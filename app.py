@@ -3,7 +3,8 @@ from flask import Flask, jsonify, request
 import scraper
 
 app = Flask(__name__)
-SCRAPE_TOKEN = os.environ.get("SCRAPE_TOKEN", "")
+# Strip whitespace: pasted env vars often carry a stray trailing newline/space.
+SCRAPE_TOKEN = os.environ.get("SCRAPE_TOKEN", "").strip()
 
 
 @app.route("/")
@@ -31,7 +32,7 @@ def debug_env():
 
 @app.route("/test-login")
 def test_login():
-    token = request.args.get("token", "")
+    token = request.args.get("token", "").strip()
     if not SCRAPE_TOKEN or token != SCRAPE_TOKEN:
         return jsonify({"error": "bad or missing token"}), 403
     return jsonify(scraper.test_login())
