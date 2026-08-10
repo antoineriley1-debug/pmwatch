@@ -47,5 +47,12 @@ def test_login():
     token = request.args.get("token", "").strip()
     expected = _scrape_token()
     if not expected or token != expected:
-        return jsonify({"error": "bad or missing token"}), 403
+        return jsonify({
+            "error": "bad or missing token",
+            "debug_incoming_token_repr": repr(token),
+            "debug_expected_repr": repr(expected),
+            "debug_incoming_hex": token.encode("utf-8").hex(),
+            "debug_expected_hex": expected.encode("utf-8").hex(),
+            "debug_equal": token == expected,
+        }), 403
     return jsonify(scraper.test_login())
