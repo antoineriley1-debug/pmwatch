@@ -18,7 +18,11 @@ def debug_env():
     shape WITHOUT revealing the value. Lists which required env vars
     are present. Remove after Step 1 verification."""
     tok = os.environ.get("SCRAPE_TOKEN", "")
+    probe = request.args.get("probe", None)
     return jsonify({
+        "code_version": "v3-strip",
+        "probe_matches_raw": (probe == tok) if probe is not None else None,
+        "probe_matches_stripped": (probe.strip() == tok.strip()) if probe is not None else None,
         "scrape_token_set": bool(tok),
         "scrape_token_length": len(tok),
         "scrape_token_first": tok[:1] if tok else None,
