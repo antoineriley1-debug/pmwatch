@@ -59,15 +59,50 @@ def test_login():
             page.wait_for_timeout(8000)
             active = context.pages[-1]
             active.wait_for_load_state("domcontentloaded", timeout=60000)
+            # Give the SPA time to render its shell.
+            try:
+                active.wait_for_load_state("networkidle", timeout=30000)
+            except Exception:
+                pass
+            active.wait_for_timeout(6000)
             result["steps"].append("Opened the MRO Work Center")
             result["opened_new_tab"] = len(context.pages) > 1
+            result["tab_count"] = len(context.pages)
 
             result["last_step"] = "verify-content"
-            body_text = active.inner_text("body")
             result["page_title"] = active.title()
-            result["found_medstar"] = ("Medstar" in body_text) or ("MedStar" in body_text)
-            result["found_work_orders"] = "Work Orders" in body_text
-            result["success"] = result["found_medstar"] or result["found_work_orders"]
+            result["url"] = active.url
+
+            # Collect text from the main page AND every iframe — MC's v2026
+            # Work Center renders inside nested frames, so body-only misses it.
+            texts = []
+            try:
+                texts.append(active.inner_text("body"))
+            except Exception as e:
+                result["body_read_error"] = str(e)
+            frame_infos = []
+            for fr in active.frames:
+                try:
+                    ft = fr.inner_text("body")
+                    texts.append(ft)
+                    frame_infos.append({"url": fr.url, "chars": len(ft)})
+                except Exception:
+                    frame_infos.append({"url": fr.url, "chars": 0})
+            result["frames"] = frame_infos
+            all_text = "\n".join(texts)
+
+            low = all_text.lower()
+            result["found_medstar"] = "medstar" in low
+            result["found_work_orders"] = "work order" in low
+            result["found_repair_center"] = "repair center" in low
+            # Sample so we can SEE what the page actually says at runtime.
+            result["content_sample"] = all_text[:1200]
+            result["total_content_chars"] = len(all_text)
+            result["success"] = (
+                result["found_medstar"]
+                or result["found_work_orders"]
+                or result["found_repair_center"]
+            )
             result["last_step"] = "done"
         except Exception as e:
             # Fail loudly: report the error AND the step it died on.
