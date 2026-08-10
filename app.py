@@ -25,9 +25,12 @@ def debug_env():
     tok = os.environ.get("SCRAPE_TOKEN", "")
     probe = request.args.get("probe", None)
     return jsonify({
-        "code_version": "v3-strip",
+        "code_version": "v5-bytes",
         "probe_matches_raw": (probe == tok) if probe is not None else None,
         "probe_matches_stripped": (probe.strip() == tok.strip()) if probe is not None else None,
+        "token_repr": repr(tok),
+        "token_bytes_hex": tok.encode("utf-8").hex(),
+        "testlogin_would_pass": (probe.strip() == tok.strip()) if probe is not None else None,
         "scrape_token_set": bool(tok),
         "scrape_token_length": len(tok),
         "scrape_token_first": tok[:1] if tok else None,
