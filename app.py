@@ -278,6 +278,28 @@ def scrape():
         enrich_limit=enrich_limit, enrich_offset=enrich_offset))
 
 
+@app.route("/probe-paging")
+def probe_paging():
+    """Diagnostic: scrape ONE hospital with store off and return the paging
+    controls + record count + row count so we can see MC's real pagination."""
+    if not _check_token():
+        return jsonify({"error": "bad or missing token"}), 403
+    hospital = request.args.get("hospital", "52626")
+    out = scraper.scrape_hospital(hospital_code=hospital, store=False,
+                                  enrich=False)
+    return jsonify({
+        "hospital": hospital,
+        "raw_row_count": out.get("raw_row_count"),
+        "parsed_count": out.get("parsed_count"),
+        "paging": out.get("paging"),
+        "paging_error": out.get("paging_error"),
+        "show_all_error": out.get("show_all_error"),
+        "list_url": out.get("list_url"),
+        "last_step": out.get("last_step"),
+        "error": out.get("error"),
+    })
+
+
 @app.route("/scrape-all")
 def scrape_all():
     """Scrape CLOSED PMs for EVERY hospital in the portfolio in one login.

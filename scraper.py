@@ -497,6 +497,81 @@ def _scrape_one_hospital(active, hospital_code, rc_id, result, store=True,
             except Exception as e:
                 result["dom_probe_error"] = str(e)
 
+            # PAGING: MC's grid shows only the first page (~48 rows) by
+            # default, so "Total" was really "first page count". Capture the
+            # paging controls + record count, then force the grid to show all
+            # rows before reading.
+            result["last_step"] = "probe-paging"
+            try:
+                result["paging"] = list_fr.evaluate(
+                    r"""() => {
+                        const out = {selects:[], inputs:[], counts:[]};
+                        // page-size / paging <select>s
+                        for (const s of document.querySelectorAll('select')) {
+                            out.selects.push({name: s.name||s.id||'',
+                                value: s.value,
+                                options: Array.from(s.options).map(o=>o.value).slice(0,20)});
+                        }
+                        // paging inputs (page number, page size)
+                        for (const i of document.querySelectorAll("input[type='text'],input[type='hidden']")) {
+                            const nm=(i.name||i.id||'');
+                            if (/page|size|rows|rec/i.test(nm)) out.inputs.push({name:nm, value:i.value});
+                        }
+                        // any 'x of y' / 'records' text
+                        const body=(document.body.innerText||'');
+                        const m=body.match(/(\d+)\s*(?:-|to)\s*(\d+)\s*of\s*(\d+)/i);
+                        if (m) out.range={from:m[1],to:m[2],total:m[3]};
+                        const rm=body.match(/(\d+)\s+records?/i);
+                        if (rm) out.records=rm[1];
+                        // global functions MC exposes for paging
+                        out.fns = ['gotopage','setpagesize','showall','doPaging','changePageSize']
+                            .filter(f => typeof window[f] === 'function');
+                        return out;
+                    }"""
+                )
+            except Exception as e:
+                result["paging_error"] = str(e)
+
+            # Try to force "show all": set any page-size control to its max
+            # option and re-fire onchange; also try common MC paging fns.
+            result["last_step"] = "force-show-all"
+            try:
+                list_fr.evaluate(
+                    r"""() => {
+                        // 1) page-size select -> pick the largest numeric option
+                        for (const s of document.querySelectorAll('select')) {
+                            const nm=(s.name||s.id||'').toLowerCase();
+                            if (/size|pagesize|perpage|rows/.test(nm)) {
+                                let best=null, bestv=-1;
+                                for (const o of s.options) {
+                                    const v=parseInt(o.value,10);
+                                    if (!isNaN(v) && v>bestv){bestv=v;best=o.value;}
+                                }
+                                if (best!=null){ s.value=best;
+                                    s.dispatchEvent(new Event('change',{bubbles:true})); }
+                            }
+                        }
+                        // 2) hidden page-size input MC reads on refresh
+                        for (const i of document.querySelectorAll("input[type='hidden'],input[type='text']")) {
+                            const nm=(i.name||i.id||'').toLowerCase();
+                            if (/pagesize|rowcount|recperpage|pagerows/.test(nm)) i.value='5000';
+                        }
+                        // 3) known MC helpers
+                        try { if (typeof setpagesize==='function') setpagesize(5000); } catch(e){}
+                        try { if (typeof changePageSize==='function') changePageSize(5000); } catch(e){}
+                        try { if (typeof showall==='function') showall(); } catch(e){}
+                    }"""
+                )
+                active.wait_for_timeout(4000)
+                list_fr = _frame_for(active, "mc_list.asp") or list_fr
+                try:
+                    list_fr.wait_for_load_state("networkidle", timeout=30000)
+                except Exception:
+                    pass
+                list_fr.wait_for_timeout(2500)
+            except Exception as e:
+                result["show_all_error"] = str(e)
+
             # Extract each row's WO number + internal key (kv) from the
             # checkbox value, plus the visible cells. The kv lets us fetch
             # the WO detail page for close date + completed-by enrichment.
