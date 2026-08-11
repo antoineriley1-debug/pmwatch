@@ -430,6 +430,11 @@ def scrape_hospital(hospital_code="52626", store=True, enrich=True,
                             rec["close_date"] = det["close_date"]
                         if det.get("asset_name") and not rec.get("asset_name"):
                             rec["asset_name"] = det["asset_name"]
+                        # system = PM name (Supply-Chilled H2O Coil, etc.)
+                        if det.get("pm_name"):
+                            rec["system"] = det["pm_name"]
+                        if det.get("procedure"):
+                            rec["procedure"] = det["procedure"]
                         rec["raw"]["detail"] = det
                         enriched += 1
                     except Exception as e:

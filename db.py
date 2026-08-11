@@ -40,12 +40,57 @@ CREATE TABLE IF NOT EXISTS closed_pms (
     asset_model     TEXT,
     asset_serial    TEXT,
     wo_type         TEXT,                      -- raw type/label from MC (audit)
+    system          TEXT,                      -- PM system/category (HVAC, med gas, ...)
+    procedure       TEXT,                      -- PM procedure name
+    reason          TEXT,                      -- WO reason/title
+    location        TEXT,                      -- location text
+    target_date     DATE,                      -- scheduled/target date from list view
+    enriched        BOOLEAN NOT NULL DEFAULT FALSE,  -- detail fetched yet?
     raw             JSONB,                     -- full scraped row for forensics
-    scraped_at      TIMESTAMP NOT NULL DEFAULT NOW()
+    scraped_at      TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMP NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_closed_pms_hospital ON closed_pms (hospital_code);
 CREATE INDEX IF NOT EXISTS idx_closed_pms_close_date ON closed_pms (close_date);
 CREATE INDEX IF NOT EXISTS idx_closed_pms_closed_by ON closed_pms (closed_by);
+CREATE INDEX IF NOT EXISTS idx_closed_pms_system ON closed_pms (system);
+CREATE INDEX IF NOT EXISTS idx_closed_pms_enriched ON closed_pms (enriched);
+
+-- Backfill columns for existing deployments (idempotent).
+ALTER TABLE closed_pms ADD COLUMN IF NOT EXISTS system TEXT;
+ALTER TABLE closed_pms ADD COLUMN IF NOT EXISTS procedure TEXT;
+ALTER TABLE closed_pms ADD COLUMN IF NOT EXISTS reason TEXT;
+ALTER TABLE closed_pms ADD COLUMN IF NOT EXISTS location TEXT;
+ALTER TABLE closed_pms ADD COLUMN IF NOT EXISTS target_date DATE;
+ALTER TABLE closed_pms ADD COLUMN IF NOT EXISTS enriched BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE closed_pms ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NOT NULL DEFAULT NOW();
+
+-- QC results: one row per QC review of a closed PM.
+CREATE TABLE IF NOT EXISTS qc_reviews (
+    id            BIGSERIAL PRIMARY KEY,
+    wo_number     TEXT NOT NULL REFERENCES closed_pms(wo_number) ON DELETE CASCADE,
+    result        TEXT NOT NULL,               -- pass | fail
+    score         INT,                         -- optional 0-100
+    notes         TEXT,
+    reviewer      TEXT,
+    photos        JSONB,                       -- list of photo refs (later R2)
+    created_at    TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_qc_wo ON qc_reviews (wo_number);
+
+-- Vendor contracts.
+CREATE TABLE IF NOT EXISTS contracts (
+    id            BIGSERIAL PRIMARY KEY,
+    vendor        TEXT NOT NULL,
+    hospital_code TEXT,
+    scope         TEXT,
+    start_date    DATE,
+    end_date      DATE,
+    obligations   JSONB,                       -- [{asset/system, qty, frequency}]
+    notes         TEXT,
+    created_at    TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_contracts_vendor ON contracts (vendor);
 """
 
 
@@ -60,34 +105,59 @@ def init_db():
 
 
 def upsert_pms(rows):
-    """Insert closed-PM rows, deduplicating on wo_number.
+    """Insert new closed-PM rows or UPDATE enrichment fields on existing.
 
-    Never double-inserts a PM already stored. Returns a dict with counts
-    so the caller can report exactly what happened.
-
-    rows: list of dicts with keys matching the columns below.
+    Dedup key is wo_number. A WO first seen from the list (no closed_by yet)
+    is inserted; when later enriched from the detail page, the same wo_number
+    UPDATEs with closed_by/close_date/system/etc. instead of being skipped.
+    Returns counts.
     """
     if not rows:
-        return {"received": 0, "inserted": 0, "skipped_existing": 0}
+        return {"received": 0, "inserted": 0, "updated": 0}
 
     init_db()
     conn = get_conn()
     inserted = 0
+    updated = 0
     try:
         with conn, conn.cursor() as cur:
             for r in rows:
+                raw = r.get("raw") or {}
+                system = r.get("system") or raw.get("pm_name") or raw.get("system")
+                procedure = r.get("procedure") or raw.get("procedure")
+                reason = r.get("reason") or raw.get("reason")
+                location = r.get("location") or raw.get("location")
+                target_date = r.get("target_date") or raw.get("target_date")
+                is_enriched = bool(r.get("closed_by") or r.get("close_date")
+                                   or (raw.get("detail")))
                 cur.execute(
                     """
                     INSERT INTO closed_pms
                         (wo_number, hospital_code, hospital_name, closed_by,
                          close_date, close_ts, asset_name, asset_model,
-                         asset_serial, wo_type, raw)
+                         asset_serial, wo_type, system, procedure, reason,
+                         location, target_date, enriched, raw, updated_at)
                     VALUES
                         (%(wo_number)s, %(hospital_code)s, %(hospital_name)s,
                          %(closed_by)s, %(close_date)s, %(close_ts)s,
                          %(asset_name)s, %(asset_model)s, %(asset_serial)s,
-                         %(wo_type)s, %(raw)s)
-                    ON CONFLICT (wo_number) DO NOTHING
+                         %(wo_type)s, %(system)s, %(procedure)s, %(reason)s,
+                         %(location)s, %(target_date)s, %(enriched)s, %(raw)s, NOW())
+                    ON CONFLICT (wo_number) DO UPDATE SET
+                        closed_by   = COALESCE(EXCLUDED.closed_by, closed_pms.closed_by),
+                        close_date  = COALESCE(EXCLUDED.close_date, closed_pms.close_date),
+                        asset_name  = COALESCE(EXCLUDED.asset_name, closed_pms.asset_name),
+                        asset_model = COALESCE(EXCLUDED.asset_model, closed_pms.asset_model),
+                        asset_serial= COALESCE(EXCLUDED.asset_serial, closed_pms.asset_serial),
+                        system      = COALESCE(EXCLUDED.system, closed_pms.system),
+                        procedure   = COALESCE(EXCLUDED.procedure, closed_pms.procedure),
+                        reason      = COALESCE(EXCLUDED.reason, closed_pms.reason),
+                        location    = COALESCE(EXCLUDED.location, closed_pms.location),
+                        target_date = COALESCE(EXCLUDED.target_date, closed_pms.target_date),
+                        enriched    = closed_pms.enriched OR EXCLUDED.enriched,
+                        raw         = EXCLUDED.raw,
+                        updated_at  = NOW()
+                    WHERE closed_pms.enriched = FALSE OR EXCLUDED.enriched = TRUE
                     """,
                     {
                         "wo_number": r.get("wo_number"),
@@ -100,18 +170,26 @@ def upsert_pms(rows):
                         "asset_model": r.get("asset_model"),
                         "asset_serial": r.get("asset_serial"),
                         "wo_type": r.get("wo_type"),
-                        "raw": psycopg2.extras.Json(r.get("raw") or r),
+                        "system": system,
+                        "procedure": procedure,
+                        "reason": reason,
+                        "location": location,
+                        "target_date": target_date,
+                        "enriched": is_enriched,
+                        "raw": psycopg2.extras.Json(raw or r),
                     },
                 )
-                # rowcount is 1 when inserted, 0 when the ON CONFLICT skipped it.
-                inserted += cur.rowcount
+                if cur.rowcount:
+                    # xmax=0 heuristic isn't available here; treat statement as
+                    # insert-or-update. Distinguish via a follow-up is costly,
+                    # so approximate: rely on caller-level newness if needed.
+                    inserted += 1
     finally:
         conn.close()
 
     return {
         "received": len(rows),
-        "inserted": inserted,
-        "skipped_existing": len(rows) - inserted,
+        "written": inserted,
     }
 
 
@@ -154,27 +232,181 @@ def hospital_stats():
         conn.close()
 
 
-def list_pms(hospital_code=None, limit=500):
-    """Full PM rows for the dashboard table, newest target date first."""
+def list_pms(hospital_code=None, limit=500, system=None, order="close_date"):
+    """Full PM rows for the dashboard table with enriched fields."""
+    order_sql = {
+        "close_date": "close_date DESC NULLS LAST, scraped_at DESC",
+        "system": "system NULLS LAST, close_date DESC",
+        "site": "hospital_code, close_date DESC",
+        "mechanic": "closed_by NULLS LAST, close_date DESC",
+    }.get(order, "close_date DESC NULLS LAST, scraped_at DESC")
+    where = []
+    params = []
+    if hospital_code:
+        where.append("hospital_code = %s")
+        params.append(hospital_code)
+    if system:
+        where.append("system = %s")
+        params.append(system)
+    wsql = ("WHERE " + " AND ".join(where)) if where else ""
+    params.append(limit)
+    conn = get_conn()
+    try:
+        with conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                f"""SELECT wo_number, hospital_code, hospital_name, closed_by,
+                          close_date, target_date, asset_name, system, procedure,
+                          reason, location, enriched
+                   FROM closed_pms {wsql}
+                   ORDER BY {order_sql} LIMIT %s""",
+                params,
+            )
+            return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def closed_today_by_site():
+    """PMs closed TODAY per site + network total. Uses actual close_date."""
+    conn = get_conn()
+    try:
+        with conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """SELECT hospital_code, MAX(hospital_name) AS hospital_name,
+                          COUNT(*) FILTER (WHERE close_date = CURRENT_DATE) AS today,
+                          COUNT(*) FILTER (WHERE close_date >= date_trunc('week', CURRENT_DATE)) AS week,
+                          COUNT(*) FILTER (WHERE close_date >= date_trunc('month', CURRENT_DATE)) AS month,
+                          COUNT(*) AS total,
+                          COUNT(*) FILTER (WHERE enriched) AS enriched
+                   FROM closed_pms
+                   GROUP BY hospital_code
+                   ORDER BY today DESC, total DESC"""
+            )
+            return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def completion_trend(hospital_code=None, days=30):
+    """Daily completion counts for trend charts (per-site or network)."""
     conn = get_conn()
     try:
         with conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             if hospital_code:
                 cur.execute(
-                    """SELECT wo_number, hospital_code, hospital_name, closed_by,
-                              close_date, asset_name, raw
-                       FROM closed_pms WHERE hospital_code = %s
-                       ORDER BY scraped_at DESC LIMIT %s""",
-                    (hospital_code, limit),
+                    """SELECT close_date::text AS day, COUNT(*) AS n
+                       FROM closed_pms
+                       WHERE close_date IS NOT NULL AND hospital_code = %s
+                         AND close_date >= CURRENT_DATE - %s::int
+                       GROUP BY close_date ORDER BY close_date""",
+                    (hospital_code, days),
                 )
             else:
                 cur.execute(
-                    """SELECT wo_number, hospital_code, hospital_name, closed_by,
-                              close_date, asset_name, raw
-                       FROM closed_pms ORDER BY scraped_at DESC LIMIT %s""",
-                    (limit,),
+                    """SELECT close_date::text AS day, COUNT(*) AS n
+                       FROM closed_pms
+                       WHERE close_date IS NOT NULL
+                         AND close_date >= CURRENT_DATE - %s::int
+                       GROUP BY close_date ORDER BY close_date""",
+                    (days,),
                 )
             return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def system_breakdown(hospital_code=None):
+    """Counts grouped by system/PM type for sorting/grouping."""
+    conn = get_conn()
+    try:
+        with conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            if hospital_code:
+                cur.execute(
+                    """SELECT COALESCE(system,'(unclassified)') AS system, COUNT(*) AS n
+                       FROM closed_pms WHERE hospital_code = %s
+                       GROUP BY system ORDER BY n DESC""",
+                    (hospital_code,),
+                )
+            else:
+                cur.execute(
+                    """SELECT COALESCE(system,'(unclassified)') AS system, COUNT(*) AS n
+                       FROM closed_pms GROUP BY system ORDER BY n DESC"""
+                )
+            return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+# ---- QC ----
+def add_qc_review(wo_number, result, score=None, notes=None, reviewer=None, photos=None):
+    conn = get_conn()
+    try:
+        with conn, conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO qc_reviews (wo_number, result, score, notes, reviewer, photos)
+                   VALUES (%s,%s,%s,%s,%s,%s) RETURNING id""",
+                (wo_number, result, score, notes, reviewer,
+                 psycopg2.extras.Json(photos) if photos else None),
+            )
+            return cur.fetchone()[0]
+    finally:
+        conn.close()
+
+
+def qc_queue(hospital_code=None, limit=200):
+    """Closed PMs and their latest QC status (pending if none)."""
+    conn = get_conn()
+    try:
+        with conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            wsql = "WHERE p.hospital_code = %s" if hospital_code else ""
+            params = ([hospital_code, limit] if hospital_code else [limit])
+            cur.execute(
+                f"""SELECT p.wo_number, p.hospital_code, p.hospital_name, p.closed_by,
+                          p.close_date, p.system, p.asset_name, p.location,
+                          q.result AS qc_result, q.score AS qc_score, q.created_at AS qc_at
+                   FROM closed_pms p
+                   LEFT JOIN LATERAL (
+                       SELECT result, score, created_at FROM qc_reviews
+                       WHERE wo_number = p.wo_number ORDER BY created_at DESC LIMIT 1
+                   ) q ON true
+                   {wsql}
+                   ORDER BY p.close_date DESC NULLS LAST LIMIT %s""",
+                params,
+            )
+            return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+# ---- Contracts ----
+def list_contracts():
+    conn = get_conn()
+    try:
+        with conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """SELECT id, vendor, hospital_code, scope, start_date, end_date,
+                          obligations, notes,
+                          (end_date - CURRENT_DATE) AS days_left
+                   FROM contracts ORDER BY end_date NULLS LAST"""
+            )
+            return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def add_contract(vendor, hospital_code=None, scope=None, start_date=None,
+                 end_date=None, obligations=None, notes=None):
+    conn = get_conn()
+    try:
+        with conn, conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO contracts (vendor, hospital_code, scope, start_date,
+                       end_date, obligations, notes)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+                (vendor, hospital_code, scope, start_date, end_date,
+                 psycopg2.extras.Json(obligations) if obligations else None, notes),
+            )
+            return cur.fetchone()[0]
     finally:
         conn.close()
 
