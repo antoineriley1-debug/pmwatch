@@ -617,9 +617,12 @@ def scrape():
         enrich_offset = int(request.args.get("enrich_offset", "0"))
     except ValueError:
         enrich_offset = 0
+    mp = request.args.get("pages")
+    max_pages = int(mp) if (mp or "").isdigit() else None
     return jsonify(scraper.scrape_hospital(
         hospital_code=hospital, store=store, enrich=enrich,
-        enrich_limit=enrich_limit, enrich_offset=enrich_offset))
+        enrich_limit=enrich_limit, enrich_offset=enrich_offset,
+        max_pages=max_pages))
 
 
 @app.route("/backfill-names")
@@ -674,9 +677,11 @@ def scrape_all():
         enrich_limit = 8
     only = request.args.get("hospitals")  # optional CSV subset
     hospitals = [h.strip() for h in only.split(",")] if only else None
+    mp = request.args.get("pages")  # light mode: newest N pages per site
+    max_pages = int(mp) if (mp or "").isdigit() else None
     return jsonify(scraper.scrape_all(
         store=store, enrich=enrich, enrich_limit=enrich_limit,
-        hospitals=hospitals))
+        hospitals=hospitals, max_pages=max_pages))
 
 
 @app.route("/pms")

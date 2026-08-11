@@ -426,7 +426,7 @@ _ROW_READ_JS = r"""els => els.map(tr => {
 
 
 def scrape_hospital(hospital_code="52626", store=True, enrich=True,
-                    enrich_limit=15, enrich_offset=0):
+                    enrich_limit=15, enrich_offset=0, max_pages=None):
     """Scrape CLOSED preventive-maintenance work orders for one hospital
     into the database. Logs in, then delegates to _scrape_one_hospital.
     """
@@ -446,7 +446,8 @@ def scrape_hospital(hospital_code="52626", store=True, enrich=True,
             _scrape_one_hospital(active, hospital_code, rc_id, result,
                                  store=store, enrich=enrich,
                                  enrich_limit=enrich_limit,
-                                 enrich_offset=enrich_offset)
+                                 enrich_offset=enrich_offset,
+                                 max_pages=max_pages)
             result["success"] = True
             result["last_step"] = "done"
         except Exception as e:
@@ -457,7 +458,8 @@ def scrape_hospital(hospital_code="52626", store=True, enrich=True,
     return result
 
 
-def scrape_all(store=True, enrich=True, enrich_limit=8, hospitals=None):
+def scrape_all(store=True, enrich=True, enrich_limit=8, hospitals=None,
+               max_pages=None):
     """Scrape CLOSED PMs for EVERY hospital in the portfolio in ONE browser
     session (single login). Loops the Repair Center dropdown per hospital so
     the whole portfolio is covered by a single cron trigger.
@@ -484,7 +486,8 @@ def scrape_all(store=True, enrich=True, enrich_limit=8, hospitals=None):
                     _scrape_one_hospital(active, code, rc_id, sub,
                                          store=store, enrich=enrich,
                                          enrich_limit=enrich_limit,
-                                         enrich_offset=0)
+                                         enrich_offset=0,
+                                         max_pages=max_pages)
                     sub["success"] = True
                     sub["last_step"] = "done"
                 except Exception as e:
@@ -627,7 +630,11 @@ def _load_closed_list(active, hospital_code, rc_id, result):
 
 
 def _scrape_one_hospital(active, hospital_code, rc_id, result, store=True,
-                         enrich=True, enrich_limit=15, enrich_offset=0):
+                         enrich=True, enrich_limit=15, enrich_offset=0,
+                         max_pages=None):
+    """max_pages=None reads EVERY page (full reconcile). max_pages=N reads
+    only the first N pages (~45 rows each, newest first) — the light mode
+    the 15-minute cron uses, since fresh closeouts surface at the top."""
     """Scrape one hospital using an already-logged-in Work Center page.
     Sets the Repair Center + Closed view, reads rows, enriches, stores.
     Mutates `result` in place. Raises on hard failure.
@@ -871,7 +878,8 @@ def _scrape_one_hospital(active, hospital_code, rc_id, result, store=True,
             seen_kv = {r["kv"] for r in rows}
             base_url = list_fr.url or ""
             pages_read = 1
-            for pg in range(2, 61):
+            page_cap = 61 if not max_pages else (int(max_pages) + 1)
+            for pg in range(2, page_cap):
                 if mc_total and len(rows) >= mc_total:
                     break
                 purl = _build_page_url(base_url, pg)
