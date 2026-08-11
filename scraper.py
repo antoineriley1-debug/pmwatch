@@ -423,7 +423,7 @@ def scrape_hospital(hospital_code="52626", store=True, enrich=True,
                     if not kv:
                         continue
                     try:
-                        det = _fetch_wo_detail(active, kv)
+                        det = _fetch_wo_detail_by_click(active, list_fr, kv)
                         if det.get("closed_by"):
                             rec["closed_by"] = det["closed_by"]
                         if det.get("close_date"):
@@ -550,57 +550,76 @@ def _fetch_wo_detail(active, kv):
     The Assignments block looks like:  "Lee, Augusta   8/31/2026  0 hr"
     which gives us the mechanic and the completion date.
     """
-    # Note: justdata=y returned an empty body in testing; the full detail
-    # page renders the Assignments/Status blocks we need.
-    url = f"{_DETAIL_PATH}?kv={kv}&currentmodule=WO"
-    page = active.context.new_page()
-    out = {}
-    try:
-        page.goto(url, timeout=45000, wait_until="domcontentloaded")
-        try:
-            page.wait_for_load_state("networkidle", timeout=15000)
-        except Exception:
-            pass
-        page.wait_for_timeout(1200)
-        text = page.inner_text("body")
-        out["raw_len"] = len(text)
-        out["raw_head"] = text[:900]
-        out["final_url"] = page.url
+    return _fetch_wo_detail_by_click(active, None, kv)
 
-        # --- Assignments: name + date ---
-        m = re.search(r"Assignments\s*Action(.*?)(Indicators|Page 1|$)",
-                      text, re.S | re.I)
-        if m:
-            block = m.group(1)
-            # A person line like "Lee, Augusta" optionally followed by a date.
-            name_m = re.search(r"([A-Z][A-Za-z.'\-]+,\s*[A-Z][A-Za-z.'\-]+)", block)
-            if name_m:
-                out["closed_by"] = _norm(name_m.group(1))
-            dm = re.search(r"(\d{1,2}/\d{1,2}/\d{2,4})", block)
-            if dm:
-                out["close_date"] = _to_date(dm.group(1))
 
-        # --- Status: capture Closed date if present ---
-        sm = re.search(r"Closed\s*\r?\n?\s*(\d{1,2}/\d{1,2}/\d{2,4}[^\n]*)",
-                       text, re.I)
-        if sm and not out.get("close_date"):
-            out["close_date"] = _to_date(sm.group(1))
+def _detail_text_from_frames(active):
+    """Read WO detail text from whichever frame MC rendered it in."""
+    best = ""
+    for fr in active.frames:
+        u = fr.url or ""
+        if "_workorder_UDF_POM.asp" in u and "mc_list" not in u:
+            try:
+                t = fr.inner_text("body")
+                if len(t) > len(best):
+                    best = t
+            except Exception:
+                pass
+    return best
 
-        # --- Asset name (the (code-id) line) ---
-        am = re.search(r"([^\n]*\(\d{4,6}-\d+\))", text)
-        if am:
-            out["asset_name"] = _norm(am.group(1))
 
-        # --- PM / Procedure ---
-        pm = re.search(r"PM:\s*([^\n]+)", text)
-        if pm:
-            out["pm_name"] = _norm(pm.group(1))
-        pr = re.search(r"Procedure:\s*\n?\s*([^\n]+)", text)
-        if pr:
-            out["procedure"] = _norm(pr.group(1))
-    finally:
-        page.close()
+def _parse_detail_text(text):
+    """Extract closed_by, close_date, asset, pm, procedure from detail text."""
+    out = {"raw_len": len(text)}
+    if not text:
+        return out
+    out["raw_head"] = text[:900]
+
+    # Assignments block: "Lee, Augusta   8/31/2026   0 hr"
+    m = re.search(r"Assignments\s*Action(.*?)(Indicators|Page 1|$)",
+                  text, re.S | re.I)
+    if m:
+        block = m.group(1)
+        name_m = re.search(r"([A-Z][A-Za-z.'\-]+\s*,\s*[A-Z][A-Za-z.'\-]+)", block)
+        if name_m:
+            out["closed_by"] = _norm(name_m.group(1).replace("\u00a0", " "))
+        dm = re.search(r"(\d{1,2}/\d{1,2}/\d{2,4})", block)
+        if dm:
+            out["close_date"] = _to_date(dm.group(1))
+
+    # Status block Closed date fallback.
+    sm = re.search(r"Closed\b[^\d]{0,20}(\d{1,2}/\d{1,2}/\d{2,4})", text, re.I)
+    if sm and not out.get("close_date"):
+        out["close_date"] = _to_date(sm.group(1))
+
+    am = re.search(r"([^\n]*\(\d{4,6}-\d+\))", text)
+    if am:
+        out["asset_name"] = _norm(am.group(1))
+    pm = re.search(r"PM:\s*([^\n]+)", text)
+    if pm:
+        out["pm_name"] = _norm(pm.group(1))
+    pr = re.search(r"Procedure:\s*\n?\s*([^\n]+)", text)
+    if pr:
+        out["procedure"] = _norm(pr.group(1))
     return out
+
+
+def _fetch_wo_detail_by_click(active, list_fr, kv):
+    """Open a WO's detail by double-clicking its list row (MC populates the
+    detail frame with session context), then parse it. Direct-URL fetch
+    returns an empty body, so we must drive the UI.
+    """
+    if list_fr is None:
+        list_fr = _frame_for(active, "mc_list.asp")
+    if list_fr is None:
+        return {"error": "list frame gone"}
+    row = list_fr.locator(
+        f"tr:has(input[name='mckeyvalues'][value='{kv}'])"
+    ).first
+    row.dblclick(timeout=15000)
+    active.wait_for_timeout(3500)
+    text = _detail_text_from_frames(active)
+    return _parse_detail_text(text)
 
 
 def _to_date(s):
