@@ -455,11 +455,20 @@ def _parse_rows(raw_rows, headers, hospital_code):
         if not cells:
             continue
 
-        # Anchor: the WO number.
+        # Skip the outer wrapper row: MC nests one big <table> whose single
+        # cell contains the entire grid text. A real data row has few cells
+        # and none longer than a couple hundred chars.
+        if any(len(c) > 300 for c in cells) or len(cells) > 20:
+            continue
+        # Skip the header row.
+        if cells and cells[0].lower().startswith("wo #"):
+            continue
+
+        # Anchor: the WO number (must BE the cell, not just contain it).
         wo = None
         wo_i = None
         for i, c in enumerate(cells):
-            if _WO_RE.match(c):
+            if _WO_RE.match(c) and len(c) < 30:
                 wo = c.split()[0]
                 wo_i = i
                 break
@@ -495,7 +504,11 @@ def _parse_rows(raw_rows, headers, hospital_code):
             "hospital_code": hospital_code,
             "hospital_name": HOSPITAL_NAMES.get(hospital_code),
             "closed_by": None,          # not in default list view; Step 5/7 detail fetch
-            "close_date": date_val,
+            # NOTE: the 'All Closed' list shows TARGET date, not the actual
+            # close date. We store it in raw.target_date and leave close_date
+            # null until we pull the real close timestamp (column config or
+            # WO detail fetch). Accuracy matters for compliance.
+            "close_date": None,
             "close_ts": None,
             "asset_name": asset_name,
             "asset_model": None,        # requires WO/asset detail fetch
@@ -504,6 +517,7 @@ def _parse_rows(raw_rows, headers, hospital_code):
             "raw": {
                 "cells": cells,
                 "reason": reason,
+                "target_date": date_val,
                 "asset_id": asset_id,
                 "location": location,
                 "headers": headers,
