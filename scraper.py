@@ -283,6 +283,33 @@ def _build_closed_pm_url(list_url, repaircenter_id):
     return urlunsplit((parts.scheme, parts.netloc, parts.path, new_query, ""))
 
 
+def _build_show_all_url(list_url):
+    """Rewrite the live mc_list.asp URL to render ALL closed PMs on one page.
+
+    MC paginates the grid (~48 rows/page). Its URL already knows the real
+    record count via pagesize; we set a large pagesize, jump to page 1, and
+    flip sallpages=1 (MC's 'show all pages' flag) so every row renders and
+    can be read in a single pass. Preserves all session/filter params.
+    """
+    if not list_url or "mc_list.asp" not in list_url:
+        return None
+    parts = urlsplit(list_url)
+    q = parse_qs(parts.query, keep_blank_values=True)
+    q = {k: (v[0] if isinstance(v, list) else v) for k, v in q.items()}
+    # Keep MC's own pagesize if it's already large; otherwise force big.
+    try:
+        cur_ps = int(q.get("pagesize", "0"))
+    except ValueError:
+        cur_ps = 0
+    q["pagesize"] = str(max(cur_ps, 5000))
+    q["page"] = "1"
+    q["sallpages"] = "1"        # show-all flag observed in the paging DOM
+    q["init"] = "n"
+    q["initdd"] = "n"
+    new_query = urlencode(q, safe=" %")
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, new_query, ""))
+
+
 def _norm(s):
     return re.sub(r"\s+", " ", (s or "").strip())
 
@@ -532,43 +559,25 @@ def _scrape_one_hospital(active, hospital_code, rc_id, result, store=True,
             except Exception as e:
                 result["paging_error"] = str(e)
 
-            # Try to force "show all": set any page-size control to its max
-            # option and re-fire onchange; also try common MC paging fns.
+            # Force "show all rows": MC's grid renders one page (~48) by
+            # default. Its own list URL already carries the true pagesize
+            # (e.g. 696) plus a 'sallpages' flag. We navigate the list frame
+            # to that same URL with page=1, a large pagesize, and sallpages=1
+            # so every closed PM renders and gets read in one pass.
             result["last_step"] = "force-show-all"
             try:
-                list_fr.evaluate(
-                    r"""() => {
-                        // 1) page-size select -> pick the largest numeric option
-                        for (const s of document.querySelectorAll('select')) {
-                            const nm=(s.name||s.id||'').toLowerCase();
-                            if (/size|pagesize|perpage|rows/.test(nm)) {
-                                let best=null, bestv=-1;
-                                for (const o of s.options) {
-                                    const v=parseInt(o.value,10);
-                                    if (!isNaN(v) && v>bestv){bestv=v;best=o.value;}
-                                }
-                                if (best!=null){ s.value=best;
-                                    s.dispatchEvent(new Event('change',{bubbles:true})); }
-                            }
-                        }
-                        // 2) hidden page-size input MC reads on refresh
-                        for (const i of document.querySelectorAll("input[type='hidden'],input[type='text']")) {
-                            const nm=(i.name||i.id||'').toLowerCase();
-                            if (/pagesize|rowcount|recperpage|pagerows/.test(nm)) i.value='5000';
-                        }
-                        // 3) known MC helpers
-                        try { if (typeof setpagesize==='function') setpagesize(5000); } catch(e){}
-                        try { if (typeof changePageSize==='function') changePageSize(5000); } catch(e){}
-                        try { if (typeof showall==='function') showall(); } catch(e){}
-                    }"""
-                )
-                active.wait_for_timeout(4000)
-                list_fr = _frame_for(active, "mc_list.asp") or list_fr
-                try:
-                    list_fr.wait_for_load_state("networkidle", timeout=30000)
-                except Exception:
-                    pass
-                list_fr.wait_for_timeout(2500)
+                cur_url = list_fr.url or ""
+                show_url = _build_show_all_url(cur_url)
+                result["show_all_url"] = show_url
+                if show_url:
+                    list_fr.goto(show_url, timeout=60000)
+                    try:
+                        list_fr.wait_for_load_state("networkidle", timeout=45000)
+                    except Exception:
+                        pass
+                    list_fr.wait_for_timeout(3000)
+                    # Re-resolve in case MC swapped the frame.
+                    list_fr = _frame_for(active, "mc_list.asp") or list_fr
             except Exception as e:
                 result["show_all_error"] = str(e)
 
