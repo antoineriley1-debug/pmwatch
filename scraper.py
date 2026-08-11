@@ -925,8 +925,13 @@ def _scrape_one_hospital(active, hospital_code, rc_id, result, store=True,
                 result["mc_date_window"] = wm.group(1)
 
             result["last_step"] = "parse-rows"
-            hosp_name = (result.get("live_hospital_name")
-                         or HOSPITAL_NAMES.get(hospital_code))
+            live = result.get("live_hospital_name")
+            # MC's dropdown labels sites by their code; a bare number is not
+            # a name. Prefer the real name map whenever the live label is
+            # numeric.
+            if live and live.strip().isdigit():
+                live = None
+            hosp_name = live or HOSPITAL_NAMES.get(hospital_code)
             parsed = _parse_kv_rows(rows, hospital_code, hospital_name=hosp_name)
             # Guard: WO numbers are prefixed with their hospital code. Any row
             # whose prefix disagrees with the site we THINK we're scraping is
