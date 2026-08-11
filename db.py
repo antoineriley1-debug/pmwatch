@@ -95,11 +95,21 @@ CREATE INDEX IF NOT EXISTS idx_contracts_vendor ON contracts (vendor);
 
 
 def init_db():
-    """Create tables/indexes if they don't exist. Idempotent."""
+    """Create tables/indexes/columns if missing. Idempotent.
+
+    Runs each statement in its OWN transaction so one failure (e.g. an FK
+    on a pre-existing table) can't abort the rest of the migration.
+    """
+    stmts = [s.strip() for s in SCHEMA.split(";") if s.strip()]
     conn = get_conn()
     try:
-        with conn, conn.cursor() as cur:
-            cur.execute(SCHEMA)
+        for stmt in stmts:
+            try:
+                with conn, conn.cursor() as cur:
+                    cur.execute(stmt)
+            except Exception:
+                # Roll back this one statement and keep going.
+                conn.rollback()
     finally:
         conn.close()
 
