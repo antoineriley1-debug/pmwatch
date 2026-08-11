@@ -262,6 +262,32 @@ def migrate():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/insights")
+def insights():
+    """Scorecard: which sites are doing well/weak, which systems are
+    failing QC. The 'notice stuff' view."""
+    selected = request.args.get("hospital")
+    try:
+        db.init_db()
+        sites = db.closed_today_by_site()
+        site_cards = db.site_scorecard()
+        systems = db.system_scorecard(hospital_code=selected)
+    except Exception as e:
+        return f"DB not ready: {e}", 200
+    # Flag weak/failing: pass_rate < 70 or fail count high.
+    flags = []
+    for s in site_cards:
+        if s.get("pass_rate") is not None and s["pass_rate"] < 70:
+            flags.append(f"{s.get('hospital_name') or s['hospital_code']} QC pass rate {s['pass_rate']}%")
+    for sy in systems:
+        if sy.get("pass_rate") is not None and sy["pass_rate"] < 70 and (sy.get("qc_done") or 0) >= 2:
+            flags.append(f"System '{sy['system']}' failing QC ({sy['pass_rate']}% pass)")
+    return render_template("insights.html", tab="insights", sites=sites,
+                           selected=selected, site_cards=site_cards,
+                           systems=systems, flags=flags,
+                           updated=datetime.now().strftime("%b %d, %I:%M %p"))
+
+
 @app.route("/enrich")
 def enrich():
     """Standalone resumable enrichment: fill in mechanic + close_date +

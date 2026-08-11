@@ -212,6 +212,79 @@ def unenriched_kvs(limit=40, hospital_code=None):
         conn.close()
 
 
+def site_scorecard():
+    """Per-site health: completions (week/month), QC reviewed, pass rate.
+    Powers the 'which sites are doing well / weak' view."""
+    conn = get_conn()
+    try:
+        with conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """SELECT p.hospital_code,
+                          MAX(p.hospital_name) AS hospital_name,
+                          COUNT(*) FILTER (WHERE p.close_date >= date_trunc('week', CURRENT_DATE)) AS week,
+                          COUNT(*) FILTER (WHERE p.close_date >= date_trunc('month', CURRENT_DATE)) AS month,
+                          COUNT(*) AS total,
+                          COUNT(q.id) AS qc_done,
+                          COUNT(*) FILTER (WHERE q.result='pass') AS qc_pass,
+                          COUNT(*) FILTER (WHERE q.result='fail') AS qc_fail,
+                          ROUND(AVG(q.score)) AS avg_score
+                   FROM closed_pms p
+                   LEFT JOIN LATERAL (
+                       SELECT id, result, score FROM qc_reviews
+                       WHERE wo_number = p.wo_number
+                       ORDER BY created_at DESC LIMIT 1
+                   ) q ON true
+                   GROUP BY p.hospital_code
+                   ORDER BY p.hospital_code"""
+            )
+            rows = [dict(r) for r in cur.fetchall()]
+            for r in rows:
+                done = r.get("qc_done") or 0
+                r["pass_rate"] = round(100 * (r.get("qc_pass") or 0) / done) if done else None
+            return rows
+    finally:
+        conn.close()
+
+
+def system_scorecard(hospital_code=None):
+    """Per-system health across (or within) sites: how many closed, QC'd,
+    and pass rate. Surfaces which SYSTEMS are weak/failing."""
+    conn = get_conn()
+    try:
+        with conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            where = ["p.system IS NOT NULL"]
+            params = []
+            if hospital_code:
+                where.append("p.hospital_code = %s")
+                params.append(hospital_code)
+            wsql = "WHERE " + " AND ".join(where)
+            cur.execute(
+                f"""SELECT p.system,
+                          COUNT(*) AS closed,
+                          COUNT(q.id) AS qc_done,
+                          COUNT(*) FILTER (WHERE q.result='pass') AS qc_pass,
+                          COUNT(*) FILTER (WHERE q.result='fail') AS qc_fail,
+                          ROUND(AVG(q.score)) AS avg_score
+                   FROM closed_pms p
+                   LEFT JOIN LATERAL (
+                       SELECT id, result, score FROM qc_reviews
+                       WHERE wo_number = p.wo_number
+                       ORDER BY created_at DESC LIMIT 1
+                   ) q ON true
+                   {wsql}
+                   GROUP BY p.system
+                   ORDER BY COUNT(*) DESC""",
+                params,
+            )
+            rows = [dict(r) for r in cur.fetchall()]
+            for r in rows:
+                done = r.get("qc_done") or 0
+                r["pass_rate"] = round(100 * (r.get("qc_pass") or 0) / done) if done else None
+            return rows
+    finally:
+        conn.close()
+
+
 def coverage_stats():
     """Per-site enrichment coverage: total rows vs how many have a mechanic,
     a real close_date, and a system classification."""

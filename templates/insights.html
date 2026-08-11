@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %} — Insights{% endblock %}
+{% block body %}
+
+<style>
+  .flags{background:rgba(210,153,34,.08);border:1px solid var(--amber);
+    border-radius:12px;padding:12px 14px;margin-bottom:16px;}
+  .flags h3{margin:0 0 8px;font-size:14px;color:var(--amber);}
+  .flags ul{margin:0;padding-left:18px;} .flags li{margin:3px 0;font-size:13px;}
+  .bar{height:8px;border-radius:99px;background:var(--border);overflow:hidden;margin-top:4px;}
+  .bar > i{display:block;height:100%;}
+  .rate-good{color:var(--green);} .rate-mid{color:var(--amber);} .rate-bad{color:var(--red);}
+  .fill-good{background:var(--green);} .fill-mid{background:var(--amber);} .fill-bad{background:var(--red);}
+  .scorecard{width:100%;border-collapse:collapse;font-size:13px;}
+  .scorecard th,.scorecard td{padding:9px 8px;border-bottom:1px solid var(--border);text-align:left;vertical-align:middle;}
+  .scorecard th{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.5px;}
+  .num{font-variant-numeric:tabular-nums;text-align:right;}
+</style>
+
+{% macro rate(pr) -%}
+  {%- if pr is none -%}<span class="muted">—</span>
+  {%- else -%}
+    {%- set cls = 'good' if pr>=85 else ('mid' if pr>=70 else 'bad') -%}
+    <span class="rate-{{ cls }}"><b>{{ pr }}%</b></span>
+    <div class="bar"><i class="fill-{{ cls }}" style="width:{{ pr }}%"></i></div>
+  {%- endif -%}
+{%- endmacro %}
+
+<div class="sectionhead"><h3>🔍 What to notice</h3>
+  <span class="pill">updated {{ updated }}</span></div>
+
+{% if flags %}
+<div class="flags">
+  <h3>⚠️ Needs attention</h3>
+  <ul>{% for f in flags %}<li>{{ f }}</li>{% endfor %}</ul>
+</div>
+{% else %}
+<div class="pill" style="margin-bottom:16px">No red flags yet. As QC reviews accumulate, weak sites/systems surface here automatically.</div>
+{% endif %}
+
+<div class="sectionhead"><h3>Sites — doing well vs weak</h3>
+  <span class="pill">by QC pass rate</span></div>
+<div class="tablewrap">
+  <table class="scorecard">
+    <thead><tr><th>Site</th><th class="num">Week</th><th class="num">Month</th>
+      <th class="num">QC'd</th><th class="num">Fail</th><th>Pass rate</th></tr></thead>
+    <tbody>
+      {% for s in site_cards %}
+      <tr>
+        <td>{{ s.hospital_name or s.hospital_code }}
+          <div class="muted" style="font-size:11px">{{ s.hospital_code }}{% if s.avg_score is not none %} · avg {{ s.avg_score }}{% endif %}</div></td>
+        <td class="num">{{ s.week }}</td>
+        <td class="num">{{ s.month }}</td>
+        <td class="num">{{ s.qc_done }}</td>
+        <td class="num {{ 'rate-bad' if (s.qc_fail or 0) > 0 }}">{{ s.qc_fail }}</td>
+        <td style="min-width:120px">{{ rate(s.pass_rate) }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="empty">No site data yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="sectionhead" style="margin-top:22px"><h3>Systems — strong vs failing {% if selected %}· {{ selected }}{% endif %}</h3>
+  <span class="pill">{% if selected %}<a href="/insights" style="color:var(--accent)">all sites</a>{% else %}across all sites{% endif %}</span></div>
+
+<div class="chips">
+  <a class="chip {{ 'on' if not selected }}" href="/insights">All sites</a>
+  {% for s in sites %}
+  <a class="chip {{ 'on' if selected==s.hospital_code }}" href="/insights?hospital={{ s.hospital_code }}">{{ s.hospital_code }}</a>
+  {% endfor %}
+</div>
+
+<div class="tablewrap">
+  <table class="scorecard">
+    <thead><tr><th>System</th><th class="num">Closed</th><th class="num">QC'd</th>
+      <th class="num">Fail</th><th>Pass rate</th></tr></thead>
+    <tbody>
+      {% for sy in systems %}
+      <tr>
+        <td>{{ sy.system }}{% if sy.avg_score is not none %}<div class="muted" style="font-size:11px">avg {{ sy.avg_score }}</div>{% endif %}</td>
+        <td class="num">{{ sy.closed }}</td>
+        <td class="num">{{ sy.qc_done }}</td>
+        <td class="num {{ 'rate-bad' if (sy.qc_fail or 0) > 0 }}">{{ sy.qc_fail }}</td>
+        <td style="min-width:120px">{{ rate(sy.pass_rate) }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="empty">No classified systems yet — fills in as enrichment runs.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}
