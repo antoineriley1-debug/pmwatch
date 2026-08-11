@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %} — QC{% endblock %}
+{% block body %}
+
+<div class="sectionhead">
+  <h3>Filter by site</h3>
+  <span class="pill">tap a site to filter the queue</span>
+</div>
+
+<div class="cards">
+  {% for s in sites %}
+  <a class="card {{ 'on' if selected==s.hospital_code }}" href="/qc?hospital={{ s.hospital_code }}">
+    <h2>{{ s.hospital_name or s.hospital_code }} <span class="code">{{ s.hospital_code }}</span></h2>
+    <div class="stats">
+      <div class="stat"><div class="n hot">{{ s.today }}</div><div class="l">Today</div></div>
+      <div class="stat"><div class="n">{{ s.week }}</div><div class="l">Week</div></div>
+      <div class="stat"><div class="n">{{ s.month }}</div><div class="l">Month</div></div>
+      <div class="stat"><div class="n">{{ s.total }}</div><div class="l">Total</div></div>
+    </div>
+  </a>
+  {% else %}
+  <div class="empty">No sites yet.</div>
+  {% endfor %}
+</div>
+
+<div class="sectionhead">
+  <h3>QC queue {% if selected %}· {{ selected }}{% endif %}</h3>
+  <span class="pill">{{ queue|length }} shown{% if selected %} · <a href="/qc" style="color:var(--accent)">clear</a>{% endif %}</span>
+</div>
+
+<div class="tablewrap">
+  <table>
+    <thead>
+      <tr>
+        <th>WO #</th>
+        <th>System</th>
+        <th>Mechanic</th>
+        <th class="hide-sm">Asset</th>
+        <th class="hide-sm">Closed</th>
+        <th>QC</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in queue %}
+      <tr>
+        <td class="wo">{{ r.wo_number }}</td>
+        <td>{{ r.system or '—' }}
+          {% if r.location %}<div class="muted" style="font-size:11px">{{ r.location }}</div>{% endif %}</td>
+        <td>{% if r.closed_by %}<span class="who">{{ r.closed_by }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+        <td class="hide-sm">{{ r.asset_name or '—' }}</td>
+        <td class="hide-sm muted">{{ r.close_date or '—' }}</td>
+        <td>
+          {% if r.qc_result == 'pass' %}
+            <span class="badge pass">PASS</span>
+            {% if r.qc_score is not none %}<div class="muted" style="font-size:11px;margin-top:3px">{{ r.qc_score }}</div>{% endif %}
+          {% elif r.qc_result == 'fail' %}
+            <span class="badge fail">FAIL</span>
+            {% if r.qc_score is not none %}<div class="muted" style="font-size:11px;margin-top:3px">{{ r.qc_score }}</div>{% endif %}
+          {% else %}
+            <span class="badge pending">PENDING</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% if r.qc_result is none %}
+      <tr>
+        <td colspan="6" style="padding-top:0;border-bottom:1px solid var(--border)">
+          <form method="post" action="/qc/submit"
+                style="display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end">
+            <input type="hidden" name="wo_number" value="{{ r.wo_number }}">
+            <input type="hidden" name="back" value="/qc">
+            <div style="flex:0 0 auto">
+              <label style="margin-top:0">Result</label>
+              <div style="display:flex;gap:6px">
+                <label style="display:flex;align-items:center;gap:4px;margin:0;color:var(--green);cursor:pointer">
+                  <input type="radio" name="qc_result" value="pass" required style="width:auto"> Pass
+                </label>
+                <label style="display:flex;align-items:center;gap:4px;margin:0;color:var(--red);cursor:pointer">
+                  <input type="radio" name="qc_result" value="fail" style="width:auto"> Fail
+                </label>
+              </div>
+            </div>
+            <div style="flex:0 0 90px">
+              <label style="margin-top:0">Score</label>
+              <input type="number" name="qc_score" min="0" max="100" step="1" placeholder="0–100">
+            </div>
+            <div style="flex:1 1 160px;min-width:140px">
+              <label style="margin-top:0">Notes</label>
+              <input type="text" name="notes" placeholder="Optional notes">
+            </div>
+            <div style="flex:0 0 auto">
+              <button type="submit" class="btn">Submit QC</button>
+            </div>
+          </form>
+        </td>
+      </tr>
+      {% endif %}
+      {% else %}
+      <tr><td colspan="6" class="empty">Nothing to QC yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}

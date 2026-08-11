@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %} — Trends{% endblock %}
+{% block body %}
+
+{% macro linechart(data, color, label) %}
+  {# data: list of {day, n}. Draws an inline SVG line+bar chart, mobile-first. #}
+  {% set W = 700 %}
+  {% set H = 180 %}
+  {% set padL = 34 %}
+  {% set padR = 12 %}
+  {% set padT = 14 %}
+  {% set padB = 26 %}
+  {% set plotW = W - padL - padR %}
+  {% set plotH = H - padT - padB %}
+  {% set ns = data | map(attribute='n') | list %}
+  {% set maxn = (ns | max) if ns else 0 %}
+  {% set maxn = maxn if maxn and maxn > 0 else 1 %}
+  {% set count = data | length %}
+  {% set step = (plotW / (count - 1)) if count > 1 else 0 %}
+  {% set bw = (plotW / count * 0.55) if count > 0 else 6 %}
+  <svg viewBox="0 0 {{ W }} {{ H }}" width="100%" preserveAspectRatio="xMidYMid meet"
+       role="img" aria-label="{{ label }}" style="max-width:100%;height:auto;display:block">
+    <!-- gridlines + y labels -->
+    {% for g in [0, 0.5, 1.0] %}
+      {% set gy = padT + plotH - (plotH * g) %}
+      <line x1="{{ padL }}" y1="{{ gy }}" x2="{{ W - padR }}" y2="{{ gy }}"
+            stroke="#30363d" stroke-width="1"/>
+      <text x="{{ padL - 6 }}" y="{{ gy + 4 }}" text-anchor="end"
+            fill="#8b949e" font-size="10">{{ (maxn * g) | round(0, 'floor') | int }}</text>
+    {% endfor %}
+    <!-- bars -->
+    {% for d in data %}
+      {% set cx = padL + (loop.index0 * step) if count > 1 else padL + plotW / 2 %}
+      {% set bh = (d.n / maxn) * plotH %}
+      {% set by = padT + plotH - bh %}
+      <rect x="{{ cx - bw / 2 }}" y="{{ by }}" width="{{ bw }}" height="{{ bh if bh > 0 else 0 }}"
+            rx="2" fill="{{ color }}" opacity="0.28"/>
+    {% endfor %}
+    <!-- line path -->
+    {% if count > 1 %}
+      <polyline fill="none" stroke="{{ color }}" stroke-width="2"
+        stroke-linejoin="round" stroke-linecap="round"
+        points="{% for d in data %}{% set cx = padL + (loop.index0 * step) %}{% set cy = padT + plotH - ((d.n / maxn) * plotH) %}{{ cx | round(1) }},{{ cy | round(1) }} {% endfor %}"/>
+    {% endif %}
+    <!-- points -->
+    {% for d in data %}
+      {% set cx = padL + (loop.index0 * step) if count > 1 else padL + plotW / 2 %}
+      {% set cy = padT + plotH - ((d.n / maxn) * plotH) %}
+      <circle cx="{{ cx | round(1) }}" cy="{{ cy | round(1) }}" r="2.6" fill="{{ color }}"/>
+    {% endfor %}
+    <!-- x labels: first, middle, last -->
+    {% if count > 0 %}
+      {% set first = data[0] %}
+      {% set last = data[count - 1] %}
+      {% set midi = (count // 2) %}
+      {% set mid = data[midi] %}
+      <text x="{{ padL }}" y="{{ H - 8 }}" text-anchor="start" fill="#8b949e" font-size="10">{{ first.day }}</text>
+      {% if count > 2 %}
+      <text x="{{ padL + (midi * step) if count > 1 else padL + plotW / 2 }}" y="{{ H - 8 }}"
+            text-anchor="middle" fill="#8b949e" font-size="10">{{ mid.day }}</text>
+      {% endif %}
+      <text x="{{ W - padR }}" y="{{ H - 8 }}" text-anchor="end" fill="#8b949e" font-size="10">{{ last.day }}</text>
+    {% endif %}
+  </svg>
+{% endmacro %}
+
+<div class="sectionhead">
+  <h3>Network completion trend (30 days)</h3>
+  <span class="pill">PMs closed per day · all sites</span>
+</div>
+
+<div class="card" style="padding:14px">
+  {% if net_trend %}
+    {{ linechart(net_trend, 'var(--accent)', 'Network completion trend, last 30 days') }}
+  {% else %}
+    <div class="empty">No completion data yet.</div>
+  {% endif %}
+</div>
+
+<div class="sectionhead">
+  <h3>By site</h3>
+  <span class="pill">tap a site to see its trend</span>
+</div>
+
+<div class="cards">
+  {% for s in sites %}
+  <a class="card {{ 'on' if selected==s.hospital_code }}" href="/trends?hospital={{ s.hospital_code }}">
+    <h2>{{ s.hospital_name or s.hospital_code }} <span class="code">{{ s.hospital_code }}</span></h2>
+    <div class="stats">
+      <div class="stat"><div class="n hot">{{ s.today }}</div><div class="l">Today</div></div>
+      <div class="stat"><div class="n">{{ s.week }}</div><div class="l">Week</div></div>
+      <div class="stat"><div class="n">{{ s.month }}</div><div class="l">Month</div></div>
+      <div class="stat"><div class="n">{{ s.total }}</div><div class="l">Total</div></div>
+    </div>
+  </a>
+  {% else %}
+  <div class="empty">No sites yet.</div>
+  {% endfor %}
+</div>
+
+{% if selected %}
+  {% set sel = (sites | selectattr('hospital_code', 'equalto', selected) | list | first) %}
+  <div class="sectionhead">
+    <h3>{{ (sel.hospital_name if sel else selected) or selected }} · completion trend (30 days)</h3>
+    <span class="pill"><a href="/trends" style="color:var(--accent)">clear</a></span>
+  </div>
+  <div class="card" style="padding:14px">
+    {% if site_trend %}
+      {{ linechart(site_trend, 'var(--green)', 'Site completion trend, last 30 days') }}
+    {% else %}
+      <div class="empty">No completion data yet.</div>
+    {% endif %}
+  </div>
+{% endif %}
+
+{% endblock %}

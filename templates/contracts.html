@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %} — Contracts{% endblock %}
+{% block body %}
+
+<div class="sectionhead">
+  <h3>Vendor contracts</h3>
+  <span class="pill">{{ contracts|length }} on file</span>
+</div>
+
+<details style="margin-bottom:16px">
+  <summary style="cursor:pointer;color:var(--accent);font-weight:600;font-size:14px;padding:10px 0;list-style:none">
+    ＋ Add contract
+  </summary>
+  <div class="card" style="margin-top:8px">
+    <form method="post" action="/contracts/add">
+      <label for="c_vendor">Vendor *</label>
+      <input id="c_vendor" type="text" name="vendor" required placeholder="Vendor name">
+
+      <label for="c_hospital">Hospital code</label>
+      <input id="c_hospital" type="text" name="hospital_code" placeholder="e.g. WHC"
+             list="hospital-codes">
+      <datalist id="hospital-codes">
+        {% for s in sites %}
+        <option value="{{ s.hospital_code }}">{{ s.hospital_name or s.hospital_code }}</option>
+        {% endfor %}
+      </datalist>
+
+      <label for="c_scope">Scope</label>
+      <input id="c_scope" type="text" name="scope" placeholder="e.g. Chiller PM, quarterly">
+
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <div style="flex:1 1 140px">
+          <label for="c_start">Start date</label>
+          <input id="c_start" type="date" name="start_date">
+        </div>
+        <div style="flex:1 1 140px">
+          <label for="c_end">End date</label>
+          <input id="c_end" type="date" name="end_date">
+        </div>
+      </div>
+
+      <label for="c_notes">Notes</label>
+      <textarea id="c_notes" name="notes" rows="3" placeholder="Obligations, contacts, issues…"></textarea>
+
+      <div style="margin-top:12px">
+        <button type="submit" class="btn">Save contract</button>
+      </div>
+    </form>
+  </div>
+</details>
+
+{% if contracts %}
+<div class="cards">
+  {% for c in contracts %}
+  {% set dl = c.days_left %}
+  {% set expired = (dl is not none and dl < 0) %}
+  {% set expiring = (dl is not none and dl >= 0 and dl < 90) %}
+  {% set has_issue = (c.notes and ('issue' in (c.notes|lower) or 'problem' in (c.notes|lower) or 'breach' in (c.notes|lower) or 'overdue' in (c.notes|lower))) %}
+  {% set flag = expired or expiring or has_issue %}
+  <div class="card {{ 'on' if expired }}">
+    <h2>
+      {{ c.vendor or '—' }}
+      {% if flag %}<span title="Attention needed">⚠️</span>{% endif %}
+      <span class="code">{{ c.hospital_code or 'all sites' }}</span>
+    </h2>
+    <div class="muted" style="font-size:12px;margin:2px 0 10px">{{ c.scope or '—' }}</div>
+
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+      <div>
+        <div class="l" style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Ends</div>
+        <div style="font-size:14px">{{ c.end_date or '—' }}</div>
+      </div>
+      <div style="text-align:right">
+        {% if dl is none %}
+          <div class="muted" style="font-size:13px">no end date</div>
+        {% elif expired %}
+          <div style="font-size:20px;font-weight:800;color:var(--red)">EXPIRED</div>
+          <div class="muted" style="font-size:11px">{{ (dl * -1) }}d ago</div>
+        {% else %}
+          {% set col = 'var(--red)' if dl < 30 else ('var(--amber)' if dl < 90 else 'var(--green)') %}
+          <div style="font-size:26px;font-weight:800;line-height:1;color:{{ col }}">{{ dl }}</div>
+          <div class="muted" style="font-size:10px;text-transform:uppercase;letter-spacing:.5px">days left</div>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if c.obligations %}
+      <div class="muted" style="font-size:12px;margin-top:10px">{{ c.obligations }}</div>
+    {% endif %}
+    {% if c.notes %}
+      <div class="muted" style="font-size:12px;margin-top:8px;border-top:1px solid var(--border);padding-top:8px">{{ c.notes }}</div>
+    {% endif %}
+    {% if c.start_date %}
+      <div class="muted" style="font-size:11px;margin-top:8px">Started {{ c.start_date }}</div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty">No contracts yet — add one above.</div>
+{% endif %}
+
+{% endblock %}

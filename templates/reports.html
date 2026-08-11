@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block title %} — Reports{% endblock %}
+{% block body %}
+
+{% set passc = queue | selectattr('qc_result', 'equalto', 'pass') | list | length %}
+{% set failc = queue | selectattr('qc_result', 'equalto', 'fail') | list | length %}
+{% set pendc = (queue | length) - passc - failc %}
+
+<div class="sectionhead no-print">
+  <h3>Filter by site</h3>
+  <span class="pill">tap a site to scope the report</span>
+</div>
+
+<div class="cards no-print">
+  {% for s in sites %}
+  <a class="card {{ 'on' if selected==s.hospital_code }}" href="/reports?hospital={{ s.hospital_code }}">
+    <h2>{{ s.hospital_name or s.hospital_code }} <span class="code">{{ s.hospital_code }}</span></h2>
+    <div class="stats">
+      <div class="stat"><div class="n hot">{{ s.today }}</div><div class="l">Today</div></div>
+      <div class="stat"><div class="n">{{ s.week }}</div><div class="l">Week</div></div>
+      <div class="stat"><div class="n">{{ s.month }}</div><div class="l">Month</div></div>
+      <div class="stat"><div class="n">{{ s.total }}</div><div class="l">Total</div></div>
+    </div>
+  </a>
+  {% else %}
+  <div class="empty">No sites yet.</div>
+  {% endfor %}
+</div>
+
+<div class="sectionhead">
+  <h3>QC report {% if selected %}· {{ selected }}{% endif %}</h3>
+  <span class="pill no-print">
+    {{ queue|length }} PMs{% if selected %} · <a href="/reports" style="color:var(--accent)">clear</a>{% endif %}
+    · <a href="#" onclick="window.print();return false;" class="btn ghost" style="padding:4px 10px">🖨️ Print / Save as PDF</a>
+  </span>
+</div>
+
+<div class="bignum">
+  <div style="display:flex;gap:22px">
+    <div class="stat"><div class="n hot">{{ passc }}</div><div class="l">Pass</div></div>
+    <div class="stat"><div class="n" style="color:var(--red)">{{ failc }}</div><div class="l">Fail</div></div>
+    <div class="stat"><div class="n" style="color:var(--amber)">{{ pendc }}</div><div class="l">Pending</div></div>
+    <div class="stat"><div class="n">{{ queue|length }}</div><div class="l">Total</div></div>
+  </div>
+  <div style="text-align:right" class="muted">
+    <div style="font-size:12px">QC pass rate</div>
+    <div style="font-size:22px;font-weight:800;color:var(--green)">
+      {% set decided = passc + failc %}
+      {{ ((passc / decided) * 100) | round(0, 'common') | int if decided > 0 else 0 }}%
+    </div>
+  </div>
+</div>
+
+<div class="tablewrap">
+  <table>
+    <thead>
+      <tr>
+        <th>WO #</th>
+        <th>Site</th>
+        <th>System</th>
+        <th>Mechanic</th>
+        <th class="hide-sm">Closed</th>
+        <th>QC</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in queue %}
+      <tr>
+        <td class="wo">{{ r.wo_number }}</td>
+        <td class="muted">{{ r.hospital_code or '—' }}</td>
+        <td>{{ r.system or '—' }}</td>
+        <td>{% if r.closed_by %}<span class="who">{{ r.closed_by }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+        <td class="hide-sm muted">{{ r.close_date or '—' }}</td>
+        <td>
+          {% if r.qc_result == 'pass' %}
+            <span class="badge pass">PASS</span>
+          {% elif r.qc_result == 'fail' %}
+            <span class="badge fail">FAIL</span>
+          {% else %}
+            <span class="badge pending">PENDING</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="empty">No PMs to report yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<style>
+@media print {
+  header, nav.tabs, .refresh, .no-print { display: none !important; }
+  body { background: #fff !important; color: #000 !important; padding-bottom: 0 !important; }
+  .wrap { max-width: 100% !important; padding: 0 !important; }
+  .tablewrap { border: 1px solid #ccc !important; overflow: visible !important; }
+  th, td { border-bottom: 1px solid #ccc !important; color: #000 !important; }
+  th { color: #333 !important; }
+  .bignum { border: 1px solid #ccc !important; background: #fff !important; }
+  .badge.pass { color: #1a7f37 !important; }
+  .badge.fail { color: #b42318 !important; }
+  .badge.pending { color: #9a6700 !important; }
+  .wo { color: #000 !important; }
+  .who { color: #000 !important; }
+  .muted { color: #444 !important; }
+  a { color: #000 !important; text-decoration: none !important; }
+}
+</style>
+{% endblock %}
