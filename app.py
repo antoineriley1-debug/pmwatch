@@ -100,8 +100,35 @@ def home():
     net_week = sum((s.get("week") or 0) for s in sites)
     net_total = sum((s.get("total") or 0) for s in sites)
 
+    # Condense duplicates: identical PM types collapse into ONE row with a
+    # count badge. Grouped view is the default; ?view=all shows every row.
+    view = request.args.get("view", "grouped")
+    groups = []
+    if view != "all":
+        gmap = {}
+        for r in rows:
+            key = r.get("system") or r.get("reason") or "(unclassified)"
+            g = gmap.get(key)
+            if not g:
+                g = {"name": key, "count": 0, "sites": set(),
+                     "mechanics": set(), "latest": None, "sample": r}
+                gmap[key] = g
+            g["count"] += 1
+            if r.get("hospital_code"):
+                g["sites"].add(r["hospital_code"])
+            if r.get("closed_by"):
+                g["mechanics"].add(r["closed_by"])
+            d = r.get("close_date") or r.get("target_date")
+            if d and (g["latest"] is None or d > g["latest"]):
+                g["latest"] = d
+        groups = sorted(gmap.values(),
+                        key=lambda g: (-g["count"], g["name"]))
+        for g in groups:
+            g["sites"] = len(g["sites"])
+            g["mechanics"] = sorted(g["mechanics"])[:3]
+
     return render_template(
-        "dashboard.html",
+        "dashboard.html", view=view, groups=groups,
         tab="dashboard", sites=sites, systems=systems, rows=rows,
         selected=selected, order=order, system=system,
         net_today=net_today, net_week=net_week, net_total=net_total,
@@ -118,13 +145,15 @@ def pms_view():
     mechanic = request.args.get("mechanic")
     system = request.args.get("system")
     day = request.args.get("date")
+    reason = request.args.get("reason")
     order = request.args.get("order", "close_date")
     try:
         db.init_db()
         sites = db.closed_today_by_site()
         rows = db.list_pms_filtered(hospital_code=selected, period=period,
                                     mechanic=mechanic, system=system,
-                                    order=order, limit=1000, date=day)
+                                    order=order, limit=1000, date=day,
+                                    reason=reason)
     except Exception as e:
         return f"DB not ready: {e}", 200
     labels = {"today": "closed today", "yesterday": "closed yesterday",

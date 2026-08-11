@@ -257,7 +257,8 @@ def get_wo(wo_number):
 
 
 def list_pms_filtered(hospital_code=None, period=None, mechanic=None,
-                      system=None, order="close_date", limit=1000, date=None):
+                      system=None, order="close_date", limit=1000, date=None,
+                      reason=None):
     """Flexible WO list for drill-downs. period in {today,yesterday,week,
     month}. mechanic matches closed_by. Every dashboard number links here.
     """
@@ -275,6 +276,8 @@ def list_pms_filtered(hospital_code=None, period=None, mechanic=None,
         where.append("TRIM(closed_by) = %s"); params.append(mechanic.strip())
     if system:
         where.append("system = %s"); params.append(system)
+    if reason:
+        where.append("COALESCE(system, reason) = %s"); params.append(reason)
     if date:
         where.append("close_date = %s"); params.append(date)
     if period == "today":

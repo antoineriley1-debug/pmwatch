@@ -34,9 +34,21 @@
   {% endfor %}
 </div>
 
+<style>
+  .cnt{display:inline-flex;align-items:center;justify-content:center;
+    min-width:26px;height:26px;padding:0 8px;border-radius:999px;
+    background:var(--accent);color:#fff;font-size:12px;font-weight:800;}
+  .cnt.one{background:var(--border);color:var(--muted);}
+</style>
+
 <div class="sectionhead">
   <h3>Closed PMs {% if selected %}· {{ selected }}{% endif %}{% if system %} · {{ system }}{% endif %}</h3>
-  <span class="pill">{{ rows|length }} shown{% if selected or system %} · <a href="/" style="color:var(--accent)">clear</a>{% endif %}</span>
+  <span class="pill">
+    {% if view != 'all' %}{{ groups|length }} PM types · {{ rows|length }} work orders{% else %}{{ rows|length }} shown{% endif %}
+    {% if selected or system %} · <a href="/" style="color:var(--accent)">clear</a>{% endif %}
+    · <a href="/?{{ 'hospital=' ~ selected ~ '&' if selected else '' }}{{ 'system=' ~ system|urlencode ~ '&' if system else '' }}view={{ 'all' if view != 'all' else 'grouped' }}"
+         style="color:var(--accent)">{{ 'show every WO' if view != 'all' else 'condense' }}</a>
+  </span>
 </div>
 
 <!-- sort chips -->
@@ -61,6 +73,35 @@
 </div>
 {% endif %}
 
+{% if view != 'all' %}
+<div class="tablewrap">
+  <table>
+    <thead>
+      <tr>
+        <th style="width:44px">Count</th>
+        <th>PM type</th>
+        <th class="hide-sm">Sites</th>
+        <th class="hide-sm">Mechanics</th>
+        <th>Latest</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for g in groups %}
+      <tr onclick="location.href='/pms-view?{{ 'hospital=' ~ selected ~ '&' if selected else '' }}reason={{ g.name|urlencode }}'" style="cursor:pointer">
+        <td><span class="cnt {{ 'one' if g.count == 1 }}">{{ g.count }}</span></td>
+        <td>{{ g.name }}
+          {% if g.sample.procedure and g.sample.procedure != g.name %}<div class="muted" style="font-size:11px">{{ g.sample.procedure }}</div>{% endif %}</td>
+        <td class="hide-sm muted">{{ g.sites }} site{{ 's' if g.sites != 1 }}</td>
+        <td class="hide-sm">{% if g.mechanics %}<span class="who">{{ g.mechanics|join(', ') }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+        <td class="muted">{{ g.latest or '—' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="empty">No PMs for this view.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
 <div class="tablewrap">
   <table>
     <thead>
@@ -90,4 +131,5 @@
     </tbody>
   </table>
 </div>
+{% endif %}
 {% endblock %}
