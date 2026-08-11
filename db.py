@@ -593,7 +593,8 @@ def closed_today_by_site():
                           COUNT(*) FILTER (WHERE close_date >= date_trunc('week', CURRENT_DATE)) AS week,
                           COUNT(*) FILTER (WHERE close_date >= date_trunc('month', CURRENT_DATE)) AS month,
                           COUNT(*) AS total,
-                          COUNT(*) FILTER (WHERE enriched) AS enriched
+                          COUNT(*) FILTER (WHERE enriched) AS enriched,
+                          MAX(scraped_at) AS last_scraped
                    FROM closed_pms
                    GROUP BY hospital_code
                    ORDER BY today DESC, total DESC"""
@@ -1096,5 +1097,30 @@ def wipe_all_pms():
         with conn, conn.cursor() as cur:
             cur.execute("DELETE FROM closed_pms")
             return cur.rowcount
+    finally:
+        conn.close()
+
+
+def search_wos(q, limit=50):
+    """Global work-order search: match on WO number, asset, reason,
+    procedure, or location. Exact WO-number hits sort first."""
+    like = f"%{q.strip()}%"
+    conn = get_conn()
+    try:
+        with conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """SELECT wo_number, hospital_code, hospital_name, closed_by,
+                          close_date, target_date, asset_name, system,
+                          procedure, reason, location, enriched
+                   FROM closed_pms
+                   WHERE wo_number ILIKE %s OR asset_name ILIKE %s
+                      OR reason ILIKE %s OR procedure ILIKE %s
+                      OR location ILIKE %s
+                   ORDER BY (wo_number = %s) DESC,
+                            close_date DESC NULLS LAST
+                   LIMIT %s""",
+                (like, like, like, like, like, q.strip(), limit),
+            )
+            return [dict(r) for r in cur.fetchall()]
     finally:
         conn.close()

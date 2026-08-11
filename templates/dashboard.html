@@ -15,7 +15,7 @@
 
 <div class="sectionhead">
   <h3>By site — closed today</h3>
-  <span class="pill">tap a site to drill down</span>
+  <span class="pill">{% if fresh %}<span style="color:var(--green)">●</span> last pull {{ fresh }} · {% endif %}tap a site to drill down</span>
 </div>
 
 <div class="cards">

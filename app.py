@@ -127,8 +127,20 @@ def home():
             g["sites"] = len(g["sites"])
             g["mechanics"] = sorted(g["mechanics"])[:3]
 
+    # Data freshness: newest scrape timestamp across sites.
+    fresh = None
+    stamps = [s.get("last_scraped") for s in sites if s.get("last_scraped")]
+    if stamps:
+        age = (datetime.now() - max(stamps)).total_seconds()
+        if age < 90:
+            fresh = "just now"
+        elif age < 5400:
+            fresh = f"{int(age // 60)} min ago"
+        else:
+            fresh = f"{int(age // 3600)} hr ago"
+
     return render_template(
-        "dashboard.html", view=view, groups=groups,
+        "dashboard.html", view=view, groups=groups, fresh=fresh,
         tab="dashboard", sites=sites, systems=systems, rows=rows,
         selected=selected, order=order, system=system,
         net_today=net_today, net_week=net_week, net_total=net_total,
@@ -213,12 +225,17 @@ def trends():
 @app.route("/qc")
 def qc():
     selected = request.args.get("hospital")
+    show = request.args.get("show", "pending")  # pending | done | all
     try:
         db.init_db()
         sites = db.closed_today_by_site()
-        queue = db.qc_queue(hospital_code=selected, limit=200)
+        queue = db.qc_queue(hospital_code=selected, limit=300)
     except Exception as e:
         return f"DB not ready: {e}", 200
+    if show == "pending":
+        queue = [r for r in queue if not r.get("qc_result")]
+    elif show == "done":
+        queue = [r for r in queue if r.get("qc_result")]
     # Attach an asset-specific checklist to each pending item so the QC form
     # shows real things to check, not just pass/fail.
     for r in queue:
@@ -227,7 +244,7 @@ def qc():
         r["asset_type"] = atype
         r["checklist"] = checklists.get_checklist(atype)
     return render_template("qc.html", tab="qc", sites=sites,
-                           selected=selected, queue=queue,
+                           selected=selected, queue=queue, show=show,
                            updated=datetime.now().strftime("%b %d, %I:%M %p"))
 
 
@@ -318,6 +335,7 @@ def mechanics():
     """Mechanics area: per-mechanic activity + active/inactive management."""
     selected = request.args.get("hospital")
     show = request.args.get("show", "all")  # all | active | inactive
+    group = request.args.get("group", "all")  # all | staff | contractors
     focus = request.args.get("who")          # drill into one mechanic
     try:
         db.init_db()
@@ -327,6 +345,10 @@ def mechanics():
                                    include_inactive=include_inactive)
         if show == "inactive":
             people = [p for p in people if not p.get("active")]
+        if group == "staff":
+            people = [p for p in people if not p.get("is_contractor")]
+        elif group == "contractors":
+            people = [p for p in people if p.get("is_contractor")]
         detail = db.mechanic_detail(focus) if focus else None
     except Exception as e:
         return f"DB not ready: {e}", 200
@@ -336,7 +358,7 @@ def mechanics():
     inactive_n = sum(1 for p in people if not p.get("active"))
     return render_template(
         "mechanics.html", tab="mechanics", sites=sites, people=people,
-        selected=selected, show=show, focus=focus, detail=detail,
+        selected=selected, show=show, group=group, focus=focus, detail=detail,
         net_today=net_today, active_n=active_n, inactive_n=inactive_n,
         updated=datetime.now().strftime("%b %d, %I:%M %p"))
 
@@ -499,6 +521,28 @@ def reports():
         return f"DB not ready: {e}", 200
     return render_template("reports.html", tab="reports", sites=sites,
                            selected=selected, queue=queue,
+                           updated=datetime.now().strftime("%b %d, %I:%M %p"))
+
+
+@app.route("/search")
+def search():
+    """Global work-order search from the header box."""
+    q = (request.args.get("q") or "").strip()
+    if not q:
+        return redirect("/")
+    try:
+        db.init_db()
+        rows = db.search_wos(q)
+        sites = db.closed_today_by_site()
+    except Exception as e:
+        return f"DB not ready: {e}", 200
+    # One exact WO-number hit -> jump straight to it.
+    if len(rows) == 1 or (rows and rows[0]["wo_number"].lower() == q.lower()):
+        return redirect(f"/wo/{rows[0]['wo_number']}?back=/")
+    return render_template("pms_view.html", tab="dashboard", sites=sites,
+                           rows=rows, selected=None, period=None,
+                           mechanic=None, system=None, order="close_date",
+                           ctx_label=f'matching "{q}"',
                            updated=datetime.now().strftime("%b %d, %I:%M %p"))
 
 
@@ -773,8 +817,10 @@ def calendar_view():
 
 @app.route("/reports/pdf")
 def reports_pdf():
-    """Exportable per-hospital QC report as a real PDF: summary counts, the
-    QC table, and attached photos. Landscape of data, portrait of proof."""
+    """Per-hospital QC report in the Crothall / MedStar layout:
+    navy-and-gold branded title block (logo slots), executive summary
+    written to the site's benefit, QC results table, findings, and
+    captioned photo evidence."""
     selected = request.args.get("hospital")
     try:
         db.init_db()
@@ -787,46 +833,123 @@ def reports_pdf():
     from reportlab.lib import colors
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer,
-                                    Table, TableStyle, Image as RLImage)
+                                    Table, TableStyle, Image as RLImage,
+                                    HRFlowable)
+
+    NAVY = colors.HexColor("#1B3764")
+    GOLD = colors.HexColor("#F2A900")
+    LIGHT = colors.HexColor("#F4F6F8")
 
     styles = getSampleStyleSheet()
     small = ParagraphStyle("small", parent=styles["Normal"], fontSize=8,
                            leading=10)
-    buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=letter, topMargin=0.6 * inch,
-                            bottomMargin=0.6 * inch, leftMargin=0.6 * inch,
-                            rightMargin=0.6 * inch)
-    site_label = selected or "All sites"
+    h_title = ParagraphStyle("h_title", parent=styles["Title"], fontSize=20,
+                             textColor=NAVY, spaceAfter=2)
+    h_sub = ParagraphStyle("h_sub", parent=styles["Normal"], fontSize=11,
+                           textColor=NAVY)
+    h_sec = ParagraphStyle("h_sec", parent=styles["Heading2"], fontSize=13,
+                           textColor=NAVY, spaceBefore=14, spaceAfter=6)
+    body = ParagraphStyle("body", parent=styles["Normal"], fontSize=10,
+                          leading=14)
+    cap = ParagraphStyle("cap", parent=styles["Normal"], fontSize=8,
+                         textColor=colors.HexColor("#555555"))
+
+    site_label = "All Sites"
     for s in db.closed_today_by_site():
-        if s.get("hospital_code") == selected and s.get("hospital_name"):
-            site_label = s["hospital_name"]
+        if selected and s.get("hospital_code") == selected:
+            site_label = s.get("hospital_name") or selected
             break
 
     passc = sum(1 for r in queue if r.get("qc_result") == "pass")
     failc = sum(1 for r in queue if r.get("qc_result") == "fail")
-    pendc = len(queue) - passc - failc
-    decided = passc + failc
-    rate = round(100 * passc / decided) if decided else 0
+    reviewed = passc + failc
+    rate = round(100 * passc / reviewed) if reviewed else 0
 
-    story = [
-        Paragraph("PMWATCH — Preventative Maintenance QC Report",
-                  styles["Title"]),
-        Paragraph(f"{site_label} &nbsp;·&nbsp; generated "
-                  f"{datetime.now().strftime('%B %d, %Y %I:%M %p')}",
-                  styles["Normal"]),
-        Spacer(1, 10),
-        Paragraph(f"<b>{len(queue)}</b> closed PMs &nbsp;·&nbsp; "
-                  f"<b>{passc}</b> pass &nbsp;·&nbsp; <b>{failc}</b> fail "
-                  f"&nbsp;·&nbsp; <b>{pendc}</b> pending &nbsp;·&nbsp; "
-                  f"QC pass rate <b>{rate}%</b>", styles["Normal"]),
-        Spacer(1, 12),
-    ]
+    prepared_by = os.environ.get(
+        "REPORT_PREPARED_BY",
+        "Antoine W. Riley Sr — Director of System Maintenance, "
+        "Crothall Healthcare")
 
-    data = [["WO #", "System", "Mechanic", "Closed", "QC", "Score"]]
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=letter, topMargin=0.55 * inch,
+                            bottomMargin=0.6 * inch, leftMargin=0.65 * inch,
+                            rightMargin=0.65 * inch)
+    story = []
+
+    # ---- Title block with logo slots (drop medstar.png / crothall.png
+    # into /static and they render automatically) ----
+    def _logo(fname, w):
+        p = os.path.join(app.static_folder or "static", fname)
+        if os.path.exists(p):
+            try:
+                img = RLImage(p)
+                scale = min(w / img.imageWidth, (0.6 * inch) / img.imageHeight)
+                img.drawWidth = img.imageWidth * scale
+                img.drawHeight = img.imageHeight * scale
+                return img
+            except Exception:
+                return None
+        return None
+
+    ms = _logo("medstar.png", 1.9 * inch)
+    cr = _logo("crothall.png", 1.9 * inch)
+    if ms or cr:
+        story.append(Table(
+            [[ms or "", cr or ""]],
+            colWidths=[3.6 * inch, 3.6 * inch],
+            style=TableStyle([
+                ("ALIGN", (0, 0), (0, 0), "LEFT"),
+                ("ALIGN", (1, 0), (1, 0), "RIGHT"),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ])))
+        story.append(Spacer(1, 8))
+    else:
+        story.append(Paragraph(
+            "<b>MedStar Health</b> &nbsp;|&nbsp; <b>Crothall Healthcare</b>",
+            h_sub))
+        story.append(Spacer(1, 4))
+
+    story.append(HRFlowable(width="100%", thickness=3, color=GOLD))
+    story.append(Spacer(1, 10))
+    story.append(Paragraph("Preventative Maintenance", h_title))
+    story.append(Paragraph("Quality Control Report", h_title))
+    story.append(Spacer(1, 6))
+    story.append(Paragraph(f"<b>{site_label}</b>", h_sub))
+    story.append(Paragraph(
+        datetime.now().strftime("%B %d, %Y"), body))
+    story.append(Spacer(1, 4))
+    story.append(Paragraph(f"Prepared by: {prepared_by}", cap))
+    story.append(Spacer(1, 10))
+    story.append(HRFlowable(width="100%", thickness=1, color=NAVY))
+
+    # ---- Executive summary (written to the site's benefit) ----
+    story.append(Paragraph("Executive Summary", h_sec))
+    if reviewed:
+        summary = (
+            f"During this reporting period, <b>{len(queue)}</b> preventative "
+            f"maintenance work orders were completed at {site_label}. Of "
+            f"these, <b>{reviewed}</b> received a documented quality-control "
+            f"review with an overall pass rate of <b>{rate}%</b> "
+            f"({passc} pass / {failc} requiring follow-up). The preventative "
+            f"maintenance program remains active and producing, and the "
+            f"items identified below have been documented for corrective "
+            f"follow-up and coaching.")
+    else:
+        summary = (
+            f"During this reporting period, <b>{len(queue)}</b> preventative "
+            f"maintenance work orders were completed at {site_label}. "
+            f"Quality-control reviews are underway; results will populate "
+            f"this report as they are documented.")
+    story.append(Paragraph(summary, body))
+
+    # ---- Results table ----
+    story.append(Paragraph("QC Results", h_sec))
+    data = [["WO #", "System / Task", "Mechanic", "Closed", "QC", "Score"]]
     for r in queue:
         data.append([
             Paragraph(str(r.get("wo_number") or ""), small),
-            Paragraph(str(r.get("system") or r.get("reason") or "—")[:70], small),
+            Paragraph(str(r.get("system") or r.get("reason") or "—")[:70],
+                      small),
             Paragraph(str(r.get("closed_by") or "—"), small),
             Paragraph(str(r.get("close_date") or "—"), small),
             Paragraph((r.get("qc_result") or "pending").upper(), small),
@@ -837,49 +960,73 @@ def reports_pdf():
                                    0.8 * inch, 0.7 * inch, 0.5 * inch],
                   repeatRows=1)
     table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#161b22")),
+        ("BACKGROUND", (0, 0), (-1, 0), NAVY),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
         ("FONTSIZE", (0, 0), (-1, 0), 8),
+        ("LINEBELOW", (0, 0), (-1, 0), 1.5, GOLD),
         ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#bbbbbb")),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1),
-         [colors.white, colors.HexColor("#f4f6f8")]),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, LIGHT]),
     ]))
     story.append(table)
 
-    # Photo evidence section: up to 40 photos total to keep the PDF sane.
+    # ---- Findings (failed QCs with notes) ----
+    fails = [r for r in queue if r.get("qc_result") == "fail"]
+    if fails:
+        story.append(Paragraph("Findings &amp; Follow-Up Items", h_sec))
+        for r in fails:
+            wo = db.get_wo(r["wo_number"]) or {}
+            note = wo.get("qc_notes") or "Documented during QC review."
+            story.append(Paragraph(
+                f"<b>{r['wo_number']}</b> — "
+                f"{r.get('system') or r.get('reason') or 'PM'}: {note}",
+                body))
+            story.append(Spacer(1, 3))
+
+    # ---- Photo evidence, captioned in the tour-report style ----
     wo_nums = [r["wo_number"] for r in queue if r.get("qc_result")]
     counts = db.photo_counts(wo_nums) if wo_nums else {}
     added = 0
-    if counts:
-        story.append(Spacer(1, 16))
-        story.append(Paragraph("Photo evidence", styles["Heading2"]))
-    for wo in wo_nums:
+    if any(counts.values()):
+        story.append(Paragraph("Photo Documentation", h_sec))
+    for wo_num in wo_nums:
         if added >= 40:
             break
-        if not counts.get(wo):
+        if not counts.get(wo_num):
             continue
-        story.append(Spacer(1, 8))
-        story.append(Paragraph(f"<b>{wo}</b>", styles["Normal"]))
-        row_imgs = []
-        for ph in db.photos_for_wo(wo)[:4]:
+        meta = db.photos_for_wo(wo_num)[:4]
+        row_imgs, row_caps = [], []
+        for ph in meta:
             got = db.get_qc_photo(ph["id"])
             if not got:
                 continue
             _, raw = got
             img = RLImage(io.BytesIO(raw))
             scale = min((3.3 * inch) / img.imageWidth,
-                        (2.6 * inch) / img.imageHeight, 1)
+                        (2.5 * inch) / img.imageHeight, 1)
             img.drawWidth = img.imageWidth * scale
             img.drawHeight = img.imageHeight * scale
             row_imgs.append(img)
+            row_caps.append(Paragraph(
+                f"WO {wo_num}" + (f" — {ph['caption']}" if ph.get("caption")
+                                  else ""), cap))
             added += 1
         if row_imgs:
-            story.append(Table([row_imgs]))
+            story.append(Spacer(1, 6))
+            story.append(Table([row_imgs, row_caps]))
+
+    # ---- Footer line ----
+    story.append(Spacer(1, 16))
+    story.append(HRFlowable(width="100%", thickness=1, color=NAVY))
+    story.append(Paragraph(
+        "Generated by PMWATCH — Crothall Healthcare Systems Maintenance, "
+        "MedStar Health portfolio · "
+        + datetime.now().strftime("%m/%d/%Y %I:%M %p"), cap))
 
     doc.build(story)
     buf.seek(0)
-    fname = f"PMWATCH_QC_{(selected or 'all')}_{date.today().isoformat()}.pdf"
+    fname = (f"QC_Report_{(site_label or 'All').replace(' ', '_')}_"
+             f"{date.today().isoformat()}.pdf")
     return send_file(buf, mimetype="application/pdf", as_attachment=True,
                      download_name=fname)
 

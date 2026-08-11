@@ -43,10 +43,18 @@
 
 <div class="chips">
   {% set sq = ('&hospital=' ~ selected) if selected else '' %}
-  <a class="chip {{ 'on' if show=='all' }}" href="/mechanics?show=all{{ sq }}">All</a>
-  <a class="chip {{ 'on' if show=='active' }}" href="/mechanics?show=active{{ sq }}">Active</a>
-  <a class="chip {{ 'on' if show=='inactive' }}" href="/mechanics?show=inactive{{ sq }}">Inactive</a>
-  {% if selected %}<a class="chip" href="/mechanics?show={{ show }}">clear site</a>{% endif %}
+  {% set gq = ('&group=' ~ group) if group and group != 'all' else '' %}
+  <a class="chip {{ 'on' if show=='all' }}" href="/mechanics?show=all{{ sq }}{{ gq }}">All</a>
+  <a class="chip {{ 'on' if show=='active' }}" href="/mechanics?show=active{{ sq }}{{ gq }}">Active</a>
+  <a class="chip {{ 'on' if show=='inactive' }}" href="/mechanics?show=inactive{{ sq }}{{ gq }}">Inactive</a>
+  {% if selected %}<a class="chip" href="/mechanics?show={{ show }}{{ gq }}">clear site</a>{% endif %}
+</div>
+
+<div class="chips">
+  <span class="muted" style="font-size:11px;align-self:center">Type:</span>
+  <a class="chip {{ 'on' if group=='all' }}" href="/mechanics?show={{ show }}{{ sq }}">Everyone</a>
+  <a class="chip {{ 'on' if group=='staff' }}" href="/mechanics?show={{ show }}&group=staff{{ sq }}">Staff</a>
+  <a class="chip {{ 'on' if group=='contractors' }}" href="/mechanics?show={{ show }}&group=contractors{{ sq }}">Contractors</a>
 </div>
 
 {% if selected %}

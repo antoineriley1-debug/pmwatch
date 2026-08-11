@@ -3,6 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0d1117">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="PMWATCH">
+<link rel="manifest" href="/static/manifest.json">
+<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/icon.svg">
 <title>PMWATCH{% block title %}{% endblock %}</title>
 <style>
   :root{--bg:#0d1117;--card:#161b22;--border:#30363d;--text:#e6edf3;
@@ -72,7 +79,15 @@
 <body>
 <header>
   <div><h1>🛠️ PMWATCH</h1><div class="sub">MedStar PM QC · updated {{ updated }}{% if tab %} · <a href="/logout" style="color:var(--muted)">sign out</a>{% endif %}</div></div>
-  <button class="refresh" onclick="location.reload()">↻</button>
+  <div style="display:flex;gap:8px;align-items:center">
+    {% if tab %}
+    <form action="/search" method="get" style="margin:0">
+      <input type="search" name="q" placeholder="WO # or asset…" inputmode="search"
+             style="width:130px;padding:6px 10px;font-size:13px;border-radius:8px">
+    </form>
+    {% endif %}
+    <button class="refresh" onclick="location.reload()">↻</button>
+  </div>
 </header>
 <div class="wrap">
 {% block body %}{% endblock %}

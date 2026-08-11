@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <rect width="128" height="128" rx="26" fill="#1B3764"/>
+  <path d="M20 78 L40 78 L50 52 L62 92 L72 62 L80 78 L108 78" fill="none"
+        stroke="#F2A900" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="108" cy="78" r="7" fill="#3fb950"/>
+  <text x="64" y="118" text-anchor="middle" font-family="Arial, sans-serif"
+        font-size="20" font-weight="800" fill="#e6edf3">PMWATCH</text>
+</svg>

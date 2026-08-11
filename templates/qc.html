@@ -51,6 +51,13 @@
   <span class="pill">{{ queue|length }} shown{% if selected %} · <a href="/qc" style="color:var(--accent)">clear</a>{% endif %}</span>
 </div>
 
+<div class="chips">
+  {% set sq = ('&hospital=' ~ selected) if selected else '' %}
+  <a class="chip {{ 'on' if show=='pending' }}" href="/qc?show=pending{{ sq }}">Pending</a>
+  <a class="chip {{ 'on' if show=='done' }}" href="/qc?show=done{{ sq }}">QC'd</a>
+  <a class="chip {{ 'on' if show=='all' }}" href="/qc?show=all{{ sq }}">All</a>
+</div>
+
 <div class="tablewrap">
   <table>
     <thead>
