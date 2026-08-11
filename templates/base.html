@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PMWATCH{% block title %}{% endblock %}</title>
+<style>
+  :root{--bg:#0d1117;--card:#161b22;--border:#30363d;--text:#e6edf3;
+    --muted:#8b949e;--accent:#2f81f7;--green:#3fb950;--amber:#d29922;--red:#f85149;}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;padding-bottom:70px;}
+  header{position:sticky;top:0;z-index:20;background:rgba(13,17,23,.94);
+    backdrop-filter:blur(8px);border-bottom:1px solid var(--border);padding:12px 16px;
+    display:flex;align-items:center;justify-content:space-between;}
+  header h1{font-size:16px;margin:0;letter-spacing:.3px;}
+  header .sub{color:var(--muted);font-size:11px;}
+  .refresh{background:var(--accent);color:#fff;border:0;border-radius:8px;padding:7px 12px;
+    font-size:13px;font-weight:600;cursor:pointer;}
+  .wrap{max-width:1100px;margin:0 auto;padding:16px;}
+  /* bottom tab bar (mobile) */
+  nav.tabs{position:fixed;bottom:0;left:0;right:0;z-index:20;display:flex;
+    background:rgba(13,17,23,.97);border-top:1px solid var(--border);}
+  nav.tabs a{flex:1;text-align:center;padding:9px 2px 8px;color:var(--muted);
+    text-decoration:none;font-size:10px;font-weight:600;letter-spacing:.3px;}
+  nav.tabs a .ic{display:block;font-size:18px;line-height:1.1;}
+  nav.tabs a.on{color:var(--accent);}
+  .cards{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;
+    text-decoration:none;color:inherit;display:block;transition:border-color .15s;}
+  .card.on{border-color:var(--accent);}
+  .card h2{font-size:14px;margin:0 0 2px;}
+  .card .code{color:var(--muted);font-size:11px;font-weight:400;}
+  .stats{display:flex;gap:16px;margin-top:12px;}
+  .stat .n{font-size:26px;font-weight:800;line-height:1;}
+  .stat .n.hot{color:var(--green);}
+  .stat .l{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-top:3px;}
+  .bignum{background:var(--card);border:1px solid var(--border);border-radius:14px;
+    padding:18px 20px;display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}
+  .bignum .big{font-size:40px;font-weight:800;color:var(--green);line-height:1;}
+  .bignum .lbl{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.6px;}
+  .sectionhead{display:flex;align-items:baseline;justify-content:space-between;margin:22px 0 10px;}
+  .sectionhead h3{margin:0;font-size:15px;}
+  .pill{font-size:11px;color:var(--muted);}
+  .chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;}
+  .chip{font-size:12px;padding:5px 11px;border:1px solid var(--border);border-radius:999px;
+    color:var(--muted);text-decoration:none;white-space:nowrap;}
+  .chip.on{border-color:var(--accent);color:var(--accent);background:rgba(47,129,247,.08);}
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--border);vertical-align:top;}
+  th{color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.5px;}
+  tr:hover td{background:rgba(255,255,255,.02);}
+  .wo{font-variant-numeric:tabular-nums;white-space:nowrap;color:var(--accent);font-weight:600;}
+  .muted{color:var(--muted);}
+  .who{color:var(--green);font-weight:600;white-space:nowrap;}
+  .tablewrap{border:1px solid var(--border);border-radius:12px;overflow:hidden;overflow-x:auto;}
+  .empty{color:var(--muted);padding:24px;text-align:center;}
+  .badge{font-size:10px;padding:2px 7px;border-radius:999px;font-weight:700;}
+  .badge.pass{background:rgba(63,185,80,.15);color:var(--green);}
+  .badge.fail{background:rgba(248,81,73,.15);color:var(--red);}
+  .badge.pending{background:rgba(210,153,34,.15);color:var(--amber);}
+  .btn{background:var(--accent);color:#fff;border:0;border-radius:8px;padding:7px 12px;
+    font-size:13px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-block;}
+  .btn.ghost{background:transparent;border:1px solid var(--border);color:var(--text);}
+  .btn.pass{background:var(--green);} .btn.fail{background:var(--red);}
+  input,select,textarea{background:#0d1117;border:1px solid var(--border);color:var(--text);
+    border-radius:8px;padding:8px 10px;font-size:14px;width:100%;}
+  label{font-size:12px;color:var(--muted);display:block;margin:8px 0 3px;}
+  @media(max-width:560px){.hide-sm{display:none;}th,td{padding:8px 7px;}}
+</style>
+</head>
+<body>
+<header>
+  <div><h1>🛠️ PMWATCH</h1><div class="sub">MedStar PM QC · updated {{ updated }}</div></div>
+  <button class="refresh" onclick="location.reload()">↻</button>
+</header>
+<div class="wrap">
+{% block body %}{% endblock %}
+</div>
+<nav class="tabs">
+  <a href="/" class="{{ 'on' if tab=='dashboard' }}"><span class="ic">📊</span>Dashboard</a>
+  <a href="/trends" class="{{ 'on' if tab=='trends' }}"><span class="ic">📈</span>Trends</a>
+  <a href="/qc" class="{{ 'on' if tab=='qc' }}"><span class="ic">✅</span>QC</a>
+  <a href="/reports" class="{{ 'on' if tab=='reports' }}"><span class="ic">📄</span>Reports</a>
+  <a href="/contracts" class="{{ 'on' if tab=='contracts' }}"><span class="ic">📑</span>Contracts</a>
+</nav>
+{% block scripts %}{% endblock %}
+</body>
+</html>

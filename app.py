@@ -1,6 +1,6 @@
 import os
 from datetime import datetime
-from flask import Flask, jsonify, request, render_template
+from flask import Flask, jsonify, request, render_template, redirect
 import scraper
 import db
 
@@ -23,39 +23,120 @@ def _check_token():
 
 @app.route("/")
 def home():
-    """Mobile-first dashboard: hospital cards + closed-PM table."""
+    """Dashboard: PMs closed today per site + network total, drill-down."""
     selected = request.args.get("hospital")
+    order = request.args.get("order", "close_date")
+    system = request.args.get("system")
     try:
         db.init_db()
-        hospitals = db.hospital_stats()
-        raw_rows = db.list_pms(hospital_code=selected, limit=500)
-        total = db.count_pms()
+        sites = db.closed_today_by_site()
+        systems = db.system_breakdown(hospital_code=selected)
+        rows = db.list_pms(hospital_code=selected, system=system, order=order, limit=500)
     except Exception as e:
         return f"PMWATCH is running. (DB not ready: {e})", 200
 
-    # Flatten the raw JSON so the template can read reason/location/target.
-    rows = []
-    for r in raw_rows:
-        raw = r.get("raw") or {}
-        rows.append({
-            "wo_number": r.get("wo_number"),
-            "asset_name": r.get("asset_name"),
-            "close_date": r.get("close_date"),
-            "closed_by": r.get("closed_by"),
-            "reason": raw.get("reason"),
-            "location": raw.get("location"),
-            "target_date": raw.get("target_date"),
-            "raw": raw,
-        })
+    net_today = sum((s.get("today") or 0) for s in sites)
+    net_week = sum((s.get("week") or 0) for s in sites)
+    net_total = sum((s.get("total") or 0) for s in sites)
 
     return render_template(
         "dashboard.html",
-        hospitals=hospitals,
-        rows=rows,
-        total=total,
-        selected=selected,
+        tab="dashboard", sites=sites, systems=systems, rows=rows,
+        selected=selected, order=order, system=system,
+        net_today=net_today, net_week=net_week, net_total=net_total,
         updated=datetime.now().strftime("%b %d, %I:%M %p"),
     )
+
+
+@app.route("/trends")
+def trends():
+    selected = request.args.get("hospital")
+    try:
+        db.init_db()
+        sites = db.closed_today_by_site()
+        net_trend = db.completion_trend(days=30)
+        site_trend = db.completion_trend(hospital_code=selected, days=30) if selected else []
+    except Exception as e:
+        return f"DB not ready: {e}", 200
+    return render_template("trends.html", tab="trends", sites=sites,
+                           selected=selected, net_trend=net_trend,
+                           site_trend=site_trend,
+                           updated=datetime.now().strftime("%b %d, %I:%M %p"))
+
+
+@app.route("/qc")
+def qc():
+    selected = request.args.get("hospital")
+    try:
+        db.init_db()
+        sites = db.closed_today_by_site()
+        queue = db.qc_queue(hospital_code=selected, limit=200)
+    except Exception as e:
+        return f"DB not ready: {e}", 200
+    return render_template("qc.html", tab="qc", sites=sites,
+                           selected=selected, queue=queue,
+                           updated=datetime.now().strftime("%b %d, %I:%M %p"))
+
+
+@app.route("/qc/submit", methods=["POST"])
+def qc_submit():
+    f = request.form
+    try:
+        db.add_qc_review(
+            wo_number=f.get("wo_number"),
+            result=f.get("result", "pass"),
+            score=int(f["score"]) if f.get("score") else None,
+            notes=f.get("notes"),
+            reviewer=f.get("reviewer") or "director",
+        )
+    except Exception as e:
+        return f"QC save failed: {e}", 400
+    back = request.form.get("back", "/qc")
+    return redirect(back)
+
+
+@app.route("/contracts")
+def contracts():
+    try:
+        db.init_db()
+        rows = db.list_contracts()
+        sites = db.closed_today_by_site()
+    except Exception as e:
+        return f"DB not ready: {e}", 200
+    return render_template("contracts.html", tab="contracts",
+                           contracts=rows, sites=sites,
+                           updated=datetime.now().strftime("%b %d, %I:%M %p"))
+
+
+@app.route("/contracts/add", methods=["POST"])
+def contracts_add():
+    f = request.form
+    try:
+        db.add_contract(
+            vendor=f.get("vendor"),
+            hospital_code=f.get("hospital_code") or None,
+            scope=f.get("scope"),
+            start_date=f.get("start_date") or None,
+            end_date=f.get("end_date") or None,
+            notes=f.get("notes"),
+        )
+    except Exception as e:
+        return f"Contract save failed: {e}", 400
+    return redirect("/contracts")
+
+
+@app.route("/reports")
+def reports():
+    selected = request.args.get("hospital")
+    try:
+        db.init_db()
+        sites = db.closed_today_by_site()
+        queue = db.qc_queue(hospital_code=selected, limit=500)
+    except Exception as e:
+        return f"DB not ready: {e}", 200
+    return render_template("reports.html", tab="reports", sites=sites,
+                           selected=selected, queue=queue,
+                           updated=datetime.now().strftime("%b %d, %I:%M %p"))
 
 
 @app.route("/ping")
