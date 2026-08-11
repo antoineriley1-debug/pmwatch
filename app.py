@@ -30,6 +30,7 @@ def health():
     """Liveness + DB connectivity check."""
     out = {"app": "ok"}
     try:
+        db.init_db()  # idempotent: creates closed_pms + indexes if missing
         out["stored_pms"] = db.count_pms()
         out["db"] = "ok"
     except Exception as e:
