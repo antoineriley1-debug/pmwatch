@@ -88,7 +88,7 @@
       <tr>
         <td colspan="6" style="padding-top:0;border-bottom:1px solid var(--border)">
           <form method="post" action="/qc/submit" class="qcform"
-                oninput="qcScore(this)">
+                enctype="multipart/form-data" oninput="qcScore(this)">
             <input type="hidden" name="wo_number" value="{{ r.wo_number }}">
             <input type="hidden" name="asset_type" value="{{ r.asset_type }}">
             <input type="hidden" name="back" value="/qc{{ '?hospital=' ~ selected if selected else '' }}">
@@ -112,6 +112,10 @@
                 <button type="button" class="btn ghost sm" onclick="qcAll(this,false)">Clear</button>
               </div>
               <input type="text" name="notes" placeholder="Notes (required if any item fails)" class="qcnotes">
+              <label class="btn ghost sm" style="margin:0;cursor:pointer">📷 Photos
+                <input type="file" name="photos" accept="image/*" capture="environment" multiple
+                       style="display:none" onchange="this.previousSibling.textContent=' 📷 '+this.files.length+' photo(s)'">
+              </label>
               <div class="qcresult">
                 <label class="rpass"><input type="radio" name="qc_result" value="pass"> Pass</label>
                 <label class="rfail"><input type="radio" name="qc_result" value="fail"> Fail</label>

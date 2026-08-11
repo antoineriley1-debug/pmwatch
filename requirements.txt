@@ -2,3 +2,5 @@ flask
 gunicorn
 playwright==1.45.0
 psycopg2-binary
+pillow
+reportlab

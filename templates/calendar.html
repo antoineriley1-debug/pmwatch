@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %} — Calendar{% endblock %}
+{% block body %}
+
+<style>
+  .calhead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;}
+  .calhead h3{margin:0;font-size:16px;}
+  .calnav{display:flex;gap:8px;align-items:center;}
+  .calgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;}
+  .dow{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;text-align:center;padding:4px 0;}
+  .day{min-height:74px;background:var(--card);border:1px solid var(--border);border-radius:8px;
+       padding:5px 6px;font-size:11px;text-decoration:none;color:inherit;display:block;overflow:hidden;}
+  .day.blank{background:transparent;border-color:transparent;}
+  .day.today{border-color:var(--accent);}
+  .day .dn{color:var(--muted);font-size:10px;}
+  .day .cnt{font-size:15px;font-weight:800;color:var(--green);line-height:1.2;}
+  .day .who{color:var(--text);font-size:9.5px;line-height:1.3;display:block;
+       white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  @media(max-width:560px){.day{min-height:58px;padding:4px 4px;} .day .who{display:none;}}
+</style>
+
+<div class="chips">
+  {% for s in sites %}
+  <a class="chip {{ 'on' if selected==s.hospital_code }}"
+     href="/calendar?hospital={{ s.hospital_code }}&year={{ year }}&month={{ month }}">{{ s.hospital_code }}</a>
+  {% endfor %}
+</div>
+
+<div class="calhead">
+  <h3>{{ sel_name }}</h3>
+  <div class="calnav">
+    <a class="btn ghost" style="padding:5px 10px" href="/calendar?hospital={{ selected }}&year={{ prev_y }}&month={{ prev_m }}">‹</a>
+    <b style="font-size:14px">{{ month_name }}</b>
+    <a class="btn ghost" style="padding:5px 10px" href="/calendar?hospital={{ selected }}&year={{ next_y }}&month={{ next_m }}">›</a>
+  </div>
+</div>
+<div class="pill" style="margin-bottom:10px">{{ total }} closed PMs this month · tap a day for detail</div>
+
+<div class="calgrid">
+  {% for d in ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'] %}<div class="dow">{{ d }}</div>{% endfor %}
+  {% for week in weeks %}
+    {% for dn in week %}
+      {% if dn == 0 %}
+        <div class="day blank"></div>
+      {% else %}
+        {% set items = by_day.get(dn, []) %}
+        {% set dstr = '%04d-%02d-%02d' % (year, month, dn) %}
+        {% set is_today = (today.year==year and today.month==month and today.day==dn) %}
+        <a class="day {{ 'today' if is_today }}"
+           href="/pms-view?hospital={{ selected }}&date={{ dstr }}">
+          <span class="dn">{{ dn }}</span>
+          {% if items %}
+            <div class="cnt">{{ items|length }}</div>
+            {% set names = items | map(attribute='closed_by') | select | unique | list %}
+            {% for n in names[:3] %}<span class="who">{{ n }}</span>{% endfor %}
+            {% if names|length > 3 %}<span class="who muted">+{{ names|length - 3 }} more</span>{% endif %}
+          {% endif %}
+        </a>
+      {% endif %}
+    {% endfor %}
+  {% endfor %}
+</div>
+
+{% endblock %}

@@ -38,6 +38,28 @@
 <div class="pill" style="margin-bottom:16px">No red flags yet. As QC reviews accumulate, weak sites/systems surface here automatically.</div>
 {% endif %}
 
+{% if volume_flags %}
+<div class="flags" style="border-color:var(--red);background:rgba(248,81,73,.07)">
+  <h3 style="color:var(--red)">🎓 Training opportunities — unusual daily volume</h3>
+  <div class="muted" style="font-size:12px;margin-bottom:6px">
+    Days where one person closed {{ thr }}+ PMs. Not an accusation — a flag to eyeball
+    and coach on. Threshold set by FLAG_DAILY_PMS.</div>
+  <ul>
+    {% for v in volume_flags %}
+    <li><a href="/pms-view?mechanic={{ v.name|urlencode }}&date={{ v.close_date }}"
+           style="color:inherit"><b>{{ v.name }}</b> closed <b>{{ v.n }}</b> PMs on {{ v.close_date }}</a></li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{% if idle %}
+<div class="flags">
+  <h3>😴 Not doing PMs this month</h3>
+  <ul>{% for n in idle %}<li><a href="/mechanics?who={{ n|urlencode }}" style="color:inherit">{{ n }}</a></li>{% endfor %}</ul>
+</div>
+{% endif %}
+
 <div class="sectionhead"><h3>Sites — doing well vs weak</h3>
   <span class="pill">by QC pass rate</span></div>
 <div class="tablewrap">

@@ -72,7 +72,7 @@
 </div>
 {% else %}
 <div class="qcbox">
-  <form method="post" action="/qc/submit" oninput="qcScore(this)">
+  <form method="post" action="/qc/submit" enctype="multipart/form-data" oninput="qcScore(this)">
     <input type="hidden" name="wo_number" value="{{ wo_number }}">
     <input type="hidden" name="asset_type" value="{{ asset_type }}">
     <input type="hidden" name="back" value="/wo/{{ wo_number|urlencode }}?back={{ (back or '/')|urlencode }}">
@@ -89,6 +89,10 @@
       <button type="button" class="btn ghost sm" onclick="qcAll(this,true)">Check all</button>
       <button type="button" class="btn ghost sm" onclick="qcAll(this,false)">Clear</button>
       <input type="text" name="notes" placeholder="Notes (required if any fail)" style="flex:1 1 160px;min-width:140px">
+      <label class="btn ghost sm" style="margin:0;cursor:pointer">📷 Photos
+        <input type="file" name="photos" accept="image/*" capture="environment" multiple
+               style="display:none" onchange="this.previousSibling.textContent=' 📷 '+this.files.length+' photo(s)'">
+      </label>
       <div class="qcresult">
         <label class="rpass"><input type="radio" name="qc_result" value="pass"> Pass</label>
         <label class="rfail"><input type="radio" name="qc_result" value="fail"> Fail</label>
@@ -96,6 +100,18 @@
       <button type="submit" class="btn">Submit QC</button>
     </div>
   </form>
+</div>
+{% endif %}
+
+{% if photos %}
+<div class="sectionhead"><h3>Photos</h3><span class="pill">{{ photos|length }}</span></div>
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin-bottom:16px">
+  {% for p in photos %}
+  <a href="/photo/{{ p.id }}" target="_blank">
+    <img src="/photo/{{ p.id }}" alt="QC photo"
+         style="width:100%;border-radius:10px;border:1px solid var(--border);display:block">
+  </a>
+  {% endfor %}
 </div>
 {% endif %}
 

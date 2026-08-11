@@ -458,6 +458,8 @@ def enrich_backlog(limit=40, hospital=None, prefer_direct=True):
                                 "system": det.get("pm_name"),
                                 "procedure": det.get("procedure"),
                                 "asset_name": det.get("asset_name"),
+                                "asset_model": det.get("asset_model"),
+                                "asset_serial": det.get("asset_serial"),
                                 "wo_type": "PM",
                                 "raw": {"detail": det, "kv": it["kv"]},
                             }])
@@ -738,6 +740,10 @@ def _scrape_one_hospital(active, hospital_code, rc_id, result, store=True,
                             rec["close_date"] = det["close_date"]
                         if det.get("asset_name") and not rec.get("asset_name"):
                             rec["asset_name"] = det["asset_name"]
+                        if det.get("asset_model"):
+                            rec["asset_model"] = det["asset_model"]
+                        if det.get("asset_serial"):
+                            rec["asset_serial"] = det["asset_serial"]
                         # system = PM name (Supply-Chilled H2O Coil, etc.)
                         if det.get("pm_name"):
                             rec["system"] = det["pm_name"]
@@ -948,6 +954,17 @@ def _parse_detail_text(text):
     pr = re.search(r"Procedure:\s*\n?\s*([^\n]+)", text)
     if pr:
         out["procedure"] = _norm(pr.group(1))
+    # Asset model / serial. Labels vary ("Model", "Model #", "Model No"), so
+    # match the label plus a short token value; skip if the "value" is just
+    # another label word.
+    mm = re.search(r"Model\s*(?:#|No\.?|Number)?\s*[:\-]?\s*([A-Za-z0-9][A-Za-z0-9\-/\.]{1,29})",
+                   text, re.I)
+    if mm and mm.group(1).lower() not in ("serial", "number", "no"):
+        out["asset_model"] = _norm(mm.group(1))
+    sn = re.search(r"Serial\s*(?:#|No\.?|Number)?\s*[:\-]?\s*([A-Za-z0-9][A-Za-z0-9\-/\.]{1,29})",
+                   text, re.I)
+    if sn and sn.group(1).lower() not in ("model", "number", "no"):
+        out["asset_serial"] = _norm(sn.group(1))
     return out
 
 

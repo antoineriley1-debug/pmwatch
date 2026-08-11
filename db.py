@@ -118,6 +118,19 @@ CREATE INDEX IF NOT EXISTS idx_mechanics_active ON mechanics (active);
 -- distinguishable, and can be assigned to a site.
 ALTER TABLE mechanics ADD COLUMN IF NOT EXISTS is_contractor BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE mechanics ADD COLUMN IF NOT EXISTS company TEXT;
+
+-- QC photos: resized JPEGs stored inline in Postgres (design allows a later
+-- move to object storage without schema change: swap data for a URL column).
+CREATE TABLE IF NOT EXISTS qc_photos (
+    id          BIGSERIAL PRIMARY KEY,
+    wo_number   TEXT NOT NULL,
+    qc_id       BIGINT,
+    mime        TEXT NOT NULL DEFAULT 'image/jpeg',
+    data        BYTEA NOT NULL,
+    caption     TEXT,
+    created_at  TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_qc_photos_wo ON qc_photos (wo_number);
 """
 
 
@@ -244,7 +257,7 @@ def get_wo(wo_number):
 
 
 def list_pms_filtered(hospital_code=None, period=None, mechanic=None,
-                      system=None, order="close_date", limit=1000):
+                      system=None, order="close_date", limit=1000, date=None):
     """Flexible WO list for drill-downs. period in {today,yesterday,week,
     month}. mechanic matches closed_by. Every dashboard number links here.
     """
@@ -262,6 +275,8 @@ def list_pms_filtered(hospital_code=None, period=None, mechanic=None,
         where.append("TRIM(closed_by) = %s"); params.append(mechanic.strip())
     if system:
         where.append("system = %s"); params.append(system)
+    if date:
+        where.append("close_date = %s"); params.append(date)
     if period == "today":
         where.append("close_date = CURRENT_DATE")
     elif period == "yesterday":
@@ -872,5 +887,164 @@ def recent_pms(limit=25, hospital_code=None):
                     (limit,),
                 )
             return [dict(row) for row in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+# ---- QC photos ----
+def add_qc_photo(wo_number, data, mime="image/jpeg", qc_id=None, caption=None):
+    """Store one resized photo for a QC review. Returns photo id."""
+    conn = get_conn()
+    try:
+        with conn, conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO qc_photos (wo_number, qc_id, mime, data, caption)
+                   VALUES (%s,%s,%s,%s,%s) RETURNING id""",
+                (wo_number, qc_id, mime, psycopg2.Binary(data), caption),
+            )
+            return cur.fetchone()[0]
+    finally:
+        conn.close()
+
+
+def get_qc_photo(photo_id):
+    """Return (mime, bytes) for one photo, or None."""
+    conn = get_conn()
+    try:
+        with conn, conn.cursor() as cur:
+            cur.execute("SELECT mime, data FROM qc_photos WHERE id = %s",
+                        (photo_id,))
+            row = cur.fetchone()
+            if not row:
+                return None
+            return row[0], bytes(row[1])
+    finally:
+        conn.close()
+
+
+def photos_for_wo(wo_number):
+    """Photo metadata (no bytes) for a WO, oldest first."""
+    conn = get_conn()
+    try:
+        with conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """SELECT id, caption, created_at FROM qc_photos
+                   WHERE wo_number = %s ORDER BY id""",
+                (wo_number,),
+            )
+            return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def photo_counts(wo_numbers):
+    """Map wo_number -> photo count for a list of WOs (for report tables)."""
+    if not wo_numbers:
+        return {}
+    conn = get_conn()
+    try:
+        with conn, conn.cursor() as cur:
+            cur.execute(
+                """SELECT wo_number, COUNT(*) FROM qc_photos
+                   WHERE wo_number = ANY(%s) GROUP BY wo_number""",
+                (list(wo_numbers),),
+            )
+            return {r[0]: r[1] for r in cur.fetchall()}
+    finally:
+        conn.close()
+
+
+# ---- Calendar ----
+def pms_in_range(hospital_code, start_date, end_date):
+    """Closed PMs with a real close_date inside [start, end] for one site.
+    Feeds the per-hospital calendar grid."""
+    conn = get_conn()
+    try:
+        with conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """SELECT wo_number, close_date, closed_by, system, asset_name
+                   FROM closed_pms
+                   WHERE hospital_code = %s AND close_date BETWEEN %s AND %s
+                   ORDER BY close_date, closed_by NULLS LAST""",
+                (hospital_code, start_date, end_date),
+            )
+            return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+# ---- Fraud / training flags ----
+def mechanic_daily_volumes(threshold=12, days=60):
+    """Days where one person closed >= threshold PMs — implausible-volume
+    candidates, surfaced as TRAINING opportunities (never accusations)."""
+    conn = get_conn()
+    try:
+        with conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """SELECT TRIM(closed_by) AS name, close_date, COUNT(*) AS n
+                   FROM closed_pms
+                   WHERE closed_by IS NOT NULL AND close_date IS NOT NULL
+                     AND close_date >= CURRENT_DATE - %s::int
+                   GROUP BY TRIM(closed_by), close_date
+                   HAVING COUNT(*) >= %s
+                   ORDER BY n DESC, close_date DESC
+                   LIMIT 30""",
+                (days, threshold),
+            )
+            return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def idle_active_mechanics():
+    """Active roster members with ZERO closed PMs this month — the
+    'who isn't doing PMs' view."""
+    conn = get_conn()
+    try:
+        with conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """SELECT m.name FROM mechanics m
+                   WHERE m.active = TRUE AND NOT EXISTS (
+                       SELECT 1 FROM closed_pms p
+                       WHERE TRIM(p.closed_by) = m.name
+                         AND p.close_date >= date_trunc('month', CURRENT_DATE))
+                   ORDER BY m.name LIMIT 40"""
+            )
+            return [r["name"] for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+# ---- Contract obligations vs completions ----
+def count_matching_pms(keyword, hospital_code=None, since=None):
+    """Closed PMs whose text matches an obligation keyword (system,
+    procedure, reason, or asset name), optionally scoped to a site and a
+    period start. Powers obligated-vs-completed."""
+    conn = get_conn()
+    try:
+        with conn, conn.cursor() as cur:
+            like = f"%{keyword}%"
+            where = ["""(system ILIKE %s OR procedure ILIKE %s
+                        OR reason ILIKE %s OR asset_name ILIKE %s)"""]
+            params = [like, like, like, like]
+            if hospital_code:
+                where.append("hospital_code = %s"); params.append(hospital_code)
+            if since:
+                where.append("close_date >= %s"); params.append(since)
+            cur.execute(
+                "SELECT COUNT(*) FROM closed_pms WHERE " + " AND ".join(where),
+                params,
+            )
+            return cur.fetchone()[0]
+    finally:
+        conn.close()
+
+
+def delete_contract(contract_id):
+    conn = get_conn()
+    try:
+        with conn, conn.cursor() as cur:
+            cur.execute("DELETE FROM contracts WHERE id = %s", (contract_id,))
+            return cur.rowcount
     finally:
         conn.close()

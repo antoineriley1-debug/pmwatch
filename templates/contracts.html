@@ -39,7 +39,11 @@
         </div>
       </div>
 
-      <label for="c_notes">Notes</label>
+      <label for="c_obl">PM obligations — one per line: keyword | how many | per month / quarter / year</label>
+      <textarea id="c_obl" name="obligations" rows="3"
+        placeholder="Chiller | 4 | quarter&#10;Cooling Tower | 2 | month&#10;Generator | 12 | year"></textarea>
+
+      <label for="c_notes">Notes / red flags / renegotiation points</label>
       <textarea id="c_notes" name="notes" rows="3" placeholder="Obligations, contacts, issues…"></textarea>
 
       <div style="margin-top:12px">
@@ -84,8 +88,25 @@
       </div>
     </div>
 
-    {% if c.obligations %}
-      <div class="muted" style="font-size:12px;margin-top:10px">{{ c.obligations }}</div>
+    {% if c.compliance %}
+      <div style="margin-top:12px;border-top:1px solid var(--border);padding-top:10px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+          <span style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Obligated vs completed</span>
+          {% if c.behind %}<span class="badge fail">BEHIND</span>{% else %}<span class="badge pass">ON TRACK</span>{% endif %}
+        </div>
+        {% for ob in c.compliance %}
+        <div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:3px 0">
+          <span>{{ ob.keyword }} <span class="muted">· {{ ob.qty }}/{{ ob.per }}</span></span>
+          {% if ob.done is none %}
+            <span class="muted">—</span>
+          {% elif ob.gap > 0 %}
+            <span style="color:var(--red);font-weight:700">{{ ob.done }}/{{ ob.qty }} · {{ ob.gap }} short</span>
+          {% else %}
+            <span style="color:var(--green);font-weight:700">{{ ob.done }}/{{ ob.qty }} ✓</span>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
     {% endif %}
     {% if c.notes %}
       <div class="muted" style="font-size:12px;margin-top:8px;border-top:1px solid var(--border);padding-top:8px">{{ c.notes }}</div>
@@ -93,6 +114,11 @@
     {% if c.start_date %}
       <div class="muted" style="font-size:11px;margin-top:8px">Started {{ c.start_date }}</div>
     {% endif %}
+    <form method="post" action="/contracts/delete" style="margin-top:10px;text-align:right"
+          onsubmit="return confirm('Delete this contract?')">
+      <input type="hidden" name="id" value="{{ c.id }}">
+      <button type="submit" class="btn ghost" style="padding:3px 9px;font-size:11px;color:var(--red);border-color:var(--red)">Delete</button>
+    </form>
   </div>
   {% endfor %}
 </div>
