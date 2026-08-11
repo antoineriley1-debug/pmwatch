@@ -387,6 +387,31 @@ def scrape_hospital(hospital_code="52626", store=True):
             except Exception as e:
                 result["dom_probe_error"] = str(e)
 
+            # DEEP PROBE: dump the full HTML of the header row + first data
+            # row so we can see EVERY field MC sends (including hidden cols
+            # like close date / completed-by that aren't visibly rendered).
+            result["last_step"] = "deep-probe"
+            try:
+                result["row_html_probe"] = list_fr.evaluate(
+                    r"""() => {
+                        const woRe = /\d{4,6}-\d+/;
+                        const rows = Array.from(document.querySelectorAll('tr'));
+                        // header row: first tr containing 'WO #'
+                        let header = null, dataRow = null;
+                        for (const tr of rows) {
+                            const t = (tr.innerText||'');
+                            if (!header && /WO\s*#/i.test(t)) header = tr.outerHTML.slice(0,4000);
+                            if (!dataRow && woRe.test(t) && !/WO\s*#/i.test(t)) dataRow = tr.outerHTML.slice(0,4000);
+                            if (header && dataRow) break;
+                        }
+                        // Also: any cell/link carrying a date or a person name attr
+                        const links = Array.from(document.querySelectorAll('a[href*="detail"],a[onclick*="wo"]')).slice(0,3).map(a=>({href:a.getAttribute('href'),onclick:(a.getAttribute('onclick')||'').slice(0,120),text:(a.innerText||'').trim().slice(0,30)}));
+                        return {header, dataRow, links};
+                    }"""
+                )
+            except Exception as e:
+                result["row_html_probe_error"] = str(e)
+
             result["last_step"] = "read-headers"
             headers = list_fr.eval_on_selector_all(
                 "table tr:first-child td, table th, .listheader td, .gridheader td",
