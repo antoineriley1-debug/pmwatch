@@ -395,18 +395,33 @@ def scrape_hospital(hospital_code="52626", store=True):
                 result["row_html_probe"] = list_fr.evaluate(
                     r"""() => {
                         const woRe = /\d{4,6}-\d+/;
-                        const rows = Array.from(document.querySelectorAll('tr'));
-                        // header row: first tr containing 'WO #'
-                        let header = null, dataRow = null;
-                        for (const tr of rows) {
-                            const t = (tr.innerText||'');
-                            if (!header && /WO\s*#/i.test(t)) header = tr.outerHTML.slice(0,4000);
-                            if (!dataRow && woRe.test(t) && !/WO\s*#/i.test(t)) dataRow = tr.outerHTML.slice(0,4000);
-                            if (header && dataRow) break;
+                        // Find the smallest element that contains exactly one WO number.
+                        let el = null;
+                        for (const e of document.querySelectorAll('*')) {
+                            const t = (e.innerText||'').trim();
+                            const m = t.match(/\d{4,6}-\d+/g);
+                            if (m && m.length === 1 && t.length < 200) { el = e; break; }
                         }
-                        // Also: any cell/link carrying a date or a person name attr
-                        const links = Array.from(document.querySelectorAll('a[href*="detail"],a[onclick*="wo"]')).slice(0,3).map(a=>({href:a.getAttribute('href'),onclick:(a.getAttribute('onclick')||'').slice(0,120),text:(a.innerText||'').trim().slice(0,30)}));
-                        return {header, dataRow, links};
+                        let climbInfo = null;
+                        if (el) {
+                            // Climb up to the row container and capture its HTML.
+                            let row = el;
+                            for (let i=0;i<6 && row.parentElement;i++){
+                                if ((row.innerText||'').split(/\t|\n/).filter(Boolean).length >= 4) break;
+                                row = row.parentElement;
+                            }
+                            climbInfo = {
+                                leafTag: el.tagName, leafCls: el.className||'', leafText: (el.innerText||'').slice(0,60),
+                                rowTag: row.tagName, rowCls: row.className||'',
+                                rowHTML: row.outerHTML.slice(0,3500),
+                            };
+                        }
+                        // Any clickable elements around WOs (links/onclick).
+                        const clickers = Array.from(document.querySelectorAll('a,[onclick],[ondblclick]'))
+                            .filter(a => woRe.test(a.innerText||'') || /wo|detail|open/i.test((a.getAttribute('onclick')||'')+(a.getAttribute('href')||'')))
+                            .slice(0,4)
+                            .map(a=>({tag:a.tagName, href:a.getAttribute('href'), onclick:(a.getAttribute('onclick')||'').slice(0,140), text:(a.innerText||'').trim().slice(0,30)}));
+                        return {climbInfo, clickers, totalCells: document.querySelectorAll('td').length};
                     }"""
                 )
             except Exception as e:
