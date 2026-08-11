@@ -303,6 +303,40 @@ def scrape_hospital(hospital_code="52626", store=True):
                 pass
             list_fr.wait_for_timeout(4000)
 
+            # DIAGNOSTIC: find where the WO numbers actually live in the DOM.
+            result["last_step"] = "probe-dom"
+            try:
+                result["dom_probe"] = list_fr.evaluate(
+                    r"""() => {
+                        const out = {};
+                        // Any element whose text starts like a WO number.
+                        const woRe = /^\s*\d{4,6}-\d+/;
+                        const walker = document.createElement('div');
+                        const hits = [];
+                        const all = document.querySelectorAll('*');
+                        for (const el of all) {
+                            if (el.children.length === 0) {
+                                const t = (el.innerText||'').trim();
+                                if (woRe.test(t)) {
+                                    hits.push({tag: el.tagName,
+                                              cls: el.className||'',
+                                              text: t.slice(0,40),
+                                              parentTag: el.parentElement ? el.parentElement.tagName : '',
+                                              parentCls: el.parentElement ? (el.parentElement.className||'') : ''});
+                                }
+                            }
+                            if (hits.length >= 6) break;
+                        }
+                        out.wo_hits = hits;
+                        out.tables = document.querySelectorAll('table').length;
+                        out.grid_divs = document.querySelectorAll('[class*=grid],[class*=Grid],[class*=list],[class*=List],[class*=row],[class*=Row]').length;
+                        out.body_sample = (document.body.innerText||'').slice(0,600);
+                        return out;
+                    }"""
+                )
+            except Exception as e:
+                result["dom_probe_error"] = str(e)
+
             result["last_step"] = "read-headers"
             headers = list_fr.eval_on_selector_all(
                 "table tr:first-child td, table th, .listheader td, .gridheader td",
