@@ -157,6 +157,27 @@ def init_db(verbose=False):
     return None
 
 
+def backfill_hospital_names(name_map):
+    """Set hospital_name for every row by hospital_code from a code->name
+    map. Fixes rows scraped before live-name capture worked. Returns the
+    per-code updated counts."""
+    conn = get_conn()
+    out = {}
+    try:
+        with conn, conn.cursor() as cur:
+            for code, name in name_map.items():
+                cur.execute(
+                    """UPDATE closed_pms SET hospital_name = %s, updated_at = NOW()
+                       WHERE hospital_code = %s
+                         AND (hospital_name IS NULL OR hospital_name <> %s)""",
+                    (name, code, name),
+                )
+                out[code] = cur.rowcount
+    finally:
+        conn.close()
+    return out
+
+
 def table_columns(table):
     """Return the column names for a table (for migration diagnostics)."""
     conn = get_conn()

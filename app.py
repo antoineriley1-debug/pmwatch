@@ -32,6 +32,10 @@ def home():
         sites = db.closed_today_by_site()
         systems = db.system_breakdown(hospital_code=selected)
         rows = db.list_pms(hospital_code=selected, system=system, order=order, limit=500)
+        # Fall back to the known name map when a site's stored name is blank.
+        for s in sites:
+            if not s.get("hospital_name"):
+                s["hospital_name"] = scraper.HOSPITAL_NAMES.get(s.get("hospital_code"))
     except Exception as e:
         return f"PMWATCH is running. (DB not ready: {e})", 200
 
@@ -276,6 +280,20 @@ def scrape():
     return jsonify(scraper.scrape_hospital(
         hospital_code=hospital, store=store, enrich=enrich,
         enrich_limit=enrich_limit, enrich_offset=enrich_offset))
+
+
+@app.route("/backfill-names")
+def backfill_names():
+    """Write hospital names for all rows from the known code->name map.
+    Fixes sites that stored a bare code because live-name capture missed."""
+    if not _check_token():
+        return jsonify({"error": "bad or missing token"}), 403
+    try:
+        db.init_db()
+        updated = db.backfill_hospital_names(scraper.HOSPITAL_NAMES)
+        return jsonify({"updated": updated})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/probe-paging")
