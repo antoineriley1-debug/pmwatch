@@ -848,3 +848,49 @@ def reports_pdf():
     fname = f"PMWATCH_QC_{(selected or 'all')}_{date.today().isoformat()}.pdf"
     return send_file(buf, mimetype="application/pdf", as_attachment=True,
                      download_name=fname)
+
+
+@app.route("/audit")
+def audit():
+    """Accuracy audit: per-site stored totals + prefix-mismatch counts +
+    per-site MC ground truth is compared during /scrape (mc_reported_total).
+    Token-gated."""
+    if not _check_token():
+        return jsonify({"error": "bad or missing token"}), 403
+    try:
+        db.init_db()
+        return jsonify({
+            "prefix_report": db.prefix_mismatch_report(),
+            "coverage": db.coverage_stats(),
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/cleanup-mismatch")
+def cleanup_mismatch():
+    """Delete rows whose WO prefix disagrees with their hospital_code
+    (contamination from a failed site switch). Token-gated."""
+    if not _check_token():
+        return jsonify({"error": "bad or missing token"}), 403
+    try:
+        deleted = db.delete_prefix_mismatches()
+        return jsonify({"deleted": deleted})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/wipe-all")
+def wipe_all():
+    """Full reset of scraped PM data for a clean, accurate re-scrape.
+    Requires ?confirm=WIPE on top of the token. QC reviews on wiped rows
+    are removed too — use only before real QC work has accumulated."""
+    if not _check_token():
+        return jsonify({"error": "bad or missing token"}), 403
+    if request.args.get("confirm") != "WIPE":
+        return jsonify({"error": "add &confirm=WIPE to really do this"}), 400
+    try:
+        deleted = db.wipe_all_pms()
+        return jsonify({"deleted": deleted})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500

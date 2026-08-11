@@ -1048,3 +1048,50 @@ def delete_contract(contract_id):
             return cur.rowcount
     finally:
         conn.close()
+
+
+# ---- Data repair ----
+def prefix_mismatch_report():
+    """How many stored rows have a WO prefix that disagrees with their
+    hospital_code — the fingerprint of a failed repair-center switch."""
+    conn = get_conn()
+    try:
+        with conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """SELECT hospital_code,
+                          COUNT(*) AS total,
+                          COUNT(*) FILTER (
+                              WHERE split_part(wo_number, '-', 1) <> hospital_code
+                          ) AS mismatched
+                   FROM closed_pms GROUP BY hospital_code ORDER BY hospital_code"""
+            )
+            return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def delete_prefix_mismatches():
+    """Delete rows whose WO prefix disagrees with their hospital_code.
+    QC reviews on those rows cascade. Returns rows deleted."""
+    conn = get_conn()
+    try:
+        with conn, conn.cursor() as cur:
+            cur.execute(
+                """DELETE FROM closed_pms
+                   WHERE split_part(wo_number, '-', 1) <> hospital_code"""
+            )
+            return cur.rowcount
+    finally:
+        conn.close()
+
+
+def wipe_all_pms():
+    """Delete EVERY scraped PM row (QC reviews cascade) for a clean
+    re-scrape. Photos are kept (keyed by wo_number, re-attach on re-scrape)."""
+    conn = get_conn()
+    try:
+        with conn, conn.cursor() as cur:
+            cur.execute("DELETE FROM closed_pms")
+            return cur.rowcount
+    finally:
+        conn.close()

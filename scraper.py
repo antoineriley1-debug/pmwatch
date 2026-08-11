@@ -314,6 +314,99 @@ def _norm(s):
     return re.sub(r"\s+", " ", (s or "").strip())
 
 
+def _try_set_pm_type(nav_fr, result):
+    """Find the nav <select> whose options include Preventive/PM and set it,
+    so the list is PM-ONLY at the source. Discovers the select by its
+    OPTIONS (never guesses a name). Records what it found either way."""
+    try:
+        info = nav_fr.evaluate(
+            """() => Array.from(document.querySelectorAll('select')).map(s => ({
+                   name: s.name || s.id || '',
+                   opts: Array.from(s.options).map(o => ({
+                       t: (o.text||'').trim(), v: o.value })).slice(0, 40)
+               }))"""
+        )
+    except Exception as e:
+        result["pm_type_error"] = f"scan: {e}"
+        return False
+    target, val, label = None, None, None
+    for s in info or []:
+        nm = (s.get("name") or "").lower()
+        if "repaircenter" in nm or "status" in nm:
+            continue
+        for o in s.get("opts") or []:
+            t = (o.get("t") or "").strip().lower()
+            v = (o.get("v") or "").strip()
+            if t in ("pm", "preventive", "preventative") or                "preventive" in t or "preventative" in t or v.upper() == "PM":
+                target, val, label = s.get("name"), o.get("v"), o.get("t")
+                break
+        if target:
+            break
+    result["pm_type_select"] = target
+    result["pm_type_option"] = label
+    if not target:
+        return False
+    try:
+        nav_fr.evaluate(
+            """(a) => {
+                const s = document.querySelector(`select[name='${a.n}']`)
+                       || document.getElementById(a.n);
+                if (s) { s.value = a.v;
+                    s.dispatchEvent(new Event('change', {bubbles:true}));
+                    if (typeof checksearch === 'function') {
+                        try { checksearch(s); } catch(e){} } }
+            }""",
+            {"n": target, "v": val},
+        )
+        result["pm_type_set"] = val
+        return True
+    except Exception as e:
+        result["pm_type_error"] = f"set: {e}"
+        return False
+
+
+def _grid_total(list_fr):
+    """Read MC's OWN record count from the grid ('x - y of N' or 'N records').
+    This is the ground truth we prove our row count against."""
+    try:
+        return list_fr.evaluate(
+            r"""() => {
+                const b = document.body.innerText || '';
+                let m = b.match(/of\s+(\d+)/i);
+                if (m) return parseInt(m[1]);
+                m = b.match(/(\d+)\s+records?/i);
+                if (m) return parseInt(m[1]);
+                return null; }"""
+        )
+    except Exception:
+        return None
+
+
+def _build_page_url(list_url, page):
+    """Same list URL, specific page, show-all OFF (so paging works)."""
+    if not list_url or "mc_list.asp" not in list_url:
+        return None
+    parts = urlsplit(list_url)
+    q = parse_qs(parts.query, keep_blank_values=True)
+    q = {k: (v[0] if isinstance(v, list) else v) for k, v in q.items()}
+    q["page"] = str(page)
+    q["sallpages"] = "0"
+    q["init"] = "n"
+    q["initdd"] = "n"
+    return urlunsplit((parts.scheme, parts.netloc, parts.path,
+                       urlencode(q, safe=" %"), ""))
+
+
+_ROW_READ_JS = r"""els => els.map(tr => {
+    const cb = tr.querySelector("input[name='mckeyvalues']");
+    const cells = Array.from(tr.querySelectorAll('td.browsedatacol'))
+        .map(td => (td.innerText||'').trim());
+    return {kv: cb ? cb.value : null,
+            title: tr.getAttribute('title') || '',
+            cells: cells};
+}).filter(r => r.kv)"""
+
+
 def scrape_hospital(hospital_code="52626", store=True, enrich=True,
                     enrich_limit=15, enrich_offset=0):
     """Scrape CLOSED preventive-maintenance work orders for one hospital
@@ -551,6 +644,23 @@ def _scrape_one_hospital(active, hospital_code, rc_id, result, store=True,
                 )
                 nav_fr.wait_for_timeout(2000)
                 result["steps"].append(f"Set Repair Center to {rc_id}")
+                # Read the value BACK so a silent no-op can never pass as done.
+                try:
+                    rc_now = nav_fr.evaluate(
+                        """() => { const s = document.querySelector(
+                               "select[name='wo_repaircenter']");
+                               return s ? s.value : null; }""")
+                    result["repaircenter_after_set"] = rc_now
+                    if str(rc_now) != str(rc_id):
+                        raise RuntimeError(
+                            f"repair center did not switch (wanted {rc_id}, "
+                            f"got {rc_now})")
+                except RuntimeError:
+                    raise
+                except Exception:
+                    pass
+            except RuntimeError:
+                raise
             except Exception as e:
                 result["set_rc_error"] = str(e)
 
@@ -587,6 +697,13 @@ def _scrape_one_hospital(active, hospital_code, rc_id, result, store=True,
                 result["steps"].append("Set view to All Closed")
             except Exception as e:
                 result["set_status_error"] = str(e)
+
+            # PM-ONLY at the source: find + set the work-order-type select.
+            result["last_step"] = "set-pm-type"
+            if _try_set_pm_type(nav_fr, result):
+                result["steps"].append(
+                    f"Set type filter to PM via {result.get('pm_type_select')}")
+                active.wait_for_timeout(4000)
 
             result["last_step"] = "wait-list-reload"
             active.wait_for_timeout(6000)
@@ -701,24 +818,60 @@ def _scrape_one_hospital(active, hospital_code, rc_id, result, store=True,
             # Extract each row's WO number + internal key (kv) from the
             # checkbox value, plus the visible cells. The kv lets us fetch
             # the WO detail page for close date + completed-by enrichment.
+            # MC's own record count = the number we must match.
+            result["last_step"] = "read-grid-total"
+            mc_total = _grid_total(list_fr)
+            result["mc_reported_total"] = mc_total
+
             result["last_step"] = "read-rows"
             rows = list_fr.eval_on_selector_all(
-                "tr:has(td.browsedatacol)",
-                r"""els => els.map(tr => {
-                    const cb = tr.querySelector("input[name='mckeyvalues']");
-                    const cells = Array.from(tr.querySelectorAll('td.browsedatacol'))
-                        .map(td => (td.innerText||'').trim());
-                    return {kv: cb ? cb.value : null,
-                            title: tr.getAttribute('title') || '',
-                            cells: cells};
-                }).filter(r => r.kv)""",
-            )
+                "tr:has(td.browsedatacol)", _ROW_READ_JS)
+
+            # If the grid rendered fewer rows than MC says exist (render cap),
+            # PAGE through until our unique rows equal MC's count.
+            if mc_total and len(rows) < mc_total:
+                result["last_step"] = "paginate"
+                seen_kv = {r["kv"] for r in rows}
+                base_url = list_fr.url or ""
+                pages_read = 1
+                for pg in range(2, 61):
+                    purl = _build_page_url(base_url, pg)
+                    if not purl:
+                        break
+                    try:
+                        list_fr.goto(purl, timeout=60000)
+                        list_fr.wait_for_timeout(1800)
+                        list_fr = _frame_for(active, "mc_list.asp") or list_fr
+                        more = list_fr.eval_on_selector_all(
+                            "tr:has(td.browsedatacol)", _ROW_READ_JS)
+                    except Exception as e:
+                        result["paginate_error"] = f"page {pg}: {e}"
+                        break
+                    added = 0
+                    for r in more:
+                        if r["kv"] not in seen_kv:
+                            seen_kv.add(r["kv"])
+                            rows.append(r)
+                            added += 1
+                    pages_read = pg
+                    if added == 0 or len(rows) >= mc_total:
+                        break
+                result["pages_read"] = pages_read
             result["raw_row_count"] = len(rows)
+            if mc_total is not None:
+                result["matches_mc_total"] = (len(rows) == mc_total)
 
             result["last_step"] = "parse-rows"
             hosp_name = (result.get("live_hospital_name")
                          or HOSPITAL_NAMES.get(hospital_code))
             parsed = _parse_kv_rows(rows, hospital_code, hospital_name=hosp_name)
+            # Guard: WO numbers are prefixed with their hospital code. Any row
+            # whose prefix disagrees with the site we THINK we're scraping is
+            # contamination from a failed switch — drop it and say so loudly.
+            kept = [p for p in parsed
+                    if p["wo_number"].split("-")[0] == str(hospital_code)]
+            result["prefix_mismatch_dropped"] = len(parsed) - len(kept)
+            parsed = kept
             result["parsed_count"] = len(parsed)
 
             # Enrichment: fetch WO detail for close date + completed-by.
