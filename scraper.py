@@ -408,54 +408,86 @@ def scrape_hospital(hospital_code="52626", store=True):
 _WO_RE = re.compile(r"^\d{4,6}-\d+")
 
 
+# Asset cells often embed the MC asset id like "Booster Pump 03 (52626-14510)".
+_ASSET_ID_RE = re.compile(r"\(([0-9]{4,6}-[0-9]+)\)\s*$")
+
+
+def _clean_cells(row):
+    """Drop MC's empty spacer cells, collapse whitespace."""
+    return [_norm(c) for c in row if _norm(c)]
+
+
 def _parse_rows(raw_rows, headers, hospital_code):
-    """Map MC list rows to closed_pms records. Header-driven where
-    possible, defensive everywhere: we always keep the WO number and
-    the full raw row so nothing is lost even if a column shifts.
+    """Map MC 'All Closed' WO-list rows to closed_pms records.
+
+    Observed column order (after dropping MC's blank spacer cells):
+        [ WO#, Reason, TargetDate, Procedure?, Asset/Location, Location ]
+    Some rows (non-equipment requests) omit Procedure/Asset. We anchor on
+    the WO number, take the first date as the target/close date, and pull
+    the embedded asset id when present. The full raw row is always stored.
     """
-    # Build a case-insensitive header index.
-    hidx = {}
-    for i, h in enumerate(headers or []):
-        key = _norm(h).lower()
-        if key and key not in hidx:
-            hidx[key] = i
-
-    def col(row, *names):
-        for n in names:
-            i = hidx.get(n)
-            if i is not None and i < len(row):
-                val = _norm(row[i])
-                if val:
-                    return val
-        return None
-
     out = []
-    for row in raw_rows:
-        if not row:
+    seen = set()
+    for raw in raw_rows:
+        if not raw:
             continue
-        # Find the WO number cell anywhere in the row.
+        cells = _clean_cells(raw)
+        if not cells:
+            continue
+
+        # Anchor: the WO number.
         wo = None
-        for cell in row:
-            c = _norm(cell)
+        wo_i = None
+        for i, c in enumerate(cells):
             if _WO_RE.match(c):
                 wo = c.split()[0]
+                wo_i = i
                 break
-        if not wo:
-            continue  # header/spacer/non-data row
+        if not wo or wo in seen:
+            continue
+        seen.add(wo)
+
+        after = cells[wo_i + 1:]
+        reason = after[0] if len(after) > 0 else None
+
+        # First date-looking cell = target/completion date.
+        date_val = None
+        for c in after:
+            d = _to_date(c)
+            if d:
+                date_val = d
+                break
+
+        # Asset cell = the one containing an embedded (code-id); else the
+        # cell just before the trailing location.
+        asset_name = None
+        asset_id = None
+        for c in after:
+            m = _ASSET_ID_RE.search(c)
+            if m:
+                asset_name = c
+                asset_id = m.group(1)
+                break
+        location = after[-1] if after else None
 
         rec = {
             "wo_number": wo,
             "hospital_code": hospital_code,
             "hospital_name": HOSPITAL_NAMES.get(hospital_code),
-            "closed_by": col(row, "closed by", "completed by", "assigned to", "labor"),
-            "close_date": _to_date(col(row, "close date", "date closed",
-                                        "completed", "completed date", "closed")),
+            "closed_by": None,          # not in default list view; Step 5/7 detail fetch
+            "close_date": date_val,
             "close_ts": None,
-            "asset_name": col(row, "asset", "asset name", "equipment"),
-            "asset_model": col(row, "model", "model number"),
-            "asset_serial": col(row, "serial", "serial number"),
-            "wo_type": col(row, "type", "wo type") or "PM",
-            "raw": {"cells": row, "headers": headers},
+            "asset_name": asset_name,
+            "asset_model": None,        # requires WO/asset detail fetch
+            "asset_serial": None,       # requires WO/asset detail fetch
+            "wo_type": "PM",
+            "raw": {
+                "cells": cells,
+                "reason": reason,
+                "asset_id": asset_id,
+                "location": location,
+                "headers": headers,
+            },
         }
         out.append(rec)
     return out
