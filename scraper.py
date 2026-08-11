@@ -298,9 +298,21 @@ def scrape_hospital(hospital_code="52626", store=True):
             # nav frame, which makes MC populate the list grid. Direct-URL
             # navigation returns an empty frame (grid is JS/POST-driven).
             result["last_step"] = "set-repaircenter"
+            # The select is a hidden styled dropdown, so Playwright's
+            # visibility-gated select_option times out. Set the value via JS
+            # and fire the onchange MC listens for. Non-fatal.
             try:
-                nav_fr.select_option("select[name='wo_repaircenter']", value=str(rc_id))
-                nav_fr.wait_for_timeout(1500)
+                nav_fr.evaluate(
+                    """(rc) => {
+                        const s = document.querySelector("select[name='wo_repaircenter']");
+                        if (s) { s.value = rc;
+                            s.dispatchEvent(new Event('change', {bubbles:true}));
+                            if (typeof checksearch === 'function') { try { checksearch(s); } catch(e){} }
+                        }
+                    }""",
+                    str(rc_id),
+                )
+                nav_fr.wait_for_timeout(2000)
                 result["steps"].append(f"Set Repair Center to {rc_id}")
             except Exception as e:
                 result["set_rc_error"] = str(e)
@@ -309,7 +321,15 @@ def scrape_hospital(hospital_code="52626", store=True):
             # wo_status 'CLOSEDALL' = All Closed. Selecting it triggers onchange
             # which reloads the list frame with closed WOs.
             try:
-                nav_fr.select_option("select[name='wo_status']", value="CLOSEDALL")
+                nav_fr.evaluate(
+                    """() => {
+                        const s = document.querySelector("select[name='wo_status']");
+                        if (s) { s.value = 'CLOSEDALL';
+                            s.dispatchEvent(new Event('change', {bubbles:true}));
+                            if (typeof checksearch === 'function') { try { checksearch(s); } catch(e){} }
+                        }
+                    }"""
+                )
                 result["steps"].append("Set view to All Closed")
             except Exception as e:
                 result["set_status_error"] = str(e)
