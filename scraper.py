@@ -286,22 +286,44 @@ def scrape_hospital(hospital_code="52626", store=True):
         try:
             active = _login(context, result)
 
-            result["last_step"] = "find-list-frame"
+            result["last_step"] = "find-frames"
             list_fr = _frame_for(active, "mc_list.asp")
+            nav_fr = _frame_for(active, "toctop.asp")
             if not list_fr:
                 raise RuntimeError("work-order list frame (mc_list.asp) not found")
+            if not nav_fr:
+                raise RuntimeError("nav frame (toctop.asp) not found")
 
-            result["last_step"] = "build-closed-pm-url"
-            target_url = _build_closed_pm_url(list_fr.url, rc_id)
-            result["list_url"] = target_url
+            # Drive the UI like a user: set Repair Center + Closed view in the
+            # nav frame, which makes MC populate the list grid. Direct-URL
+            # navigation returns an empty frame (grid is JS/POST-driven).
+            result["last_step"] = "set-repaircenter"
+            try:
+                nav_fr.select_option("select[name='wo_repaircenter']", value=str(rc_id))
+                nav_fr.wait_for_timeout(1500)
+                result["steps"].append(f"Set Repair Center to {rc_id}")
+            except Exception as e:
+                result["set_rc_error"] = str(e)
 
-            result["last_step"] = "navigate-closed-pm-list"
-            list_fr.goto(target_url, timeout=90000, wait_until="domcontentloaded")
+            result["last_step"] = "set-closed-view"
+            # wo_status 'CLOSEDALL' = All Closed. Selecting it triggers onchange
+            # which reloads the list frame with closed WOs.
+            try:
+                nav_fr.select_option("select[name='wo_status']", value="CLOSEDALL")
+                result["steps"].append("Set view to All Closed")
+            except Exception as e:
+                result["set_status_error"] = str(e)
+
+            result["last_step"] = "wait-list-reload"
+            active.wait_for_timeout(6000)
+            # Re-resolve the list frame (it may have reloaded to a new URL).
+            list_fr = _frame_for(active, "mc_list.asp") or list_fr
             try:
                 list_fr.wait_for_load_state("networkidle", timeout=45000)
             except Exception:
                 pass
             list_fr.wait_for_timeout(4000)
+            result["list_url"] = list_fr.url
 
             # DIAGNOSTIC: find where the WO numbers actually live in the DOM.
             result["last_step"] = "probe-dom"
@@ -330,7 +352,15 @@ def scrape_hospital(hospital_code="52626", store=True):
                         out.wo_hits = hits;
                         out.tables = document.querySelectorAll('table').length;
                         out.grid_divs = document.querySelectorAll('[class*=grid],[class*=Grid],[class*=list],[class*=List],[class*=row],[class*=Row]').length;
-                        out.body_sample = (document.body.innerText||'').slice(0,600);
+                        out.body_sample = (document.body.innerText||'').slice(0,800);
+                        // Class names of the biggest containers, to spot the grid.
+                        const big = [];
+                        for (const el of document.querySelectorAll('div,table,tbody')) {
+                            const t = (el.innerText||'').trim();
+                            if (t.length > 100) big.push({tag: el.tagName, cls: (el.className||'').slice(0,60), len: t.length});
+                        }
+                        out.big_containers = big.sort((a,b)=>b.len-a.len).slice(0,8);
+                        out.html_len = document.body.innerHTML.length;
                         return out;
                     }"""
                 )
