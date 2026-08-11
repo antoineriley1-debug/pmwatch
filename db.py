@@ -150,14 +150,23 @@ def _iter_statements(sql):
     return [s.strip() for s in cleaned.split(";") if s.strip()]
 
 
+_INIT_DONE = False
+
+
 def init_db(verbose=False):
-    """Create tables/indexes/columns if missing. Idempotent.
+    """Create tables/indexes/columns if missing. Idempotent — and cached:
+    after the first successful run in this process it becomes a no-op, so
+    page loads stop paying ~20 database round trips each. /migrate passes
+    verbose=True which always runs the full script.
 
     Each statement runs on its OWN fresh connection so a failure can never
     leave a poisoned/aborted transaction that silently skips later
     statements (the previous single-connection approach could do that).
     Returns a per-statement report when verbose=True.
     """
+    global _INIT_DONE
+    if _INIT_DONE and not verbose:
+        return None
     stmts = _iter_statements(SCHEMA)
     report = []
     for stmt in stmts:
@@ -174,6 +183,8 @@ def init_db(verbose=False):
         finally:
             if conn is not None:
                 conn.close()
+    if all(r.get("ok") for r in report):
+        _INIT_DONE = True
     if verbose:
         return report
     return None

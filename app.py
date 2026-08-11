@@ -1,5 +1,6 @@
 import io
 import os
+import time as _time
 import calendar as pycalendar
 from datetime import datetime, date, timedelta
 from urllib.parse import quote
@@ -20,6 +21,45 @@ app.permanent_session_lifetime = timedelta(days=31)
 
 # Paths that never require the password: login itself, liveness pings.
 _OPEN_PATHS = {"/login", "/logout", "/ping", "/health"}
+
+# ---- Scrape lock: only ONE heavy browser job at a time, across all
+# workers. A cron firing while another scrape runs gets a polite "busy"
+# instead of launching a second Chromium and starving the box. A lock older
+# than 20 minutes is treated as stale (crashed job) and taken over.
+_LOCK_PATH = "/tmp/pmwatch-scrape.lock"
+
+
+def _acquire_scrape_lock():
+    try:
+        if os.path.exists(_LOCK_PATH):
+            age = _time.time() - os.path.getmtime(_LOCK_PATH)
+            if age < 1200:
+                return False
+            os.remove(_LOCK_PATH)
+        fd = os.open(_LOCK_PATH, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        os.write(fd, str(os.getpid()).encode())
+        os.close(fd)
+        return True
+    except FileExistsError:
+        return False
+    except Exception:
+        return True  # never let lock trouble block real work
+
+
+def _release_scrape_lock():
+    try:
+        os.remove(_LOCK_PATH)
+    except Exception:
+        pass
+
+
+def _busy_response():
+    return jsonify({
+        "skipped": True,
+        "reason": "another scrape/enrich is already running — this run "
+                  "stood down so the server stays fast; the next cron "
+                  "cycle picks it up",
+    })
 
 
 @app.before_request
@@ -625,8 +665,13 @@ def enrich():
         limit = 40
     hospital = request.args.get("hospital")
     direct = request.args.get("direct", "1") != "0"
-    return jsonify(scraper.enrich_backlog(limit=limit, hospital=hospital,
-                                          prefer_direct=direct))
+    if not _acquire_scrape_lock():
+        return _busy_response()
+    try:
+        return jsonify(scraper.enrich_backlog(limit=limit, hospital=hospital,
+                                              prefer_direct=direct))
+    finally:
+        _release_scrape_lock()
 
 
 @app.route("/stats")
@@ -661,7 +706,12 @@ def health():
 def test_login():
     if not _check_token():
         return jsonify({"error": "bad or missing token"}), 403
-    return jsonify(scraper.test_login())
+    if not _acquire_scrape_lock():
+        return _busy_response()
+    try:
+        return jsonify(scraper.test_login())
+    finally:
+        _release_scrape_lock()
 
 
 @app.route("/discover")
@@ -670,7 +720,12 @@ def discover():
     if not _check_token():
         return jsonify({"error": "bad or missing token"}), 403
     rc = request.args.get("repaircenter", "52626")
-    return jsonify(scraper.discover(repaircenter=rc))
+    if not _acquire_scrape_lock():
+        return _busy_response()
+    try:
+        return jsonify(scraper.discover(repaircenter=rc))
+    finally:
+        _release_scrape_lock()
 
 
 @app.route("/scrape")
@@ -692,10 +747,15 @@ def scrape():
         enrich_offset = 0
     mp = request.args.get("pages")
     max_pages = int(mp) if (mp or "").isdigit() else None
-    return jsonify(scraper.scrape_hospital(
-        hospital_code=hospital, store=store, enrich=enrich,
-        enrich_limit=enrich_limit, enrich_offset=enrich_offset,
-        max_pages=max_pages))
+    if not _acquire_scrape_lock():
+        return _busy_response()
+    try:
+        return jsonify(scraper.scrape_hospital(
+            hospital_code=hospital, store=store, enrich=enrich,
+            enrich_limit=enrich_limit, enrich_offset=enrich_offset,
+            max_pages=max_pages))
+    finally:
+        _release_scrape_lock()
 
 
 @app.route("/backfill-names")
@@ -752,9 +812,14 @@ def scrape_all():
     hospitals = [h.strip() for h in only.split(",")] if only else None
     mp = request.args.get("pages")  # light mode: newest N pages per site
     max_pages = int(mp) if (mp or "").isdigit() else None
-    return jsonify(scraper.scrape_all(
-        store=store, enrich=enrich, enrich_limit=enrich_limit,
-        hospitals=hospitals, max_pages=max_pages))
+    if not _acquire_scrape_lock():
+        return _busy_response()
+    try:
+        return jsonify(scraper.scrape_all(
+            store=store, enrich=enrich, enrich_limit=enrich_limit,
+            hospitals=hospitals, max_pages=max_pages))
+    finally:
+        _release_scrape_lock()
 
 
 @app.route("/pms")
