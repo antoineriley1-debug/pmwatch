@@ -267,7 +267,8 @@ def _norm(s):
     return re.sub(r"\s+", " ", (s or "").strip())
 
 
-def scrape_hospital(hospital_code="52626", store=True, enrich=True, enrich_limit=15):
+def scrape_hospital(hospital_code="52626", store=True, enrich=True,
+                    enrich_limit=15, enrich_offset=0):
     """Scrape CLOSED preventive-maintenance work orders for one hospital
     into the database. Correctives excluded at source (wotype=PM).
     Deduplicates on wo_number. Optionally enriches each WO with close
@@ -416,7 +417,8 @@ def scrape_hospital(hospital_code="52626", store=True, enrich=True, enrich_limit
             if enrich and parsed:
                 result["last_step"] = "enrich-details"
                 enriched = 0
-                for rec in parsed[:enrich_limit]:
+                _slice = parsed[enrich_offset:enrich_offset + enrich_limit]
+                for rec in _slice:
                     kv = rec.get("_kv")
                     if not kv:
                         continue
@@ -434,10 +436,15 @@ def scrape_hospital(hospital_code="52626", store=True, enrich=True, enrich_limit
                         rec["raw"]["detail_error"] = str(e)
                 result["enriched"] = enriched
 
+            # Sample the enriched slice so we can verify enrichment worked.
+            if enrich and parsed:
+                result["sample_parsed"] = parsed[enrich_offset:enrich_offset + 3]
+            else:
+                result["sample_parsed"] = parsed[:3]
+
             # Strip internal-only fields before storing.
             for rec in parsed:
                 rec.pop("_kv", None)
-            result["sample_parsed"] = parsed[:3]
 
             if store and parsed:
                 result["last_step"] = "store-db"
@@ -543,7 +550,9 @@ def _fetch_wo_detail(active, kv):
     The Assignments block looks like:  "Lee, Augusta   8/31/2026  0 hr"
     which gives us the mechanic and the completion date.
     """
-    url = f"{_DETAIL_PATH}?kv={kv}&justdata=y&currentmodule=WO"
+    # Note: justdata=y returned an empty body in testing; the full detail
+    # page renders the Assignments/Status blocks we need.
+    url = f"{_DETAIL_PATH}?kv={kv}&currentmodule=WO"
     page = active.context.new_page()
     out = {}
     try:
@@ -552,9 +561,11 @@ def _fetch_wo_detail(active, kv):
             page.wait_for_load_state("networkidle", timeout=15000)
         except Exception:
             pass
-        page.wait_for_timeout(800)
+        page.wait_for_timeout(1200)
         text = page.inner_text("body")
         out["raw_len"] = len(text)
+        out["raw_head"] = text[:900]
+        out["final_url"] = page.url
 
         # --- Assignments: name + date ---
         m = re.search(r"Assignments\s*Action(.*?)(Indicators|Page 1|$)",

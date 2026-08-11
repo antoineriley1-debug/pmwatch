@@ -106,9 +106,13 @@ def scrape():
         enrich_limit = int(request.args.get("enrich_limit", "15"))
     except ValueError:
         enrich_limit = 15
+    try:
+        enrich_offset = int(request.args.get("enrich_offset", "0"))
+    except ValueError:
+        enrich_offset = 0
     return jsonify(scraper.scrape_hospital(
-        hospital_code=hospital, store=store,
-        enrich=enrich, enrich_limit=enrich_limit))
+        hospital_code=hospital, store=store, enrich=enrich,
+        enrich_limit=enrich_limit, enrich_offset=enrich_offset))
 
 
 @app.route("/pms")
