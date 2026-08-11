@@ -942,6 +942,45 @@ def reports_pdf():
             f"this report as they are documented.")
     story.append(Paragraph(summary, body))
 
+    # ---- Portfolio scorecard (executive rollup, all-sites report) ----
+    if not selected:
+        try:
+            cards = db.site_scorecard()
+        except Exception:
+            cards = []
+        if cards:
+            story.append(Paragraph("Portfolio Scorecard", h_sec))
+            sdata = [["Site", "Completed", "QC'd", "Pass", "Fail",
+                      "Pass Rate", "Avg Score"]]
+            for s in cards:
+                pr = s.get("pass_rate")
+                sdata.append([
+                    Paragraph(str(s.get("hospital_name")
+                                  or s.get("hospital_code")), small),
+                    Paragraph(str(s.get("total") or 0), small),
+                    Paragraph(str(s.get("qc_done") or 0), small),
+                    Paragraph(str(s.get("qc_pass") or 0), small),
+                    Paragraph(str(s.get("qc_fail") or 0), small),
+                    Paragraph("—" if pr is None else f"{pr}%", small),
+                    Paragraph("—" if s.get("avg_score") is None
+                              else str(int(s["avg_score"])), small),
+                ])
+            stable = Table(sdata, colWidths=[2.3 * inch, 0.8 * inch,
+                                             0.6 * inch, 0.55 * inch,
+                                             0.55 * inch, 0.8 * inch,
+                                             0.8 * inch], repeatRows=1)
+            stable.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, 0), NAVY),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTSIZE", (0, 0), (-1, 0), 8),
+                ("LINEBELOW", (0, 0), (-1, 0), 1.5, GOLD),
+                ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#bbbbbb")),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1),
+                 [colors.white, LIGHT]),
+            ]))
+            story.append(stable)
+
     # ---- Results table ----
     story.append(Paragraph("QC Results", h_sec))
     data = [["WO #", "System / Task", "Mechanic", "Closed", "QC", "Score"]]
@@ -982,6 +1021,51 @@ def reports_pdf():
                 f"{r.get('system') or r.get('reason') or 'PM'}: {note}",
                 body))
             story.append(Spacer(1, 3))
+
+    # ---- QC Activity Log: the executive audit trail ----
+    try:
+        log = db.qc_activity_log(hospital_code=selected, limit=300)
+    except Exception:
+        log = []
+    if log:
+        story.append(Paragraph("QC Activity Log — Review Audit Trail", h_sec))
+        story.append(Paragraph(
+            "Chronological record of quality-control reviews performed, "
+            "documenting the reviewer, verdict, and timing of each "
+            "inspection.", cap))
+        story.append(Spacer(1, 4))
+        ldata = [["Date / Time", "WO #", "Site", "Task", "Mechanic",
+                  "Verdict", "Reviewer"]]
+        for e in log:
+            ts = e.get("created_at")
+            ts_s = ts.strftime("%m/%d/%y %I:%M %p") if ts else "—"
+            verdict = (e.get("result") or "").upper()
+            if e.get("score") is not None:
+                verdict += f" ({e['score']})"
+            ldata.append([
+                Paragraph(ts_s, small),
+                Paragraph(str(e.get("wo_number") or ""), small),
+                Paragraph(str(e.get("hospital_code") or ""), small),
+                Paragraph(str(e.get("system") or e.get("reason")
+                              or "—")[:50], small),
+                Paragraph(str(e.get("closed_by") or "—"), small),
+                Paragraph(verdict, small),
+                Paragraph(str(e.get("reviewer") or "director"), small),
+            ])
+        ltable = Table(ldata, colWidths=[0.95 * inch, 0.95 * inch,
+                                         0.5 * inch, 1.8 * inch,
+                                         1.15 * inch, 0.75 * inch,
+                                         0.8 * inch], repeatRows=1)
+        ltable.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), NAVY),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("FONTSIZE", (0, 0), (-1, 0), 8),
+            ("LINEBELOW", (0, 0), (-1, 0), 1.5, GOLD),
+            ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#bbbbbb")),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, LIGHT]),
+        ]))
+        story.append(ltable)
 
     # ---- Photo evidence, captioned in the tour-report style ----
     wo_nums = [r["wo_number"] for r in queue if r.get("qc_result")]

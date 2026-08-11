@@ -32,6 +32,7 @@
   <span class="pill no-print">
     {{ queue|length }} PMs{% if selected %} · <a href="/reports" style="color:var(--accent)">clear</a>{% endif %}
     · <a href="/reports/pdf{{ '?hospital=' ~ selected if selected else '' }}" class="btn" style="padding:4px 10px">⬇️ Export PDF</a>
+    · <a href="/reports/pdf" class="btn ghost" style="padding:4px 10px">📊 Executive report (all sites)</a>
     · <a href="#" onclick="window.print();return false;" class="btn ghost" style="padding:4px 10px">🖨️ Print</a>
   </span>
 </div>

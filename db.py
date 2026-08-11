@@ -1124,3 +1124,29 @@ def search_wos(q, limit=50):
             return [dict(r) for r in cur.fetchall()]
     finally:
         conn.close()
+
+
+def qc_activity_log(hospital_code=None, limit=500):
+    """Chronological audit trail of every QC review performed: when, what,
+    where, who closed it, the verdict, and who reviewed it. The executive
+    log section of the report."""
+    conn = get_conn()
+    try:
+        with conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            wsql = "WHERE p.hospital_code = %s" if hospital_code else ""
+            params = ([hospital_code, limit] if hospital_code else [limit])
+            cur.execute(
+                f"""SELECT q.created_at, q.wo_number, q.result, q.score,
+                          q.reviewer, q.notes,
+                          p.hospital_code, p.hospital_name, p.system,
+                          p.reason, p.closed_by, p.close_date
+                   FROM qc_reviews q
+                   JOIN closed_pms p ON p.wo_number = q.wo_number
+                   {wsql}
+                   ORDER BY q.created_at DESC
+                   LIMIT %s""",
+                params,
+            )
+            return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
