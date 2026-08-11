@@ -91,6 +91,24 @@ CREATE TABLE IF NOT EXISTS contracts (
     created_at    TIMESTAMP NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_contracts_vendor ON contracts (vendor);
+
+-- Mechanics roster: overlays the closed_by name with an active/inactive flag
+-- and optional display name. closed_by remains the join key (name as it
+-- appears in Maintenance Connection). A mechanic who leaves is marked
+-- inactive (active=FALSE) but their history is preserved.
+CREATE TABLE IF NOT EXISTS mechanics (
+    id            BIGSERIAL PRIMARY KEY,
+    name          TEXT NOT NULL UNIQUE,        -- matches closed_pms.closed_by
+    display_name  TEXT,                        -- optional friendly name
+    hospital_code TEXT,                        -- home site (optional)
+    trade         TEXT,                        -- HVAC, plumber, electrician...
+    active        BOOLEAN NOT NULL DEFAULT TRUE,
+    left_date     DATE,                        -- when marked inactive
+    notes         TEXT,
+    created_at    TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at    TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_mechanics_active ON mechanics (active);
 """
 
 
@@ -417,6 +435,136 @@ def add_contract(vendor, hospital_code=None, scope=None, start_date=None,
                  psycopg2.extras.Json(obligations) if obligations else None, notes),
             )
             return cur.fetchone()[0]
+    finally:
+        conn.close()
+
+
+# ---- Mechanics ----
+def ensure_mechanics_from_pms():
+    """Auto-seed the mechanics roster from any closed_by names that have
+    closed at least one PM but aren't in the roster yet. Idempotent.
+    New auto-discovered mechanics default to active=TRUE.
+    """
+    conn = get_conn()
+    try:
+        with conn, conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO mechanics (name)
+                   SELECT DISTINCT TRIM(closed_by)
+                   FROM closed_pms
+                   WHERE closed_by IS NOT NULL AND TRIM(closed_by) <> ''
+                   ON CONFLICT (name) DO NOTHING"""
+            )
+    finally:
+        conn.close()
+
+
+def list_mechanics(hospital_code=None, include_inactive=True):
+    """Per-mechanic rollup: who they are, active/inactive, and what they've
+    done (today / week / month / total completion counts + last activity).
+    Left join so a mechanic with zero recent PMs still shows.
+    """
+    ensure_mechanics_from_pms()
+    conn = get_conn()
+    try:
+        with conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            where = []
+            params = []
+            if not include_inactive:
+                where.append("m.active = TRUE")
+            if hospital_code:
+                where.append("(m.hospital_code = %s OR p.hospital_code = %s)")
+                params.extend([hospital_code, hospital_code])
+            wsql = ("WHERE " + " AND ".join(where)) if where else ""
+            pfilter = "AND p.hospital_code = %s" if hospital_code else ""
+            if hospital_code:
+                params.append(hospital_code)
+            cur.execute(
+                f"""SELECT m.id, m.name, m.display_name, m.trade,
+                          m.hospital_code, m.active, m.left_date, m.notes,
+                          COALESCE(x.today,0)  AS today,
+                          COALESCE(x.week,0)   AS week,
+                          COALESCE(x.month,0)  AS month,
+                          COALESCE(x.total,0)  AS total,
+                          x.last_close
+                   FROM mechanics m
+                   LEFT JOIN LATERAL (
+                       SELECT
+                         COUNT(*) FILTER (WHERE p.close_date = CURRENT_DATE) AS today,
+                         COUNT(*) FILTER (WHERE p.close_date >= date_trunc('week', CURRENT_DATE)) AS week,
+                         COUNT(*) FILTER (WHERE p.close_date >= date_trunc('month', CURRENT_DATE)) AS month,
+                         COUNT(*) AS total,
+                         MAX(p.close_date) AS last_close
+                       FROM closed_pms p
+                       WHERE TRIM(p.closed_by) = m.name {pfilter}
+                   ) x ON TRUE
+                   {wsql}
+                   ORDER BY m.active DESC, x.today DESC NULLS LAST, x.total DESC NULLS LAST, m.name""",
+                params,
+            )
+            return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def mechanic_detail(name, limit=200):
+    """What one mechanic did: their recent closed PMs."""
+    conn = get_conn()
+    try:
+        with conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """SELECT wo_number, hospital_code, hospital_name, close_date,
+                          system, procedure, reason, asset_name, location
+                   FROM closed_pms
+                   WHERE TRIM(closed_by) = %s
+                   ORDER BY close_date DESC NULLS LAST, scraped_at DESC
+                   LIMIT %s""",
+                (name.strip(), limit),
+            )
+            return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def upsert_mechanic(name, display_name=None, hospital_code=None, trade=None, notes=None):
+    """Create or update a mechanic's roster fields (not the active flag)."""
+    conn = get_conn()
+    try:
+        with conn, conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO mechanics (name, display_name, hospital_code, trade, notes)
+                   VALUES (%s,%s,%s,%s,%s)
+                   ON CONFLICT (name) DO UPDATE SET
+                       display_name  = COALESCE(EXCLUDED.display_name, mechanics.display_name),
+                       hospital_code = COALESCE(EXCLUDED.hospital_code, mechanics.hospital_code),
+                       trade         = COALESCE(EXCLUDED.trade, mechanics.trade),
+                       notes         = COALESCE(EXCLUDED.notes, mechanics.notes),
+                       updated_at    = NOW()
+                   RETURNING id""",
+                (name.strip(), display_name, hospital_code, trade, notes),
+            )
+            return cur.fetchone()[0]
+    finally:
+        conn.close()
+
+
+def set_mechanic_active(name, active):
+    """Mark a mechanic active or inactive (left). Sets left_date when
+    deactivating, clears it when reactivating. Auto-creates the roster row
+    if the name only existed in closed_pms."""
+    conn = get_conn()
+    try:
+        with conn, conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO mechanics (name, active, left_date)
+                   VALUES (%s, %s, %s)
+                   ON CONFLICT (name) DO UPDATE SET
+                       active     = EXCLUDED.active,
+                       left_date  = CASE WHEN EXCLUDED.active THEN NULL ELSE CURRENT_DATE END,
+                       updated_at = NOW()""",
+                (name.strip(), bool(active),
+                 None if active else __import__("datetime").date.today()),
+            )
     finally:
         conn.close()
 

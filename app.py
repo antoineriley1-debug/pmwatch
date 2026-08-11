@@ -95,6 +95,69 @@ def qc_submit():
     return redirect(back)
 
 
+@app.route("/mechanics")
+def mechanics():
+    """Mechanics area: per-mechanic activity + active/inactive management."""
+    selected = request.args.get("hospital")
+    show = request.args.get("show", "all")  # all | active | inactive
+    focus = request.args.get("who")          # drill into one mechanic
+    try:
+        db.init_db()
+        sites = db.closed_today_by_site()
+        include_inactive = show != "active"
+        people = db.list_mechanics(hospital_code=selected,
+                                   include_inactive=include_inactive)
+        if show == "inactive":
+            people = [p for p in people if not p.get("active")]
+        detail = db.mechanic_detail(focus) if focus else None
+    except Exception as e:
+        return f"DB not ready: {e}", 200
+
+    net_today = sum((p.get("today") or 0) for p in people)
+    active_n = sum(1 for p in people if p.get("active"))
+    inactive_n = sum(1 for p in people if not p.get("active"))
+    return render_template(
+        "mechanics.html", tab="mechanics", sites=sites, people=people,
+        selected=selected, show=show, focus=focus, detail=detail,
+        net_today=net_today, active_n=active_n, inactive_n=inactive_n,
+        updated=datetime.now().strftime("%b %d, %I:%M %p"))
+
+
+@app.route("/mechanics/toggle", methods=["POST"])
+def mechanics_toggle():
+    """Flip a mechanic active<->inactive. 'inactive' = someone who left."""
+    f = request.form
+    name = (f.get("name") or "").strip()
+    active = f.get("active") == "1"
+    if not name:
+        return "missing name", 400
+    try:
+        db.set_mechanic_active(name, active)
+    except Exception as e:
+        return f"toggle failed: {e}", 400
+    return redirect(f.get("back", "/mechanics"))
+
+
+@app.route("/mechanics/save", methods=["POST"])
+def mechanics_save():
+    """Edit a mechanic's roster fields (display name, trade, home site, notes)."""
+    f = request.form
+    name = (f.get("name") or "").strip()
+    if not name:
+        return "missing name", 400
+    try:
+        db.upsert_mechanic(
+            name=name,
+            display_name=f.get("display_name") or None,
+            hospital_code=f.get("hospital_code") or None,
+            trade=f.get("trade") or None,
+            notes=f.get("notes") or None,
+        )
+    except Exception as e:
+        return f"save failed: {e}", 400
+    return redirect(f.get("back", "/mechanics"))
+
+
 @app.route("/contracts")
 def contracts():
     try:

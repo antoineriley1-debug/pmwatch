@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+{% block title %} — Mechanics{% endblock %}
+{% block body %}
+
+<style>
+  .m-head{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px;}
+  .m-stat{background:var(--card);border:1px solid var(--border);border-radius:12px;
+    padding:14px 18px;flex:1;min-width:120px;}
+  .m-stat .n{font-size:28px;font-weight:800;line-height:1;}
+  .m-stat .n.hot{color:var(--green);}
+  .m-stat .n.off{color:var(--muted);}
+  .m-stat .l{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-top:4px;}
+  .m-card{background:var(--card);border:1px solid var(--border);border-radius:12px;
+    padding:14px 16px;margin-bottom:10px;}
+  .m-card.inactive{opacity:.62;}
+  .m-top{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;}
+  .m-name{font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px;}
+  .dot{width:9px;height:9px;border-radius:50%;display:inline-block;}
+  .dot.on{background:var(--green);box-shadow:0 0 0 3px rgba(63,185,80,.15);}
+  .dot.off{background:var(--muted);}
+  .m-meta{color:var(--muted);font-size:11px;margin-top:2px;}
+  .m-nums{display:flex;gap:14px;margin:10px 0 2px;}
+  .m-nums .s .n{font-size:20px;font-weight:800;}
+  .m-nums .s .n.hot{color:var(--green);}
+  .m-nums .s .l{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;}
+  .m-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+  form.inline{display:inline;margin:0;}
+  .btn.sm{padding:5px 10px;font-size:12px;}
+  .leftbadge{font-size:10px;padding:2px 8px;border-radius:999px;font-weight:700;
+    background:rgba(210,153,34,.15);color:var(--amber);}
+  details.edit{margin-top:10px;}
+  details.edit summary{cursor:pointer;color:var(--muted);font-size:12px;list-style:none;}
+  details.edit summary::-webkit-details-marker{display:none;}
+  .editgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;}
+  @media(max-width:560px){.editgrid{grid-template-columns:1fr;}}
+</style>
+
+<div class="m-head">
+  <div class="m-stat"><div class="n hot">{{ net_today }}</div><div class="l">PMs closed today</div></div>
+  <div class="m-stat"><div class="n">{{ active_n }}</div><div class="l">Active mechanics</div></div>
+  <div class="m-stat"><div class="n off">{{ inactive_n }}</div><div class="l">Inactive / left</div></div>
+</div>
+
+<div class="chips">
+  {% set sq = ('&hospital=' ~ selected) if selected else '' %}
+  <a class="chip {{ 'on' if show=='all' }}" href="/mechanics?show=all{{ sq }}">All</a>
+  <a class="chip {{ 'on' if show=='active' }}" href="/mechanics?show=active{{ sq }}">Active</a>
+  <a class="chip {{ 'on' if show=='inactive' }}" href="/mechanics?show=inactive{{ sq }}">Inactive</a>
+  {% if selected %}<a class="chip" href="/mechanics?show={{ show }}">clear site</a>{% endif %}
+</div>
+
+{% if selected %}
+<div class="pill" style="margin-bottom:10px">Filtered to site {{ selected }}</div>
+{% endif %}
+
+{% set back = '/mechanics?show=' ~ show ~ (('&hospital=' ~ selected) if selected else '') %}
+
+{% for p in people %}
+<div class="m-card {{ 'inactive' if not p.active }}">
+  <div class="m-top">
+    <div>
+      <div class="m-name">
+        <span class="dot {{ 'on' if p.active else 'off' }}"></span>
+        {{ p.display_name or p.name }}
+        {% if not p.active %}<span class="leftbadge">LEFT{% if p.left_date %} · {{ p.left_date }}{% endif %}</span>{% endif %}
+      </div>
+      <div class="m-meta">
+        {{ p.name }}{% if p.trade %} · {{ p.trade }}{% endif %}{% if p.hospital_code %} · {{ p.hospital_code }}{% endif %}
+        {% if p.last_close %} · last close {{ p.last_close }}{% endif %}
+      </div>
+    </div>
+    <div class="m-actions">
+      <a class="btn ghost sm" href="/mechanics?who={{ p.name|urlencode }}&show={{ show }}{{ ('&hospital=' ~ selected) if selected else '' }}">View</a>
+      {% if p.active %}
+      <form class="inline" method="post" action="/mechanics/toggle">
+        <input type="hidden" name="name" value="{{ p.name }}">
+        <input type="hidden" name="active" value="0">
+        <input type="hidden" name="back" value="{{ back }}">
+        <button class="btn sm" style="background:var(--amber)">Mark inactive</button>
+      </form>
+      {% else %}
+      <form class="inline" method="post" action="/mechanics/toggle">
+        <input type="hidden" name="name" value="{{ p.name }}">
+        <input type="hidden" name="active" value="1">
+        <input type="hidden" name="back" value="{{ back }}">
+        <button class="btn sm" style="background:var(--green)">Reactivate</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="m-nums">
+    <div class="s"><div class="n hot">{{ p.today }}</div><div class="l">Today</div></div>
+    <div class="s"><div class="n">{{ p.week }}</div><div class="l">Week</div></div>
+    <div class="s"><div class="n">{{ p.month }}</div><div class="l">Month</div></div>
+    <div class="s"><div class="n">{{ p.total }}</div><div class="l">Total</div></div>
+  </div>
+
+  <details class="edit">
+    <summary>Edit details</summary>
+    <form method="post" action="/mechanics/save">
+      <input type="hidden" name="name" value="{{ p.name }}">
+      <input type="hidden" name="back" value="{{ back }}">
+      <div class="editgrid">
+        <div><label>Display name</label>
+          <input name="display_name" value="{{ p.display_name or '' }}" placeholder="{{ p.name }}"></div>
+        <div><label>Trade</label>
+          <input name="trade" value="{{ p.trade or '' }}" placeholder="HVAC, plumber…"></div>
+        <div><label>Home site code</label>
+          <input name="hospital_code" value="{{ p.hospital_code or '' }}" placeholder="52626"></div>
+        <div><label>Notes</label>
+          <input name="notes" value="{{ p.notes or '' }}"></div>
+      </div>
+      <div style="margin-top:8px"><button class="btn sm">Save</button></div>
+    </form>
+  </details>
+</div>
+{% else %}
+<div class="empty">No mechanics yet — they appear automatically once PMs are closed with a mechanic name.</div>
+{% endfor %}
+
+{% if detail is not none %}
+<div class="sectionhead">
+  <h3>What {{ focus }} did</h3>
+  <span class="pill">{{ detail|length }} PMs · <a href="{{ back }}" style="color:var(--accent)">close</a></span>
+</div>
+<div class="tablewrap">
+  <table>
+    <thead>
+      <tr><th>WO #</th><th>Site</th><th>System / Procedure</th>
+          <th class="hide-sm">Asset</th><th class="hide-sm">Location</th><th>Closed</th></tr>
+    </thead>
+    <tbody>
+      {% for r in detail %}
+      <tr>
+        <td class="wo">{{ r.wo_number }}</td>
+        <td class="muted">{{ r.hospital_code }}</td>
+        <td>{{ r.system or r.reason or '—' }}
+          {% if r.procedure %}<div class="muted" style="font-size:11px">{{ r.procedure }}</div>{% endif %}</td>
+        <td class="hide-sm">{{ r.asset_name or '—' }}</td>
+        <td class="hide-sm muted">{{ r.location or '—' }}</td>
+        <td class="muted">{{ r.close_date or '—' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="empty">No PMs recorded for this mechanic.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% endblock %}
