@@ -427,6 +427,28 @@ def scrape_hospital(hospital_code="52626", store=True):
             except Exception as e:
                 result["row_html_probe_error"] = str(e)
 
+            # Open ONE WO's detail to see what close-date/completed-by/asset
+            # fields the detail view exposes (source of truth for enrichment).
+            result["last_step"] = "probe-wo-detail"
+            try:
+                # Double-click the first data row to open its detail.
+                first_row = list_fr.locator("tr:has(td.browsedatacol)").first
+                first_row.dblclick(timeout=15000)
+                active.wait_for_timeout(6000)
+                # Detail may open in a new frame or the same list frame.
+                detail_texts = {}
+                for fr in active.frames:
+                    u = fr.url or ""
+                    if any(k in u for k in ["detail", "wo_", "workorder"]):
+                        try:
+                            detail_texts[u] = fr.inner_text("body")[:2500]
+                        except Exception:
+                            pass
+                result["detail_frames"] = list(detail_texts.keys())
+                result["detail_sample"] = detail_texts
+            except Exception as e:
+                result["wo_detail_probe_error"] = str(e)
+
             result["last_step"] = "read-headers"
             headers = list_fr.eval_on_selector_all(
                 "table tr:first-child td, table th, .listheader td, .gridheader td",
