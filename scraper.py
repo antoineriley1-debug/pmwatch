@@ -25,9 +25,29 @@ REPAIRCENTER_IDS = {
     "52604": "24",
 }
 
+# Known MedStar facility names keyed by hospital code. Used as a fallback
+# label; the scraper also captures the live name from the Repair Center
+# dropdown and stores whatever it finds. Update any of these if the portal
+# shows a different official name.
 HOSPITAL_NAMES = {
-    "52626": "Medstar Washington Hospital Center",
+    "52626": "MedStar Washington Hospital Center",
+    "52625": "MedStar Georgetown University Hospital",
+    "52624": "MedStar Southern Maryland Hospital Center",
+    "52623": "MedStar St. Mary's Hospital",
+    "52622": "MedStar Harbor Hospital",
+    "52621": "MedStar Good Samaritan Hospital",
+    "52620": "MedStar Union Memorial Hospital",
+    "52619": "MedStar Franklin Square Medical Center",
+    "52618": "MedStar Montgomery Medical Center",
+    "52617": "MedStar National Rehabilitation Hospital",
+    "52604": "MedStar Health",
 }
+
+# All portfolio hospital codes, in the order we want to scrape them.
+ALL_HOSPITALS = [
+    "52626", "52625", "52624", "52623", "52622",
+    "52621", "52620", "52619", "52618", "52617",
+]
 
 
 def _launch(p):
@@ -270,10 +290,7 @@ def _norm(s):
 def scrape_hospital(hospital_code="52626", store=True, enrich=True,
                     enrich_limit=15, enrich_offset=0):
     """Scrape CLOSED preventive-maintenance work orders for one hospital
-    into the database. Correctives excluded at source (wotype=PM).
-    Deduplicates on wo_number. Optionally enriches each WO with close
-    date + completed-by from the WO detail page (bounded per run).
-    Fails loudly with the step name.
+    into the database. Logs in, then delegates to _scrape_one_hospital.
     """
     result = {"steps": [], "success": False, "last_step": "init",
               "hospital_code": hospital_code}
@@ -288,7 +305,80 @@ def scrape_hospital(hospital_code="52626", store=True, enrich=True,
         browser, context = _launch(p)
         try:
             active = _login(context, result)
+            _scrape_one_hospital(active, hospital_code, rc_id, result,
+                                 store=store, enrich=enrich,
+                                 enrich_limit=enrich_limit,
+                                 enrich_offset=enrich_offset)
+            result["success"] = True
+            result["last_step"] = "done"
+        except Exception as e:
+            result["error"] = str(e)
+            result["error_type"] = type(e).__name__
+        finally:
+            browser.close()
+    return result
 
+
+def scrape_all(store=True, enrich=True, enrich_limit=8, hospitals=None):
+    """Scrape CLOSED PMs for EVERY hospital in the portfolio in ONE browser
+    session (single login). Loops the Repair Center dropdown per hospital so
+    the whole portfolio is covered by a single cron trigger.
+
+    enrich_limit is kept small per-hospital so 10 hospitals fit inside
+    Render's request/timeout window; successive cron runs fill in the rest.
+    """
+    codes = hospitals or ALL_HOSPITALS
+    summary = {"steps": [], "success": False, "last_step": "init",
+               "hospitals": {}, "order": codes}
+    with sync_playwright() as p:
+        browser, context = _launch(p)
+        try:
+            active = _login(context, summary)
+            for code in codes:
+                rc_id = REPAIRCENTER_IDS.get(code)
+                sub = {"steps": [], "success": False, "last_step": "init",
+                       "hospital_code": code, "repaircenter_id": rc_id}
+                if not rc_id:
+                    sub["error"] = f"No repaircenter id for {code}"
+                    summary["hospitals"][code] = sub
+                    continue
+                try:
+                    _scrape_one_hospital(active, code, rc_id, sub,
+                                         store=store, enrich=enrich,
+                                         enrich_limit=enrich_limit,
+                                         enrich_offset=0)
+                    sub["success"] = True
+                    sub["last_step"] = "done"
+                except Exception as e:
+                    sub["error"] = str(e)
+                    sub["error_type"] = type(e).__name__
+                summary["hospitals"][code] = {
+                    "success": sub.get("success"),
+                    "raw_row_count": sub.get("raw_row_count"),
+                    "parsed_count": sub.get("parsed_count"),
+                    "enriched": sub.get("enriched"),
+                    "db": sub.get("db"),
+                    "error": sub.get("error"),
+                    "last_step": sub.get("last_step"),
+                }
+            summary["success"] = True
+            summary["last_step"] = "done"
+        except Exception as e:
+            summary["error"] = str(e)
+            summary["error_type"] = type(e).__name__
+        finally:
+            browser.close()
+    return summary
+
+
+def _scrape_one_hospital(active, hospital_code, rc_id, result, store=True,
+                         enrich=True, enrich_limit=15, enrich_offset=0):
+    """Scrape one hospital using an already-logged-in Work Center page.
+    Sets the Repair Center + Closed view, reads rows, enriches, stores.
+    Mutates `result` in place. Raises on hard failure.
+    """
+    if True:  # noqa: retained block indent for a large ported body
+        if True:
             result["last_step"] = "find-frames"
             list_fr = _frame_for(active, "mc_list.asp")
             nav_fr = _frame_for(active, "toctop.asp")
@@ -319,6 +409,23 @@ def scrape_hospital(hospital_code="52626", store=True, enrich=True,
                 result["steps"].append(f"Set Repair Center to {rc_id}")
             except Exception as e:
                 result["set_rc_error"] = str(e)
+
+            # Capture the live hospital name straight from the dropdown so the
+            # stored name is authoritative (not just our hardcoded fallback).
+            try:
+                live_name = nav_fr.evaluate(
+                    """(rc) => {
+                        const s = document.querySelector("select[name='wo_repaircenter']");
+                        if (!s) return null;
+                        const opt = Array.from(s.options).find(o => o.value == rc);
+                        return opt ? (opt.text||'').trim() : null;
+                    }""",
+                    str(rc_id),
+                )
+                if live_name:
+                    result["live_hospital_name"] = live_name
+            except Exception:
+                pass
 
             result["last_step"] = "set-closed-view"
             # wo_status 'CLOSEDALL' = All Closed. Selecting it triggers onchange
@@ -408,7 +515,9 @@ def scrape_hospital(hospital_code="52626", store=True, enrich=True,
             result["raw_row_count"] = len(rows)
 
             result["last_step"] = "parse-rows"
-            parsed = _parse_kv_rows(rows, hospital_code)
+            hosp_name = (result.get("live_hospital_name")
+                         or HOSPITAL_NAMES.get(hospital_code))
+            parsed = _parse_kv_rows(rows, hospital_code, hospital_name=hosp_name)
             result["parsed_count"] = len(parsed)
 
             # Enrichment: fetch WO detail for close date + completed-by.
@@ -455,14 +564,7 @@ def scrape_hospital(hospital_code="52626", store=True, enrich=True,
                 result["last_step"] = "store-db"
                 result["db"] = db.upsert_pms(parsed)
 
-            result["success"] = True
-            result["last_step"] = "done"
-        except Exception as e:
-            result["error"] = str(e)
-            result["error_type"] = type(e).__name__
-        finally:
-            browser.close()
-    return result
+            return result
 
 
 # WO number pattern: <hospitalcode>-<number>, e.g. 52626-012345
@@ -478,7 +580,7 @@ def _clean_cells(row):
     return [_norm(c) for c in row if _norm(c)]
 
 
-def _parse_kv_rows(rows, hospital_code):
+def _parse_kv_rows(rows, hospital_code, hospital_name=None):
     """Map MC 'All Closed' rows (with kv + browsedatacol cells) to records.
 
     Each row: {kv, title, cells:[WO#, Reason, Target, Procedure, Dept,
@@ -523,7 +625,7 @@ def _parse_kv_rows(rows, hospital_code):
             "_kv": kv,
             "wo_number": wo,
             "hospital_code": hospital_code,
-            "hospital_name": HOSPITAL_NAMES.get(hospital_code),
+            "hospital_name": hospital_name or HOSPITAL_NAMES.get(hospital_code),
             "closed_by": None,      # filled by detail enrichment
             "close_date": None,     # filled by detail enrichment (real close date)
             "close_ts": None,

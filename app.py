@@ -278,6 +278,27 @@ def scrape():
         enrich_limit=enrich_limit, enrich_offset=enrich_offset))
 
 
+@app.route("/scrape-all")
+def scrape_all():
+    """Scrape CLOSED PMs for EVERY hospital in the portfolio in one login.
+    This is what the cron should hit so all 10 hospitals stay current.
+    ?store=0 dry-run. ?enrich=0 skip detail enrichment.
+    ?enrich_limit=N detail fetches per hospital (default 8)."""
+    if not _check_token():
+        return jsonify({"error": "bad or missing token"}), 403
+    store = request.args.get("store", "1") != "0"
+    enrich = request.args.get("enrich", "1") != "0"
+    try:
+        enrich_limit = int(request.args.get("enrich_limit", "8"))
+    except ValueError:
+        enrich_limit = 8
+    only = request.args.get("hospitals")  # optional CSV subset
+    hospitals = [h.strip() for h in only.split(",")] if only else None
+    return jsonify(scraper.scrape_all(
+        store=store, enrich=enrich, enrich_limit=enrich_limit,
+        hospitals=hospitals))
+
+
 @app.route("/pms")
 def pms():
     """Inspect stored closed PMs."""
