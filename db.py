@@ -78,6 +78,11 @@ CREATE TABLE IF NOT EXISTS qc_reviews (
 );
 CREATE INDEX IF NOT EXISTS idx_qc_wo ON qc_reviews (wo_number);
 
+-- Asset-specific QC checklist support: which checklist template was used
+-- and the per-item pass/fail results (list of {id,label,ok}).
+ALTER TABLE qc_reviews ADD COLUMN IF NOT EXISTS asset_type TEXT;
+ALTER TABLE qc_reviews ADD COLUMN IF NOT EXISTS checklist JSONB;
+
 -- Vendor contracts.
 CREATE TABLE IF NOT EXISTS contracts (
     id            BIGSERIAL PRIMARY KEY,
@@ -427,15 +432,20 @@ def system_breakdown(hospital_code=None):
 
 
 # ---- QC ----
-def add_qc_review(wo_number, result, score=None, notes=None, reviewer=None, photos=None):
+def add_qc_review(wo_number, result, score=None, notes=None, reviewer=None,
+                  photos=None, asset_type=None, checklist=None):
     conn = get_conn()
     try:
         with conn, conn.cursor() as cur:
             cur.execute(
-                """INSERT INTO qc_reviews (wo_number, result, score, notes, reviewer, photos)
-                   VALUES (%s,%s,%s,%s,%s,%s) RETURNING id""",
+                """INSERT INTO qc_reviews
+                       (wo_number, result, score, notes, reviewer, photos,
+                        asset_type, checklist)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
                 (wo_number, result, score, notes, reviewer,
-                 psycopg2.extras.Json(photos) if photos else None),
+                 psycopg2.extras.Json(photos) if photos else None,
+                 asset_type,
+                 psycopg2.extras.Json(checklist) if checklist else None),
             )
             return cur.fetchone()[0]
     finally:
@@ -451,7 +461,8 @@ def qc_queue(hospital_code=None, limit=200):
             params = ([hospital_code, limit] if hospital_code else [limit])
             cur.execute(
                 f"""SELECT p.wo_number, p.hospital_code, p.hospital_name, p.closed_by,
-                          p.close_date, p.system, p.asset_name, p.location,
+                          p.close_date, p.system, p.procedure, p.reason,
+                          p.asset_name, p.location,
                           q.result AS qc_result, q.score AS qc_score, q.created_at AS qc_at
                    FROM closed_pms p
                    LEFT JOIN LATERAL (

@@ -3,6 +3,7 @@ from datetime import datetime
 from flask import Flask, jsonify, request, render_template, redirect
 import scraper
 import db
+import checklists
 
 app = Flask(__name__)
 
@@ -77,6 +78,13 @@ def qc():
         queue = db.qc_queue(hospital_code=selected, limit=200)
     except Exception as e:
         return f"DB not ready: {e}", 200
+    # Attach an asset-specific checklist to each pending item so the QC form
+    # shows real things to check, not just pass/fail.
+    for r in queue:
+        atype = checklists.classify(r.get("system"), r.get("procedure"),
+                                    r.get("reason"), r.get("asset_name"))
+        r["asset_type"] = atype
+        r["checklist"] = checklists.get_checklist(atype)
     return render_template("qc.html", tab="qc", sites=sites,
                            selected=selected, queue=queue,
                            updated=datetime.now().strftime("%b %d, %I:%M %p"))
@@ -85,18 +93,42 @@ def qc():
 @app.route("/qc/submit", methods=["POST"])
 def qc_submit():
     f = request.form
+    wo = f.get("wo_number")
+    asset_type = f.get("asset_type") or "generic"
+    # Rebuild the checklist item results from the submitted checkboxes.
+    # The form posts item ids under 'item_<id>' when checked; we render the
+    # full item set from the template so we know the complete list.
+    clist = checklists.get_checklist(asset_type)
+    item_results = []
+    for iid, label in clist["items"]:
+        item_results.append({
+            "id": iid,
+            "label": label,
+            "ok": f.get(f"item_{iid}") == "1",
+        })
+    auto_score, passed, total = checklists.score_from_checklist(item_results)
+
+    # Result: explicit pass/fail radio wins; otherwise derive from score
+    # (>=80% and no critical miss = pass). Manual score overrides auto.
+    result = f.get("qc_result") or f.get("result")
+    if not result:
+        result = "pass" if (auto_score is not None and auto_score >= 80) else "fail"
+    manual_score = f.get("qc_score") or f.get("score")
+    score = int(manual_score) if manual_score else auto_score
+
     try:
         db.add_qc_review(
-            wo_number=f.get("wo_number"),
-            result=f.get("result", "pass"),
-            score=int(f["score"]) if f.get("score") else None,
+            wo_number=wo,
+            result=result,
+            score=score,
             notes=f.get("notes"),
             reviewer=f.get("reviewer") or "director",
+            asset_type=asset_type,
+            checklist=item_results,
         )
     except Exception as e:
         return f"QC save failed: {e}", 400
-    back = request.form.get("back", "/qc")
-    return redirect(back)
+    return redirect(f.get("back", "/qc"))
 
 
 @app.route("/mechanics")

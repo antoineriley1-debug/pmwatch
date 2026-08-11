@@ -2,6 +2,29 @@
 {% block title %} — QC{% endblock %}
 {% block body %}
 
+<style>
+  .qcform{padding:12px 2px 14px;}
+  .qchead{display:flex;justify-content:space-between;align-items:baseline;
+    flex-wrap:wrap;gap:8px;margin-bottom:8px;}
+  .qctype{font-weight:700;color:var(--accent);font-size:13px;}
+  .qcscore{font-size:13px;color:var(--muted);}
+  .qcscore .sc{font-size:16px;color:var(--text);}
+  .qcitems{display:grid;grid-template-columns:1fr 1fr;gap:6px 18px;margin-bottom:10px;}
+  @media(max-width:640px){.qcitems{grid-template-columns:1fr;}}
+  .qcitem{display:flex;align-items:flex-start;gap:8px;margin:0;cursor:pointer;
+    color:var(--text);font-size:13px;line-height:1.35;padding:3px 0;}
+  .qcitem input{width:auto;margin-top:2px;flex:0 0 auto;transform:scale(1.15);}
+  .qcitem.miss span{color:var(--amber);}
+  .qcfoot{display:flex;flex-wrap:wrap;gap:10px;align-items:center;}
+  .qcquick{display:flex;gap:6px;}
+  .qcnotes{flex:1 1 200px;min-width:160px;}
+  .qcresult{display:flex;gap:12px;}
+  .qcresult label{margin:0;display:flex;align-items:center;gap:4px;cursor:pointer;}
+  .qcresult .rpass{color:var(--green);} .qcresult .rfail{color:var(--red);}
+  .qcresult input{width:auto;}
+  .btn.sm{padding:5px 10px;font-size:12px;}
+</style>
+
 <div class="sectionhead">
   <h3>Filter by site</h3>
   <span class="pill">tap a site to filter the queue</span>
@@ -64,30 +87,35 @@
       {% if r.qc_result is none %}
       <tr>
         <td colspan="6" style="padding-top:0;border-bottom:1px solid var(--border)">
-          <form method="post" action="/qc/submit"
-                style="display:flex;flex-wrap:wrap;gap:8px;align-items:flex-end">
+          <form method="post" action="/qc/submit" class="qcform"
+                oninput="qcScore(this)">
             <input type="hidden" name="wo_number" value="{{ r.wo_number }}">
-            <input type="hidden" name="back" value="/qc">
-            <div style="flex:0 0 auto">
-              <label style="margin-top:0">Result</label>
-              <div style="display:flex;gap:6px">
-                <label style="display:flex;align-items:center;gap:4px;margin:0;color:var(--green);cursor:pointer">
-                  <input type="radio" name="qc_result" value="pass" required style="width:auto"> Pass
-                </label>
-                <label style="display:flex;align-items:center;gap:4px;margin:0;color:var(--red);cursor:pointer">
-                  <input type="radio" name="qc_result" value="fail" style="width:auto"> Fail
-                </label>
+            <input type="hidden" name="asset_type" value="{{ r.asset_type }}">
+            <input type="hidden" name="back" value="/qc{{ '?hospital=' ~ selected if selected else '' }}">
+
+            <div class="qchead">
+              <span class="qctype">✓ {{ r.checklist.label }} checklist</span>
+              <span class="qcscore">Score: <b class="sc">—</b> <span class="scn muted"></span></span>
+            </div>
+
+            <div class="qcitems">
+              {% for iid, label in r.checklist['items'] %}
+              <label class="qcitem">
+                <input type="checkbox" name="item_{{ iid }}" value="1"> <span>{{ label }}</span>
+              </label>
+              {% endfor %}
+            </div>
+
+            <div class="qcfoot">
+              <div class="qcquick">
+                <button type="button" class="btn ghost sm" onclick="qcAll(this,true)">Check all</button>
+                <button type="button" class="btn ghost sm" onclick="qcAll(this,false)">Clear</button>
               </div>
-            </div>
-            <div style="flex:0 0 90px">
-              <label style="margin-top:0">Score</label>
-              <input type="number" name="qc_score" min="0" max="100" step="1" placeholder="0–100">
-            </div>
-            <div style="flex:1 1 160px;min-width:140px">
-              <label style="margin-top:0">Notes</label>
-              <input type="text" name="notes" placeholder="Optional notes">
-            </div>
-            <div style="flex:0 0 auto">
+              <input type="text" name="notes" placeholder="Notes (required if any item fails)" class="qcnotes">
+              <div class="qcresult">
+                <label class="rpass"><input type="radio" name="qc_result" value="pass"> Pass</label>
+                <label class="rfail"><input type="radio" name="qc_result" value="fail"> Fail</label>
+              </div>
               <button type="submit" class="btn">Submit QC</button>
             </div>
           </form>
@@ -100,5 +128,44 @@
     </tbody>
   </table>
 </div>
+
+<script>
+function qcAll(btn, val){
+  const form = btn.closest('form');
+  form.querySelectorAll(".qcitem input[type=checkbox]").forEach(c => c.checked = val);
+  qcScore(form);
+}
+function qcScore(el){
+  const form = el.closest ? el.closest('form') : el;
+  if(!form) return;
+  const boxes = form.querySelectorAll(".qcitem input[type=checkbox]");
+  const total = boxes.length;
+  let passed = 0;
+  boxes.forEach(c => {
+    const item = c.closest('.qcitem');
+    if(c.checked){ passed++; item.classList.remove('miss'); }
+    else { item.classList.add('miss'); }
+  });
+  const score = total ? Math.round(100*passed/total) : 0;
+  const scEl = form.querySelector('.sc');
+  const scn = form.querySelector('.scn');
+  if(scEl) scEl.textContent = total ? score : '—';
+  if(scn) scn.textContent = total ? '('+passed+'/'+total+')' : '';
+  // suggest pass/fail: all checked = pass, any miss = fail (director can override)
+  const pass = form.querySelector(".qcresult input[value=pass]");
+  const fail = form.querySelector(".qcresult input[value=fail]");
+  if(pass && fail && !pass.dataset.touched){
+    if(passed === total && total > 0){ pass.checked = true; }
+    else if(passed < total){ fail.checked = true; }
+  }
+}
+// mark result as manually touched so auto-suggest stops overriding
+document.addEventListener('change', function(e){
+  if(e.target && e.target.name === 'qc_result'){
+    const form = e.target.closest('form');
+    form.querySelectorAll(".qcresult input").forEach(i => i.dataset.touched = '1');
+  }
+});
+</script>
 
 {% endblock %}
