@@ -271,12 +271,29 @@ def _build_closed_pm_url(list_url, repaircenter_id):
     q = parse_qs(parts.query, keep_blank_values=True)
     # Flatten single-value lists.
     q = {k: (v[0] if isinstance(v, list) else v) for k, v in q.items()}
+    # Pin the exact criteria the MC "Work Orders Criteria" screen produces:
+    # All Closed + Preventive + Last 6 Months + one Repair Center, every
+    # other facet neutralized to All (blank). This is what makes our count
+    # equal MC's own pager total.
     q["status"] = "CLOSEDALL"
     q["repaircenter"] = str(repaircenter_id)
     q["wotype"] = "PM"
-    q["pagesize"] = "2000"
+    q["withindate"] = "LN6M"          # Target Date = Last 6 Months
+    q["begindate"] = ""
+    q["enddate"] = ""
+    # Neutralize any other facet that could narrow/skew the set.
+    for facet in ("shop", "shift", "zone", "location", "asset", "priority",
+                  "substatus", "department", "tenant", "supervisor", "labor",
+                  "project", "procedure", "category", "problem", "asclass",
+                  "requester", "takenby", "part", "photos", "laborassign",
+                  "customer", "item", "classification"):
+        if facet in q:
+            q[facet] = ""
+    q["searchmode"] = "n"
+    q["searchvalue"] = ""
+    q["pagesize"] = "500"
     q["page"] = "1"
-    q["sortfield"] = "CLOSEDATE DESC"
+    q["sortfield"] = "TARGETDATE DESC"
     q["init"] = "y"
     q["initdd"] = "y"
     new_query = urlencode(q, safe=" %")
@@ -715,6 +732,25 @@ def _scrape_one_hospital(active, hospital_code, rc_id, result, store=True,
             except Exception:
                 pass
             list_fr.wait_for_timeout(4000)
+
+            # AUTHORITATIVE: navigate the list frame straight to the pinned
+            # criteria URL (All Closed + PM + Last 6 Months + this site). The
+            # dropdown dance sometimes leaves a broader cached grid showing;
+            # this guarantees the rows we read ARE the filtered result.
+            result["last_step"] = "apply-pinned-criteria"
+            pinned = _build_closed_pm_url(list_fr.url or "", rc_id)
+            result["pinned_url"] = pinned
+            if pinned:
+                try:
+                    list_fr.goto(pinned, timeout=60000)
+                    try:
+                        list_fr.wait_for_load_state("networkidle", timeout=45000)
+                    except Exception:
+                        pass
+                    list_fr.wait_for_timeout(3500)
+                    list_fr = _frame_for(active, "mc_list.asp") or list_fr
+                except Exception as e:
+                    result["pinned_nav_error"] = str(e)
             result["list_url"] = list_fr.url
 
             # DIAGNOSTIC: find where the WO numbers actually live in the DOM.
@@ -863,6 +899,17 @@ def _scrape_one_hospital(active, hospital_code, rc_id, result, store=True,
             result["raw_row_count"] = len(rows)
             if mc_total is not None:
                 result["matches_mc_total"] = (len(rows) == mc_total)
+                # Loud, explicit accuracy verdict per site.
+                if len(rows) == mc_total:
+                    result["accuracy"] = f"OK: {len(rows)} rows == MC total {mc_total}"
+                else:
+                    result["accuracy"] = (
+                        f"MISMATCH: pulled {len(rows)} but MC pager says "
+                        f"{mc_total} — not trusting this pull")
+            else:
+                result["accuracy"] = (
+                    f"MC total unreadable; pulled {len(rows)} "
+                    "(cross-check manually)")
             # Surface MC's date window (e.g. LN6M = last 6 months) so the
             # dashboard's "total" is always understood in its true scope.
             wm = re.search(r"withindate=([A-Za-z0-9]+)", base_url)
@@ -926,9 +973,18 @@ def _scrape_one_hospital(active, hospital_code, rc_id, result, store=True,
             for rec in parsed:
                 rec.pop("_kv", None)
 
-            if store and parsed:
+            # Accuracy gate: when MC gave us a real total and we don't match
+            # it, do NOT store — surface the mismatch instead. A trustworthy
+            # empty beats a confident wrong number.
+            mc_total_final = result.get("mc_reported_total")
+            if (store and parsed and mc_total_final is not None
+                    and len(rows) != mc_total_final):
+                result["stored"] = False
+                result["store_skipped_reason"] = result.get("accuracy")
+            elif store and parsed:
                 result["last_step"] = "store-db"
                 result["db"] = db.upsert_pms(parsed)
+                result["stored"] = True
 
             return result
 
