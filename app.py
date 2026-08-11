@@ -207,6 +207,25 @@ def ping():
     return "PMWATCH is running."
 
 
+@app.route("/migrate")
+def migrate():
+    """Run the schema/migration and report per-statement results.
+    Token-gated. Use to confirm columns/tables applied on the live DB."""
+    if not _check_token():
+        return jsonify({"error": "bad or missing token"}), 403
+    try:
+        report = db.init_db(verbose=True)
+        cols = db.table_columns("closed_pms")
+        return jsonify({
+            "ran": len(report),
+            "failures": [r for r in report if not r.get("ok")],
+            "closed_pms_columns": cols,
+            "report": report,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/health")
 def health():
     """Liveness + DB connectivity check."""

@@ -112,22 +112,62 @@ CREATE INDEX IF NOT EXISTS idx_mechanics_active ON mechanics (active);
 """
 
 
-def init_db():
+def _iter_statements(sql):
+    """Split a SQL script into statements, ignoring semicolons that appear
+    inside line comments. Naive split-on-';' can mis-split when a comment
+    contains a ';'; this strips '--' comments per line first.
+    """
+    cleaned_lines = []
+    for line in sql.splitlines():
+        # drop trailing line comment (no string literals in our schema)
+        idx = line.find("--")
+        if idx != -1:
+            line = line[:idx]
+        cleaned_lines.append(line)
+    cleaned = "\n".join(cleaned_lines)
+    return [s.strip() for s in cleaned.split(";") if s.strip()]
+
+
+def init_db(verbose=False):
     """Create tables/indexes/columns if missing. Idempotent.
 
-    Runs each statement in its OWN transaction so one failure (e.g. an FK
-    on a pre-existing table) can't abort the rest of the migration.
+    Each statement runs on its OWN fresh connection so a failure can never
+    leave a poisoned/aborted transaction that silently skips later
+    statements (the previous single-connection approach could do that).
+    Returns a per-statement report when verbose=True.
     """
-    stmts = [s.strip() for s in SCHEMA.split(";") if s.strip()]
+    stmts = _iter_statements(SCHEMA)
+    report = []
+    for stmt in stmts:
+        label = " ".join(stmt.split())[:70]
+        conn = None
+        try:
+            conn = get_conn()
+            conn.autocommit = True  # each DDL commits immediately, no shared txn
+            with conn.cursor() as cur:
+                cur.execute(stmt)
+            report.append({"stmt": label, "ok": True})
+        except Exception as e:
+            report.append({"stmt": label, "ok": False, "error": str(e)})
+        finally:
+            if conn is not None:
+                conn.close()
+    if verbose:
+        return report
+    return None
+
+
+def table_columns(table):
+    """Return the column names for a table (for migration diagnostics)."""
     conn = get_conn()
     try:
-        for stmt in stmts:
-            try:
-                with conn, conn.cursor() as cur:
-                    cur.execute(stmt)
-            except Exception:
-                # Roll back this one statement and keep going.
-                conn.rollback()
+        with conn, conn.cursor() as cur:
+            cur.execute(
+                """SELECT column_name FROM information_schema.columns
+                   WHERE table_name = %s ORDER BY ordinal_position""",
+                (table,),
+            )
+            return [r[0] for r in cur.fetchall()]
     finally:
         conn.close()
 
