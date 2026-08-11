@@ -55,6 +55,17 @@ def discover():
     return jsonify(scraper.discover(repaircenter=rc))
 
 
+@app.route("/scrape")
+def scrape():
+    """Step 2: scrape closed PMs for one hospital into Neon.
+    Default hospital 52626. ?store=0 to dry-run without writing."""
+    if not _check_token():
+        return jsonify({"error": "bad or missing token"}), 403
+    hospital = request.args.get("hospital", "52626")
+    store = request.args.get("store", "1") != "0"
+    return jsonify(scraper.scrape_hospital(hospital_code=hospital, store=store))
+
+
 @app.route("/pms")
 def pms():
     """Inspect stored closed PMs."""

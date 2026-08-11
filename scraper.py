@@ -1,11 +1,33 @@
 import os
 import re
+import db
+from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
 from playwright.sync_api import sync_playwright
 
 LOGIN_URL = "https://app.maintenanceconnection.com/cav3/login"
 
 # Base of the internal frameset app discovered during Step 1.
 APP_BASE = "https://app.maintenanceconnection.com/mcv18/mapp_v2026.8"
+
+# Discovered in Step 2: MC's internal repaircenter IDs keyed by hospital code.
+# 52626 (MedStar Washington Hospital Center) => internal id 4.
+REPAIRCENTER_IDS = {
+    "52626": "4",
+    "52625": "2",
+    "52624": "8",
+    "52623": "12",
+    "52622": "11",
+    "52621": "9",
+    "52620": "10",
+    "52619": "5",
+    "52618": "7",
+    "52617": "6",
+    "52604": "24",
+}
+
+HOSPITAL_NAMES = {
+    "52626": "Medstar Washington Hospital Center",
+}
 
 
 def _launch(p):
@@ -215,3 +237,178 @@ def discover(repaircenter="52626"):
         finally:
             browser.close()
     return result
+
+
+def _build_closed_pm_url(list_url, repaircenter_id):
+    """Rewrite the live mc_list.asp URL to fetch CLOSED PREVENTIVE WOs
+    for one repair center. Preserves session params (userpk etc.),
+    overrides only the filter params we control.
+
+    status=CLOSEDALL  -> all closed work orders
+    wotype=PM         -> preventive only (correctives excluded at source)
+    """
+    parts = urlsplit(list_url)
+    q = parse_qs(parts.query, keep_blank_values=True)
+    # Flatten single-value lists.
+    q = {k: (v[0] if isinstance(v, list) else v) for k, v in q.items()}
+    q["status"] = "CLOSEDALL"
+    q["repaircenter"] = str(repaircenter_id)
+    q["wotype"] = "PM"
+    q["pagesize"] = "2000"
+    q["page"] = "1"
+    q["sortfield"] = "CLOSEDATE DESC"
+    q["init"] = "y"
+    q["initdd"] = "y"
+    new_query = urlencode(q, safe=" %")
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, new_query, ""))
+
+
+def _norm(s):
+    return re.sub(r"\s+", " ", (s or "").strip())
+
+
+def scrape_hospital(hospital_code="52626", store=True):
+    """Step 2: scrape CLOSED preventive-maintenance work orders for one
+    hospital into the database. Correctives are excluded at the source
+    (wotype=PM). Deduplicates on wo_number. Fails loudly with the step.
+    """
+    result = {"steps": [], "success": False, "last_step": "init",
+              "hospital_code": hospital_code}
+    rc_id = REPAIRCENTER_IDS.get(hospital_code)
+    if not rc_id:
+        result["error"] = f"No internal repaircenter id known for {hospital_code}"
+        result["last_step"] = "resolve-repaircenter"
+        return result
+    result["repaircenter_id"] = rc_id
+
+    with sync_playwright() as p:
+        browser, context = _launch(p)
+        try:
+            active = _login(context, result)
+
+            result["last_step"] = "find-list-frame"
+            list_fr = _frame_for(active, "mc_list.asp")
+            if not list_fr:
+                raise RuntimeError("work-order list frame (mc_list.asp) not found")
+
+            result["last_step"] = "build-closed-pm-url"
+            target_url = _build_closed_pm_url(list_fr.url, rc_id)
+            result["list_url"] = target_url
+
+            result["last_step"] = "navigate-closed-pm-list"
+            list_fr.goto(target_url, timeout=90000, wait_until="domcontentloaded")
+            try:
+                list_fr.wait_for_load_state("networkidle", timeout=45000)
+            except Exception:
+                pass
+            list_fr.wait_for_timeout(4000)
+
+            result["last_step"] = "read-headers"
+            headers = list_fr.eval_on_selector_all(
+                "table tr:first-child td, table th, .listheader td, .gridheader td",
+                "els => els.map(e => (e.innerText||'').trim()).filter(Boolean).slice(0,40)",
+            )
+            result["headers"] = headers
+
+            result["last_step"] = "read-rows"
+            # Grab every table row's cell text. MC list rows carry the WO id
+            # in the first data cell (e.g. 52626-01234).
+            raw_rows = list_fr.eval_on_selector_all(
+                "table tr",
+                "els => els.map(tr => Array.from(tr.querySelectorAll('td'))"
+                ".map(td => (td.innerText||'').trim())).filter(r => r.length)",
+            )
+            result["raw_row_count"] = len(raw_rows)
+            result["sample_rows"] = raw_rows[:5]
+
+            result["last_step"] = "parse-rows"
+            parsed = _parse_rows(raw_rows, headers, hospital_code)
+            result["parsed_count"] = len(parsed)
+            result["sample_parsed"] = parsed[:5]
+
+            if store and parsed:
+                result["last_step"] = "store-db"
+                result["db"] = db.upsert_pms(parsed)
+
+            result["success"] = True
+            result["last_step"] = "done"
+        except Exception as e:
+            result["error"] = str(e)
+            result["error_type"] = type(e).__name__
+        finally:
+            browser.close()
+    return result
+
+
+# WO number pattern: <hospitalcode>-<number>, e.g. 52626-012345
+_WO_RE = re.compile(r"^\d{4,6}-\d+")
+
+
+def _parse_rows(raw_rows, headers, hospital_code):
+    """Map MC list rows to closed_pms records. Header-driven where
+    possible, defensive everywhere: we always keep the WO number and
+    the full raw row so nothing is lost even if a column shifts.
+    """
+    # Build a case-insensitive header index.
+    hidx = {}
+    for i, h in enumerate(headers or []):
+        key = _norm(h).lower()
+        if key and key not in hidx:
+            hidx[key] = i
+
+    def col(row, *names):
+        for n in names:
+            i = hidx.get(n)
+            if i is not None and i < len(row):
+                val = _norm(row[i])
+                if val:
+                    return val
+        return None
+
+    out = []
+    for row in raw_rows:
+        if not row:
+            continue
+        # Find the WO number cell anywhere in the row.
+        wo = None
+        for cell in row:
+            c = _norm(cell)
+            if _WO_RE.match(c):
+                wo = c.split()[0]
+                break
+        if not wo:
+            continue  # header/spacer/non-data row
+
+        rec = {
+            "wo_number": wo,
+            "hospital_code": hospital_code,
+            "hospital_name": HOSPITAL_NAMES.get(hospital_code),
+            "closed_by": col(row, "closed by", "completed by", "assigned to", "labor"),
+            "close_date": _to_date(col(row, "close date", "date closed",
+                                        "completed", "completed date", "closed")),
+            "close_ts": None,
+            "asset_name": col(row, "asset", "asset name", "equipment"),
+            "asset_model": col(row, "model", "model number"),
+            "asset_serial": col(row, "serial", "serial number"),
+            "wo_type": col(row, "type", "wo type") or "PM",
+            "raw": {"cells": row, "headers": headers},
+        }
+        out.append(rec)
+    return out
+
+
+def _to_date(s):
+    """Parse common MC date formats to YYYY-MM-DD, else None."""
+    if not s:
+        return None
+    s = _norm(s)
+    m = re.search(r"(\d{1,2})/(\d{1,2})/(\d{2,4})", s)
+    if m:
+        mo, d, y = m.groups()
+        if len(y) == 2:
+            y = "20" + y
+        return f"{int(y):04d}-{int(mo):02d}-{int(d):02d}"
+    m = re.search(r"(\d{4})-(\d{2})-(\d{2})", s)
+    if m:
+        return m.group(0)
+    return None
