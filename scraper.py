@@ -267,10 +267,12 @@ def _norm(s):
     return re.sub(r"\s+", " ", (s or "").strip())
 
 
-def scrape_hospital(hospital_code="52626", store=True):
-    """Step 2: scrape CLOSED preventive-maintenance work orders for one
-    hospital into the database. Correctives are excluded at the source
-    (wotype=PM). Deduplicates on wo_number. Fails loudly with the step.
+def scrape_hospital(hospital_code="52626", store=True, enrich=True, enrich_limit=15):
+    """Scrape CLOSED preventive-maintenance work orders for one hospital
+    into the database. Correctives excluded at source (wotype=PM).
+    Deduplicates on wo_number. Optionally enriches each WO with close
+    date + completed-by from the WO detail page (bounded per run).
+    Fails loudly with the step name.
     """
     result = {"steps": [], "success": False, "last_step": "init",
               "hospital_code": hospital_code}
@@ -387,90 +389,55 @@ def scrape_hospital(hospital_code="52626", store=True):
             except Exception as e:
                 result["dom_probe_error"] = str(e)
 
-            # DEEP PROBE: dump the full HTML of the header row + first data
-            # row so we can see EVERY field MC sends (including hidden cols
-            # like close date / completed-by that aren't visibly rendered).
-            result["last_step"] = "deep-probe"
-            try:
-                result["row_html_probe"] = list_fr.evaluate(
-                    r"""() => {
-                        const woRe = /\d{4,6}-\d+/;
-                        // Find the smallest element that contains exactly one WO number.
-                        let el = null;
-                        for (const e of document.querySelectorAll('*')) {
-                            const t = (e.innerText||'').trim();
-                            const m = t.match(/\d{4,6}-\d+/g);
-                            if (m && m.length === 1 && t.length < 200) { el = e; break; }
-                        }
-                        let climbInfo = null;
-                        if (el) {
-                            // Climb up to the row container and capture its HTML.
-                            let row = el;
-                            for (let i=0;i<6 && row.parentElement;i++){
-                                if ((row.innerText||'').split(/\t|\n/).filter(Boolean).length >= 4) break;
-                                row = row.parentElement;
-                            }
-                            climbInfo = {
-                                leafTag: el.tagName, leafCls: el.className||'', leafText: (el.innerText||'').slice(0,60),
-                                rowTag: row.tagName, rowCls: row.className||'',
-                                rowHTML: row.outerHTML.slice(0,3500),
-                            };
-                        }
-                        // Any clickable elements around WOs (links/onclick).
-                        const clickers = Array.from(document.querySelectorAll('a,[onclick],[ondblclick]'))
-                            .filter(a => woRe.test(a.innerText||'') || /wo|detail|open/i.test((a.getAttribute('onclick')||'')+(a.getAttribute('href')||'')))
-                            .slice(0,4)
-                            .map(a=>({tag:a.tagName, href:a.getAttribute('href'), onclick:(a.getAttribute('onclick')||'').slice(0,140), text:(a.innerText||'').trim().slice(0,30)}));
-                        return {climbInfo, clickers, totalCells: document.querySelectorAll('td').length};
-                    }"""
-                )
-            except Exception as e:
-                result["row_html_probe_error"] = str(e)
-
-            # Open ONE WO's detail to see what close-date/completed-by/asset
-            # fields the detail view exposes (source of truth for enrichment).
-            result["last_step"] = "probe-wo-detail"
-            try:
-                # Double-click the first data row to open its detail.
-                first_row = list_fr.locator("tr:has(td.browsedatacol)").first
-                first_row.dblclick(timeout=15000)
-                active.wait_for_timeout(6000)
-                # Detail may open in a new frame or the same list frame.
-                detail_texts = {}
-                for fr in active.frames:
-                    u = fr.url or ""
-                    if any(k in u for k in ["detail", "wo_", "workorder"]):
-                        try:
-                            detail_texts[u] = fr.inner_text("body")[:2500]
-                        except Exception:
-                            pass
-                result["detail_frames"] = list(detail_texts.keys())
-                result["detail_sample"] = detail_texts
-            except Exception as e:
-                result["wo_detail_probe_error"] = str(e)
-
-            result["last_step"] = "read-headers"
-            headers = list_fr.eval_on_selector_all(
-                "table tr:first-child td, table th, .listheader td, .gridheader td",
-                "els => els.map(e => (e.innerText||'').trim()).filter(Boolean).slice(0,40)",
-            )
-            result["headers"] = headers
-
+            # Extract each row's WO number + internal key (kv) from the
+            # checkbox value, plus the visible cells. The kv lets us fetch
+            # the WO detail page for close date + completed-by enrichment.
             result["last_step"] = "read-rows"
-            # Grab every table row's cell text. MC list rows carry the WO id
-            # in the first data cell (e.g. 52626-01234).
-            raw_rows = list_fr.eval_on_selector_all(
-                "table tr",
-                "els => els.map(tr => Array.from(tr.querySelectorAll('td'))"
-                ".map(td => (td.innerText||'').trim())).filter(r => r.length)",
+            rows = list_fr.eval_on_selector_all(
+                "tr:has(td.browsedatacol)",
+                r"""els => els.map(tr => {
+                    const cb = tr.querySelector("input[name='mckeyvalues']");
+                    const cells = Array.from(tr.querySelectorAll('td.browsedatacol'))
+                        .map(td => (td.innerText||'').trim());
+                    return {kv: cb ? cb.value : null,
+                            title: tr.getAttribute('title') || '',
+                            cells: cells};
+                }).filter(r => r.kv)""",
             )
-            result["raw_row_count"] = len(raw_rows)
-            result["sample_rows"] = raw_rows[:5]
+            result["raw_row_count"] = len(rows)
 
             result["last_step"] = "parse-rows"
-            parsed = _parse_rows(raw_rows, headers, hospital_code)
+            parsed = _parse_kv_rows(rows, hospital_code)
             result["parsed_count"] = len(parsed)
-            result["sample_parsed"] = parsed[:5]
+
+            # Enrichment: fetch WO detail for close date + completed-by.
+            # Bounded per run (enrich_limit) so Render free tier never times
+            # out; the 15-min cron fills in the rest over successive runs.
+            if enrich and parsed:
+                result["last_step"] = "enrich-details"
+                enriched = 0
+                for rec in parsed[:enrich_limit]:
+                    kv = rec.get("_kv")
+                    if not kv:
+                        continue
+                    try:
+                        det = _fetch_wo_detail(active, kv)
+                        if det.get("closed_by"):
+                            rec["closed_by"] = det["closed_by"]
+                        if det.get("close_date"):
+                            rec["close_date"] = det["close_date"]
+                        if det.get("asset_name") and not rec.get("asset_name"):
+                            rec["asset_name"] = det["asset_name"]
+                        rec["raw"]["detail"] = det
+                        enriched += 1
+                    except Exception as e:
+                        rec["raw"]["detail_error"] = str(e)
+                result["enriched"] = enriched
+
+            # Strip internal-only fields before storing.
+            for rec in parsed:
+                rec.pop("_kv", None)
+            result["sample_parsed"] = parsed[:3]
 
             if store and parsed:
                 result["last_step"] = "store-db"
@@ -499,58 +466,37 @@ def _clean_cells(row):
     return [_norm(c) for c in row if _norm(c)]
 
 
-def _parse_rows(raw_rows, headers, hospital_code):
-    """Map MC 'All Closed' WO-list rows to closed_pms records.
+def _parse_kv_rows(rows, hospital_code):
+    """Map MC 'All Closed' rows (with kv + browsedatacol cells) to records.
 
-    Observed column order (after dropping MC's blank spacer cells):
-        [ WO#, Reason, TargetDate, Procedure?, Asset/Location, Location ]
-    Some rows (non-equipment requests) omit Procedure/Asset. We anchor on
-    the WO number, take the first date as the target/close date, and pull
-    the embedded asset id when present. The full raw row is always stored.
+    Each row: {kv, title, cells:[WO#, Reason, Target, Procedure, Dept,
+    Asset/Location, Location]}. We keep the internal kv (_kv) for detail
+    enrichment, then strip it before storing.
     """
     out = []
     seen = set()
-    for raw in raw_rows:
-        if not raw:
-            continue
-        cells = _clean_cells(raw)
-        if not cells:
-            continue
-
-        # Skip the outer wrapper row: MC nests one big <table> whose single
-        # cell contains the entire grid text. A real data row has few cells
-        # and none longer than a couple hundred chars.
-        if any(len(c) > 300 for c in cells) or len(cells) > 20:
-            continue
-        # Skip the header row.
-        if cells and cells[0].lower().startswith("wo #"):
-            continue
-
-        # Anchor: the WO number (must BE the cell, not just contain it).
+    for row in rows:
+        cells = [_norm(c) for c in (row.get("cells") or [])]
+        kv = row.get("kv")
+        # WO number is the first cell that matches the pattern.
         wo = None
-        wo_i = None
-        for i, c in enumerate(cells):
-            if _WO_RE.match(c) and len(c) < 30:
+        for c in cells:
+            if _WO_RE.match(c):
                 wo = c.split()[0]
-                wo_i = i
                 break
         if not wo or wo in seen:
             continue
         seen.add(wo)
 
-        after = cells[wo_i + 1:]
-        reason = after[0] if len(after) > 0 else None
-
-        # First date-looking cell = target/completion date.
-        date_val = None
+        nonempty = [c for c in cells if c]
+        after = nonempty[1:] if nonempty else []
+        reason = after[0] if after else None
+        target = None
         for c in after:
             d = _to_date(c)
             if d:
-                date_val = d
+                target = d
                 break
-
-        # Asset cell = the one containing an embedded (code-id); else the
-        # cell just before the trailing location.
         asset_name = None
         asset_id = None
         for c in after:
@@ -561,31 +507,88 @@ def _parse_rows(raw_rows, headers, hospital_code):
                 break
         location = after[-1] if after else None
 
-        rec = {
+        out.append({
+            "_kv": kv,
             "wo_number": wo,
             "hospital_code": hospital_code,
             "hospital_name": HOSPITAL_NAMES.get(hospital_code),
-            "closed_by": None,          # not in default list view; Step 5/7 detail fetch
-            # NOTE: the 'All Closed' list shows TARGET date, not the actual
-            # close date. We store it in raw.target_date and leave close_date
-            # null until we pull the real close timestamp (column config or
-            # WO detail fetch). Accuracy matters for compliance.
-            "close_date": None,
+            "closed_by": None,      # filled by detail enrichment
+            "close_date": None,     # filled by detail enrichment (real close date)
             "close_ts": None,
             "asset_name": asset_name,
-            "asset_model": None,        # requires WO/asset detail fetch
-            "asset_serial": None,       # requires WO/asset detail fetch
+            "asset_model": None,
+            "asset_serial": None,
             "wo_type": "PM",
             "raw": {
+                "kv": kv,
                 "cells": cells,
                 "reason": reason,
-                "target_date": date_val,
+                "target_date": target,
                 "asset_id": asset_id,
                 "location": location,
-                "headers": headers,
+                "title": row.get("title") or None,
             },
-        }
-        out.append(rec)
+        })
+    return out
+
+
+# WO detail lives at _workorder_UDF_POM.asp?kv=<key>&justdata=y
+_DETAIL_PATH = APP_BASE + "/modules/workorder/_workorder_UDF_POM.asp"
+
+
+def _fetch_wo_detail(active, kv):
+    """Fetch one WO's detail page and extract close date + completed-by
+    from the Assignments section, plus asset name and status.
+
+    The Assignments block looks like:  "Lee, Augusta   8/31/2026  0 hr"
+    which gives us the mechanic and the completion date.
+    """
+    url = f"{_DETAIL_PATH}?kv={kv}&justdata=y&currentmodule=WO"
+    page = active.context.new_page()
+    out = {}
+    try:
+        page.goto(url, timeout=45000, wait_until="domcontentloaded")
+        try:
+            page.wait_for_load_state("networkidle", timeout=15000)
+        except Exception:
+            pass
+        page.wait_for_timeout(800)
+        text = page.inner_text("body")
+        out["raw_len"] = len(text)
+
+        # --- Assignments: name + date ---
+        m = re.search(r"Assignments\s*Action(.*?)(Indicators|Page 1|$)",
+                      text, re.S | re.I)
+        if m:
+            block = m.group(1)
+            # A person line like "Lee, Augusta" optionally followed by a date.
+            name_m = re.search(r"([A-Z][A-Za-z.'\-]+,\s*[A-Z][A-Za-z.'\-]+)", block)
+            if name_m:
+                out["closed_by"] = _norm(name_m.group(1))
+            dm = re.search(r"(\d{1,2}/\d{1,2}/\d{2,4})", block)
+            if dm:
+                out["close_date"] = _to_date(dm.group(1))
+
+        # --- Status: capture Closed date if present ---
+        sm = re.search(r"Closed\s*\r?\n?\s*(\d{1,2}/\d{1,2}/\d{2,4}[^\n]*)",
+                       text, re.I)
+        if sm and not out.get("close_date"):
+            out["close_date"] = _to_date(sm.group(1))
+
+        # --- Asset name (the (code-id) line) ---
+        am = re.search(r"([^\n]*\(\d{4,6}-\d+\))", text)
+        if am:
+            out["asset_name"] = _norm(am.group(1))
+
+        # --- PM / Procedure ---
+        pm = re.search(r"PM:\s*([^\n]+)", text)
+        if pm:
+            out["pm_name"] = _norm(pm.group(1))
+        pr = re.search(r"Procedure:\s*\n?\s*([^\n]+)", text)
+        if pr:
+            out["procedure"] = _norm(pr.group(1))
+    finally:
+        page.close()
     return out
 
 

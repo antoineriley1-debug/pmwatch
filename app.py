@@ -101,7 +101,14 @@ def scrape():
         return jsonify({"error": "bad or missing token"}), 403
     hospital = request.args.get("hospital", "52626")
     store = request.args.get("store", "1") != "0"
-    return jsonify(scraper.scrape_hospital(hospital_code=hospital, store=store))
+    enrich = request.args.get("enrich", "1") != "0"
+    try:
+        enrich_limit = int(request.args.get("enrich_limit", "15"))
+    except ValueError:
+        enrich_limit = 15
+    return jsonify(scraper.scrape_hospital(
+        hospital_code=hospital, store=store,
+        enrich=enrich, enrich_limit=enrich_limit))
 
 
 @app.route("/pms")
