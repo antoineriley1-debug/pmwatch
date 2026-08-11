@@ -114,6 +114,10 @@ CREATE TABLE IF NOT EXISTS mechanics (
     updated_at    TIMESTAMP NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_mechanics_active ON mechanics (active);
+-- Contractors close PMs too; flag them so they're tracked as mechanics but
+-- distinguishable, and can be assigned to a site.
+ALTER TABLE mechanics ADD COLUMN IF NOT EXISTS is_contractor BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE mechanics ADD COLUMN IF NOT EXISTS company TEXT;
 """
 
 
@@ -205,6 +209,78 @@ def unenriched_kvs(limit=40, hospital_code=None):
                    {wsql}
                    ORDER BY target_date DESC NULLS LAST, scraped_at DESC
                    LIMIT %s""",
+                params,
+            )
+            return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def get_wo(wo_number):
+    """Full detail for one work order: all stored fields + latest QC review.
+    Powers the drill-down target for every clickable dashboard number."""
+    conn = get_conn()
+    try:
+        with conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """SELECT p.*, q.result AS qc_result, q.score AS qc_score,
+                          q.notes AS qc_notes, q.asset_type AS qc_asset_type,
+                          q.checklist AS qc_checklist, q.created_at AS qc_at,
+                          q.reviewer AS qc_reviewer
+                   FROM closed_pms p
+                   LEFT JOIN LATERAL (
+                       SELECT result, score, notes, asset_type, checklist,
+                              created_at, reviewer
+                       FROM qc_reviews WHERE wo_number = p.wo_number
+                       ORDER BY created_at DESC LIMIT 1
+                   ) q ON true
+                   WHERE p.wo_number = %s""",
+                (wo_number,),
+            )
+            row = cur.fetchone()
+            return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def list_pms_filtered(hospital_code=None, period=None, mechanic=None,
+                      system=None, order="close_date", limit=1000):
+    """Flexible WO list for drill-downs. period in {today,yesterday,week,
+    month}. mechanic matches closed_by. Every dashboard number links here.
+    """
+    order_sql = {
+        "close_date": "close_date DESC NULLS LAST, scraped_at DESC",
+        "system": "system NULLS LAST, close_date DESC",
+        "site": "hospital_code, close_date DESC",
+        "mechanic": "closed_by NULLS LAST, close_date DESC",
+    }.get(order, "close_date DESC NULLS LAST, scraped_at DESC")
+    where = []
+    params = []
+    if hospital_code:
+        where.append("hospital_code = %s"); params.append(hospital_code)
+    if mechanic:
+        where.append("TRIM(closed_by) = %s"); params.append(mechanic.strip())
+    if system:
+        where.append("system = %s"); params.append(system)
+    if period == "today":
+        where.append("close_date = CURRENT_DATE")
+    elif period == "yesterday":
+        where.append("close_date = CURRENT_DATE - 1")
+    elif period == "week":
+        where.append("close_date >= date_trunc('week', CURRENT_DATE)")
+    elif period == "month":
+        where.append("close_date >= date_trunc('month', CURRENT_DATE)")
+    wsql = ("WHERE " + " AND ".join(where)) if where else ""
+    params.append(limit)
+    conn = get_conn()
+    try:
+        with conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                f"""SELECT wo_number, hospital_code, hospital_name, closed_by,
+                          close_date, target_date, asset_name, system, procedure,
+                          reason, location, enriched
+                   FROM closed_pms {wsql}
+                   ORDER BY {order_sql} LIMIT %s""",
                 params,
             )
             return [dict(r) for r in cur.fetchall()]
@@ -682,6 +758,7 @@ def list_mechanics(hospital_code=None, include_inactive=True):
             cur.execute(
                 f"""SELECT m.id, m.name, m.display_name, m.trade,
                           m.hospital_code, m.active, m.left_date, m.notes,
+                          m.is_contractor, m.company,
                           COALESCE(x.today,0)  AS today,
                           COALESCE(x.week,0)   AS week,
                           COALESCE(x.month,0)  AS month,
@@ -726,22 +803,27 @@ def mechanic_detail(name, limit=200):
         conn.close()
 
 
-def upsert_mechanic(name, display_name=None, hospital_code=None, trade=None, notes=None):
-    """Create or update a mechanic's roster fields (not the active flag)."""
+def upsert_mechanic(name, display_name=None, hospital_code=None, trade=None,
+                    notes=None, is_contractor=None, company=None):
+    """Create or update a mechanic/contractor's roster fields (not active)."""
     conn = get_conn()
     try:
         with conn, conn.cursor() as cur:
             cur.execute(
-                """INSERT INTO mechanics (name, display_name, hospital_code, trade, notes)
-                   VALUES (%s,%s,%s,%s,%s)
+                """INSERT INTO mechanics (name, display_name, hospital_code, trade,
+                       notes, is_contractor, company)
+                   VALUES (%s,%s,%s,%s,%s,COALESCE(%s,FALSE),%s)
                    ON CONFLICT (name) DO UPDATE SET
                        display_name  = COALESCE(EXCLUDED.display_name, mechanics.display_name),
                        hospital_code = COALESCE(EXCLUDED.hospital_code, mechanics.hospital_code),
                        trade         = COALESCE(EXCLUDED.trade, mechanics.trade),
                        notes         = COALESCE(EXCLUDED.notes, mechanics.notes),
+                       is_contractor = COALESCE(EXCLUDED.is_contractor, mechanics.is_contractor),
+                       company       = COALESCE(EXCLUDED.company, mechanics.company),
                        updated_at    = NOW()
                    RETURNING id""",
-                (name.strip(), display_name, hospital_code, trade, notes),
+                (name.strip(), display_name, hospital_code, trade, notes,
+                 is_contractor, company),
             )
             return cur.fetchone()[0]
     finally:

@@ -3,13 +3,13 @@
 {% block body %}
 
 <div class="bignum">
-  <div>
+  <a href="/pms-view?period=today" style="text-decoration:none;color:inherit">
     <div class="big">{{ net_today }}</div>
-    <div class="lbl">PMs closed today · network</div>
-  </div>
+    <div class="lbl">PMs closed today · network ›</div>
+  </a>
   <div style="text-align:right">
-    <div class="muted" style="font-size:13px">{{ net_week }} this week</div>
-    <div class="muted" style="font-size:13px">{{ net_total }} total stored</div>
+    <a href="/pms-view?period=week" class="muted" style="font-size:13px;display:block;text-decoration:none">{{ net_week }} this week ›</a>
+    <a href="/pms-view" class="muted" style="font-size:13px;display:block;text-decoration:none">{{ net_total }} total stored ›</a>
   </div>
 </div>
 
@@ -20,15 +20,15 @@
 
 <div class="cards">
   {% for s in sites %}
-  <a class="card {{ 'on' if selected==s.hospital_code }}" href="/?hospital={{ s.hospital_code }}">
-    <h2>{{ s.hospital_name or s.hospital_code }} <span class="code">{{ s.hospital_code }}</span></h2>
+  <div class="card {{ 'on' if selected==s.hospital_code }}">
+    <h2><a href="/?hospital={{ s.hospital_code }}" style="text-decoration:none;color:inherit">{{ s.hospital_name or s.hospital_code }} <span class="code">{{ s.hospital_code }}</span></a></h2>
     <div class="stats">
-      <div class="stat"><div class="n hot">{{ s.today }}</div><div class="l">Today</div></div>
-      <div class="stat"><div class="n">{{ s.week }}</div><div class="l">Week</div></div>
-      <div class="stat"><div class="n">{{ s.month }}</div><div class="l">Month</div></div>
-      <div class="stat"><div class="n">{{ s.total }}</div><div class="l">Total</div></div>
+      <a class="stat" href="/pms-view?hospital={{ s.hospital_code }}&period=today" style="text-decoration:none;color:inherit"><div class="n hot">{{ s.today }}</div><div class="l">Today ›</div></a>
+      <a class="stat" href="/pms-view?hospital={{ s.hospital_code }}&period=week" style="text-decoration:none;color:inherit"><div class="n">{{ s.week }}</div><div class="l">Week ›</div></a>
+      <a class="stat" href="/pms-view?hospital={{ s.hospital_code }}&period=month" style="text-decoration:none;color:inherit"><div class="n">{{ s.month }}</div><div class="l">Month ›</div></a>
+      <a class="stat" href="/pms-view?hospital={{ s.hospital_code }}" style="text-decoration:none;color:inherit"><div class="n">{{ s.total }}</div><div class="l">Total ›</div></a>
     </div>
-  </a>
+  </div>
   {% else %}
   <div class="empty">No data yet — run a scrape.</div>
   {% endfor %}
@@ -75,7 +75,7 @@
     </thead>
     <tbody>
       {% for r in rows %}
-      <tr>
+      <tr onclick="location.href='/wo/{{ r.wo_number|urlencode }}?back=%2F{{ ('%3Fhospital%3D' ~ selected) if selected else '' }}'" style="cursor:pointer">
         <td class="wo">{{ r.wo_number }}</td>
         <td>{{ r.system or r.reason or '—' }}
           {% if r.procedure %}<div class="muted" style="font-size:11px">{{ r.procedure }}</div>{% endif %}</td>

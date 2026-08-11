@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %} — Work Orders{% endblock %}
+{% block body %}
+
+{% set site_name = '' %}
+{% for s in sites %}{% if s.hospital_code == selected %}{% set site_name = s.hospital_name %}{% endif %}{% endfor %}
+
+<div class="sectionhead">
+  <h3>{{ rows|length }} {{ ctx_label }}{% if selected %} · {{ site_name or selected }}{% endif %}{% if mechanic %} · {{ mechanic }}{% endif %}{% if system %} · {{ system }}{% endif %}</h3>
+  <a class="btn ghost sm" href="/{{ '?hospital=' ~ selected if selected else '' }}">← Dashboard</a>
+</div>
+
+<div class="chips">
+  <span class="muted" style="font-size:11px;align-self:center">Period:</span>
+  {% set b = '/pms-view?' ~ ('hospital=' ~ selected ~ '&' if selected else '') %}
+  <a class="chip {{ 'on' if period=='today' }}" href="{{ b }}period=today">Today</a>
+  <a class="chip {{ 'on' if period=='yesterday' }}" href="{{ b }}period=yesterday">Yesterday</a>
+  <a class="chip {{ 'on' if period=='week' }}" href="{{ b }}period=week">This week</a>
+  <a class="chip {{ 'on' if period=='month' }}" href="{{ b }}period=month">This month</a>
+  <a class="chip {{ 'on' if not period }}" href="{{ b }}">All</a>
+</div>
+
+<div class="tablewrap">
+  <table>
+    <thead>
+      <tr><th>WO #</th><th>System / Procedure</th><th>Mechanic</th>
+          <th class="hide-sm">Asset</th><th class="hide-sm">Site</th><th>Closed</th><th>QC</th></tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr onclick="location.href='/wo/{{ r.wo_number|urlencode }}?back={{ request.full_path|urlencode }}'" style="cursor:pointer">
+        <td class="wo">{{ r.wo_number }}</td>
+        <td>{{ r.system or r.reason or '—' }}
+          {% if r.procedure %}<div class="muted" style="font-size:11px">{{ r.procedure }}</div>{% endif %}</td>
+        <td>{% if r.closed_by %}<span class="who">{{ r.closed_by }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+        <td class="hide-sm">{{ r.asset_name or '—' }}</td>
+        <td class="hide-sm muted">{{ r.hospital_code }}</td>
+        <td class="muted">{{ r.close_date or (r.target_date|string + ' (tgt)' if r.target_date else '—') }}</td>
+        <td><span style="color:var(--accent)">open ›</span></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="empty">No work orders for this view.{% if period in ('today','yesterday','week') %}<br><span style="font-size:12px">Close dates fill in as enrichment runs.</span>{% endif %}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}

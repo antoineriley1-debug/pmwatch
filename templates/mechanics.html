@@ -98,10 +98,11 @@
       <div class="m-name">
         <span class="dot {{ 'on' if p.active else 'off' }}"></span>
         {{ p.display_name or p.name }}
+        {% if p.is_contractor %}<span class="leftbadge" style="background:rgba(47,129,247,.15);color:var(--accent)">CONTRACTOR</span>{% endif %}
         {% if not p.active %}<span class="leftbadge">LEFT{% if p.left_date %} · {{ p.left_date }}{% endif %}</span>{% endif %}
       </div>
       <div class="m-meta">
-        {{ p.name }}{% if p.trade %} · {{ p.trade }}{% endif %}{% if p.hospital_code %} · {{ p.hospital_code }}{% endif %}
+        {{ p.name }}{% if p.company %} · {{ p.company }}{% endif %}{% if p.trade %} · {{ p.trade }}{% endif %}{% if p.hospital_code %} · {{ p.hospital_code }}{% endif %}
         {% if p.last_close %} · last close {{ p.last_close }}{% endif %}
       </div>
     </div>
@@ -144,8 +145,13 @@
           <input name="trade" value="{{ p.trade or '' }}" placeholder="HVAC, plumber…"></div>
         <div><label>Home site code</label>
           <input name="hospital_code" value="{{ p.hospital_code or '' }}" placeholder="52626"></div>
+        <div><label>Company (if contractor)</label>
+          <input name="company" value="{{ p.company or '' }}" placeholder="e.g. Trane, Siemens"></div>
         <div><label>Notes</label>
           <input name="notes" value="{{ p.notes or '' }}"></div>
+        <div><label>Type</label>
+          <label style="display:flex;align-items:center;gap:6px;margin-top:6px;color:var(--text);cursor:pointer">
+            <input type="checkbox" name="is_contractor" value="1" style="width:auto" {{ 'checked' if p.is_contractor }}> Contractor (outside vendor)</label></div>
       </div>
       <div style="margin-top:8px"><button class="btn sm">Save</button></div>
     </form>

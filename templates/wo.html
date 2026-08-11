@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %} — WO {{ wo_number }}{% endblock %}
+{% block body %}
+
+<style>
+  .wo-hd{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:14px;}
+  .wo-num{font-size:20px;font-weight:800;color:var(--accent);font-variant-numeric:tabular-nums;}
+  .wo-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;}
+  @media(max-width:560px){.wo-grid{grid-template-columns:1fr;}}
+  .fld{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:11px 13px;}
+  .fld .k{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;}
+  .fld .v{font-size:15px;margin-top:3px;}
+  .fld .v.who{color:var(--green);font-weight:700;}
+  .qcbox{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px;}
+  .qcitems{display:grid;grid-template-columns:1fr 1fr;gap:6px 18px;margin:10px 0;}
+  @media(max-width:640px){.qcitems{grid-template-columns:1fr;}}
+  .qcitem{display:flex;align-items:flex-start;gap:8px;margin:0;cursor:pointer;font-size:13px;line-height:1.35;padding:3px 0;}
+  .qcitem input{width:auto;margin-top:2px;transform:scale(1.15);}
+  .qcitem.miss span{color:var(--amber);}
+  .qcfoot{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:8px;}
+  .qcresult{display:flex;gap:12px;} .qcresult label{margin:0;display:flex;align-items:center;gap:4px;cursor:pointer;}
+  .qcresult .rpass{color:var(--green);} .qcresult .rfail{color:var(--red);} .qcresult input{width:auto;}
+  .btn.sm{padding:5px 10px;font-size:12px;}
+  .doneqc{background:rgba(63,185,80,.08);border:1px solid var(--green);border-radius:12px;padding:12px 14px;}
+</style>
+
+<div class="wo-hd">
+  <div>
+    <div class="wo-num">{{ wo_number }}</div>
+    {% if wo %}<div class="muted" style="font-size:12px">{{ wo.hospital_name or wo.hospital_code }} · {{ wo.hospital_code }}</div>{% endif %}
+  </div>
+  <a class="btn ghost sm" href="{{ back or '/' }}">← Back</a>
+</div>
+
+{% if not wo %}
+<div class="empty">Work order {{ wo_number }} not found.</div>
+{% else %}
+
+<div class="wo-grid">
+  <div class="fld"><div class="k">Mechanic / Contractor</div>
+    <div class="v {{ 'who' if wo.closed_by }}">{{ wo.closed_by or '— not enriched yet' }}</div></div>
+  <div class="fld"><div class="k">Close date</div>
+    <div class="v">{{ wo.close_date or '— (target ' ~ (wo.target_date or '?') ~ ')' }}</div></div>
+  <div class="fld"><div class="k">Asset</div>
+    <div class="v">{{ wo.asset_name or '—' }}</div>
+    {% if wo.asset_model or wo.asset_serial %}<div class="muted" style="font-size:11px">{{ wo.asset_model or '' }} {{ wo.asset_serial or '' }}</div>{% endif %}</div>
+  <div class="fld"><div class="k">Location</div>
+    <div class="v">{{ wo.location or '—' }}</div></div>
+  <div class="fld"><div class="k">System</div>
+    <div class="v">{{ wo.system or '(unclassified)' }}</div></div>
+  <div class="fld"><div class="k">Procedure / Task</div>
+    <div class="v" style="font-size:13px">{{ wo.procedure or wo.reason or '—' }}</div></div>
+</div>
+
+{% if wo.reason and wo.reason != wo.procedure %}
+<div class="fld" style="margin-bottom:16px"><div class="k">Reason / description</div>
+  <div class="v" style="font-size:13px">{{ wo.reason }}</div></div>
+{% endif %}
+
+<div class="sectionhead"><h3>QC — {{ checklist.label }}</h3>
+  {% if wo.qc_result %}<span class="badge {{ 'pass' if wo.qc_result=='pass' else 'fail' }}">{{ wo.qc_result|upper }}{% if wo.qc_score is not none %} · {{ wo.qc_score }}{% endif %}</span>{% else %}<span class="badge pending">PENDING</span>{% endif %}</div>
+
+{% if wo.qc_result and wo.qc_checklist %}
+<div class="doneqc">
+  <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Reviewed {{ wo.qc_at }} by {{ wo.qc_reviewer or 'director' }} · <a href="/wo/{{ wo_number|urlencode }}?back={{ (back or '/')|urlencode }}&redo=1" style="color:var(--accent)">re-QC</a></div>
+  <div class="qcitems">
+    {% for it in wo.qc_checklist %}
+    <label class="qcitem {{ '' if it.ok else 'miss' }}"><input type="checkbox" disabled {{ 'checked' if it.ok }}> <span>{{ it.label }}</span></label>
+    {% endfor %}
+  </div>
+  {% if wo.qc_notes %}<div class="muted" style="font-size:12px">Notes: {{ wo.qc_notes }}</div>{% endif %}
+</div>
+{% else %}
+<div class="qcbox">
+  <form method="post" action="/qc/submit" oninput="qcScore(this)">
+    <input type="hidden" name="wo_number" value="{{ wo_number }}">
+    <input type="hidden" name="asset_type" value="{{ asset_type }}">
+    <input type="hidden" name="back" value="/wo/{{ wo_number|urlencode }}?back={{ (back or '/')|urlencode }}">
+    <div style="display:flex;justify-content:space-between;align-items:baseline">
+      <span class="muted" style="font-size:12px">Check each item you verified</span>
+      <span style="font-size:13px;color:var(--muted)">Score: <b class="sc" style="color:var(--text);font-size:16px">—</b> <span class="scn muted"></span></span>
+    </div>
+    <div class="qcitems">
+      {% for iid, label in checklist['items'] %}
+      <label class="qcitem"><input type="checkbox" name="item_{{ iid }}" value="1"> <span>{{ label }}</span></label>
+      {% endfor %}
+    </div>
+    <div class="qcfoot">
+      <button type="button" class="btn ghost sm" onclick="qcAll(this,true)">Check all</button>
+      <button type="button" class="btn ghost sm" onclick="qcAll(this,false)">Clear</button>
+      <input type="text" name="notes" placeholder="Notes (required if any fail)" style="flex:1 1 160px;min-width:140px">
+      <div class="qcresult">
+        <label class="rpass"><input type="radio" name="qc_result" value="pass"> Pass</label>
+        <label class="rfail"><input type="radio" name="qc_result" value="fail"> Fail</label>
+      </div>
+      <button type="submit" class="btn">Submit QC</button>
+    </div>
+  </form>
+</div>
+{% endif %}
+
+{% endif %}
+
+<script>
+function qcAll(btn,val){const f=btn.closest('form');f.querySelectorAll(".qcitem input[type=checkbox]").forEach(c=>c.checked=val);qcScore(f);}
+function qcScore(el){const f=el.closest?el.closest('form'):el;if(!f)return;
+  const b=f.querySelectorAll(".qcitem input[type=checkbox]");const t=b.length;let p=0;
+  b.forEach(c=>{const i=c.closest('.qcitem');if(c.checked){p++;i.classList.remove('miss');}else i.classList.add('miss');});
+  const sc=t?Math.round(100*p/t):0;const e=f.querySelector('.sc');const n=f.querySelector('.scn');
+  if(e)e.textContent=t?sc:'—';if(n)n.textContent=t?'('+p+'/'+t+')':'';
+  const pa=f.querySelector(".qcresult input[value=pass]"),fa=f.querySelector(".qcresult input[value=fail]");
+  if(pa&&fa&&!pa.dataset.touched){if(p===t&&t>0)pa.checked=true;else if(p<t)fa.checked=true;}}
+document.addEventListener('change',function(e){if(e.target&&e.target.name==='qc_result'){e.target.closest('form').querySelectorAll(".qcresult input").forEach(i=>i.dataset.touched='1');}});
+</script>
+
+{% endblock %}

@@ -53,6 +53,57 @@ def home():
     )
 
 
+@app.route("/pms-view")
+def pms_view():
+    """Drill-down list: every clickable dashboard number lands here with a
+    period/site/mechanic/system filter. Rows link to the single WO page."""
+    selected = request.args.get("hospital")
+    period = request.args.get("period")
+    mechanic = request.args.get("mechanic")
+    system = request.args.get("system")
+    order = request.args.get("order", "close_date")
+    try:
+        db.init_db()
+        sites = db.closed_today_by_site()
+        rows = db.list_pms_filtered(hospital_code=selected, period=period,
+                                    mechanic=mechanic, system=system,
+                                    order=order, limit=1000)
+    except Exception as e:
+        return f"DB not ready: {e}", 200
+    labels = {"today": "closed today", "yesterday": "closed yesterday",
+              "week": "closed this week", "month": "closed this month"}
+    ctx_label = labels.get(period, "work orders")
+    return render_template("pms_view.html", tab="dashboard", sites=sites,
+                           rows=rows, selected=selected, period=period,
+                           mechanic=mechanic, system=system, order=order,
+                           ctx_label=ctx_label,
+                           updated=datetime.now().strftime("%b %d, %I:%M %p"))
+
+
+@app.route("/wo/<path:wo_number>")
+def wo_detail(wo_number):
+    """Single work order: asset, mechanic, tasks/procedure, QC status.
+    The drill-down target for every number on the dashboard."""
+    try:
+        db.init_db()
+        wo = db.get_wo(wo_number)
+    except Exception as e:
+        return f"DB not ready: {e}", 200
+    if not wo:
+        return render_template("wo.html", tab="dashboard", wo=None,
+                               wo_number=wo_number, checklist=None,
+                               updated=datetime.now().strftime("%b %d, %I:%M %p")), 404
+    # Attach the asset-specific checklist so QC can be done right here.
+    atype = wo.get("qc_asset_type") or checklists.classify(
+        wo.get("system"), wo.get("procedure"), wo.get("reason"), wo.get("asset_name"))
+    clist = checklists.get_checklist(atype)
+    back = request.args.get("back", "/")
+    return render_template("wo.html", tab="dashboard", wo=wo,
+                           wo_number=wo_number, asset_type=atype,
+                           checklist=clist, back=back,
+                           updated=datetime.now().strftime("%b %d, %I:%M %p"))
+
+
 @app.route("/trends")
 def trends():
     selected = request.args.get("hospital")
@@ -188,6 +239,8 @@ def mechanics_save():
             hospital_code=f.get("hospital_code") or None,
             trade=f.get("trade") or None,
             notes=f.get("notes") or None,
+            is_contractor=(f.get("is_contractor") == "1"),
+            company=f.get("company") or None,
         )
     except Exception as e:
         return f"save failed: {e}", 400
