@@ -1,6 +1,7 @@
 import os
 from flask import Flask, jsonify, request
 import scraper
+import db
 
 app = Flask(__name__)
 
@@ -8,8 +9,15 @@ app = Flask(__name__)
 def _scrape_token():
     """Read the token at REQUEST time, not import time.
     A module-level constant can freeze to "" if the worker imported
-    before the env var was populated. Strip stray paste whitespace."""
+    before the env var was populated. Strip stray paste whitespace.
+    """
     return os.environ.get("SCRAPE_TOKEN", "").strip()
+
+
+def _check_token():
+    token = request.args.get("token", "").strip()
+    expected = _scrape_token()
+    return bool(expected) and token == expected
 
 
 @app.route("/")
@@ -17,42 +25,42 @@ def home():
     return "PMWATCH is running."
 
 
-@app.route("/debug-env")
-def debug_env():
-    """Safe diagnostic: reports whether SCRAPE_TOKEN is loaded and its
-    shape WITHOUT revealing the value. Lists which required env vars
-    are present. Remove after Step 1 verification."""
-    tok = os.environ.get("SCRAPE_TOKEN", "")
-    probe = request.args.get("probe", None)
-    return jsonify({
-        "code_version": "v5-bytes",
-        "probe_matches_raw": (probe == tok) if probe is not None else None,
-        "probe_matches_stripped": (probe.strip() == tok.strip()) if probe is not None else None,
-        "token_repr": repr(tok),
-        "token_bytes_hex": tok.encode("utf-8").hex(),
-        "testlogin_would_pass": (probe.strip() == tok.strip()) if probe is not None else None,
-        "scrape_token_set": bool(tok),
-        "scrape_token_length": len(tok),
-        "scrape_token_first": tok[:1] if tok else None,
-        "scrape_token_last": tok[-1:] if tok else None,
-        "scrape_token_stripped_matches": tok.strip() == "pmwatch-8842-verify",
-        "has_mc_username": bool(os.environ.get("MC_USERNAME")),
-        "has_mc_password": bool(os.environ.get("MC_PASSWORD")),
-        "has_database_url": bool(os.environ.get("DATABASE_URL")),
-    })
+@app.route("/health")
+def health():
+    """Liveness + DB connectivity check."""
+    out = {"app": "ok"}
+    try:
+        out["stored_pms"] = db.count_pms()
+        out["db"] = "ok"
+    except Exception as e:
+        out["db"] = "error"
+        out["db_error"] = str(e)
+    return jsonify(out)
 
 
 @app.route("/test-login")
 def test_login():
-    token = request.args.get("token", "").strip()
-    expected = _scrape_token()
-    if not expected or token != expected:
-        return jsonify({
-            "error": "bad or missing token",
-            "debug_incoming_token_repr": repr(token),
-            "debug_expected_repr": repr(expected),
-            "debug_incoming_hex": token.encode("utf-8").hex(),
-            "debug_expected_hex": expected.encode("utf-8").hex(),
-            "debug_equal": token == expected,
-        }), 403
+    if not _check_token():
+        return jsonify({"error": "bad or missing token"}), 403
     return jsonify(scraper.test_login())
+
+
+@app.route("/discover")
+def discover():
+    """Step 2 discovery: dump MC's real list/nav structure for one hospital."""
+    if not _check_token():
+        return jsonify({"error": "bad or missing token"}), 403
+    rc = request.args.get("repaircenter", "52626")
+    return jsonify(scraper.discover(repaircenter=rc))
+
+
+@app.route("/pms")
+def pms():
+    """Inspect stored closed PMs."""
+    if not _check_token():
+        return jsonify({"error": "bad or missing token"}), 403
+    hospital = request.args.get("hospital")
+    return jsonify({
+        "count": db.count_pms(hospital),
+        "recent": db.recent_pms(limit=50, hospital_code=hospital),
+    })
