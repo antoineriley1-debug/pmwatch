@@ -372,10 +372,11 @@ def _grid_total(list_fr):
         return list_fr.evaluate(
             r"""() => {
                 const b = document.body.innerText || '';
-                let m = b.match(/of\s+(\d+)/i);
-                if (m) return parseInt(m[1]);
-                m = b.match(/(\d+)\s+records?/i);
-                if (m) return parseInt(m[1]);
+                // Only a real pager pattern counts: '1 - 355 of 2489'.
+                let m = b.match(/\d[\d,]*\s*-\s*\d[\d,]*\s+of\s+(\d[\d,]*)/i);
+                if (m) return parseInt(m[1].replace(/,/g, ''));
+                m = b.match(/(\d[\d,]*)\s+records?\b/i);
+                if (m) return parseInt(m[1].replace(/,/g, ''));
                 return null; }"""
         )
     except Exception:
@@ -404,7 +405,7 @@ _ROW_READ_JS = r"""els => els.map(tr => {
     return {kv: cb ? cb.value : null,
             title: tr.getAttribute('title') || '',
             cells: cells};
-}).filter(r => r.kv)"""
+}).filter(r => r.kv && r.cells.length <= 12)"""
 
 
 def scrape_hospital(hospital_code="52626", store=True, enrich=True,
@@ -827,39 +828,46 @@ def _scrape_one_hospital(active, hospital_code, rc_id, result, store=True,
             rows = list_fr.eval_on_selector_all(
                 "tr:has(td.browsedatacol)", _ROW_READ_JS)
 
-            # If the grid rendered fewer rows than MC says exist (render cap),
-            # PAGE through until our unique rows equal MC's count.
-            if mc_total and len(rows) < mc_total:
-                result["last_step"] = "paginate"
-                seen_kv = {r["kv"] for r in rows}
-                base_url = list_fr.url or ""
-                pages_read = 1
-                for pg in range(2, 61):
-                    purl = _build_page_url(base_url, pg)
-                    if not purl:
-                        break
-                    try:
-                        list_fr.goto(purl, timeout=60000)
-                        list_fr.wait_for_timeout(1800)
-                        list_fr = _frame_for(active, "mc_list.asp") or list_fr
-                        more = list_fr.eval_on_selector_all(
-                            "tr:has(td.browsedatacol)", _ROW_READ_JS)
-                    except Exception as e:
-                        result["paginate_error"] = f"page {pg}: {e}"
-                        break
-                    added = 0
-                    for r in more:
-                        if r["kv"] not in seen_kv:
-                            seen_kv.add(r["kv"])
-                            rows.append(r)
-                            added += 1
-                    pages_read = pg
-                    if added == 0 or len(rows) >= mc_total:
-                        break
-                result["pages_read"] = pages_read
+            # MC render-caps the grid (~355 rows per load), so ALWAYS page
+            # through until a page adds nothing new. MC's own total, when
+            # readable, is a cross-check on the result — never the trigger.
+            result["last_step"] = "paginate"
+            seen_kv = {r["kv"] for r in rows}
+            base_url = list_fr.url or ""
+            pages_read = 1
+            for pg in range(2, 61):
+                if mc_total and len(rows) >= mc_total:
+                    break
+                purl = _build_page_url(base_url, pg)
+                if not purl:
+                    break
+                try:
+                    list_fr.goto(purl, timeout=60000)
+                    list_fr.wait_for_timeout(1800)
+                    list_fr = _frame_for(active, "mc_list.asp") or list_fr
+                    more = list_fr.eval_on_selector_all(
+                        "tr:has(td.browsedatacol)", _ROW_READ_JS)
+                except Exception as e:
+                    result["paginate_error"] = f"page {pg}: {e}"
+                    break
+                added = 0
+                for r in more:
+                    if r["kv"] not in seen_kv:
+                        seen_kv.add(r["kv"])
+                        rows.append(r)
+                        added += 1
+                pages_read = pg
+                if added == 0:
+                    break
+            result["pages_read"] = pages_read
             result["raw_row_count"] = len(rows)
             if mc_total is not None:
                 result["matches_mc_total"] = (len(rows) == mc_total)
+            # Surface MC's date window (e.g. LN6M = last 6 months) so the
+            # dashboard's "total" is always understood in its true scope.
+            wm = re.search(r"withindate=([A-Za-z0-9]+)", base_url)
+            if wm:
+                result["mc_date_window"] = wm.group(1)
 
             result["last_step"] = "parse-rows"
             hosp_name = (result.get("live_hospital_name")
