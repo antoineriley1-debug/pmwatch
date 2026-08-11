@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PMWATCH — Preventative Maintenance QC</title>
+<style>
+  :root {
+    --bg: #0d1117; --card: #161b22; --border: #30363d;
+    --text: #e6edf3; --muted: #8b949e; --accent: #2f81f7;
+    --green: #3fb950; --amber: #d29922; --red: #f85149;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding-bottom: 40px;
+  }
+  header {
+    position: sticky; top: 0; z-index: 10;
+    background: rgba(13,17,23,.92); backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 16px; display: flex; align-items: center; justify-content: space-between;
+  }
+  header h1 { font-size: 17px; margin: 0; letter-spacing: .3px; }
+  header .sub { color: var(--muted); font-size: 12px; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 16px; }
+  .cards { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 16px; cursor: pointer; transition: border-color .15s, transform .1s;
+  }
+  .card:active { transform: scale(.99); }
+  .card.sel { border-color: var(--accent); }
+  .card h2 { font-size: 15px; margin: 0 0 4px; }
+  .card .code { color: var(--muted); font-size: 12px; font-weight: 400; }
+  .stats { display: flex; gap: 18px; margin-top: 12px; }
+  .stat .n { font-size: 24px; font-weight: 700; }
+  .stat .l { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+  .sectionhead { display: flex; align-items: baseline; justify-content: space-between; margin: 24px 0 10px; }
+  .sectionhead h3 { margin: 0; font-size: 15px; }
+  .pill { font-size: 11px; color: var(--muted); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; position: sticky; top: 56px; background: var(--bg); }
+  tr:hover td { background: rgba(255,255,255,.02); }
+  .wo { font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--accent); font-weight: 600; }
+  .muted { color: var(--muted); }
+  .tablewrap { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; overflow-x: auto; }
+  .empty { color: var(--muted); padding: 24px; text-align: center; }
+  .refresh { background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  @media (max-width: 560px) {
+    .hide-sm { display: none; }
+    th, td { padding: 8px 8px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>🛠️ PMWATCH</h1>
+    <div class="sub">Preventative Maintenance QC · MedStar</div>
+  </div>
+  <button class="refresh" onclick="location.reload()">↻ Refresh</button>
+</header>
+
+<div class="wrap">
+  <div class="sectionhead">
+    <h3>Hospitals</h3>
+    <span class="pill">{{ total }} closed PMs stored · updated {{ updated }}</span>
+  </div>
+
+  {% if hospitals %}
+  <div class="cards" id="cards">
+    {% for h in hospitals %}
+    <a class="card" href="?hospital={{ h.hospital_code }}"
+       {% if selected == h.hospital_code %}data-sel="1"{% endif %}>
+      <h2>{{ h.hospital_name or h.hospital_code }}
+        <span class="code">{{ h.hospital_code }}</span></h2>
+      <div class="stats">
+        <div class="stat"><div class="n">{{ h.total }}</div><div class="l">Total</div></div>
+        <div class="stat"><div class="n">{{ h.week }}</div><div class="l">This wk</div></div>
+        <div class="stat"><div class="n">{{ h.today }}</div><div class="l">Today</div></div>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty">No PMs scraped yet. Run a scrape to populate.</div>
+  {% endif %}
+
+  <div class="sectionhead">
+    <h3>Closed PMs {% if selected %}· {{ selected }}{% else %}· all hospitals{% endif %}</h3>
+    <span class="pill">{{ rows|length }} shown{% if selected %} · <a href="/" style="color:var(--accent)">clear filter</a>{% endif %}</span>
+  </div>
+
+  <div class="tablewrap">
+    <table>
+      <thead>
+        <tr>
+          <th>WO #</th>
+          <th>Reason / Procedure</th>
+          <th>Asset</th>
+          <th class="hide-sm">Location</th>
+          <th>Target</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td class="wo">{{ r.wo_number }}</td>
+          <td>{{ r.reason or '—' }}</td>
+          <td>{{ r.asset_name or (r.raw.asset_id if r.raw else '') or '—' }}</td>
+          <td class="hide-sm muted">{{ r.location or '—' }}</td>
+          <td class="muted">{{ r.target_date or r.close_date or '—' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="empty">No PMs for this view.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+</body>
+</html>

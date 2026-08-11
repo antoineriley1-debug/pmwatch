@@ -1,5 +1,6 @@
 import os
-from flask import Flask, jsonify, request
+from datetime import datetime
+from flask import Flask, jsonify, request, render_template
 import scraper
 import db
 
@@ -22,6 +23,43 @@ def _check_token():
 
 @app.route("/")
 def home():
+    """Mobile-first dashboard: hospital cards + closed-PM table."""
+    selected = request.args.get("hospital")
+    try:
+        db.init_db()
+        hospitals = db.hospital_stats()
+        raw_rows = db.list_pms(hospital_code=selected, limit=500)
+        total = db.count_pms()
+    except Exception as e:
+        return f"PMWATCH is running. (DB not ready: {e})", 200
+
+    # Flatten the raw JSON so the template can read reason/location/target.
+    rows = []
+    for r in raw_rows:
+        raw = r.get("raw") or {}
+        rows.append({
+            "wo_number": r.get("wo_number"),
+            "asset_name": r.get("asset_name"),
+            "close_date": r.get("close_date"),
+            "closed_by": r.get("closed_by"),
+            "reason": raw.get("reason"),
+            "location": raw.get("location"),
+            "target_date": raw.get("target_date"),
+            "raw": raw,
+        })
+
+    return render_template(
+        "dashboard.html",
+        hospitals=hospitals,
+        rows=rows,
+        total=total,
+        selected=selected,
+        updated=datetime.now().strftime("%b %d, %I:%M %p"),
+    )
+
+
+@app.route("/ping")
+def ping():
     return "PMWATCH is running."
 
 

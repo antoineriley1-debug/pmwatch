@@ -132,6 +132,53 @@ def count_pms(hospital_code=None):
         conn.close()
 
 
+def hospital_stats():
+    """Per-hospital rollup for the dashboard cards: total PMs, plus how
+    many were scraped today and in the last 7 days."""
+    conn = get_conn()
+    try:
+        with conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """SELECT hospital_code,
+                          MAX(hospital_name) AS hospital_name,
+                          COUNT(*) AS total,
+                          COUNT(*) FILTER (WHERE scraped_at::date = NOW()::date) AS today,
+                          COUNT(*) FILTER (WHERE scraped_at >= NOW() - INTERVAL '7 days') AS week,
+                          MAX(scraped_at) AS last_scraped
+                   FROM closed_pms
+                   GROUP BY hospital_code
+                   ORDER BY hospital_code"""
+            )
+            return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def list_pms(hospital_code=None, limit=500):
+    """Full PM rows for the dashboard table, newest target date first."""
+    conn = get_conn()
+    try:
+        with conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            if hospital_code:
+                cur.execute(
+                    """SELECT wo_number, hospital_code, hospital_name, closed_by,
+                              close_date, asset_name, raw
+                       FROM closed_pms WHERE hospital_code = %s
+                       ORDER BY scraped_at DESC LIMIT %s""",
+                    (hospital_code, limit),
+                )
+            else:
+                cur.execute(
+                    """SELECT wo_number, hospital_code, hospital_name, closed_by,
+                              close_date, asset_name, raw
+                       FROM closed_pms ORDER BY scraped_at DESC LIMIT %s""",
+                    (limit,),
+                )
+            return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
 def recent_pms(limit=25, hospital_code=None):
     """Return the most recently scraped closed PMs for quick inspection."""
     conn = get_conn()
