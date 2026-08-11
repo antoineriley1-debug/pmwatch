@@ -55,6 +55,42 @@
 
 {% set back = '/mechanics?show=' ~ show ~ (('&hospital=' ~ selected) if selected else '') %}
 
+{# ===== FOCUSED VIEW: when a mechanic is selected, show their work orders
+   at the TOP so 'View' visibly does something, then a back link. ===== #}
+{% if detail is not none %}
+<div class="m-card" style="border-color:var(--accent)">
+  <div class="m-top">
+    <div class="m-name"><span class="dot on"></span>{{ focus }}</div>
+    <a class="btn ghost sm" href="{{ back }}">← All mechanics</a>
+  </div>
+  <div class="m-meta">{{ detail|length }} work orders completed</div>
+</div>
+<div class="tablewrap" style="margin-bottom:8px">
+  <table>
+    <thead>
+      <tr><th>WO #</th><th>Site</th><th>System / Procedure</th>
+          <th class="hide-sm">Asset</th><th class="hide-sm">Location</th><th>Closed</th></tr>
+    </thead>
+    <tbody>
+      {% for r in detail %}
+      <tr>
+        <td class="wo">{{ r.wo_number }}</td>
+        <td class="muted">{{ r.hospital_code }}</td>
+        <td>{{ r.system or r.reason or '—' }}
+          {% if r.procedure %}<div class="muted" style="font-size:11px">{{ r.procedure }}</div>{% endif %}</td>
+        <td class="hide-sm">{{ r.asset_name or '—' }}</td>
+        <td class="hide-sm muted">{{ r.location or '—' }}</td>
+        <td class="muted">{{ r.close_date or '—' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="empty">No work orders recorded for this mechanic yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<div class="sectionhead"><h3>All mechanics</h3><span class="pill"><a href="{{ back }}" style="color:var(--accent)">clear selection</a></span></div>
+{% endif %}
+
 {% for p in people %}
 <div class="m-card {{ 'inactive' if not p.active }}">
   <div class="m-top">
@@ -118,35 +154,5 @@
 {% else %}
 <div class="empty">No mechanics yet — they appear automatically once PMs are closed with a mechanic name.</div>
 {% endfor %}
-
-{% if detail is not none %}
-<div class="sectionhead">
-  <h3>What {{ focus }} did</h3>
-  <span class="pill">{{ detail|length }} PMs · <a href="{{ back }}" style="color:var(--accent)">close</a></span>
-</div>
-<div class="tablewrap">
-  <table>
-    <thead>
-      <tr><th>WO #</th><th>Site</th><th>System / Procedure</th>
-          <th class="hide-sm">Asset</th><th class="hide-sm">Location</th><th>Closed</th></tr>
-    </thead>
-    <tbody>
-      {% for r in detail %}
-      <tr>
-        <td class="wo">{{ r.wo_number }}</td>
-        <td class="muted">{{ r.hospital_code }}</td>
-        <td>{{ r.system or r.reason or '—' }}
-          {% if r.procedure %}<div class="muted" style="font-size:11px">{{ r.procedure }}</div>{% endif %}</td>
-        <td class="hide-sm">{{ r.asset_name or '—' }}</td>
-        <td class="hide-sm muted">{{ r.location or '—' }}</td>
-        <td class="muted">{{ r.close_date or '—' }}</td>
-      </tr>
-      {% else %}
-      <tr><td colspan="6" class="empty">No PMs recorded for this mechanic.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
-{% endif %}
 
 {% endblock %}
