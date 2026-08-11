@@ -262,6 +262,23 @@ def migrate():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/enrich")
+def enrich():
+    """Standalone resumable enrichment: fill in mechanic + close_date +
+    system for unenriched WOs (newest first). Safe to call repeatedly; each
+    call chips away at the backlog. ?limit=N (default 40), ?hospital=CODE."""
+    if not _check_token():
+        return jsonify({"error": "bad or missing token"}), 403
+    try:
+        limit = int(request.args.get("limit", "40"))
+    except ValueError:
+        limit = 40
+    hospital = request.args.get("hospital")
+    direct = request.args.get("direct", "1") != "0"
+    return jsonify(scraper.enrich_backlog(limit=limit, hospital=hospital,
+                                          prefer_direct=direct))
+
+
 @app.route("/stats")
 def stats():
     """Coverage stats: how much of the data is enriched (mechanic + close

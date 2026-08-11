@@ -183,6 +183,35 @@ def backfill_hospital_names(name_map):
     return out
 
 
+def unenriched_kvs(limit=40, hospital_code=None):
+    """Return unenriched WOs (no mechanic/close_date yet) to target for
+    enrichment, newest first (by target_date) so recent PMs light up first.
+    Includes the MC internal kv from raw for detail lookup."""
+    conn = get_conn()
+    try:
+        with conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            where = ["(closed_by IS NULL OR close_date IS NULL)"]
+            params = []
+            if hospital_code:
+                where.append("hospital_code = %s")
+                params.append(hospital_code)
+            wsql = "WHERE " + " AND ".join(where)
+            params.append(limit)
+            cur.execute(
+                f"""SELECT wo_number, hospital_code,
+                          raw->>'kv' AS kv,
+                          target_date
+                   FROM closed_pms
+                   {wsql}
+                   ORDER BY target_date DESC NULLS LAST, scraped_at DESC
+                   LIMIT %s""",
+                params,
+            )
+            return [dict(r) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
 def coverage_stats():
     """Per-site enrichment coverage: total rows vs how many have a mechanic,
     a real close_date, and a system classification."""

@@ -398,6 +398,121 @@ def scrape_all(store=True, enrich=True, enrich_limit=8, hospitals=None):
     return summary
 
 
+def enrich_backlog(limit=40, hospital=None, prefer_direct=True):
+    """Standalone, RESUMABLE enrichment pass. Pulls unenriched WOs from the
+    DB (newest close/target first so 'today/this week' lights up first),
+    logs in once, opens each hospital's list, and enriches the WOs that
+    belong to the currently-loaded site. Tries fast direct-fetch, falls
+    back to double-click. Bounded by `limit` so it fits the HTTP window.
+    """
+    summary = {"steps": [], "success": False, "last_step": "init",
+               "requested": limit, "enriched": 0, "via_direct": 0,
+               "via_click": 0, "by_site": {}}
+    targets = db.unenriched_kvs(limit=limit, hospital_code=hospital)
+    summary["found"] = len(targets)
+    if not targets:
+        summary["success"] = True
+        summary["last_step"] = "nothing-to-do"
+        return summary
+    # Group by hospital so we set each Repair Center once.
+    by_site = {}
+    for t in targets:
+        by_site.setdefault(t["hospital_code"], []).append(t)
+
+    with sync_playwright() as p:
+        browser, context = _launch(p)
+        try:
+            active = _login(context, summary)
+            for code, items in by_site.items():
+                rc_id = REPAIRCENTER_IDS.get(code)
+                if not rc_id:
+                    continue
+                site_res = {"steps": [], "last_step": "init",
+                            "hospital_code": code}
+                try:
+                    # Load this site's closed list (reuses the scrape setup).
+                    _load_closed_list(active, code, rc_id, site_res)
+                    list_fr = _frame_for(active, "mc_list.asp")
+                    done = 0
+                    for it in items:
+                        kv = it["kv"] or it["wo_number"]
+                        det = {}
+                        if prefer_direct:
+                            det = _fetch_wo_detail_direct(active, list_fr, it["kv"])
+                            if det:
+                                summary["via_direct"] += 1
+                        if not det:
+                            try:
+                                det = _fetch_wo_detail_by_click(active, list_fr, it["kv"])
+                                if det.get("closed_by") or det.get("close_date"):
+                                    summary["via_click"] += 1
+                            except Exception as e:
+                                det = {"error": str(e)}
+                        if det.get("closed_by") or det.get("close_date"):
+                            db.upsert_pms([{
+                                "wo_number": it["wo_number"],
+                                "hospital_code": code,
+                                "hospital_name": HOSPITAL_NAMES.get(code),
+                                "closed_by": det.get("closed_by"),
+                                "close_date": det.get("close_date"),
+                                "system": det.get("pm_name"),
+                                "procedure": det.get("procedure"),
+                                "asset_name": det.get("asset_name"),
+                                "wo_type": "PM",
+                                "raw": {"detail": det, "kv": it["kv"]},
+                            }])
+                            summary["enriched"] += 1
+                            done += 1
+                    summary["by_site"][code] = done
+                except Exception as e:
+                    summary["by_site"][code] = f"err: {e}"
+            summary["success"] = True
+            summary["last_step"] = "done"
+        except Exception as e:
+            summary["error"] = str(e)
+            summary["error_type"] = type(e).__name__
+        finally:
+            browser.close()
+    return summary
+
+
+def _load_closed_list(active, hospital_code, rc_id, result):
+    """Set Repair Center + All-Closed view + show-all, leaving the list frame
+    populated. Shared by scrape + enrich. Raises on hard failure."""
+    list_fr = _frame_for(active, "mc_list.asp")
+    nav_fr = _frame_for(active, "toctop.asp")
+    if not list_fr or not nav_fr:
+        raise RuntimeError("list/nav frame not found")
+    nav_fr.evaluate(
+        """(rc) => {
+            const s = document.querySelector("select[name='wo_repaircenter']");
+            if (s) { s.value = rc; s.dispatchEvent(new Event('change',{bubbles:true}));
+                if (typeof checksearch==='function'){try{checksearch(s);}catch(e){}} }
+        }""", str(rc_id))
+    nav_fr.wait_for_timeout(1500)
+    nav_fr.evaluate(
+        """() => {
+            const s = document.querySelector("select[name='wo_status']");
+            if (s) { s.value='CLOSEDALL'; s.dispatchEvent(new Event('change',{bubbles:true}));
+                if (typeof checksearch==='function'){try{checksearch(s);}catch(e){}} }
+        }""")
+    active.wait_for_timeout(5000)
+    list_fr = _frame_for(active, "mc_list.asp") or list_fr
+    try:
+        list_fr.wait_for_load_state("networkidle", timeout=40000)
+    except Exception:
+        pass
+    list_fr.wait_for_timeout(2500)
+    show_url = _build_show_all_url(list_fr.url or "")
+    if show_url:
+        try:
+            list_fr.goto(show_url, timeout=60000)
+            list_fr.wait_for_timeout(2500)
+        except Exception:
+            pass
+    result["last_step"] = "list-loaded"
+
+
 def _scrape_one_hospital(active, hospital_code, rc_id, result, store=True,
                          enrich=True, enrich_limit=15, enrich_offset=0):
     """Scrape one hospital using an already-logged-in Work Center page.
@@ -742,6 +857,47 @@ def _fetch_wo_detail(active, kv):
     which gives us the mechanic and the completion date.
     """
     return _fetch_wo_detail_by_click(active, None, kv)
+
+
+def _fetch_wo_detail_direct(active, list_fr, kv):
+    """FAST enrichment: fetch the WO detail HTML via an in-page fetch() from
+    an authenticated frame (carries session cookies), instead of a slow
+    double-click. If MC returns real content we parse it the same way.
+    Returns {} on empty/blocked so caller can fall back to click.
+    """
+    fr = list_fr or _frame_for(active, "mc_list.asp")
+    if fr is None:
+        return {}
+    base = _DETAIL_PATH
+    # Try a few known param shapes MC uses for the detail body.
+    urls = [
+        f"{base}?kv={kv}&justdata=y",
+        f"{base}?kv={kv}",
+        f"{base}?mckeyvalues={kv}&justdata=y",
+    ]
+    for u in urls:
+        try:
+            text = fr.evaluate(
+                """async (u) => {
+                    try {
+                        const r = await fetch(u, {credentials:'include'});
+                        if (!r.ok) return '';
+                        return await r.text();
+                    } catch(e) { return ''; }
+                }""",
+                u,
+            )
+        except Exception:
+            text = ""
+        if text and len(text) > 400:
+            # Strip tags to plain text for the existing parser.
+            plain = re.sub(r"<[^>]+>", " ", text)
+            plain = re.sub(r"&nbsp;", " ", plain)
+            det = _parse_detail_text(_norm(plain))
+            if det.get("closed_by") or det.get("close_date"):
+                det["_via"] = "direct"
+                return det
+    return {}
 
 
 def _detail_text_from_frames(active):
