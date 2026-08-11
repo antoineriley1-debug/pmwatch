@@ -262,6 +262,20 @@ def migrate():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/stats")
+def stats():
+    """Coverage stats: how much of the data is enriched (mechanic + close
+    date + system) per site. Tells us if the pipeline is actually feeding
+    the mechanic/date/system tracking the dashboard needs."""
+    if not _check_token():
+        return jsonify({"error": "bad or missing token"}), 403
+    try:
+        db.init_db()
+        return jsonify(db.coverage_stats())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/health")
 def health():
     """Liveness + DB connectivity check."""

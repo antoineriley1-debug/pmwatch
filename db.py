@@ -183,6 +183,32 @@ def backfill_hospital_names(name_map):
     return out
 
 
+def coverage_stats():
+    """Per-site enrichment coverage: total rows vs how many have a mechanic,
+    a real close_date, and a system classification."""
+    conn = get_conn()
+    try:
+        with conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """SELECT hospital_code,
+                          MAX(hospital_name) AS hospital_name,
+                          COUNT(*) AS total,
+                          COUNT(*) FILTER (WHERE closed_by IS NOT NULL) AS with_mechanic,
+                          COUNT(*) FILTER (WHERE close_date IS NOT NULL) AS with_close_date,
+                          COUNT(*) FILTER (WHERE system IS NOT NULL) AS with_system,
+                          COUNT(*) FILTER (WHERE enriched) AS enriched
+                   FROM closed_pms
+                   GROUP BY hospital_code
+                   ORDER BY hospital_code"""
+            )
+            rows = [dict(r) for r in cur.fetchall()]
+            tot = sum(r["total"] for r in rows)
+            enr = sum(r["enriched"] for r in rows)
+            return {"sites": rows, "grand_total": tot, "grand_enriched": enr}
+    finally:
+        conn.close()
+
+
 def table_columns(table):
     """Return the column names for a table (for migration diagnostics)."""
     conn = get_conn()
