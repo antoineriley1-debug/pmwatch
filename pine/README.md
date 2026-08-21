@@ -1,22 +1,34 @@
-# PS60 Pine Script work
+# PS60 Pine Scripts
 
-Staging area for the PS60 Desk+ upgrade and the companion second-entry backtester.
+TradingView Pine Script v5. Each file is a complete script — paste the whole
+thing into the Pine editor (select all → delete → paste), never a snippet.
 
-## Status
+## Files
 
-Waiting on the complete PS60 Desk+ source. The paste received so far was
-truncated mid-line at:
+- **PS60_Desk_Plus.pine** — the upgraded desk. All 11 spec upgrades applied
+  on top of the running v1 source: tight box with outlier rejection (master
+  OFF by default), auto-pivot second entry off the tight-box edges, open-line
+  fix, half-step ATR levels (OFF by default), whole-numbers overhaul with
+  labels + touch alerts, price labels + price-scale registration on every
+  reference line, locked premarket/after-hours, per-feature toggles and
+  colors, earnings reaction bar with break alerts (OFF by default), and the
+  probability upgrades (verdict bar, raw counts, sample-context line,
+  earnings-break stats, tooltips throughout).
+- **PS60_Second_Entry_Backtester.pine** — separate lower-pane strategy.
+  Tests the auto-pivot second entry off the tight-box edges with remaining
+  ATR as the target filter. Full Strategy Tester report plus a custom stats
+  table (win rate, target hit rate, typical run, fakeout rate, sample line).
+- **PS60_Desk_Plus_v1_original.pine** — the source as received, archived as
+  the rollback copy. Do not edit.
 
-    bool showSup   = input.bool(true, "Old supply (last finished month high)", group =
+## Conventions locked in
 
-`_incoming_chunk01.pine` holds the verified first chunk (through the
-after-hours session input), preserved byte-for-byte including the
-Unicode arrows in the zone-fill colour labels.
-
-Once the full source lands, the merge produces two deliverables:
-
-1. `PS60_Desk_Plus.pine` — the existing desk with the 11 spec upgrades added
-   in place. ATR engine, gas tank, "Traveled" label wording, the calendar-date
-   day rollover and the RTH-only day high/low seeding all stay untouched.
-2. `PS60_Second_Entry_Backtester.pine` — separate lower-pane script, does not
-   touch the desk.
+- ATR: 14-day default, RMA, prior COMPLETED day, static intraday.
+- Day rollover keys off the calendar date (year*10000+month*100+day) — never
+  ta.change(time("D","0930-1600")), which goes na across extended-hours bars.
+- Day high/low seeds from RTH bars only.
+- Spent ATR level labels read "1x ATR Traveled <price>".
+- Never name a variable `line`, `label`, or `box`.
+- All new features default OFF or to current behavior.
+- The probability sample rebuilds from loaded history on every recompile;
+  300-day cap.

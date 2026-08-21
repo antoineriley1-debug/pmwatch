@@ -1,0 +1,389 @@
+//@version=5
+indicator("PS60 Desk+", "DESK+", overlay = true, max_lines_count = 120, max_labels_count = 60, max_boxes_count = 5)
+
+// One ATR feeds everything: tank, levels, second entry, probability.
+// ATR = prior COMPLETED day, so levels are static all session. Nothing drifts.
+// PROB engine: run on a 5-minute chart for the biggest historical sample.
+// ATR levels: live color = still reachable, spent color = exhausted.
+// Shaded zones between levels, RATR style. Toggle + colors in settings.
+
+// ───────── Inputs ─────────
+string G1 = "Tank (ATR)"
+int    atrLen    = input.int(14, "ATR length (days)", minval = 1, group = G1)
+string atrSmooth = input.string("RMA", "Smoothing", options = ["RMA", "EMA", "SMA", "WMA"], group = G1)
+bool   showGas   = input.bool(true, "Gas tank readout", group = G1)
+bool   showLvls  = input.bool(true, "Remaining-ATR levels (1x 2x 3x)", group = G1)
+bool   showOpen  = input.bool(true, "Today's open line", group = G1)
+string tz        = input.string("America/New_York", "Timezone", group = G1)
+
+string G6 = "ATR level colors + shading"
+bool  shadeOn = input.bool(true, "Shade zones between levels", group = G6)
+color cLive   = input.color(color.new(#26a69a, 0), "Level line: live", group = G6)
+color cSpent  = input.color(color.new(#ef5350, 0), "Level line: spent", group = G6)
+color cZ1     = input.color(color.new(#26a69a, 82), "Zone fill: range → 1x", group = G6)
+color cZ2     = input.color(color.new(#ffd500, 82), "Zone fill: 1x → 2x", group = G6)
+color cZ3     = input.color(color.new(#8a00ff, 86), "Zone fill: 2x → 3x", group = G6)
+color cZSpent = input.color(color.new(#ef5350, 82), "Zone fill when spent", group = G6)
+
+string G2 = "Levels"
+bool showPDH   = input.bool(true, "Prev day high", group = G2)
+bool showPDL   = input.bool(true, "Prev day low", group = G2)
+bool showPDC   = input.bool(true, "Prev day close", group = G2)
+bool showPM    = input.bool(true, "Premarket high/low", group = G2)
+bool showAH    = input.bool(false, "After-hours high/low", group = G2)
+string pmSess  = input.session("0400-0930", "Premarket session", group = G2)
+string ahSess  = input.session("1600-2000", "After-hours session", group = G2)
+bool showSup   = input.bool(true, "Old supply (last finished month high)", group = G2)
+bool showDem   = input.bool(true, "Old demand (last finished month low)", group = G2)
+bool showWhole = input.bool(true, "Whole numbers", group = G2)
+int  wholeN    = input.int(3, "Whole numbers each side", minval = 1, maxval = 6, group = G2)
+float stepIn   = input.float(0.0, "Step (0 = auto)", minval = 0.0, step = 0.5, group = G2)
+
+string G3 = "Daily box"
+bool  showBox  = input.bool(true, "Show box", group = G3)
+int   boxLen   = input.int(10, "Lookback (daily bars)", minval = 5, maxval = 40, group = G3)
+bool  boxTight = input.bool(true, "Only draw if tight", group = G3)
+float tightX   = input.float(4.0, "Tight = box range ≤ this × ATR", minval = 1.0, step = 0.5, group = G3)
+
+string G4 = "Second entry"
+bool   show2nd    = input.bool(true, "Second-entry helper", group = G4)
+float  pivotIn    = input.float(0.0, "Pivot (0 = off). Type it. Do not guess.", group = G4)
+string sideIn     = input.string("Auto", "Side", options = ["Auto", "Long", "Short"], group = G4)
+float  retracePct = input.float(30.0, "Retrace % of first push", minval = 10.0, maxval = 80.0, step = 5.0, group = G4)
+float  minRetrX   = input.float(0.3, "AND at least this × ATR", minval = 0.1, step = 0.05, group = G4)
+float  nearX      = input.float(0.15, "Alert within this × ATR of second", minval = 0.05, step = 0.05, group = G4)
+bool   hourReset  = input.bool(true, "Hourly: miss the 60, need a new second", group = G4)
+
+string G5 = "Probability (backtest)"
+bool  showProb = input.bool(true, "Continuation stats", group = G5)
+float tolIn    = input.float(0.15, "Similar day = within this × ATR of today", minval = 0.05, step = 0.05, group = G5)
+float tgt1     = input.float(1.0, "Target #1 (× ATR)", minval = 0.5, step = 0.1, group = G5)
+float tgt2     = input.float(1.5, "Target #2 (× ATR)", minval = 0.5, step = 0.1, group = G5)
+int   maxDays  = input.int(300, "Max days stored", minval = 50, maxval = 500, group = G5)
+int   minDays  = input.int(20, "Min days before stats print", minval = 5, maxval = 100, group = G5)
+
+// ───────── Fixed colors ─────────
+color cBox   = color.new(#42a5f5, 0)
+color cBoxF  = color.new(#42a5f5, 88)
+color cSup   = color.new(#c62828, 0)
+color cDem   = color.new(#2e7d32, 0)
+color cPink  = color.new(#e91e8c, 0)
+color cAH    = color.new(#ef6c00, 0)
+color cWhole = color.new(#9e9e9e, 55)
+color cOpen  = color.new(#b2b5be, 0)
+color c2nd   = color.new(#6a1b9a, 0)
+
+// ───────── One ATR to rule them all ─────────
+f_atr() =>
+    trv = ta.tr(true)
+    switch atrSmooth
+        "EMA" => ta.ema(trv, atrLen)
+        "SMA" => ta.sma(trv, atrLen)
+        "WMA" => ta.wma(trv, atrLen)
+        => ta.rma(trv, atrLen)
+
+f_daily() =>
+    float a = f_atr()[1]
+    [a, high, low, open, close[1], time, ta.highest(high, boxLen), ta.lowest(low, boxLen), time[boxLen - 1]]
+
+[yATR, dH, dL, dO, prevC, dT, boxHi, boxLo, boxT0] = request.security(syminfo.tickerid, "D", f_daily(), barmerge.gaps_off, barmerge.lookahead_off)
+
+[oldSup, oldDem] = request.security(syminfo.tickerid, "M", [high[1], low[1]], barmerge.gaps_off, barmerge.lookahead_off)
+
+[pdh, pdl, pdc] = request.security(syminfo.tickerid, "D", [high[1], low[1], close[1]], barmerge.gaps_off, barmerge.lookahead_off)
+
+f_sess() =>
+    bool newDay = ta.change(time("D", "0930-1600", tz)) != 0
+    bool inPM = not na(time("", pmSess, tz))
+    bool inAH = not na(time("", ahSess, tz))
+    var float pmH = na
+    var float pmL = na
+    var float ahH = na
+    var float ahL = na
+    var float lastAhH = na
+    var float lastAhL = na
+    if newDay
+        lastAhH := ahH
+        lastAhL := ahL
+        ahH := na
+        ahL := na
+        pmH := na
+        pmL := na
+    if inPM
+        pmH := na(pmH) ? high : math.max(pmH, high)
+        pmL := na(pmL) ? low : math.min(pmL, low)
+    if inAH
+        ahH := na(ahH) ? high : math.max(ahH, high)
+        ahL := na(ahL) ? low : math.min(ahL, low)
+    [pmH, pmL, not na(ahH) ? ahH : lastAhH, not na(ahL) ? ahL : lastAhL]
+
+[pmH, pmL, ahH, ahL] = request.security(syminfo.tickerid, "5", f_sess(), barmerge.gaps_off, barmerge.lookahead_off)
+
+// ───────── Tank math ─────────
+bool isToday = not na(dT) and year(dT, tz) == year(timenow, tz) and month(dT, tz) == month(timenow, tz) and dayofmonth(dT, tz) == dayofmonth(timenow, tz)
+
+float used = isToday and not na(dH) and not na(dL) and not na(prevC) ? math.max(dH - dL, math.abs(dH - prevC), math.abs(dL - prevC)) : 0.0
+float leftT = na(yATR) ? na : math.max(0.0, yATR - used)
+float pctLeft = not na(yATR) and yATR > 0 ? math.max(0.0, 100.0 - used / yATR * 100.0) : na
+float xATR = not na(yATR) and yATR > 0 ? used / yATR : na
+
+f2(float v) => math.round(v * 100.0) / 100.0
+
+// ───────── Probability engine ─────────
+// Day rollover keys off the calendar date of each bar (works with or
+// without extended hours). Range tracker seeds ONLY from RTH bars.
+var matrix<float> cpM   = matrix.new<float>(0, 12)
+var float[] finals      = array.new_float()
+var float[] tempCp      = array.new_float(12, na)
+var float rHi           = na
+var float rLo           = na
+var float lastProg      = na
+var int   dayKey        = na
+
+int sessStart   = timestamp(tz, year(time, tz), month(time, tz), dayofmonth(time, tz), 9, 30)
+float minsSince = (time - sessStart) / 60000.0
+
+bool rthBar = not na(time(timeframe.period, "0930-1600", tz))
+
+int barKey = year(time, tz) * 10000 + month(time, tz) * 100 + dayofmonth(time, tz)
+bool newSess = na(dayKey) or barKey != dayKey
+
+if timeframe.isintraday
+    if newSess
+        if not na(lastProg)
+            matrix.add_row(cpM, matrix.rows(cpM), array.copy(tempCp))
+            array.push(finals, lastProg)
+            if array.size(finals) > maxDays
+                matrix.remove_row(cpM, 0)
+                array.shift(finals)
+        for i = 0 to 11
+            array.set(tempCp, i, na)
+        rHi := na
+        rLo := na
+        lastProg := na
+        dayKey := barKey
+    if rthBar
+        rHi := na(rHi) ? high : math.max(rHi, high)
+        rLo := na(rLo) ? low : math.min(rLo, low)
+        float uNow = not na(prevC) ? math.max(rHi - rLo, math.abs(rHi - prevC), math.abs(rLo - prevC)) : rHi - rLo
+        float prog = not na(yATR) and yATR > 0 ? uNow / yATR : na
+        if not na(prog)
+            lastProg := prog
+            for k = 0 to 11
+                if minsSince >= 30.0 * (k + 1) and na(array.get(tempCp, k))
+                    array.set(tempCp, k, prog)
+
+// ───────── Draw helpers ─────────
+var line[]     L  = array.new_line()
+var label[]    B  = array.new_label()
+var linefill[] LF = array.new_linefill()
+
+f_wipe() =>
+    if array.size(L) > 0
+        for i = 0 to array.size(L) - 1
+            line.delete(array.get(L, i))
+        array.clear(L)
+    if array.size(B) > 0
+        for i = 0 to array.size(B) - 1
+            label.delete(array.get(B, i))
+        array.clear(B)
+    if array.size(LF) > 0
+        for i = 0 to array.size(LF) - 1
+            linefill.delete(array.get(LF, i))
+        array.clear(LF)
+
+f_lvl(bool on, float y, color c, string sty, int w, string name) =>
+    if on and not na(y)
+        string st = sty == "dash" ? line.style_dashed : sty == "dot" ? line.style_dotted : line.style_solid
+        array.push(L, line.new(bar_index - 8, y, bar_index + 2, y, extend = extend.right, color = c, width = w, style = st))
+        if name != ""
+            array.push(B, label.new(bar_index + 3, y, name, style = label.style_label_left, color = color.new(c, 30), textcolor = color.white, size = size.tiny))
+
+f_atrLine(float y, color c, int w, string name) =>
+    line ln = line.new(bar_index - 8, y, bar_index + 2, y, extend = extend.right, color = c, width = w, style = line.style_solid)
+    array.push(L, ln)
+    if name != ""
+        array.push(B, label.new(bar_index + 3, y, name, style = label.style_label_left, color = color.new(c, 30), textcolor = color.white, size = size.tiny))
+    ln
+
+f_step(float p) =>
+    stepIn > 0 ? stepIn : p >= 200 ? 5.0 : p >= 80 ? 1.0 : 0.5
+
+// ───────── Second entry ─────────
+var bool   seThru   = false
+var float  seExt    = na
+var bool   sePulled = false
+var string seSide   = "Long"
+var float  sePivot  = 0.0
+
+if pivotIn != sePivot
+    seThru   := false
+    seExt    := na
+    sePulled := false
+    sePivot  := pivotIn
+    seSide   := sideIn == "Short" ? "Short" : "Long"
+
+bool seOn = show2nd and pivotIn > 0
+
+int  hourT = request.security(syminfo.tickerid, "60", time, barmerge.gaps_off, barmerge.lookahead_off)
+bool newHour = not na(hourT) and ta.change(hourT) != 0
+bool useHour = hourReset and timeframe.isintraday
+if seOn and useHour and newHour
+    seExt    := na
+    sePulled := false
+
+if seOn
+    if not seThru
+        if sideIn == "Short" or (sideIn == "Auto" and low < pivotIn and high <= pivotIn)
+            if low < pivotIn
+                seThru := true
+                seSide := "Short"
+                seExt  := low
+        if sideIn == "Long" or (sideIn == "Auto" and high > pivotIn)
+            if high > pivotIn
+                seThru := true
+                seSide := "Long"
+                seExt  := high
+    else
+        float floorR = not na(yATR) and yATR > 0 ? minRetrX * yATR : 0.0
+        if seSide == "Long"
+            seExt := na(seExt) ? high : math.max(seExt, high)
+            float push = seExt - pivotIn
+            float need = math.max(push * retracePct / 100.0, floorR)
+            if not sePulled and push > 0 and need > 0 and low <= seExt - need
+                sePulled := true
+        else
+            seExt := na(seExt) ? low : math.min(seExt, low)
+            float push = pivotIn - seExt
+            float need = math.max(push * retracePct / 100.0, floorR)
+            if not sePulled and push > 0 and need > 0 and high >= seExt + need
+                sePulled := true
+
+bool seNear = seOn and sePulled and not na(seExt) and not na(yATR) and yATR > 0 and math.abs(close - seExt) <= nearX * yATR
+
+alertcondition(seNear, title = "PS60 second entry approaching", message = "Approaching second entry. Retrace happened. Not the first push.")
+
+// ───────── Box ─────────
+bool tightOK = not boxTight or (not na(boxHi) and not na(boxLo) and not na(yATR) and yATR > 0 and (boxHi - boxLo) <= tightX * yATR)
+bool drawBox = showBox and tightOK and not na(boxHi) and not na(boxLo)
+
+var box theBox = na
+
+// ───────── Redraw everything on the last bar ─────────
+if barstate.islast
+    f_wipe()
+    if not na(theBox)
+        box.delete(theBox)
+        theBox := na
+    if drawBox
+        theBox := box.new(boxT0, boxHi, timenow + 3 * 24 * 60 * 60 * 1000, boxLo, xloc = xloc.bar_time, border_color = cBox, border_width = 2, bgcolor = cBoxF, extend = extend.right)
+        f_lvl(true, boxHi, cBox, "solid", 1, "EDGE")
+        f_lvl(true, boxLo, cBox, "solid", 1, "EDGE")
+
+    f_lvl(showSup, oldSup, cSup, "solid", 2, "old supply")
+    f_lvl(showDem, oldDem, cDem, "solid", 2, "old demand")
+    f_lvl(showPDH, pdh, cPink, "solid", 2, "PDH")
+    f_lvl(showPDL, pdl, cPink, "solid", 2, "PDL")
+    f_lvl(showPDC, pdc, cPink, "dot", 1, "PDC")
+    f_lvl(showPM, pmH, cPink, "dash", 1, "PMH")
+    f_lvl(showPM, pmL, cPink, "dash", 1, "PML")
+    f_lvl(showAH, ahH, cAH, "dash", 1, "AHH")
+    f_lvl(showAH, ahL, cAH, "dash", 1, "AHL")
+
+    if showOpen and isToday and not na(dO)
+        f_lvl(true, dO, cOpen, "solid", 1, "Open " + str.tostring(f2(dO)))
+
+    if showLvls and isToday and not na(yATR) and yATR > 0
+        float r1 = 1 * yATR - used
+        float r2 = 2 * yATR - used
+        float r3 = 3 * yATR - used
+
+        line hiLn = f_atrLine(dH, color.new(cWhole, 40), 1, "High " + str.tostring(f2(dH)))
+        line loLn = f_atrLine(dL, color.new(cWhole, 40), 1, "Low " + str.tostring(f2(dL)))
+
+        line u1 = f_atrLine(dH + r1, r1 <= 0 ? cSpent : cLive, 2, r1 <= 0 ? "1x SPENT" : "1x " + str.tostring(f2(dH + r1)))
+        line d1 = f_atrLine(dL - r1, r1 <= 0 ? cSpent : cLive, 2, r1 <= 0 ? "1x SPENT" : "1x " + str.tostring(f2(dL - r1)))
+        line u2 = f_atrLine(dH + r2, r2 <= 0 ? cSpent : cLive, 1, r2 <= 0 ? "2x SPENT" : "2x " + str.tostring(f2(dH + r2)))
+        line d2 = f_atrLine(dL - r2, r2 <= 0 ? cSpent : cLive, 1, r2 <= 0 ? "2x SPENT" : "2x " + str.tostring(f2(dL - r2)))
+        line u3 = f_atrLine(dH + r3, r3 <= 0 ? cSpent : cLive, 1, r3 <= 0 ? "3x SPENT" : "3x " + str.tostring(f2(dH + r3)))
+        line d3 = f_atrLine(dL - r3, r3 <= 0 ? cSpent : cLive, 1, r3 <= 0 ? "3x SPENT" : "3x " + str.tostring(f2(dL - r3)))
+
+        if shadeOn
+            array.push(LF, linefill.new(hiLn, u1, r1 <= 0 ? cZSpent : cZ1))
+            array.push(LF, linefill.new(loLn, d1, r1 <= 0 ? cZSpent : cZ1))
+            array.push(LF, linefill.new(u1, u2, r2 <= 0 ? cZSpent : cZ2))
+            array.push(LF, linefill.new(d1, d2, r2 <= 0 ? cZSpent : cZ2))
+            array.push(LF, linefill.new(u2, u3, r3 <= 0 ? cZSpent : cZ3))
+            array.push(LF, linefill.new(d2, d3, r3 <= 0 ? cZSpent : cZ3))
+
+    if showWhole
+        float s = f_step(close)
+        float base = math.round(close / s) * s
+        for i = 1 to wholeN
+            f_lvl(true, base + s * i, cWhole, "solid", 1, "")
+            f_lvl(true, base - s * i, cWhole, "solid", 1, "")
+
+    if seOn and not na(seExt)
+        f_lvl(true, seExt, c2nd, "solid", 2, sePulled ? "2ND" : "1st push")
+        f_lvl(true, pivotIn, c2nd, "dot", 1, "pivot")
+
+// ───────── Probability readout ─────────
+string probLine = ""
+if showProb
+    if not timeframe.isintraday
+        probLine := "PROB needs an intraday chart"
+    else
+        int kNow = -1
+        for k = 0 to 11
+            if minsSince >= 30.0 * (k + 1)
+                kNow := k
+        if kNow < 0
+            probLine := "PROB starts at 10:00"
+        else if array.size(finals) < minDays
+            probLine := "PROB building sample (" + str.tostring(array.size(finals)) + " days stored)"
+        else if na(lastProg)
+            probLine := "PROB no data yet today"
+        else
+            int n = 0
+            int h1 = 0
+            int h2 = 0
+            float sumF = 0.0
+            for i = 0 to array.size(finals) - 1
+                float cp = matrix.get(cpM, i, kNow)
+                if not na(cp) and math.abs(cp - lastProg) <= tolIn
+                    n += 1
+                    float fv = array.get(finals, i)
+                    sumF += fv
+                    if fv >= tgt1
+                        h1 += 1
+                    if fv >= tgt2
+                        h2 += 1
+            if n == 0
+                probLine := "PROB no similar days in sample"
+            else
+                probLine := str.tostring(n) + " similar days  " + str.tostring(math.round(100.0 * h1 / n)) + "% ≥" + str.tostring(tgt1) + "x  " + str.tostring(math.round(100.0 * h2 / n)) + "% ≥" + str.tostring(tgt2) + "x  avg " + str.tostring(f2(sumF / n)) + "x"
+
+// ───────── Gas tank readout ─────────
+var table g = table.new(position.top_center, 1, 3, border_width = 1, border_color = color.new(color.white, 50))
+
+if barstate.islast
+    if showGas
+        string t1 = not isToday ? "GAS waiting 9:30   tank " + str.tostring(f2(yATR)) : "GAS " + str.tostring(math.round(pctLeft)) + "% left   " + str.tostring(f2(xATR)) + "x ATR traveled"
+        string t2 = "used " + str.tostring(f2(used)) + " / tank " + str.tostring(f2(yATR)) + "   left " + str.tostring(f2(leftT))
+        color bg = not isToday ? color.new(color.gray, 0) : pctLeft >= 40 ? color.new(color.green, 0) : pctLeft >= 15 ? color.new(#ffd500, 5) : color.rgb(215, 133, 133)
+        table.cell(g, 0, 0, t1, bgcolor = bg, text_color = color.black, text_size = size.small)
+        table.cell(g, 0, 1, t2, bgcolor = color.new(color.black, 20), text_color = color.white, text_size = size.tiny)
+        if showProb
+            table.cell(g, 0, 2, probLine, bgcolor = color.new(#1a1a2e, 10), text_color = color.new(#4deeea, 0), text_size = size.tiny)
+        else
+            table.cell(g, 0, 2, "", bgcolor = color.new(color.black, 100), text_color = color.white, text_size = size.tiny)
+    else
+        table.clear(g, 0, 0, 0, 2)
+
+var table seT = table.new(position.bottom_right, 1, 1, border_width = 1)
+if barstate.islast
+    if seOn
+        string st = not seThru ? "WAIT through " + str.tostring(pivotIn) : not sePulled ? "THROUGH  push " + str.tostring(f2(seExt)) + "  wait retrace" : seNear ? "2ND NEAR  " + str.tostring(f2(seExt)) : "2ND ARMED  " + str.tostring(f2(seExt))
+        table.cell(seT, 0, 0, st, bgcolor = seNear ? c2nd : color.new(color.black, 20), text_color = color.white, text_size = size.small)
+    else
+        table.clear(seT, 0, 0, 0, 0)
