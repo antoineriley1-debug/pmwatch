@@ -66,14 +66,14 @@ bool   wholeAlertOn = input.bool(false, "Touch alerts (separate from drawing)", 
 
 string G3 = "Daily box"
 bool  showBox  = input.bool(true, "Show box", group = G3)
-int   boxLen   = input.int(10, "Lookback (daily bars)", minval = 5, maxval = 40, group = G3)
+int   boxLen   = input.int(10, "Lookback (daily bars)", minval = 3, maxval = 40, group = G3)
 bool  boxTight = input.bool(true, "Only draw if tight", group = G3)
 float tightX   = input.float(4.0, "Tight = box range ≤ this × ATR", minval = 1.0, step = 0.5, group = G3)
 color cBoxIn   = input.color(color.new(#42a5f5, 0), "Box color", group = G3)
 
 string GT = "Tight Box (outlier reject)"
 bool  tbOn    = input.bool(false, "MASTER: tight box replaces daily box + drives auto-pivot", group = GT, tooltip = "ON: this box is the box on the chart, and its edges become the second-entry pivots automatically — upper edge = pivot for longs, lower edge = pivot for shorts. Zero manual input, so you can drop the indicator on a whole watchlist and set second-entry alerts everywhere. OFF: everything works exactly like before, manual pivot included. If this AND the daily box are both off, no box draws and no auto-pivot fires.")
-int   tbWin   = input.int(10, "Window (completed daily bars)", minval = 5, maxval = 40, group = GT, tooltip = "Uses COMPLETED days only, so the edges stay put all session.")
+int   tbWin   = input.int(10, "Window (completed daily bars)", minval = 3, maxval = 40, group = GT, tooltip = "Uses COMPLETED days only, so the edges stay put all session.")
 bool  tbRejOn = input.bool(true, "Outlier rejection", group = GT, tooltip = "Throws out unusually wide days before drawing the box: any day whose high-low range is wider than sensitivity × the window's average range gets excluded. Never rejects below 4 kept days.")
 float tbSens  = input.float(1.8, "Sensitivity (lower = stricter)", minval = 1.3, maxval = 2.5, step = 0.1, group = GT)
 color cTB     = input.color(color.new(#f5a623, 0), "Tight box color", group = GT)
