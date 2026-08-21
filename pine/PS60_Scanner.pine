@@ -160,8 +160,8 @@ f_name(string s) =>
     string[] parts = str.split(s, ":")
     array.get(parts, array.size(parts) - 1)
 
-f_fire(string s, float st, float sd, float ex) =>
-    if s != "" and math.round(st) == 4
+f_fire(string s, int st, int sd, float ex) =>
+    if s != "" and st == 4
         alert(f_name(s) + " second entry NEAR · " + (sd > 0 ? "LONG" : "SHORT") + " · push " + str.tostring(f2(ex)), alert.freq_once_per_bar)
 
 f_fire(sym1, st1, sd1, ex1)
@@ -190,8 +190,8 @@ if barstate.islast
     table.cell(scanT, 1, 0, "STATUS", bgcolor = color.new(#6a1b9a, 0), text_color = color.white, text_size = tsz)
     table.cell(scanT, 2, 0, "LEVEL", bgcolor = color.new(#6a1b9a, 0), text_color = color.white, text_size = tsz)
     string[] symA = array.from(sym1, sym2, sym3, sym4, sym5, sym6, sym7, sym8, sym9, sym10, sym11, sym12, sym13, sym14, sym15)
-    float[] stA = array.from(st1, st2, st3, st4, st5, st6, st7, st8, st9, st10, st11, st12, st13, st14, st15)
-    float[] sdA = array.from(sd1, sd2, sd3, sd4, sd5, sd6, sd7, sd8, sd9, sd10, sd11, sd12, sd13, sd14, sd15)
+    int[] stA = array.from(st1, st2, st3, st4, st5, st6, st7, st8, st9, st10, st11, st12, st13, st14, st15)
+    int[] sdA = array.from(sd1, sd2, sd3, sd4, sd5, sd6, sd7, sd8, sd9, sd10, sd11, sd12, sd13, sd14, sd15)
     float[] bhA = array.from(bh1, bh2, bh3, bh4, bh5, bh6, bh7, bh8, bh9, bh10, bh11, bh12, bh13, bh14, bh15)
     float[] blA = array.from(bl1, bl2, bl3, bl4, bl5, bl6, bl7, bl8, bl9, bl10, bl11, bl12, bl13, bl14, bl15)
     float[] exA = array.from(ex1, ex2, ex3, ex4, ex5, ex6, ex7, ex8, ex9, ex10, ex11, ex12, ex13, ex14, ex15)
@@ -201,8 +201,8 @@ if barstate.islast
         string s = array.get(symA, i)
         if s != ""
             activeN += 1
-            int st = math.round(array.get(stA, i))
-            float sd = array.get(sdA, i)
+            int st = array.get(stA, i)
+            int sd = array.get(sdA, i)
             string sideTag = sd > 0 ? "L" : sd < 0 ? "S" : ""
             string stTxt = st == 0 ? "…" : st == 1 ? "WAIT" : st == 2 ? "THRU " + sideTag : st == 3 ? "ARMED " + sideTag : "NEAR " + sideTag
             color stBg = st == 4 ? color.new(#6a1b9a, 0) : st == 3 ? color.new(#26a69a, 0) : st == 2 ? color.new(#ffd500, 10) : color.new(color.black, 30)
