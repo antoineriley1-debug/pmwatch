@@ -48,9 +48,9 @@ string sym15 = input.symbol("", "Ticker 15", group = G4)
 
 string G5 = "Display"
 string tblPos  = input.string("Top right", "Table position", options = ["Top right", "Top left", "Bottom right", "Bottom left"], group = G5)
-string tblSize = input.string("small", "Text size", options = ["tiny", "small", "normal"], group = G5)
+string tblSize = input.string("tiny", "Text size", options = ["tiny", "small", "normal"], group = G5)
 bool   onlyHot  = input.bool(false, "Only show ARMED / NEAR rows", group = G5, tooltip = "Hides WAIT and THRU rows so the table only lists tickers where a second entry is loaded. The alert still watches every ticker either way — this only trims the table.")
-bool   compactOn = input.bool(false, "Compact (single column)", group = G5, tooltip = "Squeezes each ticker to one small cell: TSLA · ARMED L · 366.5. Combine with tiny text for the smallest possible footprint.")
+bool   compactOn = input.bool(true, "Compact (single column)", group = G5, tooltip = "Squeezes each ticker to one small cell: TSLA · ARMED L · 366.5. Combine with tiny text for the smallest possible footprint.")
 
 // ───────── Helpers ─────────
 f2(float v) => math.round(v * 100.0) / 100.0
@@ -164,7 +164,7 @@ f_name(string s) =>
 
 f_fire(string s, int st, int sd, float ex) =>
     if s != "" and st == 4
-        alert(f_name(s) + " second entry NEAR · " + (sd > 0 ? "LONG" : "SHORT") + " · push " + str.tostring(f2(ex)), alert.freq_once_per_bar)
+        alert(f_name(s) + " second entry · " + (sd > 0 ? "LONG" : "SHORT") + " · trigger " + str.tostring(f2(ex)), alert.freq_once_per_bar)
 
 f_fire(sym1, st1, sd1, ex1)
 f_fire(sym2, st2, sd2, ex2)
@@ -210,10 +210,10 @@ if barstate.islast
                 shownN += 1
                 int sd = array.get(sdA, i)
                 string sideTag = sd > 0 ? "L" : sd < 0 ? "S" : ""
-                string stTxt = st == 0 ? "…" : st == 1 ? "WAIT" : st == 2 ? "THRU " + sideTag : st == 3 ? "ARMED " + sideTag : "NEAR " + sideTag
+                string stTxt = st == 0 ? "…" : st == 1 ? "IN BOX" : st == 2 ? "BROKE " + (sd > 0 ? "▲" : "▼") : st == 3 ? "READY " + sideTag : "ENTRY " + sideTag
                 color stBg = st == 4 ? color.new(#6a1b9a, 0) : st == 3 ? color.new(#26a69a, 0) : st == 2 ? color.new(#ffd500, 10) : color.new(color.black, 30)
                 color stTx = st == 3 or st == 4 ? color.white : st == 2 ? color.black : color.new(#b2b5be, 0)
-                string lvlTxt = st <= 1 ? str.tostring(f2(array.get(bhA, i))) + " / " + str.tostring(f2(array.get(blA, i))) : str.tostring(f2(array.get(exA, i)))
+                string lvlTxt = st <= 1 ? "box " + str.tostring(f2(array.get(bhA, i))) + " / " + str.tostring(f2(array.get(blA, i))) : st == 2 ? "push " + str.tostring(f2(array.get(exA, i))) + " · wait pullback" : "trigger " + str.tostring(f2(array.get(exA, i)))
                 if compactOn
                     table.cell(scanT, 0, rIdx, f_name(s) + " · " + stTxt + " · " + lvlTxt, bgcolor = stBg, text_color = stTx, text_size = tsz)
                 else
