@@ -244,6 +244,7 @@ var float rHi           = na
 var float rLo           = na
 var float lastProg      = na
 var int   dayKey        = na
+var int   sessCount     = 0
 
 int sessStart   = timestamp(tz, year(time, tz), month(time, tz), dayofmonth(time, tz), 9, 30)
 float minsSince = (time - sessStart) / 60000.0
@@ -255,6 +256,7 @@ bool newSess = na(dayKey) or barKey != dayKey
 
 if timeframe.isintraday
     if newSess
+        sessCount += 1
         if not na(lastProg)
             matrix.add_row(cpM, matrix.rows(cpM), array.copy(tempCp))
             array.push(finals, lastProg)
@@ -291,29 +293,40 @@ var int   ebKey    = na
 var bool  ebUpB    = false
 var bool  ebUpR    = false
 var float ebUpMax  = na
+var int   ebUpSess = na
 var bool  ebDnB    = false
 var bool  ebDnR    = false
 var float ebDnMax  = na
+var int   ebDnSess = na
+var int   ebEvents = 0
+var int   ebFirstKey = na
 var int   ebN      = 0
 var int   ebHit    = 0
 var int   ebFake   = 0
 var int   ebRes    = 0
 var float ebRunSum = 0.0
+var float ebSessSum = 0.0
 
 if probEarnOn and timeframe.isintraday and not na(erHi) and not na(erLo) and not na(erT)
     if na(ebKey) or erT != ebKey
-        ebKey   := erT
-        ebUpB   := false
-        ebUpR   := false
-        ebUpMax := na
-        ebDnB   := false
-        ebDnR   := false
-        ebDnMax := na
+        ebKey    := erT
+        ebEvents += 1
+        ebUpB    := false
+        ebUpR    := false
+        ebUpMax  := na
+        ebUpSess := na
+        ebDnB    := false
+        ebDnR    := false
+        ebDnMax  := na
+        ebDnSess := na
     if earnAfter and not na(yATR) and yATR > 0
         if not ebUpB and high > erHi
-            ebUpB   := true
-            ebUpMax := high - erHi
-            ebN     += 1
+            ebUpB    := true
+            ebUpMax  := high - erHi
+            ebUpSess := sessCount
+            ebN      += 1
+            if na(ebFirstKey)
+                ebFirstKey := barKey
         if ebUpB and not ebUpR
             ebUpMax := math.max(ebUpMax, high - erHi)
             if ebUpMax >= tgt1 * yATR
@@ -321,15 +334,20 @@ if probEarnOn and timeframe.isintraday and not na(erHi) and not na(erLo) and not
                 ebHit    += 1
                 ebRes    += 1
                 ebRunSum += ebUpMax / yATR
+                ebSessSum += sessCount - ebUpSess
             else if close < erHi
                 ebUpR    := true
                 ebFake   += 1
                 ebRes    += 1
                 ebRunSum += ebUpMax / yATR
+                ebSessSum += sessCount - ebUpSess
         if not ebDnB and low < erLo
-            ebDnB   := true
-            ebDnMax := erLo - low
-            ebN     += 1
+            ebDnB    := true
+            ebDnMax  := erLo - low
+            ebDnSess := sessCount
+            ebN      += 1
+            if na(ebFirstKey)
+                ebFirstKey := barKey
         if ebDnB and not ebDnR
             ebDnMax := math.max(ebDnMax, erLo - low)
             if ebDnMax >= tgt1 * yATR
@@ -337,11 +355,13 @@ if probEarnOn and timeframe.isintraday and not na(erHi) and not na(erLo) and not
                 ebHit    += 1
                 ebRes    += 1
                 ebRunSum += ebDnMax / yATR
+                ebSessSum += sessCount - ebDnSess
             else if close > erLo
                 ebDnR    := true
                 ebFake   += 1
                 ebRes    += 1
                 ebRunSum += ebDnMax / yATR
+                ebSessSum += sessCount - ebDnSess
 
 // ───────── Draw helpers ─────────
 var line[]     L  = array.new_line()
@@ -646,7 +666,8 @@ if showProb
                 string firstD = array.size(dayKeysArr) > 0 ? f_fmtKey(array.get(dayKeysArr, 0)) : "?"
                 probSample := str.tostring(n) + " of " + str.tostring(total) + " days scanned, " + firstD + " – today (" + str.tostring(math.round(100.0 * n / total)) + "% match)"
 
-string earnLine = ""
+string earnLine  = ""
+string earnLine2 = ""
 if probEarnOn and timeframe.isintraday
     if na(erHi)
         earnLine := "EARN-BREAK waiting for earnings data (or set the manual date)"
@@ -654,15 +675,22 @@ if probEarnOn and timeframe.isintraday
         earnLine := "EARN-BREAK no resolved breaks in loaded history yet"
     else
         string liveTag = ebUpB and not ebUpR ? "BREAK UP LIVE · " : ebDnB and not ebDnR ? "BREAK DOWN LIVE · " : ""
-        earnLine := liveTag + str.tostring(ebRes) + " past breaks: " + str.tostring(math.round(100.0 * ebHit / ebRes)) + "% ran +" + str.tostring(tgt1) + "x, " + str.tostring(math.round(100.0 * ebFake / ebRes)) + "% faked out, typical run +" + str.tostring(f2(ebRunSum / ebRes)) + "x"
+        string sinceTxt = not na(ebFirstKey) ? " since " + f_fmtKey(ebFirstKey) : ""
+        earnLine := liveTag + str.tostring(ebRes) + " breaks across " + str.tostring(ebEvents) + " earnings" + sinceTxt + ": " + str.tostring(math.round(100.0 * ebHit / ebRes)) + "% ran +" + str.tostring(tgt1) + "x, " + str.tostring(math.round(100.0 * ebFake / ebRes)) + "% faked out"
+        float runX = ebRunSum / ebRes
+        float runDollars = not na(yATR) ? runX * yATR : na
+        float runPct = not na(runDollars) and close > 0 ? runDollars / close * 100.0 : na
+        float sessAvg = ebSessSum / ebRes
+        string resolveTxt = sessAvg < 0.5 ? "same session" : "~" + str.tostring(math.round(sessAvg)) + " session" + (math.round(sessAvg) > 1 ? "s" : "")
+        earnLine2 := "typical run +" + str.tostring(f2(runX)) + "x ATR ≈ $" + str.tostring(f2(runDollars)) + " (" + str.tostring(f2(runPct)) + "% move) · resolves in " + resolveTxt
 
 // ───────── Gas tank readout ─────────
 // Rows are packed top-down and the table is cleared first, so switched-off
 // lines leave no empty ghost boxes behind.
-var table g = table.new(position.top_center, 1, 7, border_width = 1, border_color = color.new(color.white, 50))
+var table g = table.new(position.top_center, 1, 8, border_width = 1, border_color = color.new(color.white, 50))
 
 if barstate.islast
-    table.clear(g, 0, 0, 0, 6)
+    table.clear(g, 0, 0, 0, 7)
     if showGas
         string t1 = not isToday ? "GAS waiting 9:30   tank " + str.tostring(f2(yATR)) : "GAS " + str.tostring(math.round(pctLeft)) + "% left   " + str.tostring(f2(xATR)) + "x ATR traveled"
         string t2 = "used " + str.tostring(f2(used)) + " / tank " + str.tostring(f2(yATR)) + "   left " + str.tostring(f2(leftT))
@@ -684,6 +712,9 @@ if barstate.islast
             rIdx += 1
         if probEarnOn and earnLine != ""
             table.cell(g, 0, rIdx, earnLine, bgcolor = color.new(#1a1a2e, 10), text_color = color.new(#ffd54f, 0), text_size = size.tiny)
+            rIdx += 1
+        if probEarnOn and earnLine2 != ""
+            table.cell(g, 0, rIdx, earnLine2, bgcolor = color.new(#1a1a2e, 10), text_color = color.new(#ffd54f, 0), text_size = size.tiny)
             rIdx += 1
 
 var table seT = table.new(position.bottom_right, 1, 1, border_width = 1)
