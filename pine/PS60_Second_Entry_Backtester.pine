@@ -154,6 +154,12 @@ var float tStop  = na
 var float tMax   = na
 var float tATR   = na
 var bool  tLong  = true
+var float lastPiv   = na
+var float lastPush  = na
+var float lastPullP = na
+var float lastInP   = na
+var float lastTgtP  = na
+var bool  lastLong  = true
 var int   nHit   = 0
 var int   nFake  = 0
 var int   nRes   = 0
@@ -190,6 +196,12 @@ if rthBar and tbOK
                 if room >= minLeftX * yATR and tgtPx > close and not na(pbExt) and pbExt < close
                     strategy.entry("L", strategy.long)
                     strategy.exit("Lx", "L", stop = pbExt, limit = tgtPx)
+                    lastPiv   := sePivot
+                    lastPush  := seExt
+                    lastPullP := pbExt
+                    lastInP   := close
+                    lastTgtP  := tgtPx
+                    lastLong  := true
                     tEntry := close
                     tTgt   := tgtPx
                     tStop  := pbExt
@@ -214,6 +226,12 @@ if rthBar and tbOK
                 if room >= minLeftX * yATR and tgtPx < close and not na(pbExt) and pbExt > close
                     strategy.entry("S", strategy.short)
                     strategy.exit("Sx", "S", stop = pbExt, limit = tgtPx)
+                    lastPiv   := sePivot
+                    lastPush  := seExt
+                    lastPullP := pbExt
+                    lastInP   := close
+                    lastTgtP  := tgtPx
+                    lastLong  := false
                     tEntry := close
                     tTgt   := tgtPx
                     tStop  := pbExt
@@ -256,10 +274,10 @@ if closedNow and not na(tEntry)
 // ───────── Stats table + pane plot ─────────
 plot(strategy.equity, "Equity", color.new(#4deeea, 0), 2)
 
-var table t = table.new(position.top_right, 1, 8, border_width = 1, border_color = color.new(color.white, 60))
+var table t = table.new(position.top_right, 1, 9, border_width = 1, border_color = color.new(color.white, 60))
 
 if barstate.islast
-    table.clear(t, 0, 0, 0, 7)
+    table.clear(t, 0, 0, 0, 8)
     int closedT = strategy.closedtrades
     int winsT = strategy.wintrades
     string sampleTxt = str.tostring(daysN) + " days loaded, " + (not na(firstKeyBT) ? f_fmtKey(firstKeyBT) : "?") + " – today · " + str.tostring(closedT) + " trades (" + (daysN > 0 ? str.tostring(f2(closedT * 1.0 / daysN)) : "0") + "/day)"
@@ -281,5 +299,9 @@ if barstate.islast
         table.cell(t, 0, rIdx, "Typical run " + str.tostring(f2(runSum / nRes)) + "x ATR before exit", bgcolor = color.new(color.black, 20), text_color = color.white, text_size = size.tiny)
         rIdx += 1
         table.cell(t, 0, rIdx, "Fakeouts " + str.tostring(math.round(100.0 * nFake / nRes)) + "% (stopped before half the target)", bgcolor = color.new(color.black, 20), text_color = color.new(#ef5350, 0), text_size = size.tiny)
+        rIdx += 1
+    if not na(lastInP)
+        string anat = "Last (" + (lastLong ? "LONG" : "SHORT") + "): pivot " + str.tostring(f2(lastPiv)) + " · flush " + str.tostring(f2(lastPush)) + " · retrace " + str.tostring(f2(lastPullP)) + " · in " + str.tostring(f2(lastInP)) + " · target " + str.tostring(f2(lastTgtP))
+        table.cell(t, 0, rIdx, anat, bgcolor = color.new(color.black, 20), text_color = color.new(#4deeea, 0), text_size = size.tiny)
         rIdx += 1
     table.cell(t, 0, rIdx, timeframe.isintraday ? tbTxt + "  ·  5-min history is limited — scroll left for more days" : "Run this on an intraday chart (5-minute is best)", bgcolor = color.new(#1a1a2e, 10), text_color = color.new(#ffd54f, 0), text_size = size.tiny)
