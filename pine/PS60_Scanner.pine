@@ -140,6 +140,12 @@ f_scan() =>
     int st = not boxOK ? 0 : not seThru ? 1 : not sePulled ? 2 : near ? 4 : 3
     [st, seSide, tbh, tbl, seExt]
 
+// ───────── Chart-timeframe guard ─────────
+// The chart drives every calculation. On a chart slower than 5 minutes the
+// per-ticker engines get too few samples and their states are wrong, so the
+// scanner pauses and says so instead of showing bad rows.
+bool tfOK = timeframe.isintraday and timeframe.in_seconds(timeframe.period) <= 300
+
 // ───────── One data pull per ticker ─────────
 [st1, sd1, bh1, bl1, ex1]      = request.security(sym1 == "" ? syminfo.tickerid : sym1, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
 [st2, sd2, bh2, bl2, ex2]      = request.security(sym2 == "" ? syminfo.tickerid : sym2, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
@@ -163,7 +169,7 @@ f_name(string s) =>
     array.get(parts, array.size(parts) - 1)
 
 f_fire(string s, int st, int sd, float ex) =>
-    if s != "" and st == 4
+    if tfOK and s != "" and st == 4
         alert(f_name(s) + " second entry · " + (sd > 0 ? "LONG" : "SHORT") + " · trigger " + str.tostring(f2(ex)), alert.freq_once_per_bar)
 
 f_fire(sym1, st1, sd1, ex1)
@@ -188,7 +194,9 @@ var table scanT = table.new(tblPos == "Top left" ? position.top_left : tblPos ==
 if barstate.islast
     string tsz = tblSize == "tiny" ? size.tiny : tblSize == "normal" ? size.normal : size.small
     table.clear(scanT, 0, 0, 2, 16)
-    if not compactOn
+    if not tfOK
+        table.cell(scanT, 0, 0, "SCANNER PAUSED — set this chart to 5 minutes (or faster)", bgcolor = color.new(#ef5350, 0), text_color = color.white, text_size = tsz)
+    else if not compactOn
         table.cell(scanT, 0, 0, "TICKER", bgcolor = color.new(#6a1b9a, 0), text_color = color.white, text_size = tsz)
         table.cell(scanT, 1, 0, "STATUS", bgcolor = color.new(#6a1b9a, 0), text_color = color.white, text_size = tsz)
         table.cell(scanT, 2, 0, "LEVEL", bgcolor = color.new(#6a1b9a, 0), text_color = color.white, text_size = tsz)
@@ -203,7 +211,7 @@ if barstate.islast
     int shownN = 0
     for i = 0 to 14
         string s = array.get(symA, i)
-        if s != ""
+        if tfOK and s != ""
             activeN += 1
             int st = array.get(stA, i)
             if not (onlyHot and st < 3)
@@ -221,7 +229,7 @@ if barstate.islast
                     table.cell(scanT, 1, rIdx, stTxt, bgcolor = stBg, text_color = stTx, text_size = tsz)
                     table.cell(scanT, 2, rIdx, lvlTxt, bgcolor = color.new(color.black, 30), text_color = color.new(#b2b5be, 0), text_size = tsz)
                 rIdx += 1
-    if activeN == 0
+    if tfOK and activeN == 0
         table.cell(scanT, 0, compactOn ? 0 : 1, "Add tickers in settings", bgcolor = color.new(color.black, 30), text_color = color.new(#ffd54f, 0), text_size = tsz)
-    else if onlyHot and shownN == 0
+    else if tfOK and onlyHot and shownN == 0
         table.cell(scanT, 0, compactOn ? 0 : 1, "watching " + str.tostring(activeN) + " · none armed", bgcolor = color.new(color.black, 30), text_color = color.new(#b2b5be, 0), text_size = tsz)
