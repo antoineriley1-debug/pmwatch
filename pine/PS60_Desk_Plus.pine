@@ -228,17 +228,19 @@ f_earn() =>
 
 [erHi, erLo, erT] = request.security(syminfo.tickerid, "D", f_earn(), barmerge.gaps_off, barmerge.lookahead_off)
 
-// ───────── Historical day profiles from 30-minute data ─────────
-// The probability sample is built here, in a 30-minute request.security pull,
-// NOT from the chart's own bars — so a 5-minute chart's ~105-day history limit
-// no longer caps the sample. Each historical day's ATR progress is recorded at
-// the twelve 30-minute checkpoints (10:00–15:30) plus its final finish, keyed
-// off calendar dates, RTH bars only, capped at maxDays. Checkpoints store the
-// progress at the moment the checkpoint time is reached (no lookahead — only
-// data that existed at that checkpoint). Each day's ATR and prior close come
-// from a nested daily pull using the offset-[1]-plus-lookahead pattern, which
-// is the non-repainting way to read the prior COMPLETED day.
-f_profile30() =>
+// ───────── Probability engine: sample + matching in 30-minute data ─────────
+// The historical sample AND the matching both run inside this 30-minute
+// request.security pull, so a 5-minute chart's ~105-day history limit does not
+// cap the sample. Only the finished numbers cross back to the chart — never
+// the matrix itself, because TradingView copies a returned collection once per
+// chart bar and that blows the memory limit (runtime error RE10139).
+// Each historical day's ATR progress is recorded at the twelve 30-minute
+// checkpoints (10:00–15:30) plus its finish, keyed off calendar dates, RTH
+// bars only, capped at maxDays. Checkpoints store the progress as of the
+// checkpoint moment — no lookahead. Each day's ATR and prior close come from
+// a nested daily pull using the offset-[1]-plus-lookahead pattern, the
+// non-repainting way to read the prior COMPLETED day.
+f_prob30() =>
     [dAtr, dPrevC] = request.security(syminfo.tickerid, "D", [f_atr()[1], close[1]], barmerge.gaps_off, barmerge.lookahead_on)
     var matrix<float> m = matrix.new<float>(0, 12)
     var float[] fin = array.new_float()
@@ -264,9 +266,9 @@ f_profile30() =>
         ll := na
         lp := na
         dk := bk
+    float mins = (time - timestamp(tz, year(time, tz), month(time, tz), dayofmonth(time, tz), 9, 30)) / 60000.0
     bool rth = not na(time("", "0930-1600", tz))
     if rth and not na(dAtr) and dAtr > 0
-        float mins = (time - timestamp(tz, year(time, tz), month(time, tz), dayofmonth(time, tz), 9, 30)) / 60000.0
         float uPre = not na(hh) ? (not na(dPrevC) ? math.max(hh - ll, math.abs(hh - dPrevC), math.abs(ll - dPrevC)) : hh - ll) : na
         float progPre = not na(uPre) ? uPre / dAtr : na
         if not na(progPre)
@@ -277,9 +279,29 @@ f_profile30() =>
         ll := na(ll) ? low : math.min(ll, low)
         float uNow = not na(dPrevC) ? math.max(hh - ll, math.abs(hh - dPrevC), math.abs(ll - dPrevC)) : hh - ll
         lp := uNow / dAtr
-    [m, fin, keys]
+    int kNow30 = -1
+    if rth
+        for k = 0 to 11
+            if mins >= 30.0 * (k + 1)
+                kNow30 := k
+    int nM = 0
+    int hA = 0
+    int hB = 0
+    float sumF = 0.0
+    if kNow30 >= 0 and not na(lp) and array.size(fin) > 0
+        for i = 0 to array.size(fin) - 1
+            float cp = matrix.get(m, i, kNow30)
+            if not na(cp) and math.abs(cp - lp) <= tolIn
+                nM += 1
+                float fv = array.get(fin, i)
+                sumF += fv
+                if fv >= tgt1
+                    hA += 1
+                if fv >= tgt2
+                    hB += 1
+    [nM, hA, hB, sumF, array.size(fin), array.size(keys) > 0 ? array.get(keys, 0) : int(na), lp]
 
-[cpM30, finals30, keys30] = request.security(syminfo.tickerid, "30", f_profile30(), barmerge.gaps_off, barmerge.lookahead_off)
+[pN, pH1, pH2, pSum, pTot, pFirst, pProg] = request.security(syminfo.tickerid, "30", f_prob30(), barmerge.gaps_off, barmerge.lookahead_off)
 
 // ───────── Tank math ─────────
 bool isToday = not na(dT) and year(dT, tz) == year(timenow, tz) and month(dT, tz) == month(timenow, tz) and dayofmonth(dT, tz) == dayofmonth(timenow, tz)
@@ -674,38 +696,22 @@ if showProb
                 kNow := k
         if kNow < 0
             probLine := "TODAY · odds start at 10:00"
-        else if array.size(finals30) < minDays
-            probLine := "TODAY · building sample (" + str.tostring(array.size(finals30)) + " days stored)"
-        else if na(lastProg)
+        else if pTot < minDays
+            probLine := "TODAY · building sample (" + str.tostring(math.round(pTot)) + " days stored)"
+        else if na(pProg)
             probLine := "TODAY · no data yet"
+        else if pN == 0
+            probLine := "TODAY · no similar days in sample"
         else
-            int n = 0
-            int h1 = 0
-            int h2 = 0
-            float sumF = 0.0
-            for i = 0 to array.size(finals30) - 1
-                float cp = matrix.get(cpM30, i, kNow)
-                if not na(cp) and math.abs(cp - lastProg) <= tolIn
-                    n += 1
-                    float fv = array.get(finals30, i)
-                    sumF += fv
-                    if fv >= tgt1
-                        h1 += 1
-                    if fv >= tgt2
-                        h2 += 1
-            if n == 0
-                probLine := "TODAY · no similar days in sample"
-            else
-                float pct1 = 100.0 * h1 / n
-                probLine := "TODAY · " + str.tostring(n) + " similar days  " + str.tostring(math.round(pct1)) + "% ≥" + str.tostring(tgt1) + "x  " + str.tostring(math.round(100.0 * h2 / n)) + "% ≥" + str.tostring(tgt2) + "x  avg " + str.tostring(f2(sumF / n)) + "x"
-                string thin = n < 10 ? " (thin sample, trust it less)" : ""
-                probVerdict := (pct1 >= 70 ? "STRONG GO" : pct1 >= 55 ? "LEANS GO" : pct1 >= 45 ? "COIN FLIP" : "USUALLY STALLS") + " — " + str.tostring(math.round(pct1)) + "% continued" + thin
-                vCol  := pct1 >= 55 ? color.new(#26a69a, 0) : pct1 >= 45 ? color.new(#ffd500, 0) : color.new(#ef5350, 0)
-                vTxtC := pct1 >= 45 ? color.black : color.white
-                probCounts := "TODAY · " + str.tostring(n) + " days looked like today. " + str.tostring(h1) + " reached " + str.tostring(tgt1) + "x, " + str.tostring(h2) + " reached " + str.tostring(tgt2) + "x. Typical finish " + str.tostring(f2(sumF / n)) + "x."
-                int total = array.size(finals30)
-                string firstD = array.size(keys30) > 0 ? f_fmtKey(array.get(keys30, 0)) : "?"
-                probSample := "TODAY · " + str.tostring(n) + " of " + str.tostring(total) + " days scanned, " + firstD + " – today (" + str.tostring(math.round(100.0 * n / total)) + "% match)"
+            float pct1 = 100.0 * pH1 / pN
+            probLine := "TODAY · " + str.tostring(math.round(pN)) + " similar days  " + str.tostring(math.round(pct1)) + "% ≥" + str.tostring(tgt1) + "x  " + str.tostring(math.round(100.0 * pH2 / pN)) + "% ≥" + str.tostring(tgt2) + "x  avg " + str.tostring(f2(pSum / pN)) + "x"
+            string thin = pN < 10 ? " (thin sample, trust it less)" : ""
+            probVerdict := (pct1 >= 70 ? "STRONG GO" : pct1 >= 55 ? "LEANS GO" : pct1 >= 45 ? "COIN FLIP" : "USUALLY STALLS") + " — " + str.tostring(math.round(pct1)) + "% continued" + thin
+            vCol  := pct1 >= 55 ? color.new(#26a69a, 0) : pct1 >= 45 ? color.new(#ffd500, 0) : color.new(#ef5350, 0)
+            vTxtC := pct1 >= 45 ? color.black : color.white
+            probCounts := "TODAY · " + str.tostring(math.round(pN)) + " days looked like today. " + str.tostring(math.round(pH1)) + " reached " + str.tostring(tgt1) + "x, " + str.tostring(math.round(pH2)) + " reached " + str.tostring(tgt2) + "x. Typical finish " + str.tostring(f2(pSum / pN)) + "x."
+            string firstD = not na(pFirst) ? f_fmtKey(math.round(pFirst)) : "?"
+            probSample := "TODAY · " + str.tostring(math.round(pN)) + " of " + str.tostring(math.round(pTot)) + " days scanned, " + firstD + " – today (" + str.tostring(math.round(100.0 * pN / pTot)) + "% match)"
 
 string earnLine  = ""
 string earnLine2 = ""
