@@ -666,18 +666,18 @@ color  vCol  = color.new(color.gray, 0)
 color  vTxtC = color.white
 if showProb
     if not timeframe.isintraday
-        probLine := "PROB needs an intraday chart"
+        probLine := "TODAY · needs an intraday chart"
     else
         int kNow = -1
         for k = 0 to 11
             if minsSince >= 30.0 * (k + 1)
                 kNow := k
         if kNow < 0
-            probLine := "PROB starts at 10:00"
+            probLine := "TODAY · odds start at 10:00"
         else if array.size(finals30) < minDays
-            probLine := "PROB building sample (" + str.tostring(array.size(finals30)) + " days stored)"
+            probLine := "TODAY · building sample (" + str.tostring(array.size(finals30)) + " days stored)"
         else if na(lastProg)
-            probLine := "PROB no data yet today"
+            probLine := "TODAY · no data yet"
         else
             int n = 0
             int h1 = 0
@@ -694,36 +694,36 @@ if showProb
                     if fv >= tgt2
                         h2 += 1
             if n == 0
-                probLine := "PROB no similar days in sample"
+                probLine := "TODAY · no similar days in sample"
             else
                 float pct1 = 100.0 * h1 / n
-                probLine := str.tostring(n) + " similar days  " + str.tostring(math.round(pct1)) + "% ≥" + str.tostring(tgt1) + "x  " + str.tostring(math.round(100.0 * h2 / n)) + "% ≥" + str.tostring(tgt2) + "x  avg " + str.tostring(f2(sumF / n)) + "x"
+                probLine := "TODAY · " + str.tostring(n) + " similar days  " + str.tostring(math.round(pct1)) + "% ≥" + str.tostring(tgt1) + "x  " + str.tostring(math.round(100.0 * h2 / n)) + "% ≥" + str.tostring(tgt2) + "x  avg " + str.tostring(f2(sumF / n)) + "x"
                 string thin = n < 10 ? " (thin sample, trust it less)" : ""
                 probVerdict := (pct1 >= 70 ? "STRONG GO" : pct1 >= 55 ? "LEANS GO" : pct1 >= 45 ? "COIN FLIP" : "USUALLY STALLS") + " — " + str.tostring(math.round(pct1)) + "% continued" + thin
                 vCol  := pct1 >= 55 ? color.new(#26a69a, 0) : pct1 >= 45 ? color.new(#ffd500, 0) : color.new(#ef5350, 0)
                 vTxtC := pct1 >= 45 ? color.black : color.white
-                probCounts := str.tostring(n) + " days looked like today. " + str.tostring(h1) + " reached " + str.tostring(tgt1) + "x, " + str.tostring(h2) + " reached " + str.tostring(tgt2) + "x. Typical finish " + str.tostring(f2(sumF / n)) + "x."
+                probCounts := "TODAY · " + str.tostring(n) + " days looked like today. " + str.tostring(h1) + " reached " + str.tostring(tgt1) + "x, " + str.tostring(h2) + " reached " + str.tostring(tgt2) + "x. Typical finish " + str.tostring(f2(sumF / n)) + "x."
                 int total = array.size(finals30)
                 string firstD = array.size(keys30) > 0 ? f_fmtKey(array.get(keys30, 0)) : "?"
-                probSample := str.tostring(n) + " of " + str.tostring(total) + " days scanned, " + firstD + " – today (" + str.tostring(math.round(100.0 * n / total)) + "% match)"
+                probSample := "TODAY · " + str.tostring(n) + " of " + str.tostring(total) + " days scanned, " + firstD + " – today (" + str.tostring(math.round(100.0 * n / total)) + "% match)"
 
 string earnLine  = ""
 string earnLine2 = ""
 if probEarnOn and timeframe.isintraday
     if na(erHi)
-        earnLine := "EARN-BREAK waiting for earnings data (or set the manual date)"
+        earnLine := "EARN · waiting for earnings data (or set the manual date)"
     else if ebRes == 0
-        earnLine := "EARN-BREAK no resolved breaks in loaded history yet"
+        earnLine := "EARN · no resolved breaks in loaded history yet"
     else
         string liveTag = ebUpB and not ebUpR ? "BREAK UP LIVE · " : ebDnB and not ebDnR ? "BREAK DOWN LIVE · " : ""
         string sinceTxt = not na(ebFirstKey) ? " since " + f_fmtKey(ebFirstKey) : ""
-        earnLine := liveTag + str.tostring(ebRes) + " breaks across " + str.tostring(ebEvents) + " earnings" + sinceTxt + ": " + str.tostring(math.round(100.0 * ebHit / ebRes)) + "% ran +" + str.tostring(tgt1) + "x, " + str.tostring(math.round(100.0 * ebFake / ebRes)) + "% faked out"
+        earnLine := "EARN · " + liveTag + str.tostring(ebRes) + " breaks across " + str.tostring(ebEvents) + " earnings" + sinceTxt + ": " + str.tostring(math.round(100.0 * ebHit / ebRes)) + "% ran +" + str.tostring(tgt1) + "x, " + str.tostring(math.round(100.0 * ebFake / ebRes)) + "% faked out"
         float runX = ebRunSum / ebRes
         float runDollars = not na(yATR) ? runX * yATR : na
         float runPct = not na(runDollars) and close > 0 ? runDollars / close * 100.0 : na
         float sessAvg = ebSessSum / ebRes
         string resolveTxt = sessAvg < 0.5 ? "same session" : "~" + str.tostring(math.round(sessAvg)) + " session" + (math.round(sessAvg) > 1 ? "s" : "")
-        earnLine2 := "typical run +" + str.tostring(f2(runX)) + "x ATR ≈ $" + str.tostring(f2(runDollars)) + " (" + str.tostring(f2(runPct)) + "% move) · resolves in " + resolveTxt
+        earnLine2 := "EARN · typical run +" + str.tostring(f2(runX)) + "x ATR ≈ $" + str.tostring(f2(runDollars)) + " (" + str.tostring(f2(runPct)) + "% move) · resolves in " + resolveTxt
 
 // ───────── Gas tank readout ─────────
 // Rows are packed top-down and the table is cleared first, so switched-off
@@ -746,16 +746,16 @@ if barstate.islast
             table.cell(g, 0, rIdx, probVerdict, bgcolor = vCol, text_color = vTxtC, text_size = size.small)
             rIdx += 1
         if showProb and probCounts != ""
-            table.cell(g, 0, rIdx, probCounts, bgcolor = color.new(color.black, 20), text_color = color.white, text_size = size.tiny)
+            table.cell(g, 0, rIdx, probCounts, bgcolor = color.new(#1a1a2e, 10), text_color = color.new(#4deeea, 0), text_size = size.tiny)
             rIdx += 1
         if showProb and probSample != ""
-            table.cell(g, 0, rIdx, probSample, bgcolor = color.new(color.black, 20), text_color = color.new(#b2b5be, 0), text_size = size.tiny)
+            table.cell(g, 0, rIdx, probSample, bgcolor = color.new(#1a1a2e, 10), text_color = color.new(#4deeea, 30), text_size = size.tiny)
             rIdx += 1
         if probEarnOn and earnLine != ""
-            table.cell(g, 0, rIdx, earnLine, bgcolor = color.new(#1a1a2e, 10), text_color = color.new(#ffd54f, 0), text_size = size.tiny)
+            table.cell(g, 0, rIdx, earnLine, bgcolor = color.new(#2e1e00, 5), text_color = color.new(#ffd54f, 0), text_size = size.tiny)
             rIdx += 1
         if probEarnOn and earnLine2 != ""
-            table.cell(g, 0, rIdx, earnLine2, bgcolor = color.new(#1a1a2e, 10), text_color = color.new(#ffd54f, 0), text_size = size.tiny)
+            table.cell(g, 0, rIdx, earnLine2, bgcolor = color.new(#2e1e00, 5), text_color = color.new(#ffd54f, 0), text_size = size.tiny)
             rIdx += 1
 
 var table seT = table.new(position.bottom_right, 1, 1, border_width = 1)
