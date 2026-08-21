@@ -10,8 +10,11 @@ strategy("PS60 Second-Entry Backtester", "PS60-BT", overlay = false, initial_cap
 // drawdown, trade list) is available under the Strategy Tester tab, on top of
 // the custom stats table drawn in this pane.
 //
-// KNOWN LIMIT: on 5-minute bars TradingView loads limited history, so results
-// are a small sample. Scrolling the chart LEFT loads more days into the sample.
+// KNOWN LIMIT: TradingView requires strategy orders to execute on the chart's
+// own bars, so the TRADE sample here is capped by the chart's loaded 5-minute
+// history (roughly 100 trading days). This is a platform constraint on
+// strategies, not a bug — the desk's probability sample escapes it via a data
+// pull, but simulated trades cannot. Scrolling the chart LEFT loads more days.
 //
 // Fills are modeled at bar close on the signal bar — good enough for hit-rate
 // work, not a substitute for live fills.
@@ -39,7 +42,7 @@ int    lastEntryMin = input.int(330, "No new entries after (minutes past 9:30)",
 bool   eodOn      = input.bool(true, "Close everything at 3:55 PM", group = G3)
 
 string G4 = "Read me"
-bool noteA = input.bool(true, "ℹ Small-sample warning (read this tooltip)", group = G4, tooltip = "On 5-minute bars TradingView loads limited history, so these results come from a small sample of days. Scroll the chart LEFT — as older bars load in, they are added to the test automatically. The stats table shows exactly how many days and trades the numbers come from. Treat anything under ~30 trades as a sketch, not a verdict.")
+bool noteA = input.bool(true, "ℹ Small-sample warning (read this tooltip)", group = G4, tooltip = "TradingView requires strategy trades to execute on the chart's own bars, so this backtest is capped by the chart's loaded 5-minute history (roughly 100 trading days) — a platform constraint on strategies, which is why the desk's probability sample can reach further back but simulated trades cannot. Scroll the chart LEFT — as older bars load in, they join the test automatically. The stats table shows exactly how many days and trades the numbers come from. Treat anything under ~30 trades as a sketch, not a verdict.")
 
 // ───────── ATR + tight box from completed daily bars ─────────
 f_atr() =>
@@ -79,10 +82,11 @@ f_daily() =>
 f2(float v) => math.round(v * 100.0) / 100.0
 
 f_fmtKey(int k) =>
+    int y = k / 10000
     int m = k / 100 % 100
     int d = k % 100
     string mn = m == 1 ? "Jan" : m == 2 ? "Feb" : m == 3 ? "Mar" : m == 4 ? "Apr" : m == 5 ? "May" : m == 6 ? "Jun" : m == 7 ? "Jul" : m == 8 ? "Aug" : m == 9 ? "Sep" : m == 10 ? "Oct" : m == 11 ? "Nov" : "Dec"
-    mn + " " + str.tostring(d)
+    mn + " " + str.tostring(d) + " '" + str.tostring(y % 100)
 
 // ───────── Session plumbing ─────────
 // Day rollover keys off the calendar date of each bar (works with or without

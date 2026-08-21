@@ -3,7 +3,9 @@ indicator("PS60 Desk+", "DESK+", overlay = true, max_lines_count = 300, max_labe
 
 // One ATR feeds everything: tank, levels, second entry, probability.
 // ATR = prior COMPLETED day, so levels are static all session. Nothing drifts.
-// PROB engine: run on a 5-minute chart for the biggest historical sample.
+// PROB engine: the historical sample is built from a 30-minute data pull, so
+// it is NOT capped by the chart's loaded 5-minute bars — trade the 5-minute
+// chart and still scan up to the full 300-day sample.
 // ATR levels: live color = still reachable, spent color = traveled. Price always shown.
 // Tight Box (outlier reject) is OFF by default — turn its MASTER on to replace the
 // daily box and drive the second-entry pivot automatically off the box edges.
@@ -94,11 +96,11 @@ int    earnDateIn   = input.time(timestamp("2025-01-01T00:00:00"), "Manual earni
 color  cEarn        = input.color(color.new(#00bcd4, 0), "Line color", group = GE)
 
 string G5 = "Probability (backtest)"
-bool  showProb = input.bool(true, "Continuation stats", group = G5, tooltip = "How it works: every past day in loaded history gets its ATR progress (range used ÷ ATR) recorded at twelve 30-minute checkpoints from 10:00 to 15:30, plus where it finished. Live, today's progress at the current checkpoint is matched against those stored days, and the readout tells you how the similar days finished. The sample rebuilds from loaded chart history each time the script loads — it is not saved anywhere — so run a 5-minute chart and scroll left for the biggest sample.")
+bool  showProb = input.bool(true, "Continuation stats", group = G5, tooltip = "How it works: every past day in loaded history gets its ATR progress (range used ÷ ATR) recorded at twelve 30-minute checkpoints from 10:00 to 15:30, plus where it finished. Live, today's progress at the current checkpoint is matched against those stored days, and the readout tells you how the similar days finished. The sample is built from a 30-minute data pull, so it is NOT capped by the 5-minute chart's loaded history — trade the 5-minute chart and still get up to the full day cap below. It rebuilds every time the script loads and is not saved anywhere. In Bar Replay the pull is cut off at the replay moment, so the sample is exactly what existed then — same construction, no lookahead.")
 float tolIn    = input.float(0.15, "Similar day = within this × ATR of today", minval = 0.05, step = 0.05, group = G5, tooltip = "The tolerance band. At the current checkpoint, a past day counts as similar when its ATR progress was within this many ATRs of today's. 0.15 means within 15% of the tank either way. Tighter = fewer but closer matches.")
 float tgt1     = input.float(1.0, "Target #1 (× ATR)", minval = 0.5, step = 0.1, group = G5, tooltip = "The readout reports how many similar days finished at or beyond this much total travel. Also used as the run target for the earnings-break stats.")
 float tgt2     = input.float(1.5, "Target #2 (× ATR)", minval = 0.5, step = 0.1, group = G5, tooltip = "Second finish line for the odds readout.")
-int   maxDays  = input.int(300, "Max days stored", minval = 50, maxval = 500, group = G5, tooltip = "Sample cap — oldest days fall off first.")
+int   maxDays  = input.int(300, "Max days stored", minval = 50, maxval = 500, group = G5, tooltip = "Sample cap — oldest days fall off first. How far back the sample actually reaches depends on how much 30-minute history TradingView serves for the symbol and your plan; the sample-context line in the readout always shows the true span.")
 int   minDays  = input.int(20, "Min days before stats print", minval = 5, maxval = 100, group = G5, tooltip = "Below this the sample is too thin to say anything, so the readout stays quiet while it builds.")
 bool  probEarnOn = input.bool(false, "Earnings-break stats", group = G5, tooltip = "Needs the earnings reaction bar to have data. Every time price broke the reaction high or low in loaded history, this tracked what happened next: reaching Target #1 × ATR beyond the edge counts as a run; closing back inside the range first counts as a fakeout. The readout line shows how often each happened and the typical run distance.")
 
@@ -113,10 +115,11 @@ bool earnSame = earnDayMode == "Same session (pre-market reports)"
 f2(float v) => math.round(v * 100.0) / 100.0
 
 f_fmtKey(int k) =>
+    int y = k / 10000
     int m = k / 100 % 100
     int d = k % 100
     string mn = m == 1 ? "Jan" : m == 2 ? "Feb" : m == 3 ? "Mar" : m == 4 ? "Apr" : m == 5 ? "May" : m == 6 ? "Jun" : m == 7 ? "Jul" : m == 8 ? "Aug" : m == 9 ? "Sep" : m == 10 ? "Oct" : m == 11 ? "Nov" : "Dec"
-    mn + " " + str.tostring(d)
+    mn + " " + str.tostring(d) + " '" + str.tostring(y % 100)
 
 // ───────── One ATR to rule them all ─────────
 f_atr() =>
@@ -225,6 +228,59 @@ f_earn() =>
 
 [erHi, erLo, erT] = request.security(syminfo.tickerid, "D", f_earn(), barmerge.gaps_off, barmerge.lookahead_off)
 
+// ───────── Historical day profiles from 30-minute data ─────────
+// The probability sample is built here, in a 30-minute request.security pull,
+// NOT from the chart's own bars — so a 5-minute chart's ~105-day history limit
+// no longer caps the sample. Each historical day's ATR progress is recorded at
+// the twelve 30-minute checkpoints (10:00–15:30) plus its final finish, keyed
+// off calendar dates, RTH bars only, capped at maxDays. Checkpoints store the
+// progress at the moment the checkpoint time is reached (no lookahead — only
+// data that existed at that checkpoint). Each day's ATR and prior close come
+// from a nested daily pull using the offset-[1]-plus-lookahead pattern, which
+// is the non-repainting way to read the prior COMPLETED day.
+f_profile30() =>
+    [dAtr, dPrevC] = request.security(syminfo.tickerid, "D", [f_atr()[1], close[1]], barmerge.gaps_off, barmerge.lookahead_on)
+    var matrix<float> m = matrix.new<float>(0, 12)
+    var float[] fin = array.new_float()
+    var int[] keys = array.new_int()
+    var float[] cp12 = array.new_float(12, na)
+    var float hh = na
+    var float ll = na
+    var float lp = na
+    var int dk = na
+    int bk = year(time, tz) * 10000 + month(time, tz) * 100 + dayofmonth(time, tz)
+    if na(dk) or bk != dk
+        if not na(lp)
+            matrix.add_row(m, matrix.rows(m), array.copy(cp12))
+            array.push(fin, lp)
+            array.push(keys, dk)
+            if array.size(fin) > maxDays
+                matrix.remove_row(m, 0)
+                array.shift(fin)
+                array.shift(keys)
+        for i = 0 to 11
+            array.set(cp12, i, na)
+        hh := na
+        ll := na
+        lp := na
+        dk := bk
+    bool rth = not na(time("", "0930-1600", tz))
+    if rth and not na(dAtr) and dAtr > 0
+        float mins = (time - timestamp(tz, year(time, tz), month(time, tz), dayofmonth(time, tz), 9, 30)) / 60000.0
+        float uPre = not na(hh) ? (not na(dPrevC) ? math.max(hh - ll, math.abs(hh - dPrevC), math.abs(ll - dPrevC)) : hh - ll) : na
+        float progPre = not na(uPre) ? uPre / dAtr : na
+        if not na(progPre)
+            for k = 0 to 11
+                if mins >= 30.0 * (k + 1) and na(array.get(cp12, k))
+                    array.set(cp12, k, progPre)
+        hh := na(hh) ? high : math.max(hh, high)
+        ll := na(ll) ? low : math.min(ll, low)
+        float uNow = not na(dPrevC) ? math.max(hh - ll, math.abs(hh - dPrevC), math.abs(ll - dPrevC)) : hh - ll
+        lp := uNow / dAtr
+    [m, fin, keys]
+
+[cpM30, finals30, keys30] = request.security(syminfo.tickerid, "30", f_profile30(), barmerge.gaps_off, barmerge.lookahead_off)
+
 // ───────── Tank math ─────────
 bool isToday = not na(dT) and year(dT, tz) == year(timenow, tz) and month(dT, tz) == month(timenow, tz) and dayofmonth(dT, tz) == dayofmonth(timenow, tz)
 
@@ -233,13 +289,11 @@ float leftT = na(yATR) ? na : math.max(0.0, yATR - used)
 float pctLeft = not na(yATR) and yATR > 0 ? math.max(0.0, 100.0 - used / yATR * 100.0) : na
 float xATR = not na(yATR) and yATR > 0 ? used / yATR : na
 
-// ───────── Probability engine ─────────
-// Day rollover keys off the calendar date of each bar (works with or
-// without extended hours). Range tracker seeds ONLY from RTH bars.
-var matrix<float> cpM   = matrix.new<float>(0, 12)
-var float[] finals      = array.new_float()
-var int[]   dayKeysArr  = array.new_int()
-var float[] tempCp      = array.new_float(12, na)
+// ───────── Probability engine: TODAY's live progress ─────────
+// Only today's live tracking runs on the chart's bars — the historical sample
+// comes from the 30-minute pull above. Day rollover keys off the calendar date
+// of each bar (works with or without extended hours). Range tracker seeds ONLY
+// from RTH bars.
 var float rHi           = na
 var float rLo           = na
 var float lastProg      = na
@@ -257,16 +311,6 @@ bool newSess = na(dayKey) or barKey != dayKey
 if timeframe.isintraday
     if newSess
         sessCount += 1
-        if not na(lastProg)
-            matrix.add_row(cpM, matrix.rows(cpM), array.copy(tempCp))
-            array.push(finals, lastProg)
-            array.push(dayKeysArr, dayKey)
-            if array.size(finals) > maxDays
-                matrix.remove_row(cpM, 0)
-                array.shift(finals)
-                array.shift(dayKeysArr)
-        for i = 0 to 11
-            array.set(tempCp, i, na)
         rHi := na
         rLo := na
         lastProg := na
@@ -278,9 +322,6 @@ if timeframe.isintraday
         float prog = not na(yATR) and yATR > 0 ? uNow / yATR : na
         if not na(prog)
             lastProg := prog
-            for k = 0 to 11
-                if minsSince >= 30.0 * (k + 1) and na(array.get(tempCp, k))
-                    array.set(tempCp, k, prog)
 
 // ───────── Earnings-break stats ─────────
 // For every earnings reaction range in loaded history: a break of the high or
@@ -633,8 +674,8 @@ if showProb
                 kNow := k
         if kNow < 0
             probLine := "PROB starts at 10:00"
-        else if array.size(finals) < minDays
-            probLine := "PROB building sample (" + str.tostring(array.size(finals)) + " days stored)"
+        else if array.size(finals30) < minDays
+            probLine := "PROB building sample (" + str.tostring(array.size(finals30)) + " days stored)"
         else if na(lastProg)
             probLine := "PROB no data yet today"
         else
@@ -642,11 +683,11 @@ if showProb
             int h1 = 0
             int h2 = 0
             float sumF = 0.0
-            for i = 0 to array.size(finals) - 1
-                float cp = matrix.get(cpM, i, kNow)
+            for i = 0 to array.size(finals30) - 1
+                float cp = matrix.get(cpM30, i, kNow)
                 if not na(cp) and math.abs(cp - lastProg) <= tolIn
                     n += 1
-                    float fv = array.get(finals, i)
+                    float fv = array.get(finals30, i)
                     sumF += fv
                     if fv >= tgt1
                         h1 += 1
@@ -662,8 +703,8 @@ if showProb
                 vCol  := pct1 >= 55 ? color.new(#26a69a, 0) : pct1 >= 45 ? color.new(#ffd500, 0) : color.new(#ef5350, 0)
                 vTxtC := pct1 >= 45 ? color.black : color.white
                 probCounts := str.tostring(n) + " days looked like today. " + str.tostring(h1) + " reached " + str.tostring(tgt1) + "x, " + str.tostring(h2) + " reached " + str.tostring(tgt2) + "x. Typical finish " + str.tostring(f2(sumF / n)) + "x."
-                int total = array.size(finals)
-                string firstD = array.size(dayKeysArr) > 0 ? f_fmtKey(array.get(dayKeysArr, 0)) : "?"
+                int total = array.size(finals30)
+                string firstD = array.size(keys30) > 0 ? f_fmtKey(array.get(keys30, 0)) : "?"
                 probSample := str.tostring(n) + " of " + str.tostring(total) + " days scanned, " + firstD + " – today (" + str.tostring(math.round(100.0 * n / total)) + "% match)"
 
 string earnLine  = ""
