@@ -49,6 +49,8 @@ string sym15 = input.symbol("", "Ticker 15", group = G4)
 string G5 = "Display"
 string tblPos  = input.string("Top right", "Table position", options = ["Top right", "Top left", "Bottom right", "Bottom left"], group = G5)
 string tblSize = input.string("small", "Text size", options = ["tiny", "small", "normal"], group = G5)
+bool   onlyHot  = input.bool(false, "Only show ARMED / NEAR rows", group = G5, tooltip = "Hides WAIT and THRU rows so the table only lists tickers where a second entry is loaded. The alert still watches every ticker either way — this only trims the table.")
+bool   compactOn = input.bool(false, "Compact (single column)", group = G5, tooltip = "Squeezes each ticker to one small cell: TSLA · ARMED L · 366.5. Combine with tiny text for the smallest possible footprint.")
 
 // ───────── Helpers ─────────
 f2(float v) => math.round(v * 100.0) / 100.0
@@ -186,31 +188,40 @@ var table scanT = table.new(tblPos == "Top left" ? position.top_left : tblPos ==
 if barstate.islast
     string tsz = tblSize == "tiny" ? size.tiny : tblSize == "normal" ? size.normal : size.small
     table.clear(scanT, 0, 0, 2, 16)
-    table.cell(scanT, 0, 0, "TICKER", bgcolor = color.new(#6a1b9a, 0), text_color = color.white, text_size = tsz)
-    table.cell(scanT, 1, 0, "STATUS", bgcolor = color.new(#6a1b9a, 0), text_color = color.white, text_size = tsz)
-    table.cell(scanT, 2, 0, "LEVEL", bgcolor = color.new(#6a1b9a, 0), text_color = color.white, text_size = tsz)
+    if not compactOn
+        table.cell(scanT, 0, 0, "TICKER", bgcolor = color.new(#6a1b9a, 0), text_color = color.white, text_size = tsz)
+        table.cell(scanT, 1, 0, "STATUS", bgcolor = color.new(#6a1b9a, 0), text_color = color.white, text_size = tsz)
+        table.cell(scanT, 2, 0, "LEVEL", bgcolor = color.new(#6a1b9a, 0), text_color = color.white, text_size = tsz)
     string[] symA = array.from(sym1, sym2, sym3, sym4, sym5, sym6, sym7, sym8, sym9, sym10, sym11, sym12, sym13, sym14, sym15)
     int[] stA = array.from(st1, st2, st3, st4, st5, st6, st7, st8, st9, st10, st11, st12, st13, st14, st15)
     int[] sdA = array.from(sd1, sd2, sd3, sd4, sd5, sd6, sd7, sd8, sd9, sd10, sd11, sd12, sd13, sd14, sd15)
     float[] bhA = array.from(bh1, bh2, bh3, bh4, bh5, bh6, bh7, bh8, bh9, bh10, bh11, bh12, bh13, bh14, bh15)
     float[] blA = array.from(bl1, bl2, bl3, bl4, bl5, bl6, bl7, bl8, bl9, bl10, bl11, bl12, bl13, bl14, bl15)
     float[] exA = array.from(ex1, ex2, ex3, ex4, ex5, ex6, ex7, ex8, ex9, ex10, ex11, ex12, ex13, ex14, ex15)
-    int rIdx = 1
+    int rIdx = compactOn ? 0 : 1
     int activeN = 0
+    int shownN = 0
     for i = 0 to 14
         string s = array.get(symA, i)
         if s != ""
             activeN += 1
             int st = array.get(stA, i)
-            int sd = array.get(sdA, i)
-            string sideTag = sd > 0 ? "L" : sd < 0 ? "S" : ""
-            string stTxt = st == 0 ? "…" : st == 1 ? "WAIT" : st == 2 ? "THRU " + sideTag : st == 3 ? "ARMED " + sideTag : "NEAR " + sideTag
-            color stBg = st == 4 ? color.new(#6a1b9a, 0) : st == 3 ? color.new(#26a69a, 0) : st == 2 ? color.new(#ffd500, 10) : color.new(color.black, 30)
-            color stTx = st == 3 or st == 4 ? color.white : st == 2 ? color.black : color.new(#b2b5be, 0)
-            string lvlTxt = st <= 1 ? str.tostring(f2(array.get(bhA, i))) + " / " + str.tostring(f2(array.get(blA, i))) : str.tostring(f2(array.get(exA, i)))
-            table.cell(scanT, 0, rIdx, f_name(s), bgcolor = color.new(color.black, 30), text_color = color.white, text_size = tsz)
-            table.cell(scanT, 1, rIdx, stTxt, bgcolor = stBg, text_color = stTx, text_size = tsz)
-            table.cell(scanT, 2, rIdx, lvlTxt, bgcolor = color.new(color.black, 30), text_color = color.new(#b2b5be, 0), text_size = tsz)
-            rIdx += 1
+            if not (onlyHot and st < 3)
+                shownN += 1
+                int sd = array.get(sdA, i)
+                string sideTag = sd > 0 ? "L" : sd < 0 ? "S" : ""
+                string stTxt = st == 0 ? "…" : st == 1 ? "WAIT" : st == 2 ? "THRU " + sideTag : st == 3 ? "ARMED " + sideTag : "NEAR " + sideTag
+                color stBg = st == 4 ? color.new(#6a1b9a, 0) : st == 3 ? color.new(#26a69a, 0) : st == 2 ? color.new(#ffd500, 10) : color.new(color.black, 30)
+                color stTx = st == 3 or st == 4 ? color.white : st == 2 ? color.black : color.new(#b2b5be, 0)
+                string lvlTxt = st <= 1 ? str.tostring(f2(array.get(bhA, i))) + " / " + str.tostring(f2(array.get(blA, i))) : str.tostring(f2(array.get(exA, i)))
+                if compactOn
+                    table.cell(scanT, 0, rIdx, f_name(s) + " · " + stTxt + " · " + lvlTxt, bgcolor = stBg, text_color = stTx, text_size = tsz)
+                else
+                    table.cell(scanT, 0, rIdx, f_name(s), bgcolor = color.new(color.black, 30), text_color = color.white, text_size = tsz)
+                    table.cell(scanT, 1, rIdx, stTxt, bgcolor = stBg, text_color = stTx, text_size = tsz)
+                    table.cell(scanT, 2, rIdx, lvlTxt, bgcolor = color.new(color.black, 30), text_color = color.new(#b2b5be, 0), text_size = tsz)
+                rIdx += 1
     if activeN == 0
-        table.cell(scanT, 0, 1, "Add tickers in settings", bgcolor = color.new(color.black, 30), text_color = color.new(#ffd54f, 0), text_size = tsz)
+        table.cell(scanT, 0, compactOn ? 0 : 1, "Add tickers in settings", bgcolor = color.new(color.black, 30), text_color = color.new(#ffd54f, 0), text_size = tsz)
+    else if onlyHot and shownN == 0
+        table.cell(scanT, 0, compactOn ? 0 : 1, "watching " + str.tostring(activeN) + " · none armed", bgcolor = color.new(color.black, 30), text_color = color.new(#b2b5be, 0), text_size = tsz)
