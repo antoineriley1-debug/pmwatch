@@ -657,23 +657,34 @@ if probEarnOn and timeframe.isintraday
         earnLine := liveTag + str.tostring(ebRes) + " past breaks: " + str.tostring(math.round(100.0 * ebHit / ebRes)) + "% ran +" + str.tostring(tgt1) + "x, " + str.tostring(math.round(100.0 * ebFake / ebRes)) + "% faked out, typical run +" + str.tostring(f2(ebRunSum / ebRes)) + "x"
 
 // ───────── Gas tank readout ─────────
+// Rows are packed top-down and the table is cleared first, so switched-off
+// lines leave no empty ghost boxes behind.
 var table g = table.new(position.top_center, 1, 7, border_width = 1, border_color = color.new(color.white, 50))
 
 if barstate.islast
+    table.clear(g, 0, 0, 0, 6)
     if showGas
         string t1 = not isToday ? "GAS waiting 9:30   tank " + str.tostring(f2(yATR)) : "GAS " + str.tostring(math.round(pctLeft)) + "% left   " + str.tostring(f2(xATR)) + "x ATR traveled"
         string t2 = "used " + str.tostring(f2(used)) + " / tank " + str.tostring(f2(yATR)) + "   left " + str.tostring(f2(leftT))
         color bg = not isToday ? color.new(color.gray, 0) : pctLeft >= 40 ? color.new(color.green, 0) : pctLeft >= 15 ? color.new(#ffd500, 5) : color.rgb(215, 133, 133)
         table.cell(g, 0, 0, t1, bgcolor = bg, text_color = color.black, text_size = size.small)
         table.cell(g, 0, 1, t2, bgcolor = color.new(color.black, 20), text_color = color.white, text_size = size.tiny)
-        table.cell(g, 0, 2, showProb ? probLine : "", bgcolor = showProb and probLine != "" ? color.new(#1a1a2e, 10) : color.new(color.black, 100), text_color = color.new(#4deeea, 0), text_size = size.tiny)
-        bool vOn = showProb and probVerdict != ""
-        table.cell(g, 0, 3, vOn ? probVerdict : "", bgcolor = vOn ? vCol : color.new(color.black, 100), text_color = vOn ? vTxtC : color.white, text_size = size.small)
-        table.cell(g, 0, 4, showProb ? probCounts : "", bgcolor = showProb and probCounts != "" ? color.new(color.black, 20) : color.new(color.black, 100), text_color = color.white, text_size = size.tiny)
-        table.cell(g, 0, 5, showProb ? probSample : "", bgcolor = showProb and probSample != "" ? color.new(color.black, 20) : color.new(color.black, 100), text_color = color.new(#b2b5be, 0), text_size = size.tiny)
-        table.cell(g, 0, 6, probEarnOn ? earnLine : "", bgcolor = probEarnOn and earnLine != "" ? color.new(#1a1a2e, 10) : color.new(color.black, 100), text_color = color.new(#ffd54f, 0), text_size = size.tiny)
-    else
-        table.clear(g, 0, 0, 0, 6)
+        int rIdx = 2
+        if showProb and probLine != ""
+            table.cell(g, 0, rIdx, probLine, bgcolor = color.new(#1a1a2e, 10), text_color = color.new(#4deeea, 0), text_size = size.tiny)
+            rIdx += 1
+        if showProb and probVerdict != ""
+            table.cell(g, 0, rIdx, probVerdict, bgcolor = vCol, text_color = vTxtC, text_size = size.small)
+            rIdx += 1
+        if showProb and probCounts != ""
+            table.cell(g, 0, rIdx, probCounts, bgcolor = color.new(color.black, 20), text_color = color.white, text_size = size.tiny)
+            rIdx += 1
+        if showProb and probSample != ""
+            table.cell(g, 0, rIdx, probSample, bgcolor = color.new(color.black, 20), text_color = color.new(#b2b5be, 0), text_size = size.tiny)
+            rIdx += 1
+        if probEarnOn and earnLine != ""
+            table.cell(g, 0, rIdx, earnLine, bgcolor = color.new(#1a1a2e, 10), text_color = color.new(#ffd54f, 0), text_size = size.tiny)
+            rIdx += 1
 
 var table seT = table.new(position.bottom_right, 1, 1, border_width = 1)
 if barstate.islast
