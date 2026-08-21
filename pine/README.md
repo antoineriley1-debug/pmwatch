@@ -18,6 +18,10 @@ thing into the Pine editor (select all → delete → paste), never a snippet.
   Tests the auto-pivot second entry off the tight-box edges with remaining
   ATR as the target filter. Full Strategy Tester report plus a custom stats
   table (win rate, target hit rate, typical run, fakeout rate, sample line).
+- **PS60_Scanner.pine** — watchlist scanner: one script, up to 15 tickers,
+  runs the tight-box auto-pivot second-entry engine on each via its own
+  5-minute data pull, status table, and a single alert() covering every
+  ticker ("Any alert() function call").
 - **PS60_Desk_Plus_v1_original.pine** — the source as received, archived as
   the rollback copy. Do not edit.
 
