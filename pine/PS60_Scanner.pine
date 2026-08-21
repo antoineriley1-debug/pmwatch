@@ -210,7 +210,7 @@ if barstate.islast
                 shownN += 1
                 int sd = array.get(sdA, i)
                 string sideTag = sd > 0 ? "L" : sd < 0 ? "S" : ""
-                string stTxt = st == 0 ? "…" : st == 1 ? "IN BOX" : st == 2 ? "BROKE " + (sd > 0 ? "▲" : "▼") : st == 3 ? "READY " + sideTag : "ENTRY " + sideTag
+                string stTxt = st == 0 ? "…" : st == 1 ? "DISTRIBUTION" : st == 2 ? "BROKE " + (sd > 0 ? "▲" : "▼") : st == 3 ? "READY " + sideTag : "ENTRY " + sideTag
                 color stBg = st == 4 ? color.new(#6a1b9a, 0) : st == 3 ? color.new(#26a69a, 0) : st == 2 ? color.new(#ffd500, 10) : color.new(color.black, 30)
                 color stTx = st == 3 or st == 4 ? color.white : st == 2 ? color.black : color.new(#b2b5be, 0)
                 string lvlTxt = st <= 1 ? "box " + str.tostring(f2(array.get(bhA, i))) + " / " + str.tostring(f2(array.get(blA, i))) : st == 2 ? "push " + str.tostring(f2(array.get(exA, i))) + " · wait pullback" : "trigger " + str.tostring(f2(array.get(exA, i)))
