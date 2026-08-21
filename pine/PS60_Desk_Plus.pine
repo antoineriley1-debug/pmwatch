@@ -79,7 +79,7 @@ float tbSens  = input.float(1.8, "Sensitivity (lower = stricter)", minval = 1.3,
 color cTB     = input.color(color.new(#f5a623, 0), "Tight box color", group = GT)
 
 string G4 = "Second entry"
-bool   show2nd    = input.bool(true, "Second-entry helper", group = G4, tooltip = "The first push through the pivot is the 1st wave — buyers or sellers who rush in and immediately take profit. Their profit-taking is the retrace. The second entry is the 2nd cavalry: the real move after the noise. This helper stays quiet through the 1st wave and only arms after the retrace.")
+bool   show2nd    = input.bool(true, "Second-entry helper", group = G4, tooltip = "The first push through the pivot is the 1st wave — retail traders being liquidated: they chase the break, and their stops and forced exits produce the retrace. The second entry is the 2nd wave — institutional money buying in cheaper (or selling higher, in reverse) and running the stops as it goes. This helper stays quiet through the flush and only arms after the retrace.")
 float  pivotIn    = input.float(0.0, "Pivot (0 = off). Type it. Do not guess.", group = G4, tooltip = "Manual pivot. Only used when the Tight Box MASTER is OFF — when it is on, the pivots come from the box edges automatically.")
 string sideIn     = input.string("Auto", "Side", options = ["Auto", "Long", "Short"], group = G4)
 float  retracePct = input.float(30.0, "Retrace % of first push", minval = 10.0, maxval = 80.0, step = 5.0, group = G4)
