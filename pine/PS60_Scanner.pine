@@ -54,7 +54,7 @@ bool   onlyHot  = input.bool(false, "Only show INSTITUTIONS / ENTRY rows", group
 bool   compactOn = input.bool(true, "Compact (single column)", group = G5, tooltip = "Squeezes each ticker to one small cell: TSLA · ARMED L · 366.5. Combine with tiny text for the smallest possible footprint.")
 
 string G6 = "Next stop (measured potential)"
-bool nsOn = input.bool(true, "Show next stop on active rows", group = G6, tooltip = "PS60 Rule 1: stocks move supply-to-supply / demand-to-demand, and the distance to the next level is the measured potential. For any ticker with a direction — a box break, or price confirmed past the prior day's high/low — the row shows the nearest meaningful level in that direction: the daily EMA stack (4/9/10/13/20/50/65/89/100/200, prior completed day, static all session), PDH/PDL, the remaining-ATR ladder, and whole numbers. Levels stacking within 0.15×ATR merge into one zone and the row shows how many agree (+1, +2…). Levels hugging price (within 0.10×ATR) are skipped. THIN = less than 0.25×ATR of room — not worth it, especially on options. ↑/↓bias = which side of its daily 50 SMA the stock is on. Display-only for now; no alerts fire from this.")
+bool nsOn = input.bool(true, "Show next stop on active rows", group = G6, tooltip = "PS60 Rule 1: stocks move supply-to-supply / demand-to-demand, and the distance to the next level is the measured potential. For any ticker with a direction — a box break, or price confirmed past the prior day's high/low — the row shows the nearest meaningful level in that direction: the daily EMA stack (4/9/10/13/20/50/65/89/100/200, prior completed day, static all session), PDH/PDL, the remaining-ATR ladder, and whole numbers. Levels stacking within 0.15×ATR merge into one zone and the row shows how many agree (+1, +2…). Levels hugging price (within 0.10×ATR) are skipped. THIN = less than 0.25×ATR of room — not worth it, especially on options. ↑/↓bias = which side of its daily 50 SMA the stock is on. Each setup also carries a grade — a PS60-style checklist score, NOT a backtested probability: +2 direction agrees with daily bias, +2 the tank covers the trip, +2 three or more levels at the zone (+1 for two), +2 second entry armed or triggering (+1 earlier stages), +1 not THIN, +1 LINE IN THE SAND at the zone. 8-10 = A+, 6-7 = A, 4-5 = B, below = C. Display-only for now; no alerts fire from this.")
 
 // ───────── Helpers ─────────
 f2(float v) => math.round(v * 100.0) / 100.0
@@ -239,7 +239,17 @@ f_scan() =>
                 tch += 1
             string sandS = tch >= 2 ? " · LINE IN THE SAND (" + str.tostring(tch) + " touches held)" : ""
             string tankS = na(leftD) ? "" : leftD >= dist ? " · $" + str.tostring(f2(leftD)) + " in the tank" : " · only $" + str.tostring(f2(leftD)) + " in the tank"
-            tgtS := (dir > 0 ? "→ SUPPLY " : "→ DEMAND ") + str.tostring(f2(best)) + " · " + names + " (" + str.tostring(cnt) + (cnt > 1 ? " levels)" : " level)") + " · $" + str.tostring(f2(dist)) + " gas needed" + tankS + (thin ? " · THIN" : "") + sandS + (not na(s50d) ? close > s50d ? " · ↑bias" : " · ↓bias" : "")
+            // setup grade: a PS60-style checklist score, not a backtested probability
+            int gsc = 0
+            bool aligned = not na(s50d) and (dir > 0 ? close > s50d : close < s50d)
+            gsc += aligned ? 2 : 0
+            gsc += not na(leftD) and leftD >= dist ? 2 : 0
+            gsc += cnt >= 3 ? 2 : cnt == 2 ? 1 : 0
+            gsc += st >= 3 ? 2 : 1
+            gsc += thin ? 0 : 1
+            gsc += tch >= 2 ? 1 : 0
+            string grd = gsc >= 8 ? "A+" : gsc >= 6 ? "A" : gsc >= 4 ? "B" : "C"
+            tgtS := "grade " + grd + " · " + (dir > 0 ? "→ SUPPLY " : "→ DEMAND ") + str.tostring(f2(best)) + " · " + names + " (" + str.tostring(cnt) + (cnt > 1 ? " levels)" : " level)") + " · $" + str.tostring(f2(dist)) + " gas needed" + tankS + (thin ? " · THIN" : "") + sandS + (not na(s50d) ? close > s50d ? " · ↑bias" : " · ↓bias" : "")
     [st, seSide, tbh, tbl, seExt, tbw, htX, cont, tgtS, pdhV, pdlV]
 
 // ───────── Chart-timeframe guard ─────────
