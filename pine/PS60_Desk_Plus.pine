@@ -743,7 +743,8 @@ if probEarnOn and timeframe.isintraday
         earnLine2 := "EARN · typical run +" + str.tostring(f2(runX)) + "x ATR ≈ $" + str.tostring(f2(runDollars)) + " (" + str.tostring(f2(runPct)) + "% move) · resolves in " + resolveTxt
 
 // ───────── Next stop (measured potential) ─────────
-string nsTxt = ""
+string nsSupTxt = ""
+string nsDemTxt = ""
 if nsOn and not na(yATR) and yATR > 0
     float[] lvP = array.new_float()
     string[] lvN = array.new_string()
@@ -815,19 +816,19 @@ if nsOn and not na(yATR) and yATR > 0
             cntUp += 1
         if not na(bestDn) and math.abs(pv - bestDn) <= 0.15 * yATR
             cntDn += 1
-    string upS = not na(bestUp) ? "▲ " + str.tostring(f2(bestUp)) + " (" + bestUpN + (cntUp > 1 ? " +" + str.tostring(cntUp - 1) : "") + ") $" + str.tostring(f2(bestUp - close)) + (bestUp - close < 0.25 * yATR ? " THIN" : "") : ""
-    string dnS = not na(bestDn) ? "▼ " + str.tostring(f2(bestDn)) + " (" + bestDnN + (cntDn > 1 ? " +" + str.tostring(cntDn - 1) : "") + ") $" + str.tostring(f2(close - bestDn)) + (close - bestDn < 0.25 * yATR ? " THIN" : "") : ""
     string biasS = not na(dS50) ? close > dS50 ? " · ↑bias" : " · ↓bias" : ""
-    if upS != "" or dnS != ""
-        nsTxt := "NEXT " + upS + (upS != "" and dnS != "" ? "   " : "") + dnS + biasS
+    if not na(bestUp)
+        nsSupTxt := "SUPPLY (selling) " + str.tostring(f2(bestUp)) + " · " + bestUpN + " · " + str.tostring(cntUp) + (cntUp > 1 ? " levels" : " level") + " · $" + str.tostring(f2(bestUp - close)) + " away" + (bestUp - close < 0.25 * yATR ? " · THIN" : "") + biasS
+    if not na(bestDn)
+        nsDemTxt := "DEMAND (buying) " + str.tostring(f2(bestDn)) + " · " + bestDnN + " · " + str.tostring(cntDn) + (cntDn > 1 ? " levels" : " level") + " · $" + str.tostring(f2(close - bestDn)) + " away" + (close - bestDn < 0.25 * yATR ? " · THIN" : "") + biasS
 
 // ───────── Gas tank readout ─────────
 // Rows are packed top-down and the table is cleared first, so switched-off
 // lines leave no empty ghost boxes behind.
-var table g = table.new(position.top_center, 1, 9, border_width = 1, border_color = color.new(color.white, 50))
+var table g = table.new(position.top_center, 1, 10, border_width = 1, border_color = color.new(color.white, 50))
 
 if barstate.islast
-    table.clear(g, 0, 0, 0, 8)
+    table.clear(g, 0, 0, 0, 9)
     if showGas
         string t1 = not isToday ? "GAS waiting 9:30   tank " + str.tostring(f2(yATR)) : "GAS " + str.tostring(math.round(pctLeft)) + "% left   " + str.tostring(f2(xATR)) + "x ATR traveled"
         string t2 = "used " + str.tostring(f2(used)) + " / tank " + str.tostring(f2(yATR)) + "   left " + str.tostring(f2(leftT))
@@ -853,8 +854,11 @@ if barstate.islast
         if probEarnOn and earnLine2 != ""
             table.cell(g, 0, rIdx, earnLine2, bgcolor = color.new(#2e1e00, 5), text_color = color.new(#ffd54f, 0), text_size = size.tiny)
             rIdx += 1
-        if nsOn and nsTxt != ""
-            table.cell(g, 0, rIdx, nsTxt, bgcolor = color.new(#00332e, 5), text_color = color.new(#26a69a, 0), text_size = size.tiny)
+        if nsOn and nsSupTxt != ""
+            table.cell(g, 0, rIdx, nsSupTxt, bgcolor = color.new(#330b0b, 5), text_color = color.new(#ef5350, 0), text_size = size.tiny)
+            rIdx += 1
+        if nsOn and nsDemTxt != ""
+            table.cell(g, 0, rIdx, nsDemTxt, bgcolor = color.new(#00332e, 5), text_color = color.new(#26a69a, 0), text_size = size.tiny)
             rIdx += 1
 
 var table seT = table.new(position.bottom_right, 1, 1, border_width = 1)

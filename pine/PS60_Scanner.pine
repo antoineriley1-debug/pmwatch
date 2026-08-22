@@ -214,7 +214,7 @@ f_scan() =>
                     cnt += 1
             float dist = math.abs(best - close)
             bool thin = dist < 0.25 * dAtr
-            tgtS := "→ " + str.tostring(f2(best)) + " (" + bestN + (cnt > 1 ? " +" + str.tostring(cnt - 1) : "") + ") $" + str.tostring(f2(dist)) + (thin ? " · THIN" : "") + (not na(s50d) ? close > s50d ? " · ↑bias" : " · ↓bias" : "")
+            tgtS := (dir > 0 ? "→ SUPPLY " : "→ DEMAND ") + str.tostring(f2(best)) + " · " + bestN + " · " + str.tostring(cnt) + (cnt > 1 ? " levels" : " level") + " · $" + str.tostring(f2(dist)) + " away" + (thin ? " · THIN" : "") + (not na(s50d) ? close > s50d ? " · ↑bias" : " · ↓bias" : "")
     [st, seSide, tbh, tbl, seExt, tbw, htX, cont, tgtS, pdhV, pdlV]
 
 // ───────── Chart-timeframe guard ─────────
