@@ -20,8 +20,9 @@ string tz        = input.string("America/New_York", "Timezone", group = G1)
 
 string G2 = "Tight box (matches the desk)"
 int   tbWin   = input.int(10, "Window (completed daily bars)", minval = 3, maxval = 40, group = G2)
-bool  tbRejOn = input.bool(true, "Outlier rejection", group = G2)
-float tbSens  = input.float(1.8, "Sensitivity (lower = stricter)", minval = 1.3, maxval = 2.5, step = 0.1, group = G2)
+float tbMaxHx = input.float(2.0, "Real box = total height ≤ this × ATR", minval = 0.5, maxval = 5.0, step = 0.25, group = G2, tooltip = "A box only EXISTS when the ticker's whole window fits inside a channel this tall. Wider = NO BOX: no pivots, no alerts for that ticker until it actually consolidates.")
+bool  tbRejOn = input.bool(true, "AND no wild bars allowed", group = G2, tooltip = "A day wider than sensitivity × the window's average bar is a wild bar; even one disqualifies the box entirely.")
+float tbSens  = input.float(1.8, "Wild bar = range over this × average", minval = 1.3, maxval = 2.5, step = 0.1, group = G2)
 
 string G3 = "Second-entry rules (matches the desk)"
 float retracePct  = input.float(30.0, "Retrace % of first push", minval = 10.0, maxval = 80.0, step = 5.0, group = G3, tooltip = "The first push through a box edge is the 1st wave — retail traders being liquidated: they chase the break, and their stops and forced exits produce the retrace, which must give back at least this % of the push (and the ATR floor below). The 2nd wave is institutional money stepping in at better prices and running the stops on the way — the reclaim of the push extreme is the second entry. Long side: institutions buy the pullback cheaper and run the buy stops above. Short side: the same in reverse. The scanner only calls a ticker INSTITUTIONS once the flush has happened.")
@@ -68,26 +69,23 @@ f_tightCalc() =>
     for i = 1 to tbWin
         array.push(rngs, high[i] - low[i])
     float avgR = array.avg(rngs)
-    float[] srt = array.copy(rngs)
-    array.sort(srt, order.ascending)
-    float thr4 = array.get(srt, math.min(3, array.size(srt) - 1))
-    float cut = tbRejOn ? math.max(tbSens * avgR, thr4) : 1.0e18
-    float hh = na
-    float ll = na
+    int wildN = 0
     for i = 1 to tbWin
-        if high[i] - low[i] <= cut
-            hh := na(hh) ? high[i] : math.max(hh, high[i])
-            ll := na(ll) ? low[i] : math.min(ll, low[i])
-    [hh, ll]
+        if high[i] - low[i] > tbSens * avgR
+            wildN += 1
+    float hh = ta.highest(high, tbWin)[1]
+    float ll = ta.lowest(low, tbWin)[1]
+    [hh, ll, wildN]
 
 f_dailyScan() =>
-    [tbh, tbl] = f_tightCalc()
-    [f_atr()[1], close[1], tbh, tbl]
+    [tbh, tbl, tbw] = f_tightCalc()
+    [f_atr()[1], close[1], tbh, tbl, tbw]
 
 // Runs inside each ticker's own 5-minute context. State codes:
 // 0 building/no box · 1 WAIT · 2 THROUGH (wait retrace) · 3 ARMED · 4 NEAR
 f_scan() =>
-    [dAtr, dPrevC, tbh, tbl] = request.security(syminfo.tickerid, "D", f_dailyScan(), barmerge.gaps_off, barmerge.lookahead_on)
+    [dAtr, dPrevC, tbh, tbl, tbw] = request.security(syminfo.tickerid, "D", f_dailyScan(), barmerge.gaps_off, barmerge.lookahead_on)
+    float htX = not na(tbh) and not na(tbl) and not na(dAtr) and dAtr > 0 ? (tbh - tbl) / dAtr : na
     var bool   seThru   = false
     var int    seSide   = 0
     var float  sePivot  = na
@@ -109,7 +107,7 @@ f_scan() =>
         sePulled := false
     lastHr := hr
     bool rth = not na(time("", "0930-1600", tz))
-    bool boxOK = not na(tbh) and not na(tbl) and not na(dAtr) and dAtr > 0
+    bool boxOK = not na(htX) and htX <= tbMaxHx and (not tbRejOn or tbw == 0)
     if rth and boxOK
         if not seThru
             if high > tbh
@@ -138,7 +136,7 @@ f_scan() =>
                     sePulled := true
     bool near = sePulled and not na(seExt) and boxOK and math.abs(close - seExt) <= nearX * dAtr
     int st = not boxOK ? 0 : not seThru ? 1 : not sePulled ? 2 : near ? 4 : 3
-    [st, seSide, tbh, tbl, seExt]
+    [st, seSide, tbh, tbl, seExt, tbw, htX]
 
 // ───────── Chart-timeframe guard ─────────
 // The chart drives every calculation. On a chart slower than 5 minutes the
@@ -147,21 +145,21 @@ f_scan() =>
 bool tfOK = timeframe.isintraday and timeframe.in_seconds(timeframe.period) <= 300
 
 // ───────── One data pull per ticker ─────────
-[st1, sd1, bh1, bl1, ex1]      = request.security(sym1 == "" ? syminfo.tickerid : sym1, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
-[st2, sd2, bh2, bl2, ex2]      = request.security(sym2 == "" ? syminfo.tickerid : sym2, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
-[st3, sd3, bh3, bl3, ex3]      = request.security(sym3 == "" ? syminfo.tickerid : sym3, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
-[st4, sd4, bh4, bl4, ex4]      = request.security(sym4 == "" ? syminfo.tickerid : sym4, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
-[st5, sd5, bh5, bl5, ex5]      = request.security(sym5 == "" ? syminfo.tickerid : sym5, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
-[st6, sd6, bh6, bl6, ex6]      = request.security(sym6 == "" ? syminfo.tickerid : sym6, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
-[st7, sd7, bh7, bl7, ex7]      = request.security(sym7 == "" ? syminfo.tickerid : sym7, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
-[st8, sd8, bh8, bl8, ex8]      = request.security(sym8 == "" ? syminfo.tickerid : sym8, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
-[st9, sd9, bh9, bl9, ex9]      = request.security(sym9 == "" ? syminfo.tickerid : sym9, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
-[st10, sd10, bh10, bl10, ex10] = request.security(sym10 == "" ? syminfo.tickerid : sym10, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
-[st11, sd11, bh11, bl11, ex11] = request.security(sym11 == "" ? syminfo.tickerid : sym11, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
-[st12, sd12, bh12, bl12, ex12] = request.security(sym12 == "" ? syminfo.tickerid : sym12, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
-[st13, sd13, bh13, bl13, ex13] = request.security(sym13 == "" ? syminfo.tickerid : sym13, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
-[st14, sd14, bh14, bl14, ex14] = request.security(sym14 == "" ? syminfo.tickerid : sym14, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
-[st15, sd15, bh15, bl15, ex15] = request.security(sym15 == "" ? syminfo.tickerid : sym15, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
+[st1, sd1, bh1, bl1, ex1, wd1, hx1] = request.security(sym1 == "" ? syminfo.tickerid : sym1, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
+[st2, sd2, bh2, bl2, ex2, wd2, hx2] = request.security(sym2 == "" ? syminfo.tickerid : sym2, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
+[st3, sd3, bh3, bl3, ex3, wd3, hx3] = request.security(sym3 == "" ? syminfo.tickerid : sym3, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
+[st4, sd4, bh4, bl4, ex4, wd4, hx4] = request.security(sym4 == "" ? syminfo.tickerid : sym4, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
+[st5, sd5, bh5, bl5, ex5, wd5, hx5] = request.security(sym5 == "" ? syminfo.tickerid : sym5, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
+[st6, sd6, bh6, bl6, ex6, wd6, hx6] = request.security(sym6 == "" ? syminfo.tickerid : sym6, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
+[st7, sd7, bh7, bl7, ex7, wd7, hx7] = request.security(sym7 == "" ? syminfo.tickerid : sym7, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
+[st8, sd8, bh8, bl8, ex8, wd8, hx8] = request.security(sym8 == "" ? syminfo.tickerid : sym8, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
+[st9, sd9, bh9, bl9, ex9, wd9, hx9] = request.security(sym9 == "" ? syminfo.tickerid : sym9, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
+[st10, sd10, bh10, bl10, ex10, wd10, hx10] = request.security(sym10 == "" ? syminfo.tickerid : sym10, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
+[st11, sd11, bh11, bl11, ex11, wd11, hx11] = request.security(sym11 == "" ? syminfo.tickerid : sym11, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
+[st12, sd12, bh12, bl12, ex12, wd12, hx12] = request.security(sym12 == "" ? syminfo.tickerid : sym12, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
+[st13, sd13, bh13, bl13, ex13, wd13, hx13] = request.security(sym13 == "" ? syminfo.tickerid : sym13, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
+[st14, sd14, bh14, bl14, ex14, wd14, hx14] = request.security(sym14 == "" ? syminfo.tickerid : sym14, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
+[st15, sd15, bh15, bl15, ex15, wd15, hx15] = request.security(sym15 == "" ? syminfo.tickerid : sym15, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
 
 // ───────── Alerts: one alert() covers every ticker ─────────
 f_name(string s) =>
@@ -206,6 +204,8 @@ if barstate.islast
     float[] bhA = array.from(bh1, bh2, bh3, bh4, bh5, bh6, bh7, bh8, bh9, bh10, bh11, bh12, bh13, bh14, bh15)
     float[] blA = array.from(bl1, bl2, bl3, bl4, bl5, bl6, bl7, bl8, bl9, bl10, bl11, bl12, bl13, bl14, bl15)
     float[] exA = array.from(ex1, ex2, ex3, ex4, ex5, ex6, ex7, ex8, ex9, ex10, ex11, ex12, ex13, ex14, ex15)
+    int[] wdA = array.from(wd1, wd2, wd3, wd4, wd5, wd6, wd7, wd8, wd9, wd10, wd11, wd12, wd13, wd14, wd15)
+    float[] hxA = array.from(hx1, hx2, hx3, hx4, hx5, hx6, hx7, hx8, hx9, hx10, hx11, hx12, hx13, hx14, hx15)
     int rIdx = compactOn ? 0 : 1
     int activeN = 0
     int shownN = 0
@@ -218,10 +218,20 @@ if barstate.islast
                 shownN += 1
                 int sd = array.get(sdA, i)
                 string sideTag = sd > 0 ? "L" : sd < 0 ? "S" : ""
-                string stTxt = st == 0 ? "…" : st == 1 ? "DISTRIBUTION" : st == 2 ? "RETAIL FLUSH " + (sd > 0 ? "▲" : "▼") : st == 3 ? "INSTITUTIONS " + sideTag : "ENTRY " + sideTag
+                string stTxt = st == 0 ? "NO BOX" : st == 1 ? "DISTRIBUTION" : st == 2 ? "RETAIL FLUSH " + (sd > 0 ? "▲" : "▼") : st == 3 ? "INSTITUTIONS " + sideTag : "ENTRY " + sideTag
                 color stBg = st == 4 ? color.new(#6a1b9a, 0) : st == 3 ? color.new(#26a69a, 0) : st == 2 ? color.new(#ffd500, 10) : color.new(color.black, 30)
                 color stTx = st == 3 or st == 4 ? color.white : st == 2 ? color.black : color.new(#b2b5be, 0)
-                string lvlTxt = st <= 1 ? "box " + str.tostring(f2(array.get(bhA, i))) + " / " + str.tostring(f2(array.get(blA, i))) : st == 2 ? "push " + str.tostring(f2(array.get(exA, i))) + " · liquidation, wait" : "trigger " + str.tostring(f2(array.get(exA, i)))
+                string lvlTxt = ""
+                if st == 0
+                    int wd = array.get(wdA, i)
+                    float hx = array.get(hxA, i)
+                    lvlTxt := na(hx) ? "building…" : tbRejOn and wd > 0 ? str.tostring(wd) + " wild bar" + (wd > 1 ? "s" : "") : "range " + str.tostring(f2(hx)) + "x ATR > " + str.tostring(tbMaxHx) + "x"
+                else if st == 1
+                    lvlTxt := "box " + str.tostring(f2(array.get(bhA, i))) + " / " + str.tostring(f2(array.get(blA, i)))
+                else if st == 2
+                    lvlTxt := "push " + str.tostring(f2(array.get(exA, i))) + " · liquidation, wait"
+                else
+                    lvlTxt := "trigger " + str.tostring(f2(array.get(exA, i)))
                 if compactOn
                     table.cell(scanT, 0, rIdx, f_name(s) + " · " + stTxt + " · " + lvlTxt, bgcolor = stBg, text_color = stTx, text_size = tsz)
                 else

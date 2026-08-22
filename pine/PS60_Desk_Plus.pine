@@ -74,8 +74,9 @@ color cBoxIn   = input.color(color.new(#42a5f5, 0), "Box color", group = G3)
 string GT = "Tight Box (outlier reject)"
 bool  tbOn    = input.bool(false, "MASTER: tight box replaces daily box + drives auto-pivot", group = GT, tooltip = "ON: this box is the box on the chart, and its edges become the second-entry pivots automatically — upper edge = pivot for longs, lower edge = pivot for shorts. Zero manual input, so you can drop the indicator on a whole watchlist and set second-entry alerts everywhere. OFF: everything works exactly like before, manual pivot included. If this AND the daily box are both off, no box draws and no auto-pivot fires.")
 int   tbWin   = input.int(10, "Window (completed daily bars)", minval = 3, maxval = 40, group = GT, tooltip = "Uses COMPLETED days only, so the edges stay put all session.")
-bool  tbRejOn = input.bool(true, "Outlier rejection", group = GT, tooltip = "Throws out unusually wide days before drawing the box: any day whose high-low range is wider than sensitivity × the window's average range gets excluded. Never rejects below 4 kept days.")
-float tbSens  = input.float(1.8, "Sensitivity (lower = stricter)", minval = 1.3, maxval = 2.5, step = 0.1, group = GT)
+float tbMaxHx = input.float(2.0, "Real box = total height ≤ this × ATR", minval = 0.5, maxval = 5.0, step = 0.25, group = GT, tooltip = "A box only EXISTS when the whole window — every bar, wicks included — fits inside a channel this tall. Wider than that = NO BOX: nothing draws and the auto-pivot stays dark. This is what separates a real consolidation from just measuring the last N bars of a trend.")
+bool  tbRejOn = input.bool(true, "AND no wild bars allowed", group = GT, tooltip = "A day whose high-low range is wider than sensitivity × the window's average bar is a wild bar. With this on, even ONE wild bar disqualifies the box entirely — it is not trimmed out and ignored.")
+float tbSens  = input.float(1.8, "Wild bar = range over this × average", minval = 1.3, maxval = 2.5, step = 0.1, group = GT)
 color cTB     = input.color(color.new(#f5a623, 0), "Tight box color", group = GT)
 
 string G4 = "Second entry"
@@ -130,36 +131,32 @@ f_atr() =>
         "WMA" => ta.wma(trv, atrLen)
         => ta.rma(trv, atrLen)
 
-// Tight box over the last tbWin COMPLETED daily bars (offsets 1..tbWin), so the
-// edges stay static all session. Outlier reject: drop days wider than
-// sensitivity × average range, but never below 4 kept days.
+// Tight box candidate over the last tbWin COMPLETED daily bars (offsets
+// 1..tbWin), so the edges stay static all session. No trimming any more: the
+// candidate is the full window's extremes, and whether it QUALIFIES as a real
+// box is judged in f_daily — the whole window must fit the height cap and,
+// when required, contain zero wild bars.
 f_tightCalc() =>
     float[] rngs = array.new_float()
     for i = 1 to tbWin
         array.push(rngs, high[i] - low[i])
     float avgR = array.avg(rngs)
-    float[] srt = array.copy(rngs)
-    array.sort(srt, order.ascending)
-    float thr4 = array.get(srt, math.min(3, array.size(srt) - 1))
-    float cut = tbRejOn ? math.max(tbSens * avgR, thr4) : 1.0e18
-    float hh = na
-    float ll = na
-    int keptN = 0
-    int oldOff = 1
+    int wildN = 0
     for i = 1 to tbWin
-        if high[i] - low[i] <= cut
-            hh := na(hh) ? high[i] : math.max(hh, high[i])
-            ll := na(ll) ? low[i] : math.min(ll, low[i])
-            keptN += 1
-            oldOff := i
-    [hh, ll, keptN, time[oldOff]]
+        if high[i] - low[i] > tbSens * avgR
+            wildN += 1
+    float hh = ta.highest(high, tbWin)[1]
+    float ll = ta.lowest(low, tbWin)[1]
+    [hh, ll, wildN, time[tbWin]]
 
 f_daily() =>
     float a = f_atr()[1]
-    [tbh, tbl, tbk, tbt] = f_tightCalc()
-    [a, high, low, open, close[1], time, ta.highest(high, boxLen), ta.lowest(low, boxLen), time[boxLen - 1], tbh, tbl, tbk, tbt]
+    [tbh, tbl, tbw, tbt] = f_tightCalc()
+    float htX = not na(tbh) and not na(tbl) and not na(a) and a > 0 ? (tbh - tbl) / a : na
+    bool tbv = not na(htX) and htX <= tbMaxHx and (not tbRejOn or tbw == 0)
+    [a, high, low, open, close[1], time, ta.highest(high, boxLen), ta.lowest(low, boxLen), time[boxLen - 1], tbh, tbl, tbv ? 1 : 0, tbt, tbw, htX]
 
-[yATR, dH, dL, dO, prevC, dT, boxHi, boxLo, boxT0, tbHi, tbLo, tbKept, tbT0] = request.security(syminfo.tickerid, "D", f_daily(), barmerge.gaps_off, barmerge.lookahead_off)
+[yATR, dH, dL, dO, prevC, dT, boxHi, boxLo, boxT0, tbHi, tbLo, tbValidI, tbT0, tbWildN, tbHtX] = request.security(syminfo.tickerid, "D", f_daily(), barmerge.gaps_off, barmerge.lookahead_off)
 
 [oldSup, oldDem] = request.security(syminfo.tickerid, "M", [high[1], low[1]], barmerge.gaps_off, barmerge.lookahead_off)
 
@@ -484,7 +481,7 @@ var float  sePivot    = na
 var float  manualPrev = 0.0
 var int    seDayKey   = na
 
-bool autoPiv = tbOn and not na(tbHi) and not na(tbLo)
+bool autoPiv = tbOn and tbValidI > 0 and not na(tbHi) and not na(tbLo)
 
 if not autoPiv and pivotIn != manualPrev
     seThru     := false
@@ -568,7 +565,7 @@ alertcondition(earnDnX, title = "PS60 earnings range break DOWN", message = "Pri
 // ───────── Box ─────────
 bool tightOK = not boxTight or (not na(boxHi) and not na(boxLo) and not na(yATR) and yATR > 0 and (boxHi - boxLo) <= tightX * yATR)
 bool drawBox = showBox and not tbOn and tightOK and not na(boxHi) and not na(boxLo)
-bool drawTB  = tbOn and not na(tbHi) and not na(tbLo)
+bool drawTB  = tbOn and tbValidI > 0 and not na(tbHi) and not na(tbLo)
 
 var box theBox = na
 
@@ -596,8 +593,8 @@ plot(showAH and timeframe.isintraday ? ahL : na, "After-hours low", color.new(cA
 plot(showOpen ? dO : na, "Today's open", color.new(cOpenIn, 0), 1, display = display.price_scale)
 plot(earnOn ? erHi : na, "Earnings reaction high", color.new(cEarn, 0), 1, display = display.price_scale)
 plot(earnOn ? erLo : na, "Earnings reaction low", color.new(cEarn, 0), 1, display = display.price_scale)
-plot(tbOn ? tbHi : na, "Tight box top", color.new(cTB, 0), 1, display = display.price_scale)
-plot(tbOn ? tbLo : na, "Tight box bottom", color.new(cTB, 0), 1, display = display.price_scale)
+plot(tbOn and tbValidI > 0 ? tbHi : na, "Tight box top", color.new(cTB, 0), 1, display = display.price_scale)
+plot(tbOn and tbValidI > 0 ? tbLo : na, "Tight box bottom", color.new(cTB, 0), 1, display = display.price_scale)
 plot(showWhole ? math.round(close / wStepG) * wStepG : na, "Whole number (nearest)", color.new(cWholeIn, 0), 1, display = display.price_scale)
 
 // ───────── Redraw everything on the last bar ─────────
@@ -609,7 +606,7 @@ if barstate.islast
         theBox := na
     if drawTB
         theBox := box.new(tbT0, tbHi, timenow + 3 * 24 * 60 * 60 * 1000, tbLo, xloc = xloc.bar_time, border_color = cTB, border_width = 2, bgcolor = color.new(cTB, 88), extend = extend.right)
-        f_lvl(true, tbHi, cTB, "solid", 1, "TIGHT EDGE " + str.tostring(f2(tbHi)) + " · kept " + str.tostring(math.round(tbKept)) + "/" + str.tostring(tbWin))
+        f_lvl(true, tbHi, cTB, "solid", 1, "TIGHT EDGE " + str.tostring(f2(tbHi)) + " · " + str.tostring(f2(tbHtX)) + "x ATR tall")
         f_lvl(true, tbLo, cTB, "solid", 1, "TIGHT EDGE " + str.tostring(f2(tbLo)))
     else if drawBox
         theBox := box.new(boxT0, boxHi, timenow + 3 * 24 * 60 * 60 * 1000, boxLo, xloc = xloc.bar_time, border_color = cBoxIn, border_width = 2, bgcolor = cBoxF, extend = extend.right)
@@ -770,5 +767,8 @@ if barstate.islast
         string pivTxt = autoPiv and not seThru ? str.tostring(f2(tbHi)) + " / " + str.tostring(f2(tbLo)) : str.tostring(f2(sePivot))
         string st = not seThru ? "WAIT through " + pivTxt : not sePulled ? "THROUGH  push " + str.tostring(f2(seExt)) + "  wait retrace" : seNear ? "2ND NEAR  " + str.tostring(f2(seExt)) : "2ND ARMED  " + str.tostring(f2(seExt))
         table.cell(seT, 0, 0, st, bgcolor = seNear ? c2ndIn : color.new(color.black, 20), text_color = color.white, text_size = size.small)
+    else if show2nd and tbOn
+        string why = na(tbHtX) ? "building daily data" : tbRejOn and tbWildN > 0 ? str.tostring(math.round(tbWildN)) + " wild bar(s) in window" : "range " + str.tostring(f2(tbHtX)) + "x ATR > " + str.tostring(tbMaxHx) + "x limit"
+        table.cell(seT, 0, 0, "NO BOX — " + why, bgcolor = color.new(color.black, 20), text_color = color.new(#ffd54f, 0), text_size = size.small)
     else
         table.clear(seT, 0, 0, 0, 0)
