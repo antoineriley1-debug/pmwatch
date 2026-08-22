@@ -22,8 +22,10 @@ cut off or unreadable, say so instead of guessing.
 ## THE READOUT ROWS, TOP TO BOTTOM
 1. GAS row. Live session: "GAS 31% left · 0.69x ATR traveled" with color =
    green (>=40% left), yellow (>=15%), red (below). Market closed:
-   "GAS waiting 9:30 · tank N" — no session running; tank shown is the LAST
-   session's tank (it updates once at the next open, then freezes).
+   "GAS waiting 9:30 · tank N · next session tank M" — no session running;
+   the first tank is the LAST session's (used to grade what happened), the
+   second is the NEXT session's (ATR including the last day — the prep
+   number), which becomes the live tank at the open and then freezes.
 2. Usage row. Live: "used A / tank B · left C". Market closed it becomes the
    LAST SESSION RECAP: "last session traveled 1.1x ATR · used A of B tank".
 3. DAY AFTER verdict (colored). "DAY AFTER a <bucket> day: <verdict> ·
