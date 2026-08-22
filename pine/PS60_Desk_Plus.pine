@@ -813,12 +813,22 @@ if nsOn and not na(yATR) and yATR > 0
             bestDnN := array.get(lvN, j)
     int cntUp = 0
     int cntDn = 0
+    string namesUp = ""
+    string namesDn = ""
     for j = 0 to array.size(lvP) - 1
         float pv = array.get(lvP, j)
         if not na(bestUp) and math.abs(pv - bestUp) <= 0.15 * yATR
             cntUp += 1
+            if cntUp <= 3
+                namesUp := namesUp + (cntUp > 1 ? " + " : "") + array.get(lvN, j)
         if not na(bestDn) and math.abs(pv - bestDn) <= 0.15 * yATR
             cntDn += 1
+            if cntDn <= 3
+                namesDn := namesDn + (cntDn > 1 ? " + " : "") + array.get(lvN, j)
+    if cntUp > 3
+        namesUp := namesUp + " +" + str.tostring(cntUp - 3) + " more"
+    if cntDn > 3
+        namesDn := namesDn + " +" + str.tostring(cntDn - 3) + " more"
     string biasS = not na(dS50) ? close > dS50 ? " · ↑bias" : " · ↓bias" : ""
     // line in the sand: a level touched again and again with no close through it
     int tSup = 0
@@ -846,11 +856,11 @@ if nsOn and not na(yATR) and yATR > 0
     if not na(bestUp)
         float needUp = bestUp - close
         string tankUp = na(leftT) ? "" : leftT >= needUp ? " · $" + str.tostring(f2(leftT)) + " in the tank" : " · only $" + str.tostring(f2(leftT)) + " in the tank"
-        nsSupTxt := "SUPPLY (selling) " + str.tostring(f2(bestUp)) + " · " + bestUpN + " · " + str.tostring(cntUp) + (cntUp > 1 ? " levels" : " level") + " · $" + str.tostring(f2(needUp)) + " gas needed" + tankUp + (needUp < 0.25 * yATR ? " · THIN" : "") + sandSup + biasS
+        nsSupTxt := "SUPPLY (selling) " + str.tostring(f2(bestUp)) + " · " + namesUp + " (" + str.tostring(cntUp) + (cntUp > 1 ? " levels)" : " level)") + " · $" + str.tostring(f2(needUp)) + " gas needed" + tankUp + (needUp < 0.25 * yATR ? " · THIN" : "") + sandSup + biasS
     if not na(bestDn)
         float needDn = close - bestDn
         string tankDn = na(leftT) ? "" : leftT >= needDn ? " · $" + str.tostring(f2(leftT)) + " in the tank" : " · only $" + str.tostring(f2(leftT)) + " in the tank"
-        nsDemTxt := "DEMAND (buying) " + str.tostring(f2(bestDn)) + " · " + bestDnN + " · " + str.tostring(cntDn) + (cntDn > 1 ? " levels" : " level") + " · $" + str.tostring(f2(needDn)) + " gas needed" + tankDn + (needDn < 0.25 * yATR ? " · THIN" : "") + sandDem + biasS
+        nsDemTxt := "DEMAND (buying) " + str.tostring(f2(bestDn)) + " · " + namesDn + " (" + str.tostring(cntDn) + (cntDn > 1 ? " levels)" : " level)") + " · $" + str.tostring(f2(needDn)) + " gas needed" + tankDn + (needDn < 0.25 * yATR ? " · THIN" : "") + sandDem + biasS
 
 // ───────── Gas tank readout ─────────
 // Rows are packed top-down and the table is cleared first, so switched-off

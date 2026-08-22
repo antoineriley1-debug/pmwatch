@@ -210,9 +210,14 @@ f_scan() =>
                 bestN := array.get(lvN, j)
         if not na(best)
             int cnt = 0
+            string names = ""
             for j = 0 to array.size(lvP) - 1
                 if math.abs(array.get(lvP, j) - best) <= 0.15 * dAtr
                     cnt += 1
+                    if cnt <= 3
+                        names := names + (cnt > 1 ? " + " : "") + array.get(lvN, j)
+            if cnt > 3
+                names := names + " +" + str.tostring(cnt - 3) + " more"
             float dist = math.abs(best - close)
             bool thin = dist < 0.25 * dAtr
             int tch = 0
@@ -234,7 +239,7 @@ f_scan() =>
                 tch += 1
             string sandS = tch >= 2 ? " · LINE IN THE SAND (" + str.tostring(tch) + " touches held)" : ""
             string tankS = na(leftD) ? "" : leftD >= dist ? " · $" + str.tostring(f2(leftD)) + " in the tank" : " · only $" + str.tostring(f2(leftD)) + " in the tank"
-            tgtS := (dir > 0 ? "→ SUPPLY " : "→ DEMAND ") + str.tostring(f2(best)) + " · " + bestN + " · " + str.tostring(cnt) + (cnt > 1 ? " levels" : " level") + " · $" + str.tostring(f2(dist)) + " gas needed" + tankS + (thin ? " · THIN" : "") + sandS + (not na(s50d) ? close > s50d ? " · ↑bias" : " · ↓bias" : "")
+            tgtS := (dir > 0 ? "→ SUPPLY " : "→ DEMAND ") + str.tostring(f2(best)) + " · " + names + " (" + str.tostring(cnt) + (cnt > 1 ? " levels)" : " level)") + " · $" + str.tostring(f2(dist)) + " gas needed" + tankS + (thin ? " · THIN" : "") + sandS + (not na(s50d) ? close > s50d ? " · ↑bias" : " · ↓bias" : "")
     [st, seSide, tbh, tbl, seExt, tbw, htX, cont, tgtS, pdhV, pdlV]
 
 // ───────── Chart-timeframe guard ─────────
