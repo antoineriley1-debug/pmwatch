@@ -77,8 +77,8 @@ f_daily() =>
 f2(float v) => math.round(v * 100.0) / 100.0
 
 f_fmtKey(int k) =>
-    int y = k / 10000
-    int m = k / 100 % 100
+    int y = math.round(math.floor(k / 10000.0))
+    int m = math.round(math.floor(k / 100.0)) % 100
     int d = k % 100
     string mn = m == 1 ? "Jan" : m == 2 ? "Feb" : m == 3 ? "Mar" : m == 4 ? "Apr" : m == 5 ? "May" : m == 6 ? "Jun" : m == 7 ? "Jul" : m == 8 ? "Aug" : m == 9 ? "Sep" : m == 10 ? "Oct" : m == 11 ? "Nov" : "Dec"
     mn + " " + str.tostring(d) + " '" + str.tostring(y % 100)

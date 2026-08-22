@@ -120,8 +120,8 @@ bool earnSame = earnDayMode == "Same session (pre-market reports)"
 f2(float v) => math.round(v * 100.0) / 100.0
 
 f_fmtKey(int k) =>
-    int y = k / 10000
-    int m = k / 100 % 100
+    int y = math.round(math.floor(k / 10000.0))
+    int m = math.round(math.floor(k / 100.0)) % 100
     int d = k % 100
     string mn = m == 1 ? "Jan" : m == 2 ? "Feb" : m == 3 ? "Mar" : m == 4 ? "Apr" : m == 5 ? "May" : m == 6 ? "Jun" : m == 7 ? "Jul" : m == 8 ? "Aug" : m == 9 ? "Sep" : m == 10 ? "Oct" : m == 11 ? "Nov" : "Dec"
     mn + " " + str.tostring(d) + " '" + str.tostring(y % 100)
@@ -894,6 +894,9 @@ if nsOn and not na(yATR) and yATR > 0
 
 // ───────── Day-after readout ─────────
 string dayAfterTxt = ""
+string dayAfterTxt2 = ""
+color daCol = color.new(color.black, 20)
+color daTxtC = color.new(#b2b5be, 0)
 if dayAfterOn
     float xRef = isToday ? daX1 : daX0
     if not na(xRef)
@@ -904,18 +907,24 @@ if dayAfterOn
         int dat = dab == 3 ? daT3 : dab == 2 ? daT2 : dab == 1 ? daT1 : daT0
         string daLbl = dab == 3 ? "blowout (1.5x+)" : dab == 2 ? "extended (1-1.5x)" : dab == 1 ? "normal (0.5-1x)" : "quiet (under 0.5x)"
         if dan >= 5
-            string spanS = not na(daFirstK) ? " in " + str.tostring(daTotN) + " sessions since " + f_fmtKey(daFirstK) : ""
-            dayAfterTxt := "seen " + str.tostring(dan) + " " + daLbl + " days" + spanS + " · next day: " + str.tostring(dad) + " of " + str.tostring(dan) + " chopped · " + str.tostring(dat) + " ran again · typical " + str.tostring(f2(das / dan)) + "x"
+            float runP = 100.0 * dat / dan
+            float chopP = 100.0 * dad / dan
+            int daMid = dan - dad - dat
+            string daVerdict = runP >= 40 ? "USUALLY KEEPS RUNNING" : chopP >= 50 ? "USUALLY COOLS OFF" : "NO STRONG LEAN"
+            daCol := runP >= 40 ? color.new(#26a69a, 0) : chopP >= 50 ? color.new(#ffd500, 0) : color.new(color.gray, 0)
+            daTxtC := runP >= 40 ? color.white : color.black
+            dayAfterTxt := "DAY AFTER a " + daLbl + " day: " + daVerdict + " · typical " + str.tostring(f2(das / dan)) + "x"
+            dayAfterTxt2 := str.tostring(dan) + " days like the last one since " + f_fmtKey(daFirstK) + ": " + str.tostring(dat) + " ran again (1.2x+) · " + str.tostring(daMid) + " normal · " + str.tostring(dad) + " chopped (under 0.8x)"
         else
             dayAfterTxt := "only " + str.tostring(dan) + " " + daLbl + " days in history — not enough to lean on"
 
 // ───────── Gas tank readout ─────────
 // Rows are packed top-down and the table is cleared first, so switched-off
 // lines leave no empty ghost boxes behind.
-var table g = table.new(position.top_center, 1, 11, border_width = 1, border_color = color.new(color.white, 50))
+var table g = table.new(position.top_center, 1, 12, border_width = 1, border_color = color.new(color.white, 50))
 
 if barstate.islast
-    table.clear(g, 0, 0, 0, 10)
+    table.clear(g, 0, 0, 0, 11)
     if showGas
         string t1 = not isToday ? "GAS waiting 9:30   tank " + str.tostring(f2(yATR)) : "GAS " + str.tostring(math.round(pctLeft)) + "% left   " + str.tostring(f2(xATR)) + "x ATR traveled"
         float usedLast = not na(dH) and not na(dL) and not na(prevC) ? math.max(dH - dL, math.abs(dH - prevC), math.abs(dL - prevC)) : na
@@ -926,7 +935,10 @@ if barstate.islast
         table.cell(g, 0, 1, t2, bgcolor = color.new(color.black, 20), text_color = color.white, text_size = size.tiny)
         int rIdx = 2
         if dayAfterOn and dayAfterTxt != ""
-            table.cell(g, 0, rIdx, dayAfterTxt, bgcolor = color.new(color.black, 20), text_color = color.new(#b2b5be, 0), text_size = size.tiny)
+            table.cell(g, 0, rIdx, dayAfterTxt, bgcolor = daCol, text_color = daTxtC, text_size = size.tiny)
+            rIdx += 1
+        if dayAfterOn and dayAfterTxt2 != ""
+            table.cell(g, 0, rIdx, dayAfterTxt2, bgcolor = color.new(color.black, 20), text_color = color.new(#b2b5be, 0), text_size = size.tiny)
             rIdx += 1
         if showProb and probLine != ""
             table.cell(g, 0, rIdx, probLine, bgcolor = color.new(#1a1a2e, 10), text_color = color.new(#4deeea, 0), text_size = size.tiny)
