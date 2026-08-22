@@ -899,9 +899,9 @@ if dayAfterOn
         int dat = dab == 3 ? daT3 : dab == 2 ? daT2 : dab == 1 ? daT1 : daT0
         string daLbl = dab == 3 ? "blowout (1.5x+)" : dab == 2 ? "extended (1-1.5x)" : dab == 1 ? "normal (0.5-1x)" : "quiet (under 0.5x)"
         if dan >= 5
-            dayAfterTxt := "after " + daLbl + " days: next avg " + str.tostring(f2(das / dan)) + "x · " + str.tostring(math.round(100.0 * dad / dan)) + "% digest · " + str.tostring(math.round(100.0 * dat / dan)) + "% trend again (n=" + str.tostring(dan) + ")"
+            dayAfterTxt := "seen " + str.tostring(dan) + " " + daLbl + " days before · next day: " + str.tostring(dad) + " of " + str.tostring(dan) + " chopped · " + str.tostring(dat) + " ran again · typical " + str.tostring(f2(das / dan)) + "x"
         else
-            dayAfterTxt := "after " + daLbl + " days: not enough history (n=" + str.tostring(dan) + ")"
+            dayAfterTxt := "only " + str.tostring(dan) + " " + daLbl + " days in history — not enough to lean on"
 
 // ───────── Gas tank readout ─────────
 // Rows are packed top-down and the table is cleared first, so switched-off
