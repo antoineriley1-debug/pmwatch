@@ -179,8 +179,9 @@ f_scan() =>
         f_addLv(lvP, lvN, e200, "EMA200 D")
         f_addLv(lvP, lvN, pdhV, "PDH")
         f_addLv(lvP, lvN, pdlV, "PDL")
-        if not na(dHi) and not na(dLo)
-            float usedD = not na(dPrevC) ? math.max(dHi - dLo, math.abs(dHi - dPrevC), math.abs(dLo - dPrevC)) : dHi - dLo
+        float usedD = not na(dHi) and not na(dLo) ? (not na(dPrevC) ? math.max(dHi - dLo, math.abs(dHi - dPrevC), math.abs(dLo - dPrevC)) : dHi - dLo) : na
+        float leftD = not na(usedD) ? math.max(0.0, dAtr - usedD) : na
+        if not na(usedD)
             float rem1 = 1.0 * dAtr - usedD
             float rem15 = 1.5 * dAtr - usedD
             float rem2 = 2.0 * dAtr - usedD
@@ -232,7 +233,8 @@ f_scan() =>
             if dir < 0 and not na(dLo) and math.abs(dLo - best) <= band and close > best
                 tch += 1
             string sandS = tch >= 2 ? " · LINE IN THE SAND (" + str.tostring(tch) + " touches held)" : ""
-            tgtS := (dir > 0 ? "→ SUPPLY " : "→ DEMAND ") + str.tostring(f2(best)) + " · " + bestN + " · " + str.tostring(cnt) + (cnt > 1 ? " levels" : " level") + " · $" + str.tostring(f2(dist)) + " away" + (thin ? " · THIN" : "") + sandS + (not na(s50d) ? close > s50d ? " · ↑bias" : " · ↓bias" : "")
+            string tankS = na(leftD) ? "" : leftD >= dist ? " · $" + str.tostring(f2(leftD)) + " in the tank" : " · only $" + str.tostring(f2(leftD)) + " in the tank"
+            tgtS := (dir > 0 ? "→ SUPPLY " : "→ DEMAND ") + str.tostring(f2(best)) + " · " + bestN + " · " + str.tostring(cnt) + (cnt > 1 ? " levels" : " level") + " · $" + str.tostring(f2(dist)) + " gas needed" + tankS + (thin ? " · THIN" : "") + sandS + (not na(s50d) ? close > s50d ? " · ↑bias" : " · ↓bias" : "")
     [st, seSide, tbh, tbl, seExt, tbw, htX, cont, tgtS, pdhV, pdlV]
 
 // ───────── Chart-timeframe guard ─────────

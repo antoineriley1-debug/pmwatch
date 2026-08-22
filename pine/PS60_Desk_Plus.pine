@@ -844,9 +844,13 @@ if nsOn and not na(yATR) and yATR > 0
     string sandSup = tSup >= 2 ? " · LINE IN THE SAND (" + str.tostring(tSup) + " touches held)" : ""
     string sandDem = tDem >= 2 ? " · LINE IN THE SAND (" + str.tostring(tDem) + " touches held)" : ""
     if not na(bestUp)
-        nsSupTxt := "SUPPLY (selling) " + str.tostring(f2(bestUp)) + " · " + bestUpN + " · " + str.tostring(cntUp) + (cntUp > 1 ? " levels" : " level") + " · $" + str.tostring(f2(bestUp - close)) + " away" + (bestUp - close < 0.25 * yATR ? " · THIN" : "") + sandSup + biasS
+        float needUp = bestUp - close
+        string tankUp = na(leftT) ? "" : leftT >= needUp ? " · $" + str.tostring(f2(leftT)) + " in the tank" : " · only $" + str.tostring(f2(leftT)) + " in the tank"
+        nsSupTxt := "SUPPLY (selling) " + str.tostring(f2(bestUp)) + " · " + bestUpN + " · " + str.tostring(cntUp) + (cntUp > 1 ? " levels" : " level") + " · $" + str.tostring(f2(needUp)) + " gas needed" + tankUp + (needUp < 0.25 * yATR ? " · THIN" : "") + sandSup + biasS
     if not na(bestDn)
-        nsDemTxt := "DEMAND (buying) " + str.tostring(f2(bestDn)) + " · " + bestDnN + " · " + str.tostring(cntDn) + (cntDn > 1 ? " levels" : " level") + " · $" + str.tostring(f2(close - bestDn)) + " away" + (close - bestDn < 0.25 * yATR ? " · THIN" : "") + sandDem + biasS
+        float needDn = close - bestDn
+        string tankDn = na(leftT) ? "" : leftT >= needDn ? " · $" + str.tostring(f2(leftT)) + " in the tank" : " · only $" + str.tostring(f2(leftT)) + " in the tank"
+        nsDemTxt := "DEMAND (buying) " + str.tostring(f2(bestDn)) + " · " + bestDnN + " · " + str.tostring(cntDn) + (cntDn > 1 ? " levels" : " level") + " · $" + str.tostring(f2(needDn)) + " gas needed" + tankDn + (needDn < 0.25 * yATR ? " · THIN" : "") + sandDem + biasS
 
 // ───────── Gas tank readout ─────────
 // Rows are packed top-down and the table is cleared first, so switched-off
