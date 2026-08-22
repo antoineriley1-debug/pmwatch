@@ -158,9 +158,9 @@ f_daily() =>
     [tbh, tbl, tbw, tbt] = f_tightCalc()
     float htX = not na(tbh) and not na(tbl) and not na(a) and a > 0 ? (tbh - tbl) / a : na
     bool tbv = not na(htX) and htX <= tbMaxHx and (not tbRejOn or tbw == 0)
-    [a, high, low, open, close[1], time, ta.highest(high, boxLen), ta.lowest(low, boxLen), time[boxLen - 1], tbh, tbl, tbv ? 1 : 0, tbt, tbw, htX, ta.ema(close, 4)[1], ta.ema(close, 9)[1], ta.ema(close, 10)[1], ta.ema(close, 13)[1], ta.ema(close, 20)[1], ta.ema(close, 50)[1], ta.ema(close, 65)[1], ta.ema(close, 89)[1], ta.ema(close, 100)[1], ta.ema(close, 200)[1], ta.sma(close, 50)[1]]
+    [a, high, low, open, close[1], time, ta.highest(high, boxLen), ta.lowest(low, boxLen), time[boxLen - 1], tbh, tbl, tbv ? 1 : 0, tbt, tbw, htX, ta.ema(close, 4)[1], ta.ema(close, 9)[1], ta.ema(close, 10)[1], ta.ema(close, 13)[1], ta.ema(close, 20)[1], ta.ema(close, 50)[1], ta.ema(close, 65)[1], ta.ema(close, 89)[1], ta.ema(close, 100)[1], ta.ema(close, 200)[1], ta.sma(close, 50)[1], f_atr()]
 
-[yATR, dH, dL, dO, prevC, dT, boxHi, boxLo, boxT0, tbHi, tbLo, tbValidI, tbT0, tbWildN, tbHtX, dE4, dE9, dE10, dE13, dE20, dE50, dE65, dE89, dE100, dE200, dS50] = request.security(syminfo.tickerid, "D", f_daily(), barmerge.gaps_off, barmerge.lookahead_off)
+[yATR, dH, dL, dO, prevC, dT, boxHi, boxLo, boxT0, tbHi, tbLo, tbValidI, tbT0, tbWildN, tbHtX, dE4, dE9, dE10, dE13, dE20, dE50, dE65, dE89, dE100, dE200, dS50, nextATR] = request.security(syminfo.tickerid, "D", f_daily(), barmerge.gaps_off, barmerge.lookahead_off)
 
 // 60-minute EMA stack for the chart symbol — live values, so targets built from
 // these drift during the day as the averages move. That is what MAs do.
@@ -929,7 +929,7 @@ var table g = table.new(position.top_center, 1, 12, border_width = 1, border_col
 if barstate.islast
     table.clear(g, 0, 0, 0, 11)
     if showGas
-        string t1 = not isToday ? "GAS waiting 9:30   tank " + str.tostring(f2(yATR)) : "GAS " + str.tostring(math.round(pctLeft)) + "% left   " + str.tostring(f2(xATR)) + "x ATR traveled"
+        string t1 = not isToday ? "GAS waiting 9:30   tank " + str.tostring(f2(yATR)) + " · next session tank " + str.tostring(f2(nextATR)) : "GAS " + str.tostring(math.round(pctLeft)) + "% left   " + str.tostring(f2(xATR)) + "x ATR traveled"
         float usedLast = not na(dH) and not na(dL) and not na(prevC) ? math.max(dH - dL, math.abs(dH - prevC), math.abs(dL - prevC)) : na
         float xLast = not na(usedLast) and not na(yATR) and yATR > 0 ? usedLast / yATR : na
         string t2 = isToday ? "used " + str.tostring(f2(used)) + " / tank " + str.tostring(f2(yATR)) + "   left " + str.tostring(f2(leftT)) : not na(xLast) ? "last session traveled " + str.tostring(f2(xLast)) + "x ATR · used " + str.tostring(f2(usedLast)) + " of " + str.tostring(f2(yATR)) + " tank" : "used 0 / tank " + str.tostring(f2(yATR))
