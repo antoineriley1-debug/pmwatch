@@ -105,6 +105,9 @@ int   maxDays  = input.int(300, "Max days stored", minval = 50, maxval = 500, gr
 int   minDays  = input.int(20, "Min days before stats print", minval = 5, maxval = 100, group = G5, tooltip = "Below this the sample is too thin to say anything, so the readout stays quiet while it builds.")
 bool  probEarnOn = input.bool(false, "Earnings-break stats", group = G5, tooltip = "Needs the earnings reaction bar to have data. Every time price broke the reaction high or low in loaded history, this tracked what happened next: reaching Target #1 × ATR beyond the edge counts as a run; closing back inside the range first counts as a fakeout. The readout line shows how often each happened and the typical run distance.")
 
+string GN = "Next stop (measured potential)"
+bool nsOn = input.bool(true, "Show NEXT STOP line in the readout", group = GN, tooltip = "PS60 Rule 1: stocks move supply-to-supply / demand-to-demand, and the distance to the next level is the measured potential. This line shows the nearest meaningful level above AND below price, drawn from: the daily EMA stack (4/9/10/13/20/50/65/89/100/200, prior completed day — static all session), the 60-minute EMA stack (live, so these targets drift as the MAs move), the 65 EMA of this chart's timeframe, PDH/PDL, premarket levels, old supply/demand, the remaining-ATR ladder, whole numbers, and the earnings range when enabled. Levels stacking within 0.15×ATR merge into one zone (+1, +2 = how many agree). Levels hugging price within 0.10×ATR are skipped. THIN = under 0.25×ATR of room. ↑/↓bias = which side of the daily 50 SMA the stock is on.")
+
 // ───────── Fixed colors + small helpers ─────────
 color cBoxF = color.new(cBoxIn, 88)
 color cGray = color.new(#9e9e9e, 55)
@@ -154,9 +157,15 @@ f_daily() =>
     [tbh, tbl, tbw, tbt] = f_tightCalc()
     float htX = not na(tbh) and not na(tbl) and not na(a) and a > 0 ? (tbh - tbl) / a : na
     bool tbv = not na(htX) and htX <= tbMaxHx and (not tbRejOn or tbw == 0)
-    [a, high, low, open, close[1], time, ta.highest(high, boxLen), ta.lowest(low, boxLen), time[boxLen - 1], tbh, tbl, tbv ? 1 : 0, tbt, tbw, htX]
+    [a, high, low, open, close[1], time, ta.highest(high, boxLen), ta.lowest(low, boxLen), time[boxLen - 1], tbh, tbl, tbv ? 1 : 0, tbt, tbw, htX, ta.ema(close, 4)[1], ta.ema(close, 9)[1], ta.ema(close, 10)[1], ta.ema(close, 13)[1], ta.ema(close, 20)[1], ta.ema(close, 50)[1], ta.ema(close, 65)[1], ta.ema(close, 89)[1], ta.ema(close, 100)[1], ta.ema(close, 200)[1], ta.sma(close, 50)[1]]
 
-[yATR, dH, dL, dO, prevC, dT, boxHi, boxLo, boxT0, tbHi, tbLo, tbValidI, tbT0, tbWildN, tbHtX] = request.security(syminfo.tickerid, "D", f_daily(), barmerge.gaps_off, barmerge.lookahead_off)
+[yATR, dH, dL, dO, prevC, dT, boxHi, boxLo, boxT0, tbHi, tbLo, tbValidI, tbT0, tbWildN, tbHtX, dE4, dE9, dE10, dE13, dE20, dE50, dE65, dE89, dE100, dE200, dS50] = request.security(syminfo.tickerid, "D", f_daily(), barmerge.gaps_off, barmerge.lookahead_off)
+
+// 60-minute EMA stack for the chart symbol — live values, so targets built from
+// these drift during the day as the averages move. That is what MAs do.
+[h60e4, h60e9, h60e10, h60e13, h60e20, h60e50, h60e65, h60e100, h60e200] = request.security(syminfo.tickerid, "60", [ta.ema(close, 4), ta.ema(close, 9), ta.ema(close, 10), ta.ema(close, 13), ta.ema(close, 20), ta.ema(close, 50), ta.ema(close, 65), ta.ema(close, 100), ta.ema(close, 200)], barmerge.gaps_off, barmerge.lookahead_off)
+
+float chE65 = ta.ema(close, 65)
 
 [oldSup, oldDem] = request.security(syminfo.tickerid, "M", [high[1], low[1]], barmerge.gaps_off, barmerge.lookahead_off)
 
@@ -459,6 +468,11 @@ f_atrLine(float y, color c, int w, string name) =>
 f_atrTag(string ms, float px, bool sp) =>
     sp ? ms + " ATR Traveled " + str.tostring(f2(px)) : ms + " " + str.tostring(f2(px))
 
+f_addLv(float[] lp, string[] ln, float v, string nm) =>
+    if not na(v)
+        array.push(lp, v)
+        array.push(ln, nm)
+
 f_step(float p) =>
     stepIn > 0 ? stepIn : p >= 200 ? 5.0 : p >= 80 ? 1.0 : 0.5
 
@@ -728,13 +742,92 @@ if probEarnOn and timeframe.isintraday
         string resolveTxt = sessAvg < 0.5 ? "same session" : "~" + str.tostring(math.round(sessAvg)) + " session" + (math.round(sessAvg) > 1 ? "s" : "")
         earnLine2 := "EARN · typical run +" + str.tostring(f2(runX)) + "x ATR ≈ $" + str.tostring(f2(runDollars)) + " (" + str.tostring(f2(runPct)) + "% move) · resolves in " + resolveTxt
 
+// ───────── Next stop (measured potential) ─────────
+string nsTxt = ""
+if nsOn and not na(yATR) and yATR > 0
+    float[] lvP = array.new_float()
+    string[] lvN = array.new_string()
+    f_addLv(lvP, lvN, dE4, "EMA4 D")
+    f_addLv(lvP, lvN, dE9, "EMA9 D")
+    f_addLv(lvP, lvN, dE10, "EMA10 D")
+    f_addLv(lvP, lvN, dE13, "EMA13 D")
+    f_addLv(lvP, lvN, dE20, "EMA20 D")
+    f_addLv(lvP, lvN, dE50, "EMA50 D")
+    f_addLv(lvP, lvN, dE65, "EMA65 D")
+    f_addLv(lvP, lvN, dE89, "EMA89 D")
+    f_addLv(lvP, lvN, dE100, "EMA100 D")
+    f_addLv(lvP, lvN, dE200, "EMA200 D")
+    f_addLv(lvP, lvN, h60e4, "EMA4 60m")
+    f_addLv(lvP, lvN, h60e9, "EMA9 60m")
+    f_addLv(lvP, lvN, h60e10, "EMA10 60m")
+    f_addLv(lvP, lvN, h60e13, "EMA13 60m")
+    f_addLv(lvP, lvN, h60e20, "EMA20 60m")
+    f_addLv(lvP, lvN, h60e50, "EMA50 60m")
+    f_addLv(lvP, lvN, h60e65, "EMA65 60m")
+    f_addLv(lvP, lvN, h60e100, "EMA100 60m")
+    f_addLv(lvP, lvN, h60e200, "EMA200 60m")
+    f_addLv(lvP, lvN, chE65, "EMA65 chart")
+    f_addLv(lvP, lvN, pdh, "PDH")
+    f_addLv(lvP, lvN, pdl, "PDL")
+    f_addLv(lvP, lvN, oldSup, "old supply")
+    f_addLv(lvP, lvN, oldDem, "old demand")
+    if timeframe.isintraday
+        f_addLv(lvP, lvN, pmH, "PMH")
+        f_addLv(lvP, lvN, pmL, "PML")
+    if earnOn
+        f_addLv(lvP, lvN, erHi, "EARN H")
+        f_addLv(lvP, lvN, erLo, "EARN L")
+    if isToday and not na(dH) and not na(dL)
+        float rem1 = 1.0 * yATR - used
+        float rem15 = 1.5 * yATR - used
+        float rem2 = 2.0 * yATR - used
+        float rem25 = 2.5 * yATR - used
+        float rem3 = 3.0 * yATR - used
+        f_addLv(lvP, lvN, rem1 > 0 ? dH + rem1 : na, "1x ATR")
+        f_addLv(lvP, lvN, rem15 > 0 ? dH + rem15 : na, "1.5x ATR")
+        f_addLv(lvP, lvN, rem2 > 0 ? dH + rem2 : na, "2x ATR")
+        f_addLv(lvP, lvN, rem25 > 0 ? dH + rem25 : na, "2.5x ATR")
+        f_addLv(lvP, lvN, rem3 > 0 ? dH + rem3 : na, "3x ATR")
+        f_addLv(lvP, lvN, rem1 > 0 ? dL - rem1 : na, "1x ATR")
+        f_addLv(lvP, lvN, rem15 > 0 ? dL - rem15 : na, "1.5x ATR")
+        f_addLv(lvP, lvN, rem2 > 0 ? dL - rem2 : na, "2x ATR")
+        f_addLv(lvP, lvN, rem25 > 0 ? dL - rem25 : na, "2.5x ATR")
+        f_addLv(lvP, lvN, rem3 > 0 ? dL - rem3 : na, "3x ATR")
+    f_addLv(lvP, lvN, math.ceil(close / wStepG) * wStepG, "whole")
+    f_addLv(lvP, lvN, math.floor(close / wStepG) * wStepG, "whole")
+    float bestUp = na
+    string bestUpN = ""
+    float bestDn = na
+    string bestDnN = ""
+    for j = 0 to array.size(lvP) - 1
+        float pv = array.get(lvP, j)
+        if pv > close + 0.10 * yATR and (na(bestUp) or pv < bestUp)
+            bestUp := pv
+            bestUpN := array.get(lvN, j)
+        if pv < close - 0.10 * yATR and (na(bestDn) or pv > bestDn)
+            bestDn := pv
+            bestDnN := array.get(lvN, j)
+    int cntUp = 0
+    int cntDn = 0
+    for j = 0 to array.size(lvP) - 1
+        float pv = array.get(lvP, j)
+        if not na(bestUp) and math.abs(pv - bestUp) <= 0.15 * yATR
+            cntUp += 1
+        if not na(bestDn) and math.abs(pv - bestDn) <= 0.15 * yATR
+            cntDn += 1
+    string upS = not na(bestUp) ? "▲ " + str.tostring(f2(bestUp)) + " (" + bestUpN + (cntUp > 1 ? " +" + str.tostring(cntUp - 1) : "") + ") $" + str.tostring(f2(bestUp - close)) + (bestUp - close < 0.25 * yATR ? " THIN" : "") : ""
+    string dnS = not na(bestDn) ? "▼ " + str.tostring(f2(bestDn)) + " (" + bestDnN + (cntDn > 1 ? " +" + str.tostring(cntDn - 1) : "") + ") $" + str.tostring(f2(close - bestDn)) + (close - bestDn < 0.25 * yATR ? " THIN" : "") : ""
+    string biasS = not na(dS50) ? close > dS50 ? " · ↑bias" : " · ↓bias" : ""
+    if upS != "" or dnS != ""
+        nsTxt := "NEXT " + upS + (upS != "" and dnS != "" ? "   " : "") + dnS + biasS
+
 // ───────── Gas tank readout ─────────
 // Rows are packed top-down and the table is cleared first, so switched-off
 // lines leave no empty ghost boxes behind.
-var table g = table.new(position.top_center, 1, 8, border_width = 1, border_color = color.new(color.white, 50))
+var table g = table.new(position.top_center, 1, 9, border_width = 1, border_color = color.new(color.white, 50))
 
 if barstate.islast
-    table.clear(g, 0, 0, 0, 7)
+    table.clear(g, 0, 0, 0, 8)
     if showGas
         string t1 = not isToday ? "GAS waiting 9:30   tank " + str.tostring(f2(yATR)) : "GAS " + str.tostring(math.round(pctLeft)) + "% left   " + str.tostring(f2(xATR)) + "x ATR traveled"
         string t2 = "used " + str.tostring(f2(used)) + " / tank " + str.tostring(f2(yATR)) + "   left " + str.tostring(f2(leftT))
@@ -759,6 +852,9 @@ if barstate.islast
             rIdx += 1
         if probEarnOn and earnLine2 != ""
             table.cell(g, 0, rIdx, earnLine2, bgcolor = color.new(#2e1e00, 5), text_color = color.new(#ffd54f, 0), text_size = size.tiny)
+            rIdx += 1
+        if nsOn and nsTxt != ""
+            table.cell(g, 0, rIdx, nsTxt, bgcolor = color.new(#00332e, 5), text_color = color.new(#26a69a, 0), text_size = size.tiny)
             rIdx += 1
 
 var table seT = table.new(position.bottom_right, 1, 1, border_width = 1)

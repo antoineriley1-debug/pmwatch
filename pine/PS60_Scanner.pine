@@ -53,6 +53,9 @@ string tblSize = input.string("tiny", "Text size", options = ["tiny", "small", "
 bool   onlyHot  = input.bool(false, "Only show INSTITUTIONS / ENTRY rows", group = G5, tooltip = "Hides DISTRIBUTION and RETAIL FLUSH rows so the table only lists tickers where a second entry is loaded. The alert still watches every ticker either way — this only trims the table.")
 bool   compactOn = input.bool(true, "Compact (single column)", group = G5, tooltip = "Squeezes each ticker to one small cell: TSLA · ARMED L · 366.5. Combine with tiny text for the smallest possible footprint.")
 
+string G6 = "Next stop (measured potential)"
+bool nsOn = input.bool(true, "Show next stop on active rows", group = G6, tooltip = "PS60 Rule 1: stocks move supply-to-supply / demand-to-demand, and the distance to the next level is the measured potential. For any ticker with a direction — a box break, or price confirmed past the prior day's high/low — the row shows the nearest meaningful level in that direction: the daily EMA stack (4/9/10/13/20/50/65/89/100/200, prior completed day, static all session), PDH/PDL, the remaining-ATR ladder, and whole numbers. Levels stacking within 0.15×ATR merge into one zone and the row shows how many agree (+1, +2…). Levels hugging price (within 0.10×ATR) are skipped. THIN = less than 0.25×ATR of room — not worth it, especially on options. ↑/↓bias = which side of its daily 50 SMA the stock is on. Display-only for now; no alerts fire from this.")
+
 // ───────── Helpers ─────────
 f2(float v) => math.round(v * 100.0) / 100.0
 
@@ -77,14 +80,26 @@ f_tightCalc() =>
     float ll = ta.lowest(low, tbWin)[1]
     [hh, ll, wildN]
 
+f_stepAuto(float p) =>
+    p >= 200 ? 5.0 : p >= 80 ? 1.0 : 0.5
+
+f_addLv(float[] lp, string[] ln, float v, string nm) =>
+    if not na(v)
+        array.push(lp, v)
+        array.push(ln, nm)
+
+// Daily pull: ATR + prev close + tight box + the full daily EMA stack (prior
+// COMPLETED day via [1], so every level is static all session) + daily 50 SMA
+// for the bias tag + prior day high/low.
 f_dailyScan() =>
     [tbh, tbl, tbw] = f_tightCalc()
-    [f_atr()[1], close[1], tbh, tbl, tbw]
+    [f_atr()[1], close[1], tbh, tbl, tbw, ta.ema(close, 4)[1], ta.ema(close, 9)[1], ta.ema(close, 10)[1], ta.ema(close, 13)[1], ta.ema(close, 20)[1], ta.ema(close, 50)[1], ta.ema(close, 65)[1], ta.ema(close, 89)[1], ta.ema(close, 100)[1], ta.ema(close, 200)[1], ta.sma(close, 50)[1], high[1], low[1]]
 
 // Runs inside each ticker's own 5-minute context. State codes:
 // 0 building/no box · 1 WAIT · 2 THROUGH (wait retrace) · 3 ARMED · 4 NEAR
+// cont: 1 = confirmed over prior day high, -1 = under prior day low, 0 = neither
 f_scan() =>
-    [dAtr, dPrevC, tbh, tbl, tbw] = request.security(syminfo.tickerid, "D", f_dailyScan(), barmerge.gaps_off, barmerge.lookahead_on)
+    [dAtr, dPrevC, tbh, tbl, tbw, e4, e9, e10, e13, e20, e50, e65, e89, e100, e200, s50d, pdhV, pdlV] = request.security(syminfo.tickerid, "D", f_dailyScan(), barmerge.gaps_off, barmerge.lookahead_on)
     float htX = not na(tbh) and not na(tbl) and not na(dAtr) and dAtr > 0 ? (tbh - tbl) / dAtr : na
     var bool   seThru   = false
     var int    seSide   = 0
@@ -93,6 +108,8 @@ f_scan() =>
     var bool   sePulled = false
     var int    dk       = na
     var int    lastHr   = na
+    var float  dHi      = na
+    var float  dLo      = na
     int bk = year(time, tz) * 10000 + month(time, tz) * 100 + dayofmonth(time, tz)
     if na(dk) or bk != dk
         seThru   := false
@@ -100,6 +117,8 @@ f_scan() =>
         sePivot  := na
         seExt    := na
         sePulled := false
+        dHi      := na
+        dLo      := na
         dk       := bk
     int hr = hour(time, tz)
     if hourResetIn and not na(lastHr) and hr != lastHr
@@ -107,6 +126,9 @@ f_scan() =>
         sePulled := false
     lastHr := hr
     bool rth = not na(time("", "0930-1600", tz))
+    if rth
+        dHi := na(dHi) ? high : math.max(dHi, high)
+        dLo := na(dLo) ? low : math.min(dLo, low)
     bool boxOK = not na(htX) and htX <= tbMaxHx and (not tbRejOn or tbw == 0)
     if rth and boxOK
         if not seThru
@@ -136,7 +158,63 @@ f_scan() =>
                     sePulled := true
     bool near = sePulled and not na(seExt) and boxOK and math.abs(close - seExt) <= nearX * dAtr
     int st = not boxOK ? 0 : not seThru ? 1 : not sePulled ? 2 : near ? 4 : 3
-    [st, seSide, tbh, tbl, seExt, tbw, htX]
+    // continuation watch: no box needed — price confirmed past the prior day's range
+    int cont = rth and not na(pdhV) and close > pdhV ? 1 : rth and not na(pdlV) and close < pdlV ? -1 : 0
+    // ── next stop: nearest meaningful level in trade direction ──
+    string tgtS = ""
+    int dir = seThru ? seSide : cont
+    if nsOn and dir != 0 and not na(dAtr) and dAtr > 0
+        float[] lvP = array.new_float()
+        string[] lvN = array.new_string()
+        f_addLv(lvP, lvN, e4, "EMA4 D")
+        f_addLv(lvP, lvN, e9, "EMA9 D")
+        f_addLv(lvP, lvN, e10, "EMA10 D")
+        f_addLv(lvP, lvN, e13, "EMA13 D")
+        f_addLv(lvP, lvN, e20, "EMA20 D")
+        f_addLv(lvP, lvN, e50, "EMA50 D")
+        f_addLv(lvP, lvN, e65, "EMA65 D")
+        f_addLv(lvP, lvN, e89, "EMA89 D")
+        f_addLv(lvP, lvN, e100, "EMA100 D")
+        f_addLv(lvP, lvN, e200, "EMA200 D")
+        f_addLv(lvP, lvN, pdhV, "PDH")
+        f_addLv(lvP, lvN, pdlV, "PDL")
+        if not na(dHi) and not na(dLo)
+            float usedD = not na(dPrevC) ? math.max(dHi - dLo, math.abs(dHi - dPrevC), math.abs(dLo - dPrevC)) : dHi - dLo
+            float rem1 = 1.0 * dAtr - usedD
+            float rem15 = 1.5 * dAtr - usedD
+            float rem2 = 2.0 * dAtr - usedD
+            float rem25 = 2.5 * dAtr - usedD
+            float rem3 = 3.0 * dAtr - usedD
+            f_addLv(lvP, lvN, rem1 > 0 ? dHi + rem1 : na, "1x ATR")
+            f_addLv(lvP, lvN, rem15 > 0 ? dHi + rem15 : na, "1.5x ATR")
+            f_addLv(lvP, lvN, rem2 > 0 ? dHi + rem2 : na, "2x ATR")
+            f_addLv(lvP, lvN, rem25 > 0 ? dHi + rem25 : na, "2.5x ATR")
+            f_addLv(lvP, lvN, rem3 > 0 ? dHi + rem3 : na, "3x ATR")
+            f_addLv(lvP, lvN, rem1 > 0 ? dLo - rem1 : na, "1x ATR")
+            f_addLv(lvP, lvN, rem15 > 0 ? dLo - rem15 : na, "1.5x ATR")
+            f_addLv(lvP, lvN, rem2 > 0 ? dLo - rem2 : na, "2x ATR")
+            f_addLv(lvP, lvN, rem25 > 0 ? dLo - rem25 : na, "2.5x ATR")
+            f_addLv(lvP, lvN, rem3 > 0 ? dLo - rem3 : na, "3x ATR")
+        float wStep = f_stepAuto(close)
+        f_addLv(lvP, lvN, math.ceil(close / wStep) * wStep, "whole")
+        f_addLv(lvP, lvN, math.floor(close / wStep) * wStep, "whole")
+        float best = na
+        string bestN = ""
+        for j = 0 to array.size(lvP) - 1
+            float pv = array.get(lvP, j)
+            bool okDir = dir > 0 ? pv > close + 0.10 * dAtr : pv < close - 0.10 * dAtr
+            if okDir and (na(best) or (dir > 0 ? pv < best : pv > best))
+                best := pv
+                bestN := array.get(lvN, j)
+        if not na(best)
+            int cnt = 0
+            for j = 0 to array.size(lvP) - 1
+                if math.abs(array.get(lvP, j) - best) <= 0.15 * dAtr
+                    cnt += 1
+            float dist = math.abs(best - close)
+            bool thin = dist < 0.25 * dAtr
+            tgtS := "→ " + str.tostring(f2(best)) + " (" + bestN + (cnt > 1 ? " +" + str.tostring(cnt - 1) : "") + ") $" + str.tostring(f2(dist)) + (thin ? " · THIN" : "") + (not na(s50d) ? close > s50d ? " · ↑bias" : " · ↓bias" : "")
+    [st, seSide, tbh, tbl, seExt, tbw, htX, cont, tgtS]
 
 // ───────── Chart-timeframe guard ─────────
 // The chart drives every calculation. On a chart slower than 5 minutes the
@@ -145,21 +223,21 @@ f_scan() =>
 bool tfOK = timeframe.isintraday and timeframe.in_seconds(timeframe.period) <= 300
 
 // ───────── One data pull per ticker ─────────
-[st1, sd1, bh1, bl1, ex1, wd1, hx1] = request.security(sym1 == "" ? syminfo.tickerid : sym1, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
-[st2, sd2, bh2, bl2, ex2, wd2, hx2] = request.security(sym2 == "" ? syminfo.tickerid : sym2, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
-[st3, sd3, bh3, bl3, ex3, wd3, hx3] = request.security(sym3 == "" ? syminfo.tickerid : sym3, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
-[st4, sd4, bh4, bl4, ex4, wd4, hx4] = request.security(sym4 == "" ? syminfo.tickerid : sym4, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
-[st5, sd5, bh5, bl5, ex5, wd5, hx5] = request.security(sym5 == "" ? syminfo.tickerid : sym5, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
-[st6, sd6, bh6, bl6, ex6, wd6, hx6] = request.security(sym6 == "" ? syminfo.tickerid : sym6, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
-[st7, sd7, bh7, bl7, ex7, wd7, hx7] = request.security(sym7 == "" ? syminfo.tickerid : sym7, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
-[st8, sd8, bh8, bl8, ex8, wd8, hx8] = request.security(sym8 == "" ? syminfo.tickerid : sym8, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
-[st9, sd9, bh9, bl9, ex9, wd9, hx9] = request.security(sym9 == "" ? syminfo.tickerid : sym9, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
-[st10, sd10, bh10, bl10, ex10, wd10, hx10] = request.security(sym10 == "" ? syminfo.tickerid : sym10, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
-[st11, sd11, bh11, bl11, ex11, wd11, hx11] = request.security(sym11 == "" ? syminfo.tickerid : sym11, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
-[st12, sd12, bh12, bl12, ex12, wd12, hx12] = request.security(sym12 == "" ? syminfo.tickerid : sym12, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
-[st13, sd13, bh13, bl13, ex13, wd13, hx13] = request.security(sym13 == "" ? syminfo.tickerid : sym13, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
-[st14, sd14, bh14, bl14, ex14, wd14, hx14] = request.security(sym14 == "" ? syminfo.tickerid : sym14, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
-[st15, sd15, bh15, bl15, ex15, wd15, hx15] = request.security(sym15 == "" ? syminfo.tickerid : sym15, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
+[st1, sd1, bh1, bl1, ex1, wd1, hx1, cn1, ts1] = request.security(sym1 == "" ? syminfo.tickerid : sym1, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
+[st2, sd2, bh2, bl2, ex2, wd2, hx2, cn2, ts2] = request.security(sym2 == "" ? syminfo.tickerid : sym2, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
+[st3, sd3, bh3, bl3, ex3, wd3, hx3, cn3, ts3] = request.security(sym3 == "" ? syminfo.tickerid : sym3, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
+[st4, sd4, bh4, bl4, ex4, wd4, hx4, cn4, ts4] = request.security(sym4 == "" ? syminfo.tickerid : sym4, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
+[st5, sd5, bh5, bl5, ex5, wd5, hx5, cn5, ts5] = request.security(sym5 == "" ? syminfo.tickerid : sym5, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
+[st6, sd6, bh6, bl6, ex6, wd6, hx6, cn6, ts6] = request.security(sym6 == "" ? syminfo.tickerid : sym6, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
+[st7, sd7, bh7, bl7, ex7, wd7, hx7, cn7, ts7] = request.security(sym7 == "" ? syminfo.tickerid : sym7, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
+[st8, sd8, bh8, bl8, ex8, wd8, hx8, cn8, ts8] = request.security(sym8 == "" ? syminfo.tickerid : sym8, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
+[st9, sd9, bh9, bl9, ex9, wd9, hx9, cn9, ts9] = request.security(sym9 == "" ? syminfo.tickerid : sym9, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
+[st10, sd10, bh10, bl10, ex10, wd10, hx10, cn10, ts10] = request.security(sym10 == "" ? syminfo.tickerid : sym10, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
+[st11, sd11, bh11, bl11, ex11, wd11, hx11, cn11, ts11] = request.security(sym11 == "" ? syminfo.tickerid : sym11, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
+[st12, sd12, bh12, bl12, ex12, wd12, hx12, cn12, ts12] = request.security(sym12 == "" ? syminfo.tickerid : sym12, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
+[st13, sd13, bh13, bl13, ex13, wd13, hx13, cn13, ts13] = request.security(sym13 == "" ? syminfo.tickerid : sym13, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
+[st14, sd14, bh14, bl14, ex14, wd14, hx14, cn14, ts14] = request.security(sym14 == "" ? syminfo.tickerid : sym14, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
+[st15, sd15, bh15, bl15, ex15, wd15, hx15, cn15, ts15] = request.security(sym15 == "" ? syminfo.tickerid : sym15, "5", f_scan(), barmerge.gaps_off, barmerge.lookahead_off)
 
 // ───────── Alerts: one alert() covers every ticker ─────────
 f_name(string s) =>
@@ -206,6 +284,8 @@ if barstate.islast
     float[] exA = array.from(ex1, ex2, ex3, ex4, ex5, ex6, ex7, ex8, ex9, ex10, ex11, ex12, ex13, ex14, ex15)
     int[] wdA = array.from(wd1, wd2, wd3, wd4, wd5, wd6, wd7, wd8, wd9, wd10, wd11, wd12, wd13, wd14, wd15)
     float[] hxA = array.from(hx1, hx2, hx3, hx4, hx5, hx6, hx7, hx8, hx9, hx10, hx11, hx12, hx13, hx14, hx15)
+    int[] cnA = array.from(cn1, cn2, cn3, cn4, cn5, cn6, cn7, cn8, cn9, cn10, cn11, cn12, cn13, cn14, cn15)
+    string[] tsA = array.from(ts1, ts2, ts3, ts4, ts5, ts6, ts7, ts8, ts9, ts10, ts11, ts12, ts13, ts14, ts15)
     int rIdx = compactOn ? 0 : 1
     int activeN = 0
     int shownN = 0
@@ -218,9 +298,12 @@ if barstate.islast
                 shownN += 1
                 int sd = array.get(sdA, i)
                 string sideTag = sd > 0 ? "L" : sd < 0 ? "S" : ""
-                string stTxt = st == 0 ? "NO BOX" : st == 1 ? "DISTRIBUTION" : st == 2 ? "RETAIL FLUSH " + (sd > 0 ? "▲" : "▼") : st == 3 ? "INSTITUTIONS " + sideTag : "ENTRY " + sideTag
-                color stBg = st == 4 ? color.new(#6a1b9a, 0) : st == 3 ? color.new(#26a69a, 0) : st == 2 ? color.new(#ffd500, 10) : color.new(color.black, 30)
-                color stTx = st == 3 or st == 4 ? color.white : st == 2 ? color.black : color.new(#b2b5be, 0)
+                int cn = array.get(cnA, i)
+                string ts = array.get(tsA, i)
+                bool watch = st <= 1 and cn != 0
+                string stTxt = watch ? (cn > 0 ? "BREAKOUT WATCH ▲" : "BREAKDOWN WATCH ▼") : st == 0 ? "NO BOX" : st == 1 ? "DISTRIBUTION" : st == 2 ? "RETAIL FLUSH " + (sd > 0 ? "▲" : "▼") : st == 3 ? "INSTITUTIONS " + sideTag : "ENTRY " + sideTag
+                color stBg = st == 4 ? color.new(#6a1b9a, 0) : st == 3 ? color.new(#26a69a, 0) : st == 2 ? color.new(#ffd500, 10) : watch ? color.new(#ef6c00, 10) : color.new(color.black, 30)
+                color stTx = st == 3 or st == 4 ? color.white : st == 2 ? color.black : watch ? color.white : color.new(#b2b5be, 0)
                 string lvlTxt = ""
                 if st == 0
                     int wd = array.get(wdA, i)
@@ -232,6 +315,8 @@ if barstate.islast
                     lvlTxt := "push " + str.tostring(f2(array.get(exA, i))) + " · liquidation, wait"
                 else
                     lvlTxt := "trigger " + str.tostring(f2(array.get(exA, i)))
+                if nsOn and ts != "" and (watch or st >= 2)
+                    lvlTxt := (watch ? "" : lvlTxt + " ") + ts
                 if compactOn
                     table.cell(scanT, 0, rIdx, f_name(s) + " · " + stTxt + " · " + lvlTxt, bgcolor = stBg, text_color = stTx, text_size = tsz)
                 else
