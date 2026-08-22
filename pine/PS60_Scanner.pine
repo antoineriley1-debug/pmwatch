@@ -93,13 +93,13 @@ f_addLv(float[] lp, string[] ln, float v, string nm) =>
 // for the bias tag + prior day high/low.
 f_dailyScan() =>
     [tbh, tbl, tbw] = f_tightCalc()
-    [f_atr()[1], close[1], tbh, tbl, tbw, ta.ema(close, 4)[1], ta.ema(close, 9)[1], ta.ema(close, 10)[1], ta.ema(close, 13)[1], ta.ema(close, 20)[1], ta.ema(close, 50)[1], ta.ema(close, 65)[1], ta.ema(close, 89)[1], ta.ema(close, 100)[1], ta.ema(close, 200)[1], ta.sma(close, 50)[1], high[1], low[1]]
+    [f_atr()[1], close[1], tbh, tbl, tbw, ta.ema(close, 4)[1], ta.ema(close, 9)[1], ta.ema(close, 10)[1], ta.ema(close, 13)[1], ta.ema(close, 20)[1], ta.ema(close, 50)[1], ta.ema(close, 65)[1], ta.ema(close, 89)[1], ta.ema(close, 100)[1], ta.ema(close, 200)[1], ta.sma(close, 50)[1], high[1], low[1], high[2], high[3], high[4], high[5], high[6], high[7], high[8], high[9], high[10], low[2], low[3], low[4], low[5], low[6], low[7], low[8], low[9], low[10], close[2], close[3], close[4], close[5], close[6], close[7], close[8], close[9], close[10]]
 
 // Runs inside each ticker's own 5-minute context. State codes:
 // 0 building/no box · 1 WAIT · 2 THROUGH (wait retrace) · 3 ARMED · 4 NEAR
 // cont: 1 = confirmed over prior day high, -1 = under prior day low, 0 = neither
 f_scan() =>
-    [dAtr, dPrevC, tbh, tbl, tbw, e4, e9, e10, e13, e20, e50, e65, e89, e100, e200, s50d, pdhV, pdlV] = request.security(syminfo.tickerid, "D", f_dailyScan(), barmerge.gaps_off, barmerge.lookahead_on)
+    [dAtr, dPrevC, tbh, tbl, tbw, e4, e9, e10, e13, e20, e50, e65, e89, e100, e200, s50d, pdhV, pdlV, th2, th3, th4, th5, th6, th7, th8, th9, th10, tl2, tl3, tl4, tl5, tl6, tl7, tl8, tl9, tl10, tc2, tc3, tc4, tc5, tc6, tc7, tc8, tc9, tc10] = request.security(syminfo.tickerid, "D", f_dailyScan(), barmerge.gaps_off, barmerge.lookahead_on)
     float htX = not na(tbh) and not na(tbl) and not na(dAtr) and dAtr > 0 ? (tbh - tbl) / dAtr : na
     var bool   seThru   = false
     var int    seSide   = 0
@@ -214,7 +214,25 @@ f_scan() =>
                     cnt += 1
             float dist = math.abs(best - close)
             bool thin = dist < 0.25 * dAtr
-            tgtS := (dir > 0 ? "→ SUPPLY " : "→ DEMAND ") + str.tostring(f2(best)) + " · " + bestN + " · " + str.tostring(cnt) + (cnt > 1 ? " levels" : " level") + " · $" + str.tostring(f2(dist)) + " away" + (thin ? " · THIN" : "") + (not na(s50d) ? close > s50d ? " · ↑bias" : " · ↓bias" : "")
+            int tch = 0
+            float band = 0.15 * dAtr
+            float[] thA = array.from(pdhV, th2, th3, th4, th5, th6, th7, th8, th9, th10)
+            float[] tlA = array.from(pdlV, tl2, tl3, tl4, tl5, tl6, tl7, tl8, tl9, tl10)
+            float[] tcA = array.from(dPrevC, tc2, tc3, tc4, tc5, tc6, tc7, tc8, tc9, tc10)
+            for j2 = 0 to 9
+                float hj = array.get(thA, j2)
+                float lj = array.get(tlA, j2)
+                float cj = array.get(tcA, j2)
+                if dir > 0 and not na(hj) and not na(cj) and math.abs(hj - best) <= band and cj < best
+                    tch += 1
+                if dir < 0 and not na(lj) and not na(cj) and math.abs(lj - best) <= band and cj > best
+                    tch += 1
+            if dir > 0 and not na(dHi) and math.abs(dHi - best) <= band and close < best
+                tch += 1
+            if dir < 0 and not na(dLo) and math.abs(dLo - best) <= band and close > best
+                tch += 1
+            string sandS = tch >= 2 ? " · LINE IN THE SAND (" + str.tostring(tch) + " touches held)" : ""
+            tgtS := (dir > 0 ? "→ SUPPLY " : "→ DEMAND ") + str.tostring(f2(best)) + " · " + bestN + " · " + str.tostring(cnt) + (cnt > 1 ? " levels" : " level") + " · $" + str.tostring(f2(dist)) + " away" + (thin ? " · THIN" : "") + sandS + (not na(s50d) ? close > s50d ? " · ↑bias" : " · ↓bias" : "")
     [st, seSide, tbh, tbl, seExt, tbw, htX, cont, tgtS, pdhV, pdlV]
 
 // ───────── Chart-timeframe guard ─────────

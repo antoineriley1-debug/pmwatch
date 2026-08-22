@@ -167,6 +167,9 @@ f_daily() =>
 
 float chE65 = ta.ema(close, 65)
 
+// last 10 completed daily bars, for line-in-the-sand touch counting
+[dTh1, dTh2, dTh3, dTh4, dTh5, dTh6, dTh7, dTh8, dTh9, dTh10, dTl1, dTl2, dTl3, dTl4, dTl5, dTl6, dTl7, dTl8, dTl9, dTl10, dTc1, dTc2, dTc3, dTc4, dTc5, dTc6, dTc7, dTc8, dTc9, dTc10] = request.security(syminfo.tickerid, "D", [high[1], high[2], high[3], high[4], high[5], high[6], high[7], high[8], high[9], high[10], low[1], low[2], low[3], low[4], low[5], low[6], low[7], low[8], low[9], low[10], close[1], close[2], close[3], close[4], close[5], close[6], close[7], close[8], close[9], close[10]], barmerge.gaps_off, barmerge.lookahead_on)
+
 [oldSup, oldDem] = request.security(syminfo.tickerid, "M", [high[1], low[1]], barmerge.gaps_off, barmerge.lookahead_off)
 
 [pdh, pdl, pdc] = request.security(syminfo.tickerid, "D", [high[1], low[1], close[1]], barmerge.gaps_off, barmerge.lookahead_off)
@@ -817,10 +820,33 @@ if nsOn and not na(yATR) and yATR > 0
         if not na(bestDn) and math.abs(pv - bestDn) <= 0.15 * yATR
             cntDn += 1
     string biasS = not na(dS50) ? close > dS50 ? " · ↑bias" : " · ↓bias" : ""
+    // line in the sand: a level touched again and again with no close through it
+    int tSup = 0
+    int tDem = 0
+    if not na(bestUp) or not na(bestDn)
+        float[] thA = array.from(dTh1, dTh2, dTh3, dTh4, dTh5, dTh6, dTh7, dTh8, dTh9, dTh10)
+        float[] tlA = array.from(dTl1, dTl2, dTl3, dTl4, dTl5, dTl6, dTl7, dTl8, dTl9, dTl10)
+        float[] tcA = array.from(dTc1, dTc2, dTc3, dTc4, dTc5, dTc6, dTc7, dTc8, dTc9, dTc10)
+        float band = 0.15 * yATR
+        for j = 0 to 9
+            float hj = array.get(thA, j)
+            float lj = array.get(tlA, j)
+            float cj = array.get(tcA, j)
+            if not na(bestUp) and not na(hj) and not na(cj) and math.abs(hj - bestUp) <= band and cj < bestUp
+                tSup += 1
+            if not na(bestDn) and not na(lj) and not na(cj) and math.abs(lj - bestDn) <= band and cj > bestDn
+                tDem += 1
+        if isToday
+            if not na(bestUp) and not na(dH) and math.abs(dH - bestUp) <= band and close < bestUp
+                tSup += 1
+            if not na(bestDn) and not na(dL) and math.abs(dL - bestDn) <= band and close > bestDn
+                tDem += 1
+    string sandSup = tSup >= 2 ? " · LINE IN THE SAND (" + str.tostring(tSup) + " touches held)" : ""
+    string sandDem = tDem >= 2 ? " · LINE IN THE SAND (" + str.tostring(tDem) + " touches held)" : ""
     if not na(bestUp)
-        nsSupTxt := "SUPPLY (selling) " + str.tostring(f2(bestUp)) + " · " + bestUpN + " · " + str.tostring(cntUp) + (cntUp > 1 ? " levels" : " level") + " · $" + str.tostring(f2(bestUp - close)) + " away" + (bestUp - close < 0.25 * yATR ? " · THIN" : "") + biasS
+        nsSupTxt := "SUPPLY (selling) " + str.tostring(f2(bestUp)) + " · " + bestUpN + " · " + str.tostring(cntUp) + (cntUp > 1 ? " levels" : " level") + " · $" + str.tostring(f2(bestUp - close)) + " away" + (bestUp - close < 0.25 * yATR ? " · THIN" : "") + sandSup + biasS
     if not na(bestDn)
-        nsDemTxt := "DEMAND (buying) " + str.tostring(f2(bestDn)) + " · " + bestDnN + " · " + str.tostring(cntDn) + (cntDn > 1 ? " levels" : " level") + " · $" + str.tostring(f2(close - bestDn)) + " away" + (close - bestDn < 0.25 * yATR ? " · THIN" : "") + biasS
+        nsDemTxt := "DEMAND (buying) " + str.tostring(f2(bestDn)) + " · " + bestDnN + " · " + str.tostring(cntDn) + (cntDn > 1 ? " levels" : " level") + " · $" + str.tostring(f2(close - bestDn)) + " away" + (close - bestDn < 0.25 * yATR ? " · THIN" : "") + sandDem + biasS
 
 // ───────── Gas tank readout ─────────
 // Rows are packed top-down and the table is cleared first, so switched-off
