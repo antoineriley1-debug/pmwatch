@@ -48,6 +48,10 @@ int    fastMins   = input.int(7, "Scratch after (minutes)", minval = 5, maxval =
 float  fastMoveX  = input.float(0.05, "…unless it moved this × ATR", minval = 0.0, maxval = 0.3, step = 0.01, group = G3)
 bool   quietOpen  = input.bool(false, "No entries before 10:00", group = G3, tooltip = "PS60 open discipline: let the first hour form before taking entries.")
 
+string G0 = "Stats table"
+string tblPosIn = input.string("Top right", "Position on the chart", options = ["Top left", "Top center", "Top right", "Middle left", "Middle center", "Middle right", "Bottom left", "Bottom center", "Bottom right"], group = G0)
+string tblSizeIn = input.string("Compact", "Text size", options = ["Compact", "Medium", "Large", "Huge"], group = G0)
+
 string G4 = "Read me"
 bool noteA = input.bool(true, "ℹ Small-sample warning (read this tooltip)", group = G4, tooltip = "TradingView requires strategy trades to execute on the chart's own bars, so this backtest is capped by the chart's loaded 5-minute history (roughly 100 trading days) — a platform constraint on strategies, which is why the desk's probability sample can reach further back but simulated trades cannot. Scroll the chart LEFT — as older bars load in, they join the test automatically. The stats table shows exactly how many days and trades the numbers come from. Treat anything under ~30 trades as a sketch, not a verdict.")
 
@@ -313,7 +317,20 @@ if closedNow and not na(tEntry)
 // ───────── Stats table + pane plot ─────────
 plot(strategy.equity, "Equity", color.new(#4deeea, 0), 2)
 
-var table t = table.new(position.top_right, 1, 10, border_width = 1, border_color = color.new(color.white, 60))
+f_tblPos() =>
+    switch tblPosIn
+        "Top left"      => position.top_left
+        "Top center"    => position.top_center
+        "Top right"     => position.top_right
+        "Middle left"   => position.middle_left
+        "Middle center" => position.middle_center
+        "Middle right"  => position.middle_right
+        "Bottom left"   => position.bottom_left
+        "Bottom center" => position.bottom_center
+        => position.bottom_right
+string szBody = tblSizeIn == "Compact" ? size.tiny : tblSizeIn == "Medium" ? size.small : tblSizeIn == "Large" ? size.normal : size.large
+string szHead = tblSizeIn == "Compact" ? size.small : tblSizeIn == "Medium" ? size.normal : tblSizeIn == "Large" ? size.large : size.huge
+var table t = table.new(f_tblPos(), 1, 10, border_width = 1, border_color = color.new(color.white, 60))
 
 if barstate.islast
     table.clear(t, 0, 0, 0, 9)
@@ -322,28 +339,28 @@ if barstate.islast
     string sampleTxt = str.tostring(daysN) + " days loaded, " + (not na(firstKeyBT) ? f_fmtKey(firstKeyBT) : "?") + " – today · " + str.tostring(closedT) + " trades (" + (daysN > 0 ? str.tostring(f2(closedT * 1.0 / daysN)) : "0") + "/day)"
     string wrTxt = closedT > 0 ? "Win rate " + str.tostring(math.round(100.0 * winsT / closedT)) + "%  (" + str.tostring(winsT) + "W / " + str.tostring(closedT - winsT) + "L)" : "No closed trades yet in loaded history"
     string tbTxt = tbOK ? "Tight box today " + str.tostring(f2(tbHi)) + " / " + str.tostring(f2(tbLo)) + " · " + str.tostring(f2(tbHtX)) + "x ATR tall" : na(tbHtX) ? "Tight box building (needs " + str.tostring(tbWin) + " daily bars)" : tbRejOn and tbWild > 0 ? "NO BOX today — " + str.tostring(math.round(tbWild)) + " wild bar(s) in window" : "NO BOX today — range " + str.tostring(f2(tbHtX)) + "x ATR > " + str.tostring(tbMaxHx) + "x limit"
-    table.cell(t, 0, 0, "PS60 SECOND-ENTRY BACKTEST", bgcolor = color.new(#6a1b9a, 0), text_color = color.white, text_size = size.small)
-    table.cell(t, 0, 1, sampleTxt, bgcolor = color.new(color.black, 20), text_color = color.new(#b2b5be, 0), text_size = size.tiny)
-    table.cell(t, 0, 2, wrTxt, bgcolor = color.new(color.black, 20), text_color = color.white, text_size = size.tiny)
+    table.cell(t, 0, 0, "PS60 SECOND-ENTRY BACKTEST", bgcolor = color.new(#6a1b9a, 0), text_color = color.white, text_size = szHead)
+    table.cell(t, 0, 1, sampleTxt, bgcolor = color.new(color.black, 20), text_color = color.new(#b2b5be, 0), text_size = szBody)
+    table.cell(t, 0, 2, wrTxt, bgcolor = color.new(color.black, 20), text_color = color.white, text_size = szBody)
     int rIdx = 3
     if strategy.grossloss > 0
-        table.cell(t, 0, rIdx, "Profit factor " + str.tostring(f2(strategy.grossprofit / strategy.grossloss)), bgcolor = color.new(color.black, 20), text_color = color.white, text_size = size.tiny)
+        table.cell(t, 0, rIdx, "Profit factor " + str.tostring(f2(strategy.grossprofit / strategy.grossloss)), bgcolor = color.new(color.black, 20), text_color = color.white, text_size = szBody)
         rIdx += 1
     else if closedT > 0
-        table.cell(t, 0, rIdx, "Profit factor ∞ (no losers yet)", bgcolor = color.new(color.black, 20), text_color = color.white, text_size = size.tiny)
+        table.cell(t, 0, rIdx, "Profit factor ∞ (no losers yet)", bgcolor = color.new(color.black, 20), text_color = color.white, text_size = szBody)
         rIdx += 1
     if nRes > 0
-        table.cell(t, 0, rIdx, "Reached target " + str.tostring(math.round(100.0 * nHit / nRes)) + "%", bgcolor = color.new(color.black, 20), text_color = color.new(#26a69a, 0), text_size = size.tiny)
+        table.cell(t, 0, rIdx, "Reached target " + str.tostring(math.round(100.0 * nHit / nRes)) + "%", bgcolor = color.new(color.black, 20), text_color = color.new(#26a69a, 0), text_size = szBody)
         rIdx += 1
-        table.cell(t, 0, rIdx, "Typical run " + str.tostring(f2(runSum / nRes)) + "x ATR before exit", bgcolor = color.new(color.black, 20), text_color = color.white, text_size = size.tiny)
+        table.cell(t, 0, rIdx, "Typical run " + str.tostring(f2(runSum / nRes)) + "x ATR before exit", bgcolor = color.new(color.black, 20), text_color = color.white, text_size = szBody)
         rIdx += 1
-        table.cell(t, 0, rIdx, "Fakeouts " + str.tostring(math.round(100.0 * nFake / nRes)) + "% (stopped before half the target)", bgcolor = color.new(color.black, 20), text_color = color.new(#ef5350, 0), text_size = size.tiny)
+        table.cell(t, 0, rIdx, "Fakeouts " + str.tostring(math.round(100.0 * nFake / nRes)) + "% (stopped before half the target)", bgcolor = color.new(color.black, 20), text_color = color.new(#ef5350, 0), text_size = szBody)
         rIdx += 1
     if fastOut and nScratch > 0
-        table.cell(t, 0, rIdx, "Scratches (5-7 min rule): " + str.tostring(nScratch), bgcolor = color.new(color.black, 20), text_color = color.new(#b2b5be, 0), text_size = size.tiny)
+        table.cell(t, 0, rIdx, "Scratches (5-7 min rule): " + str.tostring(nScratch), bgcolor = color.new(color.black, 20), text_color = color.new(#b2b5be, 0), text_size = szBody)
         rIdx += 1
     if not na(lastInP)
         string anat = "Last (" + (lastLong ? "LONG" : "SHORT") + "): pivot " + str.tostring(f2(lastPiv)) + " · flush " + str.tostring(f2(lastPush)) + " · retrace " + str.tostring(f2(lastPullP)) + " · in " + str.tostring(f2(lastInP)) + " · target " + str.tostring(f2(lastTgtP))
-        table.cell(t, 0, rIdx, anat, bgcolor = color.new(color.black, 20), text_color = color.new(#4deeea, 0), text_size = size.tiny)
+        table.cell(t, 0, rIdx, anat, bgcolor = color.new(color.black, 20), text_color = color.new(#4deeea, 0), text_size = szBody)
         rIdx += 1
-    table.cell(t, 0, rIdx, timeframe.isintraday ? tbTxt + "  ·  5-min history is limited — scroll left for more days" : "Run this on an intraday chart (5-minute is best)", bgcolor = color.new(#1a1a2e, 10), text_color = color.new(#ffd54f, 0), text_size = size.tiny)
+    table.cell(t, 0, rIdx, timeframe.isintraday ? tbTxt + "  ·  5-min history is limited — scroll left for more days" : "Run this on an intraday chart (5-minute is best)", bgcolor = color.new(#1a1a2e, 10), text_color = color.new(#ffd54f, 0), text_size = szBody)
