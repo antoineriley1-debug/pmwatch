@@ -821,14 +821,14 @@ if nsOn and not na(yATR) and yATR > 0
         float rem25 = 2.5 * yATR - used
         float rem3 = 3.0 * yATR - used
         f_addLv(lvP, lvN, rem1 > 0 ? dH + rem1 : na, "1x ATR")
-        f_addLv(lvP, lvN, rem15 > 0 ? dH + rem15 : na, "1.5x ATR")
+        f_addLv(lvP, lvN, showHalf and rem15 > 0 ? dH + rem15 : na, "1.5x ATR")
         f_addLv(lvP, lvN, rem2 > 0 ? dH + rem2 : na, "2x ATR")
-        f_addLv(lvP, lvN, rem25 > 0 ? dH + rem25 : na, "2.5x ATR")
+        f_addLv(lvP, lvN, showHalf and rem25 > 0 ? dH + rem25 : na, "2.5x ATR")
         f_addLv(lvP, lvN, rem3 > 0 ? dH + rem3 : na, "3x ATR")
         f_addLv(lvP, lvN, rem1 > 0 ? dL - rem1 : na, "1x ATR")
-        f_addLv(lvP, lvN, rem15 > 0 ? dL - rem15 : na, "1.5x ATR")
+        f_addLv(lvP, lvN, showHalf and rem15 > 0 ? dL - rem15 : na, "1.5x ATR")
         f_addLv(lvP, lvN, rem2 > 0 ? dL - rem2 : na, "2x ATR")
-        f_addLv(lvP, lvN, rem25 > 0 ? dL - rem25 : na, "2.5x ATR")
+        f_addLv(lvP, lvN, showHalf and rem25 > 0 ? dL - rem25 : na, "2.5x ATR")
         f_addLv(lvP, lvN, rem3 > 0 ? dL - rem3 : na, "3x ATR")
     f_addLv(lvP, lvN, math.ceil(close / wStepG) * wStepG, "whole")
     f_addLv(lvP, lvN, math.floor(close / wStepG) * wStepG, "whole")

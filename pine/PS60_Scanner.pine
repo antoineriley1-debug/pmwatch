@@ -54,6 +54,7 @@ bool   onlyHot  = input.bool(false, "Only show INSTITUTIONS / ENTRY rows", group
 bool   compactOn = input.bool(true, "Compact (single column)", group = G5, tooltip = "Squeezes each ticker to one small cell: TSLA · ARMED L · 366.5. Combine with tiny text for the smallest possible footprint.")
 
 string G6 = "Next stop (measured potential)"
+bool halfLvOn = input.bool(false, "Include half-step levels (1.5x / 2.5x) as targets", group = G6, tooltip = "Keep OFF when the desk half-step ladder is off, so the scanner never names a level your chart is not drawing. Turn both on together for the full ladder.")
 bool nsOn = input.bool(true, "Show next stop on active rows", group = G6, tooltip = "PS60 Rule 1: stocks move supply-to-supply / demand-to-demand, and the distance to the next level is the measured potential. For any ticker with a direction — a box break, or price confirmed past the prior day's high/low — the row shows the nearest meaningful level in that direction: the daily EMA stack (4/9/10/13/20/50/65/89/100/200, prior completed day, static all session), PDH/PDL, the remaining-ATR ladder, and whole numbers. Levels stacking within 0.15×ATR merge into one zone and the row shows how many agree (+1, +2…). Levels hugging price (within 0.10×ATR) are skipped. THIN = less than 0.25×ATR of room — not worth it, especially on options. ↑/↓bias = which side of its daily 50 SMA the stock is on. Each setup also carries a grade — a PS60-style checklist score, NOT a backtested probability: +2 direction agrees with daily bias, +2 the tank covers the trip, +2 three or more levels at the zone (+1 for two), +2 second entry armed or triggering (+1 earlier stages), +1 not THIN, +1 LINE IN THE SAND at the zone. 8-10 = A+, 6-7 = A, 4-5 = B, below = C. Display-only for now; no alerts fire from this.")
 
 // ───────── Helpers ─────────
@@ -188,14 +189,14 @@ f_scan() =>
             float rem25 = 2.5 * dAtr - usedD
             float rem3 = 3.0 * dAtr - usedD
             f_addLv(lvP, lvN, rem1 > 0 ? dHi + rem1 : na, "1x ATR")
-            f_addLv(lvP, lvN, rem15 > 0 ? dHi + rem15 : na, "1.5x ATR")
+            f_addLv(lvP, lvN, halfLvOn and rem15 > 0 ? dHi + rem15 : na, "1.5x ATR")
             f_addLv(lvP, lvN, rem2 > 0 ? dHi + rem2 : na, "2x ATR")
-            f_addLv(lvP, lvN, rem25 > 0 ? dHi + rem25 : na, "2.5x ATR")
+            f_addLv(lvP, lvN, halfLvOn and rem25 > 0 ? dHi + rem25 : na, "2.5x ATR")
             f_addLv(lvP, lvN, rem3 > 0 ? dHi + rem3 : na, "3x ATR")
             f_addLv(lvP, lvN, rem1 > 0 ? dLo - rem1 : na, "1x ATR")
-            f_addLv(lvP, lvN, rem15 > 0 ? dLo - rem15 : na, "1.5x ATR")
+            f_addLv(lvP, lvN, halfLvOn and rem15 > 0 ? dLo - rem15 : na, "1.5x ATR")
             f_addLv(lvP, lvN, rem2 > 0 ? dLo - rem2 : na, "2x ATR")
-            f_addLv(lvP, lvN, rem25 > 0 ? dLo - rem25 : na, "2.5x ATR")
+            f_addLv(lvP, lvN, halfLvOn and rem25 > 0 ? dLo - rem25 : na, "2.5x ATR")
             f_addLv(lvP, lvN, rem3 > 0 ? dLo - rem3 : na, "3x ATR")
         float wStep = f_stepAuto(close)
         f_addLv(lvP, lvN, math.ceil(close / wStep) * wStep, "whole")
