@@ -1,5 +1,5 @@
 //@version=5
-indicator("PS60 Scanner", "PS60-SCAN", overlay = true)
+indicator("PS60 Scanner", "PS60-SCAN", overlay = true, dynamic_requests = true)
 
 // Watchlist scanner for the PS60 second entry. Put this on ANY chart, type your
 // tickers into the settings once, and create ONE alert with the condition

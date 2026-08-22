@@ -1,5 +1,5 @@
 //@version=5
-indicator("PS60 Desk+", "DESK+", overlay = true, max_lines_count = 300, max_labels_count = 200, max_boxes_count = 10)
+indicator("PS60 Desk+", "DESK+", overlay = true, max_lines_count = 300, max_labels_count = 200, max_boxes_count = 10, dynamic_requests = true)
 
 // One ATR feeds everything: tank, levels, second entry, probability.
 // ATR = prior COMPLETED day, so levels are static all session. Nothing drifts.
