@@ -21,7 +21,10 @@ cut off or unreadable, say so instead of guessing.
 
 ## THE READOUT ROWS, TOP TO BOTTOM
 1. GAS row. Live session: "GAS 31% left · 0.69x ATR traveled" with color =
-   green (>=40% left), yellow (>=15%), red (below). Market closed:
+   green (>=40% left), yellow (>=15%), red (below). It may append
+   "· RVOL 1.4x": cumulative volume so far vs the 20-day average PACE for
+   this time of day. 1.0x = normal participation, 1.5x+ = real interest
+   behind the move, under 0.7x = a move on air — distrust it. Market closed:
    "GAS waiting 9:30 · tank N · next session tank M" — no session running;
    the first tank is the LAST session's (used to grade what happened), the
    second is the NEXT session's (ATR including the last day — the prep
@@ -75,11 +78,19 @@ Format: TICKER · STATE · details. States, in setup order:
 - INSTITUTIONS L/S · trigger P (green): flush complete, second wave staged;
   entry fires if price reclaims P.
 - ENTRY L/S · trigger P (purple): price is at the trigger now.
-Active rows append: "grade A+/A/B/C" (checklist score: bias alignment +2,
-tank covers trip +2, 3+ levels at target +2 / 2 levels +1, armed second entry
-+2 / earlier +1, not THIN +1, line in the sand +1; 8-10 A+, 6-7 A, 4-5 B;
-it is a quality checklist, NOT a backtested probability) and a
-"→ SUPPLY/DEMAND ..." target in the same format as row 7.
+Active rows append: "grade A+/A/B/C" (checklist score out of 13: bias
+alignment +2, tank covers trip +2, 3+ levels at target +2 / 2 levels +1,
+armed second entry +2 / earlier +1, not THIN +1, line in the sand +1,
+60-minute candle agrees +1, RVOL 1.5x+ +2 / 1.0x+ +1; 10+ A+, 8-9 A,
+5-7 B, below C; it is a quality checklist, NOT a backtested probability)
+and a "→ SUPPLY/DEMAND ..." target in the same format as row 7. Two more
+tokens may appear on active rows and on the desk's second-entry status:
+- "60m ✔" / "60m ✖": whether the last COMPLETED 60-minute candle's
+  high/low agrees with the trade direction (price above the prior 60m high
+  for longs, below the prior 60m low for shorts). Dan's Rule 2 — the
+  60-minute chart is the referee; a ✖ means the higher timeframe has not
+  confirmed the move yet.
+- "RVOL 1.4x": same relative-volume-vs-pace measure as the GAS row.
 
 ## HOW TO WRITE YOUR BREAKDOWN
 1. State what the last/current session did (gas rows) in one sentence.

@@ -41,6 +41,12 @@ bool   hourReset  = input.bool(true, "Hourly: miss the 60, need a new second", g
 int    maxPerDay  = input.int(2, "Max trades per day", minval = 1, maxval = 6, group = G3)
 int    lastEntryMin = input.int(330, "No new entries after (minutes past 9:30)", minval = 60, maxval = 380, group = G3, tooltip = "330 = 3:00 PM. Late-day entries have no time to work.")
 bool   eodOn      = input.bool(true, "Close everything at 3:55 PM", group = G3)
+bool   finOn      = input.bool(true, "Finance the trade: half off at first move, stop to breakeven", group = G3, tooltip = "PS60 Rule 3. Half the position exits at the first-scale distance below; once that fills, the stop on the rest moves to the entry price (a free trade) and the runner rides to the remaining-ATR target. Turn off to test the plain all-or-nothing bracket instead.")
+float  scale1X    = input.float(0.5, "First scale at (× ATR beyond entry)", minval = 0.1, maxval = 1.0, step = 0.05, group = G3)
+bool   fastOut    = input.bool(true, "5-7 minute rule: scratch if it does not move", group = G3, tooltip = "If the trade has not traveled at least the amount below within the minutes below, there is likely a reload buyer/seller at the level — exit and take the scratch. Checked on bar closes, so on a 5-minute chart the check lands on the first bar close at or past the limit.")
+int    fastMins   = input.int(7, "Scratch after (minutes)", minval = 5, maxval = 20, group = G3)
+float  fastMoveX  = input.float(0.05, "…unless it moved this × ATR", minval = 0.0, maxval = 0.3, step = 0.01, group = G3)
+bool   quietOpen  = input.bool(false, "No entries before 10:00", group = G3, tooltip = "PS60 open discipline: let the first hour form before taking entries.")
 
 string G4 = "Read me"
 bool noteA = input.bool(true, "ℹ Small-sample warning (read this tooltip)", group = G4, tooltip = "TradingView requires strategy trades to execute on the chart's own bars, so this backtest is capped by the chart's loaded 5-minute history (roughly 100 trading days) — a platform constraint on strategies, which is why the desk's probability sample can reach further back but simulated trades cannot. Scroll the chart LEFT — as older bars load in, they join the test automatically. The stats table shows exactly how many days and trades the numbers come from. Treat anything under ~30 trades as a sketch, not a verdict.")
@@ -144,6 +150,12 @@ if hourReset and newHour
     pbExt    := na
 
 // trade bookkeeping for the custom stats
+var float entryQty = na
+var bool  movedBE  = false
+var int   entBar   = na
+var bool  wasScratch = false
+var int   nScratch = 0
+int barMins = math.max(1, math.round(timeframe.in_seconds() / 60))
 var float tEntry = na
 var float tTgt   = na
 var float tStop  = na
@@ -162,7 +174,7 @@ var int   nRes   = 0
 var float runSum = 0.0
 
 bool flatNow = strategy.position_size == 0
-bool canEnter = flatNow and rthBar and tbOK and not na(usedNow) and minsSince >= 0 and minsSince <= lastEntryMin and tradesToday < maxPerDay
+bool canEnter = flatNow and rthBar and tbOK and not na(usedNow) and minsSince >= (quietOpen ? 30 : 0) and minsSince <= lastEntryMin and tradesToday < maxPerDay
 bool allowLong  = sideMode != "Short only"
 bool allowShort = sideMode != "Long only"
 
@@ -191,7 +203,11 @@ if rthBar and tbOK
                 float tgtPx = rHi + math.max(room, 0.0)
                 if room >= minLeftX * yATR and tgtPx > close and not na(pbExt) and pbExt < close
                     strategy.entry("L", strategy.long)
-                    strategy.exit("Lx", "L", stop = pbExt, limit = tgtPx)
+                    if finOn
+                        strategy.exit("Lx1", "L", qty_percent = 50, stop = pbExt, limit = close + scale1X * yATR)
+                        strategy.exit("Lx2", "L", qty_percent = 100, stop = pbExt, limit = tgtPx)
+                    else
+                        strategy.exit("Lx", "L", stop = pbExt, limit = tgtPx)
                     lastPiv   := sePivot
                     lastPush  := seExt
                     lastPullP := pbExt
@@ -221,7 +237,11 @@ if rthBar and tbOK
                 float tgtPx = rLo - math.max(room, 0.0)
                 if room >= minLeftX * yATR and tgtPx < close and not na(pbExt) and pbExt > close
                     strategy.entry("S", strategy.short)
-                    strategy.exit("Sx", "S", stop = pbExt, limit = tgtPx)
+                    if finOn
+                        strategy.exit("Sx1", "S", qty_percent = 50, stop = pbExt, limit = close - scale1X * yATR)
+                        strategy.exit("Sx2", "S", qty_percent = 100, stop = pbExt, limit = tgtPx)
+                    else
+                        strategy.exit("Sx", "S", stop = pbExt, limit = tgtPx)
                     lastPiv   := sePivot
                     lastPush  := seExt
                     lastPullP := pbExt
@@ -250,6 +270,23 @@ if rthBar and tbOK
 if strategy.position_size != 0 and not na(tEntry)
     tMax := math.max(tMax, tLong ? high - tEntry : tEntry - low)
 
+if strategy.position_size != 0 and na(entryQty)
+    entryQty := strategy.position_size
+    entBar := bar_index
+
+// Rule 3: after the first scale fills, the rest becomes a free trade
+if finOn and not movedBE and not na(entryQty) and strategy.position_size != 0 and math.abs(strategy.position_size) < math.abs(entryQty)
+    if tLong
+        strategy.exit("Lx2", "L", qty_percent = 100, stop = tEntry, limit = tTgt)
+    else
+        strategy.exit("Sx2", "S", qty_percent = 100, stop = tEntry, limit = tTgt)
+    movedBE := true
+
+// 5-7 minute rule: no movement fast means a reload on the other side
+if fastOut and strategy.position_size != 0 and not na(entBar) and not na(tATR) and (bar_index - entBar) * barMins >= fastMins and tMax < fastMoveX * tATR
+    wasScratch := true
+    strategy.close_all(comment = "5-7 min scratch")
+
 // end-of-day flat
 if eodOn and rthBar and minsSince >= 385 and strategy.position_size != 0
     strategy.close_all(comment = "EOD")
@@ -265,15 +302,21 @@ if closedNow and not na(tEntry)
         nFake += 1
     runSum += tATR > 0 ? tMax / tATR : 0.0
     nRes += 1
+    if wasScratch
+        nScratch += 1
+    wasScratch := false
+    entryQty := na
+    movedBE := false
+    entBar := na
     tEntry := na
 
 // ───────── Stats table + pane plot ─────────
 plot(strategy.equity, "Equity", color.new(#4deeea, 0), 2)
 
-var table t = table.new(position.top_right, 1, 9, border_width = 1, border_color = color.new(color.white, 60))
+var table t = table.new(position.top_right, 1, 10, border_width = 1, border_color = color.new(color.white, 60))
 
 if barstate.islast
-    table.clear(t, 0, 0, 0, 8)
+    table.clear(t, 0, 0, 0, 9)
     int closedT = strategy.closedtrades
     int winsT = strategy.wintrades
     string sampleTxt = str.tostring(daysN) + " days loaded, " + (not na(firstKeyBT) ? f_fmtKey(firstKeyBT) : "?") + " – today · " + str.tostring(closedT) + " trades (" + (daysN > 0 ? str.tostring(f2(closedT * 1.0 / daysN)) : "0") + "/day)"
@@ -295,6 +338,9 @@ if barstate.islast
         table.cell(t, 0, rIdx, "Typical run " + str.tostring(f2(runSum / nRes)) + "x ATR before exit", bgcolor = color.new(color.black, 20), text_color = color.white, text_size = size.tiny)
         rIdx += 1
         table.cell(t, 0, rIdx, "Fakeouts " + str.tostring(math.round(100.0 * nFake / nRes)) + "% (stopped before half the target)", bgcolor = color.new(color.black, 20), text_color = color.new(#ef5350, 0), text_size = size.tiny)
+        rIdx += 1
+    if fastOut and nScratch > 0
+        table.cell(t, 0, rIdx, "Scratches (5-7 min rule): " + str.tostring(nScratch), bgcolor = color.new(color.black, 20), text_color = color.new(#b2b5be, 0), text_size = size.tiny)
         rIdx += 1
     if not na(lastInP)
         string anat = "Last (" + (lastLong ? "LONG" : "SHORT") + "): pivot " + str.tostring(f2(lastPiv)) + " · flush " + str.tostring(f2(lastPush)) + " · retrace " + str.tostring(f2(lastPullP)) + " · in " + str.tostring(f2(lastInP)) + " · target " + str.tostring(f2(lastTgtP))

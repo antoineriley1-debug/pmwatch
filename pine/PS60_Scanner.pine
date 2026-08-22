@@ -29,6 +29,7 @@ float retracePct  = input.float(30.0, "Retrace % of first push", minval = 10.0, 
 float minRetrX    = input.float(0.3, "AND at least this × ATR", minval = 0.1, step = 0.05, group = G3)
 float nearX       = input.float(0.15, "NEAR = within this × ATR of second", minval = 0.05, step = 0.05, group = G3)
 bool  hourResetIn = input.bool(true, "Hourly: miss the 60, need a new second", group = G3)
+bool  quietOpen   = input.bool(false, "No ENTRY alerts before 10:00 (let the first hour form)", group = G3, tooltip = "PS60 open discipline: the first hour is the trap being set. With this on, setups still arm and display, but the ENTRY state (and its alert) is held until 10:00.")
 
 string G4 = "Tickers (leave blank to skip)"
 string sym1  = input.symbol("", "Ticker 1", group = G4, tooltip = "Type or search the symbol (e.g. NASDAQ:TSLA). Blank rows are skipped. After filling the list, create ONE alert on this scanner with condition = Any alert() function call — that single alert covers every ticker here.")
@@ -55,7 +56,7 @@ bool   compactOn = input.bool(true, "Compact (single column)", group = G5, toolt
 
 string G6 = "Next stop (measured potential)"
 bool halfLvOn = input.bool(false, "Include half-step levels (1.5x / 2.5x) as targets", group = G6, tooltip = "Keep OFF when the desk half-step ladder is off, so the scanner never names a level your chart is not drawing. Turn both on together for the full ladder.")
-bool nsOn = input.bool(true, "Show next stop on active rows", group = G6, tooltip = "PS60 Rule 1: stocks move supply-to-supply / demand-to-demand, and the distance to the next level is the measured potential. For any ticker with a direction — a box break, or price confirmed past the prior day's high/low — the row shows the nearest meaningful level in that direction: the daily EMA stack (4/9/10/13/20/50/65/89/100/200, prior completed day, static all session), PDH/PDL, the remaining-ATR ladder, and whole numbers. Levels stacking within 0.15×ATR merge into one zone and the row shows how many agree (+1, +2…). Levels hugging price (within 0.10×ATR) are skipped. THIN = less than 0.25×ATR of room — not worth it, especially on options. ↑/↓bias = which side of its daily 50 SMA the stock is on. Each setup also carries a grade — a PS60-style checklist score, NOT a backtested probability: +2 direction agrees with daily bias, +2 the tank covers the trip, +2 three or more levels at the zone (+1 for two), +2 second entry armed or triggering (+1 earlier stages), +1 not THIN, +1 LINE IN THE SAND at the zone. 8-10 = A+, 6-7 = A, 4-5 = B, below = C. Display-only for now; no alerts fire from this.")
+bool nsOn = input.bool(true, "Show next stop on active rows", group = G6, tooltip = "PS60 Rule 1: stocks move supply-to-supply / demand-to-demand, and the distance to the next level is the measured potential. For any ticker with a direction — a box break, or price confirmed past the prior day's high/low — the row shows the nearest meaningful level in that direction: the daily EMA stack (4/9/10/13/20/50/65/89/100/200, prior completed day, static all session), PDH/PDL, the remaining-ATR ladder, and whole numbers. Levels stacking within 0.15×ATR merge into one zone and the row shows how many agree (+1, +2…). Levels hugging price (within 0.10×ATR) are skipped. THIN = less than 0.25×ATR of room — not worth it, especially on options. ↑/↓bias = which side of its daily 50 SMA the stock is on. Each setup also carries a grade — a PS60-style checklist score, NOT a backtested probability: +2 direction agrees with daily bias, +2 the tank covers the trip, +2 three or more levels at the zone (+1 for two), +2 second entry armed or triggering (+1 earlier stages), +1 not THIN, +1 LINE IN THE SAND at the zone. +1 the 60-minute candle confirms the direction (Rule 2), +2 relative volume 1.5x or better (+1 at 1.0x). 10+ = A+, 8-9 = A, 5-7 = B, below = C. Display-only for now; no alerts fire from this.")
 
 // ───────── Helpers ─────────
 f2(float v) => math.round(v * 100.0) / 100.0
@@ -111,6 +112,12 @@ f_scan() =>
     var int    lastHr   = na
     var float  dHi      = na
     var float  dLo      = na
+    var float  cur60H   = na
+    var float  cur60L   = na
+    var float  prev60H  = na
+    var float  prev60L  = na
+    var float  cumV     = 0.0
+    var float[] volH    = array.new_float()
     int bk = year(time, tz) * 10000 + month(time, tz) * 100 + dayofmonth(time, tz)
     if na(dk) or bk != dk
         seThru   := false
@@ -120,16 +127,34 @@ f_scan() =>
         sePulled := false
         dHi      := na
         dLo      := na
+        cur60H   := na
+        cur60L   := na
+        prev60H  := na
+        prev60L  := na
+        if cumV > 0
+            array.push(volH, cumV)
+            if array.size(volH) > 20
+                array.shift(volH)
+        cumV     := 0.0
         dk       := bk
     int hr = hour(time, tz)
-    if hourResetIn and not na(lastHr) and hr != lastHr
-        seExt    := na
-        sePulled := false
+    if not na(lastHr) and hr != lastHr
+        if hourResetIn
+            seExt    := na
+            sePulled := false
+        prev60H := cur60H
+        prev60L := cur60L
+        cur60H  := na
+        cur60L  := na
     lastHr := hr
     bool rth = not na(time("", "0930-1600", tz))
+    float mins = (time - timestamp(tz, year(time, tz), month(time, tz), dayofmonth(time, tz), 9, 30)) / 60000.0
     if rth
         dHi := na(dHi) ? high : math.max(dHi, high)
         dLo := na(dLo) ? low : math.min(dLo, low)
+        cur60H := na(cur60H) ? high : math.max(cur60H, high)
+        cur60L := na(cur60L) ? low : math.min(cur60L, low)
+        cumV += nz(volume)
     bool boxOK = not na(htX) and htX <= tbMaxHx and (not tbRejOn or tbw == 0)
     if rth and boxOK
         if not seThru
@@ -159,6 +184,13 @@ f_scan() =>
                     sePulled := true
     bool near = sePulled and not na(seExt) and boxOK and math.abs(close - seExt) <= nearX * dAtr
     int st = not boxOK ? 0 : not seThru ? 1 : not sePulled ? 2 : near ? 4 : 3
+    if quietOpen and st == 4 and mins < 30
+        st := 3
+    // Rule 2: the current 60-minute candle building over/under the prior one
+    int c60 = not na(prev60H) and close > prev60H ? 1 : not na(prev60L) and close < prev60L ? -1 : 0
+    // relative volume: today's cumulative pace vs the 20-day average pace
+    float elap = math.min(1.0, math.max(0.08, mins / 390.0))
+    float rvol = rth and array.size(volH) >= 5 and array.avg(volH) > 0 ? cumV / (array.avg(volH) * elap) : na
     // continuation watch: no box needed — price confirmed past the prior day's range
     // confirmed = the PRIOR completed bar closed beyond the prior day's level
     int cont = rth and not na(pdhV) and close[1] > pdhV and close > pdhV ? 1 : rth and not na(pdlV) and close[1] < pdlV and close < pdlV ? -1 : 0
@@ -249,8 +281,12 @@ f_scan() =>
             gsc += st >= 3 ? 2 : 1
             gsc += thin ? 0 : 1
             gsc += tch >= 2 ? 1 : 0
-            string grd = gsc >= 8 ? "A+" : gsc >= 6 ? "A" : gsc >= 4 ? "B" : "C"
-            tgtS := "grade " + grd + " · " + (dir > 0 ? "→ SUPPLY " : "→ DEMAND ") + str.tostring(f2(best)) + " · " + names + " (" + str.tostring(cnt) + (cnt > 1 ? " levels)" : " level)") + " · $" + str.tostring(f2(dist)) + " gas needed" + tankS + (thin ? " · THIN" : "") + sandS + (not na(s50d) ? close > s50d ? " · ↑bias" : " · ↓bias" : "")
+            gsc += dir == c60 ? 1 : 0
+            gsc += not na(rvol) and rvol >= 1.5 ? 2 : not na(rvol) and rvol >= 1.0 ? 1 : 0
+            string grd = gsc >= 10 ? "A+" : gsc >= 8 ? "A" : gsc >= 5 ? "B" : "C"
+            string c60S = dir == c60 ? " · 60m ✔" : " · 60m ✖"
+            string rvolS = not na(rvol) ? " · RVOL " + str.tostring(f2(rvol)) + "x" : ""
+            tgtS := "grade " + grd + " · " + (dir > 0 ? "→ SUPPLY " : "→ DEMAND ") + str.tostring(f2(best)) + " · " + names + " (" + str.tostring(cnt) + (cnt > 1 ? " levels)" : " level)") + " · $" + str.tostring(f2(dist)) + " gas needed" + tankS + (thin ? " · THIN" : "") + sandS + c60S + rvolS + (not na(s50d) ? close > s50d ? " · ↑bias" : " · ↓bias" : "")
     [st, seSide, tbh, tbl, seExt, tbw, htX, cont, tgtS, pdhV, pdlV]
 
 // ───────── Chart-timeframe guard ─────────
