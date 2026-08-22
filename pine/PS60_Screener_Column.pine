@@ -1,0 +1,196 @@
+//@version=5
+indicator("PS60 Screener Column", "PS60-COL", overlay = true)
+
+// FOR TRADINGVIEW'S PINE SCREENER — scan ANY watchlist (up to 1,000 symbols)
+// for PS60 setups, instead of the 15 hardcoded slots in PS60 Scanner.
+//
+// HOW TO USE (one-time setup):
+//   1. Save this script in the Pine Editor, then click the "..." next to its
+//      name in Indicators → your scripts and mark it as a FAVORITE (star it).
+//      The Pine Screener only lists favorited scripts.
+//   2. Open the Pine Screener: tradingview.com → Products → Screeners → Pine
+//      (or go directly to tradingview.com/pine-screener/). Paid plans only.
+//   3. Choose script: PS60 Screener Column. Choose your watchlist.
+//      Set the timeframe to 5 minutes. Click Scan.
+//   4. Add filters, e.g.:  State >= 3            → armed second entries
+//                          Watch != 0            → confirmed continuation breaks
+//                          Score >= 6            → best-conditioned setups first
+//      Sort by Score, descending.
+//   5. Rescan whenever you want a fresh read (it is on-demand, not streaming).
+//      For streaming alerts, feed the top names into the PS60 Scanner's 15
+//      slots — this tool finds the field, the scanner babysits the finalists.
+//
+// COLUMN MEANINGS (each plot becomes a screener column):
+//   State     0 no box · 1 distribution · 2 retail flush · 3 institutions
+//             armed · 4 at entry trigger
+//   Watch     1 confirmed over prior day high · -1 under prior day low · 0 no
+//   Score     0-9 conditions checklist (bias 2, armed 2/1, 60m 1, RVOL 2/1,
+//             gas 1, watch 1) — a sorting aid, NOT a probability
+//   BoxHtATR  tight-box window height in ATRs (box exists only when <= cap)
+//   GasLeft%  percent of the ATR tank still unburned today
+//   RVOL      cumulative volume vs the 20-day pace for this time of day
+//   H60       1 price above last completed 60m high · -1 below its low · 0
+//   Bias      1 above daily 50 SMA · -1 below · 0 unknown
+//   Trigger   the reclaim price an armed second entry fires at (state 3-4)
+//   BoxTop / BoxBot   the qualified box edges (future pivots)
+//
+// Same conventions as the desk: ATR = 14-day RMA of the prior COMPLETED day,
+// static all session; day rollover keys off the calendar date; day range
+// seeds from RTH bars only.
+
+string G1 = "ATR (matches the desk)"
+int    atrLen    = input.int(14, "ATR length (days)", minval = 1, group = G1)
+string atrSmooth = input.string("RMA", "Smoothing", options = ["RMA", "EMA", "SMA", "WMA"], group = G1)
+string tz        = input.string("America/New_York", "Timezone", group = G1)
+
+string G2 = "Tight box (matches the desk)"
+int   tbWin   = input.int(10, "Window (completed daily bars)", minval = 3, maxval = 40, group = G2)
+float tbMaxHx = input.float(2.0, "Real box = total height ≤ this × ATR", minval = 0.5, maxval = 5.0, step = 0.25, group = G2)
+bool  tbRejOn = input.bool(true, "AND no wild bars allowed", group = G2)
+float tbSens  = input.float(1.8, "Wild bar = range over this × average", minval = 1.3, maxval = 2.5, step = 0.1, group = G2)
+
+string G3 = "Second entry (matches the scanner)"
+float retracePct = input.float(30.0, "Retrace % of first push", minval = 10.0, maxval = 80.0, step = 5.0, group = G3)
+float minRetrX   = input.float(0.3, "AND at least this × ATR", minval = 0.1, step = 0.05, group = G3)
+float nearX      = input.float(0.15, "NEAR trigger when within this × ATR", minval = 0.05, maxval = 0.5, step = 0.05, group = G3)
+bool  hourResetIn = input.bool(true, "Hourly: miss the 60, need a new second", group = G3)
+
+f_dailyD() =>
+    trv = ta.tr(true)
+    float aRaw = switch atrSmooth
+        "EMA" => ta.ema(trv, atrLen)
+        "SMA" => ta.sma(trv, atrLen)
+        "WMA" => ta.wma(trv, atrLen)
+        => ta.rma(trv, atrLen)
+    float[] rngs = array.new_float()
+    for i = 1 to tbWin
+        array.push(rngs, high[i] - low[i])
+    float avgR = array.avg(rngs)
+    int wildN = 0
+    for i = 1 to tbWin
+        if high[i] - low[i] > tbSens * avgR
+            wildN += 1
+    float hh = ta.highest(high, tbWin)[1]
+    float ll = ta.lowest(low, tbWin)[1]
+    [aRaw[1], close[1], hh, ll, wildN, ta.sma(close, 50)[1], high[1], low[1]]
+
+[dAtr, dPrevC, tbh, tbl, tbw, s50d, pdhV, pdlV] = request.security(syminfo.tickerid, "D", f_dailyD(), barmerge.gaps_off, barmerge.lookahead_on)
+
+float htX = not na(tbh) and not na(tbl) and not na(dAtr) and dAtr > 0 ? (tbh - tbl) / dAtr : na
+bool boxOK = not na(htX) and htX <= tbMaxHx and (not tbRejOn or tbw == 0)
+
+var bool   seThru   = false
+var int    seSide   = 0
+var float  sePivot  = na
+var float  seExt    = na
+var bool   sePulled = false
+var int    dk       = na
+var int    lastHr   = na
+var float  dHi      = na
+var float  dLo      = na
+var float  cur60H   = na
+var float  cur60L   = na
+var float  prev60H  = na
+var float  prev60L  = na
+var float  cumV     = 0.0
+var float[] volH    = array.new_float()
+
+int bk = year(time, tz) * 10000 + month(time, tz) * 100 + dayofmonth(time, tz)
+if na(dk) or bk != dk
+    seThru   := false
+    seSide   := 0
+    sePivot  := na
+    seExt    := na
+    sePulled := false
+    dHi      := na
+    dLo      := na
+    cur60H   := na
+    cur60L   := na
+    prev60H  := na
+    prev60L  := na
+    if cumV > 0
+        array.push(volH, cumV)
+        if array.size(volH) > 20
+            array.shift(volH)
+    cumV     := 0.0
+    dk       := bk
+
+int hr = hour(time, tz)
+if not na(lastHr) and hr != lastHr
+    if hourResetIn
+        seExt    := na
+        sePulled := false
+    prev60H := cur60H
+    prev60L := cur60L
+    cur60H  := na
+    cur60L  := na
+lastHr := hr
+
+bool rth = not na(time("", "0930-1600", tz))
+float mins = (time - timestamp(tz, year(time, tz), month(time, tz), dayofmonth(time, tz), 9, 30)) / 60000.0
+if rth
+    dHi := na(dHi) ? high : math.max(dHi, high)
+    dLo := na(dLo) ? low : math.min(dLo, low)
+    cur60H := na(cur60H) ? high : math.max(cur60H, high)
+    cur60L := na(cur60L) ? low : math.min(cur60L, low)
+    cumV += nz(volume)
+
+if rth and boxOK
+    if not seThru
+        if high > tbh
+            seThru  := true
+            seSide  := 1
+            sePivot := tbh
+            seExt   := high
+        else if low < tbl
+            seThru  := true
+            seSide  := -1
+            sePivot := tbl
+            seExt   := low
+    else
+        float floorR = minRetrX * dAtr
+        if seSide == 1
+            seExt := na(seExt) ? high : math.max(seExt, high)
+            float push = seExt - sePivot
+            float need = math.max(push * retracePct / 100.0, floorR)
+            if not sePulled and push > 0 and need > 0 and low <= seExt - need
+                sePulled := true
+        else
+            seExt := na(seExt) ? low : math.min(seExt, low)
+            float push = sePivot - seExt
+            float need = math.max(push * retracePct / 100.0, floorR)
+            if not sePulled and push > 0 and need > 0 and high >= seExt + need
+                sePulled := true
+
+bool near = sePulled and not na(seExt) and boxOK and math.abs(close - seExt) <= nearX * dAtr
+int st = not boxOK ? 0 : not seThru ? 1 : not sePulled ? 2 : near ? 4 : 3
+int c60 = not na(prev60H) and close > prev60H ? 1 : not na(prev60L) and close < prev60L ? -1 : 0
+float elap = math.min(1.0, math.max(0.08, mins / 390.0))
+float rvol = rth and array.size(volH) >= 5 and array.avg(volH) > 0 ? cumV / (array.avg(volH) * elap) : na
+int cont = rth and not na(pdhV) and close[1] > pdhV and close > pdhV ? 1 : rth and not na(pdlV) and close[1] < pdlV and close < pdlV ? -1 : 0
+
+float usedD = not na(dHi) and not na(dLo) and not na(dPrevC) ? math.max(dHi - dLo, math.abs(dHi - dPrevC), math.abs(dLo - dPrevC)) : na
+float gasLeftP = not na(usedD) and not na(dAtr) and dAtr > 0 ? math.max(0.0, (dAtr - usedD) / dAtr) * 100.0 : na
+int biasV = not na(s50d) ? (close > s50d ? 1 : -1) : 0
+
+int dirV = seThru ? seSide : cont
+int sc = 0
+if dirV != 0
+    sc += biasV == dirV ? 2 : 0
+    sc += st >= 3 ? 2 : st == 2 ? 1 : 0
+    sc += c60 == dirV ? 1 : 0
+    sc += not na(rvol) and rvol >= 1.5 ? 2 : not na(rvol) and rvol >= 1.0 ? 1 : 0
+    sc += not na(gasLeftP) and gasLeftP >= 40.0 ? 1 : 0
+    sc += cont == dirV ? 1 : 0
+
+plot(st, "State", display = display.data_window)
+plot(cont, "Watch", display = display.data_window)
+plot(sc, "Score", display = display.data_window)
+plot(htX, "BoxHtATR", display = display.data_window)
+plot(gasLeftP, "GasLeft%", display = display.data_window)
+plot(rvol, "RVOL", display = display.data_window)
+plot(c60, "H60", display = display.data_window)
+plot(biasV, "Bias", display = display.data_window)
+plot(st >= 3 ? seExt : na, "Trigger", display = display.data_window)
+plot(boxOK ? tbh : na, "BoxTop", display = display.data_window)
+plot(boxOK ? tbl : na, "BoxBot", display = display.data_window)
