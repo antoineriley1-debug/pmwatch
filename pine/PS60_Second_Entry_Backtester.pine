@@ -177,6 +177,17 @@ var int   nFake  = 0
 var int   nRes   = 0
 var float runSum = 0.0
 
+// funnel diagnostics: where does the play die in the loaded history?
+var int boxDays  = 0
+var int boxKeyC  = na
+var int thruDays = 0
+var int thruKeyC = na
+var int pullDays = 0
+var int pullKeyC = na
+if rthBar and tbOK and (na(boxKeyC) or barKey != boxKeyC)
+    boxDays += 1
+    boxKeyC := barKey
+
 bool flatNow = strategy.position_size == 0
 bool canEnter = flatNow and rthBar and tbOK and not na(usedNow) and minsSince >= (quietOpen ? 30 : 0) and minsSince <= lastEntryMin and tradesToday < maxPerDay
 bool allowLong  = sideMode != "Short only"
@@ -270,6 +281,13 @@ if rthBar and tbOK
             else if sePulled
                 pbExt := na(pbExt) ? high : math.max(pbExt, high)
 
+if seThru and not seThru[1] and (na(thruKeyC) or barKey != thruKeyC)
+    thruDays += 1
+    thruKeyC := barKey
+if sePulled and (na(pullKeyC) or barKey != pullKeyC)
+    pullDays += 1
+    pullKeyC := barKey
+
 // track max favorable excursion while in a trade
 if strategy.position_size != 0 and not na(tEntry)
     tMax := math.max(tMax, tLong ? high - tEntry : tEntry - low)
@@ -330,10 +348,10 @@ f_tblPos() =>
         => position.bottom_right
 string szBody = tblSizeIn == "Compact" ? size.tiny : tblSizeIn == "Medium" ? size.small : tblSizeIn == "Large" ? size.normal : size.large
 string szHead = tblSizeIn == "Compact" ? size.small : tblSizeIn == "Medium" ? size.normal : tblSizeIn == "Large" ? size.large : size.huge
-var table t = table.new(f_tblPos(), 1, 10, border_width = 1, border_color = color.new(color.white, 60))
+var table t = table.new(f_tblPos(), 1, 11, border_width = 1, border_color = color.new(color.white, 60))
 
 if barstate.islast
-    table.clear(t, 0, 0, 0, 9)
+    table.clear(t, 0, 0, 0, 10)
     int closedT = strategy.closedtrades
     int winsT = strategy.wintrades
     string sampleTxt = str.tostring(daysN) + " days loaded, " + (not na(firstKeyBT) ? f_fmtKey(firstKeyBT) : "?") + " – today · " + str.tostring(closedT) + " trades (" + (daysN > 0 ? str.tostring(f2(closedT * 1.0 / daysN)) : "0") + "/day)"
@@ -343,6 +361,9 @@ if barstate.islast
     table.cell(t, 0, 1, sampleTxt, bgcolor = color.new(color.black, 20), text_color = color.new(#b2b5be, 0), text_size = szBody)
     table.cell(t, 0, 2, wrTxt, bgcolor = color.new(color.black, 20), text_color = color.white, text_size = szBody)
     int rIdx = 3
+    string funTxt = "Where the play died: box on " + str.tostring(boxDays) + " of " + str.tostring(daysN) + " days · edge broke " + str.tostring(thruDays) + " · retraced " + str.tostring(pullDays) + " · entered " + str.tostring(closedT + strategy.opentrades)
+    table.cell(t, 0, rIdx, funTxt, bgcolor = color.new(color.black, 20), text_color = color.new(#ffb74d, 0), text_size = szBody)
+    rIdx += 1
     if strategy.grossloss > 0
         table.cell(t, 0, rIdx, "Profit factor " + str.tostring(f2(strategy.grossprofit / strategy.grossloss)), bgcolor = color.new(color.black, 20), text_color = color.white, text_size = szBody)
         rIdx += 1
