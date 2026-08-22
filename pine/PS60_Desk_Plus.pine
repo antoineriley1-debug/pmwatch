@@ -681,12 +681,15 @@ if barstate.islast
         else if not intra and isToday and not na(dO)
             f_lvl(true, dO, cOpenIn, "solid", 1, "Open " + str.tostring(f2(dO)))
 
-    if showLvls and isToday and not na(yATR) and yATR > 0
-        float r1  = 1.0 * yATR - used
-        float r15 = 1.5 * yATR - used
-        float r2  = 2.0 * yATR - used
-        float r25 = 2.5 * yATR - used
-        float r3  = 3.0 * yATR - used
+    // live day: ladder off today's developing range. Market closed: hold the
+    // last completed session's final ladder until the new session prints.
+    float usedLad = isToday ? used : not na(dH) and not na(dL) and not na(prevC) ? math.max(dH - dL, math.abs(dH - prevC), math.abs(dL - prevC)) : na
+    if showLvls and not na(usedLad) and not na(yATR) and yATR > 0
+        float r1  = 1.0 * yATR - usedLad
+        float r15 = 1.5 * yATR - usedLad
+        float r2  = 2.0 * yATR - usedLad
+        float r25 = 2.5 * yATR - usedLad
+        float r3  = 3.0 * yATR - usedLad
 
         line hiLn = f_atrLine(dH, color.new(cGray, 40), 1, "High " + str.tostring(f2(dH)))
         line loLn = f_atrLine(dL, color.new(cGray, 40), 1, "Low " + str.tostring(f2(dL)))
