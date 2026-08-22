@@ -182,7 +182,12 @@ f_dayAfter() =>
     var float[] cS = array.new_float(4, 0.0)
     var int[] cD = array.new_int(4, 0)
     var int[] cT = array.new_int(4, 0)
+    var int daFirst = na
+    var int daTot = 0
     if barstate.isconfirmed and not na(x0) and not na(x1)
+        daTot += 1
+        if na(daFirst)
+            daFirst := year(time, tz) * 10000 + month(time, tz) * 100 + dayofmonth(time, tz)
         int b = x1 >= 1.5 ? 3 : x1 >= 1.0 ? 2 : x1 >= 0.5 ? 1 : 0
         array.set(cN, b, array.get(cN, b) + 1)
         array.set(cS, b, array.get(cS, b) + x0)
@@ -190,9 +195,9 @@ f_dayAfter() =>
             array.set(cD, b, array.get(cD, b) + 1)
         if x0 >= 1.2
             array.set(cT, b, array.get(cT, b) + 1)
-    [x0, x1, array.get(cN, 0), array.get(cS, 0), array.get(cD, 0), array.get(cT, 0), array.get(cN, 1), array.get(cS, 1), array.get(cD, 1), array.get(cT, 1), array.get(cN, 2), array.get(cS, 2), array.get(cD, 2), array.get(cT, 2), array.get(cN, 3), array.get(cS, 3), array.get(cD, 3), array.get(cT, 3)]
+    [x0, x1, array.get(cN, 0), array.get(cS, 0), array.get(cD, 0), array.get(cT, 0), array.get(cN, 1), array.get(cS, 1), array.get(cD, 1), array.get(cT, 1), array.get(cN, 2), array.get(cS, 2), array.get(cD, 2), array.get(cT, 2), array.get(cN, 3), array.get(cS, 3), array.get(cD, 3), array.get(cT, 3), daFirst, daTot]
 
-[daX0, daX1, daN0, daS0, daD0, daT0, daN1, daS1, daD1, daT1, daN2, daS2, daD2, daT2, daN3, daS3, daD3, daT3] = request.security(syminfo.tickerid, "D", f_dayAfter(), barmerge.gaps_off, barmerge.lookahead_off)
+[daX0, daX1, daN0, daS0, daD0, daT0, daN1, daS1, daD1, daT1, daN2, daS2, daD2, daT2, daN3, daS3, daD3, daT3, daFirstK, daTotN] = request.security(syminfo.tickerid, "D", f_dayAfter(), barmerge.gaps_off, barmerge.lookahead_off)
 
 
 [oldSup, oldDem] = request.security(syminfo.tickerid, "M", [high[1], low[1]], barmerge.gaps_off, barmerge.lookahead_off)
@@ -899,7 +904,8 @@ if dayAfterOn
         int dat = dab == 3 ? daT3 : dab == 2 ? daT2 : dab == 1 ? daT1 : daT0
         string daLbl = dab == 3 ? "blowout (1.5x+)" : dab == 2 ? "extended (1-1.5x)" : dab == 1 ? "normal (0.5-1x)" : "quiet (under 0.5x)"
         if dan >= 5
-            dayAfterTxt := "seen " + str.tostring(dan) + " " + daLbl + " days before · next day: " + str.tostring(dad) + " of " + str.tostring(dan) + " chopped · " + str.tostring(dat) + " ran again · typical " + str.tostring(f2(das / dan)) + "x"
+            string spanS = not na(daFirstK) ? " in " + str.tostring(daTotN) + " sessions since " + f_fmtKey(daFirstK) : ""
+            dayAfterTxt := "seen " + str.tostring(dan) + " " + daLbl + " days" + spanS + " · next day: " + str.tostring(dad) + " of " + str.tostring(dan) + " chopped · " + str.tostring(dat) + " ran again · typical " + str.tostring(f2(das / dan)) + "x"
         else
             dayAfterTxt := "only " + str.tostring(dan) + " " + daLbl + " days in history — not enough to lean on"
 
