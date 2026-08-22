@@ -1,0 +1,362 @@
+//@version=5
+strategy("PS60 Continuation Backtester", "PS60-CT", overlay = false, initial_capital = 25000, default_qty_type = strategy.percent_of_equity, default_qty_value = 100, pyramiding = 0, process_orders_on_close = true, calc_on_every_tick = false)
+
+// Companion to the PS60 Second-Entry Backtester (PS60-BT). SEPARATE script,
+// SEPARATE play: this one trades CONTINUATION — a bar-close-confirmed break of
+// the prior day's high (long) or low (short), riding whatever is left of the
+// ATR tank. This is the move the scanner flags as BREAKOUT/BREAKDOWN WATCH,
+// and the kind of no-box runner day (like a 1.5x ATR trend day) that the
+// second-entry backtester correctly ignores.
+//
+// PAIRING FOR CONVICTION: run PS60-BT and PS60-CT on two charts of the same
+// symbol. The box play and the continuation play cover opposite personalities
+// (coiled vs already running) — between them, both kinds of A-day are tested.
+// Inside this script, the "Conviction" inputs let you require the 60-minute
+// candle and/or RVOL to agree before an entry counts, and the stats table
+// always splits results into conviction vs non-conviction trades so the data
+// tells you whether the filter earns its keep.
+//
+// Same platform limit as PS60-BT: simulated trades can only execute on the
+// chart's own loaded 5-minute bars (~100 trading days). Scroll left for more.
+// Fills are modeled at bar close on the signal bar.
+
+// ───────── Inputs ─────────
+string G1 = "ATR (matches the desk)"
+int    atrLen    = input.int(14, "ATR length (days)", minval = 1, group = G1, tooltip = "Same convention as PS60 Desk+: prior COMPLETED day, static all session.")
+string atrSmooth = input.string("RMA", "Smoothing", options = ["RMA", "EMA", "SMA", "WMA"], group = G1)
+string tz        = input.string("America/New_York", "Timezone", group = G1)
+
+string G2 = "Continuation rules"
+string sideMode   = input.string("Both", "Side", options = ["Both", "Long only", "Short only"], group = G2)
+float  targetX    = input.float(1.0, "Target (× ATR of total day travel)", minval = 0.5, step = 0.1, group = G2, tooltip = "The profit target is the remaining-ATR level: today's high (for longs) plus whatever is left of targetX × ATR at entry time. Same ladder the desk draws.")
+float  minLeftX   = input.float(0.25, "Skip if less than this × ATR of room to target", minval = 0.0, step = 0.05, group = G2, tooltip = "A break with almost no gas left to the target is not taken — the tank filter.")
+float  stopX      = input.float(0.25, "Stop (× ATR back through the broken level)", minval = 0.05, maxval = 1.0, step = 0.05, group = G2, tooltip = "For a long over the prior day high, the stop sits this × ATR back below that level. A confirmed break that trades back through its level this far has failed.")
+int    maxPerDay  = input.int(1, "Max trades per day", minval = 1, maxval = 4, group = G2)
+int    lastEntryMin = input.int(330, "No new entries after (minutes past 9:30)", minval = 60, maxval = 380, group = G2, tooltip = "330 = 3:00 PM.")
+bool   eodOn      = input.bool(true, "Close everything at 3:55 PM", group = G2)
+bool   quietOpen  = input.bool(false, "No entries before 10:00", group = G2, tooltip = "PS60 open discipline: let the first hour form before taking entries. Note this play often fires early on gap days — turning this on will skip those.")
+
+string G3 = "Conviction (pairs with the second-entry backtester)"
+bool  conv60   = input.bool(false, "Require 60-minute candle agreement", group = G3, tooltip = "Dan Rule 2: only take the break when price is also past the last COMPLETED 60-minute candle in the trade direction. Off = 60m is tracked in the stats but does not block entries.")
+float convRvol = input.float(0.0, "Require RVOL at least (0 = off)", minval = 0.0, step = 0.1, group = G3, tooltip = "Only take the break when cumulative volume is running at least this multiple of the 20-day pace. 0 disables the filter. Either way, the stats table splits results by conviction so you can see whether the filter earns its keep before you arm it.")
+
+string G5 = "Trade management (Rule 3 + 5-7 min)"
+bool   finOn      = input.bool(true, "Finance the trade: half off at first move, stop to breakeven", group = G5, tooltip = "PS60 Rule 3, same as PS60-BT. Half exits at the first-scale distance; the rest becomes a free trade to the remaining-ATR target.")
+float  scale1X    = input.float(0.5, "First scale at (× ATR beyond entry)", minval = 0.1, maxval = 1.0, step = 0.05, group = G5)
+bool   fastOut    = input.bool(true, "5-7 minute rule: scratch if it does not move", group = G5, tooltip = "If the trade has not traveled at least the amount below within the minutes below, exit flat. Checked on bar closes.")
+int    fastMins   = input.int(7, "Scratch after (minutes)", minval = 5, maxval = 20, group = G5)
+float  fastMoveX  = input.float(0.05, "…unless it moved this × ATR", minval = 0.0, maxval = 0.3, step = 0.01, group = G5)
+
+string G0 = "Stats table"
+string tblPosIn = input.string("Top right", "Position on the chart", options = ["Top left", "Top center", "Top right", "Middle left", "Middle center", "Middle right", "Bottom left", "Bottom center", "Bottom right"], group = G0)
+string tblSizeIn = input.string("Compact", "Text size", options = ["Compact", "Medium", "Large", "Huge"], group = G0)
+
+// ───────── Daily data ─────────
+f_atr() =>
+    trv = ta.tr(true)
+    switch atrSmooth
+        "EMA" => ta.ema(trv, atrLen)
+        "SMA" => ta.sma(trv, atrLen)
+        "WMA" => ta.wma(trv, atrLen)
+        => ta.rma(trv, atrLen)
+
+f_daily() =>
+    float a = f_atr()[1]
+    [a, close[1], high[1], low[1]]
+
+[yATR, prevC, pdhV, pdlV] = request.security(syminfo.tickerid, "D", f_daily(), barmerge.gaps_off, barmerge.lookahead_off)
+
+f2(float v) => math.round(v * 100.0) / 100.0
+
+f_fmtKey(int k) =>
+    int y = math.round(math.floor(k / 10000.0))
+    int m = math.round(math.floor(k / 100.0)) % 100
+    int d = k % 100
+    string mn = m == 1 ? "Jan" : m == 2 ? "Feb" : m == 3 ? "Mar" : m == 4 ? "Apr" : m == 5 ? "May" : m == 6 ? "Jun" : m == 7 ? "Jul" : m == 8 ? "Aug" : m == 9 ? "Sep" : m == 10 ? "Oct" : m == 11 ? "Nov" : "Dec"
+    mn + " " + str.tostring(d) + " '" + str.tostring(y % 100)
+
+// ───────── Session plumbing ─────────
+int sessStart   = timestamp(tz, year(time, tz), month(time, tz), dayofmonth(time, tz), 9, 30)
+float minsSince = (time - sessStart) / 60000.0
+bool rthBar = not na(time(timeframe.period, "0930-1600", tz))
+int barKey = year(time, tz) * 10000 + month(time, tz) * 100 + dayofmonth(time, tz)
+
+var int dayKey = na
+bool newSess = na(dayKey) or barKey != dayKey
+
+var float rHi = na
+var float rLo = na
+var int   tradesToday = 0
+var int   daysN = 0
+var int   firstKeyBT = na
+var int   rthDayKey = na
+
+// volume pace (RVOL): today's cumulative RTH volume vs the 20-day average pace
+var float cumV = 0.0
+var float[] volH = array.new_float()
+
+if newSess
+    if cumV > 0
+        array.push(volH, cumV)
+        if array.size(volH) > 20
+            array.shift(volH)
+    cumV := 0.0
+    rHi := na
+    rLo := na
+    tradesToday := 0
+    dayKey := barKey
+
+if rthBar
+    cumV += nz(volume)
+    rHi := na(rHi) ? high : math.max(rHi, high)
+    rLo := na(rLo) ? low : math.min(rLo, low)
+    if na(rthDayKey) or barKey != rthDayKey
+        daysN += 1
+        rthDayKey := barKey
+        if na(firstKeyBT)
+            firstKeyBT := barKey
+
+float usedNow = not na(rHi) and not na(rLo) and not na(prevC) ? math.max(rHi - rLo, math.abs(rHi - prevC), math.abs(rLo - prevC)) : na
+float elapF = math.min(1.0, math.max(0.08, minsSince / 390.0))
+float rvolNow = rthBar and array.size(volH) >= 5 and array.avg(volH) > 0 ? cumV / (array.avg(volH) * elapF) : na
+
+// 60-minute referee: last COMPLETED 60m candle
+[h60t, p60H, p60L] = request.security(syminfo.tickerid, "60", [time, high[1], low[1]], barmerge.gaps_off, barmerge.lookahead_off)
+int c60 = not na(p60H) and close > p60H ? 1 : not na(p60L) and close < p60L ? -1 : 0
+
+// ───────── Continuation engine (mirrors the scanner's WATCH signal) ─────────
+// Armed when TWO consecutive bar closes hold past the prior day's level —
+// the same bar-close confirmation the scanner uses. Disarms if a close comes
+// back inside; a fresh two-close confirmation re-arms it.
+var bool armedL = false
+var bool armedS = false
+var bool didL = false
+var bool didS = false
+
+if newSess
+    armedL := false
+    armedS := false
+    didL := false
+    didS := false
+
+if rthBar and not na(pdhV) and not na(pdlV)
+    if close > pdhV and close[1] > pdhV
+        armedL := true
+    if close < pdhV
+        armedL := false
+    if close < pdlV and close[1] < pdlV
+        armedS := true
+    if close > pdlV
+        armedS := false
+
+// funnel diagnostics
+var int brkDays  = 0
+var int brkKeyC  = na
+if rthBar and (armedL or armedS) and (na(brkKeyC) or barKey != brkKeyC)
+    brkDays += 1
+    brkKeyC := barKey
+
+// trade bookkeeping
+var float entryQty = na
+var bool  movedBE  = false
+var int   entBar   = na
+var bool  wasScratch = false
+var int   nScratch = 0
+int barMins = math.max(1, math.round(timeframe.in_seconds() / 60))
+var float tEntry = na
+var float tTgt   = na
+var float tStop  = na
+var float tMax   = na
+var float tATR   = na
+var bool  tLong  = true
+var bool  tConv  = false
+var float lastLvl  = na
+var float lastInP  = na
+var float lastStpP = na
+var float lastTgtP = na
+var bool  lastLong = true
+var int   nHit   = 0
+var int   nFake  = 0
+var int   nRes   = 0
+var float runSum = 0.0
+var int   convN = 0
+var int   convW = 0
+var int   plainN = 0
+var int   plainW = 0
+var int   prevClosedT = 0
+var int   prevWinsT = 0
+
+bool flatNow = strategy.position_size == 0
+bool canEnter = flatNow and rthBar and not na(usedNow) and not na(yATR) and yATR > 0 and minsSince >= (quietOpen ? 30 : 0) and minsSince <= lastEntryMin and tradesToday < maxPerDay
+bool allowLong  = sideMode != "Short only"
+bool allowShort = sideMode != "Long only"
+
+bool convNowL = (not conv60 or c60 == 1) and (convRvol == 0.0 or (not na(rvolNow) and rvolNow >= convRvol))
+bool convNowS = (not conv60 or c60 == -1) and (convRvol == 0.0 or (not na(rvolNow) and rvolNow >= convRvol))
+bool convTagL = c60 == 1 and not na(rvolNow) and rvolNow >= 1.0
+bool convTagS = c60 == -1 and not na(rvolNow) and rvolNow >= 1.0
+
+if canEnter and allowLong and armedL and not didL and convNowL
+    float room = targetX * yATR - usedNow
+    float tgtPx = rHi + math.max(room, 0.0)
+    float stpPx = pdhV - stopX * yATR
+    if room >= minLeftX * yATR and tgtPx > close and stpPx < close
+        strategy.entry("L", strategy.long)
+        if finOn
+            strategy.exit("Lx1", "L", qty_percent = 50, stop = stpPx, limit = close + scale1X * yATR)
+            strategy.exit("Lx2", "L", qty_percent = 100, stop = stpPx, limit = tgtPx)
+        else
+            strategy.exit("Lx", "L", stop = stpPx, limit = tgtPx)
+        lastLvl  := pdhV
+        lastInP  := close
+        lastStpP := stpPx
+        lastTgtP := tgtPx
+        lastLong := true
+        tEntry := close
+        tTgt   := tgtPx
+        tStop  := stpPx
+        tMax   := 0.0
+        tATR   := yATR
+        tLong  := true
+        tConv  := convTagL
+        didL := true
+        tradesToday += 1
+
+if canEnter and allowShort and armedS and not didS and convNowS and strategy.position_size == 0
+    float room = targetX * yATR - usedNow
+    float tgtPx = rLo - math.max(room, 0.0)
+    float stpPx = pdlV + stopX * yATR
+    if room >= minLeftX * yATR and tgtPx < close and stpPx > close
+        strategy.entry("S", strategy.short)
+        if finOn
+            strategy.exit("Sx1", "S", qty_percent = 50, stop = stpPx, limit = close - scale1X * yATR)
+            strategy.exit("Sx2", "S", qty_percent = 100, stop = stpPx, limit = tgtPx)
+        else
+            strategy.exit("Sx", "S", stop = stpPx, limit = tgtPx)
+        lastLvl  := pdlV
+        lastInP  := close
+        lastStpP := stpPx
+        lastTgtP := tgtPx
+        lastLong := false
+        tEntry := close
+        tTgt   := tgtPx
+        tStop  := stpPx
+        tMax   := 0.0
+        tATR   := yATR
+        tLong  := false
+        tConv  := convTagS
+        didS := true
+        tradesToday += 1
+
+// track max favorable excursion while in a trade
+if strategy.position_size != 0 and not na(tEntry)
+    tMax := math.max(tMax, tLong ? high - tEntry : tEntry - low)
+
+if strategy.position_size != 0 and na(entryQty)
+    entryQty := strategy.position_size
+    entBar := bar_index
+
+// Rule 3: after the first scale fills, the rest becomes a free trade
+if finOn and not movedBE and not na(entryQty) and strategy.position_size != 0 and math.abs(strategy.position_size) < math.abs(entryQty)
+    if tLong
+        strategy.exit("Lx2", "L", qty_percent = 100, stop = tEntry, limit = tTgt)
+    else
+        strategy.exit("Sx2", "S", qty_percent = 100, stop = tEntry, limit = tTgt)
+    movedBE := true
+
+// 5-7 minute rule
+if fastOut and strategy.position_size != 0 and not na(entBar) and not na(tATR) and (bar_index - entBar) * barMins >= fastMins and tMax < fastMoveX * tATR
+    wasScratch := true
+    strategy.close_all(comment = "5-7 min scratch")
+
+// end-of-day flat
+if eodOn and rthBar and minsSince >= 385 and strategy.position_size != 0
+    strategy.close_all(comment = "EOD")
+
+// resolve custom stats when a trade closes
+bool closedNow = strategy.position_size == 0 and strategy.position_size[1] != 0
+if closedNow and not na(tEntry)
+    float dist = math.abs(tTgt - tEntry)
+    bool hitT = dist > 0 and tMax >= dist * 0.999
+    if hitT
+        nHit += 1
+    else if tMax < 0.5 * dist
+        nFake += 1
+    runSum += tATR > 0 ? tMax / tATR : 0.0
+    nRes += 1
+    if wasScratch
+        nScratch += 1
+    int dC = strategy.closedtrades - prevClosedT
+    int dW = strategy.wintrades - prevWinsT
+    if tConv
+        convN += dC
+        convW += dW
+    else
+        plainN += dC
+        plainW += dW
+    prevClosedT := strategy.closedtrades
+    prevWinsT := strategy.wintrades
+    wasScratch := false
+    entryQty := na
+    movedBE := false
+    entBar := na
+    tEntry := na
+
+// ───────── Stats table + pane plot ─────────
+plot(strategy.equity, "Equity", color.new(#ffb74d, 0), 2)
+
+f_tblPos() =>
+    switch tblPosIn
+        "Top left"      => position.top_left
+        "Top center"    => position.top_center
+        "Top right"     => position.top_right
+        "Middle left"   => position.middle_left
+        "Middle center" => position.middle_center
+        "Middle right"  => position.middle_right
+        "Bottom left"   => position.bottom_left
+        "Bottom center" => position.bottom_center
+        => position.bottom_right
+string szBody = tblSizeIn == "Compact" ? size.tiny : tblSizeIn == "Medium" ? size.small : tblSizeIn == "Large" ? size.normal : size.large
+string szHead = tblSizeIn == "Compact" ? size.small : tblSizeIn == "Medium" ? size.normal : tblSizeIn == "Large" ? size.large : size.huge
+var table t = table.new(f_tblPos(), 1, 12, border_width = 1, border_color = color.new(color.white, 60))
+
+if barstate.islast
+    table.clear(t, 0, 0, 0, 11)
+    int closedT = strategy.closedtrades
+    int winsT = strategy.wintrades
+    string sampleTxt = str.tostring(daysN) + " days loaded, " + (not na(firstKeyBT) ? f_fmtKey(firstKeyBT) : "?") + " – today · " + str.tostring(closedT) + " trades (" + (daysN > 0 ? str.tostring(f2(closedT * 1.0 / daysN)) : "0") + "/day)"
+    string wrTxt = closedT > 0 ? "Win rate " + str.tostring(math.round(100.0 * winsT / closedT)) + "%  (" + str.tostring(winsT) + "W / " + str.tostring(closedT - winsT) + "L)" : "No closed trades yet in loaded history"
+    string funTxt = "Confirmed break on " + str.tostring(brkDays) + " of " + str.tostring(daysN) + " days · entered " + str.tostring(closedT + strategy.opentrades)
+    string c60Txt = c60 == 1 ? "60m ✔ up" : c60 == -1 ? "60m ✔ down" : "60m flat"
+    string rvTxt = not na(rvolNow) ? " · RVOL " + str.tostring(f2(rvolNow)) + "x" : ""
+    string stTxt = na(pdhV) or na(pdlV) ? "Waiting on daily data" : armedL ? "ARMED LONG — holding over prior day high " + str.tostring(f2(pdhV)) : armedS ? "ARMED SHORT — holding under prior day low " + str.tostring(f2(pdlV)) : "Watching prior day high " + str.tostring(f2(pdhV)) + " / low " + str.tostring(f2(pdlV))
+    table.cell(t, 0, 0, "PS60 CONTINUATION BACKTEST", bgcolor = color.new(#e65100, 0), text_color = color.white, text_size = szHead)
+    table.cell(t, 0, 1, sampleTxt, bgcolor = color.new(color.black, 20), text_color = color.new(#b2b5be, 0), text_size = szBody)
+    table.cell(t, 0, 2, wrTxt, bgcolor = color.new(color.black, 20), text_color = color.white, text_size = szBody)
+    table.cell(t, 0, 3, funTxt, bgcolor = color.new(color.black, 20), text_color = color.new(#ffb74d, 0), text_size = szBody)
+    int rIdx = 4
+    if convN + plainN > 0
+        string cvTxt = "With conviction (60m + RVOL 1x+): " + str.tostring(convW) + "W / " + str.tostring(convN) + " · without: " + str.tostring(plainW) + "W / " + str.tostring(plainN)
+        table.cell(t, 0, rIdx, cvTxt, bgcolor = color.new(color.black, 20), text_color = color.new(#4deeea, 0), text_size = szBody)
+        rIdx += 1
+    if strategy.grossloss > 0
+        table.cell(t, 0, rIdx, "Profit factor " + str.tostring(f2(strategy.grossprofit / strategy.grossloss)), bgcolor = color.new(color.black, 20), text_color = color.white, text_size = szBody)
+        rIdx += 1
+    else if closedT > 0
+        table.cell(t, 0, rIdx, "Profit factor ∞ (no losers yet)", bgcolor = color.new(color.black, 20), text_color = color.white, text_size = szBody)
+        rIdx += 1
+    if nRes > 0
+        table.cell(t, 0, rIdx, "Reached target " + str.tostring(math.round(100.0 * nHit / nRes)) + "%", bgcolor = color.new(color.black, 20), text_color = color.new(#26a69a, 0), text_size = szBody)
+        rIdx += 1
+        table.cell(t, 0, rIdx, "Typical run " + str.tostring(f2(runSum / nRes)) + "x ATR before exit", bgcolor = color.new(color.black, 20), text_color = color.white, text_size = szBody)
+        rIdx += 1
+        table.cell(t, 0, rIdx, "Fakeouts " + str.tostring(math.round(100.0 * nFake / nRes)) + "% (stopped before half the target)", bgcolor = color.new(color.black, 20), text_color = color.new(#ef5350, 0), text_size = szBody)
+        rIdx += 1
+    if fastOut and nScratch > 0
+        table.cell(t, 0, rIdx, "Scratches (5-7 min rule): " + str.tostring(nScratch), bgcolor = color.new(color.black, 20), text_color = color.new(#b2b5be, 0), text_size = szBody)
+        rIdx += 1
+    if not na(lastInP)
+        string anat = "Last (" + (lastLong ? "LONG" : "SHORT") + "): level " + str.tostring(f2(lastLvl)) + " · in " + str.tostring(f2(lastInP)) + " · stop " + str.tostring(f2(lastStpP)) + " · target " + str.tostring(f2(lastTgtP))
+        table.cell(t, 0, rIdx, anat, bgcolor = color.new(color.black, 20), text_color = color.new(#4deeea, 0), text_size = szBody)
+        rIdx += 1
+    table.cell(t, 0, rIdx, timeframe.isintraday ? stTxt + " · " + c60Txt + rvTxt + "  ·  scroll left for more days" : "Run this on an intraday chart (5-minute is best)", bgcolor = color.new(#1a1a2e, 10), text_color = color.new(#ffd54f, 0), text_size = szBody)
