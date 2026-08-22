@@ -871,7 +871,9 @@ if barstate.islast
     table.clear(g, 0, 0, 0, 9)
     if showGas
         string t1 = not isToday ? "GAS waiting 9:30   tank " + str.tostring(f2(yATR)) : "GAS " + str.tostring(math.round(pctLeft)) + "% left   " + str.tostring(f2(xATR)) + "x ATR traveled"
-        string t2 = "used " + str.tostring(f2(used)) + " / tank " + str.tostring(f2(yATR)) + "   left " + str.tostring(f2(leftT))
+        float usedLast = not na(dH) and not na(dL) and not na(prevC) ? math.max(dH - dL, math.abs(dH - prevC), math.abs(dL - prevC)) : na
+        float xLast = not na(usedLast) and not na(yATR) and yATR > 0 ? usedLast / yATR : na
+        string t2 = isToday ? "used " + str.tostring(f2(used)) + " / tank " + str.tostring(f2(yATR)) + "   left " + str.tostring(f2(leftT)) : not na(xLast) ? "last session traveled " + str.tostring(f2(xLast)) + "x ATR · used " + str.tostring(f2(usedLast)) + " of " + str.tostring(f2(yATR)) + " tank" : "used 0 / tank " + str.tostring(f2(yATR))
         color bg = not isToday ? color.new(color.gray, 0) : pctLeft >= 40 ? color.new(color.green, 0) : pctLeft >= 15 ? color.new(#ffd500, 5) : color.rgb(215, 133, 133)
         table.cell(g, 0, 0, t1, bgcolor = bg, text_color = color.black, text_size = size.small)
         table.cell(g, 0, 1, t2, bgcolor = color.new(color.black, 20), text_color = color.white, text_size = size.tiny)
