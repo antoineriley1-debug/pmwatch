@@ -104,6 +104,7 @@ float tgt2     = input.float(1.5, "Target #2 (× ATR)", minval = 0.5, step = 0.1
 int   maxDays  = input.int(300, "Max days stored", minval = 50, maxval = 500, group = G5, tooltip = "Sample cap — oldest days fall off first. How far back the sample actually reaches depends on how much 30-minute history TradingView serves for the symbol and your plan; the sample-context line in the readout always shows the true span.")
 int   minDays  = input.int(20, "Min days before stats print", minval = 5, maxval = 100, group = G5, tooltip = "Below this the sample is too thin to say anything, so the readout stays quiet while it builds.")
 bool  probEarnOn = input.bool(false, "Earnings-break stats", group = G5, tooltip = "Needs the earnings reaction bar to have data. Every time price broke the reaction high or low in loaded history, this tracked what happened next: reaching Target #1 × ATR beyond the edge counts as a run; closing back inside the range first counts as a fakeout. The readout line shows how often each happened and the typical run distance.")
+bool  dayAfterOn = input.bool(true, "Day-after stats (exhaustion read)", group = G5, tooltip = "Measured from this ticker's full daily history: every day is classified by how many tanks it burned — quiet (under 0.5x), normal (0.5-1x), extended (1-1.5x), blowout (1.5x and up) — and the engine records what the NEXT day did after each kind. The readout conditions on the last completed session: after a Friday that burned 1.61 tanks it reports the after-blowout bucket. digest = next day stayed under 0.8x (chop, inside day); trend again = next day ran 1.2x or more.")
 
 string GN = "Next stop (measured potential)"
 bool nsOn = input.bool(false, "Show NEXT STOP line in the readout", group = GN, tooltip = "PS60 Rule 1: stocks move supply-to-supply / demand-to-demand, and the distance to the next level is the measured potential. This line shows the nearest meaningful level above AND below price, drawn from: the daily EMA stack (4/9/10/13/20/50/65/89/100/200, prior completed day — static all session), the 60-minute EMA stack (live, so these targets drift as the MAs move), the 65 EMA of this chart's timeframe, PDH/PDL, premarket levels, old supply/demand, the remaining-ATR ladder, whole numbers, and the earnings range when enabled. Levels stacking within 0.15×ATR merge into one zone (+1, +2 = how many agree). Levels hugging price within 0.10×ATR are skipped. THIN = under 0.25×ATR of room. ↑/↓bias = which side of the daily 50 SMA the stock is on.")
@@ -169,6 +170,30 @@ float chE65 = ta.ema(close, 65)
 
 // last 10 completed daily bars, for line-in-the-sand touch counting
 [dTh1, dTh2, dTh3, dTh4, dTh5, dTh6, dTh7, dTh8, dTh9, dTh10, dTl1, dTl2, dTl3, dTl4, dTl5, dTl6, dTl7, dTl8, dTl9, dTl10, dTc1, dTc2, dTc3, dTc4, dTc5, dTc6, dTc7, dTc8, dTc9, dTc10] = request.security(syminfo.tickerid, "D", [high[1], high[2], high[3], high[4], high[5], high[6], high[7], high[8], high[9], high[10], low[1], low[2], low[3], low[4], low[5], low[6], low[7], low[8], low[9], low[10], close[1], close[2], close[3], close[4], close[5], close[6], close[7], close[8], close[9], close[10]], barmerge.gaps_off, barmerge.lookahead_on)
+
+// Day-after engine: from the full daily history, what the next day did after
+// each kind of day (by tanks burned). Accumulated once per confirmed daily bar.
+f_dayAfter() =>
+    float atrS = f_atr()
+    float trv = ta.tr(true)
+    float x0 = not na(atrS[1]) and atrS[1] > 0 ? trv / atrS[1] : na
+    float x1 = not na(atrS[2]) and atrS[2] > 0 ? trv[1] / atrS[2] : na
+    var int[] cN = array.new_int(4, 0)
+    var float[] cS = array.new_float(4, 0.0)
+    var int[] cD = array.new_int(4, 0)
+    var int[] cT = array.new_int(4, 0)
+    if barstate.isconfirmed and not na(x0) and not na(x1)
+        int b = x1 >= 1.5 ? 3 : x1 >= 1.0 ? 2 : x1 >= 0.5 ? 1 : 0
+        array.set(cN, b, array.get(cN, b) + 1)
+        array.set(cS, b, array.get(cS, b) + x0)
+        if x0 < 0.8
+            array.set(cD, b, array.get(cD, b) + 1)
+        if x0 >= 1.2
+            array.set(cT, b, array.get(cT, b) + 1)
+    [x0, x1, array.get(cN, 0), array.get(cS, 0), array.get(cD, 0), array.get(cT, 0), array.get(cN, 1), array.get(cS, 1), array.get(cD, 1), array.get(cT, 1), array.get(cN, 2), array.get(cS, 2), array.get(cD, 2), array.get(cT, 2), array.get(cN, 3), array.get(cS, 3), array.get(cD, 3), array.get(cT, 3)]
+
+[daX0, daX1, daN0, daS0, daD0, daT0, daN1, daS1, daD1, daT1, daN2, daS2, daD2, daT2, daN3, daS3, daD3, daT3] = request.security(syminfo.tickerid, "D", f_dayAfter(), barmerge.gaps_off, barmerge.lookahead_off)
+
 
 [oldSup, oldDem] = request.security(syminfo.tickerid, "M", [high[1], low[1]], barmerge.gaps_off, barmerge.lookahead_off)
 
@@ -862,13 +887,29 @@ if nsOn and not na(yATR) and yATR > 0
         string tankDn = na(leftT) ? "" : leftT >= needDn ? " · $" + str.tostring(f2(leftT)) + " in the tank" : " · only $" + str.tostring(f2(leftT)) + " in the tank"
         nsDemTxt := "DEMAND (buying) " + str.tostring(f2(bestDn)) + " · " + namesDn + " (" + str.tostring(cntDn) + (cntDn > 1 ? " levels)" : " level)") + " · $" + str.tostring(f2(needDn)) + " gas needed" + tankDn + (needDn < 0.25 * yATR ? " · THIN" : "") + sandDem + biasS
 
+// ───────── Day-after readout ─────────
+string dayAfterTxt = ""
+if dayAfterOn
+    float xRef = isToday ? daX1 : daX0
+    if not na(xRef)
+        int dab = xRef >= 1.5 ? 3 : xRef >= 1.0 ? 2 : xRef >= 0.5 ? 1 : 0
+        int dan = dab == 3 ? daN3 : dab == 2 ? daN2 : dab == 1 ? daN1 : daN0
+        float das = dab == 3 ? daS3 : dab == 2 ? daS2 : dab == 1 ? daS1 : daS0
+        int dad = dab == 3 ? daD3 : dab == 2 ? daD2 : dab == 1 ? daD1 : daD0
+        int dat = dab == 3 ? daT3 : dab == 2 ? daT2 : dab == 1 ? daT1 : daT0
+        string daLbl = dab == 3 ? "blowout (1.5x+)" : dab == 2 ? "extended (1-1.5x)" : dab == 1 ? "normal (0.5-1x)" : "quiet (under 0.5x)"
+        if dan >= 5
+            dayAfterTxt := "after " + daLbl + " days: next avg " + str.tostring(f2(das / dan)) + "x · " + str.tostring(math.round(100.0 * dad / dan)) + "% digest · " + str.tostring(math.round(100.0 * dat / dan)) + "% trend again (n=" + str.tostring(dan) + ")"
+        else
+            dayAfterTxt := "after " + daLbl + " days: not enough history (n=" + str.tostring(dan) + ")"
+
 // ───────── Gas tank readout ─────────
 // Rows are packed top-down and the table is cleared first, so switched-off
 // lines leave no empty ghost boxes behind.
-var table g = table.new(position.top_center, 1, 10, border_width = 1, border_color = color.new(color.white, 50))
+var table g = table.new(position.top_center, 1, 11, border_width = 1, border_color = color.new(color.white, 50))
 
 if barstate.islast
-    table.clear(g, 0, 0, 0, 9)
+    table.clear(g, 0, 0, 0, 10)
     if showGas
         string t1 = not isToday ? "GAS waiting 9:30   tank " + str.tostring(f2(yATR)) : "GAS " + str.tostring(math.round(pctLeft)) + "% left   " + str.tostring(f2(xATR)) + "x ATR traveled"
         float usedLast = not na(dH) and not na(dL) and not na(prevC) ? math.max(dH - dL, math.abs(dH - prevC), math.abs(dL - prevC)) : na
@@ -878,6 +919,9 @@ if barstate.islast
         table.cell(g, 0, 0, t1, bgcolor = bg, text_color = color.black, text_size = size.small)
         table.cell(g, 0, 1, t2, bgcolor = color.new(color.black, 20), text_color = color.white, text_size = size.tiny)
         int rIdx = 2
+        if dayAfterOn and dayAfterTxt != ""
+            table.cell(g, 0, rIdx, dayAfterTxt, bgcolor = color.new(color.black, 20), text_color = color.new(#b2b5be, 0), text_size = size.tiny)
+            rIdx += 1
         if showProb and probLine != ""
             table.cell(g, 0, rIdx, probLine, bgcolor = color.new(#1a1a2e, 10), text_color = color.new(#4deeea, 0), text_size = size.tiny)
             rIdx += 1
