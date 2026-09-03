@@ -1,0 +1,1637 @@
+// Shared trap logic, keep identical with Twineys_Trap_Engine.pine
+//@version=6
+// Twiney's Trap Backtest — same trap rules as Twineys_Trap_Engine.pine with automatic entries and
+// exits so the Strategy Tester reports win rate, profit factor, drawdown and average bars in trade.
+// Commission and slippage: Pine only accepts constants in the strategy() declaration, so the
+// defaults below (0.0% commission, 0 ticks slippage) are overridden in the Strategy Tester's
+// Properties tab, not through Inputs.
+strategy("Twiney's Trap Backtest", shorttitle="Trap Backtest", overlay=true, pyramiding=0, default_qty_type=strategy.fixed, default_qty_value=1, calc_on_every_tick=false, process_orders_on_close=true, commission_type=strategy.commission.percent, commission_value=0.0, slippage=0, max_lines_count=500, max_labels_count=500, max_boxes_count=500, max_bars_back=500)
+
+// ============================================================================================
+// ===== SHARED BLOCK BEGIN — everything from here to "SHARED BLOCK END" is copy-identical =====
+// ===== in Twineys_Trap_Engine.pine and Twineys_Trap_Backtest.pine. Change one, change both. =====
+// ============================================================================================
+//
+// THE IDEA: we do not chase entries. We look for participants who got trapped and profit when
+// they are forced out (puking). A trap = price pokes through an obvious level (sweep), people
+// commit to the break, then price fails back inside quickly (Reclaim). Everyone who bought the
+// break is now underwater and must sell (mirror for sellers). Entry = retest of the reclaimed
+// Trap Level from the inside. Puke Target = where the trapped crowd finishes puking.
+//
+// VOCABULARY (mandatory): Longs Trapped, Shorts Trapped, Trap Level, Sweep Extreme, Reclaim,
+// Retest Zone, Puke Target, Trap Strength, Trap Held, Trap Failed, Timed Out, Gas Tank,
+// Full Tank, Gas Burned, Gas Left, Over Full Tank, Stand Down, Clear to Trade, Options: Yes/No,
+// Fresh Trap.
+//
+// CSV JOURNAL HEADER (alert() message order, fixed):
+// time,symbol,tf,side,level,class,strength,c1,c2,c3,c4,c5,avwap_lost,day_type,gamma,
+// gas_burned_pct,entry,stop,puke_target,rr,options,outcome,bars,mfe_atr,mae_atr
+//
+// DAILY DATA NOTE: the spec asks for request.security("D", x[1], lookahead_off). On historical
+// intraday bars that combination returns the value from TWO completed daily bars back (the [1]
+// offset is applied on top of the "last closed daily bar" that lookahead_off already delivers),
+// while realtime bars get the last completed day. TradingView documents x[1] with lookahead_on
+// as the non-repainting way to read the last COMPLETED daily bar on every bar. That is what is
+// used here, so PDH / PDL / prior close / Daily ATR are the last completed day everywhere and
+// never move during the session. Nothing here reads a daily bar that has not closed.
+// ============================================================================================
+
+// -------------------------------------------------------------------------------------------
+// INPUTS
+// -------------------------------------------------------------------------------------------
+G_TRAP   = "Trap Rules"
+G_LVL    = "Levels"
+G_VA     = "Value Area"
+G_VWAP   = "Anchored VWAP"
+G_REG    = "Regime"
+G_STOP   = "Stop/Target/Time"
+G_GAS    = "Gas Tank (ATR)"
+G_ATRL   = "ATR Levels"
+G_FILL   = "Gas Fill"
+G_CALC   = "Trade Calculator"
+G_SD     = "Stand Down"
+G_STATS  = "Stats"
+G_TBL    = "Tables"
+G_EXP    = "Export"
+
+// Trap Rules
+sweepBufTicks  = input.int(2, "Sweep Buffer (ticks)", minval=0, group=G_TRAP, tooltip="Price must trade beyond the Trap Level by at least this many ticks to count as a sweep.")
+failWindow     = input.int(3, "Failure Window (bars)", minval=1, group=G_TRAP, tooltip="After the sweep bar, price must CLOSE back on the original side within this many bars. If it does not, no trap (acceptance, we were wrong).")
+minBarsBetween = input.int(6, "Min Bars Between Traps On Same Level", minval=0, group=G_TRAP, tooltip="A level that just produced a trap is blocked for this many bars.")
+volMult        = input.float(1.5, "Committed Volume multiplier", minval=0.1, step=0.1, group=G_TRAP, tooltip="Committed Volume check: sweep bar volume >= this many times the volume average. People committed on the break.")
+volLen         = input.int(20, "Committed Volume average (bars)", minval=1, group=G_TRAP)
+entryModel     = input.string("Retest Limit at Trap Level", "Entry Model", options=["Retest Limit at Trap Level", "Enter at Reclaim Close"], group=G_TRAP, tooltip="Retest Limit at Trap Level = wait for price to come back to the Trap Level after the Reclaim (our entry). Enter at Reclaim Close = enter at the close of the Reclaim bar, for comparison. Used by the stats engine and by the backtest.")
+retestValidBars= input.int(6, "Retest order valid (bars)", minval=1, group=G_TRAP, tooltip="How many bars after the Reclaim we wait for the retest of the Trap Level. If price never comes back, the trap is logged as No Fill.")
+lvlExtendBars  = input.int(24, "Trap Level extend right (bars)", minval=1, group=G_TRAP)
+zonePct        = input.float(10, "Retest Zone depth (% of Daily ATR)", minval=1, step=1, group=G_TRAP, tooltip="Retest Zone box drawn from the Trap Level back inside by this % of the Daily ATR (Full Tank).")
+sizingText     = input.string("1-2 = quarter size, 3 = half size, 4-5 = full size", "Sizing guide by Trap Strength (display only)", group=G_TRAP)
+maxTrapsDrawn  = input.int(60, "Max traps kept on chart", minval=5, maxval=150, group=G_TRAP, tooltip="Older trap drawings are recycled so the 500 line/label/box limits are never hit.")
+
+// Levels
+sessStr = input.session("0930-1600", "Regular session", group=G_LVL, tooltip="Regular session. The 09:30 open anchors the Session aVWAP, the ATR Zero Line and the Gas Tank.")
+sessTz  = input.string("America/New_York", "Session timezone", group=G_LVL)
+pivL    = input.int(5, "Swing pivot left bars", minval=1, group=G_LVL)
+pivR    = input.int(2, "Swing pivot right bars", minval=1, group=G_LVL, tooltip="Swing High / Swing Low = last confirmed pivot on the chart timeframe. A pivot needs this many bars to confirm, so it never repaints.")
+onPDH = input.bool(true, "PDH", inline="PDH", group=G_LVL)
+cPDH  = input.color(color.rgb(233, 30, 99), "", inline="PDH", group=G_LVL)
+sPDH  = input.string("Solid", "", options=["Solid", "Dashed", "Dotted"], inline="PDH", group=G_LVL)
+lPDH  = input.bool(true, "label", inline="PDH", group=G_LVL)
+onPDL = input.bool(true, "PDL", inline="PDL", group=G_LVL)
+cPDL  = input.color(color.rgb(233, 30, 99), "", inline="PDL", group=G_LVL)
+sPDL  = input.string("Solid", "", options=["Solid", "Dashed", "Dotted"], inline="PDL", group=G_LVL)
+lPDL  = input.bool(true, "label", inline="PDL", group=G_LVL)
+onONH = input.bool(true, "ONH", inline="ONH", group=G_LVL)
+cONH  = input.color(color.rgb(156, 39, 176), "", inline="ONH", group=G_LVL)
+sONH  = input.string("Dashed", "", options=["Solid", "Dashed", "Dotted"], inline="ONH", group=G_LVL)
+lONH  = input.bool(true, "label", inline="ONH", group=G_LVL)
+onONL = input.bool(true, "ONL", inline="ONL", group=G_LVL)
+cONL  = input.color(color.rgb(156, 39, 176), "", inline="ONL", group=G_LVL)
+sONL  = input.string("Dashed", "", options=["Solid", "Dashed", "Dotted"], inline="ONL", group=G_LVL)
+lONL  = input.bool(true, "label", inline="ONL", group=G_LVL)
+onVAH = input.bool(true, "VAH", inline="VAH", group=G_LVL)
+cVAH  = input.color(color.rgb(33, 150, 243), "", inline="VAH", group=G_LVL)
+sVAH  = input.string("Solid", "", options=["Solid", "Dashed", "Dotted"], inline="VAH", group=G_LVL)
+lVAH  = input.bool(true, "label", inline="VAH", group=G_LVL)
+onVAL = input.bool(true, "VAL", inline="VAL", group=G_LVL)
+cVAL  = input.color(color.rgb(33, 150, 243), "", inline="VAL", group=G_LVL)
+sVAL  = input.string("Solid", "", options=["Solid", "Dashed", "Dotted"], inline="VAL", group=G_LVL)
+lVAL  = input.bool(true, "label", inline="VAL", group=G_LVL)
+onPOC = input.bool(true, "POC", inline="POC", group=G_LVL)
+cPOC  = input.color(color.rgb(255, 152, 0), "", inline="POC", group=G_LVL)
+sPOC  = input.string("Dotted", "", options=["Solid", "Dashed", "Dotted"], inline="POC", group=G_LVL)
+lPOC  = input.bool(true, "label", inline="POC", group=G_LVL)
+onSWH = input.bool(true, "Swing High", inline="SWH", group=G_LVL)
+cSWH  = input.color(color.rgb(120, 144, 156), "", inline="SWH", group=G_LVL)
+sSWH  = input.string("Dotted", "", options=["Solid", "Dashed", "Dotted"], inline="SWH", group=G_LVL)
+lSWH  = input.bool(true, "label", inline="SWH", group=G_LVL)
+onSWL = input.bool(true, "Swing Low", inline="SWL", group=G_LVL)
+cSWL  = input.color(color.rgb(120, 144, 156), "", inline="SWL", group=G_LVL)
+sSWL  = input.string("Dotted", "", options=["Solid", "Dashed", "Dotted"], inline="SWL", group=G_LVL)
+lSWL  = input.bool(true, "label", inline="SWL", group=G_LVL)
+
+// Value Area
+vaSource   = input.string("Manual", "Value Area Source", options=["Manual", "Auto Prior Day", "Off"], group=G_VA, tooltip="Manual = type VAH / VAL / POC from Twiney's Shop (two-click workflow). Auto Prior Day = volume-by-price profile of the prior regular session, 70% of volume around the POC. Off = value area disabled, Puke Target falls back to the ATR target.")
+vahIn      = input.price(0.0, "VAH (Manual)", group=G_VA)
+valIn      = input.price(0.0, "VAL (Manual)", group=G_VA)
+pocIn      = input.price(0.0, "POC (Manual)", group=G_VA)
+vaBinTicks = input.int(4, "Auto profile bin size (ticks)", minval=1, group=G_VA)
+vaTodayOnly= input.bool(true, "Manual levels apply to today only", group=G_VA, tooltip="ON: manual VAH / VAL / POC are only active on the current session day, so historical traps and the stats engine do not use today's numbers as targets. OFF: manual levels apply to every bar on the chart.")
+
+// Anchored VWAP
+onSessVwap  = input.bool(true, "Session aVWAP", inline="sv", group=G_VWAP, tooltip="Anchored at today's 09:30 ET open.")
+colSessVwap = input.color(color.rgb(255, 193, 7), "", inline="sv", group=G_VWAP)
+onSwingVwap = input.bool(true, "Swing aVWAP", inline="sw", group=G_VWAP, tooltip="Longs Trapped: anchored at the last confirmed swing low that started the up-leg. Shorts Trapped: the last confirmed swing high that started the down-leg. The chart shows the one matching the latest trap.")
+colSwingVwap= input.color(color.rgb(0, 188, 212), "", inline="sw", group=G_VWAP)
+onEventVwap = input.bool(true, "Event aVWAP", inline="ev", group=G_VWAP, tooltip="Anchored at the highest-volume bar in the last N bars, or at the manual anchor time.")
+colEventVwap= input.color(color.rgb(171, 71, 188), "", inline="ev", group=G_VWAP)
+eventLen    = input.int(78, "Event aVWAP lookback (bars)", minval=2, group=G_VWAP)
+eventManual = input.bool(false, "Event aVWAP manual anchor", group=G_VWAP)
+eventAnchor = input.time(timestamp("02 Jan 2024 09:30 -0500"), "Event aVWAP anchor time", group=G_VWAP)
+
+// Regime
+trendRangePct = input.float(60, "Trend Day: session range >= % of Daily ATR", minval=1, group=G_REG)
+trendSidePct  = input.float(70, "Trend Day: % of session bars closed on one side of Session aVWAP", minval=50, maxval=100, group=G_REG)
+gammaRegime   = input.string("Unknown", "Gamma Regime", options=["Positive", "Negative", "Unknown"], group=G_REG, tooltip="Manual. Pine cannot read TanukiTrade. Positive gamma counts as Regime Aligned for every trap.")
+gammaFlip     = input.price(0.0, "Gamma Flip Price", group=G_REG, tooltip="0 = unknown. Otherwise the desk shows Above Flip / Below Flip.")
+
+// Stop / Target / Time
+stopBufTicks    = input.int(2, "Stop Buffer (ticks)", minval=0, group=G_STOP, tooltip="Stop = Sweep Extreme plus this many ticks beyond the wick. If price goes back through there the trap was not a trap (Trap Failed).")
+fallbackAtrMult = input.float(1.0, "Fallback Puke Target (x Daily ATR)", minval=0.1, step=0.1, group=G_STOP, tooltip="Used when the value area is off or its edge is not a valid target: Puke Target = Trap Level minus/plus this many Daily ATRs.")
+vaTargetMaxAtr  = input.float(3.0, "Max Puke Target distance (x Daily ATR)", minval=0.5, step=0.5, group=G_STOP, tooltip="If the value edge is farther than this from the entry, the fallback ATR target is used instead.")
+timeStopBars    = input.int(12, "Time Stop (bars from entry)", minval=1, group=G_STOP, tooltip="If neither the stop nor the Puke Target hits within this many bars: Timed Out, exit at that bar's close.")
+
+// Gas Tank (ATR)
+atrLen  = input.int(14, "ATR Period", minval=1, group=G_GAS, tooltip="Daily ATR, Wilder smoothing (RMA), last COMPLETED daily bar. This ONE value is the Full Tank and feeds the ATR levels, the Gas Fill, the Trade Calculator and the backtest. No second ATR anywhere.")
+thHalf  = input.float(50, "Half Tank from (% burned)", group=G_GAS)
+thLow   = input.float(80, "Running Low from (% burned)", group=G_GAS)
+thFull  = input.float(100, "Full Tank Used from (% burned)", group=G_GAS)
+thOver  = input.float(120, "Over Full Tank from (% burned)", group=G_GAS)
+
+// ATR Levels
+showAtrLevels = input.bool(true, "Show ATR levels (intraday only)", group=G_ATRL)
+anchorMode    = input.string("Session Open", "Zero Line anchor", options=["Session Open", "Prior Close"], group=G_ATRL, tooltip="Session Open = today's 09:30 ET regular-session open. Prior Close = last completed daily close.")
+show10 = input.bool(true, "1.0x", inline="al", group=G_ATRL)
+show15 = input.bool(true, "1.5x", inline="al", group=G_ATRL)
+show20 = input.bool(true, "2.0x", inline="al", group=G_ATRL)
+show25 = input.bool(true, "2.5x", inline="al", group=G_ATRL)
+show30 = input.bool(true, "3.0x", inline="al", group=G_ATRL)
+colLive  = input.color(color.rgb(76, 175, 80), "Live", inline="ac", group=G_ATRL, tooltip="Live = today's price has not reached it. Spent = today's high/low passed it; once spent it stays spent for the session.")
+colSpent = input.color(color.rgb(244, 67, 54), "Spent", inline="ac", group=G_ATRL)
+showAtrLabels = input.bool(true, "ATR level labels", group=G_ATRL)
+atrExtend     = input.int(12, "ATR lines extend right (bars)", minval=0, group=G_ATRL)
+
+// Gas Fill
+showFill  = input.bool(true, "Show Gas Tank fill (intraday only)", group=G_FILL, tooltip="Shaded band between the Zero Line and today's session extreme. Burned gas does not come back: the band follows the session extreme, not current price.")
+fillTo    = input.string("Session Extreme", "Fill To", options=["Session Extreme", "Current Price"], group=G_FILL)
+fillC0    = input.color(color.rgb(76, 175, 80), "0%", inline="fc", group=G_FILL)
+fillC50   = input.color(color.rgb(255, 235, 59), "50%", inline="fc", group=G_FILL)
+fillC100  = input.color(color.rgb(244, 67, 54), "100%", inline="fc", group=G_FILL)
+fillC120  = input.color(color.rgb(120, 0, 0), "120%+", inline="fc", group=G_FILL)
+fillTransp= input.int(80, "Fill transparency", minval=0, maxval=100, group=G_FILL)
+
+// Trade Calculator
+myEntry      = input.price(0.0, "My Entry (0 = blank)", group=G_CALC, tooltip="Leave at 0 and the row auto-fills from the Fresh Trap (Entry = Trap Level, Stop = Sweep Extreme + buffer, Target = Puke Target).")
+myStop       = input.price(0.0, "My Stop (0 = blank)", group=G_CALC)
+myTarget     = input.price(0.0, "My Target (0 = blank)", group=G_CALC)
+minTgtAtrPct = input.float(25, "Min Target % of Daily ATR", minval=0, group=G_CALC, tooltip="Options: Yes needs Reward >= this % of the Full Tank.")
+minTgtDollars= input.float(0.50, "Min Target $", minval=0, step=0.05, group=G_CALC, tooltip="Options: Yes needs Reward >= this many price units (dollars for stocks, points for futures).")
+minRR        = input.float(1.5, "Min R:R for Options", minval=0, step=0.1, group=G_CALC)
+
+// Stand Down
+sdGasPct     = input.float(20, "Stand Down when Gas Left < % of Full Tank", minval=0, group=G_SD)
+sdFailCount  = input.int(2, "Stand Down after this many Trap Failed today", minval=1, group=G_SD)
+sdOutside    = input.bool(true, "Stand Down outside regular session", group=G_SD)
+sdBacktest   = input.bool(true, "Backtest respects Stand Down", group=G_SD, tooltip="ON: the strategy takes no new trap while the desk says Stand Down. OFF: the strategy takes every trap so both ways can be tested.")
+
+// Stats
+statsOn     = input.bool(true, "Track every trap (stats engine)", group=G_STATS)
+extOn       = input.bool(true, "Extend sample with a higher timeframe", group=G_STATS, tooltip="Runs the same trap rules on a higher timeframe pulled with request.security so the sample is not capped by the intraday bar limit. Only higher-timeframe traps that fired BEFORE the first bar of this chart are added, so nothing is double counted. Bars-to-outcome for those traps are counted in higher-timeframe bars. Higher-timeframe levels are PDH, PDL, ONH, ONL, Swing High, Swing Low (no value area).")
+extTf       = input.timeframe("30", "Extended sample timeframe", group=G_STATS)
+maxRecords  = input.int(3000, "Max traps stored", minval=100, maxval=20000, group=G_STATS)
+
+// Tables
+showDesk  = input.bool(true, "Show Trap Desk", inline="td", group=G_TBL)
+deskPos   = input.string("Top Right", "", options=["Top Right", "Top Left", "Bottom Right", "Bottom Left", "Middle Right", "Middle Left"], inline="td", group=G_TBL)
+deskSize  = input.string("Small", "", options=["Tiny", "Small", "Normal"], inline="td", group=G_TBL)
+showStats = input.bool(true, "Show Trap Stats", inline="ts", group=G_TBL)
+statsPos  = input.string("Bottom Right", "", options=["Top Right", "Top Left", "Bottom Right", "Bottom Left", "Middle Right", "Middle Left"], inline="ts", group=G_TBL)
+statsSize = input.string("Tiny", "", options=["Tiny", "Small", "Normal"], inline="ts", group=G_TBL)
+showLevelLabels = input.bool(true, "Show reference level lines", group=G_TBL)
+
+// Export
+alertsOn   = input.bool(true, "Send alert() CSV lines", group=G_EXP, tooltip="alert() fires on every Fresh Trap and every outcome (Trap Held, Trap Failed, Timed Out). Create an alert with 'Any alert() function call'. Message = one CSV line in this fixed header order:\ntime,symbol,tf,side,level,class,strength,c1,c2,c3,c4,c5,avwap_lost,day_type,gamma,gas_burned_pct,entry,stop,puke_target,rr,options,outcome,bars,mfe_atr,mae_atr")
+dataWinOn  = input.bool(true, "Data-window series for Export chart data", group=G_EXP, tooltip="Plots strength, gas_burned_pct, gas_left, rr and outcome code (1 Trap Held, -1 Trap Failed, 0 Timed Out, na none) as data-window-only series so Export chart data writes them to CSV.")
+
+// -------------------------------------------------------------------------------------------
+// CONSTANTS / SMALL HELPERS
+// -------------------------------------------------------------------------------------------
+tick        = syminfo.mintick
+sweepBuf    = sweepBufTicks * tick
+stopBuf     = stopBufTicks * tick
+LONGS_TRAPPED  = "Longs Trapped"
+SHORTS_TRAPPED = "Shorts Trapped"
+FOOTPRINT_TIP  = "Before entry, confirm on the footprint: 1) big delta into the Sweep Extreme with no follow-through (absorption), 2) on the Reclaim bar the trapped side is hitting out (aggressive selling for Longs Trapped), 3) no fresh initiative volume defending the level on the retest. If the footprint disagrees, no trade."
+
+f_px(float p) => na(p) ? "n/a" : str.tostring(p, format.mintick)
+f_pct(float p) => na(p) ? "n/a" : str.tostring(math.round(p, 0), "#") + "%"
+f_num(float p, int d) => na(p) ? "n/a" : str.tostring(math.round(p, d), d == 0 ? "#" : d == 1 ? "#.#" : "#.##")
+f_yn(bool b) => b ? "Yes" : "No"
+f_chk(bool b) => b ? "✔" : "✘"
+f_style(string s) => s == "Dashed" ? line.style_dashed : s == "Dotted" ? line.style_dotted : line.style_solid
+f_pos(string s) =>
+    switch s
+        "Top Right"    => position.top_right
+        "Top Left"     => position.top_left
+        "Bottom Right" => position.bottom_right
+        "Bottom Left"  => position.bottom_left
+        "Middle Right" => position.middle_right
+        => position.middle_left
+f_size(string s) => s == "Tiny" ? size.tiny : s == "Normal" ? size.normal : size.small
+f_sideName(int side) => side == 1 ? LONGS_TRAPPED : SHORTS_TRAPPED
+
+// -------------------------------------------------------------------------------------------
+// TYPES
+// -------------------------------------------------------------------------------------------
+// One bar of context for the trap engine. Built from built-ins (chart context) or inside the
+// higher-timeframe request (extended sample). Same fields either way.
+type BarCtx
+    float o
+    float h
+    float l
+    float c
+    float v
+    float cPrev
+    float volAvg
+    int   bi
+    int   t
+    bool  inSess
+    bool  sessOpen
+    float sessOpenPx
+    float sessHigh
+    float sessLow
+    int   sessOpenBar
+    float pdh
+    float pdl
+    float onh
+    float onl
+    float pclose
+    float swH
+    float swL
+    int   swHBar
+    int   swLBar
+    float vaHigh
+    float vaLow
+    float vaPoc
+    float atr
+    float sessVwap
+    float swLowVwap
+    float swHighVwap
+    float eventVwap
+    int   sessBars
+    int   barsAbove
+    int   barsBelow
+    string dayType
+    bool  trendUp
+    float gasBurned
+    float gasBurnedPct
+    float gasLeft
+    string gamma
+    string flip
+
+// Sweep state per reference level (both directions tracked).
+type LevelState
+    string name
+    bool   major
+    float  price
+    float  prevPrice
+    bool   upActive
+    int    upStart
+    int    upExtBar
+    float  upExt
+    float  upVol
+    float  upVolAvg
+    float  upPV
+    float  upV
+    bool   dnActive
+    int    dnStart
+    int    dnExtBar
+    float  dnExt
+    float  dnVol
+    float  dnVolAvg
+    float  dnPV
+    float  dnV
+    int    lastFire
+
+// One trap on record. side: 1 = Longs Trapped (we short), -1 = Shorts Trapped (we long).
+// status: 0 waiting for retest fill, 1 in trade, 2 resolved, 3 No Fill.
+// outcome (status 2): 1 Trap Held, -1 Trap Failed, 0 Timed Out.
+type TrapRec
+    int    fireBar
+    int    fireTime
+    int    side
+    string levelName
+    bool   major
+    float  level
+    float  extreme
+    int    extBar
+    float  reclaim
+    float  crowdAvg
+    int    strength
+    bool   c1
+    bool   c2
+    bool   c3
+    bool   c4
+    bool   c5
+    bool   avwapLost
+    string dayType
+    string gamma
+    string flip
+    float  gasBurnedPct
+    float  gasLeft
+    float  atr
+    float  entry
+    float  stop
+    float  target
+    float  rr
+    bool   options
+    int    barsToReclaim
+    int    status
+    int    fillBar
+    int    outcome
+    int    bars
+    float  mfe
+    float  mae
+    float  dist12
+    float  exitPx
+    float  pnlPts
+    float  pnlAtr
+    float  mfeAtr
+    float  maeAtr
+    bool   ext
+    int    id
+
+type Engine
+    array<LevelState> levels
+    array<TrapRec>    recs
+    array<TrapRec>    openTraps
+    array<TrapRec>    fired
+    array<TrapRec>    resolved
+    array<TrapRec>    noFill
+    int               failedToday
+    int               nextId
+
+// Drawings for one trap (chart context only).
+type TrapDraw
+    TrapRec rec
+    label   lbl
+    line    lnLevel
+    line    lnStop
+    line    lnTarget
+    box     bxZone
+    label   lblStop
+    label   lblTarget
+
+type Bucket
+    string name
+    int    n
+    int    held
+    int    failed
+    int    timed
+    int    nofill
+    int    nWin
+    int    nLoss
+    float  sumWinPts
+    float  sumWinAtr
+    float  sumLossPts
+    float  sumLossAtr
+    float  sumPnlAtr
+    float  sumMaeAtr
+    array<float> barsTgt
+
+// -------------------------------------------------------------------------------------------
+// ENGINE HELPERS
+// -------------------------------------------------------------------------------------------
+f_newLevel(string name, bool major) =>
+    LevelState.new(name=name, major=major, price=na, prevPrice=na, upActive=false, upStart=0, upExtBar=0, upExt=na, upVol=0.0, upVolAvg=na, upPV=0.0, upV=0.0, dnActive=false, dnStart=0, dnExtBar=0, dnExt=na, dnVol=0.0, dnVolAvg=na, dnPV=0.0, dnV=0.0, lastFire=-100000)
+
+f_newEngine() =>
+    lv = array.new<LevelState>()
+    array.push(lv, f_newLevel("PDH", true))
+    array.push(lv, f_newLevel("PDL", true))
+    array.push(lv, f_newLevel("ONH", true))
+    array.push(lv, f_newLevel("ONL", true))
+    array.push(lv, f_newLevel("VAH", true))
+    array.push(lv, f_newLevel("VAL", true))
+    array.push(lv, f_newLevel("POC", false))
+    array.push(lv, f_newLevel("Swing High", false))
+    array.push(lv, f_newLevel("Swing Low", false))
+    Engine.new(levels=lv, recs=array.new<TrapRec>(), openTraps=array.new<TrapRec>(), fired=array.new<TrapRec>(), resolved=array.new<TrapRec>(), noFill=array.new<TrapRec>(), failedToday=0, nextId=1)
+
+// Push the current level prices into the engine (index order matches f_newEngine).
+method setLevels(Engine e, BarCtx x) =>
+    for [i, s] in e.levels
+        float p = switch i
+            0 => onPDH ? x.pdh : na
+            1 => onPDL ? x.pdl : na
+            2 => onONH ? x.onh : na
+            3 => onONL ? x.onl : na
+            4 => onVAH ? x.vaHigh : na
+            5 => onVAL ? x.vaLow : na
+            6 => onPOC ? x.vaPoc : na
+            7 => onSWH ? x.swH : na
+            => onSWL ? x.swL : na
+        s.price := p
+    e
+
+// Day Type per section 7. Needs session counters and Daily ATR already in the context.
+f_dayType(BarCtx x) =>
+    rng = x.sessHigh - x.sessLow
+    side = math.max(x.barsAbove, x.barsBelow)
+    trend = x.sessBars > 0 and not na(x.atr) and x.atr > 0 and rng >= trendRangePct / 100.0 * x.atr and side >= trendSidePct / 100.0 * x.sessBars
+    [trend ? "Trend Day" : "Balance Day", x.barsAbove > x.barsBelow]
+
+f_gammaFlip(float px) =>
+    gammaFlip > 0 ? (px >= gammaFlip ? "Above Flip" : "Below Flip") : "Flip n/a"
+
+// Regime Aligned = Balance Day, or Gamma Positive, or Trend Day with the trap in the trend
+// direction (Shorts Trapped on an up trend day, Longs Trapped on a down trend day).
+f_regimeAligned(int side, string dayType, bool trendUp) =>
+    dayType == "Balance Day" or gammaRegime == "Positive" or (dayType == "Trend Day" and ((side == -1 and trendUp) or (side == 1 and not trendUp)))
+
+// Puke Target per section 8. Longs Trapped -> VAL, Shorts Trapped -> VAH. If the Trap Level is
+// VAH / VAL, the other edge is tried. Fallback = entry minus/plus fallbackAtrMult x Daily ATR when
+// the value area is off, the edge is not beyond the entry, or the edge is too far away.
+f_target(int side, string levelName, float entry, BarCtx x) =>
+    float edge = side == 1 ? x.vaLow : x.vaHigh
+    if levelName == "VAL" and side == 1
+        edge := na
+    if levelName == "VAH" and side == -1
+        edge := na
+    float fb = side == 1 ? entry - fallbackAtrMult * x.atr : entry + fallbackAtrMult * x.atr
+    bool edgeOk = not na(edge) and not na(x.atr) and (side == 1 ? edge < entry - tick : edge > entry + tick) and math.abs(edge - entry) <= vaTargetMaxAtr * x.atr
+    edgeOk ? edge : fb
+
+// aVWAP Lost per section 5: after the Reclaim, price has also CLOSED back through at least one
+// anchored VWAP sitting between the Trap Level and the trapped crowd's average.
+f_avwapLost(int side, float level, float crowdAvg, float c, BarCtx x) =>
+    lo = math.min(level, crowdAvg) - sweepBuf
+    hi = math.max(level, crowdAvg) + sweepBuf
+    lost = false
+    for i = 0 to 2
+        float v = i == 0 ? (onSessVwap ? x.sessVwap : na) : i == 1 ? (onSwingVwap ? (side == 1 ? x.swLowVwap : x.swHighVwap) : na) : (onEventVwap ? x.eventVwap : na)
+        if not na(v) and v >= lo and v <= hi and (side == 1 ? c < v : c > v)
+            lost := true
+    lost
+
+f_optionsOk(float entry, float stop, float target, float atr, float gasLeft) =>
+    risk = math.abs(entry - stop)
+    reward = math.abs(entry - target)
+    rr = risk > 0 ? reward / risk : na
+    fits = not na(gasLeft) and reward <= gasLeft
+    not na(atr) and reward >= minTgtAtrPct / 100.0 * atr and reward >= minTgtDollars and not na(rr) and rr >= minRR and fits
+
+// Build one TrapRec at the Reclaim bar.
+f_makeRec(Engine e, LevelState s, int side, BarCtx x, int startBar, int extBar, float ext, float sweepVol, float sweepVolAvg, float crowdAvg, bool ext_) =>
+    lv = s.price
+    fastMax = math.max(1, math.floor(failWindow / 2))
+    barsToReclaim = x.bi - startBar
+    c1 = s.major
+    c2 = f_avwapLost(side, lv, crowdAvg, x.c, x)
+    c3 = f_regimeAligned(side, x.dayType, x.trendUp)
+    c4 = barsToReclaim <= fastMax
+    c5 = not na(sweepVolAvg) and sweepVolAvg > 0 and sweepVol >= volMult * sweepVolAvg
+    strength = math.max(1, (c1 ? 1 : 0) + (c2 ? 1 : 0) + (c3 ? 1 : 0) + (c4 ? 1 : 0) + (c5 ? 1 : 0))
+    entry = entryModel == "Enter at Reclaim Close" ? x.c : lv
+    stop = side == 1 ? ext + stopBuf : ext - stopBuf
+    target = f_target(side, s.name, entry, x)
+    risk = math.abs(entry - stop)
+    rr = risk > 0 ? math.abs(entry - target) / risk : na
+    r = TrapRec.new()
+    r.fireBar := x.bi
+    r.fireTime := x.t
+    r.side := side
+    r.levelName := s.name
+    r.major := s.major
+    r.level := lv
+    r.extreme := ext
+    r.extBar := extBar
+    r.reclaim := x.c
+    r.crowdAvg := crowdAvg
+    r.strength := strength
+    r.c1 := c1
+    r.c2 := c2
+    r.c3 := c3
+    r.c4 := c4
+    r.c5 := c5
+    r.avwapLost := c2
+    r.dayType := x.dayType
+    r.gamma := x.gamma
+    r.flip := x.flip
+    r.gasBurnedPct := x.gasBurnedPct
+    r.gasLeft := x.gasLeft
+    r.atr := x.atr
+    r.entry := entry
+    r.stop := stop
+    r.target := target
+    r.rr := rr
+    r.options := f_optionsOk(entry, stop, target, x.atr, x.gasLeft)
+    r.barsToReclaim := barsToReclaim
+    r.status := entryModel == "Enter at Reclaim Close" ? 1 : 0
+    r.fillBar := entryModel == "Enter at Reclaim Close" ? x.bi : -1
+    r.outcome := 0
+    r.bars := 0
+    r.mfe := 0.0
+    r.mae := 0.0
+    r.dist12 := na
+    r.exitPx := na
+    r.ext := ext_
+    r.pnlPts := na
+    r.pnlAtr := na
+    r.mfeAtr := na
+    r.maeAtr := na
+    r.id := e.nextId
+    e.nextId := e.nextId + 1
+    r
+
+// Trap detection for one level, both directions. Fires on the Reclaim bar.
+method detect(LevelState s, Engine e, BarCtx x, bool ext_) =>
+    lv = s.price
+    if na(lv) or na(s.prevPrice) or lv != s.prevPrice
+        s.upActive := false
+        s.dnActive := false
+    s.prevPrice := lv
+    if not na(lv) and not na(x.cPrev) and not na(x.atr)
+        // ---- upside sweep -> Longs Trapped
+        if not s.upActive and x.cPrev < lv and x.h >= lv + sweepBuf
+            s.upActive := true
+            s.upStart := x.bi
+            s.upExtBar := x.bi
+            s.upExt := x.h
+            s.upVol := x.v
+            s.upVolAvg := x.volAvg
+            s.upPV := 0.0
+            s.upV := 0.0
+        if s.upActive
+            if x.h >= s.upExt
+                s.upExt := x.h
+                s.upExtBar := x.bi
+            if x.h >= lv + sweepBuf
+                s.upPV := s.upPV + math.max((x.h + x.l + x.c) / 3.0, lv) * x.v
+                s.upV := s.upV + x.v
+            if x.c <= lv
+                s.upActive := false
+                if x.bi - s.lastFire >= minBarsBetween
+                    crowd = s.upV > 0 ? s.upPV / s.upV : (lv + s.upExt) / 2.0
+                    r = f_makeRec(e, s, 1, x, s.upStart, s.upExtBar, s.upExt, s.upVol, s.upVolAvg, crowd, ext_)
+                    array.push(e.recs, r)
+                    array.push(e.openTraps, r)
+                    array.push(e.fired, r)
+                    s.lastFire := x.bi
+            else if x.bi - s.upStart >= failWindow
+                s.upActive := false
+        // ---- downside sweep -> Shorts Trapped
+        if not s.dnActive and x.cPrev > lv and x.l <= lv - sweepBuf
+            s.dnActive := true
+            s.dnStart := x.bi
+            s.dnExtBar := x.bi
+            s.dnExt := x.l
+            s.dnVol := x.v
+            s.dnVolAvg := x.volAvg
+            s.dnPV := 0.0
+            s.dnV := 0.0
+        if s.dnActive
+            if x.l <= s.dnExt
+                s.dnExt := x.l
+                s.dnExtBar := x.bi
+            if x.l <= lv - sweepBuf
+                s.dnPV := s.dnPV + math.min((x.h + x.l + x.c) / 3.0, lv) * x.v
+                s.dnV := s.dnV + x.v
+            if x.c >= lv
+                s.dnActive := false
+                if x.bi - s.lastFire >= minBarsBetween
+                    crowd = s.dnV > 0 ? s.dnPV / s.dnV : (lv + s.dnExt) / 2.0
+                    r = f_makeRec(e, s, -1, x, s.dnStart, s.dnExtBar, s.dnExt, s.dnVol, s.dnVolAvg, crowd, ext_)
+                    array.push(e.recs, r)
+                    array.push(e.openTraps, r)
+                    array.push(e.fired, r)
+                    s.lastFire := x.bi
+            else if x.bi - s.dnStart >= failWindow
+                s.dnActive := false
+    s
+
+// Outcome tracking for one open trap on this bar. Returns true when the trap left the open list.
+method track(TrapRec r, Engine e, BarCtx x) =>
+    done = false
+    if r.status == 0 and x.bi > r.fireBar
+        touched = r.side == 1 ? x.h >= r.level : x.l <= r.level
+        if touched
+            r.status := 1
+            r.fillBar := x.bi
+            r.entry := r.level
+        else if x.bi - r.fireBar >= retestValidBars
+            r.status := 3
+            array.push(e.noFill, r)
+            done := true
+    if r.status == 1 and (x.bi > r.fillBar or entryModel != "Enter at Reclaim Close")
+        dir = -r.side
+        fav = r.side == 1 ? r.entry - x.l : x.h - r.entry
+        adv = r.side == 1 ? x.h - r.entry : r.entry - x.l
+        r.mfe := math.max(r.mfe, fav)
+        r.mae := math.max(r.mae, adv)
+        barsIn = x.bi - r.fillBar
+        hitStop = r.side == 1 ? x.h >= r.stop : x.l <= r.stop
+        hitTgt  = r.side == 1 ? x.l <= r.target : x.h >= r.target
+        if hitStop
+            r.status := 2
+            r.outcome := -1
+            r.exitPx := r.stop
+            e.failedToday := e.failedToday + 1
+        else if hitTgt
+            r.status := 2
+            r.outcome := 1
+            r.exitPx := r.target
+        else if barsIn >= timeStopBars
+            r.status := 2
+            r.outcome := 0
+            r.exitPx := x.c
+            r.dist12 := (x.c - r.entry) * dir
+        if r.status == 2
+            r.bars := barsIn
+            r.pnlPts := (r.exitPx - r.entry) * dir
+            r.pnlAtr := r.atr > 0 ? r.pnlPts / r.atr : na
+            r.mfeAtr := r.atr > 0 ? r.mfe / r.atr : na
+            r.maeAtr := r.atr > 0 ? r.mae / r.atr : na
+            array.push(e.resolved, r)
+            done := true
+    done
+
+// One engine step for one bar of context. Outcomes first, then new traps.
+method step(Engine e, BarCtx x, bool ext_) =>
+    array.clear(e.fired)
+    array.clear(e.resolved)
+    array.clear(e.noFill)
+    if x.sessOpen
+        e.failedToday := 0
+    e.setLevels(x)
+    i = array.size(e.openTraps) - 1
+    while i >= 0
+        r = array.get(e.openTraps, i)
+        if r.track(e, x)
+            array.remove(e.openTraps, i)
+        i -= 1
+    for s in e.levels
+        s.detect(e, x, ext_)
+    while array.size(e.recs) > maxRecords
+        array.shift(e.recs)
+    e
+
+// -------------------------------------------------------------------------------------------
+// CONTEXT BUILDERS (session, overnight, swings, aVWAPs, value profile). All ta.* calls live
+// here so they run once per bar, unconditionally.
+// -------------------------------------------------------------------------------------------
+// Session-anchored VWAP sums, swing VWAP sums, event VWAP sums.
+f_baseCtx() =>
+    x = BarCtx.new()
+    x.o := open
+    x.h := high
+    x.l := low
+    x.c := close
+    x.v := nz(volume)
+    x.cPrev := close[1]
+    x.volAvg := ta.sma(nz(volume), volLen)
+    x.bi := bar_index
+    x.t := time
+    inSess = not na(time(timeframe.period, sessStr, sessTz))
+    sessOpen = timeframe.isintraday ? (inSess and not inSess[1]) : true
+    x.inSess := inSess
+    x.sessOpen := sessOpen
+    // session extremes and open
+    var float sOpenPx = na
+    var float sHigh = na
+    var float sLow = na
+    var int sOpenBar = 0
+    var int sBars = 0
+    var int sAbove = 0
+    var int sBelow = 0
+    var float sPV = 0.0
+    var float sV = 0.0
+    if sessOpen
+        sOpenPx := open
+        sHigh := high
+        sLow := low
+        sOpenBar := bar_index
+        sBars := 0
+        sAbove := 0
+        sBelow := 0
+        sPV := 0.0
+        sV := 0.0
+    if inSess
+        sHigh := math.max(nz(sHigh, high), high)
+        sLow := math.min(nz(sLow, low), low)
+    sPV += hlc3 * nz(volume)
+    sV += nz(volume)
+    sessVwap = sV > 0 ? sPV / sV : na
+    if inSess
+        sBars += 1
+        if not na(sessVwap)
+            if close > sessVwap
+                sAbove += 1
+            else
+                sBelow += 1
+    x.sessOpenPx := sOpenPx
+    x.sessHigh := sHigh
+    x.sessLow := sLow
+    x.sessOpenBar := sOpenBar
+    x.sessBars := sBars
+    x.barsAbove := sAbove
+    x.barsBelow := sBelow
+    x.sessVwap := sessVwap
+    // overnight high / low (bars outside the regular session since the last close)
+    var float onAccH = na
+    var float onAccL = na
+    var float onH = na
+    var float onL = na
+    if not inSess
+        onAccH := na(onAccH) ? high : math.max(onAccH, high)
+        onAccL := na(onAccL) ? low : math.min(onAccL, low)
+    if sessOpen
+        onH := onAccH
+        onL := onAccL
+        onAccH := na
+        onAccL := na
+    x.onh := onH
+    x.onl := onL
+    // swings (confirmed pivots) + swing aVWAPs anchored at the pivot bar
+    ph = ta.pivothigh(high, pivL, pivR)
+    pl = ta.pivotlow(low, pivL, pivR)
+    var float swH = na
+    var float swL = na
+    var int swHBar = 0
+    var int swLBar = 0
+    var float shPV = 0.0
+    var float shV = 0.0
+    var float slPV = 0.0
+    var float slV = 0.0
+    if not na(ph)
+        swH := ph
+        swHBar := bar_index - pivR
+        shPV := 0.0
+        shV := 0.0
+        for i = 0 to pivR
+            shPV += nz(hlc3[i]) * nz(volume[i])
+            shV += nz(volume[i])
+    else
+        shPV += hlc3 * nz(volume)
+        shV += nz(volume)
+    if not na(pl)
+        swL := pl
+        swLBar := bar_index - pivR
+        slPV := 0.0
+        slV := 0.0
+        for i = 0 to pivR
+            slPV += nz(hlc3[i]) * nz(volume[i])
+            slV += nz(volume[i])
+    else
+        slPV += hlc3 * nz(volume)
+        slV += nz(volume)
+    x.swH := swH
+    x.swL := swL
+    x.swHBar := swHBar
+    x.swLBar := swLBar
+    x.swHighVwap := not na(swH) and shV > 0 ? shPV / shV : na
+    x.swLowVwap := not na(swL) and slV > 0 ? slPV / slV : na
+    // event aVWAP: highest-volume bar in the last eventLen bars, or the manual anchor
+    hvOff = ta.highestbars(nz(volume), eventLen)
+    var int evBar = -1
+    var float evPV = 0.0
+    var float evV = 0.0
+    if eventManual
+        if time >= eventAnchor and (evBar < 0 or time[1] < eventAnchor)
+            evBar := bar_index
+            evPV := 0.0
+            evV := 0.0
+        if evBar >= 0
+            evPV += hlc3 * nz(volume)
+            evV += nz(volume)
+    else
+        want = bar_index + nz(hvOff, 0)
+        if want != evBar
+            evBar := want
+            evPV := 0.0
+            evV := 0.0
+            back = bar_index - want
+            if back >= 0
+                for i = 0 to back
+                    evPV += nz(hlc3[i]) * nz(volume[i])
+                    evV += nz(volume[i])
+        else
+            evPV += hlc3 * nz(volume)
+            evV += nz(volume)
+    x.eventVwap := evBar >= 0 and evV > 0 ? evPV / evV : na
+    x.gamma := gammaRegime
+    x.flip := f_gammaFlip(close)
+    x
+
+// Finish the context once the daily fields (atr, pdh, pdl, pclose, value area) are set.
+f_finishCtx(BarCtx x) =>
+    [dt, up] = f_dayType(x)
+    x.dayType := dt
+    x.trendUp := up
+    burned = not na(x.sessHigh) and not na(x.sessLow) ? x.sessHigh - x.sessLow : na
+    x.gasBurned := burned
+    x.gasBurnedPct := not na(x.atr) and x.atr > 0 and not na(burned) ? burned / x.atr * 100.0 : na
+    x.gasLeft := not na(x.atr) and not na(burned) ? x.atr - burned : na
+    x
+
+// Value area from a volume-by-price profile (map of bin index -> volume). 70% of volume around
+// the POC, expanding one bin at a time toward the heavier neighbour.
+f_vaFromProfile(map<int, float> prof, float binSize) =>
+    float vah = na
+    float val_ = na
+    float poc = na
+    keys = map.keys(prof)
+    if array.size(keys) > 0
+        kmin = array.min(keys)
+        kmax = array.max(keys)
+        n = kmax - kmin + 1
+        if n > 0 and n <= 20000
+            dense = array.new<float>(n, 0.0)
+            for k in keys
+                array.set(dense, k - kmin, map.get(prof, k))
+            total = array.sum(dense)
+            pocIdx = array.indexof(dense, array.max(dense))
+            lo = pocIdx
+            hi = pocIdx
+            acc = array.get(dense, pocIdx)
+            while acc < 0.7 * total and (lo > 0 or hi < n - 1)
+                upVol = hi < n - 1 ? array.get(dense, hi + 1) : -1.0
+                dnVol = lo > 0 ? array.get(dense, lo - 1) : -1.0
+                if upVol >= dnVol
+                    hi += 1
+                    acc += upVol
+                else
+                    lo -= 1
+                    acc += dnVol
+            poc := (kmin + pocIdx + 0.5) * binSize
+            vah := (kmin + hi + 1) * binSize
+            val_ := (kmin + lo) * binSize
+    [vah, val_, poc]
+
+// Auto Prior Day value area: profile the current regular session, freeze it at the next open.
+f_autoVA(bool inSess, bool sessOpen) =>
+    var prof = map.new<int, float>()
+    var float vah = na
+    var float val_ = na
+    var float poc = na
+    binSize = vaBinTicks * tick
+    if sessOpen
+        [a, b, c] = f_vaFromProfile(prof, binSize)
+        vah := a
+        val_ := b
+        poc := c
+        map.clear(prof)
+    if inSess and binSize > 0
+        loBin = math.floor(low / binSize)
+        hiBin = math.floor(high / binSize)
+        nb = hiBin - loBin + 1
+        if nb > 0 and nb <= 5000
+            share = nz(volume) / nb
+            for k = loBin to hiBin
+                map.put(prof, k, nz(map.get(prof, k), 0.0) + share)
+    [vah, val_, poc]
+
+// Is this bar on the same calendar day (session timezone) as the last bar on the chart?
+f_isToday() =>
+    year(time, sessTz) == year(last_bar_time, sessTz) and month(time, sessTz) == month(last_bar_time, sessTz) and dayofmonth(time, sessTz) == dayofmonth(last_bar_time, sessTz)
+
+// Value area for the chart context.
+f_valueArea(bool inSess, bool sessOpen) =>
+    [aVah, aVal, aPoc] = f_autoVA(inSess, sessOpen)
+    float vah = na
+    float val_ = na
+    float poc = na
+    if vaSource == "Manual"
+        if not vaTodayOnly or f_isToday()
+            vah := vahIn > 0 ? vahIn : na
+            val_ := valIn > 0 ? valIn : na
+            poc := pocIn > 0 ? pocIn : na
+    else if vaSource == "Auto Prior Day"
+        vah := aVah
+        val_ := aVal
+        poc := aPoc
+    [vah, val_, poc]
+
+// -------------------------------------------------------------------------------------------
+// EXTENDED SAMPLE (higher timeframe). Everything needed is computed inside the request context:
+// prior day high / low / close from the day tracker, Daily ATR as Wilder RMA of the daily true
+// range with the same period, swings, aVWAPs. Records are flattened to floats so they can cross
+// request.security. Only records resolved before the chart's first bar are merged (no double
+// counting). Fields per record: fireTime, side, major, strength, trend, outcome, pnlPts,
+// pnlAtr, bars, maeAtr, mfeAtr, levelCode, gasBurnedPct.
+// -------------------------------------------------------------------------------------------
+EXT_K = 13
+f_levelCode(string n) =>
+    switch n
+        "PDH" => 0
+        "PDL" => 1
+        "ONH" => 2
+        "ONL" => 3
+        "VAH" => 4
+        "VAL" => 5
+        "POC" => 6
+        "Swing High" => 7
+        => 8
+f_levelName(int code) =>
+    switch code
+        0 => "PDH"
+        1 => "PDL"
+        2 => "ONH"
+        3 => "ONL"
+        4 => "VAH"
+        5 => "VAL"
+        6 => "POC"
+        7 => "Swing High"
+        => "Swing Low"
+
+f_extSample() =>
+    x = f_baseCtx()
+    // day tracker: prior day high / low / close and Wilder daily ATR, same period, same smoothing
+    var float dH = na
+    var float dL = na
+    var float dC = na
+    var float pdh = na
+    var float pdl = na
+    var float pclose = na
+    var float atrW = na
+    var float trSum = 0.0
+    var int nDays = 0
+    newDay = nz(ta.change(time("D")), 0) != 0
+    if newDay and not na(dH)
+        tr = math.max(dH - dL, math.abs(dH - nz(pclose, dC)), math.abs(dL - nz(pclose, dC)))
+        nDays += 1
+        if nDays <= atrLen
+            trSum += tr
+            if nDays == atrLen
+                atrW := trSum / atrLen
+        else
+            atrW := (atrW * (atrLen - 1) + tr) / atrLen
+        pdh := dH
+        pdl := dL
+        pclose := dC
+        dH := na
+        dL := na
+    dH := na(dH) ? high : math.max(dH, high)
+    dL := na(dL) ? low : math.min(dL, low)
+    dC := close
+    x.pdh := pdh
+    x.pdl := pdl
+    x.pclose := pclose
+    x.atr := atrW
+    x.vaHigh := na
+    x.vaLow := na
+    x.vaPoc := na
+    f_finishCtx(x)
+    var eng = f_newEngine()
+    var out = array.new<float>()
+    if barstate.isconfirmed
+        eng.step(x, true)
+        for r in eng.resolved
+            array.push(out, r.fireTime)
+            array.push(out, r.side)
+            array.push(out, r.major ? 1.0 : 0.0)
+            array.push(out, r.strength)
+            array.push(out, r.dayType == "Trend Day" ? 1.0 : 0.0)
+            array.push(out, r.outcome)
+            array.push(out, r.pnlPts)
+            array.push(out, r.pnlAtr)
+            array.push(out, r.bars)
+            array.push(out, r.maeAtr)
+            array.push(out, r.mfeAtr)
+            array.push(out, f_levelCode(r.levelName))
+            array.push(out, r.gasBurnedPct)
+        for r in eng.noFill
+            array.push(out, r.fireTime)
+            array.push(out, r.side)
+            array.push(out, r.major ? 1.0 : 0.0)
+            array.push(out, r.strength)
+            array.push(out, r.dayType == "Trend Day" ? 1.0 : 0.0)
+            array.push(out, 9)
+            array.push(out, 0.0)
+            array.push(out, 0.0)
+            array.push(out, 0)
+            array.push(out, 0.0)
+            array.push(out, 0.0)
+            array.push(out, f_levelCode(r.levelName))
+            array.push(out, r.gasBurnedPct)
+        while array.size(out) > maxRecords * EXT_K
+            for j = 1 to EXT_K
+                array.shift(out)
+    out
+
+// -------------------------------------------------------------------------------------------
+// CHART CONTEXT
+// -------------------------------------------------------------------------------------------
+ctx = f_baseCtx()
+// Daily data = last COMPLETED daily bar on every bar (see DAILY DATA NOTE at the top).
+// This ONE Daily ATR (Wilder RMA via ta.atr) is the Full Tank everywhere. No second ATR.
+dailyAtr = request.security(syminfo.tickerid, "D", ta.atr(atrLen)[1], lookahead=barmerge.lookahead_on)
+[pdhD, pdlD, pcloseD] = request.security(syminfo.tickerid, "D", [high[1], low[1], close[1]], lookahead=barmerge.lookahead_on)
+[vahNow, valNow, pocNow] = f_valueArea(ctx.inSess, ctx.sessOpen)
+ctx.pdh := pdhD
+ctx.pdl := pdlD
+ctx.pclose := pcloseD
+ctx.atr := dailyAtr
+ctx.vaHigh := vahNow
+ctx.vaLow := valNow
+ctx.vaPoc := pocNow
+f_finishCtx(ctx)
+
+// Extended sample: same rules on a higher timeframe. Falls back to the chart timeframe (adds
+// nothing) when the requested timeframe is not higher than the chart.
+useExt  = statsOn and extOn and timeframe.in_seconds(extTf) > timeframe.in_seconds()
+extRaw  = request.security(syminfo.tickerid, useExt ? extTf : timeframe.period, f_extSample(), lookahead=barmerge.lookahead_off)
+
+var int firstBarTime = 0
+if barstate.isfirst
+    firstBarTime := time
+
+f_parseExt(array<float> raw, int beforeTime) =>
+    out = array.new<TrapRec>()
+    n = array.size(raw) / EXT_K
+    if n > 0
+        for i = 0 to n - 1
+            b = i * EXT_K
+            t = int(array.get(raw, b))
+            if t < beforeTime
+                r = TrapRec.new()
+                r.ext := true
+                r.fireTime := t
+                r.side := int(array.get(raw, b + 1))
+                r.major := array.get(raw, b + 2) > 0.5
+                r.strength := int(array.get(raw, b + 3))
+                r.dayType := array.get(raw, b + 4) > 0.5 ? "Trend Day" : "Balance Day"
+                oc = int(array.get(raw, b + 5))
+                r.status := oc == 9 ? 3 : 2
+                r.outcome := oc == 9 ? 0 : oc
+                r.pnlPts := array.get(raw, b + 6)
+                r.pnlAtr := array.get(raw, b + 7)
+                r.bars := int(array.get(raw, b + 8))
+                r.maeAtr := array.get(raw, b + 9)
+                r.mfeAtr := array.get(raw, b + 10)
+                r.levelName := f_levelName(int(array.get(raw, b + 11)))
+                r.gasBurnedPct := array.get(raw, b + 12)
+                array.push(out, r)
+    out
+
+var extRecs = array.new<TrapRec>()
+var bool extMerged = false
+if useExt and not extMerged and not na(extRaw) and array.size(extRaw) > 0
+    extRecs := f_parseExt(extRaw, firstBarTime)
+    extMerged := true
+
+// -------------------------------------------------------------------------------------------
+// TRAP ENGINE (chart timeframe). Confirmed bars only, no repainting.
+// -------------------------------------------------------------------------------------------
+var eng = f_newEngine()
+var TrapRec fresh = na
+if barstate.isconfirmed
+    eng.step(ctx, false)
+    TrapRec best = na
+    for r in eng.fired
+        if na(best) or r.strength > best.strength
+            best := r
+    if not na(best)
+        fresh := best
+
+// -------------------------------------------------------------------------------------------
+// TEXT HELPERS (tooltips, CSV journal line)
+// -------------------------------------------------------------------------------------------
+f_gasLeftText(float gasLeft, float atr) =>
+    if na(gasLeft) or na(atr) or atr <= 0
+        "n/a"
+    else if gasLeft < 0
+        "Over Full Tank +" + f_pct(-gasLeft / atr * 100.0)
+    else
+        f_px(gasLeft) + " (" + f_pct(gasLeft / atr * 100.0) + ")"
+
+f_readout(float burnedPct) =>
+    if na(burnedPct)
+        "n/a"
+    else if burnedPct >= thOver
+        "Over Full Tank, Strong, Possibly Exhausted"
+    else if burnedPct >= thFull
+        "Full Tank Used, Late"
+    else if burnedPct >= thLow
+        "Running Low"
+    else if burnedPct >= thHalf
+        "Half Tank"
+    else
+        "Plenty of Gas"
+
+f_outcomeName(TrapRec r) =>
+    r.status == 3 ? "No Fill" : r.status == 2 ? (r.outcome == 1 ? "Trap Held" : r.outcome == -1 ? "Trap Failed" : "Timed Out") : r.status == 1 ? "In Trade" : "Fresh Trap"
+
+f_checksText(TrapRec r) =>
+    "Major Level " + f_chk(r.c1) + "  aVWAP Lost " + f_chk(r.c2) + "  Regime Aligned " + f_chk(r.c3) + "  Fast Puke " + f_chk(r.c4) + "  Committed Volume " + f_chk(r.c5)
+
+f_tooltip(TrapRec r) =>
+    f_sideName(r.side) + " at " + r.levelName + " (" + (r.major ? "Major" : "Minor") + " level)" +
+      "\nTrap Level " + f_px(r.level) +
+      "\nSweep Extreme " + f_px(r.extreme) +
+      "\nReclaim " + f_px(r.reclaim) + " (" + str.tostring(r.barsToReclaim) + " bars after the sweep)" +
+      "\nTrap Strength " + str.tostring(r.strength) + "/5: " + f_checksText(r) +
+      "\naVWAP Lost: " + f_yn(r.avwapLost) +
+      "\nGas Left " + f_gasLeftText(r.gasLeft, r.atr) + " (Gas Burned " + f_pct(r.gasBurnedPct) + ")" +
+      "\nEntry " + f_px(r.entry) + "\nStop " + f_px(r.stop) + "\nPuke Target " + f_px(r.target) + "\nR:R " + f_num(r.rr, 1) +
+      "\n" + r.dayType + " · Gamma " + r.gamma + " · " + r.flip +
+      "\nOptions: " + (r.options ? "Yes" : "No") +
+      "\nStatus: " + f_outcomeName(r)
+
+// CSV line, header order:
+// time,symbol,tf,side,level,class,strength,c1,c2,c3,c4,c5,avwap_lost,day_type,gamma,
+// gas_burned_pct,entry,stop,puke_target,rr,options,outcome,bars,mfe_atr,mae_atr
+f_csv(TrapRec r, string outcome) =>
+    str.format_time(r.fireTime, "yyyy-MM-dd HH:mm", sessTz) + "," + syminfo.ticker + "," + timeframe.period + "," +
+      f_sideName(r.side) + "," + r.levelName + "," + (r.major ? "Major" : "Minor") + "," + str.tostring(r.strength) + "," +
+      (r.c1 ? "1" : "0") + "," + (r.c2 ? "1" : "0") + "," + (r.c3 ? "1" : "0") + "," + (r.c4 ? "1" : "0") + "," + (r.c5 ? "1" : "0") + "," +
+      (r.avwapLost ? "1" : "0") + "," + r.dayType + "," + r.gamma + "," + f_num(r.gasBurnedPct, 1) + "," +
+      f_px(r.entry) + "," + f_px(r.stop) + "," + f_px(r.target) + "," + f_num(r.rr, 2) + "," + (r.options ? "Yes" : "No") + "," +
+      outcome + "," + str.tostring(r.bars) + "," + f_num(r.mfeAtr, 2) + "," + f_num(r.maeAtr, 2)
+
+// -------------------------------------------------------------------------------------------
+// TRAP DRAWINGS (label at the Sweep Extreme, Trap Level line, Retest Zone box, Stop, Puke Target)
+// -------------------------------------------------------------------------------------------
+colLongsTrapped  = color.rgb(244, 67, 54)
+colShortsTrapped = color.rgb(76, 175, 80)
+var draws = array.new<TrapDraw>()
+
+f_drawTrap(TrapRec r) =>
+    isL = r.side == 1
+    col = isL ? colLongsTrapped : colShortsTrapped
+    txt = f_sideName(r.side) + "\nTrap Strength " + str.tostring(r.strength) + "/5"
+    x2 = r.fireBar + lvlExtendBars
+    lbl = label.new(r.extBar, r.extreme, txt, xloc=xloc.bar_index, yloc=yloc.price, color=col, style=isL ? label.style_label_down : label.style_label_up, textcolor=color.white, size=size.small, tooltip=f_tooltip(r))
+    lnL = line.new(r.fireBar, r.level, x2, r.level, color=col, width=2)
+    depth = zonePct / 100.0 * r.atr
+    zTop = isL ? r.level : r.level + depth
+    zBot = isL ? r.level - depth : r.level
+    bx = box.new(r.fireBar, zTop, x2, zBot, border_color=color.new(col, 60), bgcolor=color.new(col, 85), text="Retest Zone", text_size=size.tiny, text_color=col, text_halign=text.align_right)
+    lnS = line.new(r.fireBar, r.stop, x2, r.stop, color=colLongsTrapped, style=line.style_dashed)
+    lnT = line.new(r.fireBar, r.target, x2, r.target, color=colShortsTrapped, style=line.style_dashed)
+    lblS = label.new(x2, r.stop, "Stop " + f_px(r.stop), xloc=xloc.bar_index, yloc=yloc.price, style=label.style_label_left, color=color.new(colLongsTrapped, 20), textcolor=color.white, size=size.tiny)
+    lblT = label.new(x2, r.target, "Puke Target " + f_px(r.target), xloc=xloc.bar_index, yloc=yloc.price, style=label.style_label_left, color=color.new(colShortsTrapped, 20), textcolor=color.white, size=size.tiny)
+    array.push(draws, TrapDraw.new(r, lbl, lnL, lnS, lnT, bx, lblS, lblT))
+    while array.size(draws) > maxTrapsDrawn
+        d = array.shift(draws)
+        label.delete(d.lbl)
+        line.delete(d.lnLevel)
+        line.delete(d.lnStop)
+        line.delete(d.lnTarget)
+        box.delete(d.bxZone)
+        label.delete(d.lblStop)
+        label.delete(d.lblTarget)
+
+f_updateDraw(TrapRec r) =>
+    for d in draws
+        if d.rec.id == r.id
+            label.set_text(d.lbl, f_sideName(r.side) + "\nTrap Strength " + str.tostring(r.strength) + "/5\n" + f_outcomeName(r))
+            label.set_tooltip(d.lbl, f_tooltip(r))
+
+// Fire / outcome handling: drawings, alerts, data-window outcome code.
+float outcomeCode = na
+bool firedAny  = false
+bool heldAny   = false
+bool failedAny = false
+bool timedAny  = false
+if barstate.isconfirmed
+    for r in eng.fired
+        firedAny := true
+        f_drawTrap(r)
+        if alertsOn
+            alert(f_csv(r, "Fresh Trap"), alert.freq_once_per_bar_close)
+    for r in eng.resolved
+        outcomeCode := r.outcome
+        heldAny := heldAny or r.outcome == 1
+        failedAny := failedAny or r.outcome == -1
+        timedAny := timedAny or r.outcome == 0
+        f_updateDraw(r)
+        if alertsOn
+            alert(f_csv(r, f_outcomeName(r)), alert.freq_once_per_bar_close)
+    for r in eng.noFill
+        f_updateDraw(r)
+
+alertcondition(firedAny, "Fresh Trap", "Fresh Trap fired. Use 'Any alert() function call' for the CSV journal line.")
+alertcondition(heldAny, "Trap Held", "Trap Held: a trap reached its Puke Target.")
+alertcondition(failedAny, "Trap Failed", "Trap Failed: price went back through the Sweep Extreme.")
+alertcondition(timedAny, "Timed Out", "Timed Out: the time stop hit.")
+
+// -------------------------------------------------------------------------------------------
+// ANCHORED VWAP PLOTS
+// -------------------------------------------------------------------------------------------
+float swingVwapPlot = ctx.swLowVwap
+if not na(fresh)
+    swingVwapPlot := fresh.side == 1 ? ctx.swLowVwap : ctx.swHighVwap
+plot(onSessVwap ? ctx.sessVwap : na, "Session aVWAP", color=colSessVwap, linewidth=2)
+plot(onSwingVwap ? swingVwapPlot : na, "Swing aVWAP", color=colSwingVwap, linewidth=1)
+plot(onEventVwap ? ctx.eventVwap : na, "Event aVWAP", color=colEventVwap, linewidth=1)
+
+// -------------------------------------------------------------------------------------------
+// GAS TANK, STAND DOWN
+// -------------------------------------------------------------------------------------------
+fullTank     = ctx.atr
+gasBurned    = ctx.gasBurned
+gasBurnedPct = ctx.gasBurnedPct
+gasLeft      = ctx.gasLeft
+gasLeftPct   = na(gasBurnedPct) ? na : 100.0 - gasBurnedPct
+standDown    = (not na(gasLeftPct) and gasLeftPct < sdGasPct) or eng.failedToday >= sdFailCount or (sdOutside and not ctx.inSess)
+standText    = standDown ? "Stand Down" : "Clear to Trade"
+standWhy     = standDown ? ((not na(gasLeftPct) and gasLeftPct < sdGasPct) ? "Gas Left below " + f_pct(sdGasPct) : eng.failedToday >= sdFailCount ? str.tostring(eng.failedToday) + " Trap Failed today" : "outside regular session") : "no Stand Down rule is active"
+
+// -------------------------------------------------------------------------------------------
+// ATR LEVELS + GAS FILL (intraday only; identical prices on every intraday timeframe because
+// they all read the same Daily ATR)
+// -------------------------------------------------------------------------------------------
+isIntra  = timeframe.isintraday
+anchorPx = anchorMode == "Session Open" ? ctx.sessOpenPx : ctx.pclose
+var atrLines  = array.new<line>()
+var atrLabels = array.new<label>()
+var atrMults = array.from(1.0, 1.5, 2.0, 2.5, 3.0, -1.0, -1.5, -2.0, -2.5, -3.0)
+
+f_multOn(float m) =>
+    am = math.abs(m)
+    am == 1.0 ? show10 : am == 1.5 ? show15 : am == 2.0 ? show20 : am == 2.5 ? show25 : show30
+
+f_atrLabel(float m, float price, bool spent) =>
+    (m < 0 ? "-" : "") + str.tostring(math.abs(m), "#.#") + "x ATR" + (spent ? " Traveled" : "") + "  $" + f_px(price)
+
+hidden = color.new(color.black, 100)
+if isIntra and showAtrLevels and barstate.islast
+    if array.size(atrLines) == 0
+        for i = 0 to 10
+            array.push(atrLines, line.new(bar_index, close, bar_index, close, xloc=xloc.bar_index, width=1))
+            array.push(atrLabels, label.new(bar_index, close, "", xloc=xloc.bar_index, yloc=yloc.price, style=label.style_label_left, textcolor=color.white, size=size.tiny))
+    x1 = ctx.sessOpenBar
+    x2 = bar_index + atrExtend
+    okBase = not na(anchorPx) and not na(fullTank) and fullTank > 0
+    // zero line
+    zl = array.get(atrLines, 0)
+    zlb = array.get(atrLabels, 0)
+    if okBase
+        line.set_xy1(zl, x1, anchorPx)
+        line.set_xy2(zl, x2, anchorPx)
+        line.set_color(zl, color.new(color.gray, 0))
+        line.set_style(zl, line.style_solid)
+        label.set_xy(zlb, x2, anchorPx)
+        label.set_text(zlb, (anchorMode == "Session Open" ? "Open " : "Prior Close ") + "$" + f_px(anchorPx))
+        label.set_color(zlb, showAtrLabels ? color.new(color.gray, 20) : hidden)
+        label.set_textcolor(zlb, showAtrLabels ? color.white : hidden)
+    else
+        line.set_color(zl, hidden)
+        label.set_color(zlb, hidden)
+        label.set_textcolor(zlb, hidden)
+    for i = 0 to 9
+        m = array.get(atrMults, i)
+        ln = array.get(atrLines, i + 1)
+        lb = array.get(atrLabels, i + 1)
+        if okBase and f_multOn(m)
+            px = anchorPx + m * fullTank
+            spent = m > 0 ? ctx.sessHigh >= px : ctx.sessLow <= px
+            col = spent ? colSpent : colLive
+            line.set_xy1(ln, x1, px)
+            line.set_xy2(ln, x2, px)
+            line.set_color(ln, col)
+            line.set_style(ln, math.abs(m) == 1.0 or math.abs(m) == 2.0 or math.abs(m) == 3.0 ? line.style_solid : line.style_dashed)
+            label.set_xy(lb, x2, px)
+            label.set_text(lb, f_atrLabel(m, px, spent))
+            label.set_color(lb, showAtrLabels ? color.new(col, 15) : hidden)
+            label.set_textcolor(lb, showAtrLabels ? color.white : hidden)
+        else
+            line.set_color(ln, hidden)
+            label.set_color(lb, hidden)
+            label.set_textcolor(lb, hidden)
+
+// Gas Tank fill: band between the Zero Line and today's session extreme, graded by gas burned.
+f_gasColor(float ratio) =>
+    r = math.max(0.0, nz(ratio, 0.0))
+    r <= 0.5 ? color.from_gradient(r, 0.0, 0.5, fillC0, fillC50) : r <= 1.0 ? color.from_gradient(r, 0.5, 1.0, fillC50, fillC100) : color.from_gradient(r, 1.0, 1.2, fillC100, fillC120)
+
+fillOk  = showFill and isIntra and ctx.inSess and not na(anchorPx) and not na(fullTank) and fullTank > 0
+upTop   = fillTo == "Session Extreme" ? math.max(ctx.sessHigh, anchorPx) : math.max(close, anchorPx)
+dnBot   = fillTo == "Session Extreme" ? math.min(ctx.sessLow, anchorPx) : math.min(close, anchorPx)
+upRatio = fillOk ? (upTop - anchorPx) / fullTank : na
+dnRatio = fillOk ? (anchorPx - dnBot) / fullTank : na
+pAnchor = plot(fillOk ? anchorPx : na, "Gas Fill Zero Line", color=na, editable=false, display=display.pane)
+pUp     = plot(fillOk ? upTop : na, "Gas Fill Up", color=na, editable=false, display=display.pane)
+pDn     = plot(fillOk ? dnBot : na, "Gas Fill Down", color=na, editable=false, display=display.pane)
+fill(pAnchor, pUp, color=fillOk ? color.new(f_gasColor(upRatio), fillTransp) : na, title="Gas Tank fill (up)")
+fill(pAnchor, pDn, color=fillOk ? color.new(f_gasColor(dnRatio), fillTransp) : na, title="Gas Tank fill (down)")
+
+// -------------------------------------------------------------------------------------------
+// REFERENCE LEVEL LINES (current values, drawn on the last bar)
+// -------------------------------------------------------------------------------------------
+var lvlLines  = array.new<line>()
+var lvlLabels = array.new<label>()
+if showLevelLabels and barstate.islast
+    if array.size(lvlLines) == 0
+        for i = 0 to 8
+            array.push(lvlLines, line.new(bar_index, close, bar_index, close, xloc=xloc.bar_index, width=1))
+            array.push(lvlLabels, label.new(bar_index, close, "", xloc=xloc.bar_index, yloc=yloc.price, style=label.style_label_left, textcolor=color.white, size=size.tiny))
+    lx1 = math.max(ctx.sessOpenBar, bar_index - 200)
+    lx2 = bar_index + atrExtend + 6
+    for [i, s] in eng.levels
+        ln = array.get(lvlLines, i)
+        lb = array.get(lvlLabels, i)
+        col = switch i
+            0 => cPDH
+            1 => cPDL
+            2 => cONH
+            3 => cONL
+            4 => cVAH
+            5 => cVAL
+            6 => cPOC
+            7 => cSWH
+            => cSWL
+        sty = switch i
+            0 => sPDH
+            1 => sPDL
+            2 => sONH
+            3 => sONL
+            4 => sVAH
+            5 => sVAL
+            6 => sPOC
+            7 => sSWH
+            => sSWL
+        lblOn = switch i
+            0 => lPDH
+            1 => lPDL
+            2 => lONH
+            3 => lONL
+            4 => lVAH
+            5 => lVAL
+            6 => lPOC
+            7 => lSWH
+            => lSWL
+        if not na(s.price)
+            line.set_xy1(ln, lx1, s.price)
+            line.set_xy2(ln, lx2, s.price)
+            line.set_color(ln, col)
+            line.set_style(ln, f_style(sty))
+            label.set_xy(lb, lx2, s.price)
+            label.set_text(lb, s.name + " " + f_px(s.price))
+            label.set_color(lb, lblOn ? color.new(col, 20) : hidden)
+            label.set_textcolor(lb, lblOn ? color.white : hidden)
+        else
+            line.set_color(ln, hidden)
+            label.set_color(lb, hidden)
+            label.set_textcolor(lb, hidden)
+
+// -------------------------------------------------------------------------------------------
+// TRADE CALCULATOR + OPTIONS CALL
+// -------------------------------------------------------------------------------------------
+float calcEntry  = myEntry > 0 ? myEntry : na
+float calcStop   = myStop > 0 ? myStop : na
+float calcTarget = myTarget > 0 ? myTarget : na
+bool  calcAuto   = false
+if myEntry <= 0 and not na(fresh)
+    if fresh.status <= 1
+        calcEntry := fresh.entry
+        calcStop := fresh.stop
+        calcTarget := fresh.target
+        calcAuto := true
+calcRisk    = math.abs(calcEntry - calcStop)
+calcReward  = math.abs(calcEntry - calcTarget)
+calcRR      = calcRisk > 0 ? calcReward / calcRisk : na
+calcPctTank = not na(fullTank) and fullTank > 0 ? calcReward / fullTank * 100.0 : na
+calcPctLeft = not na(gasLeft) and gasLeft > 0 ? calcReward / gasLeft * 100.0 : na
+calcFits    = not na(calcReward) and not na(gasLeft) and calcReward <= gasLeft
+calcVerdict = na(calcReward) ? "Enter My Entry / Stop / Target" : (not na(gasBurnedPct) and gasBurnedPct >= 100) ? "Over Full Tank, late, expect exhaustion" : calcFits ? "Fits, Gas Left covers the target" : "Doesn't Fit, target needs more gas than what's left"
+calcOptions = not na(calcReward) and not na(fullTank) and calcReward >= minTgtAtrPct / 100.0 * fullTank and calcReward >= minTgtDollars and not na(calcRR) and calcRR >= minRR and calcFits and calcVerdict == "Fits, Gas Left covers the target"
+calcOptText = calcOptions ? "Options: Yes" : "Options: No, measured move too small for premium"
+
+// -------------------------------------------------------------------------------------------
+// STATISTICS ENGINE
+// -------------------------------------------------------------------------------------------
+f_newBucket(string name) =>
+    Bucket.new(name=name, n=0, held=0, failed=0, timed=0, nofill=0, nWin=0, nLoss=0, sumWinPts=0.0, sumWinAtr=0.0, sumLossPts=0.0, sumLossAtr=0.0, sumPnlAtr=0.0, sumMaeAtr=0.0, barsTgt=array.new<float>())
+
+f_inBucket(int id, TrapRec r) =>
+    switch id
+        0  => true
+        1  => r.strength == 1
+        2  => r.strength == 2
+        3  => r.strength == 3
+        4  => r.strength == 4
+        5  => r.strength == 5
+        6  => r.side == 1
+        7  => r.side == -1
+        8  => r.dayType == "Trend Day"
+        9  => r.dayType == "Balance Day"
+        10 => r.major
+        11 => not r.major
+        12 => r.strength <= 2
+        13 => r.strength >= 4
+        => r.strength == 3
+
+f_bucketAdd(Bucket b, TrapRec r) =>
+    if r.status == 3
+        b.nofill := b.nofill + 1
+    else if r.status == 2
+        b.n := b.n + 1
+        if r.outcome == 1
+            b.held := b.held + 1
+            array.push(b.barsTgt, r.bars)
+        else if r.outcome == -1
+            b.failed := b.failed + 1
+        else
+            b.timed := b.timed + 1
+        if r.pnlPts > 0
+            b.nWin := b.nWin + 1
+            b.sumWinPts := b.sumWinPts + r.pnlPts
+            b.sumWinAtr := b.sumWinAtr + nz(r.pnlAtr)
+        else if r.pnlPts < 0
+            b.nLoss := b.nLoss + 1
+            b.sumLossPts := b.sumLossPts - r.pnlPts
+            b.sumLossAtr := b.sumLossAtr - nz(r.pnlAtr)
+        b.sumPnlAtr := b.sumPnlAtr + nz(r.pnlAtr)
+        b.sumMaeAtr := b.sumMaeAtr + nz(r.maeAtr)
+
+f_bucketVerdict(Bucket b) =>
+    heldPct = b.n > 0 ? 100.0 * b.held / b.n : na
+    avgWin = b.nWin > 0 ? b.sumWinAtr / b.nWin : na
+    avgLoss = b.nLoss > 0 ? b.sumLossAtr / b.nLoss : na
+    expct = b.n > 0 ? b.sumPnlAtr / b.n : na
+    pf = b.sumLossAtr > 0 ? b.sumWinAtr / b.sumLossAtr : na
+    word = b.n < 10 ? "small sample." : (not na(expct) and expct > 0 and not na(pf) and pf >= 1.2) ? "pays." : (not na(expct) and expct > 0) ? "marginal." : "noise."
+    b.name + " traps: " + (b.n > 0 ? f_pct(heldPct) + " held, avg win " + f_num(avgWin, 2) + " ATR, avg loss " + f_num(avgLoss, 2) + " ATR, " + word : "no resolved traps yet.")
+
+// -------------------------------------------------------------------------------------------
+// TABLES
+// -------------------------------------------------------------------------------------------
+var tblDesk  = table.new(f_pos(deskPos), 2, 21, bgcolor=color.new(color.black, 20), frame_color=color.new(color.gray, 40), frame_width=1, border_color=color.new(color.gray, 70), border_width=1)
+var tblStats = table.new(f_pos(statsPos), 11, 19, bgcolor=color.new(color.black, 20), frame_color=color.new(color.gray, 40), frame_width=1, border_color=color.new(color.gray, 70), border_width=1)
+
+f_row(table t, int row, string k, string v, color bg, string tip, string sz) =>
+    table.cell(t, 0, row, k, text_color=color.new(color.white, 25), text_size=sz, text_halign=text.align_left, bgcolor=bg)
+    table.cell(t, 1, row, v, text_color=color.white, text_size=sz, text_halign=text.align_left, bgcolor=bg, tooltip=tip)
+
+if showDesk and barstate.islast
+    sz = f_size(deskSize)
+    bgNone = color.new(color.black, 100)
+    bgSD = standDown ? color.new(color.red, 30) : color.new(color.green, 40)
+    f_row(tblDesk, 0, "Trap Desk", standText, bgSD, standWhy, sz)
+    f_row(tblDesk, 1, "Full Tank", "$" + f_px(fullTank), bgNone, "Daily ATR = Full Tank", sz)
+    f_row(tblDesk, 2, "Gas Burned", "$" + f_px(gasBurned) + " (" + f_pct(gasBurnedPct) + ")", bgNone, "Today's regular-session High minus Low", sz)
+    f_row(tblDesk, 3, "Gas Left", f_gasLeftText(gasLeft, fullTank), bgNone, "Full Tank minus Gas Burned", sz)
+    f_row(tblDesk, 4, "Readout", f_readout(gasBurnedPct), bgNone, "Plenty of Gas / Half Tank / Running Low / Full Tank Used, Late / Over Full Tank", sz)
+    f_row(tblDesk, 5, "Day Type", ctx.dayType + (ctx.dayType == "Trend Day" ? (ctx.trendUp ? " (up)" : " (down)") : ""), bgNone, "Trend Day when session range >= " + f_pct(trendRangePct) + " of Daily ATR and >= " + f_pct(trendSidePct) + " of session bars closed on one side of the Session aVWAP. Otherwise Balance Day.", sz)
+    f_row(tblDesk, 6, "Gamma Regime", gammaRegime + " · " + f_gammaFlip(close), bgNone, "Manual input. Above Flip / Below Flip from the Gamma Flip Price.", sz)
+    string ftTitle = "None"
+    string ftStrength = "n/a"
+    string ftEntry = "n/a"
+    string ftTarget = "n/a"
+    string ftLost = "n/a"
+    string ftJournal = "no trap yet"
+    string ftTip = FOOTPRINT_TIP
+    color ftBg = bgNone
+    if not na(fresh)
+        ftTitle := f_sideName(fresh.side) + " at " + fresh.levelName + " · " + f_outcomeName(fresh)
+        ftStrength := "Trap Strength " + str.tostring(fresh.strength) + "/5  " + f_chk(fresh.c1) + f_chk(fresh.c2) + f_chk(fresh.c3) + f_chk(fresh.c4) + f_chk(fresh.c5)
+        ftEntry := "Entry " + f_px(fresh.entry) + " / Stop " + f_px(fresh.stop)
+        ftTarget := "Puke Target " + f_px(fresh.target) + " / R:R " + f_num(fresh.rr, 1)
+        ftLost := f_yn(fresh.avwapLost)
+        ftJournal := f_csv(fresh, f_outcomeName(fresh))
+        ftTip := FOOTPRINT_TIP + "\n\n" + f_tooltip(fresh)
+        ftBg := fresh.status <= 1 ? (fresh.side == 1 ? color.new(colLongsTrapped, 60) : color.new(colShortsTrapped, 60)) : bgNone
+    f_row(tblDesk, 7, "Fresh Trap", ftTitle, ftBg, ftTip, sz)
+    f_row(tblDesk, 8, "Trap Strength", ftStrength, bgNone, "Checks in order: Major Level, aVWAP Lost, Regime Aligned, Fast Puke, Committed Volume", sz)
+    f_row(tblDesk, 9, "Entry / Stop", ftEntry, bgNone, "Entry = Trap Level (retest). Stop = Sweep Extreme + Stop Buffer.", sz)
+    f_row(tblDesk, 10, "Puke Target / R:R", ftTarget, bgNone, "Puke Target = opposite value edge (VAL for Longs Trapped, VAH for Shorts Trapped) or the ATR fallback.", sz)
+    f_row(tblDesk, 11, "aVWAP Lost", ftLost, bgNone, "Yes when price closed back through an anchored VWAP sitting between the Trap Level and the trapped crowd's average.", sz)
+    f_row(tblDesk, 12, "Sizing", sizingText, bgNone, "Sizing guide by Trap Strength", sz)
+    f_row(tblDesk, 13, "My Entry / Stop / Target", (na(calcEntry) ? "blank" : f_px(calcEntry) + " / " + f_px(calcStop) + " / " + f_px(calcTarget)) + (calcAuto ? " (auto from trap)" : ""), bgNone, "Trade Calculator inputs. 0 = blank, auto-fills from the Fresh Trap.", sz)
+    f_row(tblDesk, 14, "Risk / Reward", "$" + f_px(calcRisk) + " / $" + f_px(calcReward) + " · R:R " + f_num(calcRR, 1), bgNone, "Risk = |Entry - Stop|, Reward = |Entry - Target|", sz)
+    f_row(tblDesk, 15, "Target %", f_pct(calcPctTank) + " of Full Tank · " + f_pct(calcPctLeft) + " of Gas Left", bgNone, "Target as % of Full Tank and as % of Gas Left", sz)
+    f_row(tblDesk, 16, "Verdict", calcVerdict, calcVerdict == "Fits, Gas Left covers the target" ? color.new(color.green, 60) : na(calcReward) ? bgNone : color.new(color.red, 60), "Fits when Reward <= Gas Left", sz)
+    f_row(tblDesk, 17, "Options", calcOptText, calcOptions ? color.new(color.green, 60) : bgNone, "Options: Yes when Reward >= " + f_pct(minTgtAtrPct) + " of Daily ATR, Reward >= $" + f_num(minTgtDollars, 2) + ", R:R >= " + f_num(minRR, 1) + " and the verdict is Fits.", sz)
+    f_row(tblDesk, 18, "Debug", "Daily ATR " + f_num(fullTank, 2) + " (" + str.tostring(atrLen) + ", RMA, D)", bgNone, "Same Daily ATR on every intraday timeframe", sz)
+    f_row(tblDesk, 19, "Journal", ftJournal, bgNone, "CSV: time,symbol,tf,side,level,class,strength,c1,c2,c3,c4,c5,avwap_lost,day_type,gamma,gas_burned_pct,entry,stop,puke_target,rr,options,outcome,bars,mfe_atr,mae_atr", sz)
+    f_row(tblDesk, 20, "Footprint", "check before entry (hover)", bgNone, FOOTPRINT_TIP, sz)
+
+f_statCell(table t, int col, int row, string txt, string sz, color bg) =>
+    table.cell(t, col, row, txt, text_color=color.white, text_size=sz, text_halign=text.align_center, bgcolor=bg)
+
+if showStats and statsOn and barstate.islast
+    sz = f_size(statsSize)
+    bgH = color.new(color.gray, 60)
+    bgNone = color.new(color.black, 100)
+    buckets = array.new<Bucket>()
+    names = array.from("All traps", "Strength 1/5", "Strength 2/5", "Strength 3/5", "Strength 4/5", "Strength 5/5", "Longs Trapped", "Shorts Trapped", "Trend Day", "Balance Day", "Major Level", "Minor Level", "Strength 1-2", "Strength 4-5", "Strength 3")
+    for nm in names
+        array.push(buckets, f_newBucket(nm))
+    int nChart = 0
+    int nExt = 0
+    int tMin = 0
+    int tMax = 0
+    for r in eng.recs
+        if r.status >= 2
+            nChart := nChart + 1
+            tMin := tMin == 0 or r.fireTime < tMin ? r.fireTime : tMin
+            tMax := r.fireTime > tMax ? r.fireTime : tMax
+            for [bi, b] in buckets
+                if f_inBucket(bi, r)
+                    f_bucketAdd(b, r)
+    for r in extRecs
+        nExt := nExt + 1
+        tMin := tMin == 0 or r.fireTime < tMin ? r.fireTime : tMin
+        tMax := r.fireTime > tMax ? r.fireTime : tMax
+        for [bi, b] in buckets
+            if f_inBucket(bi, r)
+                f_bucketAdd(b, r)
+    hdr = array.from("Trap Stats", "N", "Held", "Failed", "Timed", "Avg Win ATR% (pts)", "Avg Loss ATR% (pts)", "Exp ATR%", "PF", "Bars to Puke Target avg/med", "Avg MAE ATR%")
+    for [ci, h] in hdr
+        f_statCell(tblStats, ci, 0, h, sz, bgH)
+    for bi = 0 to 11
+        b = array.get(buckets, bi)
+        row = bi + 1
+        heldPct = b.n > 0 ? 100.0 * b.held / b.n : na
+        failPct = b.n > 0 ? 100.0 * b.failed / b.n : na
+        timePct = b.n > 0 ? 100.0 * b.timed / b.n : na
+        avgWinAtr = b.nWin > 0 ? b.sumWinAtr / b.nWin * 100.0 : na
+        avgWinPts = b.nWin > 0 ? b.sumWinPts / b.nWin : na
+        avgLossAtr = b.nLoss > 0 ? b.sumLossAtr / b.nLoss * 100.0 : na
+        avgLossPts = b.nLoss > 0 ? b.sumLossPts / b.nLoss : na
+        expct = b.n > 0 ? b.sumPnlAtr / b.n * 100.0 : na
+        pf = b.sumLossAtr > 0 ? b.sumWinAtr / b.sumLossAtr : na
+        avgBars = array.size(b.barsTgt) > 0 ? array.avg(b.barsTgt) : na
+        medBars = array.size(b.barsTgt) > 0 ? array.median(b.barsTgt) : na
+        avgMae = b.n > 0 ? b.sumMaeAtr / b.n * 100.0 : na
+        f_statCell(tblStats, 0, row, b.name, sz, bgNone)
+        f_statCell(tblStats, 1, row, str.tostring(b.n) + (b.nofill > 0 ? " (+" + str.tostring(b.nofill) + " No Fill)" : ""), sz, bgNone)
+        f_statCell(tblStats, 2, row, f_pct(heldPct), sz, not na(heldPct) and heldPct >= 50 ? color.new(color.green, 70) : bgNone)
+        f_statCell(tblStats, 3, row, f_pct(failPct), sz, bgNone)
+        f_statCell(tblStats, 4, row, f_pct(timePct), sz, bgNone)
+        f_statCell(tblStats, 5, row, f_pct(avgWinAtr) + " (" + f_px(avgWinPts) + ")", sz, bgNone)
+        f_statCell(tblStats, 6, row, f_pct(avgLossAtr) + " (" + f_px(avgLossPts) + ")", sz, bgNone)
+        f_statCell(tblStats, 7, row, f_pct(expct), sz, not na(expct) and expct > 0 ? color.new(color.green, 70) : bgNone)
+        f_statCell(tblStats, 8, row, f_num(pf, 2), sz, bgNone)
+        f_statCell(tblStats, 9, row, f_num(avgBars, 1) + " / " + f_num(medBars, 0), sz, bgNone)
+        f_statCell(tblStats, 10, row, f_pct(avgMae), sz, bgNone)
+    // verdict lines
+    all = array.get(buckets, 0)
+    medAll = array.size(all.barsTgt) > 0 ? array.median(all.barsTgt) : na
+    tsWord = na(medAll) ? "no Trap Held yet" : medAll > timeStopBars ? "too tight" : medAll < timeStopBars / 3.0 ? "too loose" : "looks right"
+    tsLine = "Median bars to Puke Target = " + f_num(medAll, 0) + ". " + str.tostring(timeStopBars) + "-bar time stop " + tsWord + "."
+    sampleLine = "Sample Size " + str.tostring(nChart + nExt) + " (chart " + str.tostring(nChart) + " + extended " + str.tostring(nExt) + ")" + (tMin > 0 ? " · " + str.format_time(tMin, "yyyy-MM-dd", sessTz) + " to " + str.format_time(tMax, "yyyy-MM-dd", sessTz) : "")
+    lines = array.from(f_bucketVerdict(array.get(buckets, 13)), f_bucketVerdict(array.get(buckets, 14)), f_bucketVerdict(array.get(buckets, 12)), tsLine, sampleLine, useExt ? "Extended sample: " + extTf + " bars, PDH/PDL/ONH/ONL/Swing levels, bar counts in " + extTf + " bars." : "Extended sample off (chart traps only).")
+    for [li, txt] in lines
+        row = 13 + li
+        table.cell(tblStats, 0, row, txt, text_color=color.white, text_size=sz, text_halign=text.align_left, bgcolor=bgNone)
+        table.merge_cells(tblStats, 0, row, 10, row)
+
+// -------------------------------------------------------------------------------------------
+// EXPORT: data-window-only series for "Export chart data"
+// -------------------------------------------------------------------------------------------
+float dwStrength = na
+float dwRR = na
+if not na(fresh)
+    if fresh.status <= 1
+        dwStrength := fresh.strength
+        dwRR := fresh.rr
+plot(dataWinOn ? dwStrength : na, "strength", display=display.data_window)
+plot(dataWinOn ? gasBurnedPct : na, "gas_burned_pct", display=display.data_window)
+plot(dataWinOn ? gasLeft : na, "gas_left", display=display.data_window)
+plot(dataWinOn ? dwRR : na, "rr", display=display.data_window)
+plot(dataWinOn ? outcomeCode : na, "outcome_code", display=display.data_window)
+plot(dataWinOn ? fullTank : na, "daily_atr", display=display.data_window)
+// ============================================================================================
+// ===== SHARED BLOCK END =====
+// ============================================================================================
+
+// ============================================================================================
+// STRATEGY ORDERS (backtest only). Take EVERY trap, all strengths.
+// Longs Trapped -> short. Shorts Trapped -> long. Entry ID carries the strength so the List of
+// Trades can be filtered: "LongsTrapped_S4", "ShortsTrapped_S2". Trade comment = level + Day Type.
+// ============================================================================================
+G_BT = "Backtest"
+btSessionOnly = input.bool(true, "Regular session only", group=G_BT, tooltip="ON: new traps are only taken inside the regular session. Open positions still exit on the stop, the Puke Target or the time stop.")
+btShowNoFill  = input.bool(true, "Mark No Fill on chart", group=G_BT, tooltip="A small label when the retest limit order at the Trap Level was not filled within the valid bars.")
+
+var string pendingId  = na
+var int    pendingBar = na
+var float  pendingLvl = na
+var int    entryBarIdx = na
+
+canTrade = (not btSessionOnly or ctx.inSess) and (not sdBacktest or not standDown)
+
+if barstate.isconfirmed
+    // an unfilled retest order that ran out of time: cancel and log "No Fill"
+    if not na(pendingId) and strategy.position_size == 0 and bar_index - pendingBar >= retestValidBars
+        strategy.cancel(pendingId)
+        log.info("No Fill: {0} at Trap Level {1}", pendingId, f_px(pendingLvl))
+        if btShowNoFill
+            label.new(bar_index, pendingLvl, "No Fill", xloc=xloc.bar_index, yloc=yloc.price, style=label.style_label_left, color=color.new(color.gray, 30), textcolor=color.white, size=size.tiny)
+        pendingId := na
+    // pick the strongest trap that fired on this bar
+    TrapRec best = na
+    for r in eng.fired
+        if na(best) or r.strength > best.strength
+            best := r
+    if not na(best) and canTrade and strategy.position_size == 0
+        if not na(pendingId)
+            strategy.cancel(pendingId)
+        id = (best.side == 1 ? "LongsTrapped_S" : "ShortsTrapped_S") + str.tostring(best.strength)
+        cmt = best.levelName + " " + best.dayType
+        dirn = best.side == 1 ? strategy.short : strategy.long
+        if entryModel == "Enter at Reclaim Close"
+            strategy.entry(id, dirn, comment=cmt)
+        else
+            strategy.entry(id, dirn, limit=best.level, comment=cmt)
+        strategy.exit("Exit " + id, from_entry=id, stop=best.stop, limit=best.target, comment_profit="Trap Held", comment_loss="Trap Failed")
+        pendingId := id
+        pendingBar := bar_index
+        pendingLvl := best.level
+    // time stop: exit at this bar's close
+    if strategy.position_size != 0
+        pendingId := na
+        if bar_index - strategy.opentrades.entry_bar_index(strategy.opentrades - 1) >= timeStopBars
+            strategy.close_all(comment="Timed Out")
