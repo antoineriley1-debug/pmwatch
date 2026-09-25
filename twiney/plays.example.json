@@ -1,0 +1,11 @@
+{
+  "_note": "PS60 plays. trigger = the 60-minute pivot break level; second_entry = the pullback / reclaim level. extra_levels are optional additional prices to watch for reloads.",
+  "plays": [
+    {"symbol": "AAPL", "side": "long",  "trigger": 232.50, "second_entry": 231.80, "target": 235.00, "stop": 230.90, "notes": "60m supply break"},
+    {"symbol": "NVDA", "side": "long",  "trigger": 128.40, "second_entry": 127.60, "target": 131.00, "stop": 126.90, "extra_levels": [129.00]},
+    {"symbol": "TSLA", "side": "short", "trigger": 241.20, "second_entry": 242.10, "target": 236.50, "stop": 243.30, "notes": "demand break"},
+    {"symbol": "AMD",  "side": "long",  "trigger": 158.75, "second_entry": 157.90, "target": 162.00, "stop": 156.80},
+    {"symbol": "PLTR", "side": "short", "trigger": 41.30,  "second_entry": 41.75,  "target": 39.80,  "stop": 42.20},
+    {"symbol": "SOFI", "side": "long",  "trigger": 10.45,  "second_entry": 10.28,  "target": 10.95,  "stop": 10.12}
+  ]
+}

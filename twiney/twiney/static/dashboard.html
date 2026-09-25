@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TWINEY</title>
+<style>
+:root{
+  --bg:#0b0e13; --panel:#121720; --panel2:#171d28; --line:#243044; --text:#d8e0ec; --dim:#7d8aa0;
+  --bid:#2fbf71; --ask:#ef5350; --warn:#f0b429; --info:#4aa3ff; --accent:#b388ff;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:13px/1.35 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line);background:#0e131b;position:sticky;top:0;z-index:2}
+h1{font-size:16px;letter-spacing:.12em;margin:0 8px 0 0}
+.pill{padding:2px 8px;border-radius:999px;border:1px solid var(--line);font-size:11px;white-space:nowrap}
+.pill.ok{border-color:var(--bid);color:var(--bid)} .pill.bad{border-color:var(--ask);color:var(--ask)}
+.pill.warn{border-color:var(--warn);color:var(--warn)} .pill.ro{border-color:var(--accent);color:var(--accent)}
+.dim{color:var(--dim)} .mono{font-family:var(--mono)}
+main{padding:12px 16px;display:grid;gap:12px}
+#alerts{display:flex;gap:8px;overflow-x:auto;min-height:34px}
+.alert{flex:0 0 auto;padding:6px 10px;border-radius:6px;background:var(--panel);border-left:4px solid var(--info);font-family:var(--mono);font-size:12px}
+.alert.buyer{border-color:var(--bid)} .alert.seller{border-color:var(--ask)} .alert.cleaned{border-color:var(--warn)} .alert.pulled{border-color:var(--accent)}
+.alert.fresh{box-shadow:0 0 0 1px currentColor inset}
+#depth{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px;min-width:0}
+.card h2{font-size:18px;margin:0;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:baseline}
+.quote{font-family:var(--mono);font-size:12px}
+table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12px}
+th{color:var(--dim);font-weight:500;text-align:right;padding:3px 4px;border-bottom:1px solid var(--line)}
+td{text-align:right;padding:2px 4px;white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+.book{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:8px 0}
+.book td.px.bid{color:var(--bid)} .book td.px.ask{color:var(--ask)}
+.book tr.lvl td{background:rgba(179,136,255,.14)}
+.bar{height:6px;border-radius:3px;background:var(--ask);overflow:hidden;margin:4px 0}
+.bar > span{display:block;height:100%;background:var(--bid)}
+.tape-state{font-weight:700;letter-spacing:.04em}
+.sec{margin-top:8px;border-top:1px solid var(--line);padding-top:6px}
+.sec h3{margin:0 0 4px;font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em}
+.state-RELOAD{color:var(--warn);font-weight:700} .v-CLEANED{color:var(--warn)} .v-PULLED{color:var(--accent)}
+.buy{color:var(--bid)} .sell{color:var(--ask)} .mid{color:var(--dim)}
+.large{font-weight:700;text-decoration:underline}
+.scroll{overflow-x:auto}
+.empty{color:var(--dim);padding:20px;text-align:center;border:1px dashed var(--line);border-radius:8px}
+#bottom{display:grid;grid-template-columns:2fr 1fr;gap:12px}
+@media (max-width:900px){#bottom{grid-template-columns:1fr}}
+@media (max-width:420px){#depth{grid-template-columns:1fr} .book{grid-template-columns:1fr}}
+.msg-error{color:var(--ask)} .msg-warn{color:var(--warn)} .msg-info{color:var(--dim)}
+tr.onslot td:first-child{color:var(--warn)}
+.lv td:nth-child(3),.lv th:nth-child(3){text-align:left;white-space:normal;padding-left:8px}
+</style>
+</head>
+<body>
+<header>
+  <h1>TWINEY</h1>
+  <span class="pill ro" id="mode">READ-ONLY · MARKET DATA ONLY</span>
+  <span class="pill" id="conn">…</span>
+  <span class="pill" id="mdt"></span>
+  <span class="dim mono" id="meta"></span>
+</header>
+<main>
+  <section id="alerts"><span class="dim">No alerts yet.</span></section>
+  <section id="depth"></section>
+  <section id="bottom">
+    <div class="card"><h3 class="dim" style="margin:0 0 6px">PS60 PROXIMITY RANKING</h3><div class="scroll" id="ranking"></div></div>
+    <div class="card"><h3 class="dim" style="margin:0 0 6px">FEED MESSAGES</h3><div id="messages"></div></div>
+  </section>
+</main>
+<script>
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const px = v => v == null ? "—" : Number(v).toFixed(Number(v) >= 1 ? 2 : 4);
+const sz = v => v == null ? "—" : Number(v).toLocaleString();
+const pct = v => v == null ? "—" : Number(v).toFixed(2) + "%";
+const MDT = {1:"LIVE",2:"FROZEN",3:"DELAYED",4:"DELAYED-FROZEN"};
+const ago = s => s == null ? "—" : s < 60 ? s.toFixed(0) + "s" : (s/60).toFixed(1) + "m";
+
+function alertClass(l){ return l.includes("BUYER")?"buyer":l.includes("SELLER")?"seller":l==="CLEANED UP"?"cleaned":"pulled"; }
+function healthPill(h){ const cls = h.status==="OK"?"ok":(h.status==="STALE"||h.status==="NO DATA")?"bad":"warn"; return `<span class="pill ${cls}">${esc(h.status)}</span>`; }
+
+function bookTable(rows, side, levelPrices){
+  const head = side==="bid" ? "<tr><th>BID</th><th>SIZE</th><th>#</th></tr>" : "<tr><th>ASK</th><th>SIZE</th><th>#</th></tr>";
+  let body = "";
+  for (let i=0;i<5;i++){
+    const r = rows[i];
+    if (!r){ body += `<tr><td class="dim">·</td><td></td><td></td></tr>`; continue; }
+    const hit = levelPrices.has(px(r[0]));
+    body += `<tr class="${hit?"lvl":""}"><td class="px ${side}">${px(r[0])}</td><td>${sz(r[1])}</td><td class="dim">${r[2]}</td></tr>`;
+  }
+  return `<table>${head}${body}</table>`;
+}
+
+function depthCard(d){
+  const p = d.play, t = d.tape, h = d.health;
+  const levelPrices = new Set([px(p.trigger), p.second_entry!=null?px(p.second_entry):null].filter(Boolean));
+  const buyPct = t.buy_pct==null ? 50 : t.buy_pct;
+  const prints = t.recent.map(r => `<tr><td class="dim">${ago(r.age)}</td><td class="${r.side}">${px(r.price)}</td><td class="${r.side} ${r.large?"large":""}">${sz(r.size)}</td><td class="dim">${esc(r.exchange)}</td></tr>`).join("")
+    || `<tr><td colspan="4" class="dim">no prints yet</td></tr>`;
+  const levels = d.levels.filter(l => l.role !== "auto" || l.displayed > 0 || l.absorbed_window > 0 || l.last_verdict).map(l => `<tr>
+      <td>${px(l.price)} <span class="dim">${esc(l.role)}</span></td>
+      <td class="${l.side==="bid"?"buy":"sell"}">${l.side.toUpperCase()}</td>
+      <td class="state-${esc(l.state)}">${esc(l.state)}${l.out_of_view?' <span class="dim">(off view)</span>':''}${l.last_verdict?` <span class="${l.last_verdict==="CLEANED UP"?"v-CLEANED":l.last_verdict==="PULLED"?"v-PULLED":"dim"}">· ${esc(l.last_verdict)} ${ago(l.last_verdict_age)}</span>`:""}</td>
+      <td>${sz(l.displayed)}</td><td title="total ${sz(l.absorbed_total)}">${sz(l.absorbed_window)}</td><td>${l.refreshes}</td></tr>`).join("");
+  return `<div class="card">
+    <h2>${esc(d.symbol)} <span class="pill ${p.side==="long"?"ok":"bad"}">${esc(p.side.toUpperCase())}</span> ${healthPill(h)}
+      <span class="dim" style="font-size:11px">slot ${ago(d.slot_age)}</span></h2>
+    <div class="row quote"><span>LAST <b>${px(d.last)}</b></span><span class="buy">BID ${px(d.bid)}</span><span class="sell">ASK ${px(d.ask)}</span><span class="dim">SPRD ${d.spread==null?"—":Number(d.spread).toFixed(d.bid>=1?2:4)}</span></div>
+    <div class="row quote dim"><span>TRIGGER <b style="color:var(--text)">${px(p.trigger)}</b></span><span>2ND <b style="color:var(--text)">${px(p.second_entry)}</b></span>${p.target?`<span>TGT ${px(p.target)}</span>`:""}${p.stop?`<span>STOP ${px(p.stop)}</span>`:""}</div>
+    <div class="book">${bookTable(d.book.bids,"bid",levelPrices)}${bookTable(d.book.asks,"ask",levelPrices)}</div>
+    <div class="sec"><h3>Tape · last ${t.window_seconds}s</h3>
+      <div class="row"><span class="tape-state">${esc(t.state)}</span><span class="dim">${t.prints} prints · buy ${sz(Math.round(t.buy_volume))} / sell ${sz(Math.round(t.sell_volume))}${t.large_prints?` · ${t.large_prints} large`:""}</span></div>
+      <div class="bar"><span style="width:${buyPct}%"></span></div>
+      <div class="scroll" style="max-height:150px;overflow-y:auto"><table><tr><th>AGE</th><th>PRICE</th><th>SIZE</th><th>EX</th></tr>${prints}</table></div>
+    </div>
+    <div class="sec"><h3>Watched levels</h3><div class="scroll"><table class="lv">
+      <tr><th>LEVEL</th><th>SIDE</th><th>STATE</th><th>SHOWN</th><th>ABSORBED</th><th>REFILLS</th></tr>${levels}</table></div></div>
+    <div class="sec dim mono" style="font-size:11px">L1 ${ago(h.l1_age)} · depth ${ago(h.depth_age)} · tape ${ago(h.tape_age)} · 317 resets ${h.resets} · anomalies ${h.anomalies}${h.last_error?` · <span class="msg-error">${esc(h.last_error)}</span>`:""}</div>
+  </div>`;
+}
+
+function render(s){
+  const c = s.connection;
+  const conn = document.getElementById("conn");
+  conn.textContent = c.state + (c.detail ? " · " + c.detail : "");
+  conn.className = "pill " + (c.state==="CONNECTED"?"ok":c.state==="CONNECTING"||c.state==="REPLAY"||c.state==="DEMO"?"warn":"bad");
+  document.getElementById("mdt").textContent = c.market_data_type ? "DATA " + (MDT[c.market_data_type]||c.market_data_type) : "";
+  document.getElementById("meta").textContent = `${s.depth.length}/${s.slots} depth slots · up ${ago(s.uptime)}` + (s.recording ? ` · rec ${s.recording}` : "");
+
+  const al = document.getElementById("alerts");
+  al.innerHTML = s.alerts.length ? s.alerts.slice(0,12).map(a => {
+    const age = s.now - a.t;
+    return `<div class="alert ${alertClass(a.label)} ${age<10?"fresh":""}"><b>${esc(a.symbol)}</b> ${esc(a.label)} @ ${px(a.price)} <span class="dim">${esc(a.side)} · ${esc(a.role)} · abs ${sz(a.absorbed)} · ${ago(age)} ago</span></div>`;
+  }).join("") : `<span class="dim">No alerts yet. Calls appear only when the configured evidence exists.</span>`;
+
+  document.getElementById("depth").innerHTML = s.depth.length ? s.depth.map(depthCard).join("")
+    : `<div class="empty">No depth slots assigned yet — waiting for connection and L1 prices.</div>`;
+
+  const rows = s.ranking.map(r => `<tr class="${r.depth?"onslot":""}">
+    <td>${r.rank ?? "—"} ${esc(r.symbol)}${r.depth?" ◆":""}</td><td class="${r.side==="long"?"buy":"sell"}">${esc(r.side)}</td>
+    <td>${px(r.last)}</td><td>${px(r.trigger)}</td><td>${pct(r.dist_trigger_pct)}</td><td>${px(r.second_entry)}</td><td>${pct(r.dist_second_pct)}</td>
+    <td>${esc(r.health)}</td><td class="dim" style="text-align:left;white-space:normal">${esc(r.notes)}</td></tr>`).join("");
+  document.getElementById("ranking").innerHTML = `<table><tr><th>#</th><th>SIDE</th><th>LAST</th><th>TRIGGER</th><th>DIST</th><th>2ND ENTRY</th><th>DIST</th><th>FEED</th><th style="text-align:left">NOTES</th></tr>${rows}</table>`;
+
+  document.getElementById("messages").innerHTML = s.messages.map(m =>
+    `<div class="msg-${esc(m.level)} mono" style="font-size:11px">${ago(s.now-m.t)} · ${esc(m.text)}</div>`).join("") || `<span class="dim">—</span>`;
+}
+
+async function poll(){
+  try{
+    const r = await fetch("/api/state", {cache:"no-store"});
+    render(await r.json());
+  }catch(e){
+    const conn = document.getElementById("conn");
+    conn.textContent = "DASHBOARD LOST CONTACT WITH TWINEY"; conn.className = "pill bad";
+  }
+  setTimeout(poll, 500);
+}
+poll();
+</script>
+</body>
+</html>
