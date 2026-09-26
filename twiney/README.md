@@ -36,7 +36,19 @@ Other modes:
 - **Slot rotation uses hysteresis.** A challenger must be 15% closer than the worst incumbent, and that incumbent must have held its slot for at least 20 s. If IBKR rejects a depth request (309/10092), that symbol is skipped for 30 s.
 - **Watched levels.** The trigger, second entry and any `extra_levels` are watched on both bid and ask. TWINEY also auto-tracks big inside levels (≥ 2,000 shares). Many levels are tracked at once.
 - **Records every raw event** to `recordings/*.jsonl` (L1, depth ops, prints, resets, slot changes, errors and alerts) for replay or audit.
-- **One dashboard** shows: feed health (L1, depth and tape age; 317 resets; book anomalies), 5 book rows per side with the PS60 prices highlighted, the tape read (buy/sell volume, large prints), watched levels with shares shown, shares absorbed and refill count, the ranking, alerts and TWS messages.
+- **One dashboard**, with one pane per ladder:
+  - **Plain-English headline.** For example: "Price is approaching your trigger 128.40 — 6¢ above it", "A SELLER keeps reloading at 128.40 (your trigger): 6,200 shares traded into it, refilled 5x", "The SELLER at 128.40 got CLEANED UP". It also says what that means for the PS60 play.
+  - **Chart:** 1-minute candles with IBKR history at startup, a 1m/5m toggle, and buy/sell volume. Your trigger, 2nd entry, extra levels, target and stop are drawn as labelled lines with a zone band. Green/red bubbles show shares absorbed into resting buyers/sellers at watched levels. R/C/P markers show reload, cleaned-up and pulled calls. Your working orders are drawn as lines too.
+  - **Level-memory ladder.** Every price row remembers the last 15 minutes: shares sold into the bid and bought from the ask there, how many times the size came back after being hit (●), and a glowing **BUYER ×n / SELLER ×n** tag when a reload is confirmed. Your levels and your orders are tagged on their rows. The ladder stays centered on price.
+  - **Time & sales** with prints at your levels tagged.
+- **Pane controls:**
+  - Panes keep a fixed screen position. If a symbol changes, a banner says so.
+  - **Pin** a symbol from a pane or from the plays list so it never rotates.
+  - **Auto-rotate ON/OFF** in the header.
+  - A ladder with a live reload is never rotated away.
+  - Drag a pane's corner to resize it. Sizes are remembered; **Reset layout** clears them.
+- **Orders · positions · fills (view only):** pending orders, positions with P&L, and today's fills, read from IBKR (`reqAllOpenOrders`, `reqPositions`, `reqExecutions`). Orders are placed and changed in TWS.
+- Plus: the plays list with plain-English distance to each level, feed health, and TWS messages.
 
 ## Vocabulary (exact rules, all in `config.json → reload`)
 | Call | Evidence required |

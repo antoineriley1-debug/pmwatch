@@ -91,6 +91,43 @@ class SessionTests(unittest.TestCase):
         self.assertEqual(engine.connection["state"], "CONNECTED")
         self.assertIn(("reqMarketDataType", 1), app.calls)
         self.assertEqual(names(app).count("reqMktData"), 4)
+        self.assertEqual(names(app).count("reqHistoricalData"), 4)
+
+    def test_orders_positions_fills_are_shown_read_only(self):
+        s, engine, clock, app = self.connect()
+        self.assertIn("reqPositions", names(app))
+        s.step(clock())
+        self.assertIn("reqAllOpenOrders", names(app))
+        self.assertIn("reqExecutions", names(app))
+        O = lambda **k: type("O", (), k)()
+        app.openOrder(7, O(symbol="AAA"), O(permId=555, action="BUY", totalQuantity=decimal.Decimal("200"),
+                      orderType="LMT", lmtPrice=9.9, auxPrice=0.0, tif="DAY"), O(status="Submitted"))
+        app.orderStatus(7, "Submitted", decimal.Decimal("0"), decimal.Decimal("200"), 0.0, 555, 0, 0.0, 1, "", 0.0)
+        app.openOrderEnd()
+        app.position("DU1", O(symbol="AAA"), decimal.Decimal("100"), 9.80)
+        app.execDetails(1, O(symbol="AAA"), O(execId="e1", side="BOT", shares=decimal.Decimal("100"),
+                                               price=9.80, time="20260926 09:45:00"))
+        app.tickPrice(s.l1_ids["AAA"], 4, 10.0, None)
+        acct = engine.snapshot(clock())["account"]
+        self.assertEqual(acct["pending"][0]["action"], "BUY")
+        self.assertEqual(acct["pending"][0]["lmt"], 9.9)
+        self.assertEqual(acct["positions"][0]["qty"], 100)
+        self.assertEqual(acct["fills"][0]["side"], "BOT")
+        # the order disappears from "pending" once a refresh no longer lists it
+        clock.t += 5
+        s.step(clock())
+        app.openOrderEnd()
+        self.assertEqual(engine.snapshot(clock())["account"]["pending"], [])
+
+    def test_history_bars_feed_the_chart(self):
+        s, engine, clock, app = self.connect()
+        hid = [c[1] for c in app.calls if c[0] == "reqHistoricalData" and c[2] == "AAA"][0]
+        bar = type("Bar", (), {"date": "1712345640", "open": 10.0, "high": 10.1, "low": 9.9,
+                               "close": 10.05, "volume": decimal.Decimal("12000")})()
+        app.historicalData(hid, bar)
+        app.historicalDataEnd(hid, "", "")
+        self.assertEqual(engine.syms["AAA"].bar_list()[0][1:6], [10.0, 10.1, 9.9, 10.05, 12000.0])
+        self.assertNotIn(hid, app.req)
 
     def test_l1_depth_and_tape_callbacks_reach_engine(self):
         s, engine, clock, app = self.connect()

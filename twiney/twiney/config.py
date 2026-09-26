@@ -77,6 +77,17 @@ DEFAULTS = {
         "depth_stale_seconds": 15.0,
         "tape_stale_seconds": 60.0,
     },
+    "account": {
+        # show your pending orders, positions and today's fills (read-only view)
+        "show": True,
+        "orders_refresh_seconds": 3.0,
+        "fills_refresh_seconds": 10.0,
+    },
+    "chart": {
+        # load today's 1-minute bars from IBKR at startup so the chart has context
+        "history": True,
+        "regular_hours_only": True,
+    },
     "recording": {
         "enabled": True,
         "dir": "recordings",

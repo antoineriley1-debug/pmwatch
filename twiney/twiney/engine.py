@@ -8,9 +8,11 @@ slot commands ("depth_on"/"depth_off") which the market-data adapter executes.
 import threading
 from collections import deque
 
+from . import narrative
+
 from .book import ASK, BID, Book
-from .levels import BUILDING, LevelTracker, WATCHING
-from .prices import fmt_price, price_key
+from .levels import BUILDING, GONE_PENDING, RELOAD, LevelTracker, WATCHING
+from .prices import fmt_price, price_key, tick_size
 from .ranking import allocate, distances, rank
 from .tape import Tape
 
@@ -18,6 +20,11 @@ L1_FIELDS = ("bid", "ask", "last", "bid_size", "ask_size", "last_size", "volume"
              "high", "low", "close", "open")
 
 ALERT_LABELS = ("RELOAD BUYER DETECTED", "RELOAD SELLER DETECTED", "CLEANED UP", "PULLED")
+
+BAR_SECONDS = 60
+MAX_BARS = 800
+MEMORY_SECONDS = 900   # how long the price-level memory (traded volume by price) looks back
+MARK_MINUTES = 400     # absorption bubbles kept for the chart
 
 
 class SymbolState:
@@ -37,6 +44,33 @@ class SymbolState:
         self.resets = 0
         self.rejected_until = 0.0
         self.last_error = None
+        self.bars = {}          # minute start -> [o, h, l, c, v, buy_v, sell_v]
+        self.memory = deque()   # (t, price_key, price, aggressor side, size) for the level memory
+        self.marks = {}         # (minute, price_key, side) -> [price, absorbed shares]
+
+    def bar_update(self, t, price, size=0.0, side=None):
+        m = int(t // BAR_SECONDS) * BAR_SECONDS
+        b = self.bars.get(m)
+        if b is None:
+            b = self.bars[m] = [price, price, price, price, 0.0, 0.0, 0.0]
+            if len(self.bars) > MAX_BARS:
+                for k in sorted(self.bars)[:len(self.bars) - MAX_BARS]:
+                    del self.bars[k]
+        else:
+            b[1] = max(b[1], price)
+            b[2] = min(b[2], price)
+            b[3] = price
+        b[4] += size
+        if side == "buy":
+            b[5] += size
+        elif side == "sell":
+            b[6] += size
+
+    def bar_list(self, limit=None):
+        keys = sorted(self.bars)
+        if limit:
+            keys = keys[-limit:]
+        return [[k] + [round(x, 4) for x in self.bars[k]] for k in keys]
 
     def price(self):
         last = self.l1["last"]
@@ -61,6 +95,17 @@ class Engine:
         self.lock = threading.RLock()
         self.syms = {p["symbol"]: SymbolState(p, cfg) for p in plays}
         self.slots = {}  # symbol -> time the slot was assigned
+        n = cfg["depth"]["slots"]
+        self.slot_order = [None] * n      # fixed screen position of each depth symbol
+        self.slot_changes = [None] * n    # last change per position, for the "replaced" banner
+        self._slot_last = [None] * n
+        self.pinned = set()
+        self.auto_rotate = True
+        # read-only view of the account (orders are placed in TWS, never here)
+        self.orders = {}        # key -> order dict (pending + recently finished)
+        self.positions = {}     # (account, symbol) -> {"qty", "avg_cost"}
+        self.fills = {}         # exec id -> fill dict
+        self.account_seen = False
         self.alerts = deque(maxlen=300)
         self.messages = deque(maxlen=80)
         self.listeners = []
@@ -98,6 +143,7 @@ class Engine:
         }
         if final:
             alert["size_before_gone"] = round(final["size_before_gone"])
+        alert["text"] = narrative.alert_text(alert, st.play)
         self.alerts.appendleft(alert)
         self._rec(dict(alert, ev="alert"))
         for fn in self.listeners:
@@ -120,6 +166,8 @@ class Engine:
             self._rec({"ev": "l1", "t": t, "sym": symbol, "f": field, "v": value})
             st.l1[field] = value
             st.l1_t = t
+            if field == "last" and not st.depth_active and value:
+                st.bar_update(t, value)  # symbols without a tape still get a price chart
 
     def on_depth(self, symbol, position, operation, side, price, size, market_maker, t):
         with self.lock:
@@ -170,10 +218,88 @@ class Engine:
             rec = st.tape.add(t, price, size, bid, ask, exchange)
             st.tape_t = t
             st.l1["last"] = price
+            st.bar_update(t, price, size, rec["side"])
+            k = price_key(price)
+            st.memory.append((t, k, price, rec["side"], size))
+            while st.memory and t - st.memory[0][0] > MEMORY_SECONDS:
+                st.memory.popleft()
+            marked = False
             for tr in list(st.trackers.values()):
+                before = tr.absorbed_total
                 label = tr.on_print(price, size, rec["side"], t, st.book)
+                if not marked and tr.absorbed_total > before:
+                    marked = True  # this print traded into a watched level's resting size
+                    side = "ask" if tr.side == ASK else "bid"
+                    mk = (int(t // BAR_SECONDS) * BAR_SECONDS, k, side)
+                    st.marks.setdefault(mk, [price, 0.0])[1] += size
                 if label:
                     self._emit(st, tr, label, t)
+
+    def on_hist_bar(self, symbol, t0, o, h, l, c, v):
+        """Historical 1-minute bar (reqHistoricalData) so the chart has context at startup."""
+        with self.lock:
+            st = self._st(symbol)
+            if st is None:
+                return
+            self._rec({"ev": "hbar", "t": self.last_t or t0, "sym": symbol, "t0": t0, "o": o, "h": h, "l": l, "c": c, "v": v})
+            m = int(t0 // BAR_SECONDS) * BAR_SECONDS
+            if m in st.bars:
+                return  # live data for that minute wins
+            st.bars[m] = [o, h, l, c, v or 0.0, 0.0, 0.0]
+
+    # ---- account view (read-only) --------------------------------------------
+
+    DONE_STATUSES = ("Filled", "Cancelled", "ApiCancelled", "Inactive")
+
+    def on_order(self, key, t, **fields):
+        """Order info from IBKR (openOrder / orderStatus). Display only."""
+        with self.lock:
+            self.account_seen = True
+            o = self.orders.setdefault(key, {"key": key, "first_seen": t})
+            o.update({k: v for k, v in fields.items() if v is not None})
+            o["t"] = t
+
+    def on_orders_snapshot_end(self, seen_keys, t):
+        """After a full open-order refresh, orders not listed are no longer working."""
+        with self.lock:
+            for key, o in list(self.orders.items()):
+                if key not in seen_keys and o.get("status") not in self.DONE_STATUSES:
+                    o["status"] = "Done"
+                    o["t"] = t
+            for key, o in list(self.orders.items()):
+                if o.get("status") in self.DONE_STATUSES + ("Done",) and t - o["t"] > 600:
+                    del self.orders[key]
+
+    def on_position(self, account, symbol, qty, avg_cost, t):
+        with self.lock:
+            self.account_seen = True
+            if qty:
+                self.positions[(account, symbol)] = {"account": account, "symbol": symbol,
+                                                     "qty": qty, "avg_cost": avg_cost}
+            else:
+                self.positions.pop((account, symbol), None)
+
+    def on_fill(self, exec_id, symbol, side, shares, price, when, t):
+        with self.lock:
+            self.account_seen = True
+            self.fills[exec_id] = {"symbol": symbol, "side": side, "shares": shares, "price": price,
+                                   "time": when, "t": t}
+            if len(self.fills) > 200:
+                for k in sorted(self.fills, key=lambda k: self.fills[k]["t"])[:len(self.fills) - 200]:
+                    del self.fills[k]
+
+    def _pending(self, symbol=None):
+        return [o for o in self.orders.values()
+                if o.get("status") not in self.DONE_STATUSES + ("Done",)
+                and (symbol is None or o.get("symbol") == symbol)]
+
+    def _position_view(self, symbol, price):
+        qty = sum(p["qty"] for (a, s), p in self.positions.items() if s == symbol)
+        if not qty:
+            return None
+        cost = sum(p["qty"] * p["avg_cost"] for (a, s), p in self.positions.items() if s == symbol) / qty
+        pnl = (price - cost) * qty if price else None
+        return {"qty": qty, "avg_cost": round(cost, 4), "pnl": None if pnl is None else round(pnl, 2)}
 
     def on_connection(self, state, detail, t, market_data_type=None):
         """state: CONNECTED | DISCONNECTED | CONNECTING | DATA_LOST | FEED_DOWN."""
@@ -223,9 +349,17 @@ class Engine:
 
     # ---- depth slots ---------------------------------------------------------
 
-    def _activate(self, symbol, t):
+    def _activate(self, symbol, t, reason=""):
         st = self.syms[symbol]
         self.slots[symbol] = t
+        if symbol not in self.slot_order:
+            if None not in self.slot_order:
+                self.slot_order.append(None)
+                self.slot_changes.append(None)
+                self._slot_last.append(None)
+            i = self.slot_order.index(None)
+            self.slot_order[i] = symbol
+            self.slot_changes[i] = {"prev": self._slot_last[i], "symbol": symbol, "t": t, "reason": reason}
         st.depth_active = True
         st.depth_since = t
         st.depth_t = None
@@ -248,6 +382,10 @@ class Engine:
     def _deactivate(self, symbol, t, record=False, reason=""):
         st = self.syms[symbol]
         self.slots.pop(symbol, None)
+        if symbol in self.slot_order:
+            i = self.slot_order.index(symbol)
+            self.slot_order[i] = None
+            self._slot_last[i] = symbol
         st.depth_active = False
         st.book = None
         st.trackers = {}
@@ -262,9 +400,34 @@ class Engine:
             self._rec({"ev": "slot", "t": t, "sym": symbol, "on": on, "reason": reason})
             if on:
                 if symbol not in self.slots:
-                    self._activate(symbol, t)
+                    self._activate(symbol, t, reason)
             else:
                 self._deactivate(symbol, t)
+
+    def set_pinned(self, symbol, on, t=None):
+        """Pin a symbol to a depth slot: it gets a ladder and is never rotated out."""
+        with self.lock:
+            if symbol not in self.syms:
+                return False
+            if on:
+                self.pinned.add(symbol)
+            else:
+                self.pinned.discard(symbol)
+            self._rec({"ev": "ui", "t": t or self.last_t, "pin": symbol, "on": bool(on)})
+            return True
+
+    def set_auto_rotate(self, on, t=None):
+        with self.lock:
+            self.auto_rotate = bool(on)
+            self._rec({"ev": "ui", "t": t or self.last_t, "auto_rotate": self.auto_rotate})
+
+    def _protected(self):
+        """Symbols with a live reload (or a pending verdict) are never rotated out."""
+        out = set()
+        for sym in self.slots:
+            if any(tr.state in (RELOAD, GONE_PENDING) for tr in self.syms[sym].trackers.values()):
+                out.add(sym)
+        return out
 
     def _auto_levels(self, st, t):
         rc = self.cfg["reload"]
@@ -317,14 +480,17 @@ class Engine:
 
     def _rotate(self, t):
         dc = self.cfg["depth"]
+        blocked = {s for s, st in self.syms.items() if st.rejected_until > t}
         new = allocate(self.slots, self.ranking(t), dc["slots"], t,
-                       dc["rotate_hysteresis"], dc["min_hold_seconds"])
+                       dc["rotate_hysteresis"], dc["min_hold_seconds"],
+                       pinned=self.pinned - blocked, protected=self._protected(),
+                       rotate=self.auto_rotate)
         cmds = []
         for sym in [s for s in self.slots if s not in new]:
             self.apply_slot(sym, False, t, reason="rotated")
             cmds.append(("depth_off", sym))
         for sym in [s for s in new if s not in self.slots]:
-            self.apply_slot(sym, True, t, reason="closest")
+            self.apply_slot(sym, True, t, reason="pinned" if sym in self.pinned else "closest")
             cmds.append(("depth_on", sym))
         return cmds
 
@@ -350,6 +516,8 @@ class Engine:
             self.on_depth_rejected(ev["sym"], ev.get("code"), ev.get("msg", ""), t)
         elif kind == "error":
             self.on_error(ev.get("sym"), ev.get("code"), ev.get("msg", ""), t)
+        elif kind == "hbar":
+            self.on_hist_bar(ev["sym"], ev["t0"], ev["o"], ev["h"], ev["l"], ev["c"], ev.get("v"))
 
     # ---- dashboard -----------------------------------------------------------
 
@@ -380,9 +548,151 @@ class Engine:
             "last_error": st.last_error,
         }
 
+    def _user_levels(self, play):
+        out = [{"price": play["trigger"], "role": "trigger", "label": "TRIGGER"}]
+        if play.get("second_entry"):
+            out.append({"price": play["second_entry"], "role": "second_entry", "label": "2ND ENTRY"})
+        for lv in play.get("extra_levels", []):
+            out.append({"price": lv, "role": "extra", "label": "LEVEL"})
+        for key, label in (("target", "TARGET"), ("stop", "STOP")):
+            if play.get(key):
+                out.append({"price": play[key], "role": key, "label": label})
+        return out
+
+    def _memory_ladder(self, st, t, user_levels, half_rows=12):
+        """Price rows around the market, each carrying what happened there.
+
+        Unlike a normal ladder (current size only), every row remembers: shares
+        that traded into the bid / the ask at that price over MEMORY_SECONDS, how
+        many times resting size came back after being hit, and the reload state.
+        """
+        bid, ask = st.bbo()
+        center = (bid + ask) / 2 if bid and ask else st.price()
+        if not center:
+            return {"rows": [], "max_size": 0, "max_traded": 0}
+        tk = tick_size(center)
+        ck = price_key(center, tk)
+        keys = list(range(ck + half_rows, ck - half_rows - 1, -1))
+        tags = {}
+        for lv in user_levels:
+            k = price_key(lv["price"], tk)
+            tags.setdefault(k, []).append(lv["label"])
+            if k not in keys and abs(k - ck) <= 80 and lv["role"] in ("trigger", "second_entry", "extra"):
+                keys.append(k)
+        keys = sorted(set(keys), reverse=True)
+        sold, bought = {}, {}
+        for mt, k, _p, side, size in st.memory:
+            if t - mt > MEMORY_SECONDS:
+                continue
+            if side == "sell":
+                sold[k] = sold.get(k, 0.0) + size
+            elif side == "buy":
+                bought[k] = bought.get(k, 0.0) + size
+        mine = {}
+        for o in self._pending(st.symbol):
+            for p_ in (o.get("lmt"), o.get("aux")):
+                if p_:
+                    mine.setdefault(price_key(p_, tk), []).append(
+                        f"YOU {o.get('action', '?')} {int(o.get('remaining') or o.get('qty') or 0)}")
+                    break
+        trk = {}
+        for tr in st.trackers.values():
+            trk[("bid" if tr.side == BID else "ask", price_key(tr.price, tk))] = tr
+        bb = price_key(bid, tk) if bid else None
+        ba = price_key(ask, tk) if ask else None
+        last = st.l1["last"]
+        lk = price_key(last, tk) if last else None
+        rows, prev = [], None
+        max_size = max_traded = 0.0
+        for k in keys:
+            price = round(k * tk, 4)
+            b_sz = st.book.size_at(BID, price) if st.book else None
+            a_sz = st.book.size_at(ASK, price) if st.book else None
+            row = {
+                "price": fmt_price(price),
+                "gap": prev is not None and prev - k > 1,
+                "bid": round(b_sz) if b_sz else 0, "ask": round(a_sz) if a_sz else 0,
+                "sold": round(sold.get(k, 0)), "bought": round(bought.get(k, 0)),
+                "tags": tags.get(k, []),
+                "mine": mine.get(k, []),
+                "best_bid": k == bb, "best_ask": k == ba, "last": k == lk,
+            }
+            for side in ("bid", "ask"):
+                tr = trk.get((side, k))
+                if tr is not None:
+                    row[side + "_refills"] = tr.refreshes_window(t)
+                    row[side + "_state"] = tr._display_state(t)
+                    row[side + "_absorbed"] = round(tr.absorbed_total)
+                    row[side + "_verdict"] = (tr.last_verdict[0] if tr.last_verdict and t - tr.last_verdict[1] < 60
+                                              else None)
+            max_size = max(max_size, row["bid"], row["ask"])
+            max_traded = max(max_traded, row["sold"], row["bought"])
+            rows.append(row)
+            prev = k
+        return {"rows": rows, "max_size": round(max_size), "max_traded": round(max_traded),
+                "memory_minutes": MEMORY_SECONDS // 60}
+
+    def _pane(self, sym, i, t, order):
+        st = self.syms[sym]
+        rows = self.cfg["depth"]["rows_displayed"]
+        book = st.book
+        bids = [[fmt_price(p), round(s), n] for p, s, n in book.levels(BID, rows)] if book else []
+        asks = [[fmt_price(p), round(s), n] for p, s, n in book.levels(ASK, rows)] if book else []
+        levels = sorted((tr.snapshot(t) for tr in st.trackers.values()),
+                        key=lambda x: (x["role"] == "auto", -x["price"], x["side"]))
+        for lv in levels:
+            for k in ("displayed", "peak_displayed", "absorbed_window", "absorbed_total"):
+                lv[k] = round(lv[k])
+            lv["price"] = fmt_price(lv["price"])
+        bid, ask = st.bbo()
+        tape = st.tape.stats(t)
+        user_levels = self._user_levels(st.play)
+        bars = st.bar_list(240)
+        first_bar = bars[0][0] if bars else t
+        sym_alerts = [a for a in self.alerts if a["symbol"] == sym]
+        headline, tone, lines = narrative.story(st.play, st.price(), levels, bars, tape, t, sym_alerts,
+                                                min_shares=self.cfg["reload"]["min_absorbed_shares"])
+
+        def at_level(price):
+            for lv in user_levels:
+                if lv["role"] in ("trigger", "second_entry", "extra") and \
+                        abs(price_key(price) - price_key(lv["price"])) <= 1:
+                    return lv["label"]
+            return None
+
+        change = self.slot_changes[i] if i < len(self.slot_changes) else None
+        return {
+            "slot": i,
+            "symbol": sym,
+            "pinned": sym in self.pinned,
+            "changed": change if change and t - change["t"] < 20 and change.get("prev") else None,
+            "play": {k: st.play[k] for k in ("side", "trigger", "second_entry", "target", "stop", "notes")},
+            "last": fmt_price(st.l1["last"]),
+            "bid": fmt_price(bid), "ask": fmt_price(ask),
+            "spread": fmt_price(ask - bid) if bid and ask else None,
+            "headline": headline, "tone": tone, "lines": lines,
+            "book": {"bids": bids, "asks": asks},
+            "ladder": self._memory_ladder(st, t, user_levels),
+            "tape": dict(tape, recent=[
+                {"age": round(t - p["t"], 1), "price": fmt_price(p["price"]), "size": round(p["size"]),
+                 "side": p["side"], "large": p["large"], "exchange": p["exchange"], "at": at_level(p["price"])}
+                for p in st.tape.recent(14)]),
+            "levels": levels,
+            "user_levels": user_levels,
+            "orders": [{"action": o.get("action"), "qty": o.get("remaining") or o.get("qty"),
+                        "type": o.get("type"), "price": o.get("lmt") or o.get("aux")}
+                       for o in self._pending(sym)],
+            "position": self._position_view(sym, st.price()),
+            "bars": bars,
+            "marks": [[m, fmt_price(v[0]), side, round(v[1])] for (m, _k, side), v in st.marks.items()
+                      if m >= first_bar],
+            "events": [[a["t"], a["price"], a["label"], a["side"]] for a in sym_alerts if a["t"] >= first_bar][:60],
+            "health": self._health(st, t),
+            "slot_age": round(t - self.slots[sym], 1),
+        }
+
     def snapshot(self, t):
         with self.lock:
-            rows = self.cfg["depth"]["rows_displayed"]
             ranked = self.ranking(t)
             order = {s: i + 1 for i, (s, _d) in enumerate(ranked)}
             ranking = []
@@ -398,50 +708,34 @@ class Engine:
                     "trigger": p["trigger"], "second_entry": p["second_entry"],
                     "dist_trigger_pct": None if d_trig is None else round(d_trig * 100, 3),
                     "dist_second_pct": None if d_second is None else round(d_second * 100, 3),
+                    "status": narrative.short_status(p, price),
                     "depth": st.depth_active,
+                    "pinned": p["symbol"] in self.pinned,
                     "health": self._health(st, t)["status"],
                     "notes": p["notes"],
                 })
             ranking.sort(key=lambda r: (r["rank"] is None, r["rank"] or 0, r["symbol"]))
-
-            depth = []
-            for sym in sorted(self.slots, key=lambda s: order.get(s, 999)):
-                st = self.syms[sym]
-                book = st.book
-                bids = [[fmt_price(p), round(s), n] for p, s, n in book.levels(BID, rows)] if book else []
-                asks = [[fmt_price(p), round(s), n] for p, s, n in book.levels(ASK, rows)] if book else []
-                levels = sorted((tr.snapshot(t) for tr in st.trackers.values()),
-                                key=lambda x: (x["role"] == "auto", -x["price"], x["side"]))
-                for lv in levels:
-                    lv["displayed"] = round(lv["displayed"])
-                    lv["peak_displayed"] = round(lv["peak_displayed"])
-                    lv["absorbed_window"] = round(lv["absorbed_window"])
-                    lv["absorbed_total"] = round(lv["absorbed_total"])
-                    lv["price"] = fmt_price(lv["price"])
-                bid, ask = st.bbo()
-                depth.append({
-                    "symbol": sym,
-                    "play": {k: st.play[k] for k in ("side", "trigger", "second_entry", "target", "stop", "notes")},
-                    "last": fmt_price(st.l1["last"]),
-                    "bid": fmt_price(bid), "ask": fmt_price(ask),
-                    "spread": fmt_price(ask - bid) if bid and ask else None,
-                    "book": {"bids": bids, "asks": asks},
-                    "tape": dict(st.tape.stats(t), recent=[
-                        {"age": round(t - p["t"], 1), "price": fmt_price(p["price"]), "size": round(p["size"]),
-                         "side": p["side"], "large": p["large"], "exchange": p["exchange"]}
-                        for p in st.tape.recent(12)]),
-                    "levels": levels,
-                    "health": self._health(st, t),
-                    "slot_age": round(t - self.slots[sym], 1),
-                })
+            # panes keep a fixed screen position; an empty position is None
+            panes = [self._pane(sym, i, t, order) if sym else None for i, sym in enumerate(self.slot_order)]
             return {
                 "now": t,
                 "uptime": round(t - self.started, 1) if self.started else 0,
                 "mode": "READ-ONLY · MARKET DATA ONLY",
                 "connection": dict(self.connection),
                 "slots": self.cfg["depth"]["slots"],
+                "auto_rotate": self.auto_rotate,
                 "ranking": ranking,
-                "depth": depth,
+                "panes": panes,
+                "depth": [pn for pn in panes if pn],
+                "account": {
+                    "seen": self.account_seen,
+                    "pending": sorted(self._pending(), key=lambda o: -o.get("first_seen", 0)),
+                    "done": sorted((o for o in self.orders.values() if o not in self._pending()),
+                                   key=lambda o: -o["t"])[:15],
+                    "positions": [dict(p, last=fmt_price(self.syms[p["symbol"]].price())
+                                       if p["symbol"] in self.syms else None) for p in self.positions.values()],
+                    "fills": sorted(self.fills.values(), key=lambda f: -f["t"])[:30],
+                },
                 "alerts": list(self.alerts)[:40],
                 "messages": list(self.messages)[:25],
                 "recording": getattr(self.recorder, "path", None),

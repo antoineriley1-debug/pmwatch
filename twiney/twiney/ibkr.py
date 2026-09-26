@@ -1,7 +1,10 @@
 """IBKR market-data adapter (TWS API ``ibapi``).
 
 Only these requests are ever sent: reqMarketDataType, reqMktData / cancelMktData,
-reqMktDepth / cancelMktDepth, reqTickByTickData / cancelTickByTickData.
+reqMktDepth / cancelMktDepth, reqTickByTickData / cancelTickByTickData,
+reqHistoricalData (1-minute bars for the chart), and the account READ calls
+reqAllOpenOrders / reqPositions / reqExecutions so the dashboard can SHOW your
+orders, positions and fills. Orders are placed in TWS, never from here.
 The client class puts ``ReadOnlyGuard`` ahead of EClient so order/execution
 calls raise instead of reaching TWS.
 
@@ -23,7 +26,7 @@ PRICE_TICKS = {1: "bid", 2: "ask", 4: "last", 6: "high", 7: "low", 9: "close", 1
 SIZE_TICKS = {0: "bid_size", 3: "ask_size", 5: "last_size", 8: "volume",
               69: "bid_size", 70: "ask_size", 71: "last_size", 74: "volume"}
 
-INFO_CODES = {2104, 2106, 2107, 2108, 2119, 2158, 2150, 10167}
+INFO_CODES = {2104, 2106, 2107, 2108, 2119, 2158, 2150, 10167, 162, 2174, 2176}
 FARM_WARN_CODES = {2103, 2105, 2157, 2152}
 DEPTH_REJECT_CODES = {309, 10092}
 SUBSCRIPTION_CODES = {354, 10089, 10090, 10168, 10186, 10197, 322, 10190, 200}
@@ -132,12 +135,71 @@ class TwineyWrapper:
         self.engine.on_depth(sym, int(position), int(operation), int(side),
                              num(price) or 0.0, num(size) or 0.0, marketMaker or "", self.clock())
 
+    # account view (read-only) ------------------------------------------------
+    def openOrder(self, orderId, contract, order, orderState):
+        key = getattr(order, "permId", 0) or f"id{orderId}"
+        self.session.order_seen(key)
+        self.engine.on_order(
+            key, self.clock(), symbol=getattr(contract, "symbol", "?"), action=getattr(order, "action", None),
+            qty=num(getattr(order, "totalQuantity", None)), type=getattr(order, "orderType", None),
+            lmt=num(getattr(order, "lmtPrice", None)) or None, aux=num(getattr(order, "auxPrice", None)) or None,
+            tif=getattr(order, "tif", None), status=getattr(orderState, "status", None))
+
+    def orderStatus(self, orderId, status, filled, remaining, avgFillPrice, permId, *rest):
+        key = permId or f"id{orderId}"
+        self.engine.on_order(key, self.clock(), status=status, filled=num(filled),
+                             remaining=num(remaining), avg_fill=num(avgFillPrice) or None)
+
+    def openOrderEnd(self):
+        self.session.orders_refreshed()
+
+    def position(self, account, contract, position, avgCost):
+        self.engine.on_position(account, getattr(contract, "symbol", "?"), num(position) or 0.0,
+                                num(avgCost) or 0.0, self.clock())
+
+    def positionEnd(self):
+        pass
+
+    def execDetails(self, reqId, contract, execution):
+        self.engine.on_fill(getattr(execution, "execId", ""), getattr(contract, "symbol", "?"),
+                            getattr(execution, "side", ""), num(getattr(execution, "shares", 0)) or 0.0,
+                            num(getattr(execution, "price", 0)) or 0.0, getattr(execution, "time", ""),
+                            self.clock())
+
+    def execDetailsEnd(self, reqId):
+        pass
+
+    # chart history ----------------------------------------------------------
+    def historicalData(self, reqId, bar):
+        kind, sym = self.req.get(reqId, (None, None))
+        if kind != "hist":
+            return
+        try:
+            t0 = float(bar.date)  # formatDate=2 -> epoch seconds
+        except (TypeError, ValueError):
+            return
+        o, h, l, c = num(bar.open), num(bar.high), num(bar.low), num(bar.close)
+        if None in (o, h, l, c):
+            return
+        self.engine.on_hist_bar(sym, t0, o, h, l, c, num(bar.volume))
+
+    def historicalDataEnd(self, reqId, start, end):
+        self.req.pop(reqId, None)
+
     # tape -----------------------------------------------------------------
     def tickByTickAllLast(self, reqId, tickType, time_, price, size, tickAttribLast, exchange, specialConditions):
         kind, sym = self.req.get(reqId, (None, None))
         if kind != "tape":
             return
         self.engine.on_print(sym, num(price), num(size), exchange or "", self.clock(), specialConditions or "")
+
+
+def execution_filter():
+    try:
+        from ibapi.execution import ExecutionFilter
+        return ExecutionFilter()
+    except ImportError:  # tests run without ibapi
+        return None
 
 
 def make_contract(play):
@@ -185,6 +247,9 @@ class MarketDataSession:
         self.l1_ids = {}      # symbol -> reqId
         self.depth_ids = {}   # symbol -> (depth reqId, tape reqId)
         self.dead = set()
+        self._orders_seen = set()
+        self._next_orders = 0.0
+        self._next_fills = 0.0
         self._lock = threading.RLock()
         self._stop = threading.Event()
         self.thread = None
@@ -226,6 +291,7 @@ class MarketDataSession:
             if self.ready:
                 self.engine.tick(now)
                 self.reconcile_depth()
+                self.refresh_account(now)
             else:
                 self.engine.tick(now, allocate_slots=False)
 
@@ -258,6 +324,9 @@ class MarketDataSession:
             self.app.reqMarketDataType(mdt)
             self.engine.on_connection("CONNECTED", "", self.clock(), market_data_type=mdt)
             self.subscribe_l1()
+            if self.cfg["account"]["show"]:
+                self.app.reqPositions()  # streams position updates
+            self._next_orders = self._next_fills = 0.0
 
     def handle_data_lost(self, msg):
         with self._lock:
@@ -291,6 +360,24 @@ class MarketDataSession:
             except Exception:
                 pass
 
+    def refresh_account(self, now):
+        """Poll open orders and today's fills for the display (read-only requests)."""
+        if not self.cfg["account"]["show"] or self.app is None:
+            return
+        if now >= self._next_orders:
+            self._next_orders = now + self.cfg["account"]["orders_refresh_seconds"]
+            self._orders_seen = set()
+            self.app.reqAllOpenOrders()
+        if now >= self._next_fills:
+            self._next_fills = now + self.cfg["account"]["fills_refresh_seconds"]
+            self.app.reqExecutions(self._rid(), execution_filter())
+
+    def order_seen(self, key):
+        self._orders_seen.add(key)
+
+    def orders_refreshed(self):
+        self.engine.on_orders_snapshot_end(set(self._orders_seen), self.clock())
+
     def mark_dead(self, req_id):
         self.dead.add(req_id)
 
@@ -307,6 +394,11 @@ class MarketDataSession:
             self.app.req[rid] = ("l1", sym)
             self.l1_ids[sym] = rid
             self.app.reqMktData(rid, self.contract_factory(play), "", False, False, [])
+            if self.cfg["chart"]["history"]:
+                hid = self._rid()
+                self.app.req[hid] = ("hist", sym)
+                self.app.reqHistoricalData(hid, self.contract_factory(play), "", "1 D", "1 min", "TRADES",
+                                           1 if self.cfg["chart"]["regular_hours_only"] else 0, 2, False, [])
 
     def reconcile_depth(self):
         """Make IBKR depth + tape subscriptions match the engine's slots."""

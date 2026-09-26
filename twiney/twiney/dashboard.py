@@ -1,6 +1,7 @@
-"""Local read-only dashboard: one HTML page polling /api/state.
+"""Local dashboard: one HTML page polling /api/state.
 
-There are no POST routes; the dashboard cannot change anything.
+The only write routes are screen controls (pin a symbol to a ladder, turn
+auto-rotation on/off). Nothing here can reach an order path.
 """
 
 import json
@@ -39,6 +40,32 @@ def make_handler(engine, clock):
             elif path == "/healthz":
                 self._send(200, json.dumps({"ok": True, "connection": engine.connection["state"]}),
                            "application/json")
+            else:
+                self._send(404, "not found", "text/plain")
+
+        def do_POST(self):
+            # only accept requests from this dashboard page (blocks other websites)
+            origin = self.headers.get("Origin")
+            host = self.headers.get("Host", "")
+            if origin and origin not in (f"http://{host}", f"https://{host}"):
+                self._send(403, "forbidden", "text/plain")
+                return
+            if (self.headers.get("Content-Type") or "").split(";")[0].strip() != "application/json":
+                self._send(415, "json only", "text/plain")
+                return
+            try:
+                length = min(int(self.headers.get("Content-Length") or 0), 4096)
+                body = json.loads(self.rfile.read(length) or b"{}")
+            except (ValueError, json.JSONDecodeError):
+                self._send(400, "bad json", "text/plain")
+                return
+            path = self.path.split("?", 1)[0]
+            if path == "/api/pin":
+                ok = engine.set_pinned(str(body.get("symbol", "")).upper(), bool(body.get("pinned")), clock())
+                self._send(200 if ok else 404, json.dumps({"ok": ok}), "application/json")
+            elif path == "/api/autorotate":
+                engine.set_auto_rotate(bool(body.get("on")), clock())
+                self._send(200, json.dumps({"ok": True}), "application/json")
             else:
                 self._send(404, "not found", "text/plain")
 

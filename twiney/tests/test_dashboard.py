@@ -34,11 +34,33 @@ class DashboardTests(unittest.TestCase):
             self.get("/nope")
         self.assertEqual(ctx.exception.code, 404)
 
-    def test_post_is_not_supported(self):
-        req = urllib.request.Request(self.dash.url + "/api/state", data=b"{}", method="POST")
+    def post(self, path, body, headers=None):
+        h = {"Content-Type": "application/json"}
+        h.update(headers or {})
+        req = urllib.request.Request(self.dash.url + path, data=json.dumps(body).encode(), method="POST", headers=h)
+        return urllib.request.urlopen(req, timeout=5)
+
+    def test_pin_and_autorotate_controls(self):
+        self.assertEqual(self.post("/api/pin", {"symbol": "bbb", "pinned": True}).status, 200)
+        self.assertIn("BBB", self.engine.pinned)
+        self.post("/api/pin", {"symbol": "BBB", "pinned": False})
+        self.assertNotIn("BBB", self.engine.pinned)
+        self.post("/api/autorotate", {"on": False})
+        self.assertFalse(self.engine.auto_rotate)
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            self.post("/api/pin", {"symbol": "NOPE", "pinned": True})
+        self.assertEqual(ctx.exception.code, 404)
+
+    def test_other_websites_cannot_post(self):
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            self.post("/api/autorotate", {"on": False}, {"Origin": "http://evil.example"})
+        self.assertEqual(ctx.exception.code, 403)
+        self.assertTrue(self.engine.auto_rotate)
+        req = urllib.request.Request(self.dash.url + "/api/autorotate", data=b"on=0", method="POST",
+                                     headers={"Content-Type": "application/x-www-form-urlencoded"})
         with self.assertRaises(urllib.error.HTTPError) as ctx:
             urllib.request.urlopen(req, timeout=5)
-        self.assertEqual(ctx.exception.code, 501)
+        self.assertEqual(ctx.exception.code, 415)
 
 
 if __name__ == "__main__":

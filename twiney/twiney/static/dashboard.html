@@ -6,156 +6,524 @@
 <title>TWINEY</title>
 <style>
 :root{
-  --bg:#0b0e13; --panel:#121720; --panel2:#171d28; --line:#243044; --text:#d8e0ec; --dim:#7d8aa0;
-  --bid:#2fbf71; --ask:#ef5350; --warn:#f0b429; --info:#4aa3ff; --accent:#b388ff;
+  --bg:#0a0d12; --panel:#11161f; --panel2:#161d29; --line:#243044; --text:#dbe3ee; --dim:#7b889e;
+  --buy:#26d07c; --sell:#ff4d5e; --gold:#ffc53d; --cyan:#3fd0ff; --violet:#b58cff; --warn:#f0b429;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 *{box-sizing:border-box}
+[hidden]{display:none !important}
 body{margin:0;background:var(--bg);color:var(--text);font:13px/1.35 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
-header{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line);background:#0e131b;position:sticky;top:0;z-index:2}
-h1{font-size:16px;letter-spacing:.12em;margin:0 8px 0 0}
+button{font:inherit;color:inherit;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:3px 9px;cursor:pointer}
+button:hover{border-color:var(--dim)}
+button.on{border-color:var(--gold);color:var(--gold)}
+header{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 16px;border-bottom:1px solid var(--line);background:#0d121a;position:sticky;top:0;z-index:5}
+h1{font-size:16px;letter-spacing:.14em;margin:0 6px 0 0}
 .pill{padding:2px 8px;border-radius:999px;border:1px solid var(--line);font-size:11px;white-space:nowrap}
-.pill.ok{border-color:var(--bid);color:var(--bid)} .pill.bad{border-color:var(--ask);color:var(--ask)}
-.pill.warn{border-color:var(--warn);color:var(--warn)} .pill.ro{border-color:var(--accent);color:var(--accent)}
-.dim{color:var(--dim)} .mono{font-family:var(--mono)}
-main{padding:12px 16px;display:grid;gap:12px}
-#alerts{display:flex;gap:8px;overflow-x:auto;min-height:34px}
-.alert{flex:0 0 auto;padding:6px 10px;border-radius:6px;background:var(--panel);border-left:4px solid var(--info);font-family:var(--mono);font-size:12px}
-.alert.buyer{border-color:var(--bid)} .alert.seller{border-color:var(--ask)} .alert.cleaned{border-color:var(--warn)} .alert.pulled{border-color:var(--accent)}
-.alert.fresh{box-shadow:0 0 0 1px currentColor inset}
-#depth{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:12px}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px;min-width:0}
-.card h2{font-size:18px;margin:0;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.row{display:flex;gap:10px;flex-wrap:wrap;align-items:baseline}
-.quote{font-family:var(--mono);font-size:12px}
-table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12px}
-th{color:var(--dim);font-weight:500;text-align:right;padding:3px 4px;border-bottom:1px solid var(--line)}
-td{text-align:right;padding:2px 4px;white-space:nowrap}
-th:first-child,td:first-child{text-align:left}
-.book{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:8px 0}
-.book td.px.bid{color:var(--bid)} .book td.px.ask{color:var(--ask)}
-.book tr.lvl td{background:rgba(179,136,255,.14)}
-.bar{height:6px;border-radius:3px;background:var(--ask);overflow:hidden;margin:4px 0}
-.bar > span{display:block;height:100%;background:var(--bid)}
-.tape-state{font-weight:700;letter-spacing:.04em}
-.sec{margin-top:8px;border-top:1px solid var(--line);padding-top:6px}
-.sec h3{margin:0 0 4px;font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em}
-.state-RELOAD{color:var(--warn);font-weight:700} .v-CLEANED{color:var(--warn)} .v-PULLED{color:var(--accent)}
-.buy{color:var(--bid)} .sell{color:var(--ask)} .mid{color:var(--dim)}
+.pill.ok{border-color:var(--buy);color:var(--buy)} .pill.bad{border-color:var(--sell);color:var(--sell)}
+.pill.warn{border-color:var(--warn);color:var(--warn)} .pill.ro{border-color:var(--violet);color:var(--violet)}
+.dim{color:var(--dim)} .mono{font-family:var(--mono)} .spacer{flex:1}
+main{padding:10px 16px;display:grid;gap:10px}
+
+/* plain-English feed */
+#feed{display:grid;gap:4px;max-height:128px;overflow-y:auto}
+.say{padding:6px 10px;border-radius:6px;background:var(--panel);border-left:4px solid var(--dim);font-size:14px}
+.say b{letter-spacing:.02em}
+.say.buyer{border-color:var(--buy)} .say.seller{border-color:var(--sell)}
+.say.cleaned{border-color:var(--gold)} .say.pulled{border-color:var(--violet)}
+.say.fresh{background:#1a2230}
+.say .age{float:right;color:var(--dim);font-size:11px;margin-left:10px}
+
+/* panes */
+#panes{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start}
+.pane{background:var(--panel);border:1px solid var(--line);border-radius:8px;display:flex;flex-direction:column;
+  flex:1 1 600px;min-width:340px;min-height:520px;height:780px;resize:both;overflow:hidden;position:relative}
+.pane.sized{flex:0 0 auto}
+.pane.pinned{border-color:var(--gold)}
+.p-head{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 10px 4px}
+.p-head .sym{font-size:20px;font-weight:700;letter-spacing:.03em}
+.p-quote{font-family:var(--mono);font-size:12px}
+.p-changed{margin:0 10px;padding:4px 8px;border-radius:5px;background:#3a2f0a;color:var(--gold);font-size:12px}
+.p-say{margin:4px 10px;padding:8px 10px;border-radius:6px;background:var(--panel2);border-left:5px solid var(--dim);font-size:15px;font-weight:600}
+.p-say.reload{border-color:var(--warn);background:#2a2412} .p-say.cleaned{border-color:var(--gold);background:#2b2610}
+.p-say.pulled{border-color:var(--violet);background:#221a33} .p-say.watch{border-color:var(--cyan)}
+.p-say.at{border-color:var(--gold)} .p-say.near{border-color:var(--cyan)}
+.p-lines{margin:0 10px 4px 26px;padding:0;font-size:12.5px;color:#c4cddb;max-height:78px;overflow-y:auto;flex:0 0 auto}
+.p-lines li{margin:1px 0}
+.p-body{flex:1 1 0;display:grid;grid-template-columns:minmax(0,1fr) minmax(260px,340px);grid-template-rows:minmax(0,1fr);gap:8px;padding:4px 10px;min-height:300px}
+.chart-wrap{position:relative;min-height:0;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.chart-wrap canvas{position:absolute;inset:0;width:100%;height:100%}
+.chart-tools{position:absolute;top:4px;left:6px;display:flex;gap:4px;z-index:2}
+.chart-tools button{padding:1px 6px;font-size:11px;background:rgba(17,22,31,.85)}
+.ladder-wrap{overflow-y:auto;border:1px solid var(--line);border-radius:6px;min-height:0;height:100%}
+.p-tape{flex:0 0 auto;max-height:130px;overflow-y:auto;margin:4px 10px 8px;border-top:1px solid var(--line)}
+.empty{display:flex;align-items:center;justify-content:center;flex:1;color:var(--dim);text-align:center;padding:20px}
+
+/* level-memory ladder */
+.lad{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:11.5px}
+.lad th{position:sticky;top:0;background:#0f141c;color:var(--dim);font-weight:500;font-size:10px;padding:3px 2px;z-index:1}
+.lad td{padding:1px 3px;height:19px;white-space:nowrap}
+.lad .px{text-align:center;font-weight:600;color:#cfd8e6;border-left:1px solid var(--line);border-right:1px solid var(--line);position:relative}
+.lad .sz{text-align:right;width:46px}
+.lad .ask .sz,.lad td.asz{text-align:left}
+.lad td.bars{width:28%;position:relative}
+.bar{position:absolute;top:3px;bottom:3px;border-radius:2px}
+.bar.sold{right:2px;background:rgba(38,208,124,.55)}
+.bar.bought{left:2px;background:rgba(255,77,94,.55)}
+.bar-n{position:relative;font-size:10px;color:#e8eef7;z-index:1}
+td.bars.l .bar-n{float:right;margin-right:3px} td.bars.r .bar-n{margin-left:3px}
+.pips{font-size:9px;letter-spacing:-1px}
+.pips.b{color:var(--buy)} .pips.a{color:var(--sell)}
+.lad tr.gap td{border-top:2px dashed var(--line)}
+.lad tr.best-bid td.bsz{color:var(--buy);font-weight:700}
+.lad tr.best-ask td.asz{color:var(--sell);font-weight:700}
+.lad tr.lvl td.px{background:rgba(255,197,61,.18);color:var(--gold)}
+.lad tr.lvl td{border-top:1px solid rgba(255,197,61,.45);border-bottom:1px solid rgba(255,197,61,.45)}
+.lad tr.lastpx td.px::before{content:"▶";position:absolute;left:2px;color:var(--text)}
+.mine{display:inline-block;font-size:9px;font-weight:700;padding:0 4px;border-radius:3px;border:1px solid #fff;color:#fff;margin-left:3px}
+.tag{display:inline-block;font-size:9px;font-weight:700;padding:0 4px;border-radius:3px;background:var(--gold);color:#1a1300;margin-left:3px}
+.who{display:inline-block;font-size:9.5px;font-weight:800;padding:0 4px;border-radius:3px;margin:0 2px}
+.who.buyer{background:var(--buy);color:#04210f} .who.seller{background:var(--sell);color:#2a0409}
+.who.cand{background:transparent;border:1px solid currentColor}
+.who.buyer.cand{color:var(--buy)} .who.seller.cand{color:var(--sell)}
+.who.v{background:var(--violet);color:#150a2a} .who.c{background:var(--gold);color:#1a1300}
+@keyframes glowb{0%,100%{box-shadow:inset 0 0 0 1px rgba(38,208,124,.4)}50%{box-shadow:inset 0 0 12px 2px rgba(38,208,124,.9)}}
+@keyframes glowa{0%,100%{box-shadow:inset 0 0 0 1px rgba(255,77,94,.4)}50%{box-shadow:inset 0 0 12px 2px rgba(255,77,94,.9)}}
+.lad tr.rl-bid td{animation:glowb 1.6s infinite}
+.lad tr.rl-ask td{animation:glowa 1.6s infinite}
+.legend{font-size:10.5px;color:var(--dim);padding:4px 6px;border-top:1px solid var(--line)}
+
+/* tables */
+table.t{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12px}
+table.t th{color:var(--dim);font-weight:500;text-align:right;padding:3px 5px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel)}
+table.t td{text-align:right;padding:2px 5px;white-space:nowrap}
+table.t th:first-child,table.t td:first-child{text-align:left}
+.buy{color:var(--buy)} .sell{color:var(--sell)} .mid{color:var(--dim)}
 .large{font-weight:700;text-decoration:underline}
+tr.atlvl td{background:rgba(255,197,61,.12)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px;min-width:0}
+.card h3{margin:0 0 6px;font-size:11px;color:var(--dim);letter-spacing:.08em}
+#bottom{display:grid;grid-template-columns:2fr 1fr;gap:10px}
+#account{display:grid;grid-template-columns:3fr 2fr 2fr;gap:14px}
+#account h4{margin:0 0 4px;font-size:11px;color:var(--dim);font-weight:600}
+@media (max-width:1100px){#account{grid-template-columns:1fr}}
 .scroll{overflow-x:auto}
-.empty{color:var(--dim);padding:20px;text-align:center;border:1px dashed var(--line);border-radius:8px}
-#bottom{display:grid;grid-template-columns:2fr 1fr;gap:12px}
-@media (max-width:900px){#bottom{grid-template-columns:1fr}}
-@media (max-width:420px){#depth{grid-template-columns:1fr} .book{grid-template-columns:1fr}}
-.msg-error{color:var(--ask)} .msg-warn{color:var(--warn)} .msg-info{color:var(--dim)}
-tr.onslot td:first-child{color:var(--warn)}
-.lv td:nth-child(3),.lv th:nth-child(3){text-align:left;white-space:normal;padding-left:8px}
+.msg-error{color:var(--sell)} .msg-warn{color:var(--warn)} .msg-info{color:var(--dim)}
+tr.onslot td:first-child{color:var(--gold)}
+td.status{text-align:left !important;white-space:normal !important;color:#c4cddb}
+@media (max-width:900px){#bottom{grid-template-columns:1fr} .p-body{grid-template-columns:1fr} .pane{height:auto;resize:none;flex:1 1 100%} .chart-wrap{height:260px}}
 </style>
 </head>
 <body>
 <header>
   <h1>TWINEY</h1>
-  <span class="pill ro" id="mode">READ-ONLY · MARKET DATA ONLY</span>
+  <span class="pill ro">READ-ONLY · MARKET DATA ONLY</span>
   <span class="pill" id="conn">…</span>
   <span class="pill" id="mdt"></span>
   <span class="dim mono" id="meta"></span>
+  <span class="spacer"></span>
+  <button id="rotate" title="When OFF, ladders never switch symbols on their own">Auto-rotate: …</button>
+  <button id="resetLayout" title="Forget pane sizes">Reset layout</button>
 </header>
 <main>
-  <section id="alerts"><span class="dim">No alerts yet.</span></section>
-  <section id="depth"></section>
+  <section id="feed"></section>
+  <section id="panes"></section>
+  <section class="card" id="account-card">
+    <h3>YOUR ORDERS · POSITIONS · FILLS <span class="dim" style="letter-spacing:0">— view only. Place and change orders in TWS; they show up here within seconds.</span></h3>
+    <div id="account"></div>
+  </section>
   <section id="bottom">
-    <div class="card"><h3 class="dim" style="margin:0 0 6px">PS60 PROXIMITY RANKING</h3><div class="scroll" id="ranking"></div></div>
-    <div class="card"><h3 class="dim" style="margin:0 0 6px">FEED MESSAGES</h3><div id="messages"></div></div>
+    <div class="card"><h3>YOUR PS60 PLAYS — CLOSEST FIRST</h3><div class="scroll" id="ranking"></div></div>
+    <div class="card"><h3>FEED MESSAGES</h3><div id="messages"></div></div>
   </section>
 </main>
 <script>
+"use strict";
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const px = v => v == null ? "—" : Number(v).toFixed(Number(v) >= 1 ? 2 : 4);
 const sz = v => v == null ? "—" : Number(v).toLocaleString();
-const pct = v => v == null ? "—" : Number(v).toFixed(2) + "%";
-const MDT = {1:"LIVE",2:"FROZEN",3:"DELAYED",4:"DELAYED-FROZEN"};
+const kfmt = v => !v ? "" : v >= 1e6 ? (v/1e6).toFixed(1)+"M" : v >= 1e4 ? Math.round(v/1e3)+"k" : v >= 1e3 ? (v/1e3).toFixed(1)+"k" : String(Math.round(v));
 const ago = s => s == null ? "—" : s < 60 ? s.toFixed(0) + "s" : (s/60).toFixed(1) + "m";
+const MDT = {1:"LIVE",2:"FROZEN",3:"DELAYED",4:"DELAYED-FROZEN"};
+const store = {
+  get(k, d){ try { const v = localStorage.getItem("twiney." + k); return v == null ? d : JSON.parse(v); } catch(e){ return d; } },
+  set(k, v){ try { localStorage.setItem("twiney." + k, JSON.stringify(v)); } catch(e){} },
+  clear(){ try { Object.keys(localStorage).filter(k => k.startsWith("twiney.")).forEach(k => localStorage.removeItem(k)); } catch(e){} }
+};
+let state = null;
 
-function alertClass(l){ return l.includes("BUYER")?"buyer":l.includes("SELLER")?"seller":l==="CLEANED UP"?"cleaned":"pulled"; }
-function healthPill(h){ const cls = h.status==="OK"?"ok":(h.status==="STALE"||h.status==="NO DATA")?"bad":"warn"; return `<span class="pill ${cls}">${esc(h.status)}</span>`; }
-
-function bookTable(rows, side, levelPrices){
-  const head = side==="bid" ? "<tr><th>BID</th><th>SIZE</th><th>#</th></tr>" : "<tr><th>ASK</th><th>SIZE</th><th>#</th></tr>";
-  let body = "";
-  for (let i=0;i<5;i++){
-    const r = rows[i];
-    if (!r){ body += `<tr><td class="dim">·</td><td></td><td></td></tr>`; continue; }
-    const hit = levelPrices.has(px(r[0]));
-    body += `<tr class="${hit?"lvl":""}"><td class="px ${side}">${px(r[0])}</td><td>${sz(r[1])}</td><td class="dim">${r[2]}</td></tr>`;
-  }
-  return `<table>${head}${body}</table>`;
+async function post(path, body){
+  try { await fetch(path, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)}); }
+  catch(e){}
+  poll(true);
 }
 
-function depthCard(d){
-  const p = d.play, t = d.tape, h = d.health;
-  const levelPrices = new Set([px(p.trigger), p.second_entry!=null?px(p.second_entry):null].filter(Boolean));
-  const buyPct = t.buy_pct==null ? 50 : t.buy_pct;
-  const prints = t.recent.map(r => `<tr><td class="dim">${ago(r.age)}</td><td class="${r.side}">${px(r.price)}</td><td class="${r.side} ${r.large?"large":""}">${sz(r.size)}</td><td class="dim">${esc(r.exchange)}</td></tr>`).join("")
-    || `<tr><td colspan="4" class="dim">no prints yet</td></tr>`;
-  const levels = d.levels.filter(l => l.role !== "auto" || l.displayed > 0 || l.absorbed_window > 0 || l.last_verdict).map(l => `<tr>
-      <td>${px(l.price)} <span class="dim">${esc(l.role)}</span></td>
-      <td class="${l.side==="bid"?"buy":"sell"}">${l.side.toUpperCase()}</td>
-      <td class="state-${esc(l.state)}">${esc(l.state)}${l.out_of_view?' <span class="dim">(off view)</span>':''}${l.last_verdict?` <span class="${l.last_verdict==="CLEANED UP"?"v-CLEANED":l.last_verdict==="PULLED"?"v-PULLED":"dim"}">· ${esc(l.last_verdict)} ${ago(l.last_verdict_age)}</span>`:""}</td>
-      <td>${sz(l.displayed)}</td><td title="total ${sz(l.absorbed_total)}">${sz(l.absorbed_window)}</td><td>${l.refreshes}</td></tr>`).join("");
-  return `<div class="card">
-    <h2>${esc(d.symbol)} <span class="pill ${p.side==="long"?"ok":"bad"}">${esc(p.side.toUpperCase())}</span> ${healthPill(h)}
-      <span class="dim" style="font-size:11px">slot ${ago(d.slot_age)}</span></h2>
-    <div class="row quote"><span>LAST <b>${px(d.last)}</b></span><span class="buy">BID ${px(d.bid)}</span><span class="sell">ASK ${px(d.ask)}</span><span class="dim">SPRD ${d.spread==null?"—":Number(d.spread).toFixed(d.bid>=1?2:4)}</span></div>
-    <div class="row quote dim"><span>TRIGGER <b style="color:var(--text)">${px(p.trigger)}</b></span><span>2ND <b style="color:var(--text)">${px(p.second_entry)}</b></span>${p.target?`<span>TGT ${px(p.target)}</span>`:""}${p.stop?`<span>STOP ${px(p.stop)}</span>`:""}</div>
-    <div class="book">${bookTable(d.book.bids,"bid",levelPrices)}${bookTable(d.book.asks,"ask",levelPrices)}</div>
-    <div class="sec"><h3>Tape · last ${t.window_seconds}s</h3>
-      <div class="row"><span class="tape-state">${esc(t.state)}</span><span class="dim">${t.prints} prints · buy ${sz(Math.round(t.buy_volume))} / sell ${sz(Math.round(t.sell_volume))}${t.large_prints?` · ${t.large_prints} large`:""}</span></div>
-      <div class="bar"><span style="width:${buyPct}%"></span></div>
-      <div class="scroll" style="max-height:150px;overflow-y:auto"><table><tr><th>AGE</th><th>PRICE</th><th>SIZE</th><th>EX</th></tr>${prints}</table></div>
+/* ---------- panes: fixed DOM per screen position ---------- */
+const panesEl = document.getElementById("panes");
+const paneEls = [];
+
+function ensurePane(i){
+  if (paneEls[i]) return paneEls[i];
+  const el = document.createElement("div");
+  el.className = "pane";
+  el.innerHTML = `
+    <div class="p-head"></div>
+    <div class="p-changed" hidden></div>
+    <div class="p-say"></div>
+    <ul class="p-lines"></ul>
+    <div class="p-body">
+      <div class="chart-wrap"><div class="chart-tools"></div><canvas></canvas></div>
+      <div class="ladder-wrap"></div>
     </div>
-    <div class="sec"><h3>Watched levels</h3><div class="scroll"><table class="lv">
-      <tr><th>LEVEL</th><th>SIDE</th><th>STATE</th><th>SHOWN</th><th>ABSORBED</th><th>REFILLS</th></tr>${levels}</table></div></div>
-    <div class="sec dim mono" style="font-size:11px">L1 ${ago(h.l1_age)} · depth ${ago(h.depth_age)} · tape ${ago(h.tape_age)} · 317 resets ${h.resets} · anomalies ${h.anomalies}${h.last_error?` · <span class="msg-error">${esc(h.last_error)}</span>`:""}</div>
-  </div>`;
+    <div class="p-tape"></div>
+    <div class="empty" hidden></div>`;
+  const saved = store.get("pane." + i, null);
+  if (saved && window.innerWidth > 900){ el.style.width = saved.w + "px"; el.style.height = saved.h + "px"; el.classList.add("sized"); }
+  panesEl.appendChild(el);
+  const p = {el, i, head: el.querySelector(".p-head"), changed: el.querySelector(".p-changed"),
+    say: el.querySelector(".p-say"), lines: el.querySelector(".p-lines"), body: el.querySelector(".p-body"),
+    canvas: el.querySelector("canvas"), tools: el.querySelector(".chart-tools"),
+    ladder: el.querySelector(".ladder-wrap"), tape: el.querySelector(".p-tape"), empty: el.querySelector(".empty"),
+    data: null};
+  // remember user-resized pane sizes
+  let userSized = !!saved;
+  el.addEventListener("mousedown", e => {
+    const r = el.getBoundingClientRect();
+    if (e.clientX > r.right - 22 && e.clientY > r.bottom - 22) userSized = true;
+  });
+  new ResizeObserver(() => {
+    if (userSized && window.innerWidth > 900){
+      el.classList.add("sized");
+      store.set("pane." + i, {w: el.offsetWidth, h: el.offsetHeight});
+    }
+    drawChart(p);
+  }).observe(el);
+  p.tools.addEventListener("click", e => {
+    const tf = e.target.dataset.tf;
+    if (tf){ store.set("tf." + i, +tf); drawChart(p); renderTools(p); }
+  });
+  p.head.addEventListener("click", e => {
+    const b = e.target.closest("button[data-pin]");
+    if (b) post("/api/pin", {symbol: b.dataset.pin, pinned: b.dataset.on === "1"});
+  });
+  p.ladder.addEventListener("wheel", () => { p.userScroll = Date.now(); }, {passive: true});
+  p.ladder.addEventListener("touchmove", () => { p.userScroll = Date.now(); }, {passive: true});
+  paneEls[i] = p;
+  renderTools(p);
+  return p;
 }
+
+function renderTools(p){
+  const tf = store.get("tf." + p.i, 1);
+  p.tools.innerHTML = [1, 5].map(m => `<button data-tf="${m}" class="${tf===m?"on":""}">${m}m</button>`).join("");
+}
+
+function pips(n, cls){
+  if (!n) return "";
+  const dots = "●".repeat(Math.min(n, 6)) + (n > 6 ? "+" + (n - 6) : "");
+  return `<span class="pips ${cls}" title="size came back ${n}x after being hit">${dots}</span>`;
+}
+
+function whoTag(row, side){
+  const st = row[side + "_state"], n = row[side + "_refills"] || 0, v = row[side + "_verdict"];
+  const name = side === "bid" ? "buyer" : "seller";
+  if (v === "CLEANED UP") return `<span class="who c">CLEANED</span>`;
+  if (v === "PULLED") return `<span class="who v">PULLED</span>`;
+  if (st === "RELOAD") return `<span class="who ${name}">${name.toUpperCase()} ×${n}</span>`;
+  if (st === "BUILDING" && n >= 1) return `<span class="who ${name} cand">${name}?</span>`;
+  return "";
+}
+
+function ladderHTML(L){
+  if (!L || !L.rows.length) return `<div class="empty">Waiting for the book…</div>`;
+  const ms = Math.max(L.max_traded, 1);
+  let h = `<table class="lad"><tr>
+    <th title="Shares sold INTO the bid at this price (last ${L.memory_minutes} min). Big green = a buyer absorbing.">SOLD INTO BID</th>
+    <th>BID</th><th>PRICE</th><th>ASK</th>
+    <th title="Shares bought FROM the ask at this price (last ${L.memory_minutes} min). Big red = a seller absorbing.">BOUGHT AT ASK</th></tr>`;
+  for (const r of L.rows){
+    const cls = [r.gap?"gap":"", r.best_bid?"best-bid":"", r.best_ask?"best-ask":"", r.tags.length?"lvl":"", r.last?"lastpx":"",
+      r.bid_state==="RELOAD"?"rl-bid":"", r.ask_state==="RELOAD"?"rl-ask":""].join(" ");
+    const sw = r.sold ? Math.max(4, 100 * r.sold / ms) : 0, bw = r.bought ? Math.max(4, 100 * r.bought / ms) : 0;
+    h += `<tr class="${cls}">
+      <td class="bars l">${sw?`<span class="bar sold" style="width:${sw}%"></span>`:""}<span class="bar-n">${kfmt(r.sold)}</span></td>
+      <td class="sz bsz">${whoTag(r,"bid")}${pips(r.bid_refills,"b")} ${r.bid?kfmt(r.bid):""}</td>
+      <td class="px">${px(r.price)}${r.tags.map(t => `<span class="tag">${esc(t)}</span>`).join("")}${(r.mine||[]).map(t => `<span class="mine">${esc(t)}</span>`).join("")}</td>
+      <td class="sz asz">${r.ask?kfmt(r.ask):""} ${pips(r.ask_refills,"a")}${whoTag(r,"ask")}</td>
+      <td class="bars r">${bw?`<span class="bar bought" style="width:${bw}%"></span>`:""}<span class="bar-n">${kfmt(r.bought)}</span></td></tr>`;
+  }
+  h += `</table><div class="legend">Every row remembers the last ${L.memory_minutes} min. <span class="buy">Green bar</span> = shares sold into the bid there,
+    <span class="sell">red bar</span> = shares bought from the ask. <span class="pips b">●</span><span class="pips a">●</span> = times the size came back after being hit.
+    A glowing row = a reload is confirmed there. Gold rows = your levels.</div>`;
+  return h;
+}
+
+function tapeHTML(t){
+  const rows = t.recent.map(r => `<tr class="${r.at?"atlvl":""}"><td class="dim">${ago(r.age)}</td>
+    <td class="${r.side}">${px(r.price)}${r.at?` <span class="tag">${esc(r.at)}</span>`:""}</td>
+    <td class="${r.side} ${r.large?"large":""}">${sz(r.size)}</td><td class="dim">${esc(r.exchange)}</td></tr>`).join("")
+    || `<tr><td colspan="4" class="dim">no prints yet</td></tr>`;
+  return `<table class="t"><tr><th>TIME & SALES</th><th>PRICE</th><th>SIZE</th><th>EX</th></tr>${rows}</table>`;
+}
+
+function renderPane(p, d){
+  p.data = d;
+  const showEmpty = !d;
+  p.empty.hidden = !showEmpty;
+  for (const el of [p.say, p.lines, p.body, p.tape]) el.hidden = showEmpty;
+  p.el.classList.toggle("pinned", !!(d && d.pinned));
+  if (!d){
+    p.head.innerHTML = `<span class="sym dim">Ladder ${p.i + 1}</span>`;
+    p.changed.hidden = true;
+    p.empty.innerHTML = `Empty ladder.<br>It fills with the play closest to its level, or pin one from the list below.`;
+    return;
+  }
+  const h = d.health, pl = d.play;
+  const hcls = h.status==="OK"?"ok":(h.status==="STALE"||h.status==="NO DATA")?"bad":"warn";
+  p.head.innerHTML = `<span class="sym">${esc(d.symbol)}</span>
+    <span class="pill ${pl.side==="long"?"ok":"bad"}">${esc(pl.side.toUpperCase())}</span>
+    <button data-pin="${esc(d.symbol)}" data-on="${d.pinned?0:1}" class="${d.pinned?"on":""}" title="Pinned ladders never switch symbols">${d.pinned?"📌 Pinned":"Pin"}</button>
+    <span class="pill ${hcls}">${esc(h.status)}</span>
+    <span class="p-quote">LAST <b>${px(d.last)}</b> <span class="buy">${px(d.bid)}</span> × <span class="sell">${px(d.ask)}</span></span>
+    <span class="p-quote dim">TRIG <b style="color:var(--gold)">${px(pl.trigger)}</b> · 2ND <b style="color:var(--cyan)">${px(pl.second_entry)}</b></span>
+    ${d.position ? `<span class="pill ${d.position.pnl >= 0 ? "ok" : "bad"}">POS ${d.position.qty > 0 ? "+" : ""}${sz(d.position.qty)} @ ${px(d.position.avg_cost)}${d.position.pnl != null ? ` · ${d.position.pnl >= 0 ? "+" : "−"}$${sz(Math.abs(d.position.pnl).toFixed(0))}` : ""}</span>` : ""}
+    ${d.orders.length ? `<span class="pill">${d.orders.length} working order${d.orders.length > 1 ? "s" : ""}</span>` : ""}`;
+  if (d.changed){
+    p.changed.hidden = false;
+    p.changed.textContent = `This ladder switched from ${d.changed.prev} to ${d.symbol} (${d.changed.reason === "pinned" ? "you pinned it" : "it is closer to its level"}) ${ago(state.now - d.changed.t)} ago.`;
+  } else p.changed.hidden = true;
+  p.say.className = "p-say " + (d.tone || "");
+  p.say.textContent = d.headline;
+  p.lines.innerHTML = d.lines.map(l => `<li>${esc(l)}</li>`).join("");
+  const keep = p.ladder.scrollTop;
+  p.ladder.innerHTML = ladderHTML(d.ladder);
+  // keep the current price centered unless the trader scrolled the ladder in the last 8s
+  const cur = p.ladder.querySelector("tr.lastpx") || p.ladder.querySelector("tr.best-ask");
+  if (cur && Date.now() - (p.userScroll || 0) > 8000){
+    p.ladder.scrollTop = cur.offsetTop - p.ladder.clientHeight / 2;
+  } else p.ladder.scrollTop = keep;
+  p.tape.innerHTML = tapeHTML(d.tape);
+  drawChart(p);
+}
+
+/* ---------- chart: candles + your levels + absorption bubbles ---------- */
+function aggBars(bars, tf){
+  if (tf === 1) return bars.map(b => b.slice());
+  const out = [], span = tf * 60;
+  for (const b of bars){
+    const t0 = Math.floor(b[0] / span) * span, last = out[out.length - 1];
+    if (last && last[0] === t0){ last[2] = Math.max(last[2], b[2]); last[3] = Math.min(last[3], b[3]); last[4] = b[4]; last[5] += b[5]; last[6] += b[6]; last[7] += b[7]; }
+    else out.push([t0, b[1], b[2], b[3], b[4], b[5], b[6], b[7]]);
+  }
+  return out;
+}
+
+const LEVEL_STYLE = {trigger:["#ffc53d",[],2], second_entry:["#3fd0ff",[6,4],1.6], extra:["#b9c3d3",[3,4],1.2],
+  target:["#26d07c",[2,4],1], stop:["#ff4d5e",[2,4],1]};
+
+function drawChart(p){
+  const d = p.data, cv = p.canvas;
+  if (!d || p.body.hidden) return;
+  const W = cv.clientWidth, H = cv.clientHeight;
+  if (!W || !H) return;
+  const dpr = window.devicePixelRatio || 1;
+  if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)){ cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
+  const g = cv.getContext("2d");
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, W, H);
+  const tf = store.get("tf." + p.i, 1), span = tf * 60;
+  const labelW = 86, plotW = W - labelW, volH = Math.max(28, H * 0.16), plotH = H - volH - 18;
+  const cw = tf === 1 ? 7 : 9;
+  const n = Math.max(10, Math.floor(plotW / cw));
+  const bars = aggBars(d.bars, tf).slice(-n);
+  g.font = "11px ui-monospace, Menlo, Consolas, monospace";
+  if (!bars.length){
+    g.fillStyle = "#7b889e"; g.fillText("Chart builds as trades come in…", 12, 40);
+  }
+  // y range: bars plus your trigger / 2nd entry / levels so they are always on screen
+  let lo = Infinity, hi = -Infinity;
+  for (const b of bars){ lo = Math.min(lo, b[3]); hi = Math.max(hi, b[2]); }
+  if (d.last){ lo = Math.min(lo, d.last); hi = Math.max(hi, d.last); }
+  const core = d.user_levels.filter(l => ["trigger","second_entry","extra"].includes(l.role));
+  for (const l of core){ lo = Math.min(lo, l.price); hi = Math.max(hi, l.price); }
+  // target / stop are drawn only when they fall inside this range (they never squash the chart)
+  if (!isFinite(lo)) return;
+  const pad = Math.max((hi - lo) * 0.08, lo * 0.0005);
+  lo -= pad; hi += pad;
+  const y = v => 8 + (hi - v) / (hi - lo) * (plotH - 8);
+  const x0 = plotW - bars.length * cw;
+  const xOf = t0 => x0 + ((t0 - (bars.length ? bars[0][0] : 0)) / span) * cw + cw / 2;
+
+  // grid
+  g.strokeStyle = "#1b2433"; g.lineWidth = 1;
+  for (let k = 0; k <= 4; k++){ const yy = 8 + k * (plotH - 8) / 4; g.beginPath(); g.moveTo(0, yy); g.lineTo(plotW, yy); g.stroke(); }
+
+  // your levels: zone band + line + label
+  const tickOf = v => v >= 1 ? 0.01 : 0.0001;
+  for (const l of d.user_levels){
+    if (l.price < lo || l.price > hi) continue;
+    const [col, dash, lw] = LEVEL_STYLE[l.role] || LEVEL_STYLE.extra;
+    const yy = y(l.price), band = Math.max(3, Math.abs(y(l.price + tickOf(l.price)) - yy));
+    g.fillStyle = col + "22"; g.fillRect(0, yy - band, plotW, band * 2);
+    g.strokeStyle = col; g.lineWidth = lw; g.setLineDash(dash);
+    g.beginPath(); g.moveTo(0, yy); g.lineTo(plotW, yy); g.stroke(); g.setLineDash([]);
+    g.fillStyle = col; g.fillRect(plotW, yy - 8, labelW, 16);
+    g.fillStyle = "#0a0d12"; g.fillText(`${l.label} ${px(l.price)}`.slice(0, 13), plotW + 3, yy + 4);
+  }
+
+  // candles
+  for (let k = 0; k < bars.length; k++){
+    const b = bars[k], x = x0 + k * cw + cw / 2, up = b[4] >= b[1];
+    g.strokeStyle = g.fillStyle = up ? "#26d07c" : "#ff4d5e";
+    g.beginPath(); g.moveTo(x, y(b[2])); g.lineTo(x, y(b[3])); g.stroke();
+    const top = y(Math.max(b[1], b[4])), bh = Math.max(1, Math.abs(y(b[1]) - y(b[4])));
+    g.fillRect(x - cw * 0.35, top, cw * 0.7, bh);
+  }
+  // volume, split buy / sell where known
+  const vmax = Math.max(1, ...bars.map(b => b[5]));
+  for (let k = 0; k < bars.length; k++){
+    const b = bars[k], x = x0 + k * cw + cw * 0.15, base = H - 18, full = (b[5] / vmax) * (volH - 6);
+    const known = b[6] + b[7];
+    if (known > 0){
+      const hb = full * b[6] / b[5], hs = full * b[7] / b[5];
+      g.fillStyle = "#26d07c99"; g.fillRect(x, base - hb, cw * 0.7, hb);
+      g.fillStyle = "#ff4d5e99"; g.fillRect(x, base - hb - hs, cw * 0.7, hs);
+      g.fillStyle = "#7b889e55"; g.fillRect(x, base - full, cw * 0.7, full - hb - hs);
+    } else { g.fillStyle = "#7b889e66"; g.fillRect(x, base - full, cw * 0.7, full); }
+  }
+
+  // absorption bubbles: shares traded into resting size at your levels / big levels
+  if (bars.length){
+    const first = bars[0][0], bucket = {};
+    for (const [m, price, side, shares] of d.marks){
+      const t0 = Math.floor(m / span) * span;
+      if (t0 < first) continue;
+      const key = t0 + "|" + price + "|" + side;
+      bucket[key] = bucket[key] || [t0, price, side, 0];
+      bucket[key][3] += shares;
+    }
+    const vals = Object.values(bucket), mx = Math.max(1, ...vals.map(v => v[3]));
+    for (const [t0, price, side, shares] of vals){
+      if (price < lo || price > hi) continue;
+      const r = 3 + 11 * Math.sqrt(shares / mx);
+      g.fillStyle = side === "bid" ? "rgba(38,208,124,.45)" : "rgba(255,77,94,.45)";
+      g.strokeStyle = side === "bid" ? "#26d07c" : "#ff4d5e";
+      g.beginPath(); g.arc(xOf(t0), y(price), r, 0, Math.PI * 2); g.fill(); g.stroke();
+    }
+    // calls: R = reload, C = cleaned up, P = pulled
+    for (const [t, price, label, side] of d.events){
+      if (price < lo || price > hi) continue;
+      const t0 = Math.floor(t / span) * span;
+      if (t0 < first) continue;
+      const letter = label.startsWith("RELOAD") ? "R" : label === "CLEANED UP" ? "C" : "P";
+      const col = letter === "C" ? "#ffc53d" : letter === "P" ? "#b58cff" : side === "bid" ? "#26d07c" : "#ff4d5e";
+      const xx = xOf(t0), yy = y(price) + (side === "bid" ? 16 : -16);
+      g.fillStyle = col; g.beginPath(); g.arc(xx, yy, 7, 0, Math.PI * 2); g.fill();
+      g.fillStyle = "#0a0d12"; g.font = "bold 10px system-ui"; g.fillText(letter, xx - 3.5, yy + 3.5);
+      g.font = "11px ui-monospace, Menlo, Consolas, monospace";
+    }
+  }
+
+  // your working orders
+  for (const o of d.orders){
+    if (!o.price || o.price < lo || o.price > hi) continue;
+    const yy = y(o.price), col = o.action === "BUY" ? "#9fffcf" : "#ffb3bb";
+    g.strokeStyle = col; g.lineWidth = 1.2; g.setLineDash([8, 3, 2, 3]);
+    g.beginPath(); g.moveTo(0, yy); g.lineTo(plotW, yy); g.stroke(); g.setLineDash([]);
+    g.fillStyle = "#0a0d12"; g.strokeStyle = col; g.fillRect(plotW, yy - 8, labelW, 16); g.strokeRect(plotW + .5, yy - 7.5, labelW - 1, 15);
+    g.fillStyle = col; g.fillText(`YOU ${o.action} ${sz(o.qty)}`.slice(0, 13), plotW + 3, yy + 4);
+  }
+  // last price
+  if (d.last){
+    const yy = y(d.last);
+    g.strokeStyle = "#dbe3ee"; g.setLineDash([2, 3]); g.beginPath(); g.moveTo(0, yy); g.lineTo(plotW, yy); g.stroke(); g.setLineDash([]);
+    g.fillStyle = "#dbe3ee"; g.fillRect(plotW, yy - 8, labelW, 16);
+    g.fillStyle = "#0a0d12"; g.fillText(`LAST ${px(d.last)}`, plotW + 3, yy + 4);
+  }
+  // time axis
+  g.fillStyle = "#7b889e";
+  const every = Math.max(1, Math.ceil(70 / cw));
+  for (let k = 0; k < bars.length; k += every){
+    const dt = new Date(bars[k][0] * 1000);
+    g.fillText(dt.toTimeString().slice(0, 5), x0 + k * cw, H - 4);
+  }
+  // key
+  g.fillStyle = "#7b889e";
+  g.fillText("● green = buyer absorbing   ● red = seller absorbing   R/C/P = reload / cleaned / pulled", 60, H - volH - 4);
+}
+
+/* ---------- page ---------- */
+function sayClass(a){ return a.label.includes("BUYER") ? "buyer" : a.label.includes("SELLER") ? "seller" : a.label === "CLEANED UP" ? "cleaned" : "pulled"; }
 
 function render(s){
-  const c = s.connection;
-  const conn = document.getElementById("conn");
+  state = s;
+  const c = s.connection, conn = document.getElementById("conn");
   conn.textContent = c.state + (c.detail ? " · " + c.detail : "");
-  conn.className = "pill " + (c.state==="CONNECTED"?"ok":c.state==="CONNECTING"||c.state==="REPLAY"||c.state==="DEMO"?"warn":"bad");
+  conn.className = "pill " + (c.state==="CONNECTED"?"ok":["CONNECTING","REPLAY","DEMO"].includes(c.state)?"warn":"bad");
   document.getElementById("mdt").textContent = c.market_data_type ? "DATA " + (MDT[c.market_data_type]||c.market_data_type) : "";
-  document.getElementById("meta").textContent = `${s.depth.length}/${s.slots} depth slots · up ${ago(s.uptime)}` + (s.recording ? ` · rec ${s.recording}` : "");
+  document.getElementById("meta").textContent = `${s.depth.length}/${s.slots} ladders · up ${ago(s.uptime)}`;
+  const rot = document.getElementById("rotate");
+  rot.textContent = "Auto-rotate: " + (s.auto_rotate ? "ON" : "OFF");
+  rot.className = s.auto_rotate ? "" : "on";
 
-  const al = document.getElementById("alerts");
-  al.innerHTML = s.alerts.length ? s.alerts.slice(0,12).map(a => {
+  document.getElementById("feed").innerHTML = s.alerts.length ? s.alerts.slice(0, 20).map(a => {
     const age = s.now - a.t;
-    return `<div class="alert ${alertClass(a.label)} ${age<10?"fresh":""}"><b>${esc(a.symbol)}</b> ${esc(a.label)} @ ${px(a.price)} <span class="dim">${esc(a.side)} · ${esc(a.role)} · abs ${sz(a.absorbed)} · ${ago(age)} ago</span></div>`;
-  }).join("") : `<span class="dim">No alerts yet. Calls appear only when the configured evidence exists.</span>`;
+    return `<div class="say ${sayClass(a)} ${age < 15 ? "fresh" : ""}"><span class="age">${ago(age)} ago</span><b>${esc(a.symbol)}</b> — ${esc(a.text || a.label)}</div>`;
+  }).join("") : `<div class="say">No calls yet. TWINEY speaks only when the evidence is there: price approaching your level, a buyer or seller reloading, a level cleaned up or pulled.</div>`;
 
-  document.getElementById("depth").innerHTML = s.depth.length ? s.depth.map(depthCard).join("")
-    : `<div class="empty">No depth slots assigned yet — waiting for connection and L1 prices.</div>`;
+  s.panes.forEach((d, i) => renderPane(ensurePane(i), d));
 
   const rows = s.ranking.map(r => `<tr class="${r.depth?"onslot":""}">
-    <td>${r.rank ?? "—"} ${esc(r.symbol)}${r.depth?" ◆":""}</td><td class="${r.side==="long"?"buy":"sell"}">${esc(r.side)}</td>
-    <td>${px(r.last)}</td><td>${px(r.trigger)}</td><td>${pct(r.dist_trigger_pct)}</td><td>${px(r.second_entry)}</td><td>${pct(r.dist_second_pct)}</td>
-    <td>${esc(r.health)}</td><td class="dim" style="text-align:left;white-space:normal">${esc(r.notes)}</td></tr>`).join("");
-  document.getElementById("ranking").innerHTML = `<table><tr><th>#</th><th>SIDE</th><th>LAST</th><th>TRIGGER</th><th>DIST</th><th>2ND ENTRY</th><th>DIST</th><th>FEED</th><th style="text-align:left">NOTES</th></tr>${rows}</table>`;
+    <td>${r.rank ?? "—"} ${esc(r.symbol)}${r.depth?" ◆":""}</td>
+    <td class="${r.side==="long"?"buy":"sell"}">${esc(r.side)}</td>
+    <td>${px(r.last)}</td><td style="color:var(--gold)">${px(r.trigger)}</td><td style="color:var(--cyan)">${px(r.second_entry)}</td>
+    <td class="status">${esc(r.status)}</td>
+    <td><button data-pin="${esc(r.symbol)}" data-on="${r.pinned?0:1}" class="${r.pinned?"on":""}">${r.pinned?"📌 Unpin":"Pin to ladder"}</button></td></tr>`).join("");
+  document.getElementById("ranking").innerHTML = `<table class="t"><tr><th>#</th><th>SIDE</th><th>LAST</th><th>TRIGGER</th><th>2ND</th><th style="text-align:left">WHERE PRICE IS</th><th></th></tr>${rows}</table>`;
+
+  const A = s.account;
+  const pend = A.pending.map(o => `<tr><td>${esc(o.symbol)}</td><td class="${o.action==="BUY"?"buy":"sell"}">${esc(o.action)}</td>
+    <td>${sz(o.remaining ?? o.qty)}${o.filled ? ` <span class="dim">(${sz(o.filled)} filled)</span>` : ""}</td><td>${esc(o.type)}</td>
+    <td>${o.lmt ? px(o.lmt) : ""}${o.aux ? ` <span class="dim">stop ${px(o.aux)}</span>` : ""}</td><td class="dim">${esc(o.tif || "")}</td><td>${esc(o.status || "")}</td></tr>`).join("")
+    || `<tr><td colspan="7" class="dim">${A.seen ? "No working orders." : "Waiting for IBKR account data…"}</td></tr>`;
+  const done = A.done.slice(0, 5).map(o => `<tr class="dim"><td>${esc(o.symbol)}</td><td>${esc(o.action)}</td><td>${sz(o.qty)}</td><td>${esc(o.type)}</td>
+    <td>${o.lmt ? px(o.lmt) : ""}</td><td></td><td>${esc(o.status)}</td></tr>`).join("");
+  const pos = A.positions.map(p => { const pnl = p.last ? (p.last - p.avg_cost) * p.qty : null;
+    return `<tr><td>${esc(p.symbol)}</td><td class="${p.qty>0?"buy":"sell"}">${p.qty>0?"+":""}${sz(p.qty)}</td><td>${px(p.avg_cost)}</td><td>${px(p.last)}</td>
+    <td class="${pnl==null?"":pnl>=0?"buy":"sell"}">${pnl==null?"—":(pnl>=0?"+":"−")+"$"+sz(Math.abs(pnl).toFixed(0))}</td></tr>`; }).join("")
+    || `<tr><td colspan="5" class="dim">Flat.</td></tr>`;
+  const fills = A.fills.map(f => `<tr><td class="dim">${esc(String(f.time).slice(-8))}</td><td>${esc(f.symbol)}</td>
+    <td class="${f.side==="BOT"?"buy":"sell"}">${f.side==="BOT"?"BOUGHT":"SOLD"}</td><td>${sz(f.shares)}</td><td>${px(f.price)}</td></tr>`).join("")
+    || `<tr><td colspan="5" class="dim">No fills today.</td></tr>`;
+  document.getElementById("account").innerHTML = `
+    <div><h4>PENDING ORDERS</h4><div class="scroll"><table class="t"><tr><th>SYMBOL</th><th>SIDE</th><th>QTY</th><th>TYPE</th><th>PRICE</th><th>TIF</th><th>STATUS</th></tr>${pend}${done}</table></div></div>
+    <div><h4>POSITIONS</h4><div class="scroll"><table class="t"><tr><th>SYMBOL</th><th>QTY</th><th>AVG</th><th>LAST</th><th>P&amp;L</th></tr>${pos}</table></div></div>
+    <div><h4>TODAY'S FILLS</h4><div class="scroll" style="max-height:170px;overflow-y:auto"><table class="t"><tr><th>TIME</th><th>SYMBOL</th><th>SIDE</th><th>QTY</th><th>PRICE</th></tr>${fills}</table></div></div>`;
 
   document.getElementById("messages").innerHTML = s.messages.map(m =>
     `<div class="msg-${esc(m.level)} mono" style="font-size:11px">${ago(s.now-m.t)} · ${esc(m.text)}</div>`).join("") || `<span class="dim">—</span>`;
 }
 
-async function poll(){
-  try{
+document.getElementById("ranking").addEventListener("click", e => {
+  const b = e.target.closest("button[data-pin]");
+  if (b) post("/api/pin", {symbol: b.dataset.pin, pinned: b.dataset.on === "1"});
+});
+document.getElementById("rotate").addEventListener("click", () => post("/api/autorotate", {on: !(state && state.auto_rotate)}));
+document.getElementById("resetLayout").addEventListener("click", () => {
+  store.clear();
+  paneEls.forEach(p => { p.el.style.width = ""; p.el.style.height = ""; p.el.classList.remove("sized"); renderTools(p); });
+});
+
+let timer = null;
+async function poll(now){
+  clearTimeout(timer);
+  try {
     const r = await fetch("/api/state", {cache:"no-store"});
     render(await r.json());
-  }catch(e){
+  } catch(e){
     const conn = document.getElementById("conn");
     conn.textContent = "DASHBOARD LOST CONTACT WITH TWINEY"; conn.className = "pill bad";
   }
-  setTimeout(poll, 500);
+  timer = setTimeout(poll, 500);
 }
 poll();
 </script>

@@ -31,11 +31,13 @@ class SafetyTests(unittest.TestCase):
                 for n, line in enumerate(fh, 1):
                     self.assertIsNone(pattern.search(line), f"{path}:{n}: {line.strip()}")
 
-    def test_dashboard_exposes_no_write_routes(self):
+    def test_dashboard_write_routes_are_screen_controls_only(self):
         with open(os.path.join(ROOT, "twiney", "dashboard.py"), encoding="utf-8") as fh:
             src = fh.read()
-        for verb in ("do_POST", "do_PUT", "do_DELETE", "do_PATCH"):
+        for verb in ("do_PUT", "do_DELETE", "do_PATCH"):
             self.assertNotIn(verb, src)
+        routes = set(re.findall(r'path == "(/api/[a-z]+)"', src))
+        self.assertEqual(routes, {"/api/state", "/api/pin", "/api/autorotate"})
 
     def test_real_ibapi_client_is_guarded_when_installed(self):
         try:
