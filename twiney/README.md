@@ -4,6 +4,12 @@ A read-only IBKR order-flow workstation built around PS60 levels. **There is no 
 It sends only market-data requests. The client class also blocks the order calls
 (`placeOrder`, `cancelOrder`, `reqGlobalCancel`, `exerciseOptions`, `reqIds`), which raise before anything reaches TWS.
 
+## Quick start (double-click)
+- **Windows:** `start_demo.bat` to try the demo, `start_twiney.bat` to connect to TWS.
+- **Mac:** `start_demo.command` / `start_twiney.command` (first time: right-click → Open).
+
+The launchers create `config.json` and `plays.json` from the examples if they are missing. You still need Python and IBKR's `ibapi` package (steps 3–4 below).
+
 ## Workflow
 All commands run from this `twiney/` folder.
 
