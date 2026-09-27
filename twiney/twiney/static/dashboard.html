@@ -23,9 +23,45 @@ h1{font-size:16px;letter-spacing:.14em;margin:0 6px 0 0}
 .pill.warn{border-color:var(--warn);color:var(--warn)} .pill.ro{border-color:var(--violet);color:var(--violet)}
 .dim{color:var(--dim)} .mono{font-family:var(--mono)} .spacer{flex:1}
 main{padding:10px 16px;display:grid;gap:10px}
+/* free layout: every block is a window on the desk */
+body.free main{display:block;position:relative;min-height:1400px;padding:0}
+body.free .pane.win{height:auto}
+body.free .win{position:absolute;margin:0;resize:both;overflow:hidden;min-width:260px;min-height:120px;display:flex;flex-direction:column;z-index:1}
+body.free .win.front{z-index:3}
+.win.hidden{display:none !important}
+.winbar{display:flex;align-items:center;gap:8px;padding:4px 8px;background:#0f141c;border-bottom:1px solid var(--line);font-size:11px;letter-spacing:.06em;color:var(--dim);user-select:none;cursor:grab}
+.winbar:active{cursor:grabbing}
+.winbar b{color:var(--text)}
+.winbar .x{margin-left:auto;cursor:pointer;padding:0 6px;font-size:13px}
+.winbar .x:hover{color:var(--sell)}
+.win .wbody{flex:1;min-height:0;overflow:auto}
+#feed.win .wbody{padding:6px}
+body:not(.free) .winbar{display:none}
+.menu{position:relative}
+.menu .pop{display:none;position:absolute;right:0;top:110%;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:220px;z-index:40;box-shadow:0 8px 24px rgba(0,0,0,.5)}
+.menu.open .pop{display:block}
+.pop label{display:flex;gap:8px;align-items:center;padding:3px 0;font-size:12.5px;color:var(--text);cursor:pointer}
+.pop h5{margin:6px 0 2px;font-size:10px;color:var(--dim);letter-spacing:.08em}
+.pop hr{border:0;border-top:1px solid var(--line);margin:6px 0}
+#alertsBtn.off{color:var(--dim);text-decoration:line-through}
+.p-head .gear{position:static}
+.p-head .gear .pop{position:fixed;right:auto;top:auto}
+.pane[data-hide~="story"] .p-say,.pane[data-hide~="story"] .p-lines{display:none !important}
+.pane[data-hide~="trade"] .tradebar{display:none !important}
+.pane[data-hide~="chart"] .chart-wrap,.pane[data-hide~="chart"] .divider{display:none !important}
+.pane[data-hide~="chart"] .p-body{grid-template-columns:1fr}
+.pane[data-hide~="ladder"] .ladder-wrap,.pane[data-hide~="ladder"] .divider{display:none !important}
+.pane[data-hide~="ladder"] .p-body{grid-template-columns:1fr}
+.pane[data-hide~="tape"] .p-tape{display:none !important}
+.pane[data-hide~="banner"] .p-changed{display:none !important}
+.pane[data-cols~="nomem"] .lad td.bars,.pane[data-cols~="nomem"] .lad th:nth-child(2),.pane[data-cols~="nomem"] .lad th:nth-child(6){display:none}
+.pane[data-cols~="notrade"] .lad td.act,.pane[data-cols~="notrade"] .lad th.act{display:none}
+.pane[data-cols~="nolegend"] .legend{display:none}
 
 /* plain-English feed */
-#feed{display:grid;gap:4px;max-height:128px;overflow-y:auto}
+#feed{max-height:150px;overflow-y:auto;padding:0}
+#feedBody{display:grid;gap:4px}
+body:not(.free) #feed.card{padding:0;background:transparent;border:0}
 .say{padding:6px 10px;border-radius:6px;background:var(--panel);border-left:4px solid var(--dim);font-size:14px}
 .say b{letter-spacing:.02em}
 .say.buyer{border-color:var(--buy)} .say.seller{border-color:var(--sell)}
@@ -173,20 +209,23 @@ td.status{text-align:left !important;white-space:normal !important;color:#c4cddb
   <span class="spacer"></span>
   <label class="dim" title="Skip the confirmation box on every order"><input type="checkbox" id="oneclick"> one-click</label>
   <label class="dim" title="Attach the play's stop and target to every entry"><input type="checkbox" id="bracket"> stop+target</label>
+  <button id="alertsBtn" title="Show / hide the call feed and call pop-ups">🔔 Alerts</button>
   <button id="rotate" title="When OFF, ladders never switch symbols on their own">Auto-rotate: …</button>
-  <button id="resetLayout" title="Forget pane sizes">Reset layout</button>
+  <span class="menu" id="winMenu"><button>Windows ▾</button><div class="pop" id="winList"></div></span>
+  <button id="freeBtn" title="Free layout: drag any window anywhere by its title bar, resize by the corner">Layout: …</button>
+  <button id="resetLayout" title="Put everything back">Reset layout</button>
 </header>
 <div id="toasts"></div>
 <main>
-  <section id="feed"></section>
+  <section id="feed" class="win card" data-win="alerts" data-title="CALLS"><div class="wbody" id="feedBody"></div></section>
   <section id="panes"></section>
-  <section class="card" id="account-card">
+  <section class="card win" id="account-card" data-win="orders" data-title="ORDERS · POSITIONS · FILLS"><div class="wbody">
     <h3>YOUR ORDERS · POSITIONS · FILLS <span class="dim" style="letter-spacing:0">— click ✕ to cancel an order. Orders placed in TWS show up here too.</span></h3>
     <div id="account"></div>
-  </section>
+  </div></section>
   <section id="bottom">
-    <div class="card"><h3>YOUR PS60 PLAYS — CLOSEST FIRST</h3><div class="scroll" id="ranking"></div></div>
-    <div class="card"><h3>FEED MESSAGES</h3><div id="messages"></div></div>
+    <div class="card win" data-win="plays" data-title="YOUR PLAYS"><div class="wbody"><h3>YOUR PS60 PLAYS — CLOSEST FIRST</h3><div class="scroll" id="ranking"></div></div></div>
+    <div class="card win" data-win="messages" data-title="FEED MESSAGES"><div class="wbody"><h3>FEED MESSAGES</h3><div id="messages"></div></div></div>
   </section>
 </main>
 <script>
@@ -275,6 +314,79 @@ async function cancelAll(symbol){
   toast(`Cancelled ${out.cancelled} working order${out.cancelled === 1 ? "" : "s"}`, true);
 }
 
+/* ---------- windows: drag anywhere, resize, hide / show ---------- */
+const WIN = {list: [], byId: {}};
+function makeWindow(el, id, title){
+  if (WIN.byId[id]) return WIN.byId[id];
+  const bar = document.createElement("div");
+  bar.className = "winbar";
+  bar.innerHTML = `<span>⠿</span><b>${esc(title)}</b><span class="x" title="hide this window">✕</span>`;
+  el.prepend(bar);
+  const w = {el, id, title, bar};
+  WIN.list.push(w); WIN.byId[id] = w;
+  el.classList.add("win");
+  if (store.get("hide." + id, false)) el.classList.add("hidden");
+  bar.querySelector(".x").addEventListener("click", e => { e.stopPropagation(); hideWindow(id, true); });
+  bar.addEventListener("mousedown", e => {
+    if (e.target.classList.contains("x") || !document.body.classList.contains("free")) return;
+    e.preventDefault();
+    bringFront(el);
+    const main = document.querySelector("main").getBoundingClientRect();
+    const sx = e.clientX, sy = e.clientY, ox = el.offsetLeft, oy = el.offsetTop;
+    const move = ev => { el.style.left = Math.max(0, ox + ev.clientX - sx) + "px"; el.style.top = Math.max(0, oy + ev.clientY - sy) + "px"; };
+    const up = () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); saveWin(w); growDesk(); };
+    window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
+  });
+  el.addEventListener("mousedown", () => bringFront(el));
+  new ResizeObserver(() => { if (document.body.classList.contains("free") && w.placed) saveWin(w); }).observe(el);
+  return w;
+}
+function bringFront(el){ document.querySelectorAll(".win.front").forEach(x => x.classList.remove("front")); el.classList.add("front"); }
+function saveWin(w){
+  if (!document.body.classList.contains("free")) return;
+  store.set("win." + w.id, {l: w.el.offsetLeft, t: w.el.offsetTop, w: w.el.offsetWidth, h: w.el.offsetHeight});
+}
+function hideWindow(id, hide){
+  const w = WIN.byId[id]; if (!w) return;
+  w.el.classList.toggle("hidden", hide); store.set("hide." + id, hide); renderWinList();
+}
+function renderWinList(){
+  const box = document.getElementById("winList");
+  box.innerHTML = `<h5>SHOW / HIDE</h5>` + WIN.list.map(w =>
+    `<label><input type="checkbox" data-win="${esc(w.id)}" ${w.el.classList.contains("hidden") ? "" : "checked"}> ${esc(w.title)}</label>`).join("");
+}
+function growDesk(){
+  const main = document.querySelector("main");
+  let bottom = 600;
+  WIN.list.forEach(w => { if (!w.el.classList.contains("hidden")) bottom = Math.max(bottom, w.el.offsetTop + w.el.offsetHeight + 40); });
+  main.style.minHeight = bottom + "px";
+}
+function setFree(on){
+  const body = document.body, main = document.querySelector("main");
+  if (on && !body.classList.contains("free")){
+    // remember where everything sits in the grid so the free layout starts from the same picture
+    const rects = WIN.list.map(w => [w, w.el.getBoundingClientRect()]);
+    const base = main.getBoundingClientRect();
+    body.classList.add("free");
+    for (const [w, r] of rects){
+      const saved = store.get("win." + w.id, null);
+      const pos = saved || {l: r.left - base.left, t: r.top - base.top, w: r.width, h: Math.max(r.height, 140)};
+      Object.assign(w.el.style, {left: pos.l + "px", top: pos.t + "px", width: pos.w + "px", height: pos.h + "px"});
+      w.placed = true;
+      if (!saved) saveWin(w);
+    }
+    growDesk();
+  } else if (!on){
+    body.classList.remove("free");
+    WIN.list.forEach(w => { Object.assign(w.el.style, {left: "", top: "", width: "", height: ""}); w.placed = false; });
+    main.style.minHeight = "";
+  }
+  store.set("free", !!on);
+  document.getElementById("freeBtn").textContent = "Layout: " + (on ? "FREE" : "GRID");
+  document.getElementById("freeBtn").className = on ? "on" : "";
+  paneEls.forEach(p => drawChart(p));
+}
+
 /* ---------- panes: fixed DOM per screen position ---------- */
 const panesEl = document.getElementById("panes");
 const paneEls = [];
@@ -299,6 +411,9 @@ function ensurePane(i){
   const saved = store.get("pane." + i, null);
   if (saved && window.innerWidth > 900){ el.style.width = saved.w + "px"; el.style.height = saved.h + "px"; el.classList.add("sized"); }
   panesEl.appendChild(el);
+  makeWindow(el, "ladder" + (i + 1), "LADDER " + (i + 1));
+  el.dataset.hide = (store.get("phide." + i, []) || []).join(" ");
+  el.dataset.cols = (store.get("pcols." + i, []) || []).join(" ");
   const p = {el, i, head: el.querySelector(".p-head"), changed: el.querySelector(".p-changed"),
     say: el.querySelector(".p-say"), lines: el.querySelector(".p-lines"), body: el.querySelector(".p-body"),
     tradebar: el.querySelector(".tradebar"),
@@ -329,9 +444,15 @@ function ensurePane(i){
     if (x > r.width - 86){                       // over the price axis: stretch / squeeze prices
       if (p.chartY){ const [lo, hi] = p.chartY; const c = (lo + hi) / 2, f = e.deltaY > 0 ? 1.15 : 1 / 1.15;
         v.yLo = c - (c - lo) * f; v.yHi = c + (hi - c) * f; }
-    } else {
+    } else if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)){   // shift+wheel or trackpad sideways: pan
+      const d = (e.deltaX || e.deltaY) / v.cw;
+      v.offset = Math.max(0, v.offset - d); v.follow = v.offset < 0.5;
+    } else {                                     // zoom, keeping the bar under the cursor where it is
       const f = e.deltaY > 0 ? 1 / 1.2 : 1.2;
-      v.cw = Math.max(2, Math.min(40, v.cw * f));
+      const plotW = r.width - 86, barsRight = (plotW - x) / v.cw;   // bars between cursor and right edge
+      v.cw = Math.max(2, Math.min(60, v.cw * f));
+      v.offset = Math.max(0, v.offset + barsRight - (plotW - x) / v.cw);
+      v.follow = v.offset < 0.5;
     }
     saveView(); drawChart(p);
   }, {passive: false});
@@ -397,7 +518,31 @@ function ensurePane(i){
       setTimeout(() => drawChart(p), 50);
     }
   });
-  p.head.addEventListener("mousedown", e => { el.draggable = !!e.target.closest(".grab"); });
+  p.head.addEventListener("mousedown", e => { el.draggable = !!e.target.closest(".grab") && !document.body.classList.contains("free"); });
+  p.head.addEventListener("change", e => {
+    const t = e.target;
+    if (t.dataset.part){
+      const parts = new Set((el.dataset.hide || "").split(" ").filter(Boolean));
+      t.checked ? parts.delete(t.dataset.part) : parts.add(t.dataset.part);
+      el.dataset.hide = [...parts].join(" "); store.set("phide." + i, [...parts]); drawChart(p);
+    }
+    if (t.dataset.col){
+      const cols = new Set((el.dataset.cols || "").split(" ").filter(Boolean));
+      t.checked ? cols.delete(t.dataset.col) : cols.add(t.dataset.col);
+      el.dataset.cols = [...cols].join(" "); store.set("pcols." + i, [...cols]);
+    }
+  });
+  p.head.addEventListener("click", e => {
+    const g = e.target.closest(".gear > button");
+    if (g){
+      e.stopPropagation();
+      const menu = g.parentElement, open = !menu.classList.contains("open");
+      document.querySelectorAll(".menu.open").forEach(m => m.classList.remove("open"));
+      menu.classList.toggle("open", open);
+      if (open){ const r = g.getBoundingClientRect(), pop = menu.querySelector(".pop");
+        pop.style.left = Math.min(r.left, window.innerWidth - 260) + "px"; pop.style.top = (r.bottom + 4) + "px"; }
+    }
+  });
   p.ladder.addEventListener("click", e => {
     const chip = e.target.closest(".chip[data-id]");
     if (chip){ cancelMine(+chip.dataset.id); return; }
@@ -510,8 +655,17 @@ function renderPane(p, d){
   }
   const h = d.health, pl = d.play;
   const hcls = h.status==="OK"?"ok":(h.status==="STALE"||h.status==="NO DATA")?"bad":"warn";
-  p.head.innerHTML = `<span class="grab" title="drag to move this ladder">⠿</span><span class="sym">${esc(d.symbol)}</span>
+  if (p.head.querySelector(".gear.open")) { /* menu open: leave the header alone this tick */ } else {
+  const hidden = new Set((p.el.dataset.hide || "").split(" ")), cols = new Set((p.el.dataset.cols || "").split(" "));
+  const gearOpen = p.head.querySelector(".gear.open") ? " open" : "";
+  const part = (k, label) => `<label><input type="checkbox" data-part="${k}" ${hidden.has(k) ? "" : "checked"}> ${label}</label>`;
+  const col = (k, label) => `<label><input type="checkbox" data-col="${k}" ${cols.has(k) ? "" : "checked"}> ${label}</label>`;
+  p.head.innerHTML = `<span class="grab" title="drag onto another ladder to swap (grid layout)">⠿</span><span class="sym">${esc(d.symbol)}</span>
     <button data-max="1" title="maximize / restore">${p.el.classList.contains("max") ? "⤡" : "⤢"}</button>
+    <span class="menu gear${gearOpen}"><button title="show / hide parts of this ladder">⚙</button><div class="pop">
+      <h5>SHOW IN THIS LADDER</h5>${part("story", "Story (headline + lines)")}${part("banner", "'ladder switched' banner")}${part("trade", "Trade bar")}${part("chart", "Chart")}${part("ladder", "Ladder")}${part("tape", "Time & sales")}
+      <hr><h5>LADDER COLUMNS</h5>${col("notrade", "BUY / SELL click columns")}${col("nomem", "Sold-into-bid / bought-at-ask memory bars")}${col("nolegend", "Legend text")}
+    </div></span>
     <span class="pill ${pl.side==="long"?"ok":"bad"}">${esc(pl.side.toUpperCase())}</span>
     <button data-pin="${esc(d.symbol)}" data-on="${d.pinned?0:1}" class="${d.pinned?"on":""}" title="Pinned ladders never switch symbols">${d.pinned?"📌 Pinned":"Pin"}</button>
     <span class="pill ${hcls}">${esc(h.status)}</span>
@@ -521,6 +675,7 @@ function renderPane(p, d){
     ${d.orders.length ? `<span class="pill">${d.orders.length} working order${d.orders.length > 1 ? "s" : ""}</span>` : ""}
     ${d.trap && d.trap.longs ? `<span class="trap l ${d.trap.longs.heavy ? "heavy" : ""}" title="bought the offer above here in the last ${d.trap.window_minutes} min, now underwater">${kfmt(d.trap.longs.shares)} LONGS TRAPPED above ${px(d.trap.longs.low)}</span>` : ""}
     ${d.trap && d.trap.shorts ? `<span class="trap s ${d.trap.shorts.heavy ? "heavy" : ""}" title="hit the bid below here in the last ${d.trap.window_minutes} min, now underwater">${kfmt(d.trap.shorts.shares)} SHORTS TRAPPED below ${px(d.trap.shorts.high)}</span>` : ""}`;
+  }
   const t = T(), on = canTrade();
   const pos = d.position;
   const sizeVal = p.tradebar.querySelector("input") ? p.tradebar.querySelector("input").value : t.default_shares;
@@ -768,13 +923,18 @@ function render(s){
   rot.textContent = "Auto-rotate: " + (s.auto_rotate ? "ON" : "OFF");
   rot.className = s.auto_rotate ? "" : "on";
 
-  document.getElementById("feed").innerHTML = s.alerts.length ? s.alerts.slice(0, 20).map(a => {
+  document.getElementById("feedBody").innerHTML = s.alerts.length ? s.alerts.slice(0, 20).map(a => {
     const age = s.now - a.t;
     return `<div class="say ${sayClass(a)} ${age < 15 ? "fresh" : ""}"><span class="age">${ago(age)} ago</span><b>${esc(a.symbol)}</b> — ${esc(a.text || a.label)}</div>`;
   }).join("") : `<div class="say">No calls yet. TWINEY speaks only when the evidence is there: price approaching your level, a buyer or seller reloading, a level cleaned up or pulled.</div>`;
 
   s.panes.forEach((d, i) => renderPane(ensurePane(i), d));
-  if (!panesEl.dataset.ordered){ applyOrder(); panesEl.dataset.ordered = "1"; }
+  if (!panesEl.dataset.ordered){
+    applyOrder(); panesEl.dataset.ordered = "1";
+    document.querySelectorAll(".win[data-win]").forEach(el => makeWindow(el, el.dataset.win, el.dataset.title));
+    applyAlerts();
+    if (store.get("free", false)) setFree(true); else document.getElementById("freeBtn").textContent = "Layout: GRID";
+  }
 
   const rows = s.ranking.map(r => `<tr class="${r.depth?"onslot":""}">
     <td>${r.rank ?? "—"} ${esc(r.symbol)}${r.depth?" ◆":""}</td>
@@ -822,9 +982,26 @@ document.getElementById("arm").addEventListener("click", async () => {
 });
 document.getElementById("oneclick").addEventListener("change", e => post("/api/trade/oneclick", {on: e.target.checked}));
 document.getElementById("bracket").addEventListener("change", e => post("/api/trade/bracket", {on: e.target.checked}));
+document.getElementById("alertsBtn").addEventListener("click", () => {
+  const on = !store.get("alerts", true); store.set("alerts", on); applyAlerts();
+});
+function applyAlerts(){
+  const on = store.get("alerts", true);
+  document.getElementById("alertsBtn").className = on ? "" : "off";
+  document.getElementById("alertsBtn").textContent = on ? "🔔 Alerts" : "🔕 Alerts off";
+  document.getElementById("feed").classList.toggle("hidden", !on || store.get("hide.alerts", false));
+}
+document.getElementById("winMenu").querySelector("button").addEventListener("click", e => { e.stopPropagation(); renderWinList(); document.getElementById("winMenu").classList.toggle("open"); });
+document.getElementById("winList").addEventListener("change", e => { if (e.target.dataset.win) hideWindow(e.target.dataset.win, !e.target.checked); });
+document.addEventListener("click", e => { if (!e.target.closest(".menu")) document.querySelectorAll(".menu.open").forEach(m => m.classList.remove("open")); });
+document.getElementById("freeBtn").addEventListener("click", () => setFree(!document.body.classList.contains("free")));
 document.getElementById("rotate").addEventListener("click", () => post("/api/autorotate", {on: !(state && state.auto_rotate)}));
 document.getElementById("resetLayout").addEventListener("click", () => {
+  setFree(false);
   store.clear();
+  WIN.list.forEach(w => w.el.classList.remove("hidden"));
+  paneEls.forEach(p => { p.el.dataset.hide = ""; p.el.dataset.cols = ""; });
+  applyAlerts();
   paneEls.forEach(p => { p.el.style.width = ""; p.el.style.height = ""; p.el.classList.remove("sized", "max"); p.body.style.removeProperty("--ladder-w");
     Object.assign(p.view, {cw: 7, offset: 0, yLo: null, yHi: null, follow: true}); renderTools(p); });
   document.body.classList.remove("has-max");
