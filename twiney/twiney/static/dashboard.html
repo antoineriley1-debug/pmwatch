@@ -49,11 +49,22 @@ main{padding:10px 16px;display:grid;gap:10px}
 .p-say.at{border-color:var(--gold)} .p-say.near{border-color:var(--cyan)}
 .p-lines{margin:0 10px 4px 26px;padding:0;font-size:12.5px;color:#c4cddb;max-height:78px;overflow-y:auto;flex:0 0 auto}
 .p-lines li{margin:1px 0}
-.p-body{flex:1 1 0;display:grid;grid-template-columns:minmax(0,1fr) minmax(260px,340px);grid-template-rows:minmax(0,1fr);gap:8px;padding:4px 10px;min-height:300px}
+.p-body{flex:1 1 0;display:grid;grid-template-columns:minmax(0,1fr) 8px var(--ladder-w,340px);grid-template-rows:minmax(0,1fr);gap:4px;padding:4px 10px;min-height:300px}
 .chart-wrap{position:relative;min-height:0;border:1px solid var(--line);border-radius:6px;overflow:hidden}
 .chart-wrap canvas{position:absolute;inset:0;width:100%;height:100%}
 .chart-tools{position:absolute;top:4px;left:6px;display:flex;gap:4px;z-index:2}
 .chart-tools button{padding:1px 6px;font-size:11px;background:rgba(17,22,31,.85)}
+.chart-wrap canvas{cursor:crosshair}
+.chart-wrap canvas.pan{cursor:grabbing}
+.chart-hint{position:absolute;right:6px;bottom:22px;font-size:10px;color:var(--dim);pointer-events:none;background:rgba(17,22,31,.7);padding:1px 4px;border-radius:3px}
+.divider{width:8px;cursor:col-resize;border-radius:4px;background:transparent}
+.divider:hover,.divider.on{background:var(--line)}
+.p-head .grab{cursor:grab;color:var(--dim);font-size:16px;padding:0 4px;user-select:none}
+.p-head .grab:active{cursor:grabbing}
+.pane.dragging{opacity:.4}
+.pane.dropzone{outline:2px dashed var(--gold)}
+.pane.max{position:fixed;inset:8px;z-index:10;height:auto !important;width:auto !important;resize:none}
+body.has-max #panes .pane:not(.max){visibility:hidden}
 .ladder-wrap{overflow-y:auto;border:1px solid var(--line);border-radius:6px;min-height:0;height:100%}
 .p-tape{flex:0 0 auto;max-height:130px;overflow-y:auto;margin:4px 10px 8px;border-top:1px solid var(--line)}
 .empty{display:flex;align-items:center;justify-content:center;flex:1;color:var(--dim);text-align:center;padding:20px}
@@ -148,7 +159,7 @@ tr.atlvl td{background:rgba(255,197,61,.12)}
 .msg-error{color:var(--sell)} .msg-warn{color:var(--warn)} .msg-info{color:var(--dim)}
 tr.onslot td:first-child{color:var(--gold)}
 td.status{text-align:left !important;white-space:normal !important;color:#c4cddb}
-@media (max-width:900px){#bottom{grid-template-columns:1fr} .p-body{grid-template-columns:1fr} .pane{height:auto;resize:none;flex:1 1 100%} .chart-wrap{height:260px}}
+@media (max-width:900px){#bottom{grid-template-columns:1fr} .p-body{grid-template-columns:1fr} .divider{display:none} .pane{height:auto;resize:none;flex:1 1 100%} .chart-wrap{height:260px}}
 </style>
 </head>
 <body>
@@ -279,7 +290,8 @@ function ensurePane(i){
     <ul class="p-lines"></ul>
     <div class="tradebar"></div>
     <div class="p-body">
-      <div class="chart-wrap"><div class="chart-tools"></div><canvas></canvas></div>
+      <div class="chart-wrap"><div class="chart-tools"></div><canvas></canvas><div class="chart-hint">wheel = zoom · drag = pan · drag price axis = stretch · dbl-click = reset</div></div>
+      <div class="divider" title="drag to resize chart / ladder"></div>
       <div class="ladder-wrap"></div>
     </div>
     <div class="p-tape"></div>
@@ -292,7 +304,70 @@ function ensurePane(i){
     tradebar: el.querySelector(".tradebar"),
     canvas: el.querySelector("canvas"), tools: el.querySelector(".chart-tools"),
     ladder: el.querySelector(".ladder-wrap"), tape: el.querySelector(".p-tape"), empty: el.querySelector(".empty"),
+    divider: el.querySelector(".divider"),
+    view: Object.assign({cw: 7, offset: 0, yLo: null, yHi: null, follow: true, cross: null}, store.get("view." + i, {})),
     data: null};
+  const lw = store.get("ladder." + i, null);
+  if (lw) p.body.style.setProperty("--ladder-w", lw + "px");
+  // chart / ladder divider
+  p.divider.addEventListener("mousedown", e => {
+    e.preventDefault(); p.divider.classList.add("on");
+    const move = ev => {
+      const r = p.body.getBoundingClientRect();
+      const w = Math.max(220, Math.min(r.right - ev.clientX - 10, r.width - 260));
+      p.body.style.setProperty("--ladder-w", w + "px"); store.set("ladder." + i, Math.round(w)); drawChart(p);
+    };
+    const up = () => { p.divider.classList.remove("on"); window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); };
+    window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
+  });
+  // chart interaction: wheel zoom, drag pan, price-axis stretch, crosshair, double-click reset
+  const cv = p.canvas, v = p.view;
+  const saveView = () => store.set("view." + i, {cw: v.cw, offset: v.offset, yLo: v.yLo, yHi: v.yHi, follow: v.follow});
+  cv.addEventListener("wheel", e => {
+    e.preventDefault();
+    const r = cv.getBoundingClientRect(), x = e.clientX - r.left;
+    if (x > r.width - 86){                       // over the price axis: stretch / squeeze prices
+      if (p.chartY){ const [lo, hi] = p.chartY; const c = (lo + hi) / 2, f = e.deltaY > 0 ? 1.15 : 1 / 1.15;
+        v.yLo = c - (c - lo) * f; v.yHi = c + (hi - c) * f; }
+    } else {
+      const f = e.deltaY > 0 ? 1 / 1.2 : 1.2;
+      v.cw = Math.max(2, Math.min(40, v.cw * f));
+    }
+    saveView(); drawChart(p);
+  }, {passive: false});
+  cv.addEventListener("mousedown", e => {
+    const r = cv.getBoundingClientRect(), x0 = e.clientX, y0 = e.clientY, onAxis = (e.clientX - r.left) > r.width - 86;
+    const start = {offset: v.offset, yLo: v.yLo, yHi: v.yHi, y: p.chartY ? p.chartY.slice() : null, h: p.chartH || 1};
+    let moved = false;
+    cv.classList.add("pan");
+    const move = ev => {
+      const dx = ev.clientX - x0, dy = ev.clientY - y0;
+      if (Math.abs(dx) + Math.abs(dy) > 3) moved = true;
+      if (onAxis && start.y){ const [lo, hi] = start.y; const c = (lo + hi) / 2, f = Math.exp(dy / 150);
+        v.yLo = c - (c - lo) * f; v.yHi = c + (hi - c) * f; }
+      else {
+        v.offset = Math.max(0, start.offset + dx / v.cw);
+        v.follow = v.offset < 0.5;
+        if (start.y && !onAxis){ const [lo, hi] = start.y; const per = (hi - lo) / start.h; v.yLo = lo + dy * per; v.yHi = hi + dy * per; }
+      }
+      drawChart(p);
+    };
+    const up = () => { cv.classList.remove("pan"); window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); if (moved) saveView(); };
+    window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
+  });
+  cv.addEventListener("mousemove", e => { const r = cv.getBoundingClientRect(); v.cross = [e.clientX - r.left, e.clientY - r.top]; drawChart(p); });
+  cv.addEventListener("mouseleave", () => { v.cross = null; drawChart(p); });
+  cv.addEventListener("dblclick", () => { v.cw = 7; v.offset = 0; v.yLo = v.yHi = null; v.follow = true; saveView(); drawChart(p); });
+  // drag panes to reorder (by the ⠿ handle)
+  el.addEventListener("dragstart", e => { if (!e.target.closest(".grab") && !el.classList.contains("dragging")) { e.preventDefault(); return; } e.dataTransfer.setData("text/plain", String(i)); el.classList.add("dragging"); });
+  el.addEventListener("dragend", () => el.classList.remove("dragging"));
+  el.addEventListener("dragover", e => { e.preventDefault(); el.classList.add("dropzone"); });
+  el.addEventListener("dragleave", () => el.classList.remove("dropzone"));
+  el.addEventListener("drop", e => {
+    e.preventDefault(); el.classList.remove("dropzone");
+    const from = +e.dataTransfer.getData("text/plain");
+    if (from !== i && paneEls[from]) swapPanes(from, i);
+  });
   // remember user-resized pane sizes
   let userSized = !!saved;
   el.addEventListener("mousedown", e => {
@@ -308,12 +383,21 @@ function ensurePane(i){
   }).observe(el);
   p.tools.addEventListener("click", e => {
     const tf = e.target.dataset.tf;
-    if (tf){ store.set("tf." + i, +tf); drawChart(p); renderTools(p); }
+    if (tf){ store.set("tf." + i, +tf); v.offset = 0; v.follow = true; drawChart(p); renderTools(p); }
+    if (e.target.dataset.fit){ const n = aggBars(p.data ? p.data.bars : [], store.get("tf." + i, 1)).length || 1;
+      v.cw = Math.max(2, Math.min(40, (cv.clientWidth - 86) / n)); v.offset = 0; v.follow = true; v.yLo = v.yHi = null; saveView(); drawChart(p); }
   });
   p.head.addEventListener("click", e => {
     const b = e.target.closest("button[data-pin]");
     if (b) post("/api/pin", {symbol: b.dataset.pin, pinned: b.dataset.on === "1"});
+    if (e.target.closest("button[data-max]")){
+      const on = !el.classList.contains("max");
+      paneEls.forEach(q => q.el.classList.remove("max"));
+      el.classList.toggle("max", on); document.body.classList.toggle("has-max", on);
+      setTimeout(() => drawChart(p), 50);
+    }
   });
+  p.head.addEventListener("mousedown", e => { el.draggable = !!e.target.closest(".grab"); });
   p.ladder.addEventListener("click", e => {
     const chip = e.target.closest(".chip[data-id]");
     if (chip){ cancelMine(+chip.dataset.id); return; }
@@ -341,7 +425,20 @@ function ensurePane(i){
 
 function renderTools(p){
   const tf = store.get("tf." + p.i, 1);
-  p.tools.innerHTML = [1, 5].map(m => `<button data-tf="${m}" class="${tf===m?"on":""}">${m}m</button>`).join("");
+  p.tools.innerHTML = [1, 5, 15].map(m => `<button data-tf="${m}" class="${tf===m?"on":""}">${m}m</button>`).join("")
+    + `<button data-fit="1" title="show all bars">fit</button>`;
+}
+function swapPanes(a, b){
+  const order = store.get("order", null) || paneEls.map((_, k) => k);
+  const ia = order.indexOf(a), ib = order.indexOf(b);
+  [order[ia], order[ib]] = [order[ib], order[ia]];
+  store.set("order", order);
+  applyOrder();
+}
+function applyOrder(){
+  const order = store.get("order", null);
+  if (!order) return;
+  for (const k of order) if (paneEls[k]) panesEl.appendChild(paneEls[k].el);
 }
 
 function pips(n, cls){
@@ -406,14 +503,15 @@ function renderPane(p, d){
   for (const el of [p.say, p.lines, p.tradebar, p.body, p.tape]) el.hidden = showEmpty;
   p.el.classList.toggle("pinned", !!(d && d.pinned));
   if (!d){
-    p.head.innerHTML = `<span class="sym dim">Ladder ${p.i + 1}</span>`;
+    p.head.innerHTML = `<span class="grab" title="drag to move this ladder">⠿</span><span class="sym dim">Ladder ${p.i + 1}</span>`;
     p.changed.hidden = true;
     p.empty.innerHTML = `Empty ladder.<br>It fills with the play closest to its level, or pin one from the list below.`;
     return;
   }
   const h = d.health, pl = d.play;
   const hcls = h.status==="OK"?"ok":(h.status==="STALE"||h.status==="NO DATA")?"bad":"warn";
-  p.head.innerHTML = `<span class="sym">${esc(d.symbol)}</span>
+  p.head.innerHTML = `<span class="grab" title="drag to move this ladder">⠿</span><span class="sym">${esc(d.symbol)}</span>
+    <button data-max="1" title="maximize / restore">${p.el.classList.contains("max") ? "⤡" : "⤢"}</button>
     <span class="pill ${pl.side==="long"?"ok":"bad"}">${esc(pl.side.toUpperCase())}</span>
     <button data-pin="${esc(d.symbol)}" data-on="${d.pinned?0:1}" class="${d.pinned?"on":""}" title="Pinned ladders never switch symbols">${d.pinned?"📌 Pinned":"Pin"}</button>
     <span class="pill ${hcls}">${esc(h.status)}</span>
@@ -479,9 +577,12 @@ function drawChart(p){
   g.clearRect(0, 0, W, H);
   const tf = store.get("tf." + p.i, 1), span = tf * 60;
   const labelW = 86, plotW = W - labelW, volH = Math.max(28, H * 0.16), plotH = H - volH - 18;
-  const cw = tf === 1 ? 7 : 9;
-  const n = Math.max(10, Math.floor(plotW / cw));
-  const bars = aggBars(d.bars, tf).slice(-n);
+  const v = p.view, cw = v.cw;
+  const all = aggBars(d.bars, tf);
+  const n = Math.max(5, Math.floor(plotW / cw));
+  const off = Math.min(Math.round(v.offset), Math.max(0, all.length - 2));
+  const bars = all.slice(Math.max(0, all.length - off - n), all.length - off);
+  p.chartH = plotH;
   g.font = "11px ui-monospace, Menlo, Consolas, monospace";
   if (!bars.length){
     g.fillStyle = "#7b889e"; g.fillText("Chart builds as trades come in…", 12, 40);
@@ -496,6 +597,8 @@ function drawChart(p){
   if (!isFinite(lo)) return;
   const pad = Math.max((hi - lo) * 0.08, lo * 0.0005);
   lo -= pad; hi += pad;
+  if (v.yLo != null && v.yHi != null && v.yHi > v.yLo){ lo = v.yLo; hi = v.yHi; }
+  p.chartY = [lo, hi];
   const y = v => 8 + (hi - v) / (hi - lo) * (plotH - 8);
   const x0 = plotW - bars.length * cw;
   const xOf = t0 => x0 + ((t0 - (bars.length ? bars[0][0] : 0)) / span) * cw + cw / 2;
@@ -618,6 +721,25 @@ function drawChart(p){
   // key
   g.fillStyle = "#7b889e";
   g.fillText("● green = buyer absorbing   ● red = seller absorbing   R/C/P = reload / cleaned / pulled", 60, H - volH - 4);
+  if (off > 0){ g.fillStyle = "#ffc53d"; g.fillText(`◀ ${off} bars back — double-click to go live`, plotW - 230, 14); }
+  // crosshair with price / time readout
+  if (v.cross){
+    const [cx, cy] = v.cross;
+    if (cx < plotW && cy < plotH){
+      g.strokeStyle = "#7b889e"; g.setLineDash([3, 3]);
+      g.beginPath(); g.moveTo(cx, 0); g.lineTo(cx, plotH); g.moveTo(0, cy); g.lineTo(plotW, cy); g.stroke(); g.setLineDash([]);
+      const pr = hi - (cy - 8) / (plotH - 8) * (hi - lo);
+      g.fillStyle = "#243044"; g.fillRect(plotW, cy - 8, labelW, 16);
+      g.fillStyle = "#dbe3ee"; g.fillText(px(pr), plotW + 3, cy + 4);
+      const k = Math.floor((cx - x0) / cw);
+      if (bars[k]){
+        const b = bars[k], dt = new Date(b[0] * 1000).toTimeString().slice(0, 5);
+        const txt = `${dt}  O ${px(b[1])} H ${px(b[2])} L ${px(b[3])} C ${px(b[4])}  vol ${kfmt(b[5])}`;
+        g.fillStyle = "rgba(17,22,31,.9)"; g.fillRect(6, 4, g.measureText(txt).width + 10, 16);
+        g.fillStyle = "#dbe3ee"; g.fillText(txt, 11, 16);
+      }
+    }
+  }
 }
 
 /* ---------- page ---------- */
@@ -652,6 +774,7 @@ function render(s){
   }).join("") : `<div class="say">No calls yet. TWINEY speaks only when the evidence is there: price approaching your level, a buyer or seller reloading, a level cleaned up or pulled.</div>`;
 
   s.panes.forEach((d, i) => renderPane(ensurePane(i), d));
+  if (!panesEl.dataset.ordered){ applyOrder(); panesEl.dataset.ordered = "1"; }
 
   const rows = s.ranking.map(r => `<tr class="${r.depth?"onslot":""}">
     <td>${r.rank ?? "—"} ${esc(r.symbol)}${r.depth?" ◆":""}</td>
@@ -702,7 +825,10 @@ document.getElementById("bracket").addEventListener("change", e => post("/api/tr
 document.getElementById("rotate").addEventListener("click", () => post("/api/autorotate", {on: !(state && state.auto_rotate)}));
 document.getElementById("resetLayout").addEventListener("click", () => {
   store.clear();
-  paneEls.forEach(p => { p.el.style.width = ""; p.el.style.height = ""; p.el.classList.remove("sized"); renderTools(p); });
+  paneEls.forEach(p => { p.el.style.width = ""; p.el.style.height = ""; p.el.classList.remove("sized", "max"); p.body.style.removeProperty("--ladder-w");
+    Object.assign(p.view, {cw: 7, offset: 0, yLo: null, yHi: null, follow: true}); renderTools(p); });
+  document.body.classList.remove("has-max");
+  paneEls.forEach(p => panesEl.appendChild(p.el));
 });
 
 let timer = null;

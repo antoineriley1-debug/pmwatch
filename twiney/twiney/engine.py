@@ -719,7 +719,7 @@ class Engine:
         bid, ask = st.bbo()
         tape = st.tape.stats(t)
         user_levels = self._user_levels(st.play)
-        bars = st.bar_list(240)
+        bars = st.bar_list(MAX_BARS)
         first_bar = bars[0][0] if bars else t
         sym_alerts = [a for a in self.alerts if a["symbol"] == sym]
         trap = self._trap(st, t, st.price())
