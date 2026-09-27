@@ -185,6 +185,29 @@ class FlowTests(unittest.TestCase):
         roles = {(tr.price, tr.side): tr.role for tr in e.syms["AAA"].trackers.values()}
         self.assertEqual(roles.get((10.50, ASK)), "auto")
 
+    def test_trap_and_reloaders_from_prints(self):
+        e = connected_engine(trap={"min_shares": 500, "heavy_shares": 2000})
+        e.apply_slot("AAA", True, 0.0)
+        seed_book(e, "AAA", 0.0, bid=10.09, ask=10.10)
+        # impatient buyers pay 10.10 / 10.12, then the market drops to 10.00
+        e.on_print("AAA", 10.10, 800, "X", 3.0)
+        e.on_print("AAA", 10.12, 1500, "X", 4.0)
+        e.on_depth("AAA", 0, UPDATE, BID, 9.99, 500, "", 5.0)
+        e.on_depth("AAA", 0, UPDATE, ASK, 10.00, 500, "", 5.0)
+        e.on_print("AAA", 9.99, 100, "X", 6.0)   # sets last = 9.99
+        pane = e.snapshot(7.0)["panes"][0]
+        self.assertEqual(pane["trap"]["longs"]["shares"], 2300)
+        self.assertTrue(pane["trap"]["longs"]["heavy"])
+        self.assertEqual((pane["trap"]["longs"]["low"], pane["trap"]["longs"]["high"]), (10.1, 10.12))
+        self.assertIsNone(pane["trap"]["shorts"])
+        self.assertTrue(any(l.startswith("TRAPPED LONGS") for l in pane["lines"]))
+        self.assertEqual(pane["reloaders"], {"below": [], "above": []})
+        # a confirmed reload seller above the market shows up in the map
+        tr = [x for x in e.syms["AAA"].trackers.values() if x.price == 10.0 and x.side == ASK][0]
+        tr.state = "RELOAD"
+        rel = e.snapshot(8.0)["panes"][0]["reloaders"]
+        self.assertEqual([r["price"] for r in rel["above"]], [10.0])
+
     def test_snapshot_shape(self):
         e = self._slotted()
         price_all(e, 1.0, {"AAA": 10.0})

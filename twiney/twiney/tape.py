@@ -50,9 +50,9 @@ class Tape:
         if n < self.cfg["min_prints_for_read"] or directional <= 0:
             state = "QUIET"
         elif buy / directional >= self.cfg["control_ratio"]:
-            state = "BUYERS LIFTING"
+            state = "BUYERS PAYING UP"     # impatient buyers: they wanted in now
         elif sell / directional >= self.cfg["control_ratio"]:
-            state = "SELLERS HITTING"
+            state = "SELLERS HITTING OUT"  # impatient sellers: they wanted out now
         else:
             state = "TWO-SIDED"
         return {

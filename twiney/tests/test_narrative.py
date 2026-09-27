@@ -38,3 +38,19 @@ class NarrativeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TrapTests(unittest.TestCase):
+    def test_trapped_longs_line_and_reloader_map(self):
+        trap = {"longs": {"shares": 12400, "low": 10.05, "high": 10.12, "avg": 10.08, "heavy": True}, "shorts": None,
+                "window_minutes": 10}
+        reloaders = {"below": [], "above": [{"price": 10.10, "side": "ask", "kind": "confirmed", "role": "trigger",
+                                             "refills": 5, "absorbed": 6200, "showing": 900}]}
+        lines = narrative.trap_lines(trap, reloaders, {"side": "short"}, 10.0)
+        self.assertEqual(len(lines), 1)
+        self.assertIn("TRAPPED LONGS (heavy): 12,400 shares paid up between 10.05 and 10.12", lines[0])
+        self.assertIn("seller reloading at 10.10 absorbed them", lines[0])
+        self.assertIn("what your short wants", lines[0])
+        self.assertEqual(narrative.reloader_line(reloaders), "Reloaders — above: SELLER 10.10 ×5, 6,200 hit")
+        self.assertIsNone(narrative.reloader_line({"below": [], "above": []}))
+        self.assertEqual(narrative.trap_lines(None, None, {"side": "long"}, 10.0), [])

@@ -68,6 +68,16 @@ Other modes:
 - **Orders · positions · fills (view only):** pending orders, positions with P&L, and today's fills, read from IBKR (`reqAllOpenOrders`, `reqPositions`, `reqExecutions`). Orders are placed and changed in TWS.
 - Plus: the plays list with plain-English distance to each level, feed health, and TWS messages.
 
+## Trapped traders and reloader map
+- **Tape words:** each print is tagged **IN** (paid the offer — wanted in now) or **OUT** (hit the bid — wanted out now).
+  The 30-second read says "impatient buyers paying the offer" / "impatient sellers hitting the bid".
+- **Trapped:** IN prints above the current price over the last 10 minutes are **trapped longs**; OUT prints below it are
+  **trapped shorts**. A pill in the pane header shows the size and where they got in; the chart shades that band; the
+  story says what it means for the play and which reloader absorbed them. Gross numbers: TWINEY can't see who already
+  got out, so read them as pressure, not fact. Thresholds in `config.json → trap`.
+- **Reloaders:** the nearest confirmed or likely reload buyers below and sellers above the market are listed in the
+  story ("Reloaders — below: BUYER 240.13 ×2 …") and marked on the chart's left edge (B×n / S×n).
+
 ## Vocabulary (exact rules, all in `config.json → reload`)
 | Call | Evidence required |
 |---|---|

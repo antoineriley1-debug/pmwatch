@@ -127,7 +127,48 @@ def proximity_line(play, price):
     return f"Price is {dist} {direction} {name} ({pct:.1f}% away).", "far"
 
 
-def story(play, price, levels, bars, tape, now, recent_alerts, min_shares=1000, max_lines=5):
+def trap_lines(trap, reloaders, play, price):
+    """Trapped traders, in plain words, and what it means for the play."""
+    if not trap:
+        return []
+    out = []
+    long_ = play["side"] == "long"
+    L, S = trap.get("longs"), trap.get("shorts")
+    if L:
+        held = [r for r in (reloaders or {}).get("above", []) if r["side"] == "ask"]
+        why = f" A seller reloading at {px(held[0]['price'])} absorbed them — that's the trap." if held else ""
+        out.append(f"TRAPPED LONGS{' (heavy)' if L['heavy'] else ''}: {shares(L['shares'])} shares paid up between "
+                   f"{px(L['low'])} and {px(L['high'])} in the last {trap['window_minutes']} min and price is now "
+                   f"below them.{why} If support gives way they bail — that's fuel for the drop"
+                   + (", which is what your short wants." if not long_ else ". Your long is fighting them."))
+    if S:
+        held = [r for r in (reloaders or {}).get("below", []) if r["side"] == "bid"]
+        why = f" A buyer reloading at {px(held[0]['price'])} absorbed them — that's the trap." if held else ""
+        out.append(f"TRAPPED SHORTS{' (heavy)' if S['heavy'] else ''}: {shares(S['shares'])} shares hit out between "
+                   f"{px(S['low'])} and {px(S['high'])} in the last {trap['window_minutes']} min and price is now "
+                   f"above them.{why} If resistance breaks they have to cover — that's fuel for the squeeze"
+                   + (", which is what your long wants." if long_ else ". Your short is fighting them."))
+    return out
+
+
+def reloader_line(reloaders):
+    """'Reloaders — below: BUYER 128.40 ×5 (6,200 hit) · above: SELLER 128.60 ×3 (likely)'"""
+    if not reloaders or not (reloaders["below"] or reloaders["above"]):
+        return None
+
+    def one(r):
+        tag = "" if r["kind"] == "confirmed" else " (likely)"
+        return f"{who(r['side'])} {px(r['price'])} ×{r['refills']}, {shares(r['absorbed'])} hit{tag}"
+    parts = []
+    if reloaders["below"]:
+        parts.append("below: " + "; ".join(one(r) for r in reloaders["below"]))
+    if reloaders["above"]:
+        parts.append("above: " + "; ".join(one(r) for r in reloaders["above"]))
+    return "Reloaders — " + " · ".join(parts)
+
+
+def story(play, price, levels, bars, tape, now, recent_alerts, min_shares=1000, max_lines=6,
+          trap=None, reloaders=None):
     """Headline + bullet lines for one symbol.
 
     levels: tracker snapshots (price, side, role, state, displayed, absorbed_total,
@@ -188,6 +229,12 @@ def story(play, price, levels, bars, tape, now, recent_alerts, min_shares=1000, 
         else:
             lines.insert(0, prox)
 
+    # 4b. where the reloaders sit, and who is trapped
+    rl = reloader_line(reloaders)
+    if rl:
+        lines.append(rl)
+    lines.extend(trap_lines(trap, reloaders, play, price))
+
     # 5. is price stopping at the levels?
     for role in ("trigger", "second_entry"):
         level = play.get(role)
@@ -203,7 +250,8 @@ def story(play, price, levels, bars, tape, now, recent_alerts, min_shares=1000, 
     if tape and tape.get("state") not in (None, "QUIET"):
         pct = tape.get("buy_pct")
         mix = f" ({pct:.0f}% buys)" if pct is not None else ""
-        words = {"BUYERS LIFTING": "buyers are lifting the offer", "SELLERS HITTING": "sellers are hitting the bid",
+        words = {"BUYERS PAYING UP": "impatient buyers paying the offer (they want in now)",
+                 "SELLERS HITTING OUT": "impatient sellers hitting the bid (they want out now)",
                  "TWO-SIDED": "two-sided, no one in control"}
         lines.append(f"Tape: {words.get(tape['state'], tape['state'].lower())}{mix}, last {int(tape['window_seconds'])}s.")
 

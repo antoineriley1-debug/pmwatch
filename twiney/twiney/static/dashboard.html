@@ -80,6 +80,12 @@ td.bars.l .bar-n{float:right;margin-right:3px} td.bars.r .bar-n{margin-left:3px}
 .lad tr.lvl td{border-top:1px solid rgba(255,197,61,.45);border-bottom:1px solid rgba(255,197,61,.45)}
 .lad tr.lastpx td.px::before{content:"▶";position:absolute;left:2px;color:var(--text)}
 .mine{display:inline-block;font-size:9px;font-weight:700;padding:0 4px;border-radius:3px;border:1px solid #fff;color:#fff;margin-left:3px}
+.trap{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:.03em}
+.trap.l{background:#3a1216;color:#ffb3bb;border:1px solid var(--sell)} .trap.s{background:#0f3d25;color:#9fffcf;border:1px solid var(--buy)}
+.trap.heavy{animation:trapglow 1.4s infinite}
+@keyframes trapglow{0%,100%{box-shadow:0 0 0 0 transparent}50%{box-shadow:0 0 10px 1px currentColor}}
+.io{font-size:9px;font-weight:800;padding:0 3px;border-radius:2px;margin-left:4px}
+.io.in{background:var(--buy);color:#04210f} .io.out{background:var(--sell);color:#2a0409}
 .tag{display:inline-block;font-size:9px;font-weight:700;padding:0 4px;border-radius:3px;background:var(--gold);color:#1a1300;margin-left:3px}
 .who{display:inline-block;font-size:9.5px;font-weight:800;padding:0 4px;border-radius:3px;margin:0 2px}
 .who.buyer{background:var(--buy);color:#04210f} .who.seller{background:var(--sell);color:#2a0409}
@@ -386,11 +392,11 @@ function ladderHTML(L){
 }
 
 function tapeHTML(t){
-  const rows = t.recent.map(r => `<tr class="${r.at?"atlvl":""}"><td class="dim">${ago(r.age)}</td>
+  const rows = t.recent.map(r => `<tr class="${r.at?"atlvl":""}"><td class="dim">${ago(r.age)}${r.side==="buy"?`<span class="io in" title="paid the offer — wanted in now">IN</span>`:r.side==="sell"?`<span class="io out" title="hit the bid — wanted out now">OUT</span>`:""}</td>
     <td class="${r.side}">${px(r.price)}${r.at?` <span class="tag">${esc(r.at)}</span>`:""}</td>
     <td class="${r.side} ${r.large?"large":""}">${sz(r.size)}</td><td class="dim">${esc(r.exchange)}</td></tr>`).join("")
     || `<tr><td colspan="4" class="dim">no prints yet</td></tr>`;
-  return `<table class="t"><tr><th>TIME & SALES</th><th>PRICE</th><th>SIZE</th><th>EX</th></tr>${rows}</table>`;
+  return `<table class="t"><tr><th>TIME & SALES <span class="dim" style="font-weight:400">IN = paid the offer · OUT = hit the bid</span></th><th>PRICE</th><th>SIZE</th><th>EX</th></tr>${rows}</table>`;
 }
 
 function renderPane(p, d){
@@ -414,7 +420,9 @@ function renderPane(p, d){
     <span class="p-quote">LAST <b>${px(d.last)}</b> <span class="buy">${px(d.bid)}</span> × <span class="sell">${px(d.ask)}</span></span>
     <span class="p-quote dim">TRIG <b style="color:var(--gold)">${px(pl.trigger)}</b> · 2ND <b style="color:var(--cyan)">${px(pl.second_entry)}</b></span>
     ${d.position ? `<span class="pill ${d.position.pnl >= 0 ? "ok" : "bad"}">POS ${d.position.qty > 0 ? "+" : ""}${sz(d.position.qty)} @ ${px(d.position.avg_cost)}${d.position.pnl != null ? ` · ${d.position.pnl >= 0 ? "+" : "−"}$${sz(Math.abs(d.position.pnl).toFixed(0))}` : ""}</span>` : ""}
-    ${d.orders.length ? `<span class="pill">${d.orders.length} working order${d.orders.length > 1 ? "s" : ""}</span>` : ""}`;
+    ${d.orders.length ? `<span class="pill">${d.orders.length} working order${d.orders.length > 1 ? "s" : ""}</span>` : ""}
+    ${d.trap && d.trap.longs ? `<span class="trap l ${d.trap.longs.heavy ? "heavy" : ""}" title="bought the offer above here in the last ${d.trap.window_minutes} min, now underwater">${kfmt(d.trap.longs.shares)} LONGS TRAPPED above ${px(d.trap.longs.low)}</span>` : ""}
+    ${d.trap && d.trap.shorts ? `<span class="trap s ${d.trap.shorts.heavy ? "heavy" : ""}" title="hit the bid below here in the last ${d.trap.window_minutes} min, now underwater">${kfmt(d.trap.shorts.shares)} SHORTS TRAPPED below ${px(d.trap.shorts.high)}</span>` : ""}`;
   const t = T(), on = canTrade();
   const pos = d.position;
   const sizeVal = p.tradebar.querySelector("input") ? p.tradebar.querySelector("input").value : t.default_shares;
@@ -509,6 +517,28 @@ function drawChart(p){
     g.fillStyle = "#0a0d12"; g.fillText(`${l.label} ${px(l.price)}`.slice(0, 13), plotW + 3, yy + 4);
   }
 
+  // trapped traders: shaded band where they got in
+  if (d.trap){
+    for (const [tp, col] of [[d.trap.longs, "255,77,94"], [d.trap.shorts, "38,208,124"]]){
+      if (!tp) continue;
+      const y1 = y(Math.min(hi, tp.high)), y2 = y(Math.max(lo, tp.low));
+      g.fillStyle = `rgba(${col},${tp.heavy ? .16 : .09})`; g.fillRect(0, y1 - 2, plotW, Math.max(4, y2 - y1 + 4));
+      g.fillStyle = `rgba(${col},.8)`; g.font = "bold 10px system-ui";
+      g.fillText((tp === d.trap.longs ? "TRAPPED LONGS " : "TRAPPED SHORTS ") + kfmt(tp.shares), 6, tp === d.trap.longs ? y1 - 5 : y2 + 12);
+      g.font = "11px ui-monospace, Menlo, Consolas, monospace";
+    }
+  }
+  // reloaders: a bar on the left edge at their price
+  if (d.reloaders){
+    for (const r of [...d.reloaders.below, ...d.reloaders.above]){
+      if (r.price < lo || r.price > hi) continue;
+      const yy = y(r.price), col = r.side === "bid" ? "#26d07c" : "#ff4d5e";
+      g.fillStyle = col; g.globalAlpha = r.kind === "confirmed" ? 1 : .45;
+      g.fillRect(0, yy - 3, 5, 6);
+      g.fillText((r.side === "bid" ? "B" : "S") + "×" + r.refills, 8, yy + 4);
+      g.globalAlpha = 1;
+    }
+  }
   // candles
   for (let k = 0; k < bars.length; k++){
     const b = bars[k], x = x0 + k * cw + cw / 2, up = b[4] >= b[1];

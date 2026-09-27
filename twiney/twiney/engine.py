@@ -648,6 +648,62 @@ class Engine:
         return {"rows": rows, "max_size": round(max_size), "max_traded": round(max_traded),
                 "memory_minutes": MEMORY_SECONDS // 60}
 
+    def _trap(self, st, t, price):
+        """Aggressive prints that are now underwater.
+
+        Buys (paid the offer) above the current price are trapped longs; sells
+        (hit the bid) below it are trapped shorts. Gross figures over the window:
+        we cannot see who already got out, so read them as pressure, not fact.
+        """
+        tc = self.cfg["trap"]
+        if not price:
+            return None
+        tk = tick_size(price)
+        pk = price_key(price, tk)
+        longs = shorts = 0.0
+        l_lo = l_hi = s_lo = s_hi = None
+        l_w = s_w = 0.0
+        for mt, k, p, side, size in st.memory:
+            if t - mt > tc["window_seconds"]:
+                continue
+            if side == "buy" and k > pk:
+                longs += size
+                l_w += p * size
+                l_lo = p if l_lo is None else min(l_lo, p)
+                l_hi = p if l_hi is None else max(l_hi, p)
+            elif side == "sell" and k < pk:
+                shorts += size
+                s_w += p * size
+                s_lo = p if s_lo is None else min(s_lo, p)
+                s_hi = p if s_hi is None else max(s_hi, p)
+
+        def pack(shares, lo, hi, w):
+            if shares < tc["min_shares"]:
+                return None
+            return {"shares": round(shares), "low": fmt_price(lo), "high": fmt_price(hi),
+                    "avg": fmt_price(w / shares), "heavy": shares >= tc["heavy_shares"]}
+        out = {"longs": pack(longs, l_lo, l_hi, l_w), "shorts": pack(shorts, s_lo, s_hi, s_w),
+               "window_minutes": tc["window_seconds"] // 60}
+        return out if out["longs"] or out["shorts"] else None
+
+    def _reloaders(self, st, t, price):
+        """Nearest confirmed / likely reloaders on each side of the market."""
+        below, above = [], []
+        for tr in st.trackers.values():
+            if tr.state == RELOAD:
+                kind = "confirmed"
+            elif tr.state == BUILDING and tr.refreshes_window(t) >= 2 and tr.absorbed_window(t) > 0:
+                kind = "likely"
+            else:
+                continue
+            item = {"price": fmt_price(tr.price), "side": "bid" if tr.side == BID else "ask", "kind": kind,
+                    "role": tr.role, "refills": tr.refreshes_window(t), "absorbed": round(tr.absorbed_total),
+                    "showing": round(tr.displayed)}
+            (below if price and tr.price < price else above).append(item)
+        below.sort(key=lambda x: -x["price"])
+        above.sort(key=lambda x: x["price"])
+        return {"below": below[:3], "above": above[:3]}
+
     def _pane(self, sym, i, t, order):
         st = self.syms[sym]
         rows = self.cfg["depth"]["rows_displayed"]
@@ -666,8 +722,11 @@ class Engine:
         bars = st.bar_list(240)
         first_bar = bars[0][0] if bars else t
         sym_alerts = [a for a in self.alerts if a["symbol"] == sym]
+        trap = self._trap(st, t, st.price())
+        reloaders = self._reloaders(st, t, st.price())
         headline, tone, lines = narrative.story(st.play, st.price(), levels, bars, tape, t, sym_alerts,
-                                                min_shares=self.cfg["reload"]["min_absorbed_shares"])
+                                                min_shares=self.cfg["reload"]["min_absorbed_shares"],
+                                                trap=trap, reloaders=reloaders)
 
         def at_level(price):
             for lv in user_levels:
@@ -694,6 +753,8 @@ class Engine:
                  "side": p["side"], "large": p["large"], "exchange": p["exchange"], "at": at_level(p["price"])}
                 for p in st.tape.recent(14)]),
             "levels": levels,
+            "trap": trap,
+            "reloaders": reloaders,
             "user_levels": user_levels,
             "orders": [{"id": o.get("order_id"), "action": o.get("action"), "qty": o.get("remaining") or o.get("qty"),
                         "type": o.get("type"), "price": o.get("lmt") or o.get("aux"), "role": o.get("role", "entry"),

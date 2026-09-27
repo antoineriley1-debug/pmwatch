@@ -72,6 +72,15 @@ DEFAULTS = {
         "large_print_shares": 5000,
         "keep_prints": 200,
     },
+    "trap": {
+        # aggressive prints (paid the offer / hit the bid) this far back that are now
+        # underwater count as trapped
+        "window_seconds": 600,
+        # ignore below this many trapped shares
+        "min_shares": 2000,
+        # "heavy" when trapped shares reach this
+        "heavy_shares": 10000,
+    },
     "health": {
         "l1_stale_seconds": 15.0,
         "depth_stale_seconds": 15.0,
