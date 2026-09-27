@@ -4,7 +4,7 @@ import unittest
 from helpers import ASK, INSERT, cfg, plays
 from twiney.engine import Engine
 from twiney.ibkr import MarketDataSession, TwineyWrapper, num, parse_error_args
-from twiney.safety import ReadOnlyGuard, ReadOnlyViolation
+from twiney.trading import IbkrBroker, Trader, TradingGate
 
 
 class FakeClient:
@@ -28,16 +28,13 @@ class FakeClient:
         if was:
             self.connectionClosed()  # EClient.disconnect() does this too
 
-    def placeOrder(self, *a):  # present on the real EClient; the guard must win
-        self.calls.append(("placeOrder",))
-
     def __getattr__(self, name):
-        if name.startswith(("req", "cancel")):
+        if name.startswith(("req", "cancel", "place")):
             return lambda *a: self.calls.append((name,) + a)
         raise AttributeError(name)
 
 
-class FakeApp(TwineyWrapper, ReadOnlyGuard, FakeClient):
+class FakeApp(TwineyWrapper, FakeClient):
     def __init__(self, engine, session):
         FakeClient.__init__(self)
         TwineyWrapper.__init__(self, engine, session, clock=lambda: session.clock())
@@ -51,11 +48,19 @@ class Clock:
         return self.t
 
 
-def make_session():
-    c = cfg()
+def fake_order(action, qty, order_type, price, tif="DAY", parent_id=None, transmit=True):
+    return {"action": action, "qty": qty, "type": order_type, "price": price, "tif": tif,
+            "parent": parent_id, "transmit": transmit}
+
+
+def make_session(**trading):
+    c = cfg(trading=trading)
     engine = Engine(plays(), c)
     clock = Clock()
-    s = MarketDataSession(engine, c, plays(), FakeApp, contract_factory=lambda p: p["symbol"], clock=clock)
+    gate = TradingGate(c)
+    s = MarketDataSession(engine, c, plays(), FakeApp, contract_factory=lambda p: p["symbol"], clock=clock,
+                          order_factory=fake_order, gate=gate)
+    engine.trader = Trader(engine, c, IbkrBroker(engine, s), gate)
     return s, engine, clock
 
 
@@ -244,13 +249,54 @@ class SessionTests(unittest.TestCase):
         self.assertIsNone(s.app)
         self.assertIn("nextValidId", engine.connection["detail"])
 
-    def test_order_calls_blocked_on_app(self):
+    def test_live_account_never_gets_an_order(self):
         s, engine, clock, app = self.connect()
-        with self.assertRaises(ReadOnlyViolation):
-            app.placeOrder(1, None, None)
-        with self.assertRaises(ReadOnlyViolation):
-            app.cancelOrder(1)
+        app.managedAccounts("U1234567")
+        tr = engine.trader
+        self.assertFalse(tr.gate.arm(True))
+        out = tr.submit("AAA", "BUY", 10.0, 100, clock())
+        self.assertFalse(out["ok"])
+        self.assertIn("PAPER", out["reason"])
         self.assertNotIn("placeOrder", names(app))
+
+    def test_paper_account_order_round_trip(self):
+        s, engine, clock, app = self.connect()
+        app.managedAccounts("DU7654321")
+        app.nextValidId(41)
+        tr = engine.trader
+        self.assertEqual(tr.gate.mode, "PAPER")
+        self.assertTrue(tr.gate.arm(True))
+        engine.syms["AAA"].play.update(stop=9.5, target=11.0)
+        out = tr.submit("AAA", "BUY", 10.0, 100, clock())
+        self.assertTrue(out["ok"], out)
+        placed = [c for c in app.calls if c[0] == "placeOrder"]
+        self.assertEqual([c[1] for c in placed], [41, 42, 43])
+        self.assertEqual(placed[0][3]["type"], "LMT")
+        self.assertEqual((placed[1][3]["type"], placed[1][3]["price"], placed[1][3]["parent"]), ("STP", 9.5, 41))
+        self.assertEqual((placed[2][3]["type"], placed[2][3]["price"], placed[2][3]["parent"]), ("LMT", 11.0, 41))
+        self.assertEqual(s.next_order_id, 44)
+        # TWS acknowledges with a permId: the same order, not a duplicate
+        O = lambda **k: type("O", (), k)()
+        app.openOrder(41, O(symbol="AAA"), O(permId=900, action="BUY", totalQuantity=decimal.Decimal("100"),
+                      orderType="LMT", lmtPrice=10.0, auxPrice=0.0, tif="DAY"), O(status="Submitted"))
+        app.orderStatus(41, "Submitted", decimal.Decimal("0"), decimal.Decimal("100"), 0.0, 900, 0, 0.0, 1, "", 0.0)
+        pend = engine.snapshot(clock())["account"]["pending"]
+        self.assertEqual(len([o for o in pend if o["role"] == "entry"]), 1)
+        self.assertEqual([o for o in pend if o["role"] == "entry"][0]["status"], "Submitted")
+        # cancel goes through cancelOrder with the TWS order id
+        tr.cancel(41, clock())
+        self.assertIn(("cancelOrder", 41, ""), app.calls)
+        n = tr.cancel_all("AAA", clock())["cancelled"]
+        self.assertEqual(n, 3)
+
+    def test_no_order_before_next_valid_id(self):
+        s, engine, clock = make_session()
+        s.step(clock())
+        s.app.managedAccounts("DU1")
+        self.assertIsNone(s.next_order_id)
+        engine.trader.gate.arm(True)
+        out = engine.trader.submit("AAA", "BUY", 10.0, 1, clock())
+        self.assertFalse(out["ok"])
 
 
 if __name__ == "__main__":

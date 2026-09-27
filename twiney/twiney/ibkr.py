@@ -1,12 +1,10 @@
-"""IBKR market-data adapter (TWS API ``ibapi``).
+"""IBKR adapter (TWS API ``ibapi``).
 
-Only these requests are ever sent: reqMarketDataType, reqMktData / cancelMktData,
-reqMktDepth / cancelMktDepth, reqTickByTickData / cancelTickByTickData,
-reqHistoricalData (1-minute bars for the chart), and the account READ calls
-reqAllOpenOrders / reqPositions / reqExecutions so the dashboard can SHOW your
-orders, positions and fills. Orders are placed in TWS, never from here.
-The client class puts ``ReadOnlyGuard`` ahead of EClient so order/execution
-calls raise instead of reaching TWS.
+Market data: reqMarketDataType, reqMktData, reqMktDepth, reqTickByTickData,
+reqHistoricalData. Account view: reqAllOpenOrders, reqPositions, reqExecutions.
+Order entry: placeOrder / cancelOrder — ONLY via ``send_order`` / ``cancel_order``
+below, which are only reachable through ``trading.TradingGate`` (paper-only
+lock, size caps, armed switch). Nothing else in this package sends orders.
 
 Callback signatures follow TWS API 10.x; ``error`` accepts both the pre-10.35
 form (reqId, code, msg[, json]) and the newer one (reqId, errorTime, code, msg[, json]).
@@ -15,8 +13,6 @@ form (reqId, code, msg[, json]) and the newer one (reqId, errorTime, code, msg[,
 import logging
 import threading
 import time
-
-from .safety import ReadOnlyGuard
 
 log = logging.getLogger("twiney.ibkr")
 
@@ -67,8 +63,10 @@ class TwineyWrapper:
 
     # connection -----------------------------------------------------------
     def nextValidId(self, orderId):
-        # used only as the "API is ready" signal; the order id is discarded
-        self.session.handle_ready()
+        self.session.handle_ready(int(orderId))
+
+    def managedAccounts(self, accountsList):
+        self.session.handle_accounts([a.strip() for a in str(accountsList).split(",") if a.strip()])
 
     def connectionClosed(self):
         self.session.handle_closed("connection closed by TWS / Gateway")
@@ -137,18 +135,19 @@ class TwineyWrapper:
 
     # account view (read-only) ------------------------------------------------
     def openOrder(self, orderId, contract, order, orderState):
-        key = getattr(order, "permId", 0) or f"id{orderId}"
+        key = self.session.order_key(orderId, getattr(order, "permId", 0))
         self.session.order_seen(key)
         self.engine.on_order(
             key, self.clock(), symbol=getattr(contract, "symbol", "?"), action=getattr(order, "action", None),
             qty=num(getattr(order, "totalQuantity", None)), type=getattr(order, "orderType", None),
             lmt=num(getattr(order, "lmtPrice", None)) or None, aux=num(getattr(order, "auxPrice", None)) or None,
-            tif=getattr(order, "tif", None), status=getattr(orderState, "status", None))
+            tif=getattr(order, "tif", None), status=getattr(orderState, "status", None),
+            order_id=int(orderId), role=self.session.order_roles.get(int(orderId)))
 
     def orderStatus(self, orderId, status, filled, remaining, avgFillPrice, permId, *rest):
-        key = permId or f"id{orderId}"
+        key = self.session.order_key(orderId, permId)
         self.engine.on_order(key, self.clock(), status=status, filled=num(filled),
-                             remaining=num(remaining), avg_fill=num(avgFillPrice) or None)
+                             remaining=num(remaining), avg_fill=num(avgFillPrice) or None, order_id=int(orderId))
 
     def openOrderEnd(self):
         self.session.orders_refreshed()
@@ -214,12 +213,33 @@ def make_contract(play):
     return c
 
 
+def make_order(action, qty, order_type, price, tif="DAY", parent_id=None, transmit=True):
+    from ibapi.order import Order
+    o = Order()
+    o.action = action
+    o.totalQuantity = qty
+    o.orderType = order_type
+    if order_type == "LMT":
+        o.lmtPrice = price
+    elif order_type == "STP":
+        o.auxPrice = price
+    o.tif = tif
+    o.transmit = transmit
+    if parent_id is not None:
+        o.parentId = parent_id
+    # IBKR 10.x rejects orders that still carry the legacy defaults for these
+    for attr in ("eTradeOnly", "firmQuoteOnly"):
+        if hasattr(o, attr):
+            setattr(o, attr, False)
+    return o
+
+
 def ibapi_app_factory():
-    """Return a factory building the real read-only TWS API client."""
+    """Return a factory building the real TWS API client."""
     from ibapi.client import EClient
     from ibapi.wrapper import EWrapper
 
-    class TwineyApp(TwineyWrapper, ReadOnlyGuard, EWrapper, EClient):
+    class TwineyApp(TwineyWrapper, EWrapper, EClient):
         def __init__(self, engine, session):
             EWrapper.__init__(self)
             EClient.__init__(self, wrapper=self)
@@ -231,8 +251,15 @@ def ibapi_app_factory():
 class MarketDataSession:
     """Owns the connection, reconnect backoff and all subscriptions."""
 
-    def __init__(self, engine, cfg, plays, app_factory, contract_factory=make_contract, clock=time.time):
+    def __init__(self, engine, cfg, plays, app_factory, contract_factory=make_contract, clock=time.time,
+                 order_factory=make_order, gate=None):
         self.engine = engine
+        self.order_factory = order_factory
+        self.gate = gate
+        self.next_order_id = None
+        self.order_roles = {}   # orderId -> entry / stop / target
+        self.perm_ids = {}      # orderId -> permId (stable key once TWS assigns it)
+        self.my_orders = {}     # orderId -> (symbol, parent orderId)
         self.cfg = cfg
         self.plays = {p["symbol"]: p for p in plays if p["active"]}
         self.app_factory = app_factory
@@ -250,6 +277,7 @@ class MarketDataSession:
         self._orders_seen = set()
         self._next_orders = 0.0
         self._next_fills = 0.0
+        self.accounts = []
         self._lock = threading.RLock()
         self._stop = threading.Event()
         self.thread = None
@@ -313,10 +341,23 @@ class MarketDataSession:
             threading.Thread(target=app.run, name="twiney-ibapi-reader", daemon=True).start()
 
     # callbacks from the wrapper ---------------------------------------------
-    def handle_ready(self):
+    def handle_accounts(self, accounts):
+        with self._lock:
+            self.accounts = accounts
+            if self.gate is not None:
+                self.gate.set_accounts(accounts)
+            self.engine._message("info", f"account{'s' if len(accounts) != 1 else ''}: {', '.join(accounts)}"
+                                 + ("  (PAPER)" if accounts and all(a.upper().startswith("DU") for a in accounts)
+                                    else "  (LIVE)" if accounts else ""), self.clock())
+
+    def handle_ready(self, order_id=None):
         with self._lock:
             if self.app is None:
                 return
+            if order_id is not None:
+                self.next_order_id = max(order_id, self.next_order_id or 0)
+            if self.ready:
+                return  # a later nextValidId only refreshes the order id
             self.ready = True
             self.connecting_since = None
             self.backoff = self.cfg["ibkr"]["reconnect_initial_seconds"]
@@ -359,6 +400,58 @@ class MarketDataSession:
                 app.disconnect()
             except Exception:
                 pass
+
+    # order entry (only reachable through trading.TradingGate) -----------------
+    def order_key(self, order_id, perm_id):
+        order_id = int(order_id)
+        if perm_id and order_id not in self.perm_ids:
+            self.perm_ids[order_id] = perm_id
+            self.engine.rename_order(f"id{order_id}", perm_id)
+        return self.perm_ids.get(order_id) or f"id{order_id}"
+
+    def send_order(self, symbol, action, qty, price, order_type, parent, role, tif, now):
+        with self._lock:
+            if self.app is None or not self.ready or self.next_order_id is None:
+                raise RuntimeError("not connected to TWS")
+            if self.gate is None or not self.gate.can_trade():
+                raise RuntimeError("trading gate closed")
+            oid = self.next_order_id
+            self.next_order_id += 1
+            play = self.plays[symbol]
+            # bracket legs are sent with transmit=False on the parent so TWS holds
+            # the family until the last leg arrives; a lone entry transmits at once
+            order = self.order_factory(action, qty, order_type, price, tif, parent, transmit=True)
+            self.order_roles[oid] = role
+            self.my_orders[oid] = (symbol, parent)
+            self.app.placeOrder(oid, self.contract_factory(play), order)
+            self.engine.on_order(f"id{oid}", now, symbol=symbol, action=action, qty=float(qty), remaining=float(qty),
+                                 type=order_type, lmt=price if order_type == "LMT" else None,
+                                 aux=price if order_type == "STP" else None, tif=tif, status="PendingSubmit",
+                                 order_id=oid, role=role)
+            self._orders_seen.add(f"id{oid}")
+            self._next_orders = now + 1.0  # refresh the open-order list soon
+            return oid
+
+    def cancel_order(self, oid, now):
+        with self._lock:
+            if self.app is None or not self.ready:
+                return False
+            self.app.cancelOrder(int(oid), "")
+            self._next_orders = now + 1.0
+            return True
+
+    def cancel_all(self, now, symbol=None):
+        with self._lock:
+            if self.app is None or not self.ready:
+                return 0
+            n = 0
+            for o in self.engine._pending(symbol):
+                oid = o.get("order_id")
+                if oid is not None:
+                    self.app.cancelOrder(int(oid), "")
+                    n += 1
+            self._next_orders = now + 1.0
+            return n
 
     def refresh_account(self, now):
         """Poll open orders and today's fills for the display (read-only requests)."""

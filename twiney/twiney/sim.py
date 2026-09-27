@@ -29,19 +29,6 @@ class DemoFeed:
 
     def start(self, t):
         self.engine.on_connection("DEMO", "SYNTHETIC DEMO FEED — not market data", t, market_data_type=None)
-        # sample account data so the orders panel can be seen in the demo (all fake)
-        plays = [s["play"] for s in self.state.values()]
-        for n, p in enumerate(plays[:2]):
-            buy = p["side"] == "long"
-            level = p.get("second_entry") or p["trigger"]
-            self.engine.on_order(f"demo{n}", t, symbol=p["symbol"], action="BUY" if buy else "SELL", qty=100.0,
-                                 remaining=100.0, type="LMT", lmt=level, tif="DAY", status="Submitted")
-        if len(plays) > 2:
-            p = plays[2]
-            self.engine.on_position("DEMO", p["symbol"], 200.0 if p["side"] == "long" else -200.0,
-                                    round(p["trigger"] * 1.001, 2), t)
-            self.engine.on_fill("demo-fill", p["symbol"], "BOT" if p["side"] == "long" else "SLD", 200.0,
-                                round(p["trigger"] * 1.001, 2), "09:41:07", t)
 
     def step(self, t):
         for sym, s in self.state.items():

@@ -22,7 +22,7 @@ class DashboardTests(unittest.TestCase):
 
     def test_state_json(self):
         data = json.loads(self.get("/api/state").read())
-        self.assertEqual(data["mode"], "READ-ONLY · MARKET DATA ONLY")
+        self.assertEqual(data["mode"], "PAPER-ONLY ORDER ENTRY · LIVE LOCKED")
         self.assertEqual(data["ranking"][0]["symbol"], "AAA")
         self.assertEqual(data["slots"], 3)
 

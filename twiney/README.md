@@ -1,8 +1,25 @@
-# TWINEY COMPLETE v1.0
+# TWINEY v1.2
 
-A read-only IBKR order-flow workstation built around PS60 levels. **There is no way to place orders.**
-It sends only market-data requests. The client class also blocks the order calls
-(`placeOrder`, `cancelOrder`, `reqGlobalCancel`, `exerciseOptions`, `reqIds`), which raise before anything reaches TWS.
+An IBKR order-flow workstation built around PS60 levels, with ladder trading that is
+**locked to paper accounts** until you deliberately unlock it.
+
+## Trading from the ladder (paper only)
+- **ARM** in the header. TWINEY starts DISARMED every launch; nothing can be sent until you arm it.
+- Click **BUY** on any ladder row to place a limit buy at that price; **SELL** likewise. Or use the
+  trade bar: **BUY bid** / **SELL ask** at the current quote, **Flatten**, **Cancel all**.
+- A confirmation box shows size, price, dollar value and the stop/target legs (Enter sends, Esc cancels).
+  Tick **one-click** to skip it.
+- **stop+target** (on by default) attaches the play's `stop` and `target` from `plays.json` as a bracket:
+  when the entry fills the exits go live; when one exit fills the other is cancelled.
+- Your working orders show as chips on the ladder rows (click a chip to cancel), as lines on the chart,
+  and in the orders panel below.
+- **Locks (config.json → trading):** `allow_live` is false, so a live account (id not starting with `DU`)
+  can never receive an order; `max_shares_per_order` (500), `max_dollars_per_order` ($25,000) and
+  `max_orders_per_minute` (10) reject anything bigger; only LIMIT entries are possible.
+- **Practice without IBKR:** `start_demo` runs a built-in simulator that fills your orders against the
+  demo book, so you can learn the ladder today.
+- **Paper account with real data:** log TWS into your paper account (`DU…`), untick "Read-Only API" in
+  TWS API settings, and run `start_twiney`. The header shows **PAPER account**.
 
 ## Quick start (double-click)
 - **Windows:** `start_demo.bat` to try the demo, `start_twiney.bat` to connect to TWS.
@@ -16,7 +33,8 @@ All commands run from this `twiney/` folder.
 1. `cp plays.example.json plays.json`, then put in your PS60 plays. The example prices are placeholders.
 2. `cp config.example.json config.json`, then set the port: 7497 for TWS paper, 7496 for TWS live, 4002 for Gateway paper, 4001 for Gateway live.
 3. Install IBKR's official TWS API Python package so `ibapi` is available. Download the TWS API from IBKR, then run `python -m pip install .` inside `source/pythonclient`. The `ibapi` package on PyPI is an old 9.x build, so don't use it.
-4. Start TWS or IB Gateway. In the API settings, enable socket clients and **enable "Read-Only API"** as a second safety layer. Make sure your account has market-data permissions, including depth.
+4. Start TWS or IB Gateway. In the API settings, enable socket clients. Leave "Read-Only API" ticked
+   unless you want to trade from the ladder (paper account). Make sure your account has market-data permissions, including depth.
 5. `python run_twiney.py`
 6. The dashboard opens at `http://127.0.0.1:8765` and only binds to loopback.
 
@@ -79,7 +97,8 @@ twiney/levels.py         reload / cleaned-up / pulled state machine
 twiney/ranking.py        proximity ranking + slot allocation
 twiney/engine.py         pure, timestamp-driven engine (live, replay and tests share it)
 twiney/ibkr.py           TWS API wrapper + session (reconnect, subscriptions)
-twiney/safety.py         read-only guard
+twiney/safety.py         where the order path may live (checked by tests)
+twiney/trading.py        TradingGate + SimBroker / IbkrBroker + Trader
 twiney/dashboard.py      local HTTP server (GET only) + static/dashboard.html
 twiney/recorder.py       JSONL recorder;  twiney/replay.py  replay + comparison
 twiney/sim.py            demo feed

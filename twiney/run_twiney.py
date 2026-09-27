@@ -22,6 +22,7 @@ from twiney.dashboard import Dashboard
 from twiney.engine import Engine
 from twiney.recorder import Recorder
 from twiney.replay import compare, replay, session_header
+from twiney.trading import IbkrBroker, SimBroker, Trader, TradingGate
 
 
 def console_alert(alert):
@@ -63,10 +64,15 @@ def run_live(cfg, plays, args):
         print(f"Recording raw events to {recorder.path}", flush=True)
     engine = Engine(plays, cfg, recorder)
     engine.listeners.append(console_alert)
-    dash = Dashboard(engine, cfg["dashboard"]["host"], cfg["dashboard"]["port"]).start()
-    session = MarketDataSession(engine, cfg, plays, factory)
+    gate = TradingGate(cfg)
+    session = MarketDataSession(engine, cfg, plays, factory, gate=gate)
+    trader = Trader(engine, cfg, IbkrBroker(engine, session), gate) if cfg["trading"]["enabled"] else None
+    engine.trader = trader
+    dash = Dashboard(engine, cfg["dashboard"]["host"], cfg["dashboard"]["port"], trader=trader).start()
     ib = cfg["ibkr"]
-    print(f"TWINEY {__version__} · READ-ONLY · connecting to {ib['host']}:{ib['port']} "
+    mode = "order entry PAPER-ONLY" if trader and not cfg["trading"]["allow_live"] else \
+        "order entry LIVE ALLOWED" if trader else "view only"
+    print(f"TWINEY {__version__} · {mode} · connecting to {ib['host']}:{ib['port']} "
           f"(client id {ib['client_id']}) · {len(plays)} plays · {cfg['depth']['slots']} depth slots", flush=True)
     session.start()
     open_dashboard(dash, cfg, args)
@@ -86,8 +92,15 @@ def run_demo(cfg, plays, args):
     engine.listeners.append(console_alert)
     feed = DemoFeed(engine, plays)
     feed.start(time.time())
-    dash = Dashboard(engine, cfg["dashboard"]["host"], cfg["dashboard"]["port"]).start()
-    print(f"TWINEY {__version__} · DEMO FEED (synthetic, not market data)", flush=True)
+    gate = TradingGate(cfg)
+    gate.set_sim()
+    sim = SimBroker(engine)
+    engine.sim_broker = sim
+    trader = Trader(engine, cfg, sim, gate)
+    engine.trader = trader
+    dash = Dashboard(engine, cfg["dashboard"]["host"], cfg["dashboard"]["port"], trader=trader).start()
+    print(f"TWINEY {__version__} · DEMO FEED (synthetic, not market data) · practice orders fill in the simulator",
+          flush=True)
     open_dashboard(dash, cfg, args)
     stop_evt = threading.Event()
 

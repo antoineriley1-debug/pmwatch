@@ -91,6 +91,38 @@ td.bars.l .bar-n{float:right;margin-right:3px} td.bars.r .bar-n{margin-left:3px}
 .lad tr.rl-bid td{animation:glowb 1.6s infinite}
 .lad tr.rl-ask td{animation:glowa 1.6s infinite}
 .legend{font-size:10.5px;color:var(--dim);padding:4px 6px;border-top:1px solid var(--line)}
+/* trading */
+.lad td.act{width:58px;text-align:center;cursor:pointer;user-select:none;font-size:10.5px;color:transparent;border-left:1px solid var(--line);border-right:1px solid var(--line)}
+.lad td.act.b:hover{background:rgba(38,208,124,.25);color:#dfffee}
+.lad td.act.s:hover{background:rgba(255,77,94,.25);color:#ffe3e6}
+.lad td.act.disabled{cursor:not-allowed}
+.lad td.act.disabled:hover{background:rgba(123,136,158,.15);color:var(--dim)}
+.lad th.act{color:var(--dim)}
+.chip{display:inline-block;padding:0 5px;border-radius:3px;font-weight:800;font-size:10.5px;cursor:pointer;color:#0a0d12}
+.chip.b{background:var(--buy)} .chip.s{background:var(--sell)} .chip.wait{opacity:.6}
+.chip:hover::after{content:" ✕"}
+.tradebar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 10px 4px;padding:6px 8px;border-radius:6px;background:var(--panel2);border:1px solid var(--line)}
+.tradebar input{width:64px;font:inherit;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:5px;padding:3px 6px;text-align:right}
+.tradebar .bbuy{background:#0f3d25;border-color:var(--buy);color:#dfffee;font-weight:700}
+.tradebar .bsell{background:#4a161b;border-color:var(--sell);color:#ffe3e6;font-weight:700}
+.tradebar .bflat{border-color:var(--gold);color:var(--gold)}
+.tradebar button:disabled{opacity:.4;cursor:not-allowed}
+.tradebar .pos{font-family:var(--mono);font-size:12px}
+#arm{font-weight:800;letter-spacing:.06em;padding:4px 12px}
+#arm.armed{background:#5a1218;border-color:var(--sell);color:#fff}
+#arm.off{background:#1b2a1f;border-color:var(--buy);color:var(--buy)}
+#mode.sim{border-color:var(--cyan);color:var(--cyan)} #mode.paper{border-color:var(--gold);color:var(--gold)}
+#mode.live{border-color:var(--sell);color:var(--sell)} #mode.none{color:var(--dim)}
+#toasts{position:fixed;right:16px;bottom:16px;display:grid;gap:6px;z-index:20;max-width:420px}
+.toast{padding:8px 12px;border-radius:6px;background:#1a2230;border-left:4px solid var(--buy);font-size:13px;box-shadow:0 4px 16px rgba(0,0,0,.5)}
+.toast.bad{border-color:var(--sell)}
+#modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:30}
+#modal .box{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px 20px;min-width:320px;max-width:92vw}
+#modal h2{margin:0 0 8px;font-size:22px}
+#modal .legs{color:var(--dim);margin:4px 0 12px}
+#modal .btns{display:flex;gap:8px;justify-content:flex-end}
+#modal .send{font-weight:800;padding:6px 16px}
+#modal .send.b{background:#0f3d25;border-color:var(--buy);color:#dfffee} #modal .send.s{background:#4a161b;border-color:var(--sell);color:#ffe3e6}
 
 /* tables */
 table.t{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12px}
@@ -116,19 +148,23 @@ td.status{text-align:left !important;white-space:normal !important;color:#c4cddb
 <body>
 <header>
   <h1>TWINEY</h1>
-  <span class="pill ro">READ-ONLY · MARKET DATA ONLY</span>
+  <span class="pill none" id="mode">…</span>
+  <button id="arm" class="off" title="Nothing can be sent while DISARMED">ARM</button>
   <span class="pill" id="conn">…</span>
   <span class="pill" id="mdt"></span>
   <span class="dim mono" id="meta"></span>
   <span class="spacer"></span>
+  <label class="dim" title="Skip the confirmation box on every order"><input type="checkbox" id="oneclick"> one-click</label>
+  <label class="dim" title="Attach the play's stop and target to every entry"><input type="checkbox" id="bracket"> stop+target</label>
   <button id="rotate" title="When OFF, ladders never switch symbols on their own">Auto-rotate: …</button>
   <button id="resetLayout" title="Forget pane sizes">Reset layout</button>
 </header>
+<div id="toasts"></div>
 <main>
   <section id="feed"></section>
   <section id="panes"></section>
   <section class="card" id="account-card">
-    <h3>YOUR ORDERS · POSITIONS · FILLS <span class="dim" style="letter-spacing:0">— view only. Place and change orders in TWS; they show up here within seconds.</span></h3>
+    <h3>YOUR ORDERS · POSITIONS · FILLS <span class="dim" style="letter-spacing:0">— click ✕ to cancel an order. Orders placed in TWS show up here too.</span></h3>
     <div id="account"></div>
   </section>
   <section id="bottom">
@@ -152,9 +188,74 @@ const store = {
 let state = null;
 
 async function post(path, body){
-  try { await fetch(path, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)}); }
-  catch(e){}
+  let out = null;
+  try {
+    const r = await fetch(path, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)});
+    out = await r.json();
+  } catch(e){ out = {ok:false, reason:"lost contact with TWINEY"}; }
   poll(true);
+  return out;
+}
+function toast(text, ok){
+  const el = document.createElement("div");
+  el.className = "toast " + (ok ? "" : "bad");
+  el.textContent = text;
+  document.getElementById("toasts").appendChild(el);
+  setTimeout(() => el.remove(), ok ? 4000 : 7000);
+}
+
+/* ---------- order entry ---------- */
+function T(){ return (state && state.trading) || {}; }
+function canTrade(){ const t = T(); return !!(t.can_trade && t.armed); }
+function whyNot(){ return T().why_not || "not ready"; }
+
+async function sendOrder(symbol, action, price, qty){
+  const t = T();
+  qty = qty || t.default_shares;
+  if (!canTrade()){ toast("Can't trade: " + whyNot(), false); return; }
+  const go = async () => {
+    const out = await post("/api/trade/order", {symbol, action, price, qty});
+    toast(out.ok ? "Sent: " + out.sent : "Blocked: " + out.reason, out.ok);
+  };
+  if (t.one_click) return go();
+  const pane = (state.panes || []).find(d => d && d.symbol === symbol);
+  const pl = pane ? pane.play : {};
+  const legs = [];
+  if (t.bracket){
+    if (pl.stop && (action === "BUY" ? pl.stop < price : pl.stop > price)) legs.push("stop " + px(pl.stop));
+    if (pl.target && (action === "BUY" ? pl.target > price : pl.target < price)) legs.push("target " + px(pl.target));
+  }
+  confirmBox(`${action} ${sz(qty)} ${symbol} @ ${px(price)}`, `about $${sz(Math.round(qty * price))}` + (legs.length ? " · with " + legs.join(" + ") : " · no stop/target attached"),
+    action === "BUY" ? "b" : "s", go);
+}
+function confirmBox(title, legs, cls, onSend){
+  const old = document.getElementById("modal"); if (old) old.remove();
+  const m = document.createElement("div"); m.id = "modal";
+  m.innerHTML = `<div class="box"><h2>${esc(title)}</h2><div class="legs">${esc(legs)}</div>
+    <div class="btns"><button class="no">Cancel (Esc)</button><button class="send ${cls}">SEND (Enter)</button></div></div>`;
+  const close = () => { m.remove(); document.removeEventListener("keydown", key); };
+  const key = e => { if (e.key === "Escape") close(); if (e.key === "Enter"){ close(); onSend(); } };
+  m.querySelector(".no").onclick = close;
+  m.querySelector(".send").onclick = () => { close(); onSend(); };
+  m.onclick = e => { if (e.target === m) close(); };
+  document.addEventListener("keydown", key);
+  document.body.appendChild(m);
+  m.querySelector(".send").focus();
+}
+async function cancelMine(id){
+  const out = await post("/api/trade/cancel", {id});
+  toast(out.ok ? "Cancel sent" : "Cancel failed: " + (out.reason || ""), out.ok);
+}
+async function flatten(symbol){
+  if (!canTrade()){ toast("Can't trade: " + whyNot(), false); return; }
+  confirmBox(`FLATTEN ${symbol}`, "closes the whole position with a limit through the market and cancels its working orders", "s", async () => {
+    const out = await post("/api/trade/flatten", {symbol});
+    toast(out.ok ? (out.flat ? symbol + " already flat" : "Sent: " + out.sent) : "Failed: " + out.reason, out.ok);
+  });
+}
+async function cancelAll(symbol){
+  const out = await post("/api/trade/cancel_all", {symbol});
+  toast(`Cancelled ${out.cancelled} working order${out.cancelled === 1 ? "" : "s"}`, true);
 }
 
 /* ---------- panes: fixed DOM per screen position ---------- */
@@ -170,6 +271,7 @@ function ensurePane(i){
     <div class="p-changed" hidden></div>
     <div class="p-say"></div>
     <ul class="p-lines"></ul>
+    <div class="tradebar"></div>
     <div class="p-body">
       <div class="chart-wrap"><div class="chart-tools"></div><canvas></canvas></div>
       <div class="ladder-wrap"></div>
@@ -181,6 +283,7 @@ function ensurePane(i){
   panesEl.appendChild(el);
   const p = {el, i, head: el.querySelector(".p-head"), changed: el.querySelector(".p-changed"),
     say: el.querySelector(".p-say"), lines: el.querySelector(".p-lines"), body: el.querySelector(".p-body"),
+    tradebar: el.querySelector(".tradebar"),
     canvas: el.querySelector("canvas"), tools: el.querySelector(".chart-tools"),
     ladder: el.querySelector(".ladder-wrap"), tape: el.querySelector(".p-tape"), empty: el.querySelector(".empty"),
     data: null};
@@ -204,6 +307,24 @@ function ensurePane(i){
   p.head.addEventListener("click", e => {
     const b = e.target.closest("button[data-pin]");
     if (b) post("/api/pin", {symbol: b.dataset.pin, pinned: b.dataset.on === "1"});
+  });
+  p.ladder.addEventListener("click", e => {
+    const chip = e.target.closest(".chip[data-id]");
+    if (chip){ cancelMine(+chip.dataset.id); return; }
+    const cell = e.target.closest("td.act");
+    if (cell && p.data){ sendOrder(p.data.symbol, cell.dataset.act, +cell.dataset.px); }
+  });
+  p.tradebar.addEventListener("click", e => {
+    const b = e.target.closest("button[data-do]");
+    if (!b || !p.data) return;
+    const d = p.data, qty = +p.tradebar.querySelector("input").value || T().default_shares;
+    if (b.dataset.do === "buy" && d.bid) sendOrder(d.symbol, "BUY", d.bid, qty);
+    if (b.dataset.do === "sell" && d.ask) sendOrder(d.symbol, "SELL", d.ask, qty);
+    if (b.dataset.do === "flat") flatten(d.symbol);
+    if (b.dataset.do === "cxl") cancelAll(d.symbol);
+  });
+  p.tradebar.addEventListener("change", e => {
+    if (e.target.tagName === "INPUT") post("/api/trade/size", {shares: +e.target.value});
   });
   p.ladder.addEventListener("wheel", () => { p.userScroll = Date.now(); }, {passive: true});
   p.ladder.addEventListener("touchmove", () => { p.userScroll = Date.now(); }, {passive: true});
@@ -236,24 +357,31 @@ function whoTag(row, side){
 function ladderHTML(L){
   if (!L || !L.rows.length) return `<div class="empty">Waiting for the book…</div>`;
   const ms = Math.max(L.max_traded, 1);
+  const on = canTrade(), dis = on ? "" : " disabled";
+  const chips = (r, side) => (r.mine || []).filter(o => (o.action === "BUY") === (side === "b")).map(o =>
+    `<span class="chip ${side} ${o.status === "PreSubmitted" ? "wait" : ""}" data-id="${o.id}" title="${esc(o.role)} order — click to cancel">${sz(o.qty)}</span>`).join(" ");
   let h = `<table class="lad"><tr>
+    <th class="act" title="Click a price here to BUY at that price">BUY</th>
     <th title="Shares sold INTO the bid at this price (last ${L.memory_minutes} min). Big green = a buyer absorbing.">SOLD INTO BID</th>
     <th>BID</th><th>PRICE</th><th>ASK</th>
-    <th title="Shares bought FROM the ask at this price (last ${L.memory_minutes} min). Big red = a seller absorbing.">BOUGHT AT ASK</th></tr>`;
+    <th title="Shares bought FROM the ask at this price (last ${L.memory_minutes} min). Big red = a seller absorbing.">BOUGHT AT ASK</th>
+    <th class="act" title="Click a price here to SELL at that price">SELL</th></tr>`;
   for (const r of L.rows){
     const cls = [r.gap?"gap":"", r.best_bid?"best-bid":"", r.best_ask?"best-ask":"", r.tags.length?"lvl":"", r.last?"lastpx":"",
       r.bid_state==="RELOAD"?"rl-bid":"", r.ask_state==="RELOAD"?"rl-ask":""].join(" ");
     const sw = r.sold ? Math.max(4, 100 * r.sold / ms) : 0, bw = r.bought ? Math.max(4, 100 * r.bought / ms) : 0;
     h += `<tr class="${cls}">
+      <td class="act b${dis}" data-act="BUY" data-px="${r.price}" title="${on ? "BUY " + sz(T().default_shares) + " @ " + px(r.price) : whyNot()}">${chips(r, "b") || "BUY"}</td>
       <td class="bars l">${sw?`<span class="bar sold" style="width:${sw}%"></span>`:""}<span class="bar-n">${kfmt(r.sold)}</span></td>
       <td class="sz bsz">${whoTag(r,"bid")}${pips(r.bid_refills,"b")} ${r.bid?kfmt(r.bid):""}</td>
-      <td class="px">${px(r.price)}${r.tags.map(t => `<span class="tag">${esc(t)}</span>`).join("")}${(r.mine||[]).map(t => `<span class="mine">${esc(t)}</span>`).join("")}</td>
+      <td class="px">${px(r.price)}${r.tags.map(t => `<span class="tag">${esc(t)}</span>`).join("")}</td>
       <td class="sz asz">${r.ask?kfmt(r.ask):""} ${pips(r.ask_refills,"a")}${whoTag(r,"ask")}</td>
-      <td class="bars r">${bw?`<span class="bar bought" style="width:${bw}%"></span>`:""}<span class="bar-n">${kfmt(r.bought)}</span></td></tr>`;
+      <td class="bars r">${bw?`<span class="bar bought" style="width:${bw}%"></span>`:""}<span class="bar-n">${kfmt(r.bought)}</span></td>
+      <td class="act s${dis}" data-act="SELL" data-px="${r.price}" title="${on ? "SELL " + sz(T().default_shares) + " @ " + px(r.price) : whyNot()}">${chips(r, "s") || "SELL"}</td></tr>`;
   }
   h += `</table><div class="legend">Every row remembers the last ${L.memory_minutes} min. <span class="buy">Green bar</span> = shares sold into the bid there,
     <span class="sell">red bar</span> = shares bought from the ask. <span class="pips b">●</span><span class="pips a">●</span> = times the size came back after being hit.
-    A glowing row = a reload is confirmed there. Gold rows = your levels.</div>`;
+    A glowing row = a reload is confirmed there. Gold rows = your levels. Click BUY / SELL on a row to place a limit there; click your order chip to cancel it.</div>`;
   return h;
 }
 
@@ -269,7 +397,7 @@ function renderPane(p, d){
   p.data = d;
   const showEmpty = !d;
   p.empty.hidden = !showEmpty;
-  for (const el of [p.say, p.lines, p.body, p.tape]) el.hidden = showEmpty;
+  for (const el of [p.say, p.lines, p.tradebar, p.body, p.tape]) el.hidden = showEmpty;
   p.el.classList.toggle("pinned", !!(d && d.pinned));
   if (!d){
     p.head.innerHTML = `<span class="sym dim">Ladder ${p.i + 1}</span>`;
@@ -287,6 +415,17 @@ function renderPane(p, d){
     <span class="p-quote dim">TRIG <b style="color:var(--gold)">${px(pl.trigger)}</b> · 2ND <b style="color:var(--cyan)">${px(pl.second_entry)}</b></span>
     ${d.position ? `<span class="pill ${d.position.pnl >= 0 ? "ok" : "bad"}">POS ${d.position.qty > 0 ? "+" : ""}${sz(d.position.qty)} @ ${px(d.position.avg_cost)}${d.position.pnl != null ? ` · ${d.position.pnl >= 0 ? "+" : "−"}$${sz(Math.abs(d.position.pnl).toFixed(0))}` : ""}</span>` : ""}
     ${d.orders.length ? `<span class="pill">${d.orders.length} working order${d.orders.length > 1 ? "s" : ""}</span>` : ""}`;
+  const t = T(), on = canTrade();
+  const pos = d.position;
+  const sizeVal = p.tradebar.querySelector("input") ? p.tradebar.querySelector("input").value : t.default_shares;
+  p.tradebar.innerHTML = `
+    <span class="dim">Size</span><input type="number" min="1" step="100" value="${document.activeElement && document.activeElement.closest && document.activeElement.closest(".tradebar") === p.tradebar ? sizeVal : t.default_shares}">
+    <button class="bbuy" data-do="buy" ${on && d.bid ? "" : "disabled"} title="${on ? "Buy on the bid " + px(d.bid) : whyNot()}">BUY bid ${px(d.bid)}</button>
+    <button class="bsell" data-do="sell" ${on && d.ask ? "" : "disabled"} title="${on ? "Sell on the ask " + px(d.ask) : whyNot()}">SELL ask ${px(d.ask)}</button>
+    <button class="bflat" data-do="flat" ${on && pos ? "" : "disabled"}>Flatten</button>
+    <button data-do="cxl" ${d.orders.length ? "" : "disabled"}>Cancel all (${d.orders.length})</button>
+    <span class="pos">${pos ? `<span class="${pos.qty > 0 ? "buy" : "sell"}">${pos.qty > 0 ? "LONG" : "SHORT"} ${sz(Math.abs(pos.qty))}</span> @ ${px(pos.avg_cost)}${pos.pnl != null ? ` · <span class="${pos.pnl >= 0 ? "buy" : "sell"}">${pos.pnl >= 0 ? "+" : "−"}$${sz(Math.abs(pos.pnl).toFixed(0))}</span>` : ""}` : `<span class="dim">flat</span>`}</span>
+    ${!on ? `<span class="dim" style="font-size:11px">${esc(whyNot())}</span>` : ""}`;
   if (d.changed){
     p.changed.hidden = false;
     p.changed.textContent = `This ladder switched from ${d.changed.prev} to ${d.symbol} (${d.changed.reason === "pinned" ? "you pinned it" : "it is closer to its level"}) ${ago(state.now - d.changed.t)} ago.`;
@@ -430,7 +569,7 @@ function drawChart(p){
     g.strokeStyle = col; g.lineWidth = 1.2; g.setLineDash([8, 3, 2, 3]);
     g.beginPath(); g.moveTo(0, yy); g.lineTo(plotW, yy); g.stroke(); g.setLineDash([]);
     g.fillStyle = "#0a0d12"; g.strokeStyle = col; g.fillRect(plotW, yy - 8, labelW, 16); g.strokeRect(plotW + .5, yy - 7.5, labelW - 1, 15);
-    g.fillStyle = col; g.fillText(`YOU ${o.action} ${sz(o.qty)}`.slice(0, 13), plotW + 3, yy + 4);
+    g.fillStyle = col; g.fillText(`${o.role === "entry" ? "YOU " + o.action : o.role.toUpperCase()} ${sz(o.qty)}`.slice(0, 13), plotW + 3, yy + 4);
   }
   // last price
   if (d.last){
@@ -461,6 +600,18 @@ function render(s){
   conn.className = "pill " + (c.state==="CONNECTED"?"ok":["CONNECTING","REPLAY","DEMO"].includes(c.state)?"warn":"bad");
   document.getElementById("mdt").textContent = c.market_data_type ? "DATA " + (MDT[c.market_data_type]||c.market_data_type) : "";
   document.getElementById("meta").textContent = `${s.depth.length}/${s.slots} ladders · up ${ago(s.uptime)}`;
+  const t = s.trading || {};
+  const mode = document.getElementById("mode");
+  const modeText = {SIM: "PRACTICE · simulator fills", PAPER: "PAPER account", LIVE: t.can_trade ? "LIVE ACCOUNT — REAL MONEY" : "LIVE account · trading locked", NONE: "no account yet"};
+  mode.textContent = modeText[t.mode] || t.mode;
+  mode.className = "pill " + (t.mode || "none").toLowerCase();
+  const arm = document.getElementById("arm");
+  arm.textContent = t.armed ? "ARMED — click to disarm" : "ARM";
+  arm.className = t.armed ? "armed" : "off";
+  arm.disabled = !t.can_trade;
+  arm.title = t.can_trade ? "" : (t.why_not || "");
+  document.getElementById("oneclick").checked = !!t.one_click;
+  document.getElementById("bracket").checked = !!t.bracket;
   const rot = document.getElementById("rotate");
   rot.textContent = "Auto-rotate: " + (s.auto_rotate ? "ON" : "OFF");
   rot.className = s.auto_rotate ? "" : "on";
@@ -481,9 +632,9 @@ function render(s){
   document.getElementById("ranking").innerHTML = `<table class="t"><tr><th>#</th><th>SIDE</th><th>LAST</th><th>TRIGGER</th><th>2ND</th><th style="text-align:left">WHERE PRICE IS</th><th></th></tr>${rows}</table>`;
 
   const A = s.account;
-  const pend = A.pending.map(o => `<tr><td>${esc(o.symbol)}</td><td class="${o.action==="BUY"?"buy":"sell"}">${esc(o.action)}</td>
+  const pend = A.pending.map(o => `<tr><td>${esc(o.symbol)} <span class="dim">${esc(o.role || "")}</span></td><td class="${o.action==="BUY"?"buy":"sell"}">${esc(o.action)}</td>
     <td>${sz(o.remaining ?? o.qty)}${o.filled ? ` <span class="dim">(${sz(o.filled)} filled)</span>` : ""}</td><td>${esc(o.type)}</td>
-    <td>${o.lmt ? px(o.lmt) : ""}${o.aux ? ` <span class="dim">stop ${px(o.aux)}</span>` : ""}</td><td class="dim">${esc(o.tif || "")}</td><td>${esc(o.status || "")}</td></tr>`).join("")
+    <td>${o.lmt ? px(o.lmt) : ""}${o.aux ? ` <span class="dim">stop ${px(o.aux)}</span>` : ""}</td><td class="dim">${esc(o.tif || "")}</td><td>${esc(o.status || "")}${o.order_id != null ? ` <button class="cxl" data-cxl="${o.order_id}">✕</button>` : ""}</td></tr>`).join("")
     || `<tr><td colspan="7" class="dim">${A.seen ? "No working orders." : "Waiting for IBKR account data…"}</td></tr>`;
   const done = A.done.slice(0, 5).map(o => `<tr class="dim"><td>${esc(o.symbol)}</td><td>${esc(o.action)}</td><td>${sz(o.qty)}</td><td>${esc(o.type)}</td>
     <td>${o.lmt ? px(o.lmt) : ""}</td><td></td><td>${esc(o.status)}</td></tr>`).join("");
@@ -503,10 +654,21 @@ function render(s){
     `<div class="msg-${esc(m.level)} mono" style="font-size:11px">${ago(s.now-m.t)} · ${esc(m.text)}</div>`).join("") || `<span class="dim">—</span>`;
 }
 
+document.getElementById("account").addEventListener("click", e => {
+  const b = e.target.closest("button[data-cxl]");
+  if (b) cancelMine(+b.dataset.cxl);
+});
 document.getElementById("ranking").addEventListener("click", e => {
   const b = e.target.closest("button[data-pin]");
   if (b) post("/api/pin", {symbol: b.dataset.pin, pinned: b.dataset.on === "1"});
 });
+document.getElementById("arm").addEventListener("click", async () => {
+  const out = await post("/api/trade/arm", {on: !T().armed});
+  if (!out.ok) toast("Can't arm: " + out.reason, false);
+  else toast(out.armed ? "ARMED — clicks on the ladder now send orders" : "Disarmed", true);
+});
+document.getElementById("oneclick").addEventListener("change", e => post("/api/trade/oneclick", {on: e.target.checked}));
+document.getElementById("bracket").addEventListener("change", e => post("/api/trade/bracket", {on: e.target.checked}));
 document.getElementById("rotate").addEventListener("click", () => post("/api/autorotate", {on: !(state && state.auto_rotate)}));
 document.getElementById("resetLayout").addEventListener("click", () => {
   store.clear();

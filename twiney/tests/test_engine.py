@@ -142,8 +142,8 @@ class FlowTests(unittest.TestCase):
         e.on_depth("AAA", 0, DELETE, ASK, 10.00, 0, "", t + 0.05)
         e.on_print("AAA", 10.01, 300, "ARCA", t + 0.1)
         self.assertEqual(got[-1]["label"], "CLEANED UP")
-        self.assertIn("SELLER at 10.00 (your trigger) got CLEANED UP", got[-1]["text"])
-        self.assertIn("keeps reloading at 10.00", got[0]["text"])
+        self.assertIn("CLEANED UP — the SELLER at 10.00 (your trigger) is gone", got[-1]["text"])
+        self.assertIn("RELOAD SELLER at 10.00", got[0]["text"])
         self.assertEqual(got[-1]["size_before_gone"], 1000)
         pane = e.snapshot(t + 1)["panes"][0]
         self.assertTrue(pane["marks"])      # absorption bubbles for the chart
@@ -190,7 +190,7 @@ class FlowTests(unittest.TestCase):
         price_all(e, 1.0, {"AAA": 10.0})
         e.on_print("AAA", 10.00, 100, "X", 1.0)
         s = e.snapshot(2.0)
-        self.assertEqual(s["mode"], "READ-ONLY · MARKET DATA ONLY")
+        self.assertEqual(s["mode"], "PAPER-ONLY ORDER ENTRY · LIVE LOCKED")
         d = s["depth"][0]
         self.assertEqual(d["symbol"], "AAA")
         self.assertEqual(len(d["book"]["asks"]), 3)

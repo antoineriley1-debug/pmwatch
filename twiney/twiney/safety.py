@@ -1,35 +1,17 @@
-"""Hard read-only guard.
+"""Where the order path is allowed to live.
 
-The IBKR client class is built as ``ReadOnlyGuard`` first in the MRO, so even
-if some future code tried to reach an order/execution call, the guard raises
-before the request could be serialized to TWS / IB Gateway. For defense in
-depth, also enable "Read-Only API" in TWS / Gateway API settings.
+TWINEY can send orders, but only through ``trading.TradingGate``:
+  - PAPER accounts (IBKR ids starting "DU") or the built-in simulator only,
+    unless ``trading.allow_live`` is explicitly true in config.json;
+  - DISARMED at every launch until the trader clicks ARM;
+  - LIMIT entries only, size and dollar caps, per-minute order cap.
+
+``ORDER_CALLS`` lists the IBKR client methods that place / cancel orders.
+The test-suite scans the package and fails if any file other than those in
+``ORDER_PATH`` calls them, so the gate cannot be bypassed by accident.
 """
 
-FORBIDDEN_CALLS = (
-    "placeOrder",
-    "cancelOrder",
-    "reqGlobalCancel",
-    "exerciseOptions",
-    "reqIds",
-)
+ORDER_CALLS = ("placeOrder", "cancelOrder", "reqGlobalCancel", "exerciseOptions")
 
-
-class ReadOnlyViolation(RuntimeError):
-    pass
-
-
-def _blocked(name):
-    def method(self, *args, **kwargs):
-        raise ReadOnlyViolation(f"TWINEY is market-data only: {name}() is disabled")
-    method.__name__ = name
-    return method
-
-
-class ReadOnlyGuard:
-    pass
-
-
-for _name in FORBIDDEN_CALLS:
-    setattr(ReadOnlyGuard, _name, _blocked(_name))
-del _name
+# the only files allowed to mention the order calls
+ORDER_PATH = ("twiney/ibkr.py", "twiney/trading.py", "twiney/safety.py")

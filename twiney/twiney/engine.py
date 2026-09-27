@@ -106,6 +106,8 @@ class Engine:
         self.positions = {}     # (account, symbol) -> {"qty", "avg_cost"}
         self.fills = {}         # exec id -> fill dict
         self.account_seen = False
+        self.trader = None      # set by run_twiney when order entry is enabled
+        self.sim_broker = None  # demo-mode fill simulator, if any
         self.alerts = deque(maxlen=300)
         self.messages = deque(maxlen=80)
         self.listeners = []
@@ -181,6 +183,8 @@ class Engine:
                 return  # stale update for a slot that was already released
             st.book.apply(position, operation, side, price, size, market_maker)
             st.depth_t = t
+            if self.sim_broker is not None:
+                self.sim_broker.on_market(symbol, t)
             judge = self._judge(st, t)
             for tr in list(st.trackers.values()):
                 if tr.side != side:
@@ -223,6 +227,8 @@ class Engine:
             st.memory.append((t, k, price, rec["side"], size))
             while st.memory and t - st.memory[0][0] > MEMORY_SECONDS:
                 st.memory.popleft()
+            if self.sim_broker is not None:
+                self.sim_broker.on_market(symbol, t)
             marked = False
             for tr in list(st.trackers.values()):
                 before = tr.absorbed_total
@@ -258,6 +264,14 @@ class Engine:
             o = self.orders.setdefault(key, {"key": key, "first_seen": t})
             o.update({k: v for k, v in fields.items() if v is not None})
             o["t"] = t
+
+    def rename_order(self, old_key, new_key):
+        """TWS assigns a permanent id after we sent the order under our own id."""
+        with self.lock:
+            if old_key in self.orders and new_key not in self.orders:
+                o = self.orders.pop(old_key)
+                o["key"] = new_key
+                self.orders[new_key] = o
 
     def on_orders_snapshot_end(self, seen_keys, t):
         """After a full open-order refresh, orders not listed are no longer working."""
@@ -592,8 +606,10 @@ class Engine:
         for o in self._pending(st.symbol):
             for p_ in (o.get("lmt"), o.get("aux")):
                 if p_:
-                    mine.setdefault(price_key(p_, tk), []).append(
-                        f"YOU {o.get('action', '?')} {int(o.get('remaining') or o.get('qty') or 0)}")
+                    mine.setdefault(price_key(p_, tk), []).append({
+                        "id": o.get("order_id"), "action": o.get("action", "?"),
+                        "qty": int(o.get("remaining") or o.get("qty") or 0), "role": o.get("role", "entry"),
+                        "status": o.get("status")})
                     break
         trk = {}
         for tr in st.trackers.values():
@@ -679,8 +695,9 @@ class Engine:
                 for p in st.tape.recent(14)]),
             "levels": levels,
             "user_levels": user_levels,
-            "orders": [{"action": o.get("action"), "qty": o.get("remaining") or o.get("qty"),
-                        "type": o.get("type"), "price": o.get("lmt") or o.get("aux")}
+            "orders": [{"id": o.get("order_id"), "action": o.get("action"), "qty": o.get("remaining") or o.get("qty"),
+                        "type": o.get("type"), "price": o.get("lmt") or o.get("aux"), "role": o.get("role", "entry"),
+                        "status": o.get("status")}
                        for o in self._pending(sym)],
             "position": self._position_view(sym, st.price()),
             "bars": bars,
@@ -720,13 +737,15 @@ class Engine:
             return {
                 "now": t,
                 "uptime": round(t - self.started, 1) if self.started else 0,
-                "mode": "READ-ONLY · MARKET DATA ONLY",
+                "mode": "PAPER-ONLY ORDER ENTRY · LIVE LOCKED" if not self.cfg["trading"]["allow_live"] else "LIVE TRADING ENABLED",
                 "connection": dict(self.connection),
                 "slots": self.cfg["depth"]["slots"],
                 "auto_rotate": self.auto_rotate,
                 "ranking": ranking,
                 "panes": panes,
                 "depth": [pn for pn in panes if pn],
+                "trading": self.trader.snapshot() if self.trader else {"mode": "NONE", "can_trade": False,
+                                                                        "why_not": "order entry not loaded"},
                 "account": {
                     "seen": self.account_seen,
                     "pending": sorted(self._pending(), key=lambda o: -o.get("first_seen", 0)),

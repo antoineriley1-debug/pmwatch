@@ -1,7 +1,7 @@
 """Local dashboard: one HTML page polling /api/state.
 
-The only write routes are screen controls (pin a symbol to a ladder, turn
-auto-rotation on/off). Nothing here can reach an order path.
+Write routes: screen controls (pin, auto-rotate) and order entry (/api/trade/*),
+which goes through trading.Trader -> TradingGate (paper-only lock, caps, ARM).
 """
 
 import json
@@ -13,7 +13,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 STATIC = os.path.join(os.path.dirname(__file__), "static", "dashboard.html")
 
 
-def make_handler(engine, clock):
+def make_handler(engine, clock, trader=None):
     class Handler(BaseHTTPRequestHandler):
         server_version = "TWINEY/1.0"
 
@@ -66,15 +66,51 @@ def make_handler(engine, clock):
             elif path == "/api/autorotate":
                 engine.set_auto_rotate(bool(body.get("on")), clock())
                 self._send(200, json.dumps({"ok": True}), "application/json")
+            elif path.startswith("/api/trade/"):
+                self._trade(path[len("/api/trade/"):], body)
             else:
                 self._send(404, "not found", "text/plain")
+
+        def _trade(self, action, body):
+            if trader is None:
+                self._send(503, json.dumps({"ok": False, "reason": "order entry not loaded"}), "application/json")
+                return
+            now = clock()
+            sym = str(body.get("symbol", "")).upper()
+            try:
+                if action == "arm":
+                    ok = trader.gate.arm(bool(body.get("on")))
+                    out = {"ok": ok, "armed": trader.gate.armed, "reason": None if ok else trader.gate.why_not()}
+                elif action == "oneclick":
+                    trader.gate.one_click = bool(body.get("on"))
+                    out = {"ok": True}
+                elif action == "size":
+                    out = {"ok": trader.set_size(body.get("shares")), "default_shares": trader.default_shares}
+                elif action == "bracket":
+                    trader.bracket = bool(body.get("on"))
+                    out = {"ok": True}
+                elif action == "order":
+                    out = trader.submit(sym, str(body.get("action", "")).upper(), body.get("price"),
+                                        body.get("qty"), now, body.get("bracket"))
+                elif action == "cancel":
+                    out = trader.cancel(body.get("id"), now)
+                elif action == "cancel_all":
+                    out = trader.cancel_all(sym or None, now)
+                elif action == "flatten":
+                    out = trader.flatten(sym, now)
+                else:
+                    self._send(404, "not found", "text/plain")
+                    return
+            except Exception as exc:  # never let a broker error kill the dashboard
+                out = {"ok": False, "reason": str(exc)}
+            self._send(200, json.dumps(out, default=str), "application/json")
 
     return Handler
 
 
 class Dashboard:
-    def __init__(self, engine, host, port, clock=time.time):
-        self.httpd = ThreadingHTTPServer((host, port), make_handler(engine, clock))
+    def __init__(self, engine, host, port, clock=time.time, trader=None):
+        self.httpd = ThreadingHTTPServer((host, port), make_handler(engine, clock, trader))
         self.httpd.daemon_threads = True
         self.thread = None
 

@@ -77,6 +77,19 @@ DEFAULTS = {
         "depth_stale_seconds": 15.0,
         "tape_stale_seconds": 60.0,
     },
+    "trading": {
+        # Order entry from the ladder. PAPER ONLY unless allow_live is true.
+        "enabled": True,
+        "allow_live": False,
+        "default_shares": 100,
+        "max_shares_per_order": 500,
+        "max_dollars_per_order": 25000,
+        "max_orders_per_minute": 10,
+        # attach the play's stop + target to every entry
+        "bracket": True,
+        # "Flatten" uses a limit this many ticks through the market
+        "flatten_slip_ticks": 5,
+    },
     "account": {
         # show your pending orders, positions and today's fills (read-only view)
         "show": True,
