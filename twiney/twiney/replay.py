@@ -2,7 +2,7 @@
 
 import time
 
-from .engine import ALERT_LABELS, Engine
+from .engine import ALERT_LABELS, PS60_LABELS, Engine
 from .recorder import read_events
 
 TICK_STEP = 0.25  # the live session evaluates time-based rules every 0.25s
@@ -80,7 +80,7 @@ def compare(engine, recorded):
     def counts(alerts):
         out = {}
         for a in alerts:
-            if a["label"] in ALERT_LABELS:
+            if a["label"] in ALERT_LABELS + PS60_LABELS:
                 key = (a["symbol"], a["label"], a["price"])
                 out[key] = out.get(key, 0) + 1
         return out

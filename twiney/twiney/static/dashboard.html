@@ -91,6 +91,14 @@ tr.retired td{opacity:.55} tr.retired td.status{opacity:1;color:var(--gold)}
 .p-say.at{border-color:var(--gold)} .p-say.near{border-color:var(--cyan)}
 .p-lines{margin:0 10px 4px 26px;padding:0;font-size:12.5px;color:#c4cddb;max-height:78px;overflow-y:auto;flex:0 0 auto}
 .p-lines li{margin:1px 0}
+.p-ps60{margin:2px 10px 4px;font-size:12.5px;display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center}
+.p-ps60 .g{font-weight:700;padding:1px 8px;border-radius:10px;font-size:11px;letter-spacing:.04em}
+.p-ps60 .g.READY{background:#163a28;color:var(--buy)} .p-ps60 .g.WATCH{background:#3a3016;color:var(--gold)} .p-ps60 .g.PASS{background:#3a1a1e;color:var(--sell)}
+.p-ps60 .gates{display:inline-flex;gap:4px} .p-ps60 .gates span{cursor:help;font-size:11px}
+.p-ps60 .se{flex-basis:100%;color:#c4cddb} .p-ps60 button.use{padding:0 6px;font-size:11px}
+.pane[data-hide~="ps60"] .p-ps60{display:none !important}
+.say.remount{border-color:var(--buy)} .say.rejection{border-color:var(--sell)}
+td.grade{font-weight:700} td.grade.READY{color:var(--buy)} td.grade.WATCH{color:var(--gold)} td.grade.PASS{color:var(--sell)}
 .p-body{flex:1 1 0;display:grid;grid-template-columns:minmax(0,1fr) 8px var(--ladder-w,340px);grid-template-rows:minmax(0,1fr);gap:4px;padding:4px 10px;min-height:300px}
 .chart-wrap{position:relative;min-height:0;border:1px solid var(--line);border-radius:6px;overflow:hidden}
 .chart-wrap canvas{position:absolute;inset:0;width:100%;height:100%}
@@ -234,6 +242,7 @@ td.status{text-align:left !important;white-space:normal !important;color:#c4cddb
   <span class="spacer"></span>
   <label class="dim" title="Skip the confirmation box on every order"><input type="checkbox" id="oneclick"> one-click</label>
   <label class="dim" title="Attach the play's stop and target to every entry"><input type="checkbox" id="bracket"> stop+target</label>
+  <label class="dim" title="PS60 exits: pay yourself along the way (½ at +$0.50, ¼ at +$1.50 by default), the rest runs to the target; after the first cash flow the stop moves to breakeven. Edit the plan in config.json → trading.scale_plan."><input type="checkbox" id="scale"> PS60 exits</label>
   <span id="pnl" title="today: realized + open">P&amp;L —</span>
   <button id="soundBtn" title="beep on every call">🔊</button>
   <button id="alertsBtn" title="Show / hide the call feed and call pop-ups">🔔 Alerts</button>
@@ -325,10 +334,16 @@ async function sendOrder(symbol, action, price, qty){
   const pl = pane ? pane.play : {};
   const legs = [];
   if (t.bracket){
-    if (pl.stop && (action === "BUY" ? pl.stop < price : pl.stop > price)) legs.push("stop " + px(pl.stop));
-    if (pl.target && (action === "BUY" ? pl.target > price : pl.target < price)) legs.push("target " + px(pl.target));
+    if (pl.stop && (action === "BUY" ? pl.stop < price : pl.stop > price)) legs.push("stop-limit " + px(pl.stop));
+    if (t.scale){
+      const sign = action === "BUY" ? 1 : -1;
+      for (const l of t.scale_plan || []) legs.push(`${Math.round(l.fraction * 100)}% cash flow @ ${px(price + sign * l.dollars)}`);
+      if (pl.target) legs.push("runner to " + px(pl.target));
+    } else if (pl.target && (action === "BUY" ? pl.target > price : pl.target < price)) legs.push("target " + px(pl.target));
   }
-  confirmBox(`${action} ${sz(qty)} ${symbol} @ ${px(price)}`, `about $${sz(Math.round(qty * price))}` + (legs.length ? " · with " + legs.join(" + ") : " · no stop/target attached"),
+  const g = pane && pane.ps60;
+  const warn = g && g.grade === "PASS" ? ` ⚠ PS60 says PASS: ${g.why}.` : g && g.grade === "WATCH" ? ` · PS60: WATCH — ${g.why}.` : "";
+  confirmBox(`${action} ${sz(qty)} ${symbol} @ ${px(price)}`, `about $${sz(Math.round(qty * price))}` + (legs.length ? " · with " + legs.join(" + ") : " · no stop/target attached") + warn,
     action === "BUY" ? "b" : "s", go);
 }
 function confirmBox(title, legs, cls, onSend){
@@ -475,6 +490,7 @@ function ensurePane(i){
     <div class="p-changed" hidden></div>
     <div class="p-say"></div>
     <ul class="p-lines"></ul>
+    <div class="p-ps60"></div>
     <div class="tradebar"></div>
     <div class="p-body">
       <div class="chart-wrap"><div class="chart-tools"></div><canvas></canvas><div class="chart-hint">wheel = zoom · drag = pan · drag price axis = stretch · dbl-click = reset</div></div>
@@ -492,6 +508,7 @@ function ensurePane(i){
   el.dataset.cols = (store.get("pcols." + i, []) || []).join(" ");
   const p = {el, i, head: el.querySelector(".p-head"), changed: el.querySelector(".p-changed"),
     say: el.querySelector(".p-say"), lines: el.querySelector(".p-lines"), body: el.querySelector(".p-body"),
+    ps60: el.querySelector(".p-ps60"),
     tradebar: el.querySelector(".tradebar"),
     canvas: el.querySelector("canvas"), tools: el.querySelector(".chart-tools"),
     ladder: el.querySelector(".ladder-wrap"), tape: el.querySelector(".p-tape"), empty: el.querySelector(".empty"),
@@ -638,6 +655,13 @@ function ensurePane(i){
     if (e.target.dataset.mark){ v.levelTool = e.target.value || null; renderTools(p); }
   });
   p.tools.addEventListener("mousedown", e => e.stopPropagation());
+  p.ps60.addEventListener("click", async e => {
+    const b = e.target.closest("button[data-se]");
+    if (!b || !p.data) return;
+    const out = await post("/api/level", {symbol: p.data.symbol, role: "second_entry", price: +b.dataset.se});
+    toast(out.ok ? `2nd entry set to ${px(+b.dataset.se)} and saved` : "Could not set the 2nd entry", out.ok);
+    poll(true);
+  });
   p.tools.addEventListener("click", e => {
     const tf = e.target.dataset.tf;
     if (tf){ store.set("tf." + i, +tf); v.offset = 0; v.follow = true; drawChart(p); renderTools(p); }
@@ -747,6 +771,21 @@ function renderTools(p){
         <option value="stop" ${p.view.levelTool==="stop"?"selected":""}>stop</option><option value="extra" ${p.view.levelTool==="extra"?"selected":""}>extra level</option></select>`;
   p.canvas.classList.toggle("lvltool", !!p.view.levelTool);
 }
+function ps60HTML(d){
+  const s = d.ps60; if (!s) return "";
+  const mp = s.mp, se = s.se;
+  const mpTxt = mp.dollars == null ? "no target = no measured potential" :
+    mp.verdict === "REACHED" ? "measured potential reached" :
+    `MP $${mp.dollars.toFixed(2)}` + (mp.atr ? ` · ATR $${mp.atr.toFixed(2)} · ${mp.ratio}× → <b>${mp.verdict}</b>` : " · ATR not loaded yet");
+  const gates = (s.gates || []).map(g => `<span title="${esc(g.q + " " + g.why)}">${g.ok ? "✅" : "❌"}</span>`).join("");
+  const canSet = se.extreme && ["BROKE", "RETRACE"].includes(se.state) && Math.abs((d.play.second_entry || 0) - se.extreme) > 1e-6;
+  const sneaky = (s.sneaky || []).map(x => `<span class="dim" title="${esc(x.text)}">${esc(x.label)} ${px(x.price)} ×${x.touches} · MP $${x.mp.toFixed(2)}</span>`).join("");
+  return `<span class="g ${s.grade}" title="${esc(s.why)}">${s.grade}</span><span class="dim">${esc(s.why)}</span>
+    <span class="gates" title="the four questions: pivot valid · size · control · risk">${gates}</span>
+    <span title="measured potential = dollars from here to your target, judged against the daily ATR">${mpTxt}</span>
+    <span class="se">${esc(se.text)} ${canSet ? `<button class="use" data-se="${se.extreme}" title="make ${px(se.extreme)} this play's 2nd entry (saved to plays.json)">use ${px(se.extreme)} as 2nd entry</button>` : ""}</span>
+    ${sneaky}`;
+}
 function swapPanes(a, b){
   const order = store.get("order", null) || paneEls.map((_, k) => k);
   const ia = order.indexOf(a), ib = order.indexOf(b);
@@ -823,7 +862,7 @@ function renderPane(p, d){
   p.data = d;
   const showEmpty = !d;
   p.empty.hidden = !showEmpty;
-  for (const el of [p.say, p.lines, p.tradebar, p.body, p.tape]) el.hidden = showEmpty;
+  for (const el of [p.say, p.lines, p.ps60, p.tradebar, p.body, p.tape]) el.hidden = showEmpty;
   p.el.classList.toggle("pinned", !!(d && d.pinned));
   if (!d){
     p.head.innerHTML = `<span class="grab" title="drag to move this ladder">⠿</span><span class="sym dim">Ladder ${p.i + 1}</span>`;
@@ -841,7 +880,7 @@ function renderPane(p, d){
   p.head.innerHTML = `<span class="grab" title="drag onto another ladder to swap (grid layout)">⠿</span><span class="sym">${esc(d.symbol)}</span>
     <button data-max="1" title="maximize / restore">${p.el.classList.contains("max") ? "⤡" : "⤢"}</button>
     <span class="menu gear${gearOpen}"><button title="show / hide parts of this ladder">⚙</button><div class="pop">
-      <h5>SHOW IN THIS LADDER</h5>${part("story", "Story (headline + lines)")}${part("banner", "'ladder switched' banner")}${part("trade", "Trade bar")}${part("chart", "Chart")}${part("ladder", "Ladder")}${part("tape", "Time & sales")}
+      <h5>SHOW IN THIS LADDER</h5>${part("story", "Story (headline + lines)")}${part("ps60", "PS60 read (grade, MP, second entry)")}${part("banner", "'ladder switched' banner")}${part("trade", "Trade bar")}${part("chart", "Chart")}${part("ladder", "Ladder")}${part("tape", "Time & sales")}
       <hr><h5>LADDER COLUMNS</h5>${col("notrade", "BUY / SELL click columns")}${col("nomem", "Sold-into-bid / bought-at-ask memory bars")}${col("nolegend", "Legend text")}
     </div></span>
     <span class="pill ${pl.side==="long"?"ok":"bad"}">${esc(pl.side.toUpperCase())}</span>
@@ -874,6 +913,7 @@ function renderPane(p, d){
   p.say.className = "p-say " + (d.tone || "");
   p.say.textContent = d.headline;
   p.lines.innerHTML = d.lines.map(l => `<li>${esc(l)}</li>`).join("");
+  p.ps60.innerHTML = ps60HTML(d);
   const keep = p.ladder.scrollTop;
   if (!p.dragging){
     p.ladder.innerHTML = ladderHTML(d.ladder);
@@ -962,7 +1002,7 @@ function drawChart(p){
   g.strokeStyle = "#1b2433"; g.lineWidth = 1;
   for (let k = 0; k <= 4; k++){ const yy = 8 + k * (plotH - 8) / 4; g.beginPath(); g.moveTo(0, yy); g.lineTo(plotW, yy); g.stroke(); }
 
-  // your levels: zone band + line + label
+  // your levels: band + line + label
   const tickOf = v => v >= 1 ? 0.01 : 0.0001;
   for (const l of d.user_levels){
     const dl = p.dragLevel && p.dragLevel.role === l.role && Math.abs(p.dragLevel.from - l.price) < 1e-6;
@@ -977,6 +1017,27 @@ function drawChart(p){
     g.fillStyle = "#0a0d12"; g.fillText(`${l.label} ${px(lp)}`.slice(0, 13), plotW + 3, yy + 4);
   }
 
+  // PS60: the second-entry line (the new high / low to get back through) and sneaky pivots
+  if (d.ps60){
+    const se = d.ps60.se;
+    if (se.extreme && ["BROKE", "RETRACE", "SECOND_ENTRY"].includes(se.state) && se.extreme >= lo && se.extreme <= hi){
+      const yy = y(se.extreme);
+      g.strokeStyle = "#3fd0ff"; g.lineWidth = 1; g.setLineDash([2, 3]);
+      g.beginPath(); g.moveTo(0, yy); g.lineTo(plotW, yy); g.stroke(); g.setLineDash([]);
+      g.fillStyle = "#3fd0ff"; g.font = "bold 10px system-ui";
+      g.fillText(se.state === "SECOND_ENTRY" ? "2ND ENTRY ✓ " + px(se.extreme) : "2ND ENTRY = through " + px(se.extreme), 6, yy - 4);
+      g.font = "11px ui-monospace, Menlo, Consolas, monospace";
+    }
+    for (const sp of d.ps60.sneaky || []){
+      if (sp.price < lo || sp.price > hi) continue;
+      const yy = y(sp.price), col = sp.kind === "supply" ? "#ff9f43" : "#7bed9f";
+      g.strokeStyle = col; g.lineWidth = 1.2; g.setLineDash([8, 4]);
+      g.beginPath(); g.moveTo(0, yy); g.lineTo(plotW, yy); g.stroke(); g.setLineDash([]);
+      g.fillStyle = col; g.font = "bold 10px system-ui";
+      g.fillText(`SNEAKY PIVOT · ${sp.kind.toUpperCase()} ×${sp.touches} · MP $${sp.mp.toFixed(2)}`, 6, sp.kind === "supply" ? yy - 4 : yy + 12);
+      g.font = "11px ui-monospace, Menlo, Consolas, monospace";
+    }
+  }
   // trapped traders: shaded band where they got in
   if (d.trap){
     for (const [tp, col] of [[d.trap.longs, "255,77,94"], [d.trap.shorts, "38,208,124"]]){
@@ -1122,7 +1183,7 @@ function drawChart(p){
 }
 
 /* ---------- page ---------- */
-function sayClass(a){ return a.label.includes("BUYER") ? "buyer" : a.label.includes("SELLER") ? "seller" : a.label === "CLEANED UP" ? "cleaned" : "pulled"; }
+function sayClass(a){ return a.label.includes("BUYER") ? "buyer" : a.label.includes("SELLER") ? "seller" : a.label === "CLEANED UP" ? "cleaned" : a.label === "REMOUNT" ? "remount" : a.label === "REJECTION" ? "rejection" : "pulled"; }
 
 function render(s){
   state = s;
@@ -1163,6 +1224,7 @@ function render(s){
   arm.title = t.can_trade ? "" : (t.why_not || "");
   document.getElementById("oneclick").checked = !!t.one_click;
   document.getElementById("bracket").checked = !!t.bracket;
+  document.getElementById("scale").checked = !!t.scale;
   const rot = document.getElementById("rotate");
   rot.textContent = "Auto-rotate: " + (s.auto_rotate ? "ON" : "OFF");
   rot.className = s.auto_rotate ? "" : "on";
@@ -1186,11 +1248,12 @@ function render(s){
     <td>${r.retired ? "✖" : (r.rank ?? "—")} ${esc(r.symbol)}${r.depth?" ◆":""}</td>
     <td class="${r.side==="long"?"buy":"sell"}">${esc(r.side)}</td>
     <td>${px(r.last)}</td><td style="color:var(--gold)">${px(r.trigger)}</td><td style="color:var(--cyan)">${px(r.second_entry)}</td>
-    <td class="status">${r.retired ? `RETIRED — ${esc(r.retired.reason)} at ${px(r.retired.price)}` : esc(r.status)}</td>
+    <td class="grade ${r.ps60 ? r.ps60.grade : ""}" title="${esc(r.ps60 ? r.ps60.why : "")}">${r.ps60 ? r.ps60.grade : ""}</td>
+    <td class="status">${r.retired ? `RETIRED — ${esc(r.retired.reason)} at ${px(r.retired.price)}` : esc(r.status)}${r.ps60 && r.ps60.mp.dollars != null && r.ps60.mp.atr ? ` <span class="dim">· MP $${r.ps60.mp.dollars.toFixed(2)} ${r.ps60.mp.verdict}</span>` : ""}</td>
     <td>${r.retired ? `<button data-play="${esc(r.symbol)}" data-act="reactivate" title="Put this play back in the rotation">Reactivate</button>`
       : `<button data-pin="${esc(r.symbol)}" data-on="${r.pinned?0:1}" class="${r.pinned?"on":""}">${r.pinned?"📌 Unpin":"Pin to ladder"}</button>
          <button data-play="${esc(r.symbol)}" data-act="retire" class="dim" title="Take this play out of the rotation (it stops taking a ladder)">✖</button>`}</td></tr>`).join("");
-  document.getElementById("ranking").innerHTML = `<table class="t" data-cols="plays"><tr><th>#</th><th>SIDE</th><th>LAST</th><th>TRIGGER</th><th>2ND</th><th style="text-align:left">WHERE PRICE IS</th><th></th></tr>${rows}</table>`;
+  document.getElementById("ranking").innerHTML = `<table class="t" data-cols="plays"><tr><th>#</th><th>SIDE</th><th>LAST</th><th>TRIGGER</th><th>2ND</th><th>PS60</th><th style="text-align:left">WHERE PRICE IS</th><th></th></tr>${rows}</table>`;
 
   const A = s.account;
   const pend = A.pending.map(o => `<tr><td>${esc(o.symbol)} <span class="dim">${esc(o.role || "")}</span></td><td class="${o.action==="BUY"?"buy":"sell"}">${esc(o.action)}</td>
@@ -1256,6 +1319,7 @@ document.getElementById("arm").addEventListener("click", async () => {
 });
 document.getElementById("oneclick").addEventListener("change", e => post("/api/trade/oneclick", {on: e.target.checked}));
 document.getElementById("bracket").addEventListener("change", e => post("/api/trade/bracket", {on: e.target.checked}));
+document.getElementById("scale").addEventListener("change", e => post("/api/trade/scale", {on: e.target.checked}));
 document.getElementById("soundBtn").addEventListener("click", () => { store.set("sound", !store.get("sound", true)); beep("buyer"); poll(true); });
 document.getElementById("rpPlay").addEventListener("click", () => post("/api/replay", {paused: !(state && state.replay && state.replay.paused)}));
 document.getElementById("rpSpeed").addEventListener("change", e => post("/api/replay", {speed: +e.target.value}));

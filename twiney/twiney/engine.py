@@ -8,7 +8,7 @@ slot commands ("depth_on"/"depth_off") which the market-data adapter executes.
 import threading
 from collections import deque
 
-from . import narrative
+from . import narrative, ps60
 
 from .book import ASK, BID, Book
 from .levels import BUILDING, GONE_PENDING, RELOAD, LevelTracker, WATCHING
@@ -20,6 +20,7 @@ L1_FIELDS = ("bid", "ask", "last", "bid_size", "ask_size", "last_size", "volume"
              "high", "low", "close", "open")
 
 ALERT_LABELS = ("RELOAD BUYER DETECTED", "RELOAD SELLER DETECTED", "CLEANED UP", "PULLED")
+PS60_LABELS = ("REMOUNT", "REJECTION")
 
 BAR_SECONDS = 60
 MAX_BARS = 2400  # ~6 trading days of 1-minute bars, enough for 60-minute candles
@@ -47,6 +48,10 @@ class SymbolState:
         self.retired = None     # {"reason", "t", "price"} once the play's stop or target is hit
         self.invalidation_armed = True  # after Reactivate, wait for price to get back inside stop/target first
         self.bars = {}          # minute start -> [o, h, l, c, v, buy_v, sell_v]
+        self.daily = {}         # day start -> [o, h, l, c] from IBKR daily bars (ATR)
+        self.remounts = set()   # (level, kind, t) already called
+        self.remount_last = {}  # (level, kind) -> t of the last call (cooldown)
+        self.remount_check_t = 0.0
         self.memory = deque()   # (t, price_key, price, aggressor side, size) for the level memory
         self.marks = {}         # (minute, price_key, side) -> [price, absorbed shares]
 
@@ -248,6 +253,18 @@ class Engine:
                     st.marks.setdefault(mk, [price, 0.0])[1] += size
                 if label:
                     self._emit(st, tr, label, t)
+
+    def on_daily_bar(self, symbol, t0, o, h, l, c):
+        """Historical daily bar (ATR / measured potential)."""
+        with self.lock:
+            st = self._st(symbol)
+            if st is None or None in (o, h, l, c):
+                return
+            self._rec({"ev": "dbar", "t": self.last_t or t0, "sym": symbol, "t0": t0, "o": o, "h": h, "l": l, "c": c})
+            st.daily[t0] = [o, h, l, c]
+            if len(st.daily) > 60:
+                for k in sorted(st.daily)[:len(st.daily) - 60]:
+                    del st.daily[k]
 
     def on_hist_bar(self, symbol, t0, o, h, l, c, v):
         """Historical 1-minute bar (reqHistoricalData) so the chart has context at startup."""
@@ -608,9 +625,84 @@ class Engine:
                             and not tr.absorbed_window(t) and t - tr.last_active > rc["auto_idle_seconds"]):
                         del st.trackers[key]
             self._check_plays(t)
+            self._check_remounts(t)
             if not allocate_slots or self.connection["state"] not in ("CONNECTED", "DEMO"):
                 return []
             return self._rotate(t)
+
+    def _check_remounts(self, t):
+        """REMOUNT / REJECTION calls at your levels (through the level, then back through it)."""
+        pc = self.cfg["ps60"]
+        if not pc["remount_alerts"]:
+            return
+        for st in self.syms.values():
+            if t - st.remount_check_t < 15 or st.retired or not st.play["active"]:
+                continue
+            st.remount_check_t = t
+            bars = st.bar_list(120)
+            if len(bars) < 3:
+                continue
+            for lv in self._user_levels(st.play):
+                if lv["role"] not in ("trigger", "second_entry", "extra"):
+                    continue
+                ev = ps60.remount(bars, lv["price"], t, pc)
+                if not ev or t - ev["t"] > 180:
+                    continue
+                key = (price_key(lv["price"]), ev["kind"], ev["t"])
+                if key in st.remounts or t - st.remount_last.get(key[:2], -1e9) < 600:
+                    continue
+                st.remounts.add(key)
+                st.remount_last[key[:2]] = t
+                label = ev["kind"].upper()
+                where = f"{narrative.px(lv['price'])} ({narrative.role_name(lv['role'])})"
+                if ev["kind"] == "remount":
+                    text = (f"REMOUNT at {where}: price went through it (down to {narrative.px(ev['extreme'])}) and "
+                            f"reclaimed it. Dan's how-to: get in above the level once volume reclaims; if it doesn't "
+                            f"work in a couple of minutes, max pain is that overshoot low. Cash flow, then breakeven.")
+                else:
+                    text = (f"REJECTION at {where}: price went through it (up to {narrative.px(ev['extreme'])}) and "
+                            f"lost it again. For a short: in below the level; the top of that overshoot is the out.")
+                alert = {"t": t, "symbol": st.symbol, "label": label, "price": fmt_price(lv["price"]),
+                         "side": "bid" if ev["kind"] == "remount" else "ask", "role": lv["role"], "text": text}
+                alert["key"] = f"{round(t, 2)}|{st.symbol}|{label}|{alert['price']}"
+                self.alerts.appendleft(alert)
+                self._rec(dict(alert, ev="alert"))
+                for fn in self.listeners:
+                    try:
+                        fn(alert)
+                    except Exception:
+                        pass
+
+    def _ranking_ps60(self, st, t):
+        """Cheap PS60 summary for the plays list (cached per minute)."""
+        cache = getattr(st, "_ps60_cache", None)
+        if cache and t - cache[0] < 5:
+            return cache[1]
+        bars = st.bar_list(MAX_BARS)
+        ps = self._ps60(st, t, bars, st.price())
+        out = {"grade": ps["grade"], "why": ps["why"], "mp": ps["mp"], "state": ps["se"]["state"]}
+        st._ps60_cache = (t, out)
+        return out
+
+    def _atr(self, st, bars):
+        pc = self.cfg["ps60"]
+        if len(st.daily) >= 2:
+            daily = [[k] + st.daily[k] for k in sorted(st.daily)]
+        else:
+            daily = ps60.daily_from_bars(bars)
+        return ps60.atr(daily, pc["atr_days"])
+
+    def _ps60(self, st, t, bars, price):
+        """The PS60 read for one play: second entry engine, MP vs ATR, grade, sneaky pivots."""
+        pc = self.cfg["ps60"]
+        tc = self.cfg["trading"]
+        atr_value = self._atr(st, bars)
+        se = ps60.second_entry(bars, st.play, t, pc)
+        mp = ps60.measured_potential(st.play, price, atr_value, pc)
+        shares = self.trader.default_shares if self.trader else tc["default_shares"]
+        gr = ps60.grade(st.play, price, se, mp, shares, bool(st.play.get("stop")), tc)
+        return {"se": se, "mp": mp, "grade": gr["grade"], "why": gr["why"], "gates": gr["gates"],
+                "sneaky": ps60.sneaky_pivots(bars, atr_value, pc), "atr": atr_value}
 
     def _check_plays(self, t):
         """Retire a play once its stop or target trades: it stops taking a ladder."""
@@ -731,6 +823,8 @@ class Engine:
                     self.grades[ev["key"]] = ev["verdict"]
                 else:
                     self.grades.pop(ev["key"], None)
+        elif kind == "dbar":
+            self.on_daily_bar(ev["sym"], ev["t0"], ev["o"], ev["h"], ev["l"], ev["c"])
         elif kind == "hbar":
             self.on_hist_bar(ev["sym"], ev["t0"], ev["o"], ev["h"], ev["l"], ev["c"], ev.get("v"))
 
@@ -937,8 +1031,10 @@ class Engine:
             return None
 
         change = self.slot_changes[i] if i < len(self.slot_changes) else None
+        ps = self._ps60(st, t, bars, st.price())
         return {
             "slot": i,
+            "ps60": ps,
             "symbol": sym,
             "pinned": sym in self.pinned,
             "changed": change if change and t - change["t"] < 20 and change.get("prev") else None,
@@ -958,7 +1054,9 @@ class Engine:
             "reloaders": reloaders,
             "user_levels": user_levels,
             "orders": [{"id": o.get("order_id"), "action": o.get("action"), "qty": o.get("remaining") or o.get("qty"),
-                        "type": o.get("type"), "price": o.get("lmt") or o.get("aux"), "role": o.get("role", "entry"),
+                        "type": o.get("type"),
+                        "price": o.get("aux") if o.get("type") in ("STP", "STP LMT") and o.get("aux") else o.get("lmt") or o.get("aux"),
+                        "role": o.get("role", "entry"),
                         "status": o.get("status")}
                        for o in self._pending(sym)],
             "position": self._position_view(sym, st.price()),
@@ -992,6 +1090,7 @@ class Engine:
                     "pinned": p["symbol"] in self.pinned,
                     "retired": st.retired,
                     "target": p.get("target"), "stop": p.get("stop"),
+                    "ps60": self._ranking_ps60(st, t),
                     "health": self._health(st, t)["status"],
                     "notes": p["notes"],
                 })

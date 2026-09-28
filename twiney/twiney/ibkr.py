@@ -171,6 +171,16 @@ class TwineyWrapper:
     # chart history ----------------------------------------------------------
     def historicalData(self, reqId, bar):
         kind, sym = self.req.get(reqId, (None, None))
+        if kind == "daily":
+            try:
+                t0 = float(bar.date)
+            except (TypeError, ValueError):
+                try:
+                    t0 = time.mktime(time.strptime(str(bar.date)[:8], "%Y%m%d"))
+                except ValueError:
+                    return
+            self.engine.on_daily_bar(sym, t0, num(bar.open), num(bar.high), num(bar.low), num(bar.close))
+            return
         if kind != "hist":
             return
         try:
@@ -213,7 +223,7 @@ def make_contract(play):
     return c
 
 
-def make_order(action, qty, order_type, price, tif="DAY", parent_id=None, transmit=True):
+def make_order(action, qty, order_type, price, tif="DAY", parent_id=None, transmit=True, aux=None, oca=None):
     from ibapi.order import Order
     o = Order()
     o.action = action
@@ -223,6 +233,12 @@ def make_order(action, qty, order_type, price, tif="DAY", parent_id=None, transm
         o.lmtPrice = price
     elif order_type == "STP":
         o.auxPrice = price
+    elif order_type == "STP LMT":
+        o.auxPrice = aux      # the stop trigger
+        o.lmtPrice = price    # the limit once triggered (never a naked stop)
+    if oca:
+        o.ocaGroup = oca
+        o.ocaType = 2         # a cash-flow fill reduces the other exits instead of cancelling them
     o.tif = tif
     o.transmit = transmit
     if parent_id is not None:
@@ -409,7 +425,7 @@ class MarketDataSession:
             self.engine.rename_order(f"id{order_id}", perm_id)
         return self.perm_ids.get(order_id) or f"id{order_id}"
 
-    def send_order(self, symbol, action, qty, price, order_type, parent, role, tif, now):
+    def send_order(self, symbol, action, qty, price, order_type, parent, role, tif, now, aux=None):
         with self._lock:
             if self.app is None or not self.ready or self.next_order_id is None:
                 raise RuntimeError("not connected to TWS")
@@ -420,14 +436,20 @@ class MarketDataSession:
             play = self.plays[symbol]
             # bracket legs are sent with transmit=False on the parent so TWS holds
             # the family until the last leg arrives; a lone entry transmits at once
-            order = self.order_factory(action, qty, order_type, price, tif, parent, transmit=True)
+            extra = {}
+            if order_type == "STP LMT":
+                extra["aux"] = aux
+            if parent is not None:
+                extra["oca"] = f"twiney{parent}"
+            order = self.order_factory(action, qty, order_type, price, tif, parent, transmit=True, **extra) \
+                if extra else self.order_factory(action, qty, order_type, price, tif, parent, transmit=True)
             self.order_roles[oid] = role
             self.my_orders[oid] = {"symbol": symbol, "parent": parent, "action": action, "qty": qty,
-                                   "type": order_type, "tif": tif}
+                                   "type": order_type, "tif": tif, "aux": aux, "price": price}
             self.app.placeOrder(oid, self.contract_factory(play), order)
             self.engine.on_order(f"id{oid}", now, symbol=symbol, action=action, qty=float(qty), remaining=float(qty),
-                                 type=order_type, lmt=price if order_type == "LMT" else None,
-                                 aux=price if order_type == "STP" else None, tif=tif, status="PendingSubmit",
+                                 type=order_type, lmt=price if order_type in ("LMT", "STP LMT") else None,
+                                 aux=price if order_type == "STP" else aux, tif=tif, status="PendingSubmit",
                                  order_id=oid, role=role)
             self._orders_seen.add(f"id{oid}")
             self._next_orders = now + 1.0  # refresh the open-order list soon
@@ -441,12 +463,20 @@ class MarketDataSession:
                 return False
             if self.gate is None or not self.gate.can_trade():
                 raise RuntimeError("trading gate closed")
-            order = self.order_factory(info["action"], info["qty"], info["type"], price, info["tif"],
-                                       info["parent"], transmit=True)
+            if info["type"] == "STP LMT":
+                # moving a stop-limit moves both the trigger and the limit by the same amount
+                shift = price - (info.get("aux") or price)
+                lmt = round(info["price"] + shift, 4)
+                order = self.order_factory(info["action"], info["qty"], info["type"], lmt, info["tif"],
+                                           info["parent"], transmit=True, aux=price)
+                info["aux"] = price
+            else:
+                order = self.order_factory(info["action"], info["qty"], info["type"], price, info["tif"],
+                                           info["parent"], transmit=True)
             self.app.placeOrder(int(oid), self.contract_factory(self.plays[info["symbol"]]), order)
             key = self.perm_ids.get(int(oid)) or f"id{oid}"
             self.engine.on_order(key, now, lmt=price if info["type"] == "LMT" else None,
-                                 aux=price if info["type"] == "STP" else None)
+                                 aux=price if info["type"] in ("STP", "STP LMT") else None)
             self._next_orders = now + 1.0
             return True
 
@@ -510,6 +540,10 @@ class MarketDataSession:
                 self.app.req[hid] = ("hist", sym)
                 self.app.reqHistoricalData(hid, self.contract_factory(play), "", "5 D", "1 min", "TRADES",
                                            1 if self.cfg["chart"]["regular_hours_only"] else 0, 2, False, [])
+                did = self._rid()
+                self.app.req[did] = ("daily", sym)
+                self.app.reqHistoricalData(did, self.contract_factory(play), "", "30 D", "1 day", "TRADES",
+                                           1, 2, False, [])
 
     def reconcile_depth(self):
         """Make IBKR depth + tape subscriptions match the engine's slots."""

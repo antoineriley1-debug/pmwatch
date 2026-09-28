@@ -48,9 +48,9 @@ class Clock:
         return self.t
 
 
-def fake_order(action, qty, order_type, price, tif="DAY", parent_id=None, transmit=True):
+def fake_order(action, qty, order_type, price, tif="DAY", parent_id=None, transmit=True, aux=None, oca=None):
     return {"action": action, "qty": qty, "type": order_type, "price": price, "tif": tif,
-            "parent": parent_id, "transmit": transmit}
+            "parent": parent_id, "transmit": transmit, "aux": aux, "oca": oca}
 
 
 def make_session(**trading):
@@ -96,7 +96,7 @@ class SessionTests(unittest.TestCase):
         self.assertEqual(engine.connection["state"], "CONNECTED")
         self.assertIn(("reqMarketDataType", 1), app.calls)
         self.assertEqual(names(app).count("reqMktData"), 4)
-        self.assertEqual(names(app).count("reqHistoricalData"), 4)
+        self.assertEqual(names(app).count("reqHistoricalData"), 8)  # 1-minute + daily per play
 
     def test_orders_positions_fills_are_shown_read_only(self):
         s, engine, clock, app = self.connect()
@@ -272,7 +272,8 @@ class SessionTests(unittest.TestCase):
         placed = [c for c in app.calls if c[0] == "placeOrder"]
         self.assertEqual([c[1] for c in placed], [41, 42, 43])
         self.assertEqual(placed[0][3]["type"], "LMT")
-        self.assertEqual((placed[1][3]["type"], placed[1][3]["price"], placed[1][3]["parent"]), ("STP", 9.5, 41))
+        self.assertEqual((placed[1][3]["type"], placed[1][3]["aux"], placed[1][3]["price"], placed[1][3]["parent"],
+                          placed[1][3]["oca"]), ("STP LMT", 9.5, 9.4, 41, "twiney41"))
         self.assertEqual((placed[2][3]["type"], placed[2][3]["price"], placed[2][3]["parent"]), ("LMT", 11.0, 41))
         self.assertEqual(s.next_order_id, 44)
         # TWS acknowledges with a permId: the same order, not a duplicate

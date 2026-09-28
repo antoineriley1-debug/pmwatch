@@ -1,4 +1,4 @@
-# TWINEY v1.3
+# TWINEY v1.4
 
 An IBKR order-flow workstation built around PS60 levels, with ladder trading that is
 **locked to paper accounts** until you deliberately unlock it.
@@ -58,7 +58,7 @@ Other modes:
 - **One dashboard**, with one pane per ladder:
   - **Plain-English headline.** For example: "Price is approaching your trigger 128.40 — 6¢ above it", "A SELLER keeps reloading at 128.40 (your trigger): 6,200 shares traded into it, refilled 5x", "The SELLER at 128.40 got CLEANED UP". It also says what that means for the PS60 play.
   - **Chart:** 1-minute candles with 5 days of IBKR history at startup, a 1m / 5m / 15m / 60m toggle (60-minute
-    candles start at 9:30 like every other chart), a session **VWAP** line (toggle), and buy/sell volume. Your trigger, 2nd entry, extra levels, target and stop are drawn as labelled lines with a zone band. Green/red bubbles show shares absorbed into resting buyers/sellers at watched levels. R/C/P markers show reload, cleaned-up and pulled calls. Your working orders are drawn as lines too.
+    candles start at 9:30 like every other chart), a session **VWAP** line (toggle), and buy/sell volume. Your trigger, 2nd entry, extra levels, target and stop are drawn as labelled lines with a band. Green/red bubbles show shares absorbed into resting buyers/sellers at watched levels. R/C/P markers show reload, cleaned-up and pulled calls. Your working orders are drawn as lines too.
   - **Level-memory ladder.** Every price row remembers the last 15 minutes: shares sold into the bid and bought from the ask there, how many times the size came back after being hit (●), and a glowing **BUYER ×n / SELLER ×n** tag when a reload is confirmed. Your levels and your orders are tagged on their rows. The ladder stays centered on price.
   - **Time & sales** with prints at your levels tagged.
 - **Pane controls:**
@@ -86,6 +86,38 @@ Other modes:
   session in the dashboard with pause / play / speed, and practice orders fill against the replayed book.
 - **Limits (config.json → trading):** `max_position_shares` (1,000) caps any one position; `max_daily_loss` ($500)
   disarms trading for the rest of the session once the day's realized + open P&L reaches it. The header shows day P&L.
+
+## PS60 inside TWINEY
+Encoded from the PS60 handoff (Dan Shapiro / Access A Trader, via Antoine). Nothing is invented: every object is read
+off the candles you see. Settings live in `config.json → ps60`.
+
+- **Second-entry engine** (per play, from today's candles): pivot = your `trigger`. Long: break the pivot → new high →
+  retrace → back through that high **on a new candle** = SECOND ENTRY. Short is the mirror. The ladder says exactly where
+  it is ("Retracing off 738.90 — SECOND ENTRY = through 738.90 on a new candle"), draws the line on the chart, and offers
+  **use 738.90 as 2nd entry** so the play and the reload trackers move to it. After the second entry it watches the
+  **build**: "building", "just triggered", or "NOT building after two minutes — out at breakeven". A close back
+  through the pivot resets it and counts a failure. Judge on 5-minute candles with `second_entry_tf: 5`.
+- **Measured potential (MP) and ATR.** MP = dollars from here to your `target` (the next supply / demand you marked).
+  TWINEY loads 30 daily bars from IBKR for the ATR (falls back to the days of 1-minute history it has) and shows
+  `MP $2.77 · ATR $2.87 · 0.97× → CLEAR`. Below `clear_ratio` (0.5 ATR) it is THIN.
+- **Grade READY / WATCH / PASS** on every ladder and in the plays list, with the four questions as ✅ / ❌ (pivot valid,
+  size, control, risk). PASS = no target (no MP on the board), MP THIN, or no stop (risk not known). READY only when
+  the second entry has triggered and is building. The order confirmation repeats the grade, so a PASS play warns you
+  before you send.
+- **Sneaky pivots** on the 60-minute: a micro range inside the macro channel (≥ 2 candles, prefer 3, tight vs ATR,
+  inset from the macro edges, MP ≥ $0.50 to the next macro edge). Shown as `SNEAKY PIVOT · SUPPLY 230.71 ×3 · MP $1.52`
+  on the chart and under the story; the second-entry path is the same.
+- **Remount / rejection calls** at your levels: price goes through the level and reclaims it (REMOUNT) or loses it
+  again (REJECTION). They go to the CALLS feed with Dan's how-to (in above the level once volume reclaims; the overshoot
+  is the max pain). One call per level per 10 minutes.
+- **PS60 exits** (header checkbox, or `trading.scale_plan.enabled`): pay yourself along the way — ½ at +$0.50, ¼ at
+  +$1.50 (edit `cash_flow`), the rest runs to the target. After the first cash flow fills the stop moves to
+  **breakeven**. Cash flow and the runner are separate orders, never one manager.
+- **Stops are stop-limits**, never naked stops: trigger at your stop, limit `stop_limit_ticks` (10) through it.
+- **Language lock:** supply, demand, pivot, confirmation, second entry, build, measured potential, ATR, cash flow, runner,
+  max pain, remount, rejection, sneaky pivot, macro / micro channel, reload buyer / seller. A test scans the PS60 text.
+- Not built (no data for it in an equity ladder): the options translation layer, option flow, and the moving-average /
+  Bollinger stack for bounce plays. Mark those levels as `extra_levels` or `target` from your chart for now.
 
 ## Grading calls and tuning
 - Every call in the CALLS feed has 👍 / 👎. Grade a call and TWINEY remembers it (`recordings/grades.jsonl`, and inside
@@ -145,14 +177,15 @@ twiney/safety.py         where the order path may live (checked by tests)
 twiney/trading.py        TradingGate + SimBroker / IbkrBroker + Trader
 twiney/dashboard.py      local HTTP server (GET only) + static/dashboard.html
 twiney/recorder.py       JSONL recorder;  twiney/replay.py  replay + comparison
-twiney/sim.py            demo feed
+twiney/sim.py            demo feed (with 5 synthetic sessions of history + daily bars)
+twiney/ps60.py           PS60: second-entry engine, MP / ATR, grade, sneaky pivots, remount, cash-flow legs
 tune.py                  reload-threshold tuner scored against your graded calls
 ```
 
 ## Tests
 `python -m unittest discover -s tests -v`
 
-This runs 104 tests covering the book, reload verdicts, 317 resets, ranking/rotation, a fake TWS session (reconnect, 1100/1101, 309, rotation cancels), the safety guard and source scan, replay fidelity and the dashboard.
+This runs 114 tests covering the book, reload verdicts, 317 resets, ranking/rotation, a fake TWS session (reconnect, 1100/1101, 309, rotation cancels), the safety guard and source scan, replay fidelity and the dashboard.
 One test checks the guard against the real `EClient`. It only runs when `ibapi` is installed.
 
 ## Before connecting to a live-data session (handoff checklist)
@@ -163,4 +196,6 @@ These could not be checked in the build environment because IBKR's download site
 - [ ] Market-data entitlements: depth for each venue you need (for example NASDAQ TotalView), plus tick-by-tick. Look for errors 354/10089/10092 in the Feed Messages panel.
 - [ ] With paper TWS, pull the network or restart TWS and check the reconnect, 1100/1101/1102 handling and depth resubscription.
 - [ ] Watch for an error 317 in a live session. The book should empty and resync with no `PULLED` calls.
+- [ ] With PS60 exits on, check on paper that a cash-flow fill REDUCES the stop (OCA type 2) instead of cancelling it,
+      and that the stop moves to breakeven. If TWS cancels the stop instead, turn PS60 exits off and tell Claude.
 - [ ] Replay the first real recording (`--replay`) and check that `replay N / recorded N` matches.

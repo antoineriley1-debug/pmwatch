@@ -28,7 +28,8 @@ class BracketTests(unittest.TestCase):
         play = {"stop": 9.5, "target": 11.0}
         legs = bracket_legs(play, "BUY", 100, 10.0)
         self.assertEqual([(l["role"], l["type"], l["action"]) for l in legs],
-                         [("stop", "STP", "SELL"), ("target", "LMT", "SELL")])
+                         [("stop", "STP LMT", "SELL"), ("target", "LMT", "SELL")])
+        self.assertEqual((legs[0]["aux"], legs[0]["price"]), (9.5, 9.4))  # stop-limit: trigger 9.50, limit 10 ticks through
         # a stop on the wrong side of the entry is dropped rather than sent
         self.assertEqual([l["role"] for l in bracket_legs({"stop": 10.5, "target": 11.0}, "BUY", 1, 10.0)],
                          ["target"])
@@ -180,3 +181,31 @@ class SimTradingTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PS60ExitTests(unittest.TestCase):
+    def test_cash_flow_legs_runner_and_breakeven_stop(self):
+        e, tr, gate, broker = sim_setup()
+        e.syms["AAA"].play.update(stop=9.90, target=10.60)
+        gate.arm(True)
+        tr.scale = True
+        out = tr.submit("AAA", "BUY", 9.99, 100, 2.0)
+        self.assertTrue(out["ok"], out)
+        self.assertIn("cash flow 1 50 @ 10.49", out["sent"])
+        self.assertIn("runner 25 @ 10.60", out["sent"])
+        e.on_depth("AAA", 0, UPDATE, ASK, 9.99, 300, "", 3.0)   # entry fills
+        roles = {o["role"]: (o["status"], o["qty"]) for o in e.snapshot(3.5)["panes"][0]["orders"]}
+        self.assertEqual(roles["stop"], ("Submitted", 100.0))
+        self.assertEqual(roles["cash_flow_1"], ("Submitted", 50.0))
+        # first cash flow fills: stop shrinks to 50 and moves to breakeven (the entry price)
+        e.on_depth("AAA", 0, UPDATE, BID, 10.49, 300, "", 4.0)
+        self.assertEqual(broker.position("AAA"), 50)
+        tr.watchdog(4.1)
+        stop = [o for o in e.snapshot(4.5)["panes"][0]["orders"] if o["role"] == "stop"][0]
+        self.assertEqual((stop["qty"], stop["price"]), (50.0, 9.99))
+        self.assertTrue(any("breakeven" in m["text"] for m in e.snapshot(4.5)["messages"]))
+        # stop-limit: last trades through 9.99, the stop becomes a limit and fills
+        e.on_print("AAA", 9.98, 100, "X", 5.0)
+        e.on_depth("AAA", 0, UPDATE, BID, 9.98, 300, "", 5.1)
+        self.assertEqual(broker.position("AAA"), 0)
+        self.assertEqual(e.snapshot(5.5)["account"]["pending"], [])

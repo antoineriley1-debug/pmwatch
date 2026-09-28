@@ -34,6 +34,56 @@ class DemoFeed:
 
     def start(self, t):
         self.engine.on_connection("DEMO", "SYNTHETIC DEMO FEED — not market data", t, market_data_type=None)
+        self._history(t)
+
+    def _history(self, t):
+        """Five synthetic sessions of 1-minute bars and 20 daily bars per play (labelled demo, not data)."""
+        from .ps60 import ny_offset, SESSION_OPEN
+        rng = self.rng
+        for sym, s in self.state.items():
+            p = s["play"]
+            tk = tick_size(s["mid"])
+            atr_ = max(tk * 20, p["trigger"] * 0.018)
+            off = ny_offset(t)
+            today0 = (t + off) // 86400 * 86400 - off
+            # daily bars, ending yesterday, drifting into today's level
+            px = s["mid"] * (1 + rng.uniform(-0.03, 0.03))
+            day_bars = []
+            for d in range(20, 0, -1):
+                day0 = today0 - d * 86400
+                if ((day0 + off) // 86400) % 7 in (3, 4):   # skip Sat / Sun (epoch day 0 is a Thursday)
+                    continue
+                o = px
+                c = round(o + rng.uniform(-atr_, atr_) * 0.7, 2)
+                h = round(max(o, c) + rng.uniform(0, atr_ * 0.4), 2)
+                l = round(min(o, c) - rng.uniform(0, atr_ * 0.4), 2)
+                day_bars.append((day0, o, h, l, c))
+                px = c
+            for day0, o, h, l, c in day_bars:
+                self.engine.on_daily_bar(sym, day0, o, h, l, c)
+            # 1-minute bars for the last 5 sessions, ending at the current demo price
+            sessions = [b[0] for b in day_bars[-5:]]
+            n_total = 390 * len(sessions)
+            end_px = s["mid"]
+            start_px = day_bars[-5][1] if len(day_bars) >= 5 else end_px
+            walk = [start_px]
+            for _ in range(n_total - 1):
+                walk.append(walk[-1] + rng.gauss(0, atr_ / 40))
+            drift = (end_px - walk[-1]) / max(1, n_total - 1)
+            walk = [w + drift * i for i, w in enumerate(walk)]
+            k = 0
+            for day0 in sessions:
+                for m in range(390):
+                    t0 = day0 + SESSION_OPEN + m * 60
+                    if t0 >= t:
+                        break
+                    o = walk[k]
+                    c = walk[min(k + 1, n_total - 1)]
+                    h = max(o, c) + abs(rng.gauss(0, atr_ / 80))
+                    l = min(o, c) - abs(rng.gauss(0, atr_ / 80))
+                    self.engine.on_hist_bar(sym, t0, round(o, 2), round(h, 2), round(l, 2), round(c, 2),
+                                            rng.randint(500, 20000))
+                    k += 1
 
     def step(self, t):
         for sym, s in self.state.items():

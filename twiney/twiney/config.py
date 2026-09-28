@@ -102,6 +102,32 @@ DEFAULTS = {
         "max_position_shares": 1000,
         # day P&L (realized + open) at or below -this disarms trading for the rest of the session
         "max_daily_loss": 500,
+        # PS60 exits: cash-flow scale-outs, runner to the target (measured potential), stop to
+        # breakeven after the first cash flow. Off = plain stop + target bracket.
+        "scale_plan": {
+            "enabled": False,
+            "cash_flow": [{"fraction": 0.5, "dollars": 0.50}, {"fraction": 0.25, "dollars": 1.50}],
+            "breakeven_after_cash_flow": True,
+        },
+        # stops go out as STOP-LIMIT (never a naked stop): limit this many ticks through the stop
+        "stop_limit_ticks": 10,
+    },
+    "ps60": {
+        # candle size the second entry is judged on (1 or 5); Dan: "always on a new candle"
+        "second_entry_tf": 1,
+        # after the second entry price should be going the right way within this long
+        "build_seconds": 120,
+        # measured potential vs daily ATR: CLEAR at or above this ratio, THIN below
+        "clear_ratio": 0.5,
+        # how many daily bars the ATR uses
+        "atr_days": 14,
+        # sneaky pivots on the 60-minute: micro range height cap (x ATR), min candles, min MP $
+        "sneaky_max_height_atr": 1.25,
+        "sneaky_min_candles": 2,
+        "sneaky_min_mp": 0.50,
+        # remount / rejection calls at your levels: through the level and back within this window
+        "remount_window_seconds": 1800,
+        "remount_alerts": True,
     },
     "account": {
         # show your pending orders, positions and today's fills (read-only view)

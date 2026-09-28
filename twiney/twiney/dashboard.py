@@ -122,6 +122,9 @@ def make_handler(engine, clock, trader=None):
                 elif action == "bracket":
                     trader.bracket = bool(body.get("on"))
                     out = {"ok": True}
+                elif action == "scale":
+                    trader.scale = bool(body.get("on"))
+                    out = {"ok": True}
                 elif action == "order":
                     out = trader.submit(sym, str(body.get("action", "")).upper(), body.get("price"),
                                         body.get("qty"), now, body.get("bracket"))

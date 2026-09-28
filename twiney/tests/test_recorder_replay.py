@@ -4,7 +4,7 @@ import tempfile
 import unittest
 
 from helpers import cfg, plays
-from twiney.engine import Engine
+from twiney.engine import ALERT_LABELS, PS60_LABELS, Engine
 from twiney.recorder import Recorder, read_events
 from twiney.replay import compare, replay, session_header
 from twiney.sim import DemoFeed
@@ -28,7 +28,7 @@ class RecorderReplayTests(unittest.TestCase):
             engine, recorded = replay(rec.path)
             got, want = compare(engine, recorded)
             self.assertEqual(got, want)
-            self.assertEqual(sum(want.values()), sum(1 for a in live.alerts))
+            self.assertEqual(sum(want.values()), sum(1 for a in live.alerts if a["label"] in ALERT_LABELS + PS60_LABELS))
 
     def test_replay_with_overridden_settings(self):
         with tempfile.TemporaryDirectory() as d:
