@@ -1046,6 +1046,8 @@ class Engine:
             "bid": fmt_price(bid), "ask": fmt_price(ask),
             "spread": fmt_price(ask - bid) if bid and ask else None,
             "headline": headline, "tone": tone, "lines": lines,
+            # what stays inside the ladder itself: only who is defending a level (the rest goes to the story window)
+            "keep_lines": [l for l in [headline] + lines if l.startswith(("Maybe a ", "RELOAD "))][:2],
             "book": {"bids": bids, "asks": asks},
             "ladder": self._memory_ladder(st, t, user_levels),
             "tape": dict(tape, recent=[

@@ -1,4 +1,4 @@
-# TWINEY v1.4
+# TWINEY v1.5
 
 An IBKR order-flow workstation built around PS60 levels, with ladder trading that is
 **locked to paper accounts** until you deliberately unlock it.
@@ -63,6 +63,17 @@ Other modes:
     candles start at 9:30 like every other chart), a session **VWAP** line (toggle), and buy/sell volume. Your pivot, 2nd entry, extra levels, target and stop are drawn as labelled lines with a band. Green/red bubbles show shares absorbed into resting buyers/sellers at watched levels. R/C/P markers show reload, cleaned-up and pulled calls. Your working orders are drawn as lines too.
   - **Level-memory ladder.** Every price row remembers the last 15 minutes: shares sold into the bid and bought from the ask there, how many times the size came back after being hit (●), and a glowing **BUYER ×n / SELLER ×n** tag when a reload is confirmed. Your levels and your orders are tagged on their rows. The ladder stays centered on price.
   - **Time & sales** with prints at your levels tagged.
+- **Every ladder is four windows** — QUOTE & TRADE, CHART, LADDER, TIME & SALES — plus the CALLS and WHAT'S HAPPENING
+  windows, the plays list, orders and feed messages. Each window moves (Layout: FREE, drag its title bar), resizes from
+  any edge or corner, folds (▾) and hides (✕, bring it back from the Windows menu). Build the screen you want; it is
+  remembered. **Reset layout** puts everything back.
+- **Clean chart** (the `clean` button above the chart, on by default): only candles, volume, VWAP, your levels and your
+  orders. Turn it off to see trapped bands, sneaky pivots, reload marks, absorption bubbles and R/C/P call markers.
+- **Chart axes work like TradingView:** pull the price axis down to squeeze, up to expand; pull the time axis right for
+  wider bars, left for more bars; wheel to zoom; drag to pan; double-click to reset.
+- **Ladder rows:** the white row is the last price. Gold price = your level. A lit red / green row is a CONFIRMED reload
+  seller / buyer with its refill count (`RELOAD SELLER ×14`); only confirmed ones are shown, and when it is gone the row
+  says `SELLER CLEARED OUT` or `SELLER PULLED`.
 - **Pane controls:**
   - Panes keep a fixed screen position. If a symbol changes, a banner says so.
   - **Pin** a symbol from a pane or from the plays list so it never rotates.

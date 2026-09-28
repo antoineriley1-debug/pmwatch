@@ -29,6 +29,14 @@ body.free .pane.win{height:auto}
 body.free .win{position:absolute;margin:0;resize:both;overflow:hidden;min-width:260px;min-height:120px;display:flex;flex-direction:column;z-index:1}
 body.free .win.front{z-index:3}
 .win.hidden{display:none !important}
+/* resize from any edge or corner, not just the bottom-right grip */
+.rs{position:absolute;z-index:4;user-select:none}
+.rs.e{right:0;top:12px;bottom:12px;width:7px;cursor:ew-resize} .rs.w{left:0;top:12px;bottom:12px;width:7px;cursor:ew-resize}
+.rs.n{top:0;left:12px;right:12px;height:6px;cursor:ns-resize} .rs.s{bottom:0;left:12px;right:12px;height:6px;cursor:ns-resize}
+.rs.ne{top:0;right:0;width:14px;height:14px;cursor:nesw-resize} .rs.sw{bottom:0;left:0;width:14px;height:14px;cursor:nesw-resize}
+.rs.nw{top:0;left:0;width:14px;height:14px;cursor:nwse-resize} .rs.se{bottom:0;right:0;width:14px;height:14px;cursor:nwse-resize}
+.rs:hover{background:rgba(255,197,61,.25)}
+.pane.max .rs, .win.folded .rs{display:none}
 .winbar{display:flex;align-items:center;gap:8px;padding:4px 8px;background:#0f141c;border-bottom:1px solid var(--line);font-size:11px;letter-spacing:.06em;color:var(--dim);user-select:none;cursor:grab}
 .winbar:active{cursor:grabbing}
 .winbar b{color:var(--text)}
@@ -49,7 +57,7 @@ body:not(.free) .winbar{cursor:default}
 #alertsBtn.off{color:var(--dim);text-decoration:line-through}
 .p-head .gear{position:static}
 .p-head .gear .pop{position:fixed;right:auto;top:auto}
-.pane[data-hide~="story"] .p-say,.pane[data-hide~="story"] .p-lines{display:none !important}
+
 .pane[data-hide~="trade"] .tradebar{display:none !important}
 .pane[data-hide~="chart"] .chart-wrap,.pane[data-hide~="chart"] .divider{display:none !important}
 .pane[data-hide~="chart"] .p-body{grid-template-columns:1fr}
@@ -63,6 +71,7 @@ body:not(.free) .winbar{cursor:default}
 
 /* plain-English feed */
 #feed{max-height:150px;overflow-y:auto;padding:0}
+#story{max-height:240px;overflow-y:auto}
 #feedBody{display:grid;gap:4px}
 body:not(.free) #feed.card{padding:0}
 .say{padding:6px 10px;border-radius:6px;background:var(--panel);border-left:4px solid var(--dim);font-size:14px}
@@ -78,25 +87,41 @@ tr.retired td{opacity:.55} tr.retired td.status{opacity:1;color:var(--gold)}
 /* panes */
 #panes{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start}
 .pane{background:var(--panel);border:1px solid var(--line);border-radius:8px;display:flex;flex-direction:column;
-  flex:1 1 600px;min-width:340px;min-height:520px;height:780px;resize:both;overflow:hidden;position:relative}
+  overflow:hidden;position:relative}
+.pane-trade{flex:1 1 100%;min-width:340px;height:auto;min-height:0}
+.pane-chart{flex:2 1 520px;min-width:300px;height:440px;min-height:200px;resize:both}
+.pane-book{flex:1 1 380px;min-width:280px;height:440px;min-height:200px;resize:both}
+.pane-tape{flex:1 1 300px;min-width:220px;height:440px;min-height:120px;resize:both}
 .pane.sized{flex:0 0 auto}
 .pane.pinned{border-color:var(--gold)}
-.p-head{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 10px 4px}
+.pane-chart .chart-wrap{flex:1 1 0;margin:4px;min-height:0}
+.pane-book .ladder-wrap{flex:1 1 0;margin:4px;min-height:0;height:auto}
+.pane-tape .p-tape{flex:1 1 0;max-height:none;margin:4px;border-top:0;min-height:0}
+.p-head{display:flex;gap:8px;align-items:center;flex-wrap:nowrap;overflow:hidden;white-space:nowrap;padding:8px 10px 4px;height:44px;flex:0 0 auto}
 .p-head .sym{font-size:20px;font-weight:700;letter-spacing:.03em}
 .p-quote{font-family:var(--mono);font-size:12px}
-.p-changed{margin:0 10px;padding:4px 8px;border-radius:5px;background:#3a2f0a;color:var(--gold);font-size:12px}
-.p-say{margin:4px 10px;padding:8px 10px;border-radius:6px;background:var(--panel2);border-left:5px solid var(--dim);font-size:15px;font-weight:600}
+.p-changed{margin:0 10px;padding:4px 8px;border-radius:5px;background:#3a2f0a;color:var(--gold);font-size:12px;height:24px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;flex:0 0 auto}
+.p-say{margin:4px 10px;padding:6px 10px;border-radius:6px;background:var(--panel2);border-left:5px solid var(--dim);font-size:15px;font-weight:600;height:52px;overflow:hidden;flex:0 0 auto;line-height:1.3}
 .p-say.reload{border-color:var(--warn);background:#2a2412} .p-say.cleaned{border-color:var(--gold);background:#2b2610}
 .p-say.pulled{border-color:var(--violet);background:#221a33} .p-say.watch{border-color:var(--cyan)}
 .p-say.at{border-color:var(--gold)} .p-say.near{border-color:var(--cyan)}
-.p-lines{margin:0 10px 4px 26px;padding:0;font-size:12.5px;color:#c4cddb;max-height:78px;overflow-y:auto;flex:0 0 auto}
+.p-lines{margin:0 10px 4px 26px;padding:0;font-size:12.5px;color:#c4cddb;height:78px;overflow-y:auto;flex:0 0 auto}
 .p-lines li{margin:1px 0}
-.p-ps60{margin:2px 10px 4px;font-size:12.5px;display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center}
+.p-ps60{margin:2px 10px 4px;font-size:12.5px;display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center;height:60px;overflow-y:auto;flex:0 0 auto;align-content:flex-start}
 .p-ps60 .g{font-weight:700;padding:1px 8px;border-radius:10px;font-size:11px;letter-spacing:.04em}
 .p-ps60 .g.READY{background:#163a28;color:var(--buy)} .p-ps60 .g.WATCH{background:#3a3016;color:var(--gold)} .p-ps60 .g.PASS{background:#3a1a1e;color:var(--sell)}
 .p-ps60 .gates{display:inline-flex;gap:4px} .p-ps60 .gates span{cursor:help;font-size:11px}
 .p-ps60 .se{flex-basis:100%;color:#c4cddb} .p-ps60 button.use{padding:0 6px;font-size:11px}
-.pane[data-hide~="ps60"] .p-ps60{display:none !important}
+.pane[data-hide~="keep"] .p-keep{display:none !important}
+.p-keep{margin:2px 10px;height:22px;line-height:22px;font-size:12.5px;color:#c4cddb;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 0 auto}
+.p-keep:empty{display:none}
+#story{padding:0} #storyBody{display:grid;gap:6px;padding:6px}
+.st{background:var(--panel2);border-radius:6px;padding:6px 10px;border-left:5px solid var(--dim)}
+.st.reload{border-color:var(--warn)} .st.cleaned{border-color:var(--gold)} .st.pulled{border-color:var(--violet)} .st.watch,.st.near{border-color:var(--cyan)} .st.at{border-color:var(--gold)}
+.st .sym{font-weight:700;font-size:14px;margin-right:8px} .st .hl{font-size:14px;font-weight:600}
+.st ul{margin:3px 0 0 18px;padding:0;font-size:12.5px;color:#c4cddb} .st li{margin:1px 0}
+.st .p-ps60{margin:4px 0 0;height:auto;overflow:visible}
+.pane.clean .chart-hint{display:none}
 .say.remount{border-color:var(--buy)} .say.rejection{border-color:var(--sell)}
 td.grade{font-weight:700} td.grade.READY{color:var(--buy)} td.grade.WATCH{color:var(--gold)} td.grade.PASS{color:var(--sell)}
 .p-body{flex:1 1 0;display:grid;grid-template-columns:minmax(0,1fr) 8px var(--ladder-w,340px);grid-template-rows:minmax(0,1fr);gap:4px;padding:4px 10px;min-height:300px}
@@ -115,8 +140,9 @@ td.grade{font-weight:700} td.grade.READY{color:var(--buy)} td.grade.WATCH{color:
 .pane.dropzone{outline:2px dashed var(--gold)}
 .pane.max{position:fixed;inset:8px;z-index:10;height:auto !important;width:auto !important;resize:none}
 body.has-max #panes .pane:not(.max){visibility:hidden}
+@media (max-width:900px){.pane-chart,.pane-book,.pane-tape{flex:1 1 100%;height:320px}}
 .ladder-wrap{overflow-y:auto;border:1px solid var(--line);border-radius:6px;min-height:0;height:100%}
-.p-tape{flex:0 0 auto;max-height:130px;overflow-y:auto;margin:4px 10px 8px;border-top:1px solid var(--line)}
+.p-tape{overflow-y:auto}
 .empty{display:flex;align-items:center;justify-content:center;flex:1;color:var(--dim);text-align:center;padding:20px}
 
 /* level-memory ladder */
@@ -137,9 +163,11 @@ td.bars.l .bar-n{float:right;margin-right:3px} td.bars.r .bar-n{margin-left:3px}
 .lad tr.gap td{border-top:2px dashed var(--line)}
 .lad tr.best-bid td.bsz{color:var(--buy);font-weight:700}
 .lad tr.best-ask td.asz{color:var(--sell);font-weight:700}
-.lad tr.lvl td.px{background:rgba(255,197,61,.18);color:var(--gold)}
-.lad tr.lvl td{border-top:1px solid rgba(255,197,61,.45);border-bottom:1px solid rgba(255,197,61,.45)}
-.lad tr.lastpx td.px::before{content:"▶";position:absolute;left:2px;color:var(--text)}
+.lad tr.lvl td.px{color:var(--gold);font-weight:700}
+.lad tr.lvl td{border-top:1px solid rgba(255,197,61,.3);border-bottom:1px solid rgba(255,197,61,.3)}
+.lad tr.lastpx td.px{background:#dbe3ee;color:#0a0d12;font-weight:800;border-radius:3px}
+.lad tr.lastpx td.px::before{content:"▶";position:absolute;left:2px;color:#0a0d12}
+.lad tr.lastpx td{background:rgba(219,227,238,.08)}
 .mine{display:inline-block;font-size:9px;font-weight:700;padding:0 4px;border-radius:3px;border:1px solid #fff;color:#fff;margin-left:3px}
 .chip.drag{opacity:.5} .lad tr.droptarget td{outline:1px dashed var(--gold)}
 .chart-wrap canvas.lvltool{cursor:cell}
@@ -161,7 +189,9 @@ td.bars.l .bar-n{float:right;margin-right:3px} td.bars.r .bar-n{margin-left:3px}
 .tag{display:inline-block;font-size:9px;font-weight:700;padding:0 4px;border-radius:3px;background:var(--gold);color:#1a1300;margin-left:3px}
 .who{display:inline-block;font-size:9.5px;font-weight:800;padding:0 4px;border-radius:3px;margin:0 2px}
 .who.buyer{background:var(--buy);color:#04210f} .who.seller{background:var(--sell);color:#2a0409}
-.who.cand{background:transparent;border:1px solid currentColor}
+.who.big{font-size:11px;padding:1px 6px;box-shadow:0 0 8px currentColor}
+.lad tr.rl-ask td{background:rgba(255,77,94,.16)} .lad tr.rl-bid td{background:rgba(38,208,124,.16)}
+.lad tr.rl-ask td.px{color:var(--sell);font-weight:800} .lad tr.rl-bid td.px{color:var(--buy);font-weight:800}
 .who.buyer.cand{color:var(--buy)} .who.seller.cand{color:var(--sell)}
 .who.v{background:var(--violet);color:#150a2a} .who.c{background:var(--gold);color:#1a1300}
 @keyframes glowb{0%,100%{box-shadow:inset 0 0 0 1px rgba(38,208,124,.4)}50%{box-shadow:inset 0 0 12px 2px rgba(38,208,124,.9)}}
@@ -248,7 +278,7 @@ td.status{text-align:left !important;white-space:normal !important;color:#c4cddb
   <button id="alertsBtn" title="Show / hide the call feed and call pop-ups">🔔 Alerts</button>
   <button id="rotate" title="When OFF, ladders never switch symbols on their own">Auto-rotate: …</button>
   <span class="menu" id="winMenu"><button>Windows ▾</button><div class="pop" id="winList"></div></span>
-  <button id="freeBtn" title="Free layout: drag any window anywhere by its title bar, resize by the corner">Layout: …</button>
+  <button id="freeBtn" title="Free layout: drag any window anywhere by its title bar, resize from any edge or corner">Layout: …</button>
   <button id="resetLayout" title="Put everything back">Reset layout</button>
 </header>
 <div id="toasts"></div>
@@ -261,6 +291,7 @@ td.status{text-align:left !important;white-space:normal !important;color:#c4cddb
 </div>
 <main>
   <section id="feed" class="win card" data-win="alerts" data-title="CALLS"><div class="wbody" id="feedBody"></div></section>
+  <section id="story" class="win card" data-win="story" data-title="WHAT'S HAPPENING (per ladder)"><div class="wbody" id="storyBody"></div></section>
   <section id="panes"></section>
   <section class="card win" id="account-card" data-win="orders" data-title="ORDERS · POSITIONS · FILLS"><div class="wbody">
     <h3>YOUR ORDERS · POSITIONS · FILLS <span class="dim" style="letter-spacing:0">— click ✕ to cancel an order. Orders placed in TWS show up here too.</span></h3>
@@ -429,7 +460,44 @@ function makeWindow(el, id, title){
   });
   el.addEventListener("mousedown", () => bringFront(el));
   new ResizeObserver(() => { if (document.body.classList.contains("free") && w.placed) saveWin(w); }).observe(el);
+  addEdgeResize(el, w);
   return w;
+}
+function addEdgeResize(el, w){
+  for (const dir of ["n", "s", "e", "w", "ne", "nw", "se", "sw"]){
+    const h = document.createElement("div");
+    h.className = "rs " + dir;
+    h.title = "drag to resize";
+    h.addEventListener("mousedown", e => {
+      e.preventDefault(); e.stopPropagation();
+      const free = document.body.classList.contains("free");
+      const r = el.getBoundingClientRect();
+      const sx = e.clientX, sy = e.clientY, ow = r.width, oh = r.height, ol = el.offsetLeft, ot = el.offsetTop;
+      const minW = 260, minH = 120;
+      if (el._markSized) el._markSized();
+      el.classList.add("sized");
+      const move = ev => {
+        const dx = ev.clientX - sx, dy = ev.clientY - sy;
+        let nw = ow, nh = oh, nl = ol, nt = ot;
+        if (dir.includes("e")) nw = ow + dx;
+        if (dir.includes("s")) nh = oh + dy;
+        if (dir.includes("w")){ nw = ow - dx; if (free) nl = ol + dx; }
+        if (dir.includes("n")){ nh = oh - dy; if (free) nt = ot + dy; }
+        if (nw < minW){ if (dir.includes("w") && free) nl -= (minW - nw); nw = minW; }
+        if (nh < minH){ if (dir.includes("n") && free) nt -= (minH - nh); nh = minH; }
+        el.style.width = nw + "px"; el.style.height = nh + "px";
+        if (free){ el.style.left = Math.max(0, nl) + "px"; el.style.top = Math.max(0, nt) + "px"; }
+      };
+      const up = () => {
+        window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up);
+        document.body.style.cursor = "";
+        if (w && free){ saveWin(w); growDesk(); }
+      };
+      document.body.style.cursor = getComputedStyle(h).cursor;
+      window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
+    });
+    el.appendChild(h);
+  }
 }
 function bringFront(el){ document.querySelectorAll(".win.front").forEach(x => x.classList.remove("front")); el.classList.add("front"); }
 function saveWin(w){
@@ -483,51 +551,44 @@ const paneEls = [];
 
 function ensurePane(i){
   if (paneEls[i]) return paneEls[i];
-  const el = document.createElement("div");
-  el.className = "pane";
-  el.innerHTML = `
-    <div class="p-head"></div>
-    <div class="p-changed" hidden></div>
-    <div class="p-say"></div>
-    <ul class="p-lines"></ul>
-    <div class="p-ps60"></div>
-    <div class="tradebar"></div>
-    <div class="p-body">
-      <div class="chart-wrap"><div class="chart-tools"></div><canvas></canvas><div class="chart-hint">wheel = zoom · drag = pan · drag price axis = stretch · dbl-click = reset</div></div>
-      <div class="divider" title="drag to resize chart / ladder"></div>
-      <div class="ladder-wrap"></div>
-    </div>
-    <div class="p-tape"></div>
-    <div class="empty" hidden></div>`;
-  const saved = store.get("pane." + i, null);
-  if (saved && window.innerWidth > 900){ el.style.width = saved.w + "px"; el.style.height = saved.h + "px"; el.classList.add("sized"); }
-  panesEl.appendChild(el);
-  makeWindow(el, "ladder" + (i + 1), "LADDER " + (i + 1));
-  el._pane = null;
-  el.dataset.hide = (store.get("phide." + i, []) || []).join(" ");
-  el.dataset.cols = (store.get("pcols." + i, []) || []).join(" ");
-  const p = {el, i, head: el.querySelector(".p-head"), changed: el.querySelector(".p-changed"),
-    say: el.querySelector(".p-say"), lines: el.querySelector(".p-lines"), body: el.querySelector(".p-body"),
-    ps60: el.querySelector(".p-ps60"),
-    tradebar: el.querySelector(".tradebar"),
+  // every ladder is FOUR windows: quote & trade strip, chart, ladder, time & sales.
+  // Each one moves, resizes, folds and hides on its own so you can build your own screen.
+  const n = i + 1;
+  const p = {i, wins: {}, els: [], data: null,
+    view: Object.assign({cw: 7, offset: 0, yLo: null, yHi: null, follow: true, cross: null}, store.get("view." + i, {}))};
+  const mk = (cls, key, title, html) => {
+    const el = document.createElement("div");
+    el.className = "pane " + cls;
+    el.innerHTML = html;
+    const id = "l" + n + "-" + key;
+    const saved = store.get("pane." + id, null);
+    if (saved && window.innerWidth > 900){ el.style.width = saved.w + "px"; el.style.height = saved.h + "px"; el.classList.add("sized"); }
+    panesEl.appendChild(el);
+    p.wins[key] = makeWindow(el, id, `LADDER ${n} · ${title}`);
+    p.wins[key].baseTitle = `LADDER ${n} · ${title}`;
+    el._pane = p;
+    el._markSized = () => { el.dataset.sized = "1"; };
+    el.addEventListener("mousedown", e => {   // the native corner grip counts as a user resize too
+      const r = el.getBoundingClientRect();
+      if (e.clientX > r.right - 22 && e.clientY > r.bottom - 22) el.dataset.sized = "1";
+    });
+    new ResizeObserver(() => {
+      if (el.dataset.sized && window.innerWidth > 900){ el.classList.add("sized"); store.set("pane." + id, {w: el.offsetWidth, h: el.offsetHeight}); }
+      drawChart(p);
+    }).observe(el);
+    p.els.push(el);
+    return el;
+  };
+  const elTrade = mk("pane-trade", "trade", "QUOTE & TRADE", `<div class="p-head"></div><div class="p-changed" hidden></div><div class="p-keep"></div><div class="tradebar"></div><div class="empty" hidden></div>`);
+  const el = mk("pane-chart", "chart", "CHART", `<div class="chart-wrap"><div class="chart-tools"></div><canvas></canvas><div class="chart-hint">wheel = zoom · drag = pan · pull price axis up/down = expand/squeeze · pull time axis left/right = more/fewer bars · dbl-click = reset</div></div>`);
+  const elBook = mk("pane-book", "book", "LADDER", `<div class="ladder-wrap"></div>`);
+  const elTape = mk("pane-tape", "tape", "TIME & SALES", `<div class="p-tape"></div>`);
+  elBook.dataset.cols = (store.get("pcols." + i, []) || []).join(" ");
+  Object.assign(p, {el, elTrade, elBook, elTape,
+    head: elTrade.querySelector(".p-head"), changed: elTrade.querySelector(".p-changed"), keep: elTrade.querySelector(".p-keep"),
+    tradebar: elTrade.querySelector(".tradebar"), empty: elTrade.querySelector(".empty"),
     canvas: el.querySelector("canvas"), tools: el.querySelector(".chart-tools"),
-    ladder: el.querySelector(".ladder-wrap"), tape: el.querySelector(".p-tape"), empty: el.querySelector(".empty"),
-    divider: el.querySelector(".divider"),
-    view: Object.assign({cw: 7, offset: 0, yLo: null, yHi: null, follow: true, cross: null}, store.get("view." + i, {})),
-    data: null};
-  const lw = store.get("ladder." + i, null);
-  if (lw) p.body.style.setProperty("--ladder-w", lw + "px");
-  // chart / ladder divider
-  p.divider.addEventListener("mousedown", e => {
-    e.preventDefault(); p.divider.classList.add("on");
-    const move = ev => {
-      const r = p.body.getBoundingClientRect();
-      const w = Math.max(220, Math.min(r.right - ev.clientX - 10, r.width - 260));
-      p.body.style.setProperty("--ladder-w", w + "px"); store.set("ladder." + i, Math.round(w)); drawChart(p);
-    };
-    const up = () => { p.divider.classList.remove("on"); window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); };
-    window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
-  });
+    ladder: elBook.querySelector(".ladder-wrap"), tape: elTape.querySelector(".p-tape")});
   // chart interaction: wheel zoom, drag pan, price-axis stretch, crosshair, double-click reset
   const cv = p.canvas, v = p.view;
   const saveView = () => store.set("view." + i, {cw: v.cw, offset: v.offset, yLo: v.yLo, yHi: v.yHi, follow: v.follow});
@@ -551,9 +612,10 @@ function ensurePane(i){
   }, {passive: false});
   cv.addEventListener("mousedown", e => {
     const r = cv.getBoundingClientRect(), x0 = e.clientX, y0 = e.clientY, onAxis = (e.clientX - r.left) > r.width - 86;
+    const onTime = !onAxis && (e.clientY - r.top) > r.height - 18;   // the time axis: drag left / right to squeeze / stretch bars
     const yAt = () => p.chartY ? p.chartY[1] - ((e.clientY - r.top) - 8) / ((p.chartH || 1) - 8) * (p.chartY[1] - p.chartY[0]) : null;
     // mark tool: click the chart to set the chosen level at that price
-    if (v.levelTool && p.data && !onAxis){
+    if (v.levelTool && p.data && !onAxis && !onTime){
       const price = yAt(); if (price == null) return;
       const tk = price >= 1 ? 0.01 : 0.0001, snapped = +(Math.round(price / tk) * tk).toFixed(4), role = v.levelTool;
       const names = {second_entry: "2nd entry", trigger: "pivot", target: "target", stop: "stop", extra: "level"};
@@ -569,7 +631,7 @@ function ensurePane(i){
       return;
     }
     // grab one of your level lines and drag it to a new price
-    if (p.data && p.chartY && !onAxis && !(e.ctrlKey || e.metaKey)){
+    if (p.data && p.chartY && !onAxis && !onTime && !(e.ctrlKey || e.metaKey)){
       const price = yAt(), per = (p.chartY[1] - p.chartY[0]) / ((p.chartH || 1) - 8);
       const nearOrder = (p.data.orders || []).some(o => o.price && Math.abs(o.price - price) <= per * 5);
       const lv = !nearOrder && (p.data.user_levels || []).find(l => Math.abs(l.price - price) <= per * 5);
@@ -591,7 +653,7 @@ function ensurePane(i){
       }
     }
     // grab a working-order line on the chart and drag it to a new price
-    if (p.data && p.chartY && !onAxis){
+    if (p.data && p.chartY && !onAxis && !onTime){
       const price = yAt(), per = (p.chartY[1] - p.chartY[0]) / ((p.chartH || 1) - 8);
       const o = (p.data.orders || []).find(o => o.price && Math.abs(o.price - price) <= per * 5 && o.id != null);
       if (o){
@@ -607,14 +669,15 @@ function ensurePane(i){
         return;
       }
     }
-    const start = {offset: v.offset, yLo: v.yLo, yHi: v.yHi, y: p.chartY ? p.chartY.slice() : null, h: p.chartH || 1};
+    const start = {offset: v.offset, yLo: v.yLo, yHi: v.yHi, y: p.chartY ? p.chartY.slice() : null, h: p.chartH || 1, cw: v.cw};
     let moved = false;
     cv.classList.add("pan");
     const move = ev => {
       const dx = ev.clientX - x0, dy = ev.clientY - y0;
       if (Math.abs(dx) + Math.abs(dy) > 3) moved = true;
-      if (onAxis && start.y){ const [lo, hi] = start.y; const c = (lo + hi) / 2, f = Math.exp(dy / 150);
+      if (onAxis && start.y){ const [lo, hi] = start.y; const c = (lo + hi) / 2, f = Math.exp(dy / 150);   // pull down = squeeze, up = expand
         v.yLo = c - (c - lo) * f; v.yHi = c + (hi - c) * f; }
+      else if (onTime){ v.cw = Math.max(2, Math.min(60, start.cw * Math.exp(dx / 150))); }                     // pull right = wider bars, left = more bars
       else {
         v.offset = Math.max(0, start.offset + dx / v.cw);
         v.follow = v.offset < 0.5; v.rightT = null;
@@ -625,48 +688,22 @@ function ensurePane(i){
     const up = () => { cv.classList.remove("pan"); window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); if (moved) saveView(); };
     window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
   });
-  cv.addEventListener("mousemove", e => { const r = cv.getBoundingClientRect(); v.cross = [e.clientX - r.left, e.clientY - r.top]; drawChart(p); });
+  cv.addEventListener("mousemove", e => { const r = cv.getBoundingClientRect(); v.cross = [e.clientX - r.left, e.clientY - r.top];
+    cv.style.cursor = (e.clientX - r.left) > r.width - 86 ? "ns-resize" : (e.clientY - r.top) > r.height - 18 ? "ew-resize" : "";
+    drawChart(p); });
   cv.addEventListener("mouseleave", () => { v.cross = null; drawChart(p); });
   cv.addEventListener("dblclick", () => { v.cw = 7; v.offset = 0; v.yLo = v.yHi = null; v.follow = true; v.rightT = null; saveView(); drawChart(p); });
-  // drag panes to reorder (by the ⠿ handle)
-  el.addEventListener("dragstart", e => { if (!e.target.closest(".grab") && !el.classList.contains("dragging")) { e.preventDefault(); return; } e.dataTransfer.setData("text/plain", String(i)); el.classList.add("dragging"); });
-  el.addEventListener("dragend", () => el.classList.remove("dragging"));
-  el.addEventListener("dragover", e => { e.preventDefault(); el.classList.add("dropzone"); });
-  el.addEventListener("dragleave", () => el.classList.remove("dropzone"));
-  el.addEventListener("drop", e => {
-    e.preventDefault(); el.classList.remove("dropzone");
-    const from = +e.dataTransfer.getData("text/plain");
-    if (from !== i && paneEls[from]) swapPanes(from, i);
-  });
-  // remember user-resized pane sizes
-  let userSized = !!saved;
-  el.addEventListener("mousedown", e => {
-    const r = el.getBoundingClientRect();
-    if (e.clientX > r.right - 22 && e.clientY > r.bottom - 22) userSized = true;
-  });
-  new ResizeObserver(() => {
-    if (userSized && window.innerWidth > 900){
-      el.classList.add("sized");
-      store.set("pane." + i, {w: el.offsetWidth, h: el.offsetHeight});
-    }
-    drawChart(p);
-  }).observe(el);
   p.tools.addEventListener("change", e => {
     if (e.target.dataset.mark){ v.levelTool = e.target.value || null; renderTools(p); }
   });
   p.tools.addEventListener("mousedown", e => e.stopPropagation());
-  p.ps60.addEventListener("click", async e => {
-    const b = e.target.closest("button[data-se]");
-    if (!b || !p.data) return;
-    const out = await post("/api/level", {symbol: p.data.symbol, role: "second_entry", price: +b.dataset.se});
-    toast(out.ok ? `2nd entry set to ${px(+b.dataset.se)} and saved` : "Could not set the 2nd entry", out.ok);
-    poll(true);
-  });
+
   p.tools.addEventListener("click", e => {
     const tf = e.target.dataset.tf;
     if (tf){ store.set("tf." + i, +tf); v.offset = 0; v.follow = true; drawChart(p); renderTools(p); }
 
     if (e.target.dataset.vwap){ store.set("vwap", !store.get("vwap", true)); paneEls.forEach(q => { drawChart(q); renderTools(q); }); }
+    if (e.target.dataset.clean){ store.set("clean", !store.get("clean", true)); paneEls.forEach(q => { q.el.classList.toggle("clean", store.get("clean", true)); drawChart(q); renderTools(q); }); }
     if (e.target.dataset.fit){ const n = aggBars(p.data ? p.data.bars : [], store.get("tf." + i, 1)).length || 1;
       v.cw = Math.max(2, Math.min(40, (cv.clientWidth - 86) / n)); v.offset = 0; v.follow = true; v.yLo = v.yHi = null; saveView(); drawChart(p); }
   });
@@ -680,18 +717,13 @@ function ensurePane(i){
       setTimeout(() => drawChart(p), 50);
     }
   });
-  p.head.addEventListener("mousedown", e => { el.draggable = !!e.target.closest(".grab") && !document.body.classList.contains("free"); });
   p.head.addEventListener("change", e => {
     const t = e.target;
-    if (t.dataset.part){
-      const parts = new Set((el.dataset.hide || "").split(" ").filter(Boolean));
-      t.checked ? parts.delete(t.dataset.part) : parts.add(t.dataset.part);
-      el.dataset.hide = [...parts].join(" "); store.set("phide." + i, [...parts]); drawChart(p);
-    }
+    if (t.dataset.win){ hideWindow(t.dataset.win, !t.checked); }
     if (t.dataset.col){
-      const cols = new Set((el.dataset.cols || "").split(" ").filter(Boolean));
+      const cols = new Set((elBook.dataset.cols || "").split(" ").filter(Boolean));
       t.checked ? cols.delete(t.dataset.col) : cols.add(t.dataset.col);
-      el.dataset.cols = [...cols].join(" "); store.set("pcols." + i, [...cols]);
+      elBook.dataset.cols = [...cols].join(" "); store.set("pcols." + i, [...cols]);
     }
   });
   p.head.addEventListener("click", e => {
@@ -765,6 +797,7 @@ function renderTools(p){
   p.tools.innerHTML = [1, 5, 15, 60].map(m => `<button data-tf="${m}" class="${tf===m?"on":""}">${m}m</button>`).join("")
     + `<button data-fit="1" title="show all bars">fit</button>`
     + `<button data-vwap="1" class="${store.get("vwap", true) ? "on" : ""}" title="Session VWAP: the average price paid today, weighted by volume. Above = buyers in control of the day, below = sellers.">VWAP</button>`
+    + `<button data-clean="1" class="${store.get("clean", true) ? "on" : ""}" title="Clean chart: only candles, volume, VWAP, your levels and your orders. Off = also show trapped bands, sneaky pivots, reload marks, bubbles and R/C/P calls.">clean</button>`
     + `<select data-mark="1" class="lvl ${p.view.levelTool ? "on" : ""}" title="Mark a level on the chart: pick what it is, then click the chart at the price. Saved to plays.json.">
         <option value="">＋ mark…</option><option value="second_entry" ${p.view.levelTool==="second_entry"?"selected":""}>2nd entry</option>
         <option value="trigger" ${p.view.levelTool==="trigger"?"selected":""}>pivot</option><option value="target" ${p.view.levelTool==="target"?"selected":""}>target</option>
@@ -795,7 +828,7 @@ function swapPanes(a, b){
 function applyOrder(){
   const order = store.get("order", null);
   if (!order) return;
-  for (const k of order) if (paneEls[k]) panesEl.appendChild(paneEls[k].el);
+  for (const k of order) if (paneEls[k]) paneEls[k].els.forEach(el => panesEl.appendChild(el));
 }
 
 function pips(n, cls){
@@ -807,10 +840,9 @@ function pips(n, cls){
 function whoTag(row, side){
   const st = row[side + "_state"], n = row[side + "_refills"] || 0, v = row[side + "_verdict"];
   const name = side === "bid" ? "buyer" : "seller";
-  if (v === "CLEANED UP") return `<span class="who c">CLEANED</span>`;
-  if (v === "PULLED") return `<span class="who v">PULLED</span>`;
-  if (st === "RELOAD") return `<span class="who ${name}">${name.toUpperCase()} ×${n}</span>`;
-  if (st === "BUILDING" && n >= 2) return `<span class="who ${name} cand">${name}?</span>`;
+  if (v === "CLEANED UP") return `<span class="who c" title="the reload ${name} here got eaten and price went through: cleared out">${name.toUpperCase()} CLEARED OUT</span>`;
+  if (v === "PULLED") return `<span class="who v" title="the reload ${name} here vanished without getting hit">${name.toUpperCase()} PULLED</span>`;
+  if (st === "RELOAD") return `<span class="who ${name} big" title="confirmed reload ${name}: refilled ${n}x after getting hit">RELOAD ${name.toUpperCase()} ×${n}</span>`;
   return "";
 }
 
@@ -841,7 +873,7 @@ function ladderHTML(L){
   }
   h += `</table><div class="legend">Every row remembers the last ${L.memory_minutes} min. <span class="buy">Green bar</span> = shares sold into the bid there,
     <span class="sell">red bar</span> = shares bought from the ask. <span class="pips b">●</span><span class="pips a">●</span> = times the size came back after being hit.
-    A glowing row = a reload is confirmed there. Gold rows = your levels. Click BUY / SELL on a row to place a limit there; click your order chip to cancel it.</div>`;
+    A lit row = a CONFIRMED reload buyer / seller sits there (only confirmed ones are shown). White row = the last price. Gold price = your level. Click BUY / SELL on a row to place a limit there; click your order chip to cancel it.</div>`;
   return h;
 }
 
@@ -861,25 +893,31 @@ function renderPane(p, d){
   p.data = d;
   const showEmpty = !d;
   p.empty.hidden = !showEmpty;
-  for (const el of [p.say, p.lines, p.ps60, p.tradebar, p.body, p.tape]) el.hidden = showEmpty;
-  p.el.classList.toggle("pinned", !!(d && d.pinned));
+  for (const el of [p.keep, p.tradebar]) el.hidden = showEmpty;
+  p.elTrade.classList.toggle("pinned", !!(d && d.pinned));
+  for (const [k, w] of Object.entries(p.wins)){   // window titles carry the symbol
+    const title = w.baseTitle + (d ? " · " + d.symbol : "");
+    if (w.title !== title){ w.title = title; w.bar.querySelector("b").textContent = title; }
+  }
   if (!d){
-    p.head.innerHTML = `<span class="grab" title="drag to move this ladder">⠿</span><span class="sym dim">Ladder ${p.i + 1}</span>`;
+    p.head.innerHTML = `<span class="sym dim">Ladder ${p.i + 1}</span>`;
     p.changed.hidden = true;
     p.empty.innerHTML = `Empty ladder.<br>It fills with the play closest to its level, or pin one from the list below.`;
+    p.ladder.innerHTML = ""; p.tape.innerHTML = "";
+    drawChart(p);
     return;
   }
   const h = d.health, pl = d.play;
   const hcls = h.status==="OK"?"ok":(h.status==="STALE"||h.status==="NO DATA")?"bad":"warn";
   if (p.head.querySelector(".gear.open")) { /* menu open: leave the header alone this tick */ } else {
-  const hidden = new Set((p.el.dataset.hide || "").split(" ")), cols = new Set((p.el.dataset.cols || "").split(" "));
+  const cols = new Set((p.elBook.dataset.cols || "").split(" "));
   const gearOpen = p.head.querySelector(".gear.open") ? " open" : "";
-  const part = (k, label) => `<label><input type="checkbox" data-part="${k}" ${hidden.has(k) ? "" : "checked"}> ${label}</label>`;
+  const win = (k, label) => `<label><input type="checkbox" data-win="${p.wins[k].id}" ${p.wins[k].el.classList.contains("hidden") ? "" : "checked"}> ${label}</label>`;
   const col = (k, label) => `<label><input type="checkbox" data-col="${k}" ${cols.has(k) ? "" : "checked"}> ${label}</label>`;
-  p.head.innerHTML = `<span class="grab" title="drag onto another ladder to swap (grid layout)">⠿</span><span class="sym">${esc(d.symbol)}</span>
-    <button data-max="1" title="maximize / restore">${p.el.classList.contains("max") ? "⤡" : "⤢"}</button>
-    <span class="menu gear${gearOpen}"><button title="show / hide parts of this ladder">⚙</button><div class="pop">
-      <h5>SHOW IN THIS LADDER</h5>${part("story", "Story (headline + lines)")}${part("ps60", "PS60 read (grade, MP, second entry)")}${part("banner", "'ladder switched' banner")}${part("trade", "Trade bar")}${part("chart", "Chart")}${part("ladder", "Ladder")}${part("tape", "Time & sales")}
+  p.head.innerHTML = `<span class="sym">${esc(d.symbol)}</span>
+    <button data-max="1" title="maximize / restore the chart">${p.el.classList.contains("max") ? "⤡" : "⤢"}</button>
+    <span class="menu gear${gearOpen}"><button title="windows and columns for this ladder">⚙</button><div class="pop">
+      <h5>WINDOWS FOR THIS LADDER</h5>${win("chart", "Chart")}${win("book", "Ladder")}${win("tape", "Time & sales")}
       <hr><h5>LADDER COLUMNS</h5>${col("notrade", "BUY / SELL click columns")}${col("nomem", "Sold-into-bid / bought-at-ask memory bars")}${col("nolegend", "Legend text")}
     </div></span>
     <span class="pill ${pl.side==="long"?"ok":"bad"}">${esc(pl.side.toUpperCase())}</span>
@@ -909,10 +947,9 @@ function renderPane(p, d){
     p.changed.hidden = false;
     p.changed.textContent = `This ladder switched from ${d.changed.prev} to ${d.symbol} (${d.changed.reason === "pinned" ? "you pinned it" : "it is closer to its level"}) ${ago(state.now - d.changed.t)} ago.`;
   } else p.changed.hidden = true;
-  p.say.className = "p-say " + (d.tone || "");
-  p.say.textContent = d.headline;
-  p.lines.innerHTML = d.lines.map(l => `<li>${esc(l)}</li>`).join("");
-  p.ps60.innerHTML = ps60HTML(d);
+  p.keep.textContent = (d.keep_lines || []).join("  ·  ");
+  p.keep.title = p.keep.textContent;
+  p.el.classList.toggle("clean", store.get("clean", true));
   const keep = p.ladder.scrollTop;
   if (!p.dragging){
     p.ladder.innerHTML = ladderHTML(d.ladder);
@@ -954,7 +991,7 @@ const LEVEL_STYLE = {trigger:["#ffc53d",[],2], second_entry:["#3fd0ff",[6,4],1.6
 
 function drawChart(p){
   const d = p.data, cv = p.canvas;
-  if (!d || p.body.hidden) return;
+  if (!d) return;
   const W = cv.clientWidth, H = cv.clientHeight;
   if (!W || !H) return;
   const dpr = window.devicePixelRatio || 1;
@@ -992,6 +1029,21 @@ function drawChart(p){
   const pad = Math.max((hi - lo) * 0.08, lo * 0.0005);
   lo -= pad; hi += pad;
   if (v.yLo != null && v.yHi != null && v.yHi > v.yLo){ lo = v.yLo; hi = v.yHi; }
+  else {
+    // auto scale with hysteresis: keep the last scale until price / levels leave it, or it gets
+    // far too roomy — so the chart doesn't twitch on every print
+    const a = v.autoY;
+    if (a && a.sym === d.symbol && a.tf === tf){
+      const span = a.hi - a.lo, want = hi - lo;
+      const inside = lo >= a.lo && hi <= a.hi;
+      if (inside && want > span * 0.45){ lo = a.lo; hi = a.hi; }           // still fits: keep the scale
+      else if (!inside){                                                   // something left the scale: grow it
+        const uLo = Math.min(lo, a.lo), uHi = Math.max(hi, a.hi);
+        if ((uHi - uLo) <= want * 2.2){ lo = uLo; hi = uHi; }             // else: fresh fit to what matters now
+      }                                                                    // inside but too roomy: fresh fit
+    }
+    v.autoY = {sym: d.symbol, tf, lo, hi};
+  }
   p.chartY = [lo, hi];
   const y = v => 8 + (hi - v) / (hi - lo) * (plotH - 8);
   const x0 = plotW - bars.length * cw;
@@ -1016,8 +1068,9 @@ function drawChart(p){
     g.fillStyle = "#0a0d12"; g.fillText(`${l.label} ${px(lp)}`.slice(0, 13), plotW + 3, yy + 4);
   }
 
+  const clean = store.get("clean", true);
   // PS60: the second-entry line (the new high / low to get back through) and sneaky pivots
-  if (d.ps60){
+  if (d.ps60 && !clean){
     const se = d.ps60.se;
     if (se.extreme && ["BROKE", "RETRACE", "SECOND_ENTRY"].includes(se.state) && se.extreme >= lo && se.extreme <= hi){
       const yy = y(se.extreme);
@@ -1038,7 +1091,7 @@ function drawChart(p){
     }
   }
   // trapped traders: shaded band where they got in
-  if (d.trap){
+  if (d.trap && !clean){
     for (const [tp, col] of [[d.trap.longs, "255,77,94"], [d.trap.shorts, "38,208,124"]]){
       if (!tp) continue;
       const y1 = y(Math.min(hi, tp.high)), y2 = y(Math.max(lo, tp.low));
@@ -1049,7 +1102,7 @@ function drawChart(p){
     }
   }
   // reloaders: a bar on the left edge at their price
-  if (d.reloaders){
+  if (d.reloaders && !clean){
     for (const r of [...d.reloaders.below, ...d.reloaders.above]){
       if (r.price < lo || r.price > hi) continue;
       const yy = y(r.price), col = r.side === "bid" ? "#26d07c" : "#ff4d5e";
@@ -1102,7 +1155,7 @@ function drawChart(p){
   }
 
   // absorption bubbles: shares traded into resting size at your levels / big levels
-  if (bars.length){
+  if (bars.length && !clean){
     const first = bars[0][0], bucket = {};
     for (const [m, price, side, shares] of d.marks){
       const t0 = Math.floor(m / span) * span;
@@ -1158,8 +1211,8 @@ function drawChart(p){
     g.fillText(dt.toTimeString().slice(0, 5), x0 + k * cw, H - 4);
   }
   // key
-  g.fillStyle = "#7b889e";
-  g.fillText("● green = buyer absorbing   ● red = seller absorbing   R/C/P = reload / cleaned / pulled", 60, H - volH - 4);
+  if (!clean){ g.fillStyle = "#7b889e";
+    g.fillText("● green = buyer absorbing   ● red = seller absorbing   R/C/P = reload / cleaned / pulled", 60, H - volH - 4); }
   if (off > 0){ g.fillStyle = "#ffc53d"; g.fillText(`◀ ${off} bars back — double-click to go live`, plotW - 230, 14); }
   // crosshair with price / time readout
   if (v.cross){
@@ -1236,6 +1289,10 @@ function render(s){
   }).join("") : `<div class="say">No calls yet. TWINEY speaks only when the evidence is there: price approaching your level, a buyer or seller reloading, a level cleaned up or pulled.</div>`;
 
   s.panes.forEach((d, i) => renderPane(ensurePane(i), d));
+  document.getElementById("storyBody").innerHTML = s.panes.map((d, i) => d ? `<div class="st ${esc(d.tone || "")}" data-i="${i}">
+      <span class="sym">${esc(d.symbol)}</span><span class="hl">${esc(d.headline)}</span>
+      <ul>${d.lines.map(l => `<li>${esc(l)}</li>`).join("")}</ul>
+      <div class="p-ps60">${ps60HTML(d)}</div></div>` : "").join("") || `<div class="dim">Ladders are empty.</div>`;
   if (!panesEl.dataset.ordered){
     applyOrder(); panesEl.dataset.ordered = "1";
     document.querySelectorAll(".win[data-win]").forEach(el => makeWindow(el, el.dataset.win, el.dataset.title));
@@ -1303,6 +1360,15 @@ document.getElementById("ranking").addEventListener("click", e => {
   const pb = e.target.closest("button[data-play]");
   if (pb) post("/api/play", {symbol: pb.dataset.play, action: pb.dataset.act}).then(() => poll(true));
 });
+document.getElementById("storyBody").addEventListener("click", async e => {
+  const b = e.target.closest("button[data-se]");
+  if (!b) return;
+  const d = (state.panes || [])[+b.closest(".st").dataset.i];
+  if (!d) return;
+  const out = await post("/api/level", {symbol: d.symbol, role: "second_entry", price: +b.dataset.se});
+  toast(out.ok ? `2nd entry set to ${px(+b.dataset.se)} and saved` : "Could not set the 2nd entry", out.ok);
+  poll(true);
+});
 document.getElementById("feedBody").addEventListener("click", async e => {
   const b = e.target.closest(".grade button");
   if (!b) return;
@@ -1360,12 +1426,12 @@ document.getElementById("resetLayout").addEventListener("click", () => {
   setFree(false);
   store.clear();
   WIN.list.forEach(w => w.el.classList.remove("hidden"));
-  paneEls.forEach(p => { p.el.dataset.hide = ""; p.el.dataset.cols = ""; });
+  paneEls.forEach(p => { p.elBook.dataset.cols = ""; });
   applyAlerts();
-  paneEls.forEach(p => { p.el.style.width = ""; p.el.style.height = ""; p.el.classList.remove("sized", "max"); p.body.style.removeProperty("--ladder-w");
+  paneEls.forEach(p => { p.els.forEach(el => { el.style.width = ""; el.style.height = ""; delete el.dataset.sized; el.classList.remove("sized", "max"); });
     Object.assign(p.view, {cw: 7, offset: 0, yLo: null, yHi: null, follow: true}); renderTools(p); });
   document.body.classList.remove("has-max");
-  paneEls.forEach(p => panesEl.appendChild(p.el));
+  paneEls.forEach(p => p.els.forEach(el => panesEl.appendChild(el)));
 });
 
 let timer = null;
