@@ -568,7 +568,7 @@ function wireChart(p, cv, v, saveView, isFoot){
     } else {                                     // zoom, keeping the bar under the cursor where it is
       const f = e.deltaY > 0 ? 1 / 1.2 : 1.2;
       const plotW = r.width - 86, barsRight = (plotW - x) / v.cw;   // bars between cursor and right edge
-      v.cw = Math.max(2, Math.min(60, v.cw * f));
+      v.cw = Math.max(isFoot ? 34 : 2, Math.min(isFoot ? 120 : 60, v.cw * f));
       v.offset = Math.max(0, v.offset + barsRight - (plotW - x) / v.cw);
       v.follow = v.offset < 0.5; v.rightT = null;
     }
@@ -641,7 +641,7 @@ function wireChart(p, cv, v, saveView, isFoot){
       if (Math.abs(dx) + Math.abs(dy) > 3) moved = true;
       if (onAxis && start.y){ const [lo, hi] = start.y; const c = (lo + hi) / 2, f = Math.exp(dy / 150);   // pull down = squeeze, up = expand
         v.yLo = c - (c - lo) * f; v.yHi = c + (hi - c) * f; }
-      else if (onTime){ v.cw = Math.max(2, Math.min(60, start.cw * Math.exp(dx / 150))); }                     // pull right = wider bars, left = more bars
+      else if (onTime){ v.cw = Math.max(isFoot ? 34 : 2, Math.min(isFoot ? 120 : 60, start.cw * Math.exp(dx / 150))); }                     // pull right = wider bars, left = more bars
       else {
         v.offset = Math.max(0, start.offset + dx / v.cw);
         v.follow = v.offset < 0.5; v.rightT = null;
@@ -664,7 +664,7 @@ function wireChart(p, cv, v, saveView, isFoot){
     const tk = pr >= 1 ? 0.01 : 0.0001, price = +(Math.round(pr / tk) * tk).toFixed(4);
     chartMenu(p, v, e.clientX, e.clientY, price);
   });
-  cv.addEventListener("dblclick", () => { v.cw = isFoot ? 44 : 7; v.offset = 0; v.yLo = v.yHi = null; v.follow = true; v.rightT = null; saveView(); drawChart(p); });
+  cv.addEventListener("dblclick", () => { v.cw = isFoot ? 64 : 7; v.offset = 0; v.yLo = v.yHi = null; v.follow = true; v.rightT = null; saveView(); drawChart(p); });
 }
 
 function ensurePane(i){
@@ -702,7 +702,7 @@ function ensurePane(i){
   const elBook = mk("pane-book", "book", "LADDER", `<div class="ladder-wrap"></div>`);
   const elTape = mk("pane-tape", "tape", "TIME & SALES", `<div class="p-tape"></div>`);
   const elFoot = mk("pane-foot", "foot", "FOOTPRINT 5m", `<div class="chart-wrap"><div class="chart-tools"><span class="dim" style="font-size:11px;background:rgba(17,22,31,.85);padding:1px 6px;border-radius:4px">5-minute footprint · sold into bid × bought at ask · wheel = zoom · right-click = trade</span></div><canvas></canvas></div>`);
-  p.fview = Object.assign({cw: 44, offset: 0, yLo: null, yHi: null, follow: true, cross: null}, store.get("fview." + i, {}));
+  p.fview = Object.assign({cw: 64, offset: 0, yLo: null, yHi: null, follow: true, cross: null}, store.get("fview." + i, {}));
   elBook.dataset.cols = (store.get("pcols." + i, []) || []).join(" ");
   Object.assign(p, {el, elTrade, elBook, elTape,
     head: elTrade.querySelector(".p-head"), changed: elTrade.querySelector(".p-changed"), keep: elTrade.querySelector(".p-keep"),
@@ -1082,11 +1082,11 @@ function drawOne(p, cv, v, isFoot){
   let lo = Infinity, hi = -Infinity;
   for (const b of bars){ lo = Math.min(lo, b[3]); hi = Math.max(hi, b[2]); }
   if (d.last){ lo = Math.min(lo, d.last); hi = Math.max(hi, d.last); }
-  const core = d.user_levels.filter(l => ["trigger","second_entry","extra"].includes(l.role));
+  const core = isFoot ? [] : d.user_levels.filter(l => ["trigger","second_entry","extra"].includes(l.role));
   for (const l of core){ lo = Math.min(lo, l.price); hi = Math.max(hi, l.price); }
   // target / stop are drawn only when they fall inside this range (they never squash the chart)
   if (!isFinite(lo)) return;
-  const pad = Math.max((hi - lo) * 0.08, lo * 0.0005);
+  const pad = isFoot ? Math.max((hi - lo) * 0.03, lo * 0.0002) : Math.max((hi - lo) * 0.08, lo * 0.0005);
   lo -= pad; hi += pad;
   if (v.yLo != null && v.yHi != null && v.yHi > v.yLo){ lo = v.yLo; hi = v.yHi; }
   else {
@@ -1111,7 +1111,19 @@ function drawOne(p, cv, v, isFoot){
 
   // grid + a real price scale on the right, at round prices, lined up with the candles
   g.strokeStyle = "#1b2433"; g.lineWidth = 1;
-  {
+  // footprint rows: 1, 2, 5, 10… ticks per row, whatever keeps a row at least 11px tall
+  const ftk = lo >= 1 ? 0.01 : 0.0001, fpx = Math.abs(y(lo) - y(lo + ftk));
+  const fmult = [1, 2, 5, 10, 25, 50, 100].find(m => fpx * m >= 11) || 100, fstep = ftk * fmult;
+  if (isFoot){
+    g.fillStyle = "#9aa7bb"; g.font = "10px ui-monospace, Menlo, Consolas, monospace";
+    for (let pr = Math.floor(lo / fstep) * fstep; pr <= hi; pr += fstep){
+      const yy = y(pr + fstep / 2), yb = y(pr);
+      g.strokeStyle = "#1b2433"; g.beginPath(); g.moveTo(0, yb); g.lineTo(plotW, yb); g.stroke();
+      if (fpx * fmult >= 11) g.fillText(px(pr), plotW + 4, yy + 4);
+    }
+    g.font = "11px ui-monospace, Menlo, Consolas, monospace";
+    g.strokeStyle = "#2a3548"; g.beginPath(); g.moveTo(plotW + .5, 0); g.lineTo(plotW + .5, plotH); g.stroke();
+  } else {
     const raw = (hi - lo) / Math.max(3, Math.floor((plotH - 8) / 34));
     const mag = Math.pow(10, Math.floor(Math.log10(raw))), m = raw / mag;
     const step = (m <= 1 ? 1 : m <= 2 ? 2 : m <= 2.5 ? 2.5 : m <= 5 ? 5 : 10) * mag;
@@ -1202,21 +1214,24 @@ function drawOne(p, cv, v, isFoot){
       for (const [pr, buy, sell] of rows){ const c = bucket[pr] = bucket[pr] || [0, 0]; c[0] += buy; c[1] += sell; }
     }
     // group prices into rows tall enough to read: 1, 2, 5, 10, 25, 50 or 100 ticks per row
-    const tk = lo >= 1 ? 0.01 : 0.0001, pxPerTick = Math.abs(y(lo) - y(lo + tk));
-    const mult = [1, 2, 5, 10, 25, 50, 100].find(m => pxPerTick * m >= 11) || 100;
-    const step = tk * mult, rowH = pxPerTick * mult;
-    const showText = cw >= 34 && rowH >= 10;
-    g.font = "9px ui-monospace, Menlo, Consolas, monospace"; g.textAlign = "center";
+    const step = fstep, rowH = fpx * fmult;
+    const showText = cw >= 30 && rowH >= 10;
+    g.font = (cw >= 56 ? "10px" : "9px") + " ui-monospace, Menlo, Consolas, monospace"; g.textAlign = "center";
     for (let k = 0; k < bars.length; k++){
-      const b = bars[k], bucket = cells[b[0]]; if (!bucket) continue;
+      const b = bars[k], bucket = cells[b[0]] || {};
       const x = x0 + k * cw + cw / 2, rows = {};
       for (const pr in bucket){ const r0 = Math.floor((+pr + 1e-9) / step) * step; const c = rows[r0] = rows[r0] || [0, 0]; c[0] += bucket[pr][0]; c[1] += bucket[pr][1]; }
-      for (const r0 in rows){
-        const p_ = +r0 + step / 2; if (p_ + step / 2 < lo || p_ - step / 2 > hi) continue;
-        const [buy, sell] = rows[r0], yy = y(p_), h = Math.max(2, rowH - 1);
-        const bg = buy >= 3 * sell && buy >= 300 ? "rgba(38,208,124,.4)" : sell >= 3 * buy && sell >= 300 ? "rgba(255,77,94,.4)" : "rgba(123,136,158,.16)";
-        g.fillStyle = bg; g.fillRect(x - cw * 0.46, yy - h / 2, cw * 0.92, h);
-        if (showText){ g.fillStyle = "#e8eef8"; g.fillText(`${kfmt(sell)}×${kfmt(buy)}`, x, yy + 3); }
+      const hasPrints = Object.keys(rows).length > 0;
+      // every price row the candle covered gets a cell, even 0×0, so the column reads like a footprint
+      for (let r0 = Math.floor(b[3] / step) * step; r0 <= b[2] + 1e-9; r0 += step){
+        const key = Object.keys(rows).find(kk => Math.abs(+kk - r0) < step / 2);
+        const [buy, sell] = key ? rows[key] : [0, 0];
+        const p_ = r0 + step / 2; if (p_ + step / 2 < lo || p_ - step / 2 > hi) continue;
+        const yy = y(p_), h = Math.max(2, rowH - 1);
+        const bg = buy >= 3 * sell && buy >= 300 ? "rgba(38,208,124,.42)" : sell >= 3 * buy && sell >= 300 ? "rgba(255,77,94,.42)" : hasPrints ? "rgba(123,136,158,.18)" : "rgba(123,136,158,.06)";
+        g.fillStyle = bg; g.fillRect(x - cw * 0.47, yy - h / 2, cw * 0.94, h);
+        const f0 = n => n ? kfmt(n) : "0";
+        if (showText){ g.fillStyle = hasPrints ? "#e8eef8" : "#4a5566"; g.fillText(hasPrints ? `${f0(sell)}×${f0(buy)}` : "—", x, yy + 3); }
       }
     }
     g.textAlign = "start"; g.font = "11px ui-monospace, Menlo, Consolas, monospace";
@@ -1565,7 +1580,7 @@ document.getElementById("resetLayout").addEventListener("click", () => {
   paneEls.forEach(p => { p.elBook.dataset.cols = ""; });
   applyAlerts();
   paneEls.forEach(p => { p.els.forEach(el => { el.style.width = ""; el.style.height = ""; delete el.dataset.sized; el.classList.remove("sized", "max"); });
-    Object.assign(p.view, {cw: 7, offset: 0, yLo: null, yHi: null, follow: true}); Object.assign(p.fview, {cw: 44, offset: 0, yLo: null, yHi: null, follow: true}); renderTools(p); });
+    Object.assign(p.view, {cw: 7, offset: 0, yLo: null, yHi: null, follow: true}); Object.assign(p.fview, {cw: 64, offset: 0, yLo: null, yHi: null, follow: true}); renderTools(p); });
   document.body.classList.remove("has-max");
   paneEls.forEach(p => p.els.forEach(el => panesEl.appendChild(el)));
 });

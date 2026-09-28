@@ -72,7 +72,8 @@ Other modes:
 - **Trade from the chart:** right-click at any price for BUY / SELL limit there (and Flatten / Cancel all), or hover
   the price and press **B** / **S**. The price scale on the right is real: round prices lined up with the candles.
 - **Footprint window (5-minute):** every ladder has a FOOTPRINT 5m window next to its chart. Inside each 5-minute candle,
-  per price row, it shows shares **sold into the bid × bought at the ask** from the tape. Green cell = buyers 3:1 or
+  per price row, it shows shares **sold into the bid × bought at the ask** from the tape, with every row's price on the
+  right-hand scale. Pull the price axis up to get down to 1-cent rows. Green cell = buyers 3:1 or
   more, red = sellers 3:1 or more. Rows group into 1/2/5/10… ticks so they stay readable; wheel to zoom. The regular
   chart can also show a footprint on any timeframe with its FOOT button.
 - **Chart axes work like TradingView:** pull the price axis down to squeeze, up to expand; pull the time axis right for
