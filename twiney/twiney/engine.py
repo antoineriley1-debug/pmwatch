@@ -22,7 +22,7 @@ L1_FIELDS = ("bid", "ask", "last", "bid_size", "ask_size", "last_size", "volume"
 ALERT_LABELS = ("RELOAD BUYER DETECTED", "RELOAD SELLER DETECTED", "CLEANED UP", "PULLED")
 
 BAR_SECONDS = 60
-MAX_BARS = 800
+MAX_BARS = 2400  # ~6 trading days of 1-minute bars, enough for 60-minute candles
 MEMORY_SECONDS = 900   # how long the price-level memory (traded volume by price) looks back
 MARK_MINUTES = 400     # absorption bubbles kept for the chart
 
@@ -44,6 +44,8 @@ class SymbolState:
         self.resets = 0
         self.rejected_until = 0.0
         self.last_error = None
+        self.retired = None     # {"reason", "t", "price"} once the play's stop or target is hit
+        self.invalidation_armed = True  # after Reactivate, wait for price to get back inside stop/target first
         self.bars = {}          # minute start -> [o, h, l, c, v, buy_v, sell_v]
         self.memory = deque()   # (t, price_key, price, aggressor side, size) for the level memory
         self.marks = {}         # (minute, price_key, side) -> [price, absorbed shares]
@@ -101,6 +103,7 @@ class Engine:
         self._slot_last = [None] * n
         self.pinned = set()
         self.auto_rotate = True
+        self._slot_cmds = []
         # read-only view of the account (orders are placed in TWS, never here)
         self.orders = {}        # key -> order dict (pending + recently finished)
         self.positions = {}     # (account, symbol) -> {"qty", "avg_cost"}
@@ -110,6 +113,8 @@ class Engine:
         self.sim_broker = None  # demo-mode fill simulator, if any
         self.plays_path = None  # where to save levels added from the chart
         self.replay = None      # replay control block when replaying a recording
+        self.grades = {}        # alert key -> "good" | "bad" (trader's verdict on a call)
+        self.grades_path = None
         self.alerts = deque(maxlen=300)
         self.messages = deque(maxlen=80)
         self.listeners = []
@@ -148,6 +153,7 @@ class Engine:
         if final:
             alert["size_before_gone"] = round(final["size_before_gone"])
         alert["text"] = narrative.alert_text(alert, st.play)
+        alert["key"] = f"{round(t, 2)}|{st.symbol}|{label}|{alert['price']}"
         self.alerts.appendleft(alert)
         self._rec(dict(alert, ev="alert"))
         for fn in self.listeners:
@@ -601,12 +607,79 @@ class Engine:
                     if (tr.role == "auto" and tr.state in (WATCHING, BUILDING) and tr.displayed <= 0
                             and not tr.absorbed_window(t) and t - tr.last_active > rc["auto_idle_seconds"]):
                         del st.trackers[key]
+            self._check_plays(t)
             if not allocate_slots or self.connection["state"] not in ("CONNECTED", "DEMO"):
                 return []
             return self._rotate(t)
 
+    def _check_plays(self, t):
+        """Retire a play once its stop or target trades: it stops taking a ladder."""
+        for st in self.syms.values():
+            if st.retired or not st.play["active"]:
+                continue
+            price = st.l1.get("last")
+            if not price:
+                continue
+            p, long_ = st.play, st.play["side"] == "long"
+            if not st.invalidation_armed:
+                inside = (not p.get("stop") or (price > p["stop"] if long_ else price < p["stop"])) and \
+                         (not p.get("target") or (price < p["target"] if long_ else price > p["target"]))
+                if inside:
+                    st.invalidation_armed = True
+                continue
+            hit = None
+            if p.get("stop") and ((long_ and price <= p["stop"]) or (not long_ and price >= p["stop"])):
+                hit = "stopped out"
+            elif p.get("target") and ((long_ and price >= p["target"]) or (not long_ and price <= p["target"])):
+                hit = "target hit"
+            if hit:
+                self.retire_play(st.symbol, hit, t, price)
+
+    def retire_play(self, symbol, reason, t=None, price=None):
+        with self.lock:
+            st = self._st(symbol)
+            if st is None:
+                return False
+            t = t or self.last_t
+            st.retired = {"reason": reason, "t": t, "price": fmt_price(price or st.price())}
+            self._rec({"ev": "retire", "t": t, "sym": symbol, "reason": reason})
+            self._message("warn", f"{symbol}: {reason} at {st.retired['price']} — play retired (Reactivate in the plays list to bring it back)", t, symbol)
+            if symbol in self.slots and symbol not in self.pinned:
+                self.apply_slot(symbol, False, t, reason="retired")
+                self._slot_cmds.append(("depth_off", symbol))
+            return True
+
+    def reactivate_play(self, symbol, t=None):
+        with self.lock:
+            st = self._st(symbol)
+            if st is None:
+                return False
+            st.retired = None
+            st.invalidation_armed = False
+            self._rec({"ev": "retire", "t": t or self.last_t, "sym": symbol, "reason": None})
+            return True
+
+    # ---- grading calls (feeds the tuning tool) --------------------------------
+
+    def grade(self, key, verdict, t=None):
+        with self.lock:
+            if verdict not in ("good", "bad", None):
+                return False
+            if verdict is None:
+                self.grades.pop(key, None)
+            else:
+                self.grades[key] = verdict
+            rec = {"t": t or self.last_t, "key": key, "verdict": verdict}
+            self._rec(dict(rec, ev="grade"))
+            if self.grades_path:
+                import json, os
+                os.makedirs(os.path.dirname(self.grades_path) or ".", exist_ok=True)
+                with open(self.grades_path, "a", encoding="utf-8") as fh:
+                    fh.write(json.dumps(rec) + "\n")
+            return True
+
     def ranking(self, t):
-        blocked = {s for s, st in self.syms.items() if st.rejected_until > t}
+        blocked = {s for s, st in self.syms.items() if st.rejected_until > t or st.retired}
         prices = {s: st.price() for s, st in self.syms.items()}
         return rank(self.plays, prices, blocked)
 
@@ -617,7 +690,8 @@ class Engine:
                        dc["rotate_hysteresis"], dc["min_hold_seconds"],
                        pinned=self.pinned - blocked, protected=self._protected(),
                        rotate=self.auto_rotate)
-        cmds = []
+        cmds = list(self._slot_cmds)
+        self._slot_cmds = []
         for sym in [s for s in self.slots if s not in new]:
             self.apply_slot(sym, False, t, reason="rotated")
             cmds.append(("depth_off", sym))
@@ -649,6 +723,14 @@ class Engine:
             self.on_depth_rejected(ev["sym"], ev.get("code"), ev.get("msg", ""), t)
         elif kind == "error":
             self.on_error(ev.get("sym"), ev.get("code"), ev.get("msg", ""), t)
+        elif kind == "retire":
+            (self.retire_play if ev.get("reason") else self.reactivate_play)(ev["sym"], *( [ev["reason"], t] if ev.get("reason") else [t]))
+        elif kind == "grade":
+            with self.lock:
+                if ev.get("verdict"):
+                    self.grades[ev["key"]] = ev["verdict"]
+                else:
+                    self.grades.pop(ev["key"], None)
         elif kind == "hbar":
             self.on_hist_bar(ev["sym"], ev["t0"], ev["o"], ev["h"], ev["l"], ev["c"], ev.get("v"))
 
@@ -908,6 +990,8 @@ class Engine:
                     "status": narrative.short_status(p, price),
                     "depth": st.depth_active,
                     "pinned": p["symbol"] in self.pinned,
+                    "retired": st.retired,
+                    "target": p.get("target"), "stop": p.get("stop"),
                     "health": self._health(st, t)["status"],
                     "notes": p["notes"],
                 })
@@ -936,7 +1020,7 @@ class Engine:
                                        if p["symbol"] in self.syms else None) for p in self.positions.values()],
                     "fills": sorted(self.fills.values(), key=lambda f: -f["t"])[:30],
                 },
-                "alerts": list(self.alerts)[:40],
+                "alerts": [dict(a, grade=self.grades.get(a["key"])) for a in list(self.alerts)[:40]],
                 "messages": list(self.messages)[:25],
                 "recording": getattr(self.recorder, "path", None),
             }

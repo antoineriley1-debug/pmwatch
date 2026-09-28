@@ -259,3 +259,50 @@ class FlowTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PlayLifecycleTests(unittest.TestCase):
+    def test_stop_hit_retires_play_and_releases_its_ladder(self):
+        e = connected_engine()
+        e.syms["AAA"].play["stop"] = 9.50
+        e.syms["AAA"].play["target"] = 10.80
+        price_all(e, 1.0, {"AAA": 10.01, "BBB": 50.02, "CCC": 20.50, "DDD": 5.30})
+        e.tick(1.0)
+        self.assertTrue(e.syms["AAA"].depth_active)
+        price_all(e, 40.0, {"AAA": 9.49})
+        cmds = e.tick(40.0)
+        self.assertIn(("depth_off", "AAA"), cmds)
+        self.assertEqual(e.syms["AAA"].retired["reason"], "stopped out")
+        self.assertNotIn("AAA", [s for s, _ in e.ranking(41.0)])
+        snap = e.snapshot(41.0)
+        row = next(r for r in snap["ranking"] if r["symbol"] == "AAA")
+        self.assertEqual(row["retired"]["reason"], "stopped out")
+        self.assertTrue(any("retired" in m["text"] for m in snap["messages"]))
+        # reactivating while price is still under the stop must not retire it again at once
+        self.assertTrue(e.reactivate_play("AAA", 42.0))
+        e.tick(42.0)
+        self.assertIsNone(e.syms["AAA"].retired)
+        self.assertIn("AAA", [s for s, _ in e.ranking(43.0)])
+        # once price is back above the stop, the stop is live again
+        price_all(e, 44.0, {"AAA": 9.95}); e.tick(44.0)
+        price_all(e, 45.0, {"AAA": 9.40}); e.tick(45.0)
+        self.assertEqual(e.syms["AAA"].retired["reason"], "stopped out")
+
+    def test_target_hit_on_short_play(self):
+        e = connected_engine()
+        e.syms["BBB"].play["side"] = "short"
+        e.syms["BBB"].play["target"] = 49.00
+        price_all(e, 1.0, {"BBB": 50.0})
+        e.tick(1.0)
+        price_all(e, 2.0, {"BBB": 48.99})
+        e.tick(2.0)
+        self.assertEqual(e.syms["BBB"].retired["reason"], "target hit")
+
+    def test_grading_a_call_is_kept_and_shown(self):
+        e = connected_engine()
+        e.alerts.appendleft({"t": 1.0, "symbol": "AAA", "label": "RELOAD BUYER DETECTED", "price": 9.9, "key": "1.0|AAA|RELOAD BUYER DETECTED|9.9", "text": "x"})
+        self.assertTrue(e.grade("1.0|AAA|RELOAD BUYER DETECTED|9.9", "good", 2.0))
+        self.assertEqual(e.snapshot(2.0)["alerts"][0]["grade"], "good")
+        self.assertFalse(e.grade("k", "meh", 2.0))
+        e.grade("1.0|AAA|RELOAD BUYER DETECTED|9.9", None, 3.0)
+        self.assertIsNone(e.snapshot(3.0)["alerts"][0]["grade"])

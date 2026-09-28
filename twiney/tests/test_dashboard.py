@@ -51,6 +51,17 @@ class DashboardTests(unittest.TestCase):
             self.post("/api/pin", {"symbol": "NOPE", "pinned": True})
         self.assertEqual(ctx.exception.code, 404)
 
+    def test_play_and_grade_routes(self):
+        self.assertEqual(self.post("/api/play", {"symbol": "aaa", "action": "retire"}).status, 200)
+        self.assertEqual(self.engine.syms["AAA"].retired["reason"], "retired by you")
+        self.post("/api/play", {"symbol": "AAA", "action": "reactivate"})
+        self.assertIsNone(self.engine.syms["AAA"].retired)
+        self.assertEqual(self.post("/api/grade", {"key": "1|AAA|X|1", "verdict": "bad"}).status, 200)
+        self.assertEqual(self.engine.grades["1|AAA|X|1"], "bad")
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            self.post("/api/play", {"symbol": "AAA", "action": "explode"})
+        self.assertEqual(ctx.exception.code, 400)
+
     def test_other_websites_cannot_post(self):
         with self.assertRaises(urllib.error.HTTPError) as ctx:
             self.post("/api/autorotate", {"on": False}, {"Origin": "http://evil.example"})

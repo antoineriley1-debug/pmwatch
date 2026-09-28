@@ -110,7 +110,7 @@ DEFAULTS = {
         "fills_refresh_seconds": 10.0,
     },
     "chart": {
-        # load today's 1-minute bars from IBKR at startup so the chart has context
+        # load the last days of 1-minute bars from IBKR at startup (chart context + 60-minute candles)
         "history": True,
         "regular_hours_only": True,
     },

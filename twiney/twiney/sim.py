@@ -21,9 +21,14 @@ class DemoFeed:
         for p in plays:
             if not p["active"]:
                 continue
-            drift = self.rng.uniform(0.004, 0.03) * self.rng.choice((-1, 1))
+            drift = self.rng.uniform(0.002, 0.008) * self.rng.choice((-1, 1))
+            mid = round(p["trigger"] * (1 + drift), 2)
+            # start inside the play's stop / target band so the demo doesn't retire the play at once
+            lo, hi = sorted(x for x in (p.get("stop"), p.get("target")) if x) or (None, None)
+            if lo and hi:
+                mid = round(min(max(mid, lo + (hi - lo) * 0.15), hi - (hi - lo) * 0.15), 2)
             self.state[p["symbol"]] = {
-                "play": p, "mid": round(p["trigger"] * (1 + drift), 2),
+                "play": p, "mid": mid,
                 "phase": "drift", "n": 0, "outcome": None, "rows": {ASK: 0, BID: 0},
             }
 

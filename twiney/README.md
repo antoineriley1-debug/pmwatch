@@ -1,4 +1,4 @@
-# TWINEY v1.2
+# TWINEY v1.3
 
 An IBKR order-flow workstation built around PS60 levels, with ladder trading that is
 **locked to paper accounts** until you deliberately unlock it.
@@ -42,7 +42,8 @@ Other modes:
 
 | Command | What it does |
 |---|---|
-| `python run_twiney.py --demo` | Synthetic feed with no IBKR connection. It is labelled DEMO everywhere. |
+| `python run_twiney.py --demo` | Synthetic feed with no IBKR connection. It is labelled DEMO everywhere and records to `recordings/demo-*.jsonl`. |
+| `python tune.py recordings/X.jsonl` | Fits the reload thresholds to the calls you graded 👍 / 👎 |
 | `python run_twiney.py --replay recordings/X.jsonl` | Re-runs a recording and compares its calls with the ones made live |
 | `... --replay X.jsonl --speed 5` | Paced replay (5x) with the dashboard |
 | `... --replay X.jsonl --override` | Replays using the current `config.json`/`plays.json` so you can tune thresholds |
@@ -56,7 +57,8 @@ Other modes:
 - **Records every raw event** to `recordings/*.jsonl` (L1, depth ops, prints, resets, slot changes, errors and alerts) for replay or audit.
 - **One dashboard**, with one pane per ladder:
   - **Plain-English headline.** For example: "Price is approaching your trigger 128.40 — 6¢ above it", "A SELLER keeps reloading at 128.40 (your trigger): 6,200 shares traded into it, refilled 5x", "The SELLER at 128.40 got CLEANED UP". It also says what that means for the PS60 play.
-  - **Chart:** 1-minute candles with IBKR history at startup, a 1m/5m toggle, and buy/sell volume. Your trigger, 2nd entry, extra levels, target and stop are drawn as labelled lines with a zone band. Green/red bubbles show shares absorbed into resting buyers/sellers at watched levels. R/C/P markers show reload, cleaned-up and pulled calls. Your working orders are drawn as lines too.
+  - **Chart:** 1-minute candles with 5 days of IBKR history at startup, a 1m / 5m / 15m / 60m toggle (60-minute
+    candles start at 9:30 like every other chart), a session **VWAP** line (toggle), and buy/sell volume. Your trigger, 2nd entry, extra levels, target and stop are drawn as labelled lines with a zone band. Green/red bubbles show shares absorbed into resting buyers/sellers at watched levels. R/C/P markers show reload, cleaned-up and pulled calls. Your working orders are drawn as lines too.
   - **Level-memory ladder.** Every price row remembers the last 15 minutes: shares sold into the bid and bought from the ask there, how many times the size came back after being hit (●), and a glowing **BUYER ×n / SELLER ×n** tag when a reload is confirmed. Your levels and your orders are tagged on their rows. The ladder stays centered on price.
   - **Time & sales** with prints at your levels tagged.
 - **Pane controls:**
@@ -84,6 +86,21 @@ Other modes:
   session in the dashboard with pause / play / speed, and practice orders fill against the replayed book.
 - **Limits (config.json → trading):** `max_position_shares` (1,000) caps any one position; `max_daily_loss` ($500)
   disarms trading for the rest of the session once the day's realized + open P&L reaches it. The header shows day P&L.
+
+## Grading calls and tuning
+- Every call in the CALLS feed has 👍 / 👎. Grade a call and TWINEY remembers it (`recordings/grades.jsonl`, and inside
+  the session recording). Click again to clear a grade.
+- `tune.bat` (or `python tune.py recordings/FILE.jsonl`) replays that recording with a grid of reload settings and shows,
+  for each, how many of your good calls it keeps and how many bad ones it avoids. Copy the best line into
+  `config.json → reload`. Grade a few sessions first: one or two grades prove nothing.
+- Demo sessions record too (`recordings/demo-*.jsonl`), so you can practise grading before you have live data.
+
+## Play invalidation
+- When price trades through a play's `stop` or reaches its `target`, the play is **retired**: it leaves the ranking,
+  gives up its ladder (unless pinned), and the plays list shows `RETIRED — stopped out at 229.62` with a **Reactivate**
+  button. TWINEY also posts a message in Feed Messages.
+- **Reactivate** puts it back. It won't be retired again until price has first come back inside the stop / target band.
+- ✖ next to any play retires it by hand. Plays without a stop or target are never auto-retired.
 
 ## Trapped traders and reloader map
 - **Tape words:** each print is tagged **IN** (paid the offer — wanted in now) or **OUT** (hit the bid — wanted out now).
@@ -129,12 +146,13 @@ twiney/trading.py        TradingGate + SimBroker / IbkrBroker + Trader
 twiney/dashboard.py      local HTTP server (GET only) + static/dashboard.html
 twiney/recorder.py       JSONL recorder;  twiney/replay.py  replay + comparison
 twiney/sim.py            demo feed
+tune.py                  reload-threshold tuner scored against your graded calls
 ```
 
 ## Tests
 `python -m unittest discover -s tests -v`
 
-This runs 68 tests covering the book, reload verdicts, 317 resets, ranking/rotation, a fake TWS session (reconnect, 1100/1101, 309, rotation cancels), the safety guard and source scan, replay fidelity and the dashboard.
+This runs 104 tests covering the book, reload verdicts, 317 resets, ranking/rotation, a fake TWS session (reconnect, 1100/1101, 309, rotation cancels), the safety guard and source scan, replay fidelity and the dashboard.
 One test checks the guard against the real `EClient`. It only runs when `ibapi` is installed.
 
 ## Before connecting to a live-data session (handoff checklist)

@@ -508,7 +508,7 @@ class MarketDataSession:
             if self.cfg["chart"]["history"]:
                 hid = self._rid()
                 self.app.req[hid] = ("hist", sym)
-                self.app.reqHistoricalData(hid, self.contract_factory(play), "", "1 D", "1 min", "TRADES",
+                self.app.reqHistoricalData(hid, self.contract_factory(play), "", "5 D", "1 min", "TRADES",
                                            1 if self.cfg["chart"]["regular_hours_only"] else 0, 2, False, [])
 
     def reconcile_depth(self):

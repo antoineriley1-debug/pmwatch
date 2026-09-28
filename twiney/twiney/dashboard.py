@@ -76,6 +76,18 @@ def make_handler(engine, clock, trader=None):
                 else:
                     ok = (engine.add_level if body.get("on", True) else engine.remove_level)(sym, body.get("price"), clock())
                 self._send(200 if ok else 400, json.dumps({"ok": ok}), "application/json")
+            elif path == "/api/grade":
+                ok = engine.grade(str(body.get("key", "")), body.get("verdict"), clock())
+                self._send(200 if ok else 400, json.dumps({"ok": ok}), "application/json")
+            elif path == "/api/play":
+                sym = str(body.get("symbol", "")).upper()
+                if body.get("action") == "reactivate":
+                    ok = engine.reactivate_play(sym, clock())
+                elif body.get("action") == "retire":
+                    ok = engine.retire_play(sym, "retired by you", clock())
+                else:
+                    ok = False
+                self._send(200 if ok else 400, json.dumps({"ok": ok}), "application/json")
             elif path == "/api/replay":
                 r = engine.replay
                 if r is None:

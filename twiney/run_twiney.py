@@ -64,6 +64,7 @@ def run_live(cfg, plays, args):
         print(f"Recording raw events to {recorder.path}", flush=True)
     engine = Engine(plays, cfg, recorder)
     engine.plays_path = args.plays
+    engine.grades_path = os.path.join(cfg["recording"]["dir"], "grades.jsonl")
     engine.listeners.append(console_alert)
     gate = TradingGate(cfg)
     session = MarketDataSession(engine, cfg, plays, factory, gate=gate)
@@ -89,8 +90,14 @@ def run_live(cfg, plays, args):
 
 def run_demo(cfg, plays, args):
     from twiney.sim import DemoFeed
-    engine = Engine(plays, cfg)
+    recorder = None
+    if cfg["recording"]["enabled"]:
+        recorder = Recorder(cfg["recording"]["dir"], time.strftime("demo-%Y%m%d-%H%M%S.jsonl"))
+        recorder.write(session_header(plays, cfg, __version__))
+        print(f"Recording the demo to {recorder.path} (replay it or grade its calls for tune.py)", flush=True)
+    engine = Engine(plays, cfg, recorder)
     engine.plays_path = args.plays if os.path.exists(args.plays) else None
+    engine.grades_path = os.path.join(cfg["recording"]["dir"], "grades.jsonl")
     engine.listeners.append(console_alert)
     feed = DemoFeed(engine, plays)
     feed.start(time.time())
@@ -111,7 +118,7 @@ def run_demo(cfg, plays, args):
             feed.step(time.time())
             stop_evt.wait(0.25)
     threading.Thread(target=loop, daemon=True).start()
-    wait_forever(lambda: (stop_evt.set(), dash.stop()))
+    wait_forever(lambda: (stop_evt.set(), dash.stop(), recorder and recorder.close()))
     return 0
 
 

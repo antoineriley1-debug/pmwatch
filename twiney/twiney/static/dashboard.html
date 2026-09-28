@@ -71,6 +71,9 @@ body:not(.free) #feed.card{padding:0}
 .say.cleaned{border-color:var(--gold)} .say.pulled{border-color:var(--violet)}
 .say.fresh{background:#1a2230}
 .say .age{float:right;color:var(--dim);font-size:11px;margin-left:10px}
+.say .grade{float:right;margin-left:8px} .say .grade button{padding:0 5px;font-size:12px;opacity:.5;border:1px solid transparent}
+.say .grade button.on{opacity:1;border-color:var(--gold);background:#2a2a1a} .say .grade button:hover{opacity:1}
+tr.retired td{opacity:.55} tr.retired td.status{opacity:1;color:var(--gold)}
 
 /* panes */
 #panes{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start}
@@ -639,6 +642,7 @@ function ensurePane(i){
     const tf = e.target.dataset.tf;
     if (tf){ store.set("tf." + i, +tf); v.offset = 0; v.follow = true; drawChart(p); renderTools(p); }
 
+    if (e.target.dataset.vwap){ store.set("vwap", !store.get("vwap", true)); paneEls.forEach(q => { drawChart(q); renderTools(q); }); }
     if (e.target.dataset.fit){ const n = aggBars(p.data ? p.data.bars : [], store.get("tf." + i, 1)).length || 1;
       v.cw = Math.max(2, Math.min(40, (cv.clientWidth - 86) / n)); v.offset = 0; v.follow = true; v.yLo = v.yHi = null; saveView(); drawChart(p); }
   });
@@ -734,8 +738,9 @@ function ensurePane(i){
 
 function renderTools(p){
   const tf = store.get("tf." + p.i, 1);
-  p.tools.innerHTML = [1, 5, 15].map(m => `<button data-tf="${m}" class="${tf===m?"on":""}">${m}m</button>`).join("")
+  p.tools.innerHTML = [1, 5, 15, 60].map(m => `<button data-tf="${m}" class="${tf===m?"on":""}">${m}m</button>`).join("")
     + `<button data-fit="1" title="show all bars">fit</button>`
+    + `<button data-vwap="1" class="${store.get("vwap", true) ? "on" : ""}" title="Session VWAP: the average price paid today, weighted by volume. Above = buyers in control of the day, below = sellers.">VWAP</button>`
     + `<select data-mark="1" class="lvl ${p.view.levelTool ? "on" : ""}" title="Mark a level on the chart: pick what it is, then click the chart at the price. Saved to plays.json.">
         <option value="">＋ mark…</option><option value="second_entry" ${p.view.levelTool==="second_entry"?"selected":""}>2nd entry</option>
         <option value="trigger" ${p.view.levelTool==="trigger"?"selected":""}>trigger</option><option value="target" ${p.view.levelTool==="target"?"selected":""}>target</option>
@@ -885,11 +890,20 @@ function renderPane(p, d){
 }
 
 /* ---------- chart: candles + your levels + absorption bubbles ---------- */
+// seconds to add to a UTC timestamp to get New York wall time (session anchors: 9:30 open, day rollover)
+function etOffset(t){
+  const d = new Date(t * 1000);
+  const parts = new Intl.DateTimeFormat("en-US", {timeZone: "America/New_York", hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit"}).formatToParts(d);
+  const g = k => +parts.find(x => x.type === k).value;
+  return Math.round(Date.UTC(g("year"), g("month") - 1, g("day"), g("hour"), g("minute"), g("second")) / 1000 - t);
+}
 function aggBars(bars, tf){
   if (tf === 1) return bars.map(b => b.slice());
   const out = [], span = tf * 60;
+  // 60-minute candles start at 9:30 like the rest of the world's charts, not on the hour
+  const anchor = tf >= 30 && bars.length ? (etOffset(bars[bars.length - 1][0]) - 1800) : 0;
   for (const b of bars){
-    const t0 = Math.floor(b[0] / span) * span, last = out[out.length - 1];
+    const t0 = Math.floor((b[0] + anchor) / span) * span - anchor, last = out[out.length - 1];
     if (last && last[0] === t0){ last[2] = Math.max(last[2], b[2]); last[3] = Math.min(last[3], b[3]); last[4] = b[4]; last[5] += b[5]; last[6] += b[6]; last[7] += b[7]; }
     else out.push([t0, b[1], b[2], b[3], b[4], b[5], b[6], b[7]]);
   }
@@ -992,6 +1006,27 @@ function drawChart(p){
     g.beginPath(); g.moveTo(x, y(b[2])); g.lineTo(x, y(b[3])); g.stroke();
     const top = y(Math.max(b[1], b[4])), bh = Math.max(1, Math.abs(y(b[1]) - y(b[4])));
     g.fillRect(x - cw * 0.35, top, cw * 0.7, bh);
+  }
+  // session VWAP from the 1-minute bars, restarting each New York day
+  if (store.get("vwap", true) && d.bars.length && bars.length){
+    const eo = etOffset(d.bars[d.bars.length - 1][0]);
+    let day = null, pv = 0, vol = 0, k = 0;
+    const firstT = bars[0][0], lastT = bars[bars.length - 1][0] + span;
+    g.strokeStyle = "#e8a0ff"; g.lineWidth = 1.4; g.setLineDash([]); g.beginPath();
+    let started = false, lastVw = null;
+    for (const b of d.bars){
+      const dd = Math.floor((b[0] + eo) / 86400);
+      if (dd !== day){ day = dd; pv = 0; vol = 0; started = false; }
+      pv += (b[2] + b[3] + b[4]) / 3 * b[5]; vol += b[5];
+      if (!vol || b[0] < firstT || b[0] >= lastT) continue;
+      const vw = pv / vol, x = x0 + (b[0] - firstT) / span * cw + cw / 2;
+      if (!started){ g.moveTo(x, y(vw)); started = true; } else g.lineTo(x, y(vw));
+      lastVw = vw;
+    }
+    g.stroke(); g.lineWidth = 1;
+    if (lastVw != null){
+      g.fillStyle = "#e8a0ff"; g.fillText("VWAP " + lastVw.toFixed(2), W - labelW + 4, y(lastVw) + 4);
+    }
   }
   // volume, split buy / sell where known
   const vmax = Math.max(1, ...bars.map(b => b[5]));
@@ -1134,7 +1169,9 @@ function render(s){
 
   document.getElementById("feedBody").innerHTML = s.alerts.length ? s.alerts.slice(0, 20).map(a => {
     const age = s.now - a.t;
-    return `<div class="say ${sayClass(a)} ${age < 15 ? "fresh" : ""}"><span class="age">${ago(age)} ago</span><b>${esc(a.symbol)}</b> — ${esc(a.text || a.label)}</div>`;
+    const gr = a.key ? `<span class="grade" data-key="${esc(a.key)}" title="Grade this call so the tuning tool can learn what a good call looks like (tune.bat)">
+        <button data-v="good" class="${a.grade==="good"?"on":""}">👍</button><button data-v="bad" class="${a.grade==="bad"?"on":""}">👎</button></span>` : "";
+    return `<div class="say ${sayClass(a)} ${age < 15 ? "fresh" : ""}"><span class="age">${ago(age)} ago</span>${gr}<b>${esc(a.symbol)}</b> — ${esc(a.text || a.label)}</div>`;
   }).join("") : `<div class="say">No calls yet. TWINEY speaks only when the evidence is there: price approaching your level, a buyer or seller reloading, a level cleaned up or pulled.</div>`;
 
   s.panes.forEach((d, i) => renderPane(ensurePane(i), d));
@@ -1145,12 +1182,14 @@ function render(s){
     if (store.get("free", false)) setFree(true); else document.getElementById("freeBtn").textContent = "Layout: GRID";
   }
 
-  const rows = s.ranking.map(r => `<tr class="${r.depth?"onslot":""}">
-    <td>${r.rank ?? "—"} ${esc(r.symbol)}${r.depth?" ◆":""}</td>
+  const rows = s.ranking.map(r => `<tr class="${r.depth?"onslot":""} ${r.retired?"retired":""}">
+    <td>${r.retired ? "✖" : (r.rank ?? "—")} ${esc(r.symbol)}${r.depth?" ◆":""}</td>
     <td class="${r.side==="long"?"buy":"sell"}">${esc(r.side)}</td>
     <td>${px(r.last)}</td><td style="color:var(--gold)">${px(r.trigger)}</td><td style="color:var(--cyan)">${px(r.second_entry)}</td>
-    <td class="status">${esc(r.status)}</td>
-    <td><button data-pin="${esc(r.symbol)}" data-on="${r.pinned?0:1}" class="${r.pinned?"on":""}">${r.pinned?"📌 Unpin":"Pin to ladder"}</button></td></tr>`).join("");
+    <td class="status">${r.retired ? `RETIRED — ${esc(r.retired.reason)} at ${px(r.retired.price)}` : esc(r.status)}</td>
+    <td>${r.retired ? `<button data-play="${esc(r.symbol)}" data-act="reactivate" title="Put this play back in the rotation">Reactivate</button>`
+      : `<button data-pin="${esc(r.symbol)}" data-on="${r.pinned?0:1}" class="${r.pinned?"on":""}">${r.pinned?"📌 Unpin":"Pin to ladder"}</button>
+         <button data-play="${esc(r.symbol)}" data-act="retire" class="dim" title="Take this play out of the rotation (it stops taking a ladder)">✖</button>`}</td></tr>`).join("");
   document.getElementById("ranking").innerHTML = `<table class="t" data-cols="plays"><tr><th>#</th><th>SIDE</th><th>LAST</th><th>TRIGGER</th><th>2ND</th><th style="text-align:left">WHERE PRICE IS</th><th></th></tr>${rows}</table>`;
 
   const A = s.account;
@@ -1199,6 +1238,16 @@ document.getElementById("account").addEventListener("change", e => { if (e.targe
 document.getElementById("ranking").addEventListener("click", e => {
   const b = e.target.closest("button[data-pin]");
   if (b) post("/api/pin", {symbol: b.dataset.pin, pinned: b.dataset.on === "1"});
+  const pb = e.target.closest("button[data-play]");
+  if (pb) post("/api/play", {symbol: pb.dataset.play, action: pb.dataset.act}).then(() => poll(true));
+});
+document.getElementById("feedBody").addEventListener("click", async e => {
+  const b = e.target.closest(".grade button");
+  if (!b) return;
+  const key = b.parentElement.dataset.key, verdict = b.classList.contains("on") ? null : b.dataset.v;
+  const out = await post("/api/grade", {key, verdict});
+  if (out.ok) toast(verdict ? (verdict === "good" ? "Marked as a good call" : "Marked as a bad call") + " — run tune.bat later to fit the settings to your grades" : "Grade cleared", true);
+  poll(true);
 });
 document.getElementById("arm").addEventListener("click", async () => {
   const out = await post("/api/trade/arm", {on: !T().armed});
