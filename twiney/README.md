@@ -92,14 +92,17 @@ Encoded from the PS60 handoff (Dan Shapiro / Access A Trader, via Antoine). Noth
 off the candles you see. Settings live in `config.json → ps60`.
 
 - **Second-entry engine** (per play, from today's candles): pivot = your `trigger`. Long: break the pivot → new high →
-  retrace → back through that high **on a new candle** = SECOND ENTRY. Short is the mirror. The ladder says exactly where
+  retrace → back through that high = SECOND ENTRY, always on a candle after the one that made the high (the retrace and
+  the re-take may happen inside that same new candle once the pullback is real: `min_retrace_fraction` of the move, at
+  least 3 ticks). Short is the mirror. The ladder says exactly where
   it is ("Retracing off 738.90 — SECOND ENTRY = through 738.90 on a new candle"), draws the line on the chart, and offers
   **use 738.90 as 2nd entry** so the play and the reload trackers move to it. After the second entry it watches the
   **build**: "building", "just triggered", or "NOT building after two minutes — out at breakeven". A close back
   through the pivot resets it and counts a failure. Judge on 5-minute candles with `second_entry_tf: 5`.
-- **Measured potential (MP) and ATR.** MP = dollars from here to your `target` (the next supply / demand you marked).
-  TWINEY loads 30 daily bars from IBKR for the ATR (falls back to the days of 1-minute history it has) and shows
-  `MP $2.77 · ATR $2.87 · 0.97× → CLEAR`. Below `clear_ratio` (0.5 ATR) it is THIN.
+- **Measured potential (MP) and ATR.** Put your own numbers on the play: `"mp": 2.50, "atr": 3.10` in `plays.json`
+  and TWINEY uses them as-is (shown as "(yours)"). Without them, MP is measured from the current price to your
+  `target` and the ATR comes from 30 daily bars from IBKR (or the days of 1-minute history it has). Shown as
+  `MP $2.77 · ATR $2.87 · 0.97× → CLEAR`; below `clear_ratio` (0.5 ATR) it is THIN.
 - **Grade READY / WATCH / PASS** on every ladder and in the plays list, with the four questions as ✅ / ❌ (pivot valid,
   size, control, risk). PASS = no target (no MP on the board), MP THIN, or no stop (risk not known). READY only when
   the second entry has triggered and is building. The order confirmation repeats the grade, so a PASS play warns you
@@ -185,7 +188,7 @@ tune.py                  reload-threshold tuner scored against your graded calls
 ## Tests
 `python -m unittest discover -s tests -v`
 
-This runs 114 tests covering the book, reload verdicts, 317 resets, ranking/rotation, a fake TWS session (reconnect, 1100/1101, 309, rotation cancels), the safety guard and source scan, replay fidelity and the dashboard.
+This runs 115 tests covering the book, reload verdicts, 317 resets, ranking/rotation, a fake TWS session (reconnect, 1100/1101, 309, rotation cancels), the safety guard and source scan, replay fidelity and the dashboard.
 One test checks the guard against the real `EClient`. It only runs when `ibapi` is installed.
 
 ## Before connecting to a live-data session (handoff checklist)

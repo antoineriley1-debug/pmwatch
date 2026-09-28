@@ -776,7 +776,7 @@ function ps60HTML(d){
   const mp = s.mp, se = s.se;
   const mpTxt = mp.dollars == null ? "no target = no measured potential" :
     mp.verdict === "REACHED" ? "measured potential reached" :
-    `MP $${mp.dollars.toFixed(2)}` + (mp.atr ? ` · ATR $${mp.atr.toFixed(2)} · ${mp.ratio}× → <b>${mp.verdict}</b>` : " · ATR not loaded yet");
+    `MP $${mp.dollars.toFixed(2)}${mp.manual ? " (yours)" : ""}` + (mp.atr ? ` · ATR $${mp.atr.toFixed(2)}${d.play.atr ? " (yours)" : ""} · ${mp.ratio}× → <b>${mp.verdict}</b>` : " · ATR not loaded yet");
   const gates = (s.gates || []).map(g => `<span title="${esc(g.q + " " + g.why)}">${g.ok ? "✅" : "❌"}</span>`).join("");
   const canSet = se.extreme && ["BROKE", "RETRACE"].includes(se.state) && Math.abs((d.play.second_entry || 0) - se.extreme) > 1e-6;
   const sneaky = (s.sneaky || []).map(x => `<span class="dim" title="${esc(x.text)}">${esc(x.label)} ${px(x.price)} ×${x.touches} · MP $${x.mp.toFixed(2)}</span>`).join("");

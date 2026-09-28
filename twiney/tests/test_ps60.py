@@ -18,7 +18,7 @@ class SecondEntryTests(unittest.TestCase):
 
     def test_cheat_sheet_example(self):
         # break 736.70 -> new high 738.90 -> retrace -> back through 738.90 on a new candle
-        seq = [(736.0, 736.5, 735.8, 736.4), (736.4, 737.5, 736.3, 737.4), (737.4, 738.9, 737.2, 738.5),
+        seq = [(736.0, 736.5, 735.8, 736.4), (736.4, 737.5, 736.3, 737.4), (737.4, 738.9, 737.4, 738.5),
                (738.5, 738.7, 737.6, 737.8), (737.8, 738.2, 737.5, 738.0)]
         se = ps60.second_entry(bars(seq), self.play, OPEN + 5 * 60, CFG)
         self.assertEqual(se["state"], ps60.RETRACE)
@@ -34,10 +34,19 @@ class SecondEntryTests(unittest.TestCase):
         self.assertEqual(g["grade"], "READY")
 
     def test_same_candle_never_counts_and_failure_resets(self):
-        # the candle that makes the high can't also be the second entry
-        seq = [(736.0, 737.0, 735.9, 736.9), (736.9, 738.0, 736.8, 737.9)]
-        se = ps60.second_entry(bars(seq), self.play, OPEN + 2 * 60, CFG)
+        # the candle that makes the high can't be the entry, even if it dips and re-takes it inside the candle
+        seq = [(736.0, 737.0, 735.9, 736.9)]
+        se = ps60.second_entry(bars(seq), self.play, OPEN + 60, CFG)
         self.assertEqual(se["state"], ps60.BROKE)
+        # the NEXT candle dips under 737.00 (the retrace) and takes it out: that is the second entry,
+        # it does not need a whole candle of retrace first
+        seq.append((736.9, 738.0, 736.8, 737.9))
+        se = ps60.second_entry(bars(seq), self.play, OPEN + 2 * 60, CFG)
+        self.assertEqual((se["state"], se["second_entry"], se["retrace"]), (ps60.SECOND_ENTRY, 737.0, 736.8))
+        # a candle that only dips a cent before going through is not a retrace: just a higher high
+        se = ps60.second_entry(bars([(736.0, 737.0, 735.9, 736.9), (736.99, 738.0, 736.98, 737.9)]), self.play,
+                               OPEN + 2 * 60, CFG)
+        self.assertEqual((se["state"], se["extreme"]), (ps60.BROKE, 738.0))
         # closes back under the pivot: back to waiting, one failure on the board
         seq.append((737.9, 737.9, 735.0, 735.5))
         se = ps60.second_entry(bars(seq), self.play, OPEN + 3 * 60, CFG)
@@ -45,7 +54,7 @@ class SecondEntryTests(unittest.TestCase):
 
     def test_short_mirror_and_not_building(self):
         play = dict(self.play, side="short", trigger=241.20, target=236.5, stop=243.3)
-        seq = [(241.5, 241.6, 240.9, 241.0), (241.0, 241.1, 240.2, 240.4), (240.4, 240.9, 240.3, 240.8),
+        seq = [(241.5, 241.6, 240.9, 241.0), (241.0, 240.95, 240.2, 240.4), (240.4, 240.9, 240.3, 240.8),
                (240.8, 240.9, 240.1, 240.5), (240.5, 240.7, 240.4, 240.6), (240.6, 240.8, 240.3, 240.7)]
         se = ps60.second_entry(bars(seq), play, OPEN + 6 * 60 + 200, CFG)
         self.assertEqual(se["state"], ps60.SECOND_ENTRY)
@@ -120,3 +129,13 @@ class LanguageLockTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ManualNumbersTests(unittest.TestCase):
+    def test_your_mp_and_atr_win(self):
+        play = {"side": "long", "trigger": 100.0, "target": 101.0, "stop": 99.0, "mp": 2.5}
+        mp = ps60.measured_potential(play, 100.2, 3.0, CFG)
+        self.assertEqual((mp["dollars"], mp["ratio"], mp["verdict"], mp["manual"]), (2.5, 0.83, "CLEAR", True))
+        from twiney.config import validate_plays
+        p = validate_plays([{"symbol": "x", "trigger": 10, "mp": "1.5", "atr": 0.4}])[0]
+        self.assertEqual((p["mp"], p["atr"]), (1.5, 0.4))

@@ -434,7 +434,7 @@ class Engine:
         if not self.plays_path:
             return
         import json
-        keep = ("symbol", "side", "trigger", "second_entry", "target", "stop", "extra_levels", "notes", "active",
+        keep = ("symbol", "side", "trigger", "second_entry", "target", "stop", "mp", "atr", "extra_levels", "notes", "active",
                 "exchange", "primary_exchange", "currency")
         out = {"plays": [{k: p[k] for k in keep if k in p} for p in self.plays]}
         tmp = self.plays_path + ".tmp"
@@ -696,7 +696,7 @@ class Engine:
         """The PS60 read for one play: second entry engine, MP vs ATR, grade, sneaky pivots."""
         pc = self.cfg["ps60"]
         tc = self.cfg["trading"]
-        atr_value = self._atr(st, bars)
+        atr_value = st.play.get("atr") or self._atr(st, bars)
         se = ps60.second_entry(bars, st.play, t, pc)
         mp = ps60.measured_potential(st.play, price, atr_value, pc)
         shares = self.trader.default_shares if self.trader else tc["default_shares"]
@@ -1038,7 +1038,7 @@ class Engine:
             "symbol": sym,
             "pinned": sym in self.pinned,
             "changed": change if change and t - change["t"] < 20 and change.get("prev") else None,
-            "play": {k: st.play[k] for k in ("side", "trigger", "second_entry", "target", "stop", "notes")},
+            "play": {k: st.play[k] for k in ("side", "trigger", "second_entry", "target", "stop", "mp", "atr", "notes")},
             "last": fmt_price(st.l1["last"]),
             "bid": fmt_price(bid), "ask": fmt_price(ask),
             "spread": fmt_price(ask - bid) if bid and ask else None,

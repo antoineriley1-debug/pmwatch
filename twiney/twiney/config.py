@@ -115,6 +115,8 @@ DEFAULTS = {
     "ps60": {
         # candle size the second entry is judged on (1 or 5); Dan: "always on a new candle"
         "second_entry_tf": 1,
+        # a pullback counts as the retrace once it is this fraction of the pivot-to-new-high move (min 3 ticks)
+        "min_retrace_fraction": 0.25,
         # after the second entry price should be going the right way within this long
         "build_seconds": 120,
         # measured potential vs daily ATR: CLEAR at or above this ratio, THIN below
@@ -241,6 +243,10 @@ def validate_plays(raw):
             "second_entry": num("second_entry", False),
             "target": num("target", False),
             "stop": num("stop", False),
+            # your own numbers: measured potential in dollars and the ATR. When set they are used as-is;
+            # otherwise MP is measured to the target and the ATR comes from daily bars.
+            "mp": num("mp", False),
+            "atr": num("atr", False),
             "extra_levels": extra,
             "notes": str(item.get("notes", "")),
             "active": bool(item.get("active", True)),

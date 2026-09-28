@@ -24,6 +24,8 @@ IDLE, BROKE, RETRACE, SECOND_ENTRY = "IDLE", "BROKE", "RETRACE", "SECOND_ENTRY"
 DEFAULTS = {
     # candle size the second entry is judged on (1 or 5 minutes; Dan: "always on a new candle")
     "second_entry_tf": 1,
+    # a pullback counts as the retrace once it is this fraction of the move from the pivot to the new extreme
+    "min_retrace_fraction": 0.25,
     # after the second entry, price should be going the right way within this long
     "build_seconds": 120,
     # measured potential judged against the daily ATR: CLEAR at or above this ratio, THIN below
@@ -116,6 +118,15 @@ def atr(daily, n=14):
 def measured_potential(play, price, atr_value, cfg):
     """MP = dollars from here to the next supply (long) or demand (short) the trader marked as target."""
     target = play.get("target")
+    manual = play.get("mp")
+    if manual:
+        # the trader's own measured potential, taken as-is
+        dollars = round(float(manual), 4)
+        if not atr_value:
+            return {"dollars": dollars, "atr": None, "ratio": None, "verdict": "NO ATR", "manual": True}
+        ratio = round(dollars / atr_value, 2)
+        return {"dollars": dollars, "atr": atr_value, "ratio": ratio, "manual": True,
+                "verdict": "CLEAR" if ratio >= cfg["clear_ratio"] else "THIN"}
     if not target or not price:
         return {"dollars": None, "atr": atr_value, "ratio": None, "verdict": "NO TARGET"}
     long_ = play["side"] == "long"
@@ -162,16 +173,24 @@ def second_entry(bars, play, now, cfg):
                 state, ext, ext_i, retr = IDLE, None, None, None
                 continue
             new_ext = h > ext if long_ else l < ext
-            if state == BROKE:
-                if new_ext:
-                    ext, ext_i = (h if long_ else l), i
-                elif i > ext_i:
-                    state, retr = RETRACE, (l if long_ else h)
-            else:  # RETRACE
-                if new_ext and i > ext_i:
-                    state, se_price, se_t, se_i = SECOND_ENTRY, ext, t, i
-                else:
-                    retr = min(retr, l) if long_ else max(retr, h)
+            if i == ext_i:
+                continue  # the candle that made the high / low can never be the entry candle
+            # the retrace: how far price pulled back from the extreme on this new candle
+            dip = l if long_ else h
+            pulled = (ext - dip) if long_ else (dip - ext)
+            if pulled > 0:
+                retr = dip if retr is None else (min(retr, dip) if long_ else max(retr, dip))
+            move = abs(ext - pivot)
+            real_retrace = pulled >= max(3 * tk, cfg["min_retrace_fraction"] * move)
+            closed_through = cl > ext if long_ else cl < ext
+            if state == RETRACE and new_ext:
+                state, se_price, se_t, se_i = SECOND_ENTRY, ext, t, i      # back through the extreme
+            elif state == BROKE and new_ext and real_retrace and closed_through:
+                state, se_price, se_t, se_i = SECOND_ENTRY, ext, t, i      # retraced and re-took it inside one new candle
+            elif new_ext:
+                ext, ext_i = (h if long_ else l), i                        # no real retrace yet: a higher extreme
+            else:
+                state = RETRACE
             continue
         # SECOND_ENTRY: watch the build
         if failed:
@@ -206,17 +225,19 @@ def second_entry_text(se, play):
         return base + ". Nothing to do until price goes through it and puts in a new " + word_hi + "."
     if se["state"] == BROKE:
         return (f"Pivot {p} broke — new {word_hi} {_px(se['extreme'])}. Now let it retrace (a bigger retrace is better). "
-                f"The second entry is back through {_px(se['extreme'])} on a new {tfw}candle.")
+                f"The second entry is back through {_px(se['extreme'])} on a new {tfw}candle — the candle that made "
+                f"the {word_hi} can't be the entry.")
     if se["state"] == RETRACE:
         return (f"Retracing off {_px(se['extreme'])} (so far to {_px(se['retrace'])}). "
-                f"SECOND ENTRY = through {_px(se['extreme'])} on a new {tfw}candle. That is the safest entry.")
+                f"SECOND ENTRY = through {_px(se['extreme'])}. That is the safest entry.")
     build = se["build"]
+    depth = f" after a retrace to {_px(se['retrace'])}" if se.get("retrace") else ""
     if build == "building":
-        return (f"SECOND ENTRY taken through {_px(se['second_entry'])} and it is building — price keeps improving. "
-                f"Cash flow first, then breakeven stop, runner to the measured potential.")
+        return (f"SECOND ENTRY taken through {_px(se['second_entry'])}{depth} and it is building — price keeps "
+                f"improving. Cash flow first, then breakeven stop, runner to the measured potential.")
     if build == "early":
-        return (f"SECOND ENTRY through {_px(se['second_entry'])} just triggered. It should go now — if there is no "
-                f"aggressive move in the next minute or two, use breakeven as the out.")
+        return (f"SECOND ENTRY through {_px(se['second_entry'])}{depth} just triggered. It should go now — if there "
+                f"is no aggressive move in the next minute or two, use breakeven as the out.")
     return (f"SECOND ENTRY through {_px(se['second_entry'])} is NOT building after two minutes — high probability "
             f"it is wrong. Out at breakeven or your max pain.")
 
