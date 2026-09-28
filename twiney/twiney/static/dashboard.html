@@ -132,7 +132,8 @@ td.bars.l .bar-n{float:right;margin-right:3px} td.bars.r .bar-n{margin-left:3px}
 .mine{display:inline-block;font-size:9px;font-weight:700;padding:0 4px;border-radius:3px;border:1px solid #fff;color:#fff;margin-left:3px}
 .chip.drag{opacity:.5} .lad tr.droptarget td{outline:1px dashed var(--gold)}
 .chart-wrap canvas.lvltool{cursor:cell}
-.chart-tools button.on.lvl{border-color:var(--gold);color:var(--gold)}
+.chart-tools button.on.lvl,.chart-tools select.on{border-color:var(--gold);color:var(--gold)}
+.chart-tools select{font:inherit;font-size:11px;background:rgba(17,22,31,.85);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:1px 4px}
 #pnl{font-family:var(--mono);font-weight:700} #pnl.up{color:var(--buy)} #pnl.dn{color:var(--sell)}
 #locked{background:#5a1218;border-color:var(--sell);color:#fff;font-weight:800}
 #replaybar{display:none;gap:8px;align-items:center;padding:6px 16px;background:#1a1530;border-bottom:1px solid var(--violet)}
@@ -531,14 +532,43 @@ function ensurePane(i){
   cv.addEventListener("mousedown", e => {
     const r = cv.getBoundingClientRect(), x0 = e.clientX, y0 = e.clientY, onAxis = (e.clientX - r.left) > r.width - 86;
     const yAt = () => p.chartY ? p.chartY[1] - ((e.clientY - r.top) - 8) / ((p.chartH || 1) - 8) * (p.chartY[1] - p.chartY[0]) : null;
-    // level tool: click to add a level, click an existing extra level to remove it
+    // mark tool: click the chart to set the chosen level at that price
     if (v.levelTool && p.data && !onAxis){
       const price = yAt(); if (price == null) return;
-      const tk = price >= 1 ? 0.01 : 0.0001, snapped = Math.round(price / tk) * tk;
-      const hit = (p.data.user_levels || []).find(l => l.role === "extra" && Math.abs(l.price - snapped) <= tk * 2);
-      post("/api/level", {symbol: p.data.symbol, price: hit ? hit.price : snapped, on: !hit})
-        .then(out => toast(out.ok ? (hit ? "Level removed " + px(hit.price) : "Level added " + px(snapped) + " — saved to plays.json") : "Could not save level", out.ok));
+      const tk = price >= 1 ? 0.01 : 0.0001, snapped = +(Math.round(price / tk) * tk).toFixed(4), role = v.levelTool;
+      const names = {second_entry: "2nd entry", trigger: "trigger", target: "target", stop: "stop", extra: "level"};
+      if (role === "extra"){
+        const hit = (p.data.user_levels || []).find(l => l.role === "extra" && Math.abs(l.price - snapped) <= tk * 2);
+        post("/api/level", {symbol: p.data.symbol, price: hit ? hit.price : snapped, on: !hit, role: "extra"})
+          .then(out => toast(out.ok ? (hit ? "Level removed " + px(hit.price) : "Level added " + px(snapped) + " — saved to plays.json") : "Could not save level", out.ok));
+      } else {
+        post("/api/level", {symbol: p.data.symbol, price: snapped, role})
+          .then(out => toast(out.ok ? `${p.data.symbol} ${names[role]} set to ${px(snapped)} — saved to plays.json` : "Could not set " + names[role], out.ok));
+      }
+      v.levelTool = null; renderTools(p);   // one mark per click of the tool
       return;
+    }
+    // grab one of your level lines and drag it to a new price
+    if (p.data && p.chartY && !onAxis && !(e.ctrlKey || e.metaKey)){
+      const price = yAt(), per = (p.chartY[1] - p.chartY[0]) / ((p.chartH || 1) - 8);
+      const nearOrder = (p.data.orders || []).some(o => o.price && Math.abs(o.price - price) <= per * 5);
+      const lv = !nearOrder && (p.data.user_levels || []).find(l => Math.abs(l.price - price) <= per * 5);
+      if (lv){
+        e.preventDefault();
+        p.dragLevel = {role: lv.role, from: lv.price, price: lv.price, label: lv.label};
+        const move = ev => { const pr = p.chartY[1] - ((ev.clientY - r.top) - 8) / ((p.chartH || 1) - 8) * (p.chartY[1] - p.chartY[0]);
+          const tk = pr >= 1 ? 0.01 : 0.0001; p.dragLevel.price = +(Math.round(pr / tk) * tk).toFixed(4); drawChart(p); };
+        const up = async () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up);
+          const d = p.dragLevel; p.dragLevel = null;
+          if (Math.abs(d.price - d.from) < 1e-6) return;
+          let out;
+          if (d.role === "extra"){ await post("/api/level", {symbol: p.data.symbol, price: d.from, on: false, role: "extra"});
+            out = await post("/api/level", {symbol: p.data.symbol, price: d.price, on: true, role: "extra"}); }
+          else out = await post("/api/level", {symbol: p.data.symbol, price: d.price, role: d.role});
+          toast(out.ok ? `${d.label} moved to ${px(d.price)} — saved` : "Could not move " + d.label, out.ok); };
+        window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
+        return;
+      }
     }
     // grab a working-order line on the chart and drag it to a new price
     if (p.data && p.chartY && !onAxis){
@@ -601,10 +631,14 @@ function ensurePane(i){
     }
     drawChart(p);
   }).observe(el);
+  p.tools.addEventListener("change", e => {
+    if (e.target.dataset.mark){ v.levelTool = e.target.value || null; renderTools(p); }
+  });
+  p.tools.addEventListener("mousedown", e => e.stopPropagation());
   p.tools.addEventListener("click", e => {
     const tf = e.target.dataset.tf;
     if (tf){ store.set("tf." + i, +tf); v.offset = 0; v.follow = true; drawChart(p); renderTools(p); }
-    if (e.target.dataset.lvl){ v.levelTool = !v.levelTool; renderTools(p); return; }
+
     if (e.target.dataset.fit){ const n = aggBars(p.data ? p.data.bars : [], store.get("tf." + i, 1)).length || 1;
       v.cw = Math.max(2, Math.min(40, (cv.clientWidth - 86) / n)); v.offset = 0; v.follow = true; v.yLo = v.yHi = null; saveView(); drawChart(p); }
   });
@@ -702,7 +736,10 @@ function renderTools(p){
   const tf = store.get("tf." + p.i, 1);
   p.tools.innerHTML = [1, 5, 15].map(m => `<button data-tf="${m}" class="${tf===m?"on":""}">${m}m</button>`).join("")
     + `<button data-fit="1" title="show all bars">fit</button>`
-    + `<button data-lvl="1" class="lvl ${p.view.levelTool ? "on" : ""}" title="Level tool: click the chart to add a level (saved to plays.json); click an added level to remove it">＋ level</button>`;
+    + `<select data-mark="1" class="lvl ${p.view.levelTool ? "on" : ""}" title="Mark a level on the chart: pick what it is, then click the chart at the price. Saved to plays.json.">
+        <option value="">＋ mark…</option><option value="second_entry" ${p.view.levelTool==="second_entry"?"selected":""}>2nd entry</option>
+        <option value="trigger" ${p.view.levelTool==="trigger"?"selected":""}>trigger</option><option value="target" ${p.view.levelTool==="target"?"selected":""}>target</option>
+        <option value="stop" ${p.view.levelTool==="stop"?"selected":""}>stop</option><option value="extra" ${p.view.levelTool==="extra"?"selected":""}>extra level</option></select>`;
   p.canvas.classList.toggle("lvltool", !!p.view.levelTool);
 }
 function swapPanes(a, b){
@@ -824,7 +861,7 @@ function renderPane(p, d){
     <button class="bflat" data-do="flat" ${on && pos ? "" : "disabled"}>Flatten</button>
     <button data-do="cxl" ${d.orders.length ? "" : "disabled"}>Cancel all (${d.orders.length})</button>
     <span class="pos">${pos ? `<span class="${pos.qty > 0 ? "buy" : "sell"}">${pos.qty > 0 ? "LONG" : "SHORT"} ${sz(Math.abs(pos.qty))}</span> @ ${px(pos.avg_cost)}${pos.pnl != null ? ` · <span class="${pos.pnl >= 0 ? "buy" : "sell"}">${pos.pnl >= 0 ? "+" : "−"}$${sz(Math.abs(pos.pnl).toFixed(0))}</span>` : ""}` : `<span class="dim">flat</span>`}</span>
-    ${!on ? `<span class="dim" style="font-size:11px">${esc(whyNot())}</span>` : `<span class="keys">keys: B buy bid · S sell ask · + add · − close · F flatten · Esc cancel all · L level tool · A arm</span>`}`;
+    ${!on ? `<span class="dim" style="font-size:11px">${esc(whyNot())}</span>` : `<span class="keys">keys: B buy bid · S sell ask · + add · − close · F flatten · Esc cancel all · 2 mark 2nd entry · L extra level · A arm</span>`}`;
   if (d.changed){
     p.changed.hidden = false;
     p.changed.textContent = `This ladder switched from ${d.changed.prev} to ${d.symbol} (${d.changed.reason === "pinned" ? "you pinned it" : "it is closer to its level"}) ${ago(state.now - d.changed.t)} ago.`;
@@ -914,14 +951,16 @@ function drawChart(p){
   // your levels: zone band + line + label
   const tickOf = v => v >= 1 ? 0.01 : 0.0001;
   for (const l of d.user_levels){
-    if (l.price < lo || l.price > hi) continue;
+    const dl = p.dragLevel && p.dragLevel.role === l.role && Math.abs(p.dragLevel.from - l.price) < 1e-6;
+    const lp = dl ? p.dragLevel.price : l.price;
+    if (lp < lo || lp > hi) continue;
     const [col, dash, lw] = LEVEL_STYLE[l.role] || LEVEL_STYLE.extra;
-    const yy = y(l.price), band = Math.max(3, Math.abs(y(l.price + tickOf(l.price)) - yy));
+    const yy = y(lp), band = Math.max(3, Math.abs(y(lp + tickOf(lp)) - yy));
     g.fillStyle = col + "22"; g.fillRect(0, yy - band, plotW, band * 2);
     g.strokeStyle = col; g.lineWidth = lw; g.setLineDash(dash);
     g.beginPath(); g.moveTo(0, yy); g.lineTo(plotW, yy); g.stroke(); g.setLineDash([]);
     g.fillStyle = col; g.fillRect(plotW, yy - 8, labelW, 16);
-    g.fillStyle = "#0a0d12"; g.fillText(`${l.label} ${px(l.price)}`.slice(0, 13), plotW + 3, yy + 4);
+    g.fillStyle = "#0a0d12"; g.fillText(`${l.label} ${px(lp)}`.slice(0, 13), plotW + 3, yy + 4);
   }
 
   // trapped traders: shaded band where they got in
@@ -1184,7 +1223,8 @@ document.addEventListener("keydown", e => {
   else if (e.key === "Escape") cancelAll(d.symbol);
   else if (e.key === "+" || e.key === "=") post("/api/trade/adjust", {symbol: d.symbol, shares: lot, mode: "add"}).then(o => toast(o.ok ? "Sent: " + o.sent : "Blocked: " + o.reason, o.ok));
   else if (e.key === "-" || e.key === "_") post("/api/trade/adjust", {symbol: d.symbol, shares: lot, mode: "close"}).then(o => toast(o.ok ? "Sent: " + o.sent : "Blocked: " + o.reason, o.ok));
-  else if (e.key === "l" || e.key === "L"){ p.view.levelTool = !p.view.levelTool; renderTools(p); }
+  else if (e.key === "2"){ p.view.levelTool = "second_entry"; renderTools(p); toast("Click the chart where the 2nd entry is", true); }
+  else if (e.key === "l" || e.key === "L"){ p.view.levelTool = p.view.levelTool ? null : "extra"; renderTools(p); }
   else if (e.key === "b" || e.key === "B"){ if (d.bid) sendOrder(d.symbol, "BUY", d.bid); }
   else if (e.key === "s" || e.key === "S"){ if (d.ask) sendOrder(d.symbol, "SELL", d.ask); }
   else return;

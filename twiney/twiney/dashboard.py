@@ -70,7 +70,11 @@ def make_handler(engine, clock, trader=None):
                 self._trade(path[len("/api/trade/"):], body)
             elif path == "/api/level":
                 sym = str(body.get("symbol", "")).upper()
-                ok = (engine.add_level if body.get("on", True) else engine.remove_level)(sym, body.get("price"), clock())
+                role = str(body.get("role", "extra"))
+                if role in ("trigger", "second_entry", "target", "stop"):
+                    ok = engine.set_play_level(sym, role, body.get("price") if body.get("on", True) else None, clock())
+                else:
+                    ok = (engine.add_level if body.get("on", True) else engine.remove_level)(sym, body.get("price"), clock())
                 self._send(200 if ok else 400, json.dumps({"ok": ok}), "application/json")
             elif path == "/api/replay":
                 r = engine.replay

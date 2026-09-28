@@ -74,8 +74,10 @@ Other modes:
   current price to the play's stop.
 - **Hotkeys** (click a ladder first): **B** buy on the bid · **S** sell on the ask · **+** / **−** add / close one
   lot (the × dropdown in POSITIONS) · **F** flatten · **Esc** cancel all · **L** level tool · **A** arm / disarm.
-- **Level tool** (＋ level on the chart, or **L**): click the chart to add a level; it is watched for reloads at once
-  and written to `plays.json` as an `extra_levels` entry. Click an added level again to remove it.
+- **Mark levels on the chart** (＋ mark… above the chart): choose 2nd entry, trigger, target, stop or extra level,
+  then click the chart at the price. The play is updated, the reload trackers move to the new price, and `plays.json`
+  is saved. Press **2** to mark a 2nd entry quickly. Drag any level line to adjust it. Click an extra level with the
+  extra tool to remove it.
 - **Positions panel:** close 1 / 5 / 10 and add 1 / 5 / 10 (× lot), Flatten, all as limits at the touch.
 - **Sound:** a short tone on every call (🔊 / 🔇 in the header).
 - **Replay:** `start_replay.bat` (or `python run_twiney.py --replay recordings/FILE.jsonl --speed 5`) plays a recorded

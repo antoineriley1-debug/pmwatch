@@ -223,6 +223,24 @@ class FlowTests(unittest.TestCase):
             self.assertNotIn((ASK, 1005), e.syms["AAA"].trackers)
             self.assertEqual([p for p in json.load(open(e.plays_path))["plays"] if p["symbol"] == "AAA"][0]["extra_levels"], [])
 
+    def test_second_entry_set_from_chart(self):
+        import json, os, tempfile
+        e = self._slotted()
+        with tempfile.TemporaryDirectory() as d:
+            e.plays_path = os.path.join(d, "plays.json")
+            self.assertIn((BID, 990), e.syms["AAA"].trackers)                 # old 2nd entry 9.90
+            self.assertTrue(e.set_play_level("AAA", "second_entry", 9.95, 2.0))
+            self.assertNotIn((BID, 990), e.syms["AAA"].trackers)
+            self.assertEqual(e.syms["AAA"].trackers[(BID, 995)].role, "second_entry")
+            self.assertEqual(e.syms["AAA"].play["second_entry"], 9.95)
+            saved = [p for p in json.load(open(e.plays_path))["plays"] if p["symbol"] == "AAA"][0]
+            self.assertEqual(saved["second_entry"], 9.95)
+            self.assertTrue(e.set_play_level("AAA", "stop", 9.50, 3.0))
+            self.assertEqual(e.snapshot(4.0)["panes"][0]["play"]["stop"], 9.5)
+            self.assertFalse(e.set_play_level("AAA", "trigger", None, 5.0))     # trigger can't be cleared
+            self.assertTrue(e.set_play_level("AAA", "second_entry", None, 6.0))  # 2nd entry can
+            self.assertNotIn((BID, 995), e.syms["AAA"].trackers)
+
     def test_snapshot_shape(self):
         e = self._slotted()
         price_all(e, 1.0, {"AAA": 10.0})

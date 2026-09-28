@@ -352,6 +352,44 @@ class Engine:
             self._save_plays()
             return True
 
+    def set_play_level(self, symbol, role, price, t=None):
+        """Set (or clear, with price None) the play's trigger / second_entry / target / stop
+        from the chart, re-point the reload trackers, and save plays.json."""
+        with self.lock:
+            st = self._st(symbol)
+            if st is None or role not in ("trigger", "second_entry", "target", "stop"):
+                return False
+            if price is not None:
+                price = round(float(price), 4)
+                if price <= 0:
+                    return False
+            if role == "trigger" and price is None:
+                return False  # a play always needs a trigger
+            old = st.play.get(role)
+            st.play[role] = price
+            if role in ("trigger", "second_entry"):
+                # drop the old trackers for this role (unless another role shares that price)
+                if old is not None:
+                    for side in (BID, ASK):
+                        tr = st.trackers.get((side, price_key(old)))
+                        if tr is not None:
+                            roles = [r for r in tr.role.split("+") if r != role]
+                            if roles:
+                                tr.role = "+".join(roles)
+                            else:
+                                del st.trackers[(side, price_key(old))]
+                if price is not None and st.book is not None:
+                    for side in (BID, ASK):
+                        key = (side, price_key(price))
+                        tr = st.trackers.get(key)
+                        if tr is None:
+                            st.trackers[key] = LevelTracker(symbol, price, side, role, self.cfg["reload"], t or self.last_t)
+                        elif role not in tr.role.split("+"):
+                            tr.role = role + "+" + tr.role if tr.role == "auto" else tr.role + "+" + role
+            self._rec({"ev": "play_level", "t": t or self.last_t, "sym": symbol, "role": role, "px": price})
+            self._save_plays()
+            return True
+
     def remove_level(self, symbol, price, t=None):
         with self.lock:
             st = self._st(symbol)
