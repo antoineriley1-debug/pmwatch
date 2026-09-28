@@ -307,3 +307,24 @@ class PlayLifecycleTests(unittest.TestCase):
         self.assertFalse(e.grade("k", "meh", 2.0))
         e.grade("1.0|AAA|RELOAD BUYER DETECTED|9.9", None, 3.0)
         self.assertIsNone(e.snapshot(3.0)["alerts"][0]["grade"])
+
+
+class VoiceTests(unittest.TestCase):
+    def test_big_size_added_pulled_and_hit_are_called_out(self):
+        e = connected_engine(voice={"min_shares": 5000, "repeat_seconds": 20})
+        price_all(e, 1.0, {"AAA": 10.01})
+        e.tick(1.0)
+        seed_book(e, "AAA", 2.0)
+        e.on_depth("AAA", 0, UPDATE, BID, 9.99, 18000, "", 3.0)
+        self.assertEqual(e.voice[0]["text"], "AAA: 18k buyer at 9.99")
+        # pulled: size vanishes with nothing trading there
+        e.on_depth("AAA", 0, UPDATE, BID, 9.99, 200, "", 4.0)
+        self.assertEqual(e.voice[0]["text"], "AAA: buyer pulled 17k from 9.99")
+        # hit: prints at that price account for the drop
+        e.on_depth("AAA", 0, UPDATE, ASK, 10.00, 12000, "", 30.0)
+        self.assertEqual(e.voice[0]["text"], "AAA: 12k seller at 10.00")
+        for k in range(6):
+            e.on_print("AAA", 10.00, 2000, "X", 31.0 + k * 0.1)
+        e.on_depth("AAA", 0, UPDATE, ASK, 10.00, 100, "", 32.0)
+        self.assertEqual(e.voice[0]["text"], "AAA: seller at 10.00 got hit for 11k")
+        self.assertEqual(len(e.snapshot(33.0)["voice"]), 4)

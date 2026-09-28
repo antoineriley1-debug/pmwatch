@@ -275,6 +275,7 @@ td.status{text-align:left !important;white-space:normal !important;color:#c4cddb
   <label class="dim" title="PS60 exits: pay yourself along the way (½ at +$0.50, ¼ at +$1.50 by default), the rest runs to the target; after the first cash flow the stop moves to breakeven. Edit the plan in config.json → trading.scale_plan."><input type="checkbox" id="scale"> PS60 exits</label>
   <span id="pnl" title="today: realized + open">P&amp;L —</span>
   <button id="soundBtn" title="beep on every call">🔊</button>
+  <button id="voiceBtn" title="Voice: reads out big size showing up or pulled at a price (e.g. '18k buyer at 120', 'buyer pulled 18k from 120') and every call. Threshold in config.json → voice.min_shares">🗣 Voice</button>
   <button id="alertsBtn" title="Show / hide the call feed and call pop-ups">🔔 Alerts</button>
   <button id="rotate" title="When OFF, ladders never switch symbols on their own">Auto-rotate: …</button>
   <span class="menu" id="winMenu"><button>Windows ▾</button><div class="pop" id="winList"></div></span>
@@ -1258,6 +1259,8 @@ function render(s){
   if (t.pnl){ const v = t.pnl.total; pnlEl.textContent = `P&L ${v >= 0 ? "+" : "−"}$${sz(Math.abs(v).toFixed(0))}` + (t.max_daily_loss ? ` / −$${sz(t.max_daily_loss)} limit` : "");
     pnlEl.className = v > 0 ? "up" : v < 0 ? "dn" : ""; pnlEl.title = `realized ${t.pnl.realized} · open ${t.pnl.open}`; }
   document.getElementById("soundBtn").textContent = store.get("sound", true) ? "🔊" : "🔇";
+  document.getElementById("voiceBtn").className = store.get("voice", true) ? "on" : "";
+  speakNew(s);
   const rp = s.replay, rb = document.getElementById("replaybar");
   rb.classList.toggle("on", !!rp);
   if (rp){
@@ -1387,6 +1390,38 @@ document.getElementById("oneclick").addEventListener("change", e => post("/api/t
 document.getElementById("bracket").addEventListener("change", e => post("/api/trade/bracket", {on: e.target.checked}));
 document.getElementById("scale").addEventListener("change", e => post("/api/trade/scale", {on: e.target.checked}));
 document.getElementById("soundBtn").addEventListener("click", () => { store.set("sound", !store.get("sound", true)); beep("buyer"); poll(true); });
+document.getElementById("voiceBtn").addEventListener("click", () => { const on = !store.get("voice", true); store.set("voice", on); say(on ? "Voice on" : "Voice off", true); poll(true); });
+// ---------- voice: the browser reads call-outs aloud (Windows / Mac built-in voices, no internet needed)
+const spoken = new Set(); let voiceFirst = true;
+function say(text, force){
+  if (!force && !store.get("voice", true)) return;
+  if (!("speechSynthesis" in window)) return;
+  try {
+    if (speechSynthesis.pending && speechSynthesis.getVoices().length && !force){ /* backlog: keep it short */ }
+    const u = new SpeechSynthesisUtterance(text.replace(/×/g, " times ").replace(/\$/g, ""));
+    u.rate = 1.15; u.pitch = 1;
+    speechSynthesis.speak(u);
+  } catch (e) {}
+}
+function callWords(a){
+  const who = a.side === "bid" ? "buyer" : "seller", at = `at ${px(a.price)}`;
+  const kshares = n => n >= 1000 ? Math.round(n / 1000) + " thousand" : String(n);
+  if (a.label.startsWith("RELOAD")) return `${a.symbol}: confirmed reload ${who} ${at}. Reloaded ${a.refreshes} times, ${kshares(a.absorbed)} shares absorbed.`;
+  if (a.label === "CLEANED UP") return `${a.symbol}: ${who} ${at} cleared out. ${kshares(a.absorbed)} shares ate through it.`;
+  if (a.label === "PULLED") return `${a.symbol}: ${who} ${at} pulled. Never got hit.`;
+  if (a.label === "REMOUNT") return `${a.symbol}: remount ${at}.`;
+  if (a.label === "REJECTION") return `${a.symbol}: rejection ${at}.`;
+  return `${a.symbol}: ${a.label.toLowerCase()} ${at}`;
+}
+function speakNew(s){
+  const items = [];
+  for (const v of (s.voice || [])) if (!spoken.has(v.key)){ spoken.add(v.key); items.push(v.text); }
+  for (const a of (s.alerts || []).slice(0, 5)) if (!spoken.has("a" + a.key) && s.now - a.t < 30){ spoken.add("a" + a.key); items.push(callWords(a)); }
+  if (voiceFirst){ voiceFirst = false; return; }   // don't read the backlog on page load
+  if (!store.get("voice", true)) return;
+  if (items.length > 3) items.splice(0, items.length - 3);   // never fall behind the market
+  for (const t of items.reverse()) say(t);
+}
 document.getElementById("rpPlay").addEventListener("click", () => post("/api/replay", {paused: !(state && state.replay && state.replay.paused)}));
 document.getElementById("rpSpeed").addEventListener("change", e => post("/api/replay", {speed: +e.target.value}));
 // hotkeys (ignored while typing in a box): F flatten focused ladder · Esc cancel all on it · +/- add/close one lot · A arm/disarm · L level tool

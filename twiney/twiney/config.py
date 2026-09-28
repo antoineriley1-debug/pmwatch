@@ -143,6 +143,12 @@ DEFAULTS = {
         "history": True,
         "regular_hours_only": True,
     },
+    "voice": {
+        # spoken call-outs: big size showing up at a price, and big size pulled / hit
+        "min_shares": 5000,
+        # don't repeat the same price on the same side within this many seconds
+        "repeat_seconds": 20.0,
+    },
     "recording": {
         "enabled": True,
         "dir": "recordings",

@@ -23,6 +23,12 @@ ALERT_LABELS = ("RELOAD BUYER DETECTED", "RELOAD SELLER DETECTED", "CLEANED UP",
 PS60_LABELS = ("REMOUNT", "REJECTION")
 
 BAR_SECONDS = 60
+def _k(n):
+    """5,000 -> '5k', 18,400 -> '18k', 800 -> '800' (for speech)."""
+    n = int(round(n))
+    return f"{n // 1000}k" if n >= 1000 else str(n)
+
+
 MAX_BARS = 2400  # ~6 trading days of 1-minute bars, enough for 60-minute candles
 MEMORY_SECONDS = 900   # how long the price-level memory (traded volume by price) looks back
 MARK_MINUTES = 400     # absorption bubbles kept for the chart
@@ -50,6 +56,8 @@ class SymbolState:
         self.bars = {}          # minute start -> [o, h, l, c, v, buy_v, sell_v]
         self.daily = {}         # day start -> [o, h, l, c] from IBKR daily bars (ATR)
         self.remounts = set()   # (level, kind, t) already called
+        self.sizes = {ASK: {}, BID: {}}   # last aggregated size per price on each side (voice call-outs)
+        self.voice_last = {}    # (side, price_key, kind) -> t of the last call-out
         self.remount_last = {}  # (level, kind) -> t of the last call (cooldown)
         self.remount_check_t = 0.0
         self.memory = deque()   # (t, price_key, price, aggressor side, size) for the level memory
@@ -119,6 +127,7 @@ class Engine:
         self.plays_path = None  # where to save levels added from the chart
         self.replay = None      # replay control block when replaying a recording
         self.grades = {}        # alert key -> "good" | "bad" (trader's verdict on a call)
+        self.voice = deque(maxlen=60)   # spoken call-outs: big size added / pulled / hit
         self.grades_path = None
         self.alerts = deque(maxlen=300)
         self.messages = deque(maxlen=80)
@@ -196,6 +205,7 @@ class Engine:
                 return  # stale update for a slot that was already released
             st.book.apply(position, operation, side, price, size, market_maker)
             st.depth_t = t
+            self._voice_sizes(st, side, t)
             if self.sim_broker is not None:
                 self.sim_broker.on_market(symbol, t)
             judge = self._judge(st, t)
@@ -209,6 +219,10 @@ class Engine:
                 self._auto_levels(st, t)
 
     def on_depth_reset(self, symbol, t, reason="317"):
+        st0 = self._st(symbol)
+        if st0 is not None:
+            st0.sizes = {ASK: {}, BID: {}}
+
         with self.lock:
             st = self._st(symbol)
             if st is None:
@@ -632,6 +646,44 @@ class Engine:
             if not allocate_slots or self.connection["state"] not in ("CONNECTED", "DEMO"):
                 return []
             return self._rotate(t)
+
+    def _voice_sizes(self, st, side, t):
+        """Call out big size showing up at a price, and big size leaving it (pulled or hit)."""
+        vc = self.cfg["voice"]
+        big = vc["min_shares"]
+        if not big or st.book is None:
+            return
+        now = {price_key(p): (p, s) for p, s, _n in st.book.levels(side)}
+        prev = st.sizes[side]
+        who = "buyer" if side == BID else "seller"
+        synced = st.book.synced and t >= st.resync_until
+        for k, (p, s) in now.items():
+            was = prev.get(k, (p, 0.0))[1]
+            if synced and s - was >= big and s >= big:
+                self._say(st, side, k, "add", t, f"{_k(s)} {who} at {narrative.px(p)}")
+        for k, (p, was) in prev.items():
+            s = now.get(k, (p, 0.0))[1]
+            gone = was - s
+            if synced and was >= big and gone >= big * 0.8:
+                # hit, or pulled? look at what traded at that price in the last few seconds
+                traded = sum(pr["size"] for pr in st.tape.recent(60)
+                             if t - pr["t"] <= 3.0 and price_key(pr["price"]) == k)
+                if traded >= gone * 0.5:
+                    self._say(st, side, k, "hit", t, f"{who} at {narrative.px(p)} got hit for {_k(gone)}")
+                else:
+                    self._say(st, side, k, "pull", t, f"{who} pulled {_k(gone)} from {narrative.px(p)}")
+        st.sizes[side] = now
+
+    def _say(self, st, side, k, kind, t, text):
+        vc = self.cfg["voice"]
+        key = (side, k, kind)
+        if t - st.voice_last.get(key, -1e9) < vc["repeat_seconds"]:
+            return
+        st.voice_last[key] = t
+        item = {"t": t, "symbol": st.symbol, "kind": kind, "text": f"{st.symbol}: {text}",
+                "key": f"{round(t, 2)}|{st.symbol}|{kind}|{k}"}
+        self.voice.appendleft(item)
+        self._rec(dict(item, ev="voice"))
 
     def _check_remounts(self, t):
         """REMOUNT / REJECTION calls at your levels (through the level, then back through it)."""
@@ -1125,6 +1177,7 @@ class Engine:
                     "fills": sorted(self.fills.values(), key=lambda f: -f["t"])[:30],
                 },
                 "alerts": [dict(a, grade=self.grades.get(a["key"])) for a in list(self.alerts)[:40]],
+                "voice": [v for v in list(self.voice)[:20] if t - v["t"] < 60],
                 "messages": list(self.messages)[:25],
                 "recording": getattr(self.recorder, "path", None),
             }

@@ -95,6 +95,11 @@ Other modes:
   extra tool to remove it.
 - **Positions panel:** close 1 / 5 / 10 and add 1 / 5 / 10 (× lot), Flatten, all as limits at the touch.
 - **Sound:** a short tone on every call (🔊 / 🔇 in the header).
+- **Voice** (🗣 in the header, on by default; uses the voices built into Windows / Mac, no internet): reads out big size
+  showing up or leaving a price — "18k buyer at 120", "buyer pulled 17k from 120", "seller at 120 got hit for 11k" —
+  and every call: "confirmed reload seller at 241.20, reloaded 12 times, 6 thousand shares absorbed", "seller at 241.20
+  cleared out", "pulled". Size threshold in `config.json → voice.min_shares` (5,000). Hit vs pulled is decided by the
+  tape: if prints at that price cover the size that left, it got hit; otherwise it was pulled.
 - **Replay:** `start_replay.bat` (or `python run_twiney.py --replay recordings/FILE.jsonl --speed 5`) plays a recorded
   session in the dashboard with pause / play / speed, and practice orders fill against the replayed book.
 - **Limits (config.json → trading):** `max_position_shares` (1,000) caps any one position; `max_daily_loss` ($500)
@@ -202,7 +207,7 @@ tune.py                  reload-threshold tuner scored against your graded calls
 ## Tests
 `python -m unittest discover -s tests -v`
 
-This runs 115 tests covering the book, reload verdicts, 317 resets, ranking/rotation, a fake TWS session (reconnect, 1100/1101, 309, rotation cancels), the safety guard and source scan, replay fidelity and the dashboard.
+This runs 116 tests covering the book, reload verdicts, 317 resets, ranking/rotation, a fake TWS session (reconnect, 1100/1101, 309, rotation cancels), the safety guard and source scan, replay fidelity and the dashboard.
 One test checks the guard against the real `EClient`. It only runs when `ibapi` is installed.
 
 ## Before connecting to a live-data session (handoff checklist)
