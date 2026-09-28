@@ -59,12 +59,16 @@ def replay(path, plays=None, cfg=None, speed=0.0, on_alert=None, engine_ready=No
             next_tick += TICK_STEP
         if control is not None:
             control["position"] = t
-            while control.get("paused") and not control.get("stop"):
+            seek = control.get("seek")
+            if seek is not None and t >= seek:
+                control["seek"] = None
+                seek = None
+            while control.get("paused") and not control.get("stop") and seek is None:
                 time.sleep(0.1)
             if control.get("stop"):
                 break
             spd = control.get("speed") or speed
-            if spd and spd > 0 and prev_t is not None and t > prev_t:
+            if seek is None and spd and spd > 0 and prev_t is not None and t > prev_t:
                 time.sleep(min((t - prev_t) / spd, 5.0))
         elif speed and speed > 0 and prev_t is not None and t > prev_t:
             time.sleep(min((t - prev_t) / speed, 5.0))

@@ -13,7 +13,17 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 STATIC = os.path.join(os.path.dirname(__file__), "static", "dashboard.html")
 
 
-def make_handler(engine, clock, trader=None):
+class EngineRef:
+    """Forwards to whichever engine is current (the replay desk restarts its engine on a backward jump)."""
+
+    def __init__(self, box):
+        self._box = box
+
+    def __getattr__(self, name):
+        return getattr(self._box["engine"], name)
+
+
+def make_handler(engine, clock, trader=None, desk=None, rec_dir=None):
     class Handler(BaseHTTPRequestHandler):
         server_version = "TWINEY/1.0"
 
@@ -37,6 +47,23 @@ def make_handler(engine, clock, trader=None):
             elif path == "/api/state":
                 snap = engine.snapshot(clock())
                 self._send(200, json.dumps(snap, default=str), "application/json")
+            elif path.startswith("/recordings/shots/") and rec_dir:
+                name = os.path.basename(path)
+                fp = os.path.join(rec_dir, "shots", name)
+                if name.endswith(".png") and os.path.exists(fp):
+                    with open(fp, "rb") as fh:
+                        self._send(200, fh.read(), "image/png")
+                else:
+                    self._send(404, "not found", "text/plain")
+            elif path.startswith("/recordings/") and path.endswith(".journal.md") and rec_dir:
+                fp = os.path.join(rec_dir, os.path.basename(path))
+                if os.path.exists(fp):
+                    with open(fp, "rb") as fh:
+                        self._send(200, fh.read(), "text/plain; charset=utf-8")
+                else:
+                    self._send(404, "not found", "text/plain")
+            elif path == "/api/desk/list":
+                self._send(200, json.dumps(desk.list_recordings() if desk else []), "application/json")
             elif path == "/healthz":
                 self._send(200, json.dumps({"ok": True, "connection": engine.connection["state"]}),
                            "application/json")
@@ -88,11 +115,23 @@ def make_handler(engine, clock, trader=None):
                 else:
                     ok = False
                 self._send(200 if ok else 400, json.dumps({"ok": ok}), "application/json")
+            elif path.startswith("/api/desk/"):
+                self._desk(path[len("/api/desk/"):], body)
             elif path == "/api/replay":
                 r = engine.replay
                 if r is None:
                     self._send(404, json.dumps({"ok": False, "reason": "not replaying"}), "application/json")
                     return
+                if "seek" in body:
+                    try:
+                        target = float(body["seek"])
+                        if r.get("done") or (r.get("position") is not None and target < r["position"]):
+                            r["restart_at"] = target   # backwards: the replay loop starts over and fast-forwards
+                            r["stop"] = True
+                        else:
+                            r["seek"] = target
+                    except (TypeError, ValueError):
+                        pass
                 if "paused" in body:
                     r["paused"] = bool(body["paused"])
                 if "speed" in body:
@@ -104,40 +143,68 @@ def make_handler(engine, clock, trader=None):
             else:
                 self._send(404, "not found", "text/plain")
 
+        def _desk(self, action, body):
+            if desk is None:
+                self._send(503, json.dumps({"ok": False, "reason": "no recording desk in replay"}), "application/json")
+                return
+            now = clock()
+            sym = (str(body.get("symbol", "")).upper() or None)
+            try:
+                if action == "rec":
+                    out = dict(desk.toggle(now), ok=True)
+                elif action == "mark":
+                    out = {"ok": True, "mark": desk.mark(now, sym, str(body.get("note", "")))}
+                elif action == "note":
+                    out = {"ok": desk.set_note(int(body.get("n", 0)), str(body.get("note", "")))}
+                elif action == "journal":
+                    out = {"ok": True, "notes": desk.add_note(now, str(body.get("text", "")), sym)}
+                elif action == "shot":
+                    out = desk.screenshot(now, sym, str(body.get("note", "")))
+                elif action == "replay":
+                    port = self.server.server_address[1] + 1
+                    out = desk.open_replay(str(body.get("name", "")), port, float(body.get("speed", 1) or 1))
+                else:
+                    self._send(404, "not found", "text/plain")
+                    return
+            except Exception as exc:
+                out = {"ok": False, "reason": str(exc)}
+            self._send(200, json.dumps(out, default=str), "application/json")
+
         def _trade(self, action, body):
-            if trader is None:
+            tr = trader if trader is not None else getattr(engine, "trader", None)
+            if tr is None:
                 self._send(503, json.dumps({"ok": False, "reason": "order entry not loaded"}), "application/json")
                 return
             now = clock()
             sym = str(body.get("symbol", "")).upper()
             try:
                 if action == "arm":
-                    ok = trader.gate.arm(bool(body.get("on")))
-                    out = {"ok": ok, "armed": trader.gate.armed, "reason": None if ok else trader.gate.why_not()}
+                    ok = tr.gate.arm(bool(body.get("on")))
+                    out = {"ok": ok, "armed": tr.gate.armed, "reason": None if ok else tr.gate.why_not()}
                 elif action == "oneclick":
-                    trader.gate.one_click = bool(body.get("on"))
+                    tr.gate.one_click = bool(body.get("on"))
                     out = {"ok": True}
                 elif action == "size":
-                    out = {"ok": trader.set_size(body.get("shares")), "default_shares": trader.default_shares}
+                    out = {"ok": tr.set_size(body.get("shares")), "default_shares": tr.default_shares}
                 elif action == "bracket":
-                    trader.bracket = bool(body.get("on"))
+                    tr.bracket = bool(body.get("on"))
                     out = {"ok": True}
                 elif action == "scale":
-                    trader.scale = bool(body.get("on"))
+                    tr.scale = bool(body.get("on"))
                     out = {"ok": True}
                 elif action == "order":
-                    out = trader.submit(sym, str(body.get("action", "")).upper(), body.get("price"),
+                    out = tr.submit(sym, str(body.get("action", "")).upper(), body.get("price"),
                                         body.get("qty"), now, body.get("bracket"))
                 elif action == "cancel":
-                    out = trader.cancel(body.get("id"), now)
+                    out = tr.cancel(body.get("id"), now)
                 elif action == "cancel_all":
-                    out = trader.cancel_all(sym or None, now)
+                    out = tr.cancel_all(sym or None, now)
                 elif action == "flatten":
-                    out = trader.flatten(sym, now)
+                    out = tr.flatten(sym, now)
                 elif action == "adjust":
-                    out = trader.adjust(sym, body.get("shares"), str(body.get("mode", "")), now)
+                    out = tr.adjust(sym, body.get("shares"), str(body.get("mode", "")), now)
                 elif action == "modify":
-                    out = trader.modify(body.get("id"), body.get("price"), now)
+                    out = tr.modify(body.get("id"), body.get("price"), now)
                 else:
                     self._send(404, "not found", "text/plain")
                     return
@@ -149,8 +216,8 @@ def make_handler(engine, clock, trader=None):
 
 
 class Dashboard:
-    def __init__(self, engine, host, port, clock=time.time, trader=None):
-        self.httpd = ThreadingHTTPServer((host, port), make_handler(engine, clock, trader))
+    def __init__(self, engine, host, port, clock=time.time, trader=None, desk=None, rec_dir=None):
+        self.httpd = ThreadingHTTPServer((host, port), make_handler(engine, clock, trader, desk, rec_dir))
         self.httpd.daemon_threads = True
         self.thread = None
 

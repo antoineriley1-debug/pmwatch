@@ -129,6 +129,9 @@ class Engine:
         self.replay = None      # replay control block when replaying a recording
         self.grades = {}        # alert key -> "good" | "bad" (trader's verdict on a call)
         self.voice = deque(maxlen=60)   # spoken call-outs: big size added / pulled / hit
+        self.desk = None        # recording desk (REC / markers / screenshots), set by run_twiney
+        self.marks_list = []    # markers seen while replaying a recording
+        self.notes_list = []    # journal notes seen while replaying
         self.grades_path = None
         self.alerts = deque(maxlen=300)
         self.messages = deque(maxlen=80)
@@ -139,6 +142,10 @@ class Engine:
         self.last_t = 0.0
 
     # ---- plumbing ------------------------------------------------------------
+
+    def dump_state(self, rec, t):
+        from .desk import dump_state
+        dump_state(self, rec, t)
 
     def _rec(self, event):
         if self.recorder is not None:
@@ -887,6 +894,17 @@ class Engine:
                     self.grades.pop(ev["key"], None)
         elif kind == "dbar":
             self.on_daily_bar(ev["sym"], ev["t0"], ev["o"], ev["h"], ev["l"], ev["c"])
+        elif kind == "mark":
+            with self.lock:
+                self.marks_list.append({k: ev.get(k) for k in ("t", "symbol", "price", "note", "headline", "shot", "n")})
+        elif kind == "note":
+            with self.lock:
+                self.notes_list.append({k: ev.get(k) for k in ("t", "symbol", "text")})
+        elif kind == "mark_note":
+            with self.lock:
+                for m in self.marks_list:
+                    if m.get("n") == ev.get("n"):
+                        m["note"] = ev.get("note", "")
         elif kind == "hbar":
             self.on_hist_bar(ev["sym"], ev["t0"], ev["o"], ev["h"], ev["l"], ev["c"], ev.get("v"))
 
@@ -1189,4 +1207,8 @@ class Engine:
                 "voice": [v for v in list(self.voice)[:20] if t - v["t"] < 60],
                 "messages": list(self.messages)[:25],
                 "recording": getattr(self.recorder, "path", None),
+                "desk": {"recording": self.recorder is not None,
+                         "started": self.desk.started if self.desk else None,
+                         "notes": (self.desk.notes if self.desk else self.notes_list)[-30:],
+                         "marks": (self.desk.marks if self.desk else self.marks_list)[-60:]},
             }

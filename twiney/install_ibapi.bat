@@ -10,6 +10,8 @@ if not exist "%SRC%\setup.py" if not exist "%SRC%\pyproject.toml" (
 pushd "%SRC%"
 python -m pip install .
 popd
+REM screenshots (P key) need Pillow
+python -m pip install pillow
 python -c "import ibapi; print(); print('ibapi installed OK - you can now double-click start_twiney')"
 if errorlevel 1 echo Install FAILED - send a photo of this window.
 pause

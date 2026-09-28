@@ -15,5 +15,6 @@ if not exist plays.json (
   copy plays.example.json plays.json >nul
   echo Created plays.json with PLACEHOLDER plays - edit it with your real PS60 levels.
 )
+python -c "import PIL" >nul 2>nul || python -m pip install -q pillow >nul 2>nul
 python run_twiney.py %*
 pause

@@ -18,7 +18,8 @@ import webbrowser
 
 from twiney import __version__
 from twiney.config import ConfigError, build_config, load_config, load_plays
-from twiney.dashboard import Dashboard
+from twiney.dashboard import Dashboard, EngineRef
+from twiney.desk import Desk
 from twiney.engine import Engine
 from twiney.recorder import Recorder
 from twiney.replay import compare, replay, session_header
@@ -70,7 +71,11 @@ def run_live(cfg, plays, args):
     session = MarketDataSession(engine, cfg, plays, factory, gate=gate)
     trader = Trader(engine, cfg, IbkrBroker(engine, session), gate) if cfg["trading"]["enabled"] else None
     engine.trader = trader
-    dash = Dashboard(engine, cfg["dashboard"]["host"], cfg["dashboard"]["port"], trader=trader).start()
+    desk = Desk(engine, cfg, plays, __version__, prefix="twiney", base_dir=os.path.dirname(os.path.abspath(__file__)))
+    if recorder:
+        desk.started = time.time()
+    dash = Dashboard(engine, cfg["dashboard"]["host"], cfg["dashboard"]["port"], trader=trader, desk=desk,
+                     rec_dir=cfg["recording"]["dir"]).start()
     ib = cfg["ibkr"]
     mode = "order entry PAPER-ONLY" if trader and not cfg["trading"]["allow_live"] else \
         "order entry LIVE ALLOWED" if trader else "view only"
@@ -82,8 +87,7 @@ def run_live(cfg, plays, args):
     def stop():
         session.stop()
         dash.stop()
-        if recorder:
-            recorder.close()
+        desk.stop()
     wait_forever(stop)
     return 0
 
@@ -107,7 +111,11 @@ def run_demo(cfg, plays, args):
     engine.sim_broker = sim
     trader = Trader(engine, cfg, sim, gate)
     engine.trader = trader
-    dash = Dashboard(engine, cfg["dashboard"]["host"], cfg["dashboard"]["port"], trader=trader).start()
+    desk = Desk(engine, cfg, plays, __version__, prefix="demo", base_dir=os.path.dirname(os.path.abspath(__file__)))
+    if recorder:
+        desk.started = time.time()
+    dash = Dashboard(engine, cfg["dashboard"]["host"], cfg["dashboard"]["port"], trader=trader, desk=desk,
+                     rec_dir=cfg["recording"]["dir"]).start()
     print(f"TWINEY {__version__} · DEMO FEED (synthetic, not market data) · practice orders fill in the simulator",
           flush=True)
     open_dashboard(dash, cfg, args)
@@ -118,13 +126,14 @@ def run_demo(cfg, plays, args):
             feed.step(time.time())
             stop_evt.wait(0.25)
     threading.Thread(target=loop, daemon=True).start()
-    wait_forever(lambda: (stop_evt.set(), dash.stop(), recorder and recorder.close()))
+    wait_forever(lambda: (stop_evt.set(), dash.stop(), desk.stop()))
     return 0
 
 
 def run_replay(cfg, plays, args):
     box = {}
     dash = None
+    ref = EngineRef(box)
 
     control = {"paused": False, "speed": args.speed, "position": None, "file": os.path.basename(args.replay)}
 
@@ -140,29 +149,42 @@ def run_replay(cfg, plays, args):
             sim = SimBroker(engine)
             engine.sim_broker = sim
             engine.trader = Trader(engine, cfg, sim, gate)
-            dash = Dashboard(engine, cfg["dashboard"]["host"], cfg["dashboard"]["port"],
-                             clock=lambda: engine.last_t, trader=engine.trader).start()
-            open_dashboard(dash, cfg, args)
+            if dash is None:
+                dash = Dashboard(ref, cfg["dashboard"]["host"], cfg["dashboard"]["port"],
+                                 clock=lambda: box["engine"].last_t, trader=None, rec_dir=cfg["recording"]["dir"]).start()
+                open_dashboard(dash, cfg, args)
+            dash.trader = engine.trader
 
     use_file_settings = not args.override
-    engine, recorded = replay(args.replay,
-                              plays=None if use_file_settings else plays,
-                              cfg=None if use_file_settings else cfg,
-                              speed=args.speed, on_alert=console_alert, engine_ready=ready,
-                              control=control if args.speed > 0 else None)
-    control["done"] = True
-    if engine is None:
-        print("recording is empty", file=sys.stderr)
-        return 1
-    got, want = compare(engine, recorded)
-    print(f"\nReplay finished: {sum(got.values())} alerts replayed, {sum(want.values())} recorded.")
-    for key in sorted(set(got) | set(want)):
-        g, w = got.get(key, 0), want.get(key, 0)
-        mark = "ok " if g == w else "DIFF"
-        print(f"  {mark} {key[0]:<6} {key[1]:<24} @ {key[2]}  replay {g} / recorded {w}")
-    if dash is not None:
-        print("Replay done; dashboard stays up on the final state. Ctrl+C to exit.")
-        wait_forever(dash.stop)
+    try:
+        while True:
+            engine, recorded = replay(args.replay,
+                                      plays=None if use_file_settings else plays,
+                                      cfg=None if use_file_settings else cfg,
+                                      speed=args.speed, on_alert=console_alert, engine_ready=ready,
+                                      control=control if args.speed > 0 else None)
+            if control.get("restart_at") is None:
+                control["done"] = True
+                if engine is None:
+                    print("recording is empty", file=sys.stderr)
+                    return 1
+                got, want = compare(engine, recorded)
+                print(f"\nReplay finished: {sum(got.values())} alerts replayed, {sum(want.values())} recorded.")
+                for key in sorted(set(got) | set(want)):
+                    g, w = got.get(key, 0), want.get(key, 0)
+                    mark = "ok " if g == w else "DIFF"
+                    print(f"  {mark} {key[0]:<6} {key[1]:<24} @ {key[2]}  replay {g} / recorded {w}")
+                if dash is None:
+                    return 0
+                print("Replay done; dashboard stays up. Click a marker to jump back. Ctrl+C to exit.")
+                while control.get("restart_at") is None:
+                    time.sleep(0.3)
+            # jumped backwards (or the replay had finished): start over and fast-forward to that moment
+            control.update(stop=False, done=False, seek=control.pop("restart_at"), position=None)
+    except KeyboardInterrupt:
+        print("\nStopping TWINEY.", flush=True)
+        if dash is not None:
+            dash.stop()
     return 0
 
 
@@ -176,6 +198,7 @@ def main(argv=None):
     ap.add_argument("--override", action="store_true",
                     help="replay with current config.json/plays.json instead of the recording's own")
     ap.add_argument("--no-browser", action="store_true")
+    ap.add_argument("--port", type=int, help="dashboard port (overrides config.json)")
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.WARNING,
@@ -183,13 +206,17 @@ def main(argv=None):
     try:
         if args.demo:
             cfg = load_config(args.config) if os.path.exists(args.config) else build_config({})
+            if args.port: cfg["dashboard"]["port"] = args.port
             plays = load_plays(args.plays) if os.path.exists(args.plays) else load_plays("plays.example.json")
             return run_demo(cfg, plays, args)
         if args.replay:
             cfg = load_config(args.config) if os.path.exists(args.config) else build_config({})
+            if args.port: cfg["dashboard"]["port"] = args.port
             plays = load_plays(args.plays) if args.override else None
             return run_replay(cfg, plays, args)
-        return run_live(load_config(args.config), load_plays(args.plays), args)
+        cfg = load_config(args.config)
+        if args.port: cfg["dashboard"]["port"] = args.port
+        return run_live(cfg, load_plays(args.plays), args)
     except ConfigError as exc:
         print(f"CONFIG ERROR: {exc}", file=sys.stderr)
         return 2

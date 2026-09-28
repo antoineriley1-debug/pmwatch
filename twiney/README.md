@@ -1,4 +1,4 @@
-# TWINEY v1.5
+# TWINEY v1.6
 
 An IBKR order-flow workstation built around PS60 levels, with ladder trading that is
 **locked to paper accounts** until you deliberately unlock it.
@@ -148,6 +148,22 @@ off the candles you see. Settings live in `config.json → ps60`.
 - Not built (no data for it in an equity ladder): the options translation layer, option flow, and the moving-average /
   Bollinger stack for bounce plays. Mark those levels as `extra_levels` or `target` from your chart for now.
 
+## The desk: record, mark, screenshot, journal, replay
+- **● REC** in the header, or the **space bar**: start / stop a recording at any moment. Live and demo sessions also
+  start recording on launch (`recording.enabled`). A recording started mid-session first writes the current books,
+  charts and plays into the file, so it replays cleanly from that moment.
+- **⚑ mark / key M:** drops a marker at that second with the focused ladder's symbol, price and what the story said.
+  Click a marker in the DESK window to add a note. Markers also go to `recordings/NAME.marks.jsonl`.
+- **📷 shot / key P:** screenshot of the whole screen into `recordings/shots/`, plus a marker that links to it.
+  Needs the Pillow package (the launcher installs it; or `python -m pip install pillow`).
+- **JOURNAL window / key J:** type a note, press Enter. Notes go into the recording and the session journal.
+- **Stop** writes `recordings/NAME.journal.md`: duration, plays, P&L, your notes, markers (with screenshots), every
+  call with its grade, and every fill. The JOURNAL window links the last journals.
+- **DESK window:** every recording with size, marker count and a **▶ Replay** button. Replay opens a second TWINEY
+  on the next port in a new tab: **space** = play / pause, **← →** = slower / faster, click a marker to jump there
+  (backwards jumps restart the replay and fast-forward). Practice orders fill against the replayed book.
+- `start_replay.bat` still works for replaying from the command line.
+
 ## Grading calls and tuning
 - Every call in the CALLS feed has 👍 / 👎. Grade a call and TWINEY remembers it (`recordings/grades.jsonl`, and inside
   the session recording). Click again to clear a grade.
@@ -206,6 +222,7 @@ twiney/safety.py         where the order path may live (checked by tests)
 twiney/trading.py        TradingGate + SimBroker / IbkrBroker + Trader
 twiney/dashboard.py      local HTTP server (GET only) + static/dashboard.html
 twiney/recorder.py       JSONL recorder;  twiney/replay.py  replay + comparison
+twiney/desk.py           REC / markers / screenshots / journal / replay launcher
 twiney/sim.py            demo feed (with 5 synthetic sessions of history + daily bars)
 twiney/ps60.py           PS60: second-entry engine, MP / ATR, grade, sneaky pivots, remount, cash-flow legs
 tune.py                  reload-threshold tuner scored against your graded calls
@@ -214,7 +231,7 @@ tune.py                  reload-threshold tuner scored against your graded calls
 ## Tests
 `python -m unittest discover -s tests -v`
 
-This runs 116 tests covering the book, reload verdicts, 317 resets, ranking/rotation, a fake TWS session (reconnect, 1100/1101, 309, rotation cancels), the safety guard and source scan, replay fidelity and the dashboard.
+This runs 117 tests covering the book, reload verdicts, 317 resets, ranking/rotation, a fake TWS session (reconnect, 1100/1101, 309, rotation cancels), the safety guard and source scan, replay fidelity and the dashboard.
 One test checks the guard against the real `EClient`. It only runs when `ibapi` is installed.
 
 ## Before connecting to a live-data session (handoff checklist)

@@ -55,6 +55,18 @@ body:not(.free) .winbar{cursor:default}
 .pop h5{margin:6px 0 2px;font-size:10px;color:var(--dim);letter-spacing:.08em}
 .pop hr{border:0;border-top:1px solid var(--line);margin:6px 0}
 #alertsBtn.off{color:var(--dim);text-decoration:line-through}
+#recBtn.on{background:#4a161b;border-color:var(--sell);color:#ffe3e6;font-weight:700;animation:recblink 1.2s infinite}
+@keyframes recblink{0%,100%{box-shadow:0 0 0 0 transparent}50%{box-shadow:0 0 8px 1px var(--sell)}}
+#desk{max-height:260px;overflow-y:auto}
+#journal{max-height:220px;overflow-y:auto} #journalBody{padding:6px} .jform{display:flex;gap:6px;margin-bottom:6px}
+.jform input{flex:1;font:inherit;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:5px;padding:5px 8px}
+.jn{padding:3px 6px;border-radius:4px;background:var(--panel2);margin-bottom:3px;font-size:12.5px} .jn b{color:var(--gold);margin-right:6px} #deskBody{padding:6px;display:grid;grid-template-columns:1fr 1fr;gap:10px}
+#deskBody h5{margin:2px 0 4px;font-size:10px;color:var(--dim);letter-spacing:.08em}
+.mk{display:flex;gap:8px;align-items:center;padding:3px 6px;border-radius:4px;background:var(--panel2);margin-bottom:3px;font-size:12px;cursor:pointer}
+.mk:hover{outline:1px solid var(--gold)} .mk b{color:var(--gold)} .mk .note{flex:1;color:#c4cddb} .mk .hl{color:var(--dim);font-size:11px}
+.rec{display:flex;gap:8px;align-items:center;padding:3px 6px;border-radius:4px;background:var(--panel2);margin-bottom:3px;font-size:12px}
+.rec.cur{outline:1px solid var(--sell)} .rec .nm{flex:1;font-family:var(--mono)} .rec button{padding:1px 6px;font-size:11px}
+@media (max-width:900px){#deskBody{grid-template-columns:1fr}}
 .p-head .gear{position:static}
 .p-head .gear .pop{position:fixed;right:auto;top:auto}
 
@@ -279,6 +291,9 @@ td.status{text-align:left !important;white-space:normal !important;color:#c4cddb
   <label class="dim" title="Attach the play's stop and target to every entry"><input type="checkbox" id="bracket"> stop+target</label>
   <label class="dim" title="PS60 exits: pay yourself along the way (½ at +$0.50, ¼ at +$1.50 by default), the rest runs to the target; after the first cash flow the stop moves to breakeven. Edit the plan in config.json → trading.scale_plan."><input type="checkbox" id="scale"> PS60 exits</label>
   <span id="pnl" title="today: realized + open">P&amp;L —</span>
+  <button id="recBtn" title="Record this session (space bar). Everything is saved so you can replay it, grade the calls and tune the settings.">● REC</button>
+  <button id="markBtn" title="Drop a marker at this second (key M): symbol, price and what the story said. Click a marker in the DESK window to add a note.">⚑ mark</button>
+  <button id="shotBtn" title="Screenshot of the whole screen into recordings/shots (key P), with a marker.">📷 shot</button>
   <button id="soundBtn" title="beep on every call">🔊</button>
   <button id="voiceBtn" title="Voice: reads out big size showing up or pulled at a price (e.g. '18k buyer at 120', 'buyer pulled 18k from 120') and every call. Threshold in config.json → voice.min_shares">🗣 Voice</button>
   <button id="alertsBtn" title="Show / hide the call feed and call pop-ups">🔔 Alerts</button>
@@ -293,11 +308,15 @@ td.status{text-align:left !important;white-space:normal !important;color:#c4cddb
   <button id="rpPlay">⏸ Pause</button>
   <span class="dim">speed</span><input type="range" id="rpSpeed" min="1" max="50" step="1"><span id="rpSpeedV" class="mono"></span>
   <span id="rpPos" class="mono dim"></span>
-  <span class="keys" style="margin-left:auto">practice orders fill against the replayed book</span>
+  <span class="keys" style="margin-left:auto">space = play / pause · ← → = slower / faster · click a marker in DESK to jump · practice orders fill against the replayed book</span>
 </div>
 <main>
   <section id="feed" class="win card" data-win="alerts" data-title="CALLS"><div class="wbody" id="feedBody"></div></section>
   <section id="story" class="win card" data-win="story" data-title="WHAT'S HAPPENING (per ladder)"><div class="wbody" id="storyBody"></div></section>
+  <section id="desk" class="win card" data-win="desk" data-title="DESK · recordings · markers"><div class="wbody" id="deskBody"></div></section>
+  <section id="journal" class="win card" data-win="journal" data-title="JOURNAL"><div class="wbody" id="journalBody">
+    <div class="jform"><input id="jText" placeholder="Type a note and press Enter — it goes into the recording and the session journal (J focuses this box)"><button id="jAdd">add</button></div>
+    <div id="jList"></div></div></section>
   <section id="panes"></section>
   <section class="card win" id="account-card" data-win="orders" data-title="ORDERS · POSITIONS · FILLS"><div class="wbody">
     <h3>YOUR ORDERS · POSITIONS · FILLS <span class="dim" style="letter-spacing:0">— click ✕ to cancel an order. Orders placed in TWS show up here too.</span></h3>
@@ -1374,6 +1393,7 @@ function render(s){
   if (t.pnl){ const v = t.pnl.total; pnlEl.textContent = `P&L ${v >= 0 ? "+" : "−"}$${sz(Math.abs(v).toFixed(0))}` + (t.max_daily_loss ? ` / −$${sz(t.max_daily_loss)} limit` : "");
     pnlEl.className = v > 0 ? "up" : v < 0 ? "dn" : ""; pnlEl.title = `realized ${t.pnl.realized} · open ${t.pnl.open}`; }
   document.getElementById("soundBtn").textContent = store.get("sound", true) ? "🔊" : "🔇";
+  renderDesk(s);
   document.getElementById("voiceBtn").className = store.get("voice", true) ? "on" : "";
   speakNew(s);
   const rp = s.replay, rb = document.getElementById("replaybar");
@@ -1518,6 +1538,48 @@ function say(text, force){
     speechSynthesis.speak(u);
   } catch (e) {}
 }
+// ---------- the desk: REC / markers / screenshots / recordings / replay
+let deskList = null, deskListT = 0;
+function renderDesk(s){
+  const dk = s.desk || {}, rec = document.getElementById("recBtn");
+  const inReplay = !!s.replay;
+  rec.className = dk.recording ? "on" : "";
+  rec.textContent = dk.recording ? "● REC " + fmtDur(s.now - (dk.started || s.now)) : "● REC";
+  rec.disabled = inReplay; document.getElementById("shotBtn").disabled = inReplay; document.getElementById("markBtn").disabled = inReplay;
+  const marks = (dk.marks || []).slice().reverse();
+  const mkHTML = marks.map(m => `<div class="mk" data-t="${m.t}" data-n="${m.n}" title="${inReplay ? "click to jump here" : "click to add a note"}">
+      <b>${new Date(m.t * 1000).toLocaleTimeString()}</b><span>${esc(m.symbol || "")} ${m.price ? px(m.price) : ""}</span>
+      <span class="note">${esc(m.note || "")}</span>${m.shot ? `<a href="/recordings/${esc(m.shot)}" target="_blank" title="open the screenshot">📷</a>` : ""}
+      <span class="hl">${esc((m.headline || "").slice(0, 70))}</span></div>`).join("") || `<div class="dim">No markers yet. Press M for a marker, P for a screenshot.</div>`;
+  if (!inReplay && (!deskList || s.now - deskListT > 15)){ deskListT = s.now; fetch("/api/desk/list").then(r => r.json()).then(l => { deskList = l; renderDesk(state); }).catch(() => {}); }
+  const recHTML = inReplay ? `<div class="dim">Replaying ${esc(s.replay.file || "")}</div>` : (deskList || []).map(r => `<div class="rec ${r.current ? "cur" : ""}">
+      <span class="nm">${esc(r.name.replace(".jsonl", ""))}</span><span class="dim">${r.size_mb} MB · ${r.marks.length} marks${r.journal ? " · journal" : ""}</span>
+      ${r.current ? `<span class="dim">recording…</span>` : `<button data-replay="${esc(r.name)}" title="open this recording in the replay desk (new tab)">▶ Replay</button>`}</div>`).join("") || `<div class="dim">No recordings yet.</div>`;
+  document.getElementById("jList").innerHTML = (dk.notes || []).slice().reverse().map(n => `<div class="jn"><b>${new Date(n.t * 1000).toLocaleTimeString()}</b>${esc(n.symbol || "")} ${esc(n.text)}</div>`).join("")
+    || `<div class="dim">No notes yet. What did you see, what did you do, why.</div>`;
+  const jl = (deskList || []).filter(r => r.journal && !r.current).slice(0, 5);
+  if (jl.length) document.getElementById("jList").innerHTML += `<div class="dim" style="margin-top:6px">Journals: ${jl.map(r => `<a href="/recordings/${esc(r.name.replace(".jsonl", ".journal.md"))}" target="_blank">${esc(r.name.replace(".jsonl", ""))}</a>`).join(" · ")}</div>`;
+  document.getElementById("deskBody").innerHTML = `<div><h5>MARKERS ${inReplay ? "(click to jump)" : "this session"}</h5>${mkHTML}</div><div><h5>RECORDINGS</h5>${recHTML}</div>`;
+}
+function fmtDur(sec){ sec = Math.max(0, Math.round(sec)); const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60; return (h ? h + ":" : "") + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0"); }
+async function deskRec(){ const out = await post("/api/desk/rec", {}); if (out.ok) toast(out.recording ? "Recording: " + (out.path || "").split(/[\\/]/).pop() : "Recording stopped — journal written next to it", true); else toast(out.reason || "no desk", false); poll(true); }
+async function deskMark(note){ const d = focusedPane && focusedPane.data; const out = await post("/api/desk/mark", {symbol: d ? d.symbol : null, note: note || ""}); if (out.ok) toast("Marker " + out.mark.n + (d ? " · " + d.symbol : ""), true); else toast(out.reason || "no desk", false); poll(true); }
+async function deskShot(){ const d = focusedPane && focusedPane.data; toast("Screenshot…", true); const out = await post("/api/desk/shot", {symbol: d ? d.symbol : null}); toast(out.ok ? "Saved " + out.path.split(/[\\/]/).pop() : out.reason, out.ok); poll(true); }
+document.getElementById("recBtn").addEventListener("click", deskRec);
+async function jAdd(){ const inp = document.getElementById("jText"), text = inp.value.trim(); if (!text) return; const d = focusedPane && focusedPane.data;
+  const out = await post("/api/desk/journal", {text, symbol: d ? d.symbol : null}); if (out.ok){ inp.value = ""; toast("Noted", true); poll(true); } else toast(out.reason || "no desk", false); }
+document.getElementById("jAdd").addEventListener("click", jAdd);
+document.getElementById("jText").addEventListener("keydown", e => { if (e.key === "Enter") jAdd(); e.stopPropagation(); });
+document.getElementById("markBtn").addEventListener("click", () => deskMark());
+document.getElementById("shotBtn").addEventListener("click", deskShot);
+document.getElementById("deskBody").addEventListener("click", async e => {
+  const rb = e.target.closest("button[data-replay]");
+  if (rb){ const out = await post("/api/desk/replay", {name: rb.dataset.replay, speed: 1}); if (out.ok){ toast("Replay desk starting on " + out.url, true); setTimeout(() => window.open(out.url, "_blank"), 2500); } else toast(out.reason, false); return; }
+  const mk = e.target.closest(".mk");
+  if (!mk || e.target.tagName === "A") return;
+  if (state && state.replay){ post("/api/replay", {seek: +mk.dataset.t, paused: false}); toast("Jumping to " + new Date(+mk.dataset.t * 1000).toLocaleTimeString(), true); }
+  else { const note = prompt("Note for this marker:", mk.querySelector(".note").textContent); if (note != null){ await post("/api/desk/note", {n: +mk.dataset.n, note}); poll(true); } }
+});
 function callWords(a){
   const who = a.side === "bid" ? "buyer" : "seller", at = `at ${px(a.price)}`;
   const kshares = n => n >= 1000 ? Math.round(n / 1000) + " thousand" : String(n);
@@ -1546,6 +1608,12 @@ document.addEventListener("keydown", e => {
   if (e.target.matches("input, select, textarea") || document.getElementById("modal")) return;
   const p = focusedPane, d = p && p.data;
   if (e.key === "a" || e.key === "A"){ document.getElementById("arm").click(); return; }
+  if (e.key === " "){ e.preventDefault(); if (state && state.replay) post("/api/replay", {paused: !state.replay.paused}); else deskRec(); return; }
+  if (e.key === "m" || e.key === "M"){ e.preventDefault(); if (!(state && state.replay)) deskMark(); return; }
+  if (e.key === "p" || e.key === "P"){ e.preventDefault(); if (!(state && state.replay)) deskShot(); return; }
+  if (e.key === "j" || e.key === "J"){ e.preventDefault(); document.getElementById("jText").focus(); return; }
+  if (state && state.replay && (e.key === "ArrowLeft" || e.key === "ArrowRight")){ e.preventDefault();
+    const sp = state.replay.speed || 1, ns = e.key === "ArrowRight" ? Math.min(50, sp * 2) : Math.max(1, sp / 2); post("/api/replay", {speed: ns}); return; }
   if (!d) return;
   const lot = store.get("lot", 1);
   if (e.key === "f" || e.key === "F") flatten(d.symbol);
