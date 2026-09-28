@@ -23,7 +23,7 @@ class EngineRef:
         return getattr(self._box["engine"], name)
 
 
-def make_handler(engine, clock, trader=None, desk=None, rec_dir=None):
+def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_path=None):
     class Handler(BaseHTTPRequestHandler):
         server_version = "TWINEY/1.0"
 
@@ -45,7 +45,10 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None):
                 with open(STATIC, "rb") as fh:
                     self._send(200, fh.read(), "text/html; charset=utf-8")
             elif path == "/api/state":
-                snap = engine.snapshot(clock())
+                from urllib.parse import parse_qs, urlparse
+                q = parse_qs(urlparse(self.path).query)
+                extra = [x.strip().upper() for x in (q.get("extra", [""])[0]).split(",") if x.strip()][:12]
+                snap = engine.snapshot(clock(), extra)
                 self._send(200, json.dumps(snap, default=str), "application/json")
             elif path.startswith("/recordings/shots/") and rec_dir:
                 name = os.path.basename(path)
@@ -62,6 +65,13 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None):
                         self._send(200, fh.read(), "text/plain; charset=utf-8")
                 else:
                     self._send(404, "not found", "text/plain")
+            elif path == "/api/layout":
+                lp = layout_path or "layout.json"
+                if os.path.exists(lp):
+                    with open(lp, encoding="utf-8") as fh:
+                        self._send(200, json.dumps({"ok": True, "layout": json.load(fh)}), "application/json")
+                else:
+                    self._send(200, json.dumps({"ok": True, "layout": None}), "application/json")
             elif path == "/api/desk/list":
                 self._send(200, json.dumps(desk.list_recordings() if desk else []), "application/json")
             elif path == "/healthz":
@@ -115,6 +125,21 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None):
                 else:
                     ok = False
                 self._send(200 if ok else 400, json.dumps({"ok": ok}), "application/json")
+            elif path == "/api/layout":
+                lp = layout_path or "layout.json"
+                lay = body.get("layout")
+                try:
+                    if lay is None:
+                        if os.path.exists(lp):
+                            os.remove(lp)
+                    else:
+                        tmp = lp + ".tmp"
+                        with open(tmp, "w", encoding="utf-8") as fh:
+                            json.dump(lay, fh, indent=1)
+                        os.replace(tmp, lp)
+                    self._send(200, json.dumps({"ok": True, "path": os.path.abspath(lp)}), "application/json")
+                except OSError as exc:
+                    self._send(200, json.dumps({"ok": False, "reason": str(exc)}), "application/json")
             elif path.startswith("/api/desk/"):
                 self._desk(path[len("/api/desk/"):], body)
             elif path == "/api/replay":
@@ -216,8 +241,8 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None):
 
 
 class Dashboard:
-    def __init__(self, engine, host, port, clock=time.time, trader=None, desk=None, rec_dir=None):
-        self.httpd = ThreadingHTTPServer((host, port), make_handler(engine, clock, trader, desk, rec_dir))
+    def __init__(self, engine, host, port, clock=time.time, trader=None, desk=None, rec_dir=None, layout_path=None):
+        self.httpd = ThreadingHTTPServer((host, port), make_handler(engine, clock, trader, desk, rec_dir, layout_path))
         self.httpd.daemon_threads = True
         self.thread = None
 

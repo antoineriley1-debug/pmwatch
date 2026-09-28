@@ -32,6 +32,11 @@ def console_alert(alert):
           f"({alert['side']} · {alert['role']} · absorbed {alert['absorbed']:,})", flush=True)
 
 
+def layout_file(args):
+    """layout.json lives next to config.json (the TWINEY folder)."""
+    return os.path.join(os.path.dirname(os.path.abspath(args.config)), "layout.json")
+
+
 def open_dashboard(dash, cfg, args):
     print(f"Dashboard: {dash.url}", flush=True)
     if cfg["dashboard"]["open_browser"] and not args.no_browser:
@@ -75,7 +80,7 @@ def run_live(cfg, plays, args):
     if recorder:
         desk.started = time.time()
     dash = Dashboard(engine, cfg["dashboard"]["host"], cfg["dashboard"]["port"], trader=trader, desk=desk,
-                     rec_dir=cfg["recording"]["dir"]).start()
+                     rec_dir=cfg["recording"]["dir"], layout_path=layout_file(args)).start()
     ib = cfg["ibkr"]
     mode = "order entry PAPER-ONLY" if trader and not cfg["trading"]["allow_live"] else \
         "order entry LIVE ALLOWED" if trader else "view only"
@@ -115,7 +120,7 @@ def run_demo(cfg, plays, args):
     if recorder:
         desk.started = time.time()
     dash = Dashboard(engine, cfg["dashboard"]["host"], cfg["dashboard"]["port"], trader=trader, desk=desk,
-                     rec_dir=cfg["recording"]["dir"]).start()
+                     rec_dir=cfg["recording"]["dir"], layout_path=layout_file(args)).start()
     print(f"TWINEY {__version__} · DEMO FEED (synthetic, not market data) · practice orders fill in the simulator",
           flush=True)
     open_dashboard(dash, cfg, args)
@@ -151,7 +156,8 @@ def run_replay(cfg, plays, args):
             engine.trader = Trader(engine, cfg, sim, gate)
             if dash is None:
                 dash = Dashboard(ref, cfg["dashboard"]["host"], cfg["dashboard"]["port"],
-                                 clock=lambda: box["engine"].last_t, trader=None, rec_dir=cfg["recording"]["dir"]).start()
+                                 clock=lambda: box["engine"].last_t, trader=None, rec_dir=cfg["recording"]["dir"],
+                                 layout_path=layout_file(args)).start()
                 open_dashboard(dash, cfg, args)
             dash.trader = engine.trader
 

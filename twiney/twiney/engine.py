@@ -1110,7 +1110,7 @@ class Engine:
                     return lv["label"]
             return None
 
-        change = self.slot_changes[i] if i < len(self.slot_changes) else None
+        change = self.slot_changes[i] if 0 <= i < len(self.slot_changes) else None
         ps = self._ps60(st, t, bars, st.price())
         return {
             "slot": i,
@@ -1149,12 +1149,14 @@ class Engine:
                       if m >= first_bar],
             "events": [[a["t"], a["price"], a["label"], a["side"]] for a in sym_alerts if a["t"] >= first_bar][:60],
             "health": self._health(st, t),
-            "slot_age": round(t - self.slots[sym], 1),
+            "slot_age": round(t - self.slots[sym], 1) if sym in self.slots else None,
         }
 
-    def snapshot(self, t):
+    def snapshot(self, t, extra=()):
         with self.lock:
             ranked = self.ranking(t)
+            extra_panes = {sym: self._pane(sym, -1, t, None) for sym in extra
+                           if sym in self.syms and sym not in self.slots}
             order = {s: i + 1 for i, (s, _d) in enumerate(ranked)}
             ranking = []
             for p in self.plays:
@@ -1190,6 +1192,7 @@ class Engine:
                 "auto_rotate": self.auto_rotate,
                 "ranking": ranking,
                 "panes": panes,
+                "extra": extra_panes,
                 "depth": [pn for pn in panes if pn],
                 "trading": self.trader.snapshot() if self.trader else {"mode": "NONE", "can_trade": False,
                                                                         "why_not": "order entry not loaded"},

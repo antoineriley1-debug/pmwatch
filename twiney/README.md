@@ -1,4 +1,4 @@
-# TWINEY v1.6
+# TWINEY v1.7
 
 An IBKR order-flow workstation built around PS60 levels, with ladder trading that is
 **locked to paper accounts** until you deliberately unlock it.
@@ -63,10 +63,16 @@ Other modes:
     candles start at 9:30 like every other chart), a session **VWAP** line (toggle), and buy/sell volume. Your pivot, 2nd entry, extra levels, target and stop are drawn as labelled lines with a band. Green/red bubbles show shares absorbed into resting buyers/sellers at watched levels. R/C/P markers show reload, cleaned-up and pulled calls. Your working orders are drawn as lines too.
   - **Level-memory ladder.** Every price row remembers the last 15 minutes: shares sold into the bid and bought from the ask there, how many times the size came back after being hit (●), and a glowing **BUYER ×n / SELLER ×n** tag when a reload is confirmed. Your levels and your orders are tagged on their rows. The ladder stays centered on price.
   - **Time & sales** with prints at your levels tagged.
-- **Every ladder is four windows** — QUOTE & TRADE, CHART, LADDER, TIME & SALES — plus the CALLS and WHAT'S HAPPENING
-  windows, the plays list, orders and feed messages. Each window moves (Layout: FREE, drag its title bar), resizes from
-  any edge or corner, folds (▾) and hides (✕, bring it back from the Windows menu). Build the screen you want; it is
-  remembered. **Reset layout** puts everything back.
+- **Build your own screen.** Every window is one view with a type and a link. **Windows ▾ → + Chart / + Footprint /
+  + Ladder / + Time & sales / + Quote & trade** adds a window; the dropdown in its title bar links it to **Ladder 1 / 2 / 3**
+  (follows whatever play holds that ladder) or to a **symbol** (always that stock; a symbol outside the three ladders
+  gets its chart and quote, but no depth or tape). Windows move (Layout: FREE, drag the title bar), resize from any edge
+  or corner, fold (▾) and hide or remove (✕). The default screen is five windows per ladder: QUOTE & TRADE, CHART,
+  LADDER, TIME & SALES, FOOTPRINT 5m, plus CALLS, WHAT'S HAPPENING, DESK, JOURNAL, plays, orders and feed messages.
+- **💾 Save layout** writes the whole screen (windows, links, sizes, positions, chart settings, columns) to
+  `layout.json` next to `config.json`. It loads on every start, in any browser. Until you save, changes live only in
+  the browser you made them in. **Reset layout** deletes the saved layout and puts everything back.
+- **Voice per ladder:** 🗣 on a QUOTE & TRADE window mutes that symbol; **solo** reads only that symbol.
 - **Clean chart** (the `clean` button above the chart, on by default): only candles, volume, VWAP, your levels and your
   orders. Turn it off to see trapped bands, sneaky pivots, reload marks, absorption bubbles and R/C/P call markers.
 - **Trade from the chart:** right-click at any price for BUY / SELL limit there (and Flatten / Cancel all), or hover
@@ -102,7 +108,8 @@ Other modes:
   extra tool to remove it.
 - **Positions panel:** close 1 / 5 / 10 and add 1 / 5 / 10 (× lot), Flatten, all as limits at the touch.
 - **Sound:** a short tone on every call (🔊 / 🔇 in the header).
-- **Voice** (🗣 in the header, on by default; uses the voices built into Windows / Mac, no internet): reads out big size
+- **Voice** (🗣 Voice ON / OFF in the header; uses the voices built into Windows / Mac, no internet; if you hear
+  nothing, Windows → Settings → Time & language → Speech → add a voice): reads out big size
   showing up or leaving a price — "18k buyer at 120", "buyer pulled 17k from 120", "seller at 120 got hit for 11k" —
   and every call: "confirmed reload seller at 241.20, reloaded 12 times, 6 thousand shares absorbed", "seller at 241.20
   cleared out", "pulled". Size threshold in `config.json → voice.min_shares` (5,000). Hit vs pulled is decided by the
