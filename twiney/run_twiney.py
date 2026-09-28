@@ -63,6 +63,7 @@ def run_live(cfg, plays, args):
         recorder.write(session_header(plays, cfg, __version__))
         print(f"Recording raw events to {recorder.path}", flush=True)
     engine = Engine(plays, cfg, recorder)
+    engine.plays_path = args.plays
     engine.listeners.append(console_alert)
     gate = TradingGate(cfg)
     session = MarketDataSession(engine, cfg, plays, factory, gate=gate)
@@ -89,6 +90,7 @@ def run_live(cfg, plays, args):
 def run_demo(cfg, plays, args):
     from twiney.sim import DemoFeed
     engine = Engine(plays, cfg)
+    engine.plays_path = args.plays if os.path.exists(args.plays) else None
     engine.listeners.append(console_alert)
     feed = DemoFeed(engine, plays)
     feed.start(time.time())
@@ -117,20 +119,31 @@ def run_replay(cfg, plays, args):
     box = {}
     dash = None
 
+    control = {"paused": False, "speed": args.speed, "position": None, "file": os.path.basename(args.replay)}
+
     def ready(engine):
         box["engine"] = engine
         engine.connection.update(state="REPLAY", detail=args.replay)
         nonlocal dash
         if args.speed > 0:
+            engine.replay = control
+            # practice orders fill against the replayed book, exactly like the demo
+            gate = TradingGate(cfg)
+            gate.set_sim()
+            sim = SimBroker(engine)
+            engine.sim_broker = sim
+            engine.trader = Trader(engine, cfg, sim, gate)
             dash = Dashboard(engine, cfg["dashboard"]["host"], cfg["dashboard"]["port"],
-                             clock=lambda: engine.last_t).start()
+                             clock=lambda: engine.last_t, trader=engine.trader).start()
             open_dashboard(dash, cfg, args)
 
     use_file_settings = not args.override
     engine, recorded = replay(args.replay,
                               plays=None if use_file_settings else plays,
                               cfg=None if use_file_settings else cfg,
-                              speed=args.speed, on_alert=console_alert, engine_ready=ready)
+                              speed=args.speed, on_alert=console_alert, engine_ready=ready,
+                              control=control if args.speed > 0 else None)
+    control["done"] = True
     if engine is None:
         print("recording is empty", file=sys.stderr)
         return 1

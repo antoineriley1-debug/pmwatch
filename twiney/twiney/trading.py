@@ -46,6 +46,7 @@ class TradingGate:
         self.mode = "NONE"           # NONE | SIM | PAPER | LIVE
         self.recent = deque()        # timestamps of accepted orders (rate limit)
         self.blocked = deque(maxlen=50)
+        self.locked = None           # reason trading is locked for the rest of the session
         self.lock = threading.RLock()
 
     # ---- state ------------------------------------------------------------
@@ -61,6 +62,12 @@ class TradingGate:
             self.mode = "SIM"
             self.accounts = ["SIM"]
 
+    def lock_out(self, reason):
+        """Disarm and refuse to re-arm until restart (daily loss limit)."""
+        with self.lock:
+            self.locked = reason
+            self.armed = False
+
     def arm(self, on):
         with self.lock:
             if on and not self.can_trade():
@@ -69,7 +76,7 @@ class TradingGate:
             return True
 
     def can_trade(self):
-        if not self.cfg["enabled"]:
+        if not self.cfg["enabled"] or self.locked:
             return False
         if self.mode in ("SIM", "PAPER"):
             return True
@@ -78,6 +85,8 @@ class TradingGate:
     def why_not(self):
         if not self.cfg["enabled"]:
             return "trading is disabled in config.json"
+        if self.locked:
+            return f"LOCKED for today: {self.locked}"
         if self.mode == "NONE":
             return "no account connected yet"
         if self.mode == "LIVE" and not self.cfg["allow_live"]:
@@ -137,6 +146,9 @@ class TradingGate:
                 "max_shares": self.cfg["max_shares_per_order"],
                 "max_dollars": self.cfg["max_dollars_per_order"],
                 "bracket": self.cfg["bracket"],
+                "locked": self.locked,
+                "max_position": self.cfg["max_position_shares"],
+                "max_daily_loss": self.cfg["max_daily_loss"],
                 "blocked": list(self.blocked)[:10],
             }
 
@@ -196,6 +208,22 @@ class SimBroker:
                 self._cancel(o, now)
                 return True
             return False
+
+    def modify(self, oid, price, now):
+        with self.lock:
+            o = self.orders.get(oid)
+            if not o or o["status"] not in ("Submitted", "PreSubmitted"):
+                return None
+            o["price"] = price
+            o["t"] = now
+            self._report(o, now)
+            if o["status"] == "Submitted":
+                self.on_market(o["symbol"], now)
+            return o
+
+    def order_info(self, oid):
+        o = self.orders.get(oid)
+        return dict(o) if o else None
 
     def cancel_all(self, now, symbol=None):
         with self.lock:
@@ -298,6 +326,15 @@ class IbkrBroker:
     def cancel(self, oid, now):
         return self.session.cancel_order(oid, now)
 
+    def modify(self, oid, price, now):
+        return self.session.modify_order(oid, price, now)
+
+    def order_info(self, oid):
+        for o in self.engine.orders.values():
+            if o.get("order_id") == oid:
+                return o
+        return None
+
     def cancel_all(self, now, symbol=None):
         return self.session.cancel_all(now, symbol)
 
@@ -332,6 +369,13 @@ class Trader:
             return {"ok": False, "reason": "unknown symbol"}
         price = round(float(price), 4)
         reason = self.gate.check(action, qty, price, now)
+        if not reason:
+            pos = int(self.broker.position(symbol))
+            after = pos + (qty if action == BUY else -qty)
+            cap = self.cfg["max_position_shares"]
+            if abs(after) > cap and abs(after) > abs(pos):
+                reason = f"that would make the {symbol} position {abs(after):,} shares — your cap is {cap:,}"
+                self.gate.blocked.appendleft({"t": now, "action": action, "qty": qty, "price": price, "reason": reason})
         if reason:
             self._note(now, f"BLOCKED {action} {qty} {symbol} @ {money(price)}: {reason}", False)
             return {"ok": False, "reason": reason}
@@ -384,6 +428,46 @@ class Trader:
         self.broker.cancel_all(now, symbol)
         return self.submit(symbol, action, price, abs(qty), now, bracket=False)
 
+    def modify(self, oid, price, now=None):
+        """Move a working order to a new price (drag on the ladder / chart)."""
+        now = now or time.time()
+        oid = int(oid)
+        info = self.broker.order_info(oid)
+        if not info:
+            return {"ok": False, "reason": "no such order"}
+        price = round(float(price), 4)
+        qty = int(info.get("remaining") or info.get("qty") or 0)
+        reason = self.gate.check(info.get("action"), qty, price, now, order_type=info.get("type", "LMT"))
+        if reason:
+            self._note(now, f"BLOCKED move of order {oid} to {money(price)}: {reason}", False)
+            return {"ok": False, "reason": reason}
+        try:
+            ok = self.broker.modify(oid, price, now)
+        except Exception as exc:
+            return {"ok": False, "reason": str(exc)}
+        if not ok:
+            return {"ok": False, "reason": "order is no longer working"}
+        self._note(now, f"MOVED {info.get('action')} {qty} {info.get('symbol')} to {money(price)}", True)
+        self.engine._rec({"ev": "order_modify", "t": now, "id": oid, "px": price})
+        return {"ok": True, "price": price}
+
+    def day_pnl(self):
+        return self.engine.day_pnl()
+
+    def watchdog(self, now=None):
+        """Called on every dashboard snapshot: lock trading once the daily loss is hit."""
+        limit = self.cfg["max_daily_loss"]
+        if not limit or self.gate.locked:
+            return
+        pnl = self.day_pnl()
+        if pnl["total"] <= -abs(limit):
+            self.gate.lock_out(f"daily loss limit hit ({money(abs(pnl['total']))} against a {money(limit)} limit)")
+            self._note(now or time.time(), f"TRADING LOCKED — day P&L {pnl['total']:+,.0f} hit your {limit:,.0f} loss limit", False)
+            try:
+                self.broker.cancel_all(now or time.time())
+            except Exception:
+                pass
+
     def adjust(self, symbol, shares, mode, now=None):
         """Close or add ``shares`` to the position with a limit at the touch.
 
@@ -423,6 +507,8 @@ class Trader:
         return True
 
     def snapshot(self):
+        self.watchdog()
         s = self.gate.snapshot()
-        s.update(default_shares=self.default_shares, bracket=self.bracket, log=list(self.log)[:12])
+        s.update(default_shares=self.default_shares, bracket=self.bracket, log=list(self.log)[:12],
+                 pnl=self.day_pnl())
         return s

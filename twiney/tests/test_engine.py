@@ -208,6 +208,21 @@ class FlowTests(unittest.TestCase):
         rel = e.snapshot(8.0)["panes"][0]["reloaders"]
         self.assertEqual([r["price"] for r in rel["above"]], [10.0])
 
+    def test_drawn_levels_are_watched_and_saved(self):
+        import json, os, tempfile
+        e = self._slotted()
+        with tempfile.TemporaryDirectory() as d:
+            e.plays_path = os.path.join(d, "plays.json")
+            self.assertTrue(e.add_level("AAA", 10.05, 2.0))
+            self.assertIn((ASK, 1005), e.syms["AAA"].trackers)
+            self.assertEqual(e.syms["AAA"].trackers[(ASK, 1005)].role, "extra")
+            saved = json.load(open(e.plays_path))
+            self.assertEqual([p for p in saved["plays"] if p["symbol"] == "AAA"][0]["extra_levels"], [10.05])
+            self.assertTrue(any(l["role"] == "extra" and l["price"] == 10.05 for l in e.snapshot(3.0)["panes"][0]["user_levels"]))
+            e.remove_level("AAA", 10.05, 4.0)
+            self.assertNotIn((ASK, 1005), e.syms["AAA"].trackers)
+            self.assertEqual([p for p in json.load(open(e.plays_path))["plays"] if p["symbol"] == "AAA"][0]["extra_levels"], [])
+
     def test_snapshot_shape(self):
         e = self._slotted()
         price_all(e, 1.0, {"AAA": 10.0})

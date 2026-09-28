@@ -283,6 +283,10 @@ class SessionTests(unittest.TestCase):
         pend = engine.snapshot(clock())["account"]["pending"]
         self.assertEqual(len([o for o in pend if o["role"] == "entry"]), 1)
         self.assertEqual([o for o in pend if o["role"] == "entry"][0]["status"], "Submitted")
+        # moving the order re-sends placeOrder with the same id and the new price
+        self.assertTrue(engine.trader.modify(41, 10.05, clock())["ok"])
+        moved = [c for c in app.calls if c[0] == "placeOrder" and c[1] == 41][-1]
+        self.assertEqual((moved[3]["price"], moved[3]["qty"], moved[3]["type"]), (10.05, 100, "LMT"))
         # cancel goes through cancelOrder with the TWS order id
         tr.cancel(41, clock())
         self.assertIn(("cancelOrder", 41, ""), app.calls)

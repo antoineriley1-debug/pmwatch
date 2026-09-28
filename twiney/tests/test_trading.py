@@ -117,6 +117,50 @@ class SimTradingTests(unittest.TestCase):
         gate.arm(False)
         self.assertFalse(tr.adjust("AAA", 1, "add", 7.0)["ok"])      # disarmed: blocked by the gate
 
+    def test_move_a_working_order(self):
+        e, tr, gate, broker = sim_setup()
+        gate.arm(True)
+        oid = tr.submit("AAA", "BUY", 9.90, 100, 2.0, bracket=False)["id"]
+        out = tr.modify(oid, 9.95, 3.0)
+        self.assertTrue(out["ok"], out)
+        self.assertEqual(e._pending("AAA")[0]["lmt"], 9.95)
+        self.assertIn("cap", tr.modify(oid, 9999.0, 4.0)["reason"])          # gate still applies
+        tr.modify(oid, 10.00, 5.0)                                             # moved onto the offer: fills
+        self.assertEqual(broker.position("AAA"), 100)
+        self.assertFalse(tr.modify(oid, 9.0, 6.0)["ok"])                       # filled orders can't move
+
+    def test_max_position_cap(self):
+        e, tr, gate, broker = sim_setup(max_position_shares=150)
+        gate.arm(True)
+        self.assertTrue(tr.submit("AAA", "BUY", 10.00, 100, 2.0, bracket=False)["ok"])
+        out = tr.submit("AAA", "BUY", 10.00, 100, 3.0, bracket=False)
+        self.assertFalse(out["ok"])
+        self.assertIn("cap is 150", out["reason"])
+        self.assertTrue(tr.submit("AAA", "SELL", 9.99, 100, 4.0, bracket=False)["ok"])  # reducing is always fine
+
+    def test_daily_loss_locks_trading_for_the_session(self):
+        e, tr, gate, broker = sim_setup(max_daily_loss=50)
+        gate.arm(True)
+        tr.submit("AAA", "BUY", 10.00, 100, 2.0, bracket=False)     # long 100 @ 10.00
+        e.on_depth("AAA", 0, UPDATE, BID, 9.40, 500, "", 3.0)         # market drops: open loss $60
+        e.on_depth("AAA", 0, UPDATE, ASK, 9.41, 500, "", 3.0)
+        e.on_l1("AAA", "last", 9.40, 3.0)
+        snap = e.snapshot(4.0)["trading"]
+        self.assertLessEqual(snap["pnl"]["total"], -50)
+        self.assertFalse(snap["armed"])
+        self.assertIn("LOCKED", snap["why_not"])
+        self.assertFalse(gate.arm(True))                                # cannot re-arm today
+        self.assertFalse(tr.submit("AAA", "BUY", 9.41, 1, 5.0)["ok"])
+
+    def test_day_pnl_realized_and_open(self):
+        e, tr, gate, broker = sim_setup()
+        gate.arm(True)
+        tr.submit("AAA", "BUY", 10.00, 100, 2.0, bracket=False)
+        tr.submit("AAA", "SELL", 9.99, 50, 3.0, bracket=False)       # realize -$0.50
+        pnl = e.day_pnl()
+        self.assertAlmostEqual(pnl["realized"], -0.5)
+        self.assertAlmostEqual(pnl["open"], (10.0 - 10.0) * 50, places=2)
+
     def test_size_and_caps_reach_the_dashboard_snapshot(self):
         e, tr, gate, broker = sim_setup(default_shares=50, max_shares_per_order=75)
         self.assertTrue(tr.set_size(500))

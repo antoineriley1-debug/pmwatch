@@ -108,6 +108,8 @@ class Engine:
         self.account_seen = False
         self.trader = None      # set by run_twiney when order entry is enabled
         self.sim_broker = None  # demo-mode fill simulator, if any
+        self.plays_path = None  # where to save levels added from the chart
+        self.replay = None      # replay control block when replaying a recording
         self.alerts = deque(maxlen=300)
         self.messages = deque(maxlen=80)
         self.listeners = []
@@ -301,6 +303,84 @@ class Engine:
             if len(self.fills) > 200:
                 for k in sorted(self.fills, key=lambda k: self.fills[k]["t"])[:len(self.fills) - 200]:
                     del self.fills[k]
+
+    def day_pnl(self):
+        """Realized (average-cost, from today's fills) + open P&L, in dollars."""
+        with self.lock:
+            realized, pos = 0.0, {}
+            for f in sorted(self.fills.values(), key=lambda f: f["t"]):
+                sym, qty, px_ = f["symbol"], f["shares"] * (1 if f["side"] == "BOT" else -1), f["price"]
+                q, cost = pos.get(sym, (0.0, 0.0))
+                if q == 0 or (q > 0) == (qty > 0):
+                    nq = q + qty
+                    cost = (q * cost + qty * px_) / nq if nq else 0.0
+                    q = nq
+                else:
+                    closed = min(abs(q), abs(qty))
+                    realized += closed * (px_ - cost) * (1 if q > 0 else -1)
+                    q += qty
+                    if q == 0:
+                        cost = 0.0
+                    elif (q > 0) == (qty > 0):
+                        cost = px_
+                pos[sym] = (q, cost)
+            open_pnl = 0.0
+            for (a, sym), p in self.positions.items():
+                last = self.syms[sym].price() if sym in self.syms else None
+                if last:
+                    open_pnl += (last - p["avg_cost"]) * p["qty"]
+            return {"realized": round(realized, 2), "open": round(open_pnl, 2), "total": round(realized + open_pnl, 2)}
+
+    # ---- levels drawn on the chart -------------------------------------------
+
+    def add_level(self, symbol, price, t=None):
+        with self.lock:
+            st = self._st(symbol)
+            if st is None or not price or price <= 0:
+                return False
+            price = round(float(price), 4)
+            lv = st.play.setdefault("extra_levels", [])
+            if any(price_key(price) == price_key(x) for x in lv):
+                return True
+            lv.append(price)
+            if st.book is not None:  # depth is on: start watching it right away
+                for side in (BID, ASK):
+                    key = (side, price_key(price))
+                    if key not in st.trackers:
+                        st.trackers[key] = LevelTracker(symbol, price, side, "extra", self.cfg["reload"], t or self.last_t)
+            self._rec({"ev": "level", "t": t or self.last_t, "sym": symbol, "px": price, "on": True})
+            self._save_plays()
+            return True
+
+    def remove_level(self, symbol, price, t=None):
+        with self.lock:
+            st = self._st(symbol)
+            if st is None:
+                return False
+            k = price_key(price)
+            lv = st.play.get("extra_levels", [])
+            st.play["extra_levels"] = [x for x in lv if price_key(x) != k]
+            for side in (BID, ASK):
+                tr = st.trackers.get((side, k))
+                if tr is not None and tr.role == "extra":
+                    del st.trackers[(side, k)]
+            self._rec({"ev": "level", "t": t or self.last_t, "sym": symbol, "px": price, "on": False})
+            self._save_plays()
+            return True
+
+    def _save_plays(self):
+        """Write plays.json back so drawn levels survive a restart."""
+        if not self.plays_path:
+            return
+        import json
+        keep = ("symbol", "side", "trigger", "second_entry", "target", "stop", "extra_levels", "notes", "active",
+                "exchange", "primary_exchange", "currency")
+        out = {"plays": [{k: p[k] for k in keep if k in p} for p in self.plays]}
+        tmp = self.plays_path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(out, fh, indent=2)
+        import os
+        os.replace(tmp, self.plays_path)
 
     def _pending(self, symbol=None):
         return [o for o in self.orders.values()
@@ -525,7 +605,8 @@ class Engine:
             self.apply_slot(ev["sym"], ev["on"], t, ev.get("reason", ""))
         elif kind == "conn":
             with self.lock:
-                self.connection.update(state=ev["state"], since=t, detail=ev.get("detail", ""))
+                if self.replay is None:  # while replaying, the header keeps saying REPLAY
+                    self.connection.update(state=ev["state"], since=t, detail=ev.get("detail", ""))
         elif kind == "depth_rejected":
             self.on_depth_rejected(ev["sym"], ev.get("code"), ev.get("msg", ""), t)
         elif kind == "error":
@@ -807,6 +888,7 @@ class Engine:
                 "depth": [pn for pn in panes if pn],
                 "trading": self.trader.snapshot() if self.trader else {"mode": "NONE", "can_trade": False,
                                                                         "why_not": "order entry not loaded"},
+                "replay": dict(self.replay) if self.replay else None,
                 "account": {
                     "seen": self.account_seen,
                     "pending": sorted(self._pending(), key=lambda o: -o.get("first_seen", 0)),

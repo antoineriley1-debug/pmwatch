@@ -68,6 +68,23 @@ def make_handler(engine, clock, trader=None):
                 self._send(200, json.dumps({"ok": True}), "application/json")
             elif path.startswith("/api/trade/"):
                 self._trade(path[len("/api/trade/"):], body)
+            elif path == "/api/level":
+                sym = str(body.get("symbol", "")).upper()
+                ok = (engine.add_level if body.get("on", True) else engine.remove_level)(sym, body.get("price"), clock())
+                self._send(200 if ok else 400, json.dumps({"ok": ok}), "application/json")
+            elif path == "/api/replay":
+                r = engine.replay
+                if r is None:
+                    self._send(404, json.dumps({"ok": False, "reason": "not replaying"}), "application/json")
+                    return
+                if "paused" in body:
+                    r["paused"] = bool(body["paused"])
+                if "speed" in body:
+                    try:
+                        r["speed"] = max(0.25, min(100.0, float(body["speed"])))
+                    except (TypeError, ValueError):
+                        pass
+                self._send(200, json.dumps({"ok": True, "replay": dict(r)}), "application/json")
             else:
                 self._send(404, "not found", "text/plain")
 
@@ -100,6 +117,8 @@ def make_handler(engine, clock, trader=None):
                     out = trader.flatten(sym, now)
                 elif action == "adjust":
                     out = trader.adjust(sym, body.get("shares"), str(body.get("mode", "")), now)
+                elif action == "modify":
+                    out = trader.modify(body.get("id"), body.get("price"), now)
                 else:
                     self._send(404, "not found", "text/plain")
                     return

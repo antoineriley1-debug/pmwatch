@@ -12,7 +12,7 @@ def session_header(plays, cfg, version):
     return {"ev": "session", "t": time.time(), "version": version, "plays": plays, "config": cfg}
 
 
-def replay(path, plays=None, cfg=None, speed=0.0, on_alert=None, engine_ready=None):
+def replay(path, plays=None, cfg=None, speed=0.0, on_alert=None, engine_ready=None, control=None):
     """Feed every recorded event into a new engine.
 
     Uses the plays/config stored in the recording header unless overridden, so a
@@ -57,7 +57,16 @@ def replay(path, plays=None, cfg=None, speed=0.0, on_alert=None, engine_ready=No
         while next_tick <= t:
             engine.tick(next_tick, allocate_slots=False)
             next_tick += TICK_STEP
-        if speed and speed > 0 and prev_t is not None and t > prev_t:
+        if control is not None:
+            control["position"] = t
+            while control.get("paused") and not control.get("stop"):
+                time.sleep(0.1)
+            if control.get("stop"):
+                break
+            spd = control.get("speed") or speed
+            if spd and spd > 0 and prev_t is not None and t > prev_t:
+                time.sleep(min((t - prev_t) / spd, 5.0))
+        elif speed and speed > 0 and prev_t is not None and t > prev_t:
             time.sleep(min((t - prev_t) / speed, 5.0))
         prev_t = t if prev_t is None else max(prev_t, t)
         engine.ingest(ev)

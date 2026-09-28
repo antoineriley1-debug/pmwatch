@@ -130,6 +130,16 @@ td.bars.l .bar-n{float:right;margin-right:3px} td.bars.r .bar-n{margin-left:3px}
 .lad tr.lvl td{border-top:1px solid rgba(255,197,61,.45);border-bottom:1px solid rgba(255,197,61,.45)}
 .lad tr.lastpx td.px::before{content:"▶";position:absolute;left:2px;color:var(--text)}
 .mine{display:inline-block;font-size:9px;font-weight:700;padding:0 4px;border-radius:3px;border:1px solid #fff;color:#fff;margin-left:3px}
+.chip.drag{opacity:.5} .lad tr.droptarget td{outline:1px dashed var(--gold)}
+.chart-wrap canvas.lvltool{cursor:cell}
+.chart-tools button.on.lvl{border-color:var(--gold);color:var(--gold)}
+#pnl{font-family:var(--mono);font-weight:700} #pnl.up{color:var(--buy)} #pnl.dn{color:var(--sell)}
+#locked{background:#5a1218;border-color:var(--sell);color:#fff;font-weight:800}
+#replaybar{display:none;gap:8px;align-items:center;padding:6px 16px;background:#1a1530;border-bottom:1px solid var(--violet)}
+#replaybar.on{display:flex}
+#replaybar input[type=range]{width:160px}
+.tradebar .risk{width:70px}
+.keys{font-size:10.5px;color:var(--dim)}
 .trap{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:.03em}
 .trap.l{background:#3a1216;color:#ffb3bb;border:1px solid var(--sell)} .trap.s{background:#0f3d25;color:#9fffcf;border:1px solid var(--buy)}
 .trap.heavy{animation:trapglow 1.4s infinite}
@@ -220,6 +230,8 @@ td.status{text-align:left !important;white-space:normal !important;color:#c4cddb
   <span class="spacer"></span>
   <label class="dim" title="Skip the confirmation box on every order"><input type="checkbox" id="oneclick"> one-click</label>
   <label class="dim" title="Attach the play's stop and target to every entry"><input type="checkbox" id="bracket"> stop+target</label>
+  <span id="pnl" title="today: realized + open">P&amp;L —</span>
+  <button id="soundBtn" title="beep on every call">🔊</button>
   <button id="alertsBtn" title="Show / hide the call feed and call pop-ups">🔔 Alerts</button>
   <button id="rotate" title="When OFF, ladders never switch symbols on their own">Auto-rotate: …</button>
   <span class="menu" id="winMenu"><button>Windows ▾</button><div class="pop" id="winList"></div></span>
@@ -227,6 +239,13 @@ td.status{text-align:left !important;white-space:normal !important;color:#c4cddb
   <button id="resetLayout" title="Put everything back">Reset layout</button>
 </header>
 <div id="toasts"></div>
+<div id="replaybar">
+  <b>REPLAY</b> <span id="rpFile" class="dim"></span>
+  <button id="rpPlay">⏸ Pause</button>
+  <span class="dim">speed</span><input type="range" id="rpSpeed" min="1" max="50" step="1"><span id="rpSpeedV" class="mono"></span>
+  <span id="rpPos" class="mono dim"></span>
+  <span class="keys" style="margin-left:auto">practice orders fill against the replayed book</span>
+</div>
 <main>
   <section id="feed" class="win card" data-win="alerts" data-title="CALLS"><div class="wbody" id="feedBody"></div></section>
   <section id="panes"></section>
@@ -262,6 +281,19 @@ async function post(path, body){
   } catch(e){ out = {ok:false, reason:"lost contact with TWINEY"}; }
   poll(true);
   return out;
+}
+let audioCtx = null, seenAlerts = new Set(), firstFeed = true;
+function beep(kind){
+  if (!store.get("sound", true)) return;
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    const f = {buyer: 660, seller: 440, cleaned: 880, pulled: 330}[kind] || 550;
+    o.frequency.value = f; o.type = "sine"; g.gain.value = 0.08;
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(); o.frequency.setValueAtTime(f, audioCtx.currentTime); o.frequency.setValueAtTime(f * 1.25, audioCtx.currentTime + 0.12);
+    g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.35); o.stop(audioCtx.currentTime + 0.36);
+  } catch(e){}
 }
 function toast(text, ok){
   const el = document.createElement("div");
@@ -498,6 +530,33 @@ function ensurePane(i){
   }, {passive: false});
   cv.addEventListener("mousedown", e => {
     const r = cv.getBoundingClientRect(), x0 = e.clientX, y0 = e.clientY, onAxis = (e.clientX - r.left) > r.width - 86;
+    const yAt = () => p.chartY ? p.chartY[1] - ((e.clientY - r.top) - 8) / ((p.chartH || 1) - 8) * (p.chartY[1] - p.chartY[0]) : null;
+    // level tool: click to add a level, click an existing extra level to remove it
+    if (v.levelTool && p.data && !onAxis){
+      const price = yAt(); if (price == null) return;
+      const tk = price >= 1 ? 0.01 : 0.0001, snapped = Math.round(price / tk) * tk;
+      const hit = (p.data.user_levels || []).find(l => l.role === "extra" && Math.abs(l.price - snapped) <= tk * 2);
+      post("/api/level", {symbol: p.data.symbol, price: hit ? hit.price : snapped, on: !hit})
+        .then(out => toast(out.ok ? (hit ? "Level removed " + px(hit.price) : "Level added " + px(snapped) + " — saved to plays.json") : "Could not save level", out.ok));
+      return;
+    }
+    // grab a working-order line on the chart and drag it to a new price
+    if (p.data && p.chartY && !onAxis){
+      const price = yAt(), per = (p.chartY[1] - p.chartY[0]) / ((p.chartH || 1) - 8);
+      const o = (p.data.orders || []).find(o => o.price && Math.abs(o.price - price) <= per * 5 && o.id != null);
+      if (o){
+        e.preventDefault();
+        p.dragOrder = {id: o.id, price: o.price};
+        const move = ev => { const pr = p.chartY[1] - ((ev.clientY - r.top) - 8) / ((p.chartH || 1) - 8) * (p.chartY[1] - p.chartY[0]);
+          const tk = pr >= 1 ? 0.01 : 0.0001; p.dragOrder.price = Math.round(pr / tk) * tk; drawChart(p); };
+        const up = async () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up);
+          const d = p.dragOrder; p.dragOrder = null;
+          if (Math.abs(d.price - o.price) >= 1e-6){ const out = await post("/api/trade/modify", {id: d.id, price: d.price});
+            toast(out.ok ? "Moved to " + px(out.price) : "Move blocked: " + (out.reason || ""), out.ok); } };
+        window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
+        return;
+      }
+    }
     const start = {offset: v.offset, yLo: v.yLo, yHi: v.yHi, y: p.chartY ? p.chartY.slice() : null, h: p.chartH || 1};
     let moved = false;
     cv.classList.add("pan");
@@ -545,6 +604,7 @@ function ensurePane(i){
   p.tools.addEventListener("click", e => {
     const tf = e.target.dataset.tf;
     if (tf){ store.set("tf." + i, +tf); v.offset = 0; v.follow = true; drawChart(p); renderTools(p); }
+    if (e.target.dataset.lvl){ v.levelTool = !v.levelTool; renderTools(p); return; }
     if (e.target.dataset.fit){ const n = aggBars(p.data ? p.data.bars : [], store.get("tf." + i, 1)).length || 1;
       v.cw = Math.max(2, Math.min(40, (cv.clientWidth - 86) / n)); v.offset = 0; v.follow = true; v.yLo = v.yHi = null; saveView(); drawChart(p); }
   });
@@ -583,7 +643,27 @@ function ensurePane(i){
         pop.style.left = Math.min(r.left, window.innerWidth - 260) + "px"; pop.style.top = (r.bottom + 4) + "px"; }
     }
   });
+  // drag an order chip onto another row = move the order to that price
+  p.ladder.addEventListener("dragstart", e => {
+    const chip = e.target.closest(".chip[data-id]");
+    if (!chip){ e.preventDefault(); return; }
+    e.dataTransfer.setData("text/plain", "order:" + chip.dataset.id); chip.classList.add("drag"); p.dragging = true;
+  });
+  p.ladder.addEventListener("dragend", () => { p.dragging = false; p.ladder.querySelectorAll(".droptarget").forEach(r => r.classList.remove("droptarget")); });
+  p.ladder.addEventListener("dragover", e => {
+    const row = e.target.closest("tr"); if (!row || !row.querySelector("td.px")) return;
+    e.preventDefault(); p.ladder.querySelectorAll(".droptarget").forEach(r => r.classList.remove("droptarget")); row.classList.add("droptarget");
+  });
+  p.ladder.addEventListener("drop", async e => {
+    const row = e.target.closest("tr"); const data = e.dataTransfer.getData("text/plain");
+    if (!row || !data.startsWith("order:")) return;
+    e.preventDefault();
+    const cell = row.querySelector("td.act"); if (!cell) return;
+    const out = await post("/api/trade/modify", {id: +data.slice(6), price: +cell.dataset.px});
+    toast(out.ok ? "Moved to " + px(out.price) : "Move blocked: " + (out.reason || ""), out.ok);
+  });
   p.ladder.addEventListener("click", e => {
+    if (p.dragging) return;
     const chip = e.target.closest(".chip[data-id]");
     if (chip){ cancelMine(+chip.dataset.id); return; }
     const cell = e.target.closest("td.act");
@@ -597,9 +677,18 @@ function ensurePane(i){
     if (b.dataset.do === "sell" && d.ask) sendOrder(d.symbol, "SELL", d.ask, qty);
     if (b.dataset.do === "flat") flatten(d.symbol);
     if (b.dataset.do === "cxl") cancelAll(d.symbol);
+    if (b.dataset.do === "risk"){
+      const risk = +p.tradebar.querySelector(".risk").value, ref = d.play.side === "long" ? (d.ask || d.last) : (d.bid || d.last);
+      const dist = Math.abs(ref - d.play.stop);
+      if (!risk || !dist){ toast("Enter a risk amount, and the play needs a stop", false); return; }
+      const shares = Math.max(1, Math.floor(risk / dist));
+      p.tradebar.querySelector("input[type=number]").value = shares;
+      post("/api/trade/size", {shares}).then(out => toast(`Size ${sz(out.default_shares)} sh = $${sz(risk)} risk ÷ ${px(dist)} to your stop`, true));
+    }
   });
+  p.tradebar.addEventListener("input", e => { if (e.target.classList.contains("risk")) p.riskVal = e.target.value; });
   p.tradebar.addEventListener("change", e => {
-    if (e.target.tagName === "INPUT") post("/api/trade/size", {shares: +e.target.value});
+    if (e.target.tagName === "INPUT" && !e.target.classList.contains("risk")) post("/api/trade/size", {shares: +e.target.value});
   });
   p.ladder.addEventListener("wheel", () => { p.userScroll = Date.now(); }, {passive: true});
   p.ladder.addEventListener("touchmove", () => { p.userScroll = Date.now(); }, {passive: true});
@@ -612,7 +701,9 @@ function ensurePane(i){
 function renderTools(p){
   const tf = store.get("tf." + p.i, 1);
   p.tools.innerHTML = [1, 5, 15].map(m => `<button data-tf="${m}" class="${tf===m?"on":""}">${m}m</button>`).join("")
-    + `<button data-fit="1" title="show all bars">fit</button>`;
+    + `<button data-fit="1" title="show all bars">fit</button>`
+    + `<button data-lvl="1" class="lvl ${p.view.levelTool ? "on" : ""}" title="Level tool: click the chart to add a level (saved to plays.json); click an added level to remove it">＋ level</button>`;
+  p.canvas.classList.toggle("lvltool", !!p.view.levelTool);
 }
 function swapPanes(a, b){
   const order = store.get("order", null) || paneEls.map((_, k) => k);
@@ -648,7 +739,7 @@ function ladderHTML(L){
   const ms = Math.max(L.max_traded, 1);
   const on = canTrade(), dis = on ? "" : " disabled";
   const chips = (r, side) => (r.mine || []).filter(o => (o.action === "BUY") === (side === "b")).map(o =>
-    `<span class="chip ${side} ${o.status === "PreSubmitted" ? "wait" : ""}" data-id="${o.id}" title="${esc(o.role)} order — click to cancel">${sz(o.qty)}</span>`).join(" ");
+    `<span class="chip ${side} ${o.status === "PreSubmitted" ? "wait" : ""}" data-id="${o.id}" draggable="true" title="${esc(o.role)} order — click to cancel, drag to move">${sz(o.qty)}</span>`).join(" ");
   let h = `<table class="lad" data-cols="ladder"><tr>
     <th class="act" title="Click a price here to BUY at that price">BUY</th>
     <th title="Shares sold INTO the bid at this price (last ${L.memory_minutes} min). Big green = a buyer absorbing.">SOLD INTO BID</th>
@@ -726,12 +817,14 @@ function renderPane(p, d){
   const sizeVal = p.tradebar.querySelector("input") ? p.tradebar.querySelector("input").value : t.default_shares;
   p.tradebar.innerHTML = `
     <span class="dim">Size</span><input type="number" min="1" step="100" value="${document.activeElement && document.activeElement.closest && document.activeElement.closest(".tradebar") === p.tradebar ? sizeVal : t.default_shares}">
+    <span class="dim" title="shares = risk ÷ distance from the current price to your stop">risk $</span><input class="risk" type="number" min="1" step="50" placeholder="—" value="${p.riskVal || ""}">
+    <button data-do="risk" ${pl.stop ? "" : "disabled"} title="${pl.stop ? "size from risk $ and your stop " + px(pl.stop) : "no stop in plays.json"}">size it</button>
     <button class="bbuy" data-do="buy" ${on && d.bid ? "" : "disabled"} title="${on ? "Buy on the bid " + px(d.bid) : whyNot()}">BUY bid ${px(d.bid)}</button>
     <button class="bsell" data-do="sell" ${on && d.ask ? "" : "disabled"} title="${on ? "Sell on the ask " + px(d.ask) : whyNot()}">SELL ask ${px(d.ask)}</button>
     <button class="bflat" data-do="flat" ${on && pos ? "" : "disabled"}>Flatten</button>
     <button data-do="cxl" ${d.orders.length ? "" : "disabled"}>Cancel all (${d.orders.length})</button>
     <span class="pos">${pos ? `<span class="${pos.qty > 0 ? "buy" : "sell"}">${pos.qty > 0 ? "LONG" : "SHORT"} ${sz(Math.abs(pos.qty))}</span> @ ${px(pos.avg_cost)}${pos.pnl != null ? ` · <span class="${pos.pnl >= 0 ? "buy" : "sell"}">${pos.pnl >= 0 ? "+" : "−"}$${sz(Math.abs(pos.pnl).toFixed(0))}</span>` : ""}` : `<span class="dim">flat</span>`}</span>
-    ${!on ? `<span class="dim" style="font-size:11px">${esc(whyNot())}</span>` : ""}`;
+    ${!on ? `<span class="dim" style="font-size:11px">${esc(whyNot())}</span>` : `<span class="keys">keys: B buy bid · S sell ask · + add · − close · F flatten · Esc cancel all · L level tool · A arm</span>`}`;
   if (d.changed){
     p.changed.hidden = false;
     p.changed.textContent = `This ladder switched from ${d.changed.prev} to ${d.symbol} (${d.changed.reason === "pinned" ? "you pinned it" : "it is closer to its level"}) ${ago(state.now - d.changed.t)} ago.`;
@@ -740,8 +833,10 @@ function renderPane(p, d){
   p.say.textContent = d.headline;
   p.lines.innerHTML = d.lines.map(l => `<li>${esc(l)}</li>`).join("");
   const keep = p.ladder.scrollTop;
-  p.ladder.innerHTML = ladderHTML(d.ladder);
-  makeColsResizable(p.ladder.querySelector("table"));
+  if (!p.dragging){
+    p.ladder.innerHTML = ladderHTML(d.ladder);
+    makeColsResizable(p.ladder.querySelector("table"));
+  }
   // keep the current price centered unless the trader scrolled the ladder in the last 8s
   const cur = p.ladder.querySelector("tr.lastpx") || p.ladder.querySelector("tr.best-ask");
   if (cur && Date.now() - (p.userScroll || 0) > 8000){
@@ -904,14 +999,15 @@ function drawChart(p){
     }
   }
 
-  // your working orders
+  // your working orders (a grabbed one follows the mouse)
   for (const o of d.orders){
     if (!o.price || o.price < lo || o.price > hi) continue;
-    const yy = y(o.price), col = o.action === "BUY" ? "#9fffcf" : "#ffb3bb";
+    const drag = p.dragOrder && p.dragOrder.id === o.id;
+    const yy = y(drag ? p.dragOrder.price : o.price), col = o.action === "BUY" ? "#9fffcf" : "#ffb3bb";
     g.strokeStyle = col; g.lineWidth = 1.2; g.setLineDash([8, 3, 2, 3]);
     g.beginPath(); g.moveTo(0, yy); g.lineTo(plotW, yy); g.stroke(); g.setLineDash([]);
     g.fillStyle = "#0a0d12"; g.strokeStyle = col; g.fillRect(plotW, yy - 8, labelW, 16); g.strokeRect(plotW + .5, yy - 7.5, labelW - 1, 15);
-    g.fillStyle = col; g.fillText(`${o.role === "entry" ? "YOU " + o.action : o.role.toUpperCase()} ${sz(o.qty)}`.slice(0, 13), plotW + 3, yy + 4);
+    g.fillStyle = col; g.fillText((drag ? px(p.dragOrder.price) + " ▸" : `${o.role === "entry" ? "YOU " + o.action : o.role.toUpperCase()} ${sz(o.qty)}`).slice(0, 13), plotW + 3, yy + 4);
   }
   // last price
   if (d.last){
@@ -967,8 +1063,28 @@ function render(s){
   mode.textContent = modeText[t.mode] || t.mode;
   mode.className = "pill " + (t.mode || "none").toLowerCase();
   const arm = document.getElementById("arm");
-  arm.textContent = t.armed ? "ARMED — click to disarm" : "ARM";
-  arm.className = t.armed ? "armed" : "off";
+  arm.textContent = t.locked ? "LOCKED" : t.armed ? "ARMED — click to disarm" : "ARM";
+  arm.className = t.locked ? "" : t.armed ? "armed" : "off";
+  if (t.locked) arm.id = "arm", arm.setAttribute("style", "background:#5a1218;border-color:var(--sell);color:#fff"); else arm.removeAttribute("style");
+  const pnlEl = document.getElementById("pnl");
+  if (t.pnl){ const v = t.pnl.total; pnlEl.textContent = `P&L ${v >= 0 ? "+" : "−"}$${sz(Math.abs(v).toFixed(0))}` + (t.max_daily_loss ? ` / −$${sz(t.max_daily_loss)} limit` : "");
+    pnlEl.className = v > 0 ? "up" : v < 0 ? "dn" : ""; pnlEl.title = `realized ${t.pnl.realized} · open ${t.pnl.open}`; }
+  document.getElementById("soundBtn").textContent = store.get("sound", true) ? "🔊" : "🔇";
+  const rp = s.replay, rb = document.getElementById("replaybar");
+  rb.classList.toggle("on", !!rp);
+  if (rp){
+    document.getElementById("rpFile").textContent = rp.file || "";
+    document.getElementById("rpPlay").textContent = rp.done ? "✔ finished" : rp.paused ? "▶ Play" : "⏸ Pause";
+    if (document.activeElement !== document.getElementById("rpSpeed")) document.getElementById("rpSpeed").value = rp.speed || 5;
+    document.getElementById("rpSpeedV").textContent = (rp.speed || 5) + "×";
+    document.getElementById("rpPos").textContent = rp.position ? new Date(rp.position * 1000).toLocaleTimeString() : "";
+  }
+  // beep once per new call
+  for (const a of s.alerts.slice(0, 10)){
+    const key = a.t + a.symbol + a.label;
+    if (!seenAlerts.has(key)){ seenAlerts.add(key); if (!firstFeed && store.get("alerts", true)) beep(sayClass(a)); }
+  }
+  firstFeed = false;
   arm.disabled = !t.can_trade;
   arm.title = t.can_trade ? "" : (t.why_not || "");
   document.getElementById("oneclick").checked = !!t.one_click;
@@ -1052,6 +1168,28 @@ document.getElementById("arm").addEventListener("click", async () => {
 });
 document.getElementById("oneclick").addEventListener("change", e => post("/api/trade/oneclick", {on: e.target.checked}));
 document.getElementById("bracket").addEventListener("change", e => post("/api/trade/bracket", {on: e.target.checked}));
+document.getElementById("soundBtn").addEventListener("click", () => { store.set("sound", !store.get("sound", true)); beep("buyer"); poll(true); });
+document.getElementById("rpPlay").addEventListener("click", () => post("/api/replay", {paused: !(state && state.replay && state.replay.paused)}));
+document.getElementById("rpSpeed").addEventListener("change", e => post("/api/replay", {speed: +e.target.value}));
+// hotkeys (ignored while typing in a box): F flatten focused ladder · Esc cancel all on it · +/- add/close one lot · A arm/disarm · L level tool
+let focusedPane = null;
+document.addEventListener("mousedown", e => { const el = e.target.closest(".pane"); if (el && el._pane) focusedPane = el._pane; });
+document.addEventListener("keydown", e => {
+  if (e.target.matches("input, select, textarea") || document.getElementById("modal")) return;
+  const p = focusedPane, d = p && p.data;
+  if (e.key === "a" || e.key === "A"){ document.getElementById("arm").click(); return; }
+  if (!d) return;
+  const lot = store.get("lot", 1);
+  if (e.key === "f" || e.key === "F") flatten(d.symbol);
+  else if (e.key === "Escape") cancelAll(d.symbol);
+  else if (e.key === "+" || e.key === "=") post("/api/trade/adjust", {symbol: d.symbol, shares: lot, mode: "add"}).then(o => toast(o.ok ? "Sent: " + o.sent : "Blocked: " + o.reason, o.ok));
+  else if (e.key === "-" || e.key === "_") post("/api/trade/adjust", {symbol: d.symbol, shares: lot, mode: "close"}).then(o => toast(o.ok ? "Sent: " + o.sent : "Blocked: " + o.reason, o.ok));
+  else if (e.key === "l" || e.key === "L"){ p.view.levelTool = !p.view.levelTool; renderTools(p); }
+  else if (e.key === "b" || e.key === "B"){ if (d.bid) sendOrder(d.symbol, "BUY", d.bid); }
+  else if (e.key === "s" || e.key === "S"){ if (d.ask) sendOrder(d.symbol, "SELL", d.ask); }
+  else return;
+  e.preventDefault();
+});
 document.getElementById("alertsBtn").addEventListener("click", () => {
   const on = !store.get("alerts", true); store.set("alerts", on); applyAlerts();
 });

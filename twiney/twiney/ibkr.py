@@ -422,7 +422,8 @@ class MarketDataSession:
             # the family until the last leg arrives; a lone entry transmits at once
             order = self.order_factory(action, qty, order_type, price, tif, parent, transmit=True)
             self.order_roles[oid] = role
-            self.my_orders[oid] = (symbol, parent)
+            self.my_orders[oid] = {"symbol": symbol, "parent": parent, "action": action, "qty": qty,
+                                   "type": order_type, "tif": tif}
             self.app.placeOrder(oid, self.contract_factory(play), order)
             self.engine.on_order(f"id{oid}", now, symbol=symbol, action=action, qty=float(qty), remaining=float(qty),
                                  type=order_type, lmt=price if order_type == "LMT" else None,
@@ -431,6 +432,23 @@ class MarketDataSession:
             self._orders_seen.add(f"id{oid}")
             self._next_orders = now + 1.0  # refresh the open-order list soon
             return oid
+
+    def modify_order(self, oid, price, now):
+        """IBKR modifies an order by re-sending placeOrder with the same id and new price."""
+        with self._lock:
+            info = self.my_orders.get(int(oid))
+            if self.app is None or not self.ready or info is None:
+                return False
+            if self.gate is None or not self.gate.can_trade():
+                raise RuntimeError("trading gate closed")
+            order = self.order_factory(info["action"], info["qty"], info["type"], price, info["tif"],
+                                       info["parent"], transmit=True)
+            self.app.placeOrder(int(oid), self.contract_factory(self.plays[info["symbol"]]), order)
+            key = self.perm_ids.get(int(oid)) or f"id{oid}"
+            self.engine.on_order(key, now, lmt=price if info["type"] == "LMT" else None,
+                                 aux=price if info["type"] == "STP" else None)
+            self._next_orders = now + 1.0
+            return True
 
     def cancel_order(self, oid, now):
         with self._lock:

@@ -98,6 +98,10 @@ DEFAULTS = {
         "bracket": True,
         # "Flatten" uses a limit this many ticks through the market
         "flatten_slip_ticks": 5,
+        # biggest position (shares) TWINEY will let you build in one symbol
+        "max_position_shares": 1000,
+        # day P&L (realized + open) at or below -this disarms trading for the rest of the session
+        "max_daily_loss": 500,
     },
     "account": {
         # show your pending orders, positions and today's fills (read-only view)

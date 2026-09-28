@@ -68,6 +68,21 @@ Other modes:
 - **Orders · positions · fills (view only):** pending orders, positions with P&L, and today's fills, read from IBKR (`reqAllOpenOrders`, `reqPositions`, `reqExecutions`). Orders are placed and changed in TWS.
 - Plus: the plays list with plain-English distance to each level, feed health, and TWS messages.
 
+## Trading tools
+- **Drag an order** chip on the ladder to another row, or drag its line on the chart, to move it.
+- **Risk sizing:** type a dollar risk in the trade bar and click **size it** — shares = risk ÷ distance from the
+  current price to the play's stop.
+- **Hotkeys** (click a ladder first): **B** buy on the bid · **S** sell on the ask · **+** / **−** add / close one
+  lot (the × dropdown in POSITIONS) · **F** flatten · **Esc** cancel all · **L** level tool · **A** arm / disarm.
+- **Level tool** (＋ level on the chart, or **L**): click the chart to add a level; it is watched for reloads at once
+  and written to `plays.json` as an `extra_levels` entry. Click an added level again to remove it.
+- **Positions panel:** close 1 / 5 / 10 and add 1 / 5 / 10 (× lot), Flatten, all as limits at the touch.
+- **Sound:** a short tone on every call (🔊 / 🔇 in the header).
+- **Replay:** `start_replay.bat` (or `python run_twiney.py --replay recordings/FILE.jsonl --speed 5`) plays a recorded
+  session in the dashboard with pause / play / speed, and practice orders fill against the replayed book.
+- **Limits (config.json → trading):** `max_position_shares` (1,000) caps any one position; `max_daily_loss` ($500)
+  disarms trading for the rest of the session once the day's realized + open P&L reaches it. The header shows day P&L.
+
 ## Trapped traders and reloader map
 - **Tape words:** each print is tagged **IN** (paid the offer — wanted in now) or **OUT** (hit the bid — wanted out now).
   The 30-second read says "impatient buyers paying the offer" / "impatient sellers hitting the bid".
