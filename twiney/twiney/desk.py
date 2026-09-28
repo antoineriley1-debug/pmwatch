@@ -200,6 +200,28 @@ class Desk:
                         "current": self.recording and os.path.abspath(self.engine.recorder.path) == os.path.abspath(path)})
         return out[:40]
 
+    def delete_recording(self, name):
+        """Delete a recording and everything that belongs to it (markers, journal, screenshots)."""
+        name = os.path.basename(name)
+        path = os.path.join(self.dir, name)
+        if not name.endswith(".jsonl") or not os.path.exists(path):
+            return {"ok": False, "reason": "no such recording"}
+        if self.recording and os.path.abspath(self.engine.recorder.path) == os.path.abspath(path):
+            return {"ok": False, "reason": "that one is recording right now — stop it first (space bar)"}
+        stem = name[:-6]
+        removed = []
+        for f in (path, path[:-6] + ".marks.jsonl", path[:-6] + ".journal.md"):
+            if os.path.exists(f):
+                os.remove(f)
+                removed.append(os.path.basename(f))
+        shots = os.path.join(self.dir, "shots")
+        if os.path.isdir(shots):
+            for f in os.listdir(shots):
+                if f.startswith(stem + "-"):
+                    os.remove(os.path.join(shots, f))
+                    removed.append("shots/" + f)
+        return {"ok": True, "removed": removed}
+
     def open_replay(self, name, port, speed=1.0):
         """Start the replay desk for a recording in a second TWINEY on another port."""
         path = os.path.join(self.dir, os.path.basename(name))

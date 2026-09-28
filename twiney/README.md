@@ -72,8 +72,9 @@ Other modes:
 - **💾 Save layout** writes the whole screen (windows, links, sizes, positions, chart settings, columns) to
   `layout.json` next to `config.json`. It loads on every start, in any browser. Until you save, changes live only in
   the browser you made them in. **Reset layout** deletes the saved layout and puts everything back.
-- **Voice follows your screen:** it only reads stocks that are in a window you can see right now. A play that is not up
-  is never spoken. 🗣 on a QUOTE & TRADE window mutes that symbol; **solo** reads only that symbol.
+- **Voice reads one stock at a time:** the stock in the window you last clicked (the window gets a thin gold outline).
+  To pin the voice, click **🗣** in a window's title bar — lit means the voice reads that window's stock; mark more than
+  one if you want two. The header shows which stock the voice is on. 🗣 on a QUOTE & TRADE header mutes that stock.
 - **Clean chart** (the `clean` button above the chart, on by default): only candles, volume, VWAP, your levels and your
   orders. Turn it off to see trapped bands, sneaky pivots, reload marks, absorption bubbles and R/C/P call markers.
 - **Trade from the chart:** right-click at any price for BUY / SELL limit there (and Flatten / Cancel all), or hover
@@ -167,7 +168,8 @@ off the candles you see. Settings live in `config.json → ps60`.
 - **JOURNAL window / key J:** type a note, press Enter. Notes go into the recording and the session journal.
 - **Stop** writes `recordings/NAME.journal.md`: duration, plays, P&L, your notes, markers (with screenshots), every
   call with its grade, and every fill. The JOURNAL window links the last journals.
-- **DESK window:** every recording with size, marker count and a **▶ Replay** button. Replay opens a second TWINEY
+- **DESK window:** every recording with size, marker count, a **▶ Replay** button and a **🗑** that deletes the
+  recording with its markers, journal and screenshots (asks first). Replay opens a second TWINEY
   on the next port in a new tab: **space** = play / pause, **← →** = slower / faster, click a marker to jump there
   (backwards jumps restart the replay and fast-forward). Practice orders fill against the replayed book.
 - `start_replay.bat` still works for replaying from the command line.

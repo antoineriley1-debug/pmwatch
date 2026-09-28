@@ -44,3 +44,8 @@ class DeskTests(unittest.TestCase):
             listed = desk.list_recordings()
             self.assertEqual(listed[0]["marks"][0]["n"], m["n"])
             self.assertTrue(listed[0]["journal"])
+            out = desk.delete_recording(listed[0]["name"])
+            self.assertTrue(out["ok"])
+            self.assertEqual(sorted(out["removed"]), sorted([listed[0]["name"], listed[0]["name"][:-6] + ".marks.jsonl", listed[0]["name"][:-6] + ".journal.md"]))
+            self.assertEqual(desk.list_recordings(), [])
+            self.assertFalse(desk.delete_recording("nope.jsonl")["ok"])

@@ -185,6 +185,8 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                     out = {"ok": True, "notes": desk.add_note(now, str(body.get("text", "")), sym)}
                 elif action == "shot":
                     out = desk.screenshot(now, sym, str(body.get("note", "")))
+                elif action == "delete":
+                    out = desk.delete_recording(str(body.get("name", "")))
                 elif action == "replay":
                     port = self.server.server_address[1] + 1
                     out = desk.open_replay(str(body.get("name", "")), port, float(body.get("speed", 1) or 1))
