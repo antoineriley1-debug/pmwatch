@@ -69,6 +69,12 @@ Other modes:
   remembered. **Reset layout** puts everything back.
 - **Clean chart** (the `clean` button above the chart, on by default): only candles, volume, VWAP, your levels and your
   orders. Turn it off to see trapped bands, sneaky pivots, reload marks, absorption bubbles and R/C/P call markers.
+- **Trade from the chart:** right-click at any price for BUY / SELL limit there (and Flatten / Cancel all), or hover
+  the price and press **B** / **S**. The price scale on the right is real: round prices lined up with the candles.
+- **Footprint window (5-minute):** every ladder has a FOOTPRINT 5m window next to its chart. Inside each 5-minute candle,
+  per price row, it shows shares **sold into the bid × bought at the ask** from the tape. Green cell = buyers 3:1 or
+  more, red = sellers 3:1 or more. Rows group into 1/2/5/10… ticks so they stay readable; wheel to zoom. The regular
+  chart can also show a footprint on any timeframe with its FOOT button.
 - **Chart axes work like TradingView:** pull the price axis down to squeeze, up to expand; pull the time axis right for
   wider bars, left for more bars; wheel to zoom; drag to pan; double-click to reset.
 - **Ladder rows:** the gold row is the last price (gold = price, everywhere). White price = your pivot / level. A lit red / green row is a CONFIRMED reload

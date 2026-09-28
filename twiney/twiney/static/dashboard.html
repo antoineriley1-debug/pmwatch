@@ -92,6 +92,8 @@ tr.retired td{opacity:.55} tr.retired td.status{opacity:1;color:var(--gold)}
 .pane-chart{flex:2 1 520px;min-width:300px;height:440px;min-height:200px;resize:both}
 .pane-book{flex:1 1 380px;min-width:280px;height:440px;min-height:200px;resize:both}
 .pane-tape{flex:1 1 300px;min-width:220px;height:440px;min-height:120px;resize:both}
+.pane-foot{flex:2 1 520px;min-width:300px;height:440px;min-height:200px;resize:both}
+.pane-foot .chart-wrap{flex:1 1 0;margin:4px;min-height:0}
 .pane.sized{flex:0 0 auto}
 .pane.pinned{border-color:var(--gold)}
 .pane-chart .chart-wrap{flex:1 1 0;margin:4px;min-height:0}
@@ -122,6 +124,9 @@ tr.retired td{opacity:.55} tr.retired td.status{opacity:1;color:var(--gold)}
 .st ul{margin:3px 0 0 18px;padding:0;font-size:12.5px;color:#c4cddb} .st li{margin:1px 0}
 .st .p-ps60{margin:4px 0 0;height:auto;overflow:visible}
 .pane.clean .chart-hint{display:none}
+.cmenu{display:block;position:fixed;z-index:60;min-width:200px}
+.cmenu button{display:block;width:100%;margin:3px 0;text-align:left;padding:5px 8px}
+.cmenu .bbuy{background:#0f3d25;border-color:var(--buy);color:#dfffee;font-weight:700} .cmenu .bsell{background:#4a161b;border-color:var(--sell);color:#ffe3e6;font-weight:700}
 .say.remount{border-color:var(--buy)} .say.rejection{border-color:var(--sell)}
 td.grade{font-weight:700} td.grade.READY{color:var(--buy)} td.grade.WATCH{color:var(--gold)} td.grade.PASS{color:var(--sell)}
 .p-body{flex:1 1 0;display:grid;grid-template-columns:minmax(0,1fr) 8px var(--ladder-w,340px);grid-template-rows:minmax(0,1fr);gap:4px;padding:4px 10px;min-height:300px}
@@ -550,6 +555,118 @@ function setFree(on){
 const panesEl = document.getElementById("panes");
 const paneEls = [];
 
+function wireChart(p, cv, v, saveView, isFoot){
+  cv.addEventListener("wheel", e => {
+    e.preventDefault();
+    const r = cv.getBoundingClientRect(), x = e.clientX - r.left;
+    if (x > r.width - 86){                       // over the price axis: stretch / squeeze prices
+      if (v.chartY){ const [lo, hi] = v.chartY; const c = (lo + hi) / 2, f = e.deltaY > 0 ? 1.15 : 1 / 1.15;
+        v.yLo = c - (c - lo) * f; v.yHi = c + (hi - c) * f; }
+    } else if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)){   // shift+wheel or trackpad sideways: pan
+      const d = (e.deltaX || e.deltaY) / v.cw;
+      v.offset = Math.max(0, v.offset - d); v.follow = v.offset < 0.5; v.rightT = null;
+    } else {                                     // zoom, keeping the bar under the cursor where it is
+      const f = e.deltaY > 0 ? 1 / 1.2 : 1.2;
+      const plotW = r.width - 86, barsRight = (plotW - x) / v.cw;   // bars between cursor and right edge
+      v.cw = Math.max(2, Math.min(60, v.cw * f));
+      v.offset = Math.max(0, v.offset + barsRight - (plotW - x) / v.cw);
+      v.follow = v.offset < 0.5; v.rightT = null;
+    }
+    saveView(); drawChart(p);
+  }, {passive: false});
+  cv.addEventListener("mousedown", e => {
+    const r = cv.getBoundingClientRect(), x0 = e.clientX, y0 = e.clientY, onAxis = (e.clientX - r.left) > r.width - 86;
+    const onTime = !onAxis && (e.clientY - r.top) > r.height - 18;   // the time axis: drag left / right to squeeze / stretch bars
+    const yAt = () => v.chartY ? v.chartY[1] - ((e.clientY - r.top) - 8) / ((v.chartH || 1) - 8) * (v.chartY[1] - v.chartY[0]) : null;
+    // mark tool: click the chart to set the chosen level at that price
+    if (v.levelTool && p.data && !onAxis && !onTime){
+      const price = yAt(); if (price == null) return;
+      const tk = price >= 1 ? 0.01 : 0.0001, snapped = +(Math.round(price / tk) * tk).toFixed(4), role = v.levelTool;
+      const names = {second_entry: "2nd entry", trigger: "pivot", target: "target", stop: "stop", extra: "level"};
+      if (role === "extra"){
+        const hit = (p.data.user_levels || []).find(l => l.role === "extra" && Math.abs(l.price - snapped) <= tk * 2);
+        post("/api/level", {symbol: p.data.symbol, price: hit ? hit.price : snapped, on: !hit, role: "extra"})
+          .then(out => toast(out.ok ? (hit ? "Level removed " + px(hit.price) : "Level added " + px(snapped) + " — saved to plays.json") : "Could not save level", out.ok));
+      } else {
+        post("/api/level", {symbol: p.data.symbol, price: snapped, role})
+          .then(out => toast(out.ok ? `${p.data.symbol} ${names[role]} set to ${px(snapped)} — saved to plays.json` : "Could not set " + names[role], out.ok));
+      }
+      v.levelTool = null; renderTools(p);   // one mark per click of the tool
+      return;
+    }
+    // grab one of your level lines and drag it to a new price
+    if (p.data && v.chartY && !onAxis && !onTime && !(e.ctrlKey || e.metaKey)){
+      const price = yAt(), per = (v.chartY[1] - v.chartY[0]) / ((v.chartH || 1) - 8);
+      const nearOrder = (p.data.orders || []).some(o => o.price && Math.abs(o.price - price) <= per * 5);
+      const lv = !nearOrder && (p.data.user_levels || []).find(l => Math.abs(l.price - price) <= per * 5);
+      if (lv){
+        e.preventDefault();
+        p.dragLevel = {role: lv.role, from: lv.price, price: lv.price, label: lv.label};
+        const move = ev => { const pr = v.chartY[1] - ((ev.clientY - r.top) - 8) / ((v.chartH || 1) - 8) * (v.chartY[1] - v.chartY[0]);
+          const tk = pr >= 1 ? 0.01 : 0.0001; p.dragLevel.price = +(Math.round(pr / tk) * tk).toFixed(4); drawChart(p); };
+        const up = async () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up);
+          const d = p.dragLevel; p.dragLevel = null;
+          if (Math.abs(d.price - d.from) < 1e-6) return;
+          let out;
+          if (d.role === "extra"){ await post("/api/level", {symbol: p.data.symbol, price: d.from, on: false, role: "extra"});
+            out = await post("/api/level", {symbol: p.data.symbol, price: d.price, on: true, role: "extra"}); }
+          else out = await post("/api/level", {symbol: p.data.symbol, price: d.price, role: d.role});
+          toast(out.ok ? `${d.label} moved to ${px(d.price)} — saved` : "Could not move " + d.label, out.ok); };
+        window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
+        return;
+      }
+    }
+    // grab a working-order line on the chart and drag it to a new price
+    if (p.data && v.chartY && !onAxis && !onTime){
+      const price = yAt(), per = (v.chartY[1] - v.chartY[0]) / ((v.chartH || 1) - 8);
+      const o = (p.data.orders || []).find(o => o.price && Math.abs(o.price - price) <= per * 5 && o.id != null);
+      if (o){
+        e.preventDefault();
+        p.dragOrder = {id: o.id, price: o.price};
+        const move = ev => { const pr = v.chartY[1] - ((ev.clientY - r.top) - 8) / ((v.chartH || 1) - 8) * (v.chartY[1] - v.chartY[0]);
+          const tk = pr >= 1 ? 0.01 : 0.0001; p.dragOrder.price = Math.round(pr / tk) * tk; drawChart(p); };
+        const up = async () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up);
+          const d = p.dragOrder; p.dragOrder = null;
+          if (Math.abs(d.price - o.price) >= 1e-6){ const out = await post("/api/trade/modify", {id: d.id, price: d.price});
+            toast(out.ok ? "Moved to " + px(out.price) : "Move blocked: " + (out.reason || ""), out.ok); } };
+        window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
+        return;
+      }
+    }
+    const start = {offset: v.offset, yLo: v.yLo, yHi: v.yHi, y: v.chartY ? v.chartY.slice() : null, h: v.chartH || 1, cw: v.cw};
+    let moved = false;
+    cv.classList.add("pan");
+    const move = ev => {
+      const dx = ev.clientX - x0, dy = ev.clientY - y0;
+      if (Math.abs(dx) + Math.abs(dy) > 3) moved = true;
+      if (onAxis && start.y){ const [lo, hi] = start.y; const c = (lo + hi) / 2, f = Math.exp(dy / 150);   // pull down = squeeze, up = expand
+        v.yLo = c - (c - lo) * f; v.yHi = c + (hi - c) * f; }
+      else if (onTime){ v.cw = Math.max(2, Math.min(60, start.cw * Math.exp(dx / 150))); }                     // pull right = wider bars, left = more bars
+      else {
+        v.offset = Math.max(0, start.offset + dx / v.cw);
+        v.follow = v.offset < 0.5; v.rightT = null;
+        if (start.y && !onAxis){ const [lo, hi] = start.y; const per = (hi - lo) / start.h; v.yLo = lo + dy * per; v.yHi = hi + dy * per; }
+      }
+      drawChart(p);
+    };
+    const up = () => { cv.classList.remove("pan"); window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); if (moved) saveView(); };
+    window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
+  });
+  cv.addEventListener("mousemove", e => { const r = cv.getBoundingClientRect(); v.cross = [e.clientX - r.left, e.clientY - r.top];
+    cv.style.cursor = (e.clientX - r.left) > r.width - 86 ? "ns-resize" : (e.clientY - r.top) > r.height - 18 ? "ew-resize" : "";
+    drawChart(p); });
+  cv.addEventListener("mouseleave", () => { v.cross = null; drawChart(p); });
+  cv.addEventListener("contextmenu", e => {
+    e.preventDefault();
+    if (!p.data || !v.chartY) return;
+    const r = cv.getBoundingClientRect();
+    const pr = v.chartY[1] - ((e.clientY - r.top) - 8) / ((v.chartH || 1) - 8) * (v.chartY[1] - v.chartY[0]);
+    const tk = pr >= 1 ? 0.01 : 0.0001, price = +(Math.round(pr / tk) * tk).toFixed(4);
+    chartMenu(p, v, e.clientX, e.clientY, price);
+  });
+  cv.addEventListener("dblclick", () => { v.cw = isFoot ? 44 : 7; v.offset = 0; v.yLo = v.yHi = null; v.follow = true; v.rightT = null; saveView(); drawChart(p); });
+}
+
 function ensurePane(i){
   if (paneEls[i]) return paneEls[i];
   // every ladder is FOUR windows: quote & trade strip, chart, ladder, time & sales.
@@ -581,119 +698,23 @@ function ensurePane(i){
     return el;
   };
   const elTrade = mk("pane-trade", "trade", "QUOTE & TRADE", `<div class="p-head"></div><div class="p-changed" hidden></div><div class="p-keep"></div><div class="tradebar"></div><div class="empty" hidden></div>`);
-  const el = mk("pane-chart", "chart", "CHART", `<div class="chart-wrap"><div class="chart-tools"></div><canvas></canvas><div class="chart-hint">wheel = zoom · drag = pan · pull price axis up/down = expand/squeeze · pull time axis left/right = more/fewer bars · dbl-click = reset</div></div>`);
+  const el = mk("pane-chart", "chart", "CHART", `<div class="chart-wrap"><div class="chart-tools"></div><canvas></canvas><div class="chart-hint">right-click = BUY / SELL at that price · hover + B / S = same · wheel = zoom · drag = pan · pull price axis = squeeze/expand · pull time axis = more/fewer bars · dbl-click = reset</div></div>`);
   const elBook = mk("pane-book", "book", "LADDER", `<div class="ladder-wrap"></div>`);
   const elTape = mk("pane-tape", "tape", "TIME & SALES", `<div class="p-tape"></div>`);
+  const elFoot = mk("pane-foot", "foot", "FOOTPRINT 5m", `<div class="chart-wrap"><div class="chart-tools"><span class="dim" style="font-size:11px;background:rgba(17,22,31,.85);padding:1px 6px;border-radius:4px">5-minute footprint · sold into bid × bought at ask · wheel = zoom · right-click = trade</span></div><canvas></canvas></div>`);
+  p.fview = Object.assign({cw: 44, offset: 0, yLo: null, yHi: null, follow: true, cross: null}, store.get("fview." + i, {}));
   elBook.dataset.cols = (store.get("pcols." + i, []) || []).join(" ");
   Object.assign(p, {el, elTrade, elBook, elTape,
     head: elTrade.querySelector(".p-head"), changed: elTrade.querySelector(".p-changed"), keep: elTrade.querySelector(".p-keep"),
     tradebar: elTrade.querySelector(".tradebar"), empty: elTrade.querySelector(".empty"),
     canvas: el.querySelector("canvas"), tools: el.querySelector(".chart-tools"),
+    elFoot, fcanvas: elFoot.querySelector("canvas"),
     ladder: elBook.querySelector(".ladder-wrap"), tape: elTape.querySelector(".p-tape")});
   // chart interaction: wheel zoom, drag pan, price-axis stretch, crosshair, double-click reset
   const cv = p.canvas, v = p.view;
   const saveView = () => store.set("view." + i, {cw: v.cw, offset: v.offset, yLo: v.yLo, yHi: v.yHi, follow: v.follow});
-  cv.addEventListener("wheel", e => {
-    e.preventDefault();
-    const r = cv.getBoundingClientRect(), x = e.clientX - r.left;
-    if (x > r.width - 86){                       // over the price axis: stretch / squeeze prices
-      if (p.chartY){ const [lo, hi] = p.chartY; const c = (lo + hi) / 2, f = e.deltaY > 0 ? 1.15 : 1 / 1.15;
-        v.yLo = c - (c - lo) * f; v.yHi = c + (hi - c) * f; }
-    } else if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)){   // shift+wheel or trackpad sideways: pan
-      const d = (e.deltaX || e.deltaY) / v.cw;
-      v.offset = Math.max(0, v.offset - d); v.follow = v.offset < 0.5; v.rightT = null;
-    } else {                                     // zoom, keeping the bar under the cursor where it is
-      const f = e.deltaY > 0 ? 1 / 1.2 : 1.2;
-      const plotW = r.width - 86, barsRight = (plotW - x) / v.cw;   // bars between cursor and right edge
-      v.cw = Math.max(2, Math.min(60, v.cw * f));
-      v.offset = Math.max(0, v.offset + barsRight - (plotW - x) / v.cw);
-      v.follow = v.offset < 0.5; v.rightT = null;
-    }
-    saveView(); drawChart(p);
-  }, {passive: false});
-  cv.addEventListener("mousedown", e => {
-    const r = cv.getBoundingClientRect(), x0 = e.clientX, y0 = e.clientY, onAxis = (e.clientX - r.left) > r.width - 86;
-    const onTime = !onAxis && (e.clientY - r.top) > r.height - 18;   // the time axis: drag left / right to squeeze / stretch bars
-    const yAt = () => p.chartY ? p.chartY[1] - ((e.clientY - r.top) - 8) / ((p.chartH || 1) - 8) * (p.chartY[1] - p.chartY[0]) : null;
-    // mark tool: click the chart to set the chosen level at that price
-    if (v.levelTool && p.data && !onAxis && !onTime){
-      const price = yAt(); if (price == null) return;
-      const tk = price >= 1 ? 0.01 : 0.0001, snapped = +(Math.round(price / tk) * tk).toFixed(4), role = v.levelTool;
-      const names = {second_entry: "2nd entry", trigger: "pivot", target: "target", stop: "stop", extra: "level"};
-      if (role === "extra"){
-        const hit = (p.data.user_levels || []).find(l => l.role === "extra" && Math.abs(l.price - snapped) <= tk * 2);
-        post("/api/level", {symbol: p.data.symbol, price: hit ? hit.price : snapped, on: !hit, role: "extra"})
-          .then(out => toast(out.ok ? (hit ? "Level removed " + px(hit.price) : "Level added " + px(snapped) + " — saved to plays.json") : "Could not save level", out.ok));
-      } else {
-        post("/api/level", {symbol: p.data.symbol, price: snapped, role})
-          .then(out => toast(out.ok ? `${p.data.symbol} ${names[role]} set to ${px(snapped)} — saved to plays.json` : "Could not set " + names[role], out.ok));
-      }
-      v.levelTool = null; renderTools(p);   // one mark per click of the tool
-      return;
-    }
-    // grab one of your level lines and drag it to a new price
-    if (p.data && p.chartY && !onAxis && !onTime && !(e.ctrlKey || e.metaKey)){
-      const price = yAt(), per = (p.chartY[1] - p.chartY[0]) / ((p.chartH || 1) - 8);
-      const nearOrder = (p.data.orders || []).some(o => o.price && Math.abs(o.price - price) <= per * 5);
-      const lv = !nearOrder && (p.data.user_levels || []).find(l => Math.abs(l.price - price) <= per * 5);
-      if (lv){
-        e.preventDefault();
-        p.dragLevel = {role: lv.role, from: lv.price, price: lv.price, label: lv.label};
-        const move = ev => { const pr = p.chartY[1] - ((ev.clientY - r.top) - 8) / ((p.chartH || 1) - 8) * (p.chartY[1] - p.chartY[0]);
-          const tk = pr >= 1 ? 0.01 : 0.0001; p.dragLevel.price = +(Math.round(pr / tk) * tk).toFixed(4); drawChart(p); };
-        const up = async () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up);
-          const d = p.dragLevel; p.dragLevel = null;
-          if (Math.abs(d.price - d.from) < 1e-6) return;
-          let out;
-          if (d.role === "extra"){ await post("/api/level", {symbol: p.data.symbol, price: d.from, on: false, role: "extra"});
-            out = await post("/api/level", {symbol: p.data.symbol, price: d.price, on: true, role: "extra"}); }
-          else out = await post("/api/level", {symbol: p.data.symbol, price: d.price, role: d.role});
-          toast(out.ok ? `${d.label} moved to ${px(d.price)} — saved` : "Could not move " + d.label, out.ok); };
-        window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
-        return;
-      }
-    }
-    // grab a working-order line on the chart and drag it to a new price
-    if (p.data && p.chartY && !onAxis && !onTime){
-      const price = yAt(), per = (p.chartY[1] - p.chartY[0]) / ((p.chartH || 1) - 8);
-      const o = (p.data.orders || []).find(o => o.price && Math.abs(o.price - price) <= per * 5 && o.id != null);
-      if (o){
-        e.preventDefault();
-        p.dragOrder = {id: o.id, price: o.price};
-        const move = ev => { const pr = p.chartY[1] - ((ev.clientY - r.top) - 8) / ((p.chartH || 1) - 8) * (p.chartY[1] - p.chartY[0]);
-          const tk = pr >= 1 ? 0.01 : 0.0001; p.dragOrder.price = Math.round(pr / tk) * tk; drawChart(p); };
-        const up = async () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up);
-          const d = p.dragOrder; p.dragOrder = null;
-          if (Math.abs(d.price - o.price) >= 1e-6){ const out = await post("/api/trade/modify", {id: d.id, price: d.price});
-            toast(out.ok ? "Moved to " + px(out.price) : "Move blocked: " + (out.reason || ""), out.ok); } };
-        window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
-        return;
-      }
-    }
-    const start = {offset: v.offset, yLo: v.yLo, yHi: v.yHi, y: p.chartY ? p.chartY.slice() : null, h: p.chartH || 1, cw: v.cw};
-    let moved = false;
-    cv.classList.add("pan");
-    const move = ev => {
-      const dx = ev.clientX - x0, dy = ev.clientY - y0;
-      if (Math.abs(dx) + Math.abs(dy) > 3) moved = true;
-      if (onAxis && start.y){ const [lo, hi] = start.y; const c = (lo + hi) / 2, f = Math.exp(dy / 150);   // pull down = squeeze, up = expand
-        v.yLo = c - (c - lo) * f; v.yHi = c + (hi - c) * f; }
-      else if (onTime){ v.cw = Math.max(2, Math.min(60, start.cw * Math.exp(dx / 150))); }                     // pull right = wider bars, left = more bars
-      else {
-        v.offset = Math.max(0, start.offset + dx / v.cw);
-        v.follow = v.offset < 0.5; v.rightT = null;
-        if (start.y && !onAxis){ const [lo, hi] = start.y; const per = (hi - lo) / start.h; v.yLo = lo + dy * per; v.yHi = hi + dy * per; }
-      }
-      drawChart(p);
-    };
-    const up = () => { cv.classList.remove("pan"); window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); if (moved) saveView(); };
-    window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
-  });
-  cv.addEventListener("mousemove", e => { const r = cv.getBoundingClientRect(); v.cross = [e.clientX - r.left, e.clientY - r.top];
-    cv.style.cursor = (e.clientX - r.left) > r.width - 86 ? "ns-resize" : (e.clientY - r.top) > r.height - 18 ? "ew-resize" : "";
-    drawChart(p); });
-  cv.addEventListener("mouseleave", () => { v.cross = null; drawChart(p); });
-  cv.addEventListener("dblclick", () => { v.cw = 7; v.offset = 0; v.yLo = v.yHi = null; v.follow = true; v.rightT = null; saveView(); drawChart(p); });
+  wireChart(p, cv, v, saveView, false);
+  wireChart(p, p.fcanvas, p.fview, () => store.set("fview." + i, {cw: p.fview.cw, offset: p.fview.offset, yLo: p.fview.yLo, yHi: p.fview.yHi, follow: p.fview.follow}), true);
   p.tools.addEventListener("change", e => {
     if (e.target.dataset.mark){ v.levelTool = e.target.value || null; renderTools(p); }
   });
@@ -704,6 +725,7 @@ function ensurePane(i){
     if (tf){ store.set("tf." + i, +tf); v.offset = 0; v.follow = true; drawChart(p); renderTools(p); }
 
     if (e.target.dataset.vwap){ store.set("vwap", !store.get("vwap", true)); paneEls.forEach(q => { drawChart(q); renderTools(q); }); }
+    if (e.target.dataset.foot){ store.set("foot", !store.get("foot", false)); paneEls.forEach(q => { drawChart(q); renderTools(q); }); }
     if (e.target.dataset.clean){ store.set("clean", !store.get("clean", true)); paneEls.forEach(q => { q.el.classList.toggle("clean", store.get("clean", true)); drawChart(q); renderTools(q); }); }
     if (e.target.dataset.fit){ const n = aggBars(p.data ? p.data.bars : [], store.get("tf." + i, 1)).length || 1;
       v.cw = Math.max(2, Math.min(40, (cv.clientWidth - 86) / n)); v.offset = 0; v.follow = true; v.yLo = v.yHi = null; saveView(); drawChart(p); }
@@ -798,12 +820,45 @@ function renderTools(p){
   p.tools.innerHTML = [1, 5, 15, 60].map(m => `<button data-tf="${m}" class="${tf===m?"on":""}">${m}m</button>`).join("")
     + `<button data-fit="1" title="show all bars">fit</button>`
     + `<button data-vwap="1" class="${store.get("vwap", true) ? "on" : ""}" title="Session VWAP: the average price paid today, weighted by volume. Above = buyers in control of the day, below = sellers.">VWAP</button>`
+    + `<button data-foot="1" class="${store.get("foot", false) ? "on" : ""}" title="Footprint: inside every candle, per price, shares SOLD into the bid × BOUGHT at the ask. Green cell = buyers 3:1 or more, red = sellers 3:1 or more. Zoom in (wheel) to read the numbers.">FOOT</button>`
     + `<button data-clean="1" class="${store.get("clean", true) ? "on" : ""}" title="Clean chart: only candles, volume, VWAP, your levels and your orders. Off = also show trapped bands, sneaky pivots, reload marks, bubbles and R/C/P calls.">clean</button>`
     + `<select data-mark="1" class="lvl ${p.view.levelTool ? "on" : ""}" title="Mark a level on the chart: pick what it is, then click the chart at the price. Saved to plays.json.">
         <option value="">＋ mark…</option><option value="second_entry" ${p.view.levelTool==="second_entry"?"selected":""}>2nd entry</option>
         <option value="trigger" ${p.view.levelTool==="trigger"?"selected":""}>pivot</option><option value="target" ${p.view.levelTool==="target"?"selected":""}>target</option>
         <option value="stop" ${p.view.levelTool==="stop"?"selected":""}>stop</option><option value="extra" ${p.view.levelTool==="extra"?"selected":""}>extra level</option></select>`;
   p.canvas.classList.toggle("lvltool", !!p.view.levelTool);
+}
+// ---------- chart trading: right-click (or hover + B / S) = limit order at that price
+function chartPrice(p){
+  const v = [p.view, p.fview].find(v => v && v.cross && v.chartY);
+  if (!v) return null;
+  const [, cy] = v.cross;
+  if (cy > (v.chartH || 0)) return null;
+  const pr = v.chartY[1] - (cy - 8) / ((v.chartH || 1) - 8) * (v.chartY[1] - v.chartY[0]);
+  const tk = pr >= 1 ? 0.01 : 0.0001;
+  return +(Math.round(pr / tk) * tk).toFixed(4);
+}
+function chartMenu(p, v, x, y, price){
+  const old = document.getElementById("cmenu"); if (old) old.remove();
+  const d = p.data, t = T(), on = canTrade();
+  const m = document.createElement("div"); m.id = "cmenu"; m.className = "pop cmenu";
+  m.innerHTML = `<div class="dim" style="font-size:11px;margin-bottom:4px">${esc(d.symbol)} @ <b style="color:var(--gold)">${px(price)}</b></div>
+    <button class="bbuy" data-do="buy" ${on ? "" : "disabled"}>BUY ${sz(t.default_shares)} limit @ ${px(price)}</button>
+    <button class="bsell" data-do="sell" ${on ? "" : "disabled"}>SELL ${sz(t.default_shares)} limit @ ${px(price)}</button>
+    ${d.position ? `<button class="bflat" data-do="flat" ${on ? "" : "disabled"}>Flatten ${esc(d.symbol)}</button>` : ""}
+    ${d.orders.length ? `<button data-do="cxl">Cancel all (${d.orders.length})</button>` : ""}
+    ${!on ? `<div class="dim" style="font-size:11px;margin-top:4px">${esc(whyNot())}</div>` : ""}`;
+  m.style.left = Math.min(x, window.innerWidth - 230) + "px"; m.style.top = Math.min(y, window.innerHeight - 160) + "px";
+  document.body.appendChild(m);
+  m.addEventListener("click", e => {
+    const b = e.target.closest("button[data-do]"); if (!b) return;
+    m.remove();
+    if (b.dataset.do === "buy") sendOrder(d.symbol, "BUY", price);
+    else if (b.dataset.do === "sell") sendOrder(d.symbol, "SELL", price);
+    else if (b.dataset.do === "flat") flatten(d.symbol);
+    else if (b.dataset.do === "cxl") cancelAll(d.symbol);
+  });
+  setTimeout(() => document.addEventListener("mousedown", ev => { if (!m.contains(ev.target)) m.remove(); }, {once: true}), 0);
 }
 function ps60HTML(d){
   const s = d.ps60; if (!s) return "";
@@ -918,7 +973,7 @@ function renderPane(p, d){
   p.head.innerHTML = `<span class="sym">${esc(d.symbol)}</span>
     <button data-max="1" title="maximize / restore the chart">${p.el.classList.contains("max") ? "⤡" : "⤢"}</button>
     <span class="menu gear${gearOpen}"><button title="windows and columns for this ladder">⚙</button><div class="pop">
-      <h5>WINDOWS FOR THIS LADDER</h5>${win("chart", "Chart")}${win("book", "Ladder")}${win("tape", "Time & sales")}
+      <h5>WINDOWS FOR THIS LADDER</h5>${win("chart", "Chart")}${win("foot", "Footprint (5m)")}${win("book", "Ladder")}${win("tape", "Time & sales")}
       <hr><h5>LADDER COLUMNS</h5>${col("notrade", "BUY / SELL click columns")}${col("nomem", "Sold-into-bid / bought-at-ask memory bars")}${col("nolegend", "Legend text")}
     </div></span>
     <span class="pill ${pl.side==="long"?"ok":"bad"}">${esc(pl.side.toUpperCase())}</span>
@@ -943,7 +998,7 @@ function renderPane(p, d){
     <button class="bflat" data-do="flat" ${on && pos ? "" : "disabled"}>Flatten</button>
     <button data-do="cxl" ${d.orders.length ? "" : "disabled"}>Cancel all (${d.orders.length})</button>
     <span class="pos">${pos ? `<span class="${pos.qty > 0 ? "buy" : "sell"}">${pos.qty > 0 ? "LONG" : "SHORT"} ${sz(Math.abs(pos.qty))}</span> @ ${px(pos.avg_cost)}${pos.pnl != null ? ` · <span class="${pos.pnl >= 0 ? "buy" : "sell"}">${pos.pnl >= 0 ? "+" : "−"}$${sz(Math.abs(pos.pnl).toFixed(0))}</span>` : ""}` : `<span class="dim">flat</span>`}</span>
-    ${!on ? `<span class="dim" style="font-size:11px">${esc(whyNot())}</span>` : `<span class="keys">keys: B buy bid · S sell ask · + add · − close · F flatten · Esc cancel all · 2 mark 2nd entry · L extra level · A arm</span>`}`;
+    ${!on ? `<span class="dim" style="font-size:11px">${esc(whyNot())}</span>` : `<span class="keys">keys: B / S buy or sell at the price under the mouse on the chart (else bid / ask) · + add · − close · F flatten · Esc cancel all · 2 mark 2nd entry · L extra level · A arm</span>`}`;
   if (d.changed){
     p.changed.hidden = false;
     p.changed.textContent = `This ladder switched from ${d.changed.prev} to ${d.symbol} (${d.changed.reason === "pinned" ? "you pinned it" : "it is closer to its level"}) ${ago(state.now - d.changed.t)} ago.`;
@@ -991,8 +1046,12 @@ const LEVEL_STYLE = {trigger:["#dbe3ee",[],1.6], second_entry:["#3fd0ff",[6,4],1
   target:["#26d07c",[2,4],1], stop:["#ff4d5e",[2,4],1]};
 
 function drawChart(p){
-  const d = p.data, cv = p.canvas;
-  if (!d) return;
+  if (!p.data) return;
+  drawOne(p, p.canvas, p.view, false);
+  if (p.fcanvas && p.elFoot.offsetParent !== null) drawOne(p, p.fcanvas, p.fview, true);
+}
+function drawOne(p, cv, v, isFoot){
+  const d = p.data;
   const W = cv.clientWidth, H = cv.clientHeight;
   if (!W || !H) return;
   const dpr = window.devicePixelRatio || 1;
@@ -1000,9 +1059,9 @@ function drawChart(p){
   const g = cv.getContext("2d");
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
   g.clearRect(0, 0, W, H);
-  const tf = store.get("tf." + p.i, 1), span = tf * 60;
+  const tf = isFoot ? 5 : store.get("tf." + p.i, 1), span = tf * 60;
   const labelW = 86, plotW = W - labelW, volH = Math.max(28, H * 0.16), plotH = H - volH - 18;
-  const v = p.view, cw = v.cw;
+  const cw = v.cw;
   const all = aggBars(d.bars, tf);
   const n = Math.max(5, Math.floor(plotW / cw));
   // when scrolled back, the right edge is pinned to a TIMESTAMP so new bars don't shove the view
@@ -1014,7 +1073,7 @@ function drawChart(p){
   off = Math.min(off, Math.max(0, all.length - 2));
   const bars = all.slice(Math.max(0, all.length - off - n), all.length - off);
   v.rightT = v.follow ? null : (bars.length ? bars[bars.length - 1][0] : null);
-  p.chartH = plotH;
+  v.chartH = plotH;
   g.font = "11px ui-monospace, Menlo, Consolas, monospace";
   if (!bars.length){
     g.fillStyle = "#7b889e"; g.fillText("Chart builds as trades come in…", 12, 40);
@@ -1045,14 +1104,25 @@ function drawChart(p){
     }
     v.autoY = {sym: d.symbol, tf, lo, hi};
   }
-  p.chartY = [lo, hi];
+  v.chartY = [lo, hi];
   const y = v => 8 + (hi - v) / (hi - lo) * (plotH - 8);
   const x0 = plotW - bars.length * cw;
   const xOf = t0 => x0 + ((t0 - (bars.length ? bars[0][0] : 0)) / span) * cw + cw / 2;
 
-  // grid
+  // grid + a real price scale on the right, at round prices, lined up with the candles
   g.strokeStyle = "#1b2433"; g.lineWidth = 1;
-  for (let k = 0; k <= 4; k++){ const yy = 8 + k * (plotH - 8) / 4; g.beginPath(); g.moveTo(0, yy); g.lineTo(plotW, yy); g.stroke(); }
+  {
+    const raw = (hi - lo) / Math.max(3, Math.floor((plotH - 8) / 34));
+    const mag = Math.pow(10, Math.floor(Math.log10(raw))), m = raw / mag;
+    const step = (m <= 1 ? 1 : m <= 2 ? 2 : m <= 2.5 ? 2.5 : m <= 5 ? 5 : 10) * mag;
+    g.fillStyle = "#7b889e";
+    for (let pr = Math.ceil(lo / step) * step; pr <= hi; pr += step){
+      const yy = y(pr);
+      g.beginPath(); g.moveTo(0, yy); g.lineTo(plotW, yy); g.stroke();
+      g.fillText(px(pr), plotW + 4, yy + 4);
+    }
+    g.strokeStyle = "#2a3548"; g.beginPath(); g.moveTo(plotW + .5, 0); g.lineTo(plotW + .5, plotH); g.stroke();
+  }
 
   // your levels: band + line + label
   const tickOf = v => v >= 1 ? 0.01 : 0.0001;
@@ -1069,7 +1139,7 @@ function drawChart(p){
     g.fillStyle = "#0a0d12"; g.fillText(`${l.label} ${px(lp)}`.slice(0, 13), plotW + 3, yy + 4);
   }
 
-  const clean = store.get("clean", true);
+  const clean = isFoot || store.get("clean", true);
   // PS60: the second-entry line (the new high / low to get back through) and sneaky pivots
   if (d.ps60 && !clean){
     const se = d.ps60.se;
@@ -1113,16 +1183,46 @@ function drawChart(p){
       g.globalAlpha = 1;
     }
   }
-  // candles
+  // candles (hollow when the footprint is on, so the cells stay readable)
+  const foot = (isFoot || store.get("foot", false)) && (d.footprint || []).length;
   for (let k = 0; k < bars.length; k++){
     const b = bars[k], x = x0 + k * cw + cw / 2, up = b[4] >= b[1];
     g.strokeStyle = g.fillStyle = up ? "#26d07c" : "#ff4d5e";
     g.beginPath(); g.moveTo(x, y(b[2])); g.lineTo(x, y(b[3])); g.stroke();
     const top = y(Math.max(b[1], b[4])), bh = Math.max(1, Math.abs(y(b[1]) - y(b[4])));
-    g.fillRect(x - cw * 0.35, top, cw * 0.7, bh);
+    if (foot){ g.lineWidth = 1; g.strokeRect(x - cw * 0.45, top, cw * 0.9, bh); }
+    else g.fillRect(x - cw * 0.35, top, cw * 0.7, bh);
+  }
+  // footprint: per candle, per price: sold into bid × bought at ask
+  if (foot){
+    const cells = {};                                   // bar start -> price -> [buy, sell]
+    for (const [m, rows] of d.footprint){
+      const t0 = tf === 1 ? m : aggBars([[m, 0, 0, 0, 0, 0, 0, 0]], tf)[0][0];
+      const bucket = cells[t0] = cells[t0] || {};
+      for (const [pr, buy, sell] of rows){ const c = bucket[pr] = bucket[pr] || [0, 0]; c[0] += buy; c[1] += sell; }
+    }
+    // group prices into rows tall enough to read: 1, 2, 5, 10, 25, 50 or 100 ticks per row
+    const tk = lo >= 1 ? 0.01 : 0.0001, pxPerTick = Math.abs(y(lo) - y(lo + tk));
+    const mult = [1, 2, 5, 10, 25, 50, 100].find(m => pxPerTick * m >= 11) || 100;
+    const step = tk * mult, rowH = pxPerTick * mult;
+    const showText = cw >= 34 && rowH >= 10;
+    g.font = "9px ui-monospace, Menlo, Consolas, monospace"; g.textAlign = "center";
+    for (let k = 0; k < bars.length; k++){
+      const b = bars[k], bucket = cells[b[0]]; if (!bucket) continue;
+      const x = x0 + k * cw + cw / 2, rows = {};
+      for (const pr in bucket){ const r0 = Math.floor((+pr + 1e-9) / step) * step; const c = rows[r0] = rows[r0] || [0, 0]; c[0] += bucket[pr][0]; c[1] += bucket[pr][1]; }
+      for (const r0 in rows){
+        const p_ = +r0 + step / 2; if (p_ + step / 2 < lo || p_ - step / 2 > hi) continue;
+        const [buy, sell] = rows[r0], yy = y(p_), h = Math.max(2, rowH - 1);
+        const bg = buy >= 3 * sell && buy >= 300 ? "rgba(38,208,124,.4)" : sell >= 3 * buy && sell >= 300 ? "rgba(255,77,94,.4)" : "rgba(123,136,158,.16)";
+        g.fillStyle = bg; g.fillRect(x - cw * 0.46, yy - h / 2, cw * 0.92, h);
+        if (showText){ g.fillStyle = "#e8eef8"; g.fillText(`${kfmt(sell)}×${kfmt(buy)}`, x, yy + 3); }
+      }
+    }
+    g.textAlign = "start"; g.font = "11px ui-monospace, Menlo, Consolas, monospace";
   }
   // session VWAP from the 1-minute bars, restarting each New York day
-  if (store.get("vwap", true) && d.bars.length && bars.length){
+  if (!isFoot && store.get("vwap", true) && d.bars.length && bars.length){
     const eo = etOffset(d.bars[d.bars.length - 1][0]);
     let day = null, pv = 0, vol = 0, k = 0;
     const firstT = bars[0][0], lastT = bars[bars.length - 1][0] + span;
@@ -1439,8 +1539,8 @@ document.addEventListener("keydown", e => {
   else if (e.key === "-" || e.key === "_") post("/api/trade/adjust", {symbol: d.symbol, shares: lot, mode: "close"}).then(o => toast(o.ok ? "Sent: " + o.sent : "Blocked: " + o.reason, o.ok));
   else if (e.key === "2"){ p.view.levelTool = "second_entry"; renderTools(p); toast("Click the chart where the 2nd entry is", true); }
   else if (e.key === "l" || e.key === "L"){ p.view.levelTool = p.view.levelTool ? null : "extra"; renderTools(p); }
-  else if (e.key === "b" || e.key === "B"){ if (d.bid) sendOrder(d.symbol, "BUY", d.bid); }
-  else if (e.key === "s" || e.key === "S"){ if (d.ask) sendOrder(d.symbol, "SELL", d.ask); }
+  else if (e.key === "b" || e.key === "B"){ const cp = chartPrice(p); if (cp) sendOrder(d.symbol, "BUY", cp); else if (d.bid) sendOrder(d.symbol, "BUY", d.bid); }
+  else if (e.key === "s" || e.key === "S"){ const cp = chartPrice(p); if (cp) sendOrder(d.symbol, "SELL", cp); else if (d.ask) sendOrder(d.symbol, "SELL", d.ask); }
   else return;
   e.preventDefault();
 });
@@ -1465,7 +1565,7 @@ document.getElementById("resetLayout").addEventListener("click", () => {
   paneEls.forEach(p => { p.elBook.dataset.cols = ""; });
   applyAlerts();
   paneEls.forEach(p => { p.els.forEach(el => { el.style.width = ""; el.style.height = ""; delete el.dataset.sized; el.classList.remove("sized", "max"); });
-    Object.assign(p.view, {cw: 7, offset: 0, yLo: null, yHi: null, follow: true}); renderTools(p); });
+    Object.assign(p.view, {cw: 7, offset: 0, yLo: null, yHi: null, follow: true}); Object.assign(p.fview, {cw: 44, offset: 0, yLo: null, yHi: null, follow: true}); renderTools(p); });
   document.body.classList.remove("has-max");
   paneEls.forEach(p => p.els.forEach(el => panesEl.appendChild(el)));
 });

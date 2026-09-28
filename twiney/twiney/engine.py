@@ -57,6 +57,7 @@ class SymbolState:
         self.daily = {}         # day start -> [o, h, l, c] from IBKR daily bars (ATR)
         self.remounts = set()   # (level, kind, t) already called
         self.sizes = {ASK: {}, BID: {}}   # last aggregated size per price on each side (voice call-outs)
+        self.foot = {}          # minute -> {price_key: [bought at ask, sold into bid]} (footprint chart)
         self.voice_last = {}    # (side, price_key, kind) -> t of the last call-out
         self.remount_last = {}  # (level, kind) -> t of the last call (cooldown)
         self.remount_check_t = 0.0
@@ -251,6 +252,12 @@ class Engine:
             st.l1["last"] = price
             st.bar_update(t, price, size, rec["side"])
             k = price_key(price)
+            if rec["side"] in ("buy", "sell"):
+                fm = st.foot.setdefault(int(t // BAR_SECONDS) * BAR_SECONDS, {})
+                cell = fm.setdefault(k, [price, 0.0, 0.0])
+                cell[1 if rec["side"] == "buy" else 2] += size
+                if len(st.foot) > 240:
+                    del st.foot[min(st.foot)]
             st.memory.append((t, k, price, rec["side"], size))
             while st.memory and t - st.memory[0][0] > MEMORY_SECONDS:
                 st.memory.popleft()
@@ -1118,6 +1125,8 @@ class Engine:
                        for o in self._pending(sym)],
             "position": self._position_view(sym, st.price()),
             "bars": bars,
+            "footprint": [[m, [[round(c[0], 4), round(c[1]), round(c[2])] for c in sorted(cells.values(), key=lambda c: c[0])]]
+                          for m, cells in sorted(st.foot.items())[-150:]],
             "marks": [[m, fmt_price(v[0]), side, round(v[1])] for (m, _k, side), v in st.marks.items()
                       if m >= first_bar],
             "events": [[a["t"], a["price"], a["label"], a["side"]] for a in sym_alerts if a["t"] >= first_bar][:60],
