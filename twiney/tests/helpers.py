@@ -4,10 +4,10 @@ from twiney.book import ASK, BID, DELETE, INSERT, UPDATE, Book
 from twiney.config import build_config
 
 PLAYS = [
-    {"symbol": "AAA", "side": "long", "trigger": 10.00, "second_entry": 9.90},
-    {"symbol": "BBB", "side": "short", "trigger": 50.00, "second_entry": 50.40},
-    {"symbol": "CCC", "side": "long", "trigger": 20.00, "second_entry": 19.80},
-    {"symbol": "DDD", "side": "long", "trigger": 5.00, "second_entry": 4.95},
+    {"symbol": "AAA", "side": "long", "trigger": 10.00, "second_entry": 10.10},
+    {"symbol": "BBB", "side": "short", "trigger": 50.00, "second_entry": 49.60},
+    {"symbol": "CCC", "side": "long", "trigger": 20.00, "second_entry": 20.20},
+    {"symbol": "DDD", "side": "long", "trigger": 5.00, "second_entry": 5.05},
 ]
 
 

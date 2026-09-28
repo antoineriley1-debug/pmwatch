@@ -30,7 +30,9 @@ The launchers create `config.json` and `plays.json` from the examples if they ar
 ## Workflow
 All commands run from this `twiney/` folder.
 
-1. `cp plays.example.json plays.json`, then put in your PS60 plays. The example prices are placeholders.
+1. `cp plays.example.json plays.json`, then put in your PS60 plays. The example prices are placeholders. `pivot` is the
+   60-minute pivot (the old `trigger` key still works); `second_entry` is optional and sits **beyond** the pivot (the new high after a long break, the new low after
+   a short break) — leave it out and TWINEY finds it once the pivot breaks. `mp` and `atr` are your numbers from the chart.
 2. `cp config.example.json config.json`, then set the port: 7497 for TWS paper, 7496 for TWS live, 4002 for Gateway paper, 4001 for Gateway live.
 3. Install IBKR's official TWS API Python package so `ibapi` is available. Download the TWS API from IBKR, then run `python -m pip install .` inside `source/pythonclient`. The `ibapi` package on PyPI is an old 9.x build, so don't use it.
 4. Start TWS or IB Gateway. In the API settings, enable socket clients. Leave "Read-Only API" ticked
@@ -50,15 +52,15 @@ Other modes:
 
 ## What it does
 - **L1 on every play** (`reqMktData`).
-- **Ranks every symbol** by fractional distance to its PS60 **trigger and second entry**, whichever is closer.
+- **Ranks every symbol** by fractional distance to its PS60 **pivot and second entry**, whichever is closer.
 - **Three full-depth slots** go to the closest symbols. Each slot gets Smart Depth (`reqMktDepth`, 10 rows requested, 5 shown) plus tick-by-tick prints (`reqTickByTickData AllLast`).
 - **Slot rotation uses hysteresis.** A challenger must be 15% closer than the worst incumbent, and that incumbent must have held its slot for at least 20 s. If IBKR rejects a depth request (309/10092), that symbol is skipped for 30 s.
-- **Watched levels.** The trigger, second entry and any `extra_levels` are watched on both bid and ask. TWINEY also auto-tracks big inside levels (≥ 2,000 shares). Many levels are tracked at once.
+- **Watched levels.** The pivot, second entry and any `extra_levels` are watched on both bid and ask. TWINEY also auto-tracks big inside levels (≥ 2,000 shares). Many levels are tracked at once.
 - **Records every raw event** to `recordings/*.jsonl` (L1, depth ops, prints, resets, slot changes, errors and alerts) for replay or audit.
 - **One dashboard**, with one pane per ladder:
-  - **Plain-English headline.** For example: "Price is approaching your trigger 128.40 — 6¢ above it", "A SELLER keeps reloading at 128.40 (your trigger): 6,200 shares traded into it, refilled 5x", "The SELLER at 128.40 got CLEANED UP". It also says what that means for the PS60 play.
+  - **Plain-English headline.** For example: "Price is approaching your pivot 128.40 — 6¢ above it", "A SELLER keeps reloading at 128.40 (your pivot): 6,200 shares traded into it, refilled 5x", "The SELLER at 128.40 got CLEANED UP". It also says what that means for the PS60 play.
   - **Chart:** 1-minute candles with 5 days of IBKR history at startup, a 1m / 5m / 15m / 60m toggle (60-minute
-    candles start at 9:30 like every other chart), a session **VWAP** line (toggle), and buy/sell volume. Your trigger, 2nd entry, extra levels, target and stop are drawn as labelled lines with a band. Green/red bubbles show shares absorbed into resting buyers/sellers at watched levels. R/C/P markers show reload, cleaned-up and pulled calls. Your working orders are drawn as lines too.
+    candles start at 9:30 like every other chart), a session **VWAP** line (toggle), and buy/sell volume. Your pivot, 2nd entry, extra levels, target and stop are drawn as labelled lines with a band. Green/red bubbles show shares absorbed into resting buyers/sellers at watched levels. R/C/P markers show reload, cleaned-up and pulled calls. Your working orders are drawn as lines too.
   - **Level-memory ladder.** Every price row remembers the last 15 minutes: shares sold into the bid and bought from the ask there, how many times the size came back after being hit (●), and a glowing **BUYER ×n / SELLER ×n** tag when a reload is confirmed. Your levels and your orders are tagged on their rows. The ladder stays centered on price.
   - **Time & sales** with prints at your levels tagged.
 - **Pane controls:**
@@ -76,7 +78,7 @@ Other modes:
   current price to the play's stop.
 - **Hotkeys** (click a ladder first): **B** buy on the bid · **S** sell on the ask · **+** / **−** add / close one
   lot (the × dropdown in POSITIONS) · **F** flatten · **Esc** cancel all · **L** level tool · **A** arm / disarm.
-- **Mark levels on the chart** (＋ mark… above the chart): choose 2nd entry, trigger, target, stop or extra level,
+- **Mark levels on the chart** (＋ mark… above the chart): choose 2nd entry, pivot, target, stop or extra level,
   then click the chart at the price. The play is updated, the reload trackers move to the new price, and `plays.json`
   is saved. Press **2** to mark a 2nd entry quickly. Drag any level line to adjust it. Click an extra level with the
   extra tool to remove it.
@@ -91,7 +93,7 @@ Other modes:
 Encoded from the PS60 handoff (Dan Shapiro / Access A Trader, via Antoine). Nothing is invented: every object is read
 off the candles you see. Settings live in `config.json → ps60`.
 
-- **Second-entry engine** (per play, from today's candles): pivot = your `trigger`. Long: break the pivot → new high →
+- **Second-entry engine** (per play, from today's candles): pivot = your `pivot`. Long: break the pivot → new high →
   retrace → back through that high = SECOND ENTRY, always on a candle after the one that made the high (the retrace and
   the re-take may happen inside that same new candle once the pullback is real: `min_retrace_fraction` of the move, at
   least 3 ticks). Short is the mirror. The ladder says exactly where
@@ -117,7 +119,7 @@ off the candles you see. Settings live in `config.json → ps60`.
 - **PS60 exits** (header checkbox, or `trading.scale_plan.enabled`): pay yourself along the way — ½ at +$0.50, ¼ at
   +$1.50 (edit `cash_flow`), the rest runs to the target. After the first cash flow fills the stop moves to
   **breakeven**. Cash flow and the runner are separate orders, never one manager.
-- **Stops are stop-limits**, never naked stops: trigger at your stop, limit `stop_limit_ticks` (10) through it.
+- **Stops are stop-limits**, never naked stops: pivot at your stop, limit `stop_limit_ticks` (10) through it.
 - **Language lock:** supply, demand, pivot, confirmation, second entry, build, measured potential, ATR, cash flow, runner,
   max pain, remount, rejection, sneaky pivot, macro / micro channel, reload buyer / seller. A test scans the PS60 text.
 - Not built (no data for it in an equity ladder): the options translation layer, option flow, and the moving-average /

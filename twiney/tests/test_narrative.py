@@ -10,7 +10,7 @@ class NarrativeTests(unittest.TestCase):
         self.assertEqual(narrative.proximity_line(PLAY, 10.00)[1], "at")
         text, where = narrative.proximity_line(PLAY, 10.04)
         self.assertEqual(where, "near")
-        self.assertIn("coming into your trigger 10.00 — 4¢ above it", text)
+        self.assertIn("coming into your pivot 10.00 — 4¢ above it", text)
         self.assertEqual(narrative.proximity_line(PLAY, 12.0)[1], "far")
 
     def test_reload_headline_and_play_context(self):
@@ -22,7 +22,7 @@ class NarrativeTests(unittest.TestCase):
         self.assertIn("RELOAD SELLER at 10.00", head)
         self.assertIn("6,200", head)
         self.assertIn("resistance is holding", head)
-        self.assertTrue(any("supply sitting on your trigger" in l for l in lines))
+        self.assertTrue(any("supply sitting on your pivot" in l for l in lines))
 
     def test_fresh_verdict_wins(self):
         alert = {"t": 95.0, "label": "PULLED", "side": "bid", "price": 9.9, "role": "second_entry", "absorbed": 0}
@@ -33,7 +33,7 @@ class NarrativeTests(unittest.TestCase):
     def test_level_holding(self):
         bars = [[i * 60, 9.95, 10.00, 9.94, 9.97, 100, 0, 0] for i in range(5)]
         _, _, lines = narrative.story(PLAY, 9.97, [], bars, None, 400.0, [])
-        self.assertTrue(any("Resistance at your trigger 10.00 is holding: tested 5x" in l for l in lines), lines)
+        self.assertTrue(any("Resistance at your pivot 10.00 is holding: tested 5x" in l for l in lines), lines)
 
 
 if __name__ == "__main__":

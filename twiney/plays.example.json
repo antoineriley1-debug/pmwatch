@@ -1,11 +1,11 @@
 {
-  "_note": "PS60 plays. trigger = the 60-minute pivot; second_entry = the pullback / reclaim level; target = next supply / demand; stop = max pain. Optional: mp (your measured potential, $) and atr (your ATR, $) override what TWINEY computes. extra_levels are more prices to watch for reloads.",
+  "_note": "PS60 plays. pivot = the 60-minute pivot (Dan's word; the old trigger key still works). second_entry (optional, leave it out until the pivot breaks) = the new high (long) / new low (short) after the break; the entry is back through it after the retrace. TWINEY finds it for you and offers 'use X as 2nd entry'. target = where the runner exits. stop = max pain. mp = your measured potential ($) and atr = the ATR ($), read off your chart. extra_levels = more prices to watch for reloads.",
   "plays": [
-    {"symbol": "AAPL", "side": "long",  "trigger": 232.50, "second_entry": 231.80, "target": 235.00, "stop": 230.90, "mp": 2.50, "atr": 3.10, "notes": "60m supply break"},
-    {"symbol": "NVDA", "side": "long",  "trigger": 128.40, "second_entry": 127.60, "target": 131.00, "stop": 126.90, "extra_levels": [129.00]},
-    {"symbol": "TSLA", "side": "short", "trigger": 241.20, "second_entry": 242.10, "target": 236.50, "stop": 243.30, "notes": "demand break"},
-    {"symbol": "AMD",  "side": "long",  "trigger": 158.75, "second_entry": 157.90, "target": 162.00, "stop": 156.80},
-    {"symbol": "PLTR", "side": "short", "trigger": 41.30,  "second_entry": 41.75,  "target": 39.80,  "stop": 42.20},
-    {"symbol": "SOFI", "side": "long",  "trigger": 10.45,  "second_entry": 10.28,  "target": 10.95,  "stop": 10.12}
+    {"symbol": "AAPL", "side": "long",  "pivot": 232.50, "target": 235.00, "stop": 230.90, "mp": 2.50, "atr": 3.10, "notes": "60m supply break"},
+    {"symbol": "NVDA", "side": "long",  "pivot": 128.40, "second_entry": 128.95, "target": 131.00, "stop": 126.90, "mp": 2.60, "atr": 3.40, "extra_levels": [129.00]},
+    {"symbol": "TSLA", "side": "short", "pivot": 241.20, "second_entry": 240.60, "target": 236.50, "stop": 243.30, "mp": 4.70, "atr": 8.20, "notes": "demand break"},
+    {"symbol": "AMD",  "side": "long",  "pivot": 158.75, "target": 162.00, "stop": 156.80, "mp": 3.25, "atr": 4.10},
+    {"symbol": "PLTR", "side": "short", "pivot": 41.30,  "target": 39.80,  "stop": 42.20, "mp": 1.50, "atr": 1.60},
+    {"symbol": "SOFI", "side": "long",  "pivot": 10.45,  "target": 10.95,  "stop": 10.12, "mp": 0.50, "atr": 0.42}
   ]
 }

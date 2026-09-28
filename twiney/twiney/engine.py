@@ -436,7 +436,10 @@ class Engine:
         import json
         keep = ("symbol", "side", "trigger", "second_entry", "target", "stop", "mp", "atr", "extra_levels", "notes", "active",
                 "exchange", "primary_exchange", "currency")
-        out = {"plays": [{k: p[k] for k in keep if k in p} for p in self.plays]}
+        def row(p):
+            r = {("pivot" if k == "trigger" else k): p[k] for k in keep if k in p}
+            return r
+        out = {"plays": [row(p) for p in self.plays]}
         tmp = self.plays_path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as fh:
             json.dump(out, fh, indent=2)
@@ -858,7 +861,7 @@ class Engine:
         }
 
     def _user_levels(self, play):
-        out = [{"price": play["trigger"], "role": "trigger", "label": "TRIGGER"}]
+        out = [{"price": play["trigger"], "role": "trigger", "label": "PIVOT"}]
         if play.get("second_entry"):
             out.append({"price": play["second_entry"], "role": "second_entry", "label": "2ND ENTRY"})
         for lv in play.get("extra_levels", []):

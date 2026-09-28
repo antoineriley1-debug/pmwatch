@@ -42,7 +42,7 @@ class ConfigTests(unittest.TestCase):
 
 class PlayValidationTests(unittest.TestCase):
     def test_normalises(self):
-        p = validate_plays([{"symbol": " aapl ", "side": "SHORT", "trigger": "10.5", "second_entry": 10.7}])[0]
+        p = validate_plays([{"symbol": " aapl ", "side": "SHORT", "pivot": "10.5", "second_entry": 10.3}])[0]
         self.assertEqual((p["symbol"], p["side"], p["trigger"]), ("AAPL", "short", 10.5))
         self.assertEqual(p["exchange"], "SMART")
         self.assertTrue(p["active"])

@@ -8,7 +8,7 @@ never an identified participant.
 from .prices import fmt_price, price_key, tick_size
 
 ROLE_NAMES = {
-    "trigger": "your trigger",
+    "trigger": "your pivot",
     "second_entry": "your 2nd entry",
     "extra": "your level",
     "auto": "a big level",
@@ -52,20 +52,22 @@ def play_context(play, side, role):
     long_ = play["side"] == "long"
     if first == "trigger":
         if long_ and side == "ask":
-            return "That's supply sitting on your trigger. Your long needs it cleared. Wait for CLEANED UP — then the break is real."
+            return "That's supply sitting on your pivot. Your long needs it cleared. Wait for CLEANED UP — then the break is real."
         if not long_ and side == "bid":
-            return "That's demand sitting on your trigger. Your short needs it cleared. Wait for CLEANED UP — then the break is real."
+            return "That's demand sitting on your pivot. Your short needs it cleared. Wait for CLEANED UP — then the break is real."
         if long_ and side == "bid":
-            return "That's demand under your trigger — a buyer has your back. Good for the long."
-        return "That's supply over your trigger — a seller has your back. Good for the short."
+            return "That's demand under your pivot — a buyer has your back. Good for the long."
+        return "That's supply over your pivot — a seller has your back. Good for the short."
     if first == "second_entry":
-        if long_ and side == "bid":
-            return "Support is holding at your 2nd entry. This is where the long is supposed to bounce."
-        if not long_ and side == "ask":
-            return "Resistance is holding at your 2nd entry. This is where the short is supposed to roll over."
+        # PS60: the 2nd entry is the new high (long) / new low (short) after the pivot broke;
+        # the entry is back through it after the retrace
         if long_ and side == "ask":
-            return "Supply at your 2nd entry — the bounce is being sold into. Careful."
-        return "Demand at your 2nd entry — the drop is being bought. Careful."
+            return "That's supply sitting on your 2nd entry — the high you need back through. Wait for CLEANED UP, then the entry is real."
+        if not long_ and side == "bid":
+            return "That's demand sitting on your 2nd entry — the low you need back through. Wait for CLEANED UP, then the entry is real."
+        if long_ and side == "bid":
+            return "Demand at your 2nd entry — a buyer is holding the level you got in through. That's the build you want."
+        return "Supply at your 2nd entry — a seller is holding the level you got in through. That's the build you want."
     if first == "auto":
         return f"Not one of your levels, but big {wall(side)} showed up here."
     return ""
@@ -106,7 +108,7 @@ def level_tests(bars, level, lookback=30):
 
 
 def proximity_line(play, price):
-    """'Price is approaching your trigger 128.40 — 6¢ away (0.05%).'"""
+    """'Price is approaching your pivot 128.40 — 6¢ away (0.05%).'"""
     if price is None:
         return None, None
     options = [("trigger", play["trigger"])]

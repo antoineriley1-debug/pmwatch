@@ -113,9 +113,9 @@ class ScreenControlTests(unittest.TestCase):
     def test_english_story_and_alert_text(self):
         snap = self.e.snapshot(2.0)
         pane = snap["panes"][self.positions().index("AAA")]
-        self.assertIn("your trigger 10.00", pane["headline"])
+        self.assertIn("your pivot 10.00", pane["headline"])
         self.assertTrue(pane["ladder"]["rows"])
-        self.assertTrue(any("TRIGGER" in r["tags"] for r in pane["ladder"]["rows"]))
+        self.assertTrue(any("PIVOT" in r["tags"] for r in pane["ladder"]["rows"]))
         self.assertIn("status", snap["ranking"][0])
 
 
@@ -142,7 +142,7 @@ class FlowTests(unittest.TestCase):
         e.on_depth("AAA", 0, DELETE, ASK, 10.00, 0, "", t + 0.05)
         e.on_print("AAA", 10.01, 300, "ARCA", t + 0.1)
         self.assertEqual(got[-1]["label"], "CLEANED UP")
-        self.assertIn("CLEANED UP — the SELLER at 10.00 (your trigger) is gone", got[-1]["text"])
+        self.assertIn("CLEANED UP — the SELLER at 10.00 (your pivot) is gone", got[-1]["text"])
         self.assertIn("RELOAD SELLER at 10.00", got[0]["text"])
         self.assertEqual(got[-1]["size_before_gone"], 1000)
         pane = e.snapshot(t + 1)["panes"][0]
@@ -228,18 +228,19 @@ class FlowTests(unittest.TestCase):
         e = self._slotted()
         with tempfile.TemporaryDirectory() as d:
             e.plays_path = os.path.join(d, "plays.json")
-            self.assertIn((BID, 990), e.syms["AAA"].trackers)                 # old 2nd entry 9.90
-            self.assertTrue(e.set_play_level("AAA", "second_entry", 9.95, 2.0))
-            self.assertNotIn((BID, 990), e.syms["AAA"].trackers)
-            self.assertEqual(e.syms["AAA"].trackers[(BID, 995)].role, "second_entry")
-            self.assertEqual(e.syms["AAA"].play["second_entry"], 9.95)
+            self.assertIn((BID, 1010), e.syms["AAA"].trackers)                # old 2nd entry 10.10
+            self.assertTrue(e.set_play_level("AAA", "second_entry", 10.15, 2.0))
+            self.assertNotIn((BID, 1010), e.syms["AAA"].trackers)
+            self.assertEqual(e.syms["AAA"].trackers[(BID, 1015)].role, "second_entry")
+            self.assertEqual(e.syms["AAA"].play["second_entry"], 10.15)
             saved = [p for p in json.load(open(e.plays_path))["plays"] if p["symbol"] == "AAA"][0]
-            self.assertEqual(saved["second_entry"], 9.95)
+            self.assertEqual((saved["second_entry"], saved["pivot"]), (10.15, 10.0))
+            self.assertNotIn("trigger", saved)
             self.assertTrue(e.set_play_level("AAA", "stop", 9.50, 3.0))
             self.assertEqual(e.snapshot(4.0)["panes"][0]["play"]["stop"], 9.5)
             self.assertFalse(e.set_play_level("AAA", "trigger", None, 5.0))     # trigger can't be cleared
             self.assertTrue(e.set_play_level("AAA", "second_entry", None, 6.0))  # 2nd entry can
-            self.assertNotIn((BID, 995), e.syms["AAA"].trackers)
+            self.assertNotIn((BID, 1015), e.syms["AAA"].trackers)
 
     def test_snapshot_shape(self):
         e = self._slotted()

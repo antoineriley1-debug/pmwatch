@@ -217,7 +217,7 @@ def validate_plays(raw):
             v = item.get(key)
             if v is None:
                 if required:
-                    raise ConfigError(f"{where}: {key} is required")
+                    raise ConfigError(f"{where}: {'pivot' if key == 'trigger' else key} is required")
                 return None
             try:
                 v = float(v)
@@ -237,11 +237,25 @@ def validate_plays(raw):
                 raise ConfigError(f"{where}: extra_levels must be > 0")
             extra.append(fv)
 
+        if item.get("pivot") is not None and item.get("trigger") is None:
+            item = dict(item, trigger=item["pivot"])
+        trigger, second = num("trigger", True), num("second_entry", False)
+        if trigger is None:
+            raise ConfigError(f"{where}: pivot is required")
+        if second is not None:
+            # PS60: the 2nd entry is the new high (long) / new low (short) made after the pivot broke,
+            # so it sits beyond the trigger, never behind it
+            if side == "long" and second <= trigger:
+                raise ConfigError(f"{where}: second_entry {second} must be ABOVE the pivot {trigger} for a long "
+                                  f"(it is the new high after the break, not a pullback level)")
+            if side == "short" and second >= trigger:
+                raise ConfigError(f"{where}: second_entry {second} must be BELOW the pivot {trigger} for a short "
+                                  f"(it is the new low after the break, not a bounce level)")
         plays.append({
             "symbol": sym,
             "side": side,
-            "trigger": num("trigger", True),
-            "second_entry": num("second_entry", False),
+            "trigger": trigger,
+            "second_entry": second,
             "target": num("target", False),
             "stop": num("stop", False),
             # your own numbers: measured potential in dollars and the ATR. When set they are used as-is;
