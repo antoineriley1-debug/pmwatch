@@ -72,7 +72,8 @@ Other modes:
 - **💾 Save layout** writes the whole screen (windows, links, sizes, positions, chart settings, columns) to
   `layout.json` next to `config.json`. It loads on every start, in any browser. Until you save, changes live only in
   the browser you made them in. **Reset layout** deletes the saved layout and puts everything back.
-- **Voice per ladder:** 🗣 on a QUOTE & TRADE window mutes that symbol; **solo** reads only that symbol.
+- **Voice follows your screen:** it only reads stocks that are in a window you can see right now. A play that is not up
+  is never spoken. 🗣 on a QUOTE & TRADE window mutes that symbol; **solo** reads only that symbol.
 - **Clean chart** (the `clean` button above the chart, on by default): only candles, volume, VWAP, your levels and your
   orders. Turn it off to see trapped bands, sneaky pivots, reload marks, absorption bubbles and R/C/P call markers.
 - **Trade from the chart:** right-click at any price for BUY / SELL limit there (and Flatten / Cancel all), or hover

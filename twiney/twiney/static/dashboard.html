@@ -303,7 +303,7 @@ td.status{text-align:left !important;white-space:normal !important;color:#c4cddb
   <button id="markBtn" title="Drop a marker at this second (key M): symbol, price and what the story said. Click a marker in the DESK window to add a note.">⚑ mark</button>
   <button id="shotBtn" title="Screenshot of the whole screen into recordings/shots (key P), with a marker.">📷 shot</button>
   <button id="soundBtn" title="beep on every call">🔊</button>
-  <button id="voiceBtn" title="Voice: reads out big size showing up or pulled at a price (e.g. '18k buyer at 120', 'buyer pulled 18k from 120') and every call. Threshold in config.json → voice.min_shares">🗣 Voice</button>
+  <button id="voiceBtn" title="Voice: reads out big size showing up or pulled at a price and every call — only for the stocks in the windows on your screen. 🗣 on a Quote & Trade window mutes that stock; solo = only that stock. Threshold in config.json → voice.min_shares">🗣 Voice</button>
   <button id="alertsBtn" title="Show / hide the call feed and call pop-ups">🔔 Alerts</button>
   <button id="rotate" title="When OFF, ladders never switch symbols on their own">Auto-rotate: …</button>
   <span class="menu" id="winMenu"><button>Windows ▾</button><div class="pop" id="winList"></div></span>
@@ -1638,11 +1638,18 @@ function say(text, force){
     if (force && !speechSynthesis.getVoices().length) toast("No voices installed in this browser yet. Windows: Settings → Time & language → Speech → Manage voices.", false);
   } catch (e) { if (force) toast("Voice failed: " + e.message, false); }
 }
+function onScreenSymbols(){
+  // only the stocks in windows you can actually see right now
+  const out = new Set();
+  for (const v of views) if (v.data && v.el && !v.el.classList.contains("hidden") && v.el.offsetParent !== null) out.add(v.data.symbol);
+  return out;
+}
 function voiceAllowed(sym){
   if (!sym) return true;
   const solo = store.get("solo", null);
   if (solo && solo !== sym) return false;
-  return !store.get("mute." + sym, false);
+  if (store.get("mute." + sym, false)) return false;
+  return onScreenSymbols().has(sym);   // never read a stock you don't have up
 }
 // ---------- the desk: REC / markers / screenshots / recordings / replay
 let deskList = null, deskListT = 0;
