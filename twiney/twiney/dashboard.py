@@ -98,6 +98,8 @@ def make_handler(engine, clock, trader=None):
                     out = trader.cancel_all(sym or None, now)
                 elif action == "flatten":
                     out = trader.flatten(sym, now)
+                elif action == "adjust":
+                    out = trader.adjust(sym, body.get("shares"), str(body.get("mode", "")), now)
                 else:
                     self._send(404, "not found", "text/plain")
                     return

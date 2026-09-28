@@ -384,6 +384,37 @@ class Trader:
         self.broker.cancel_all(now, symbol)
         return self.submit(symbol, action, price, abs(qty), now, bracket=False)
 
+    def adjust(self, symbol, shares, mode, now=None):
+        """Close or add ``shares`` to the position with a limit at the touch.
+
+        mode "close": trade against the position (sell for a long, buy for a short).
+        mode "add":   same direction as the position; if flat, "add" opens long.
+        Limit price is the current bid (selling) or ask (buying): marketable now,
+        but never worse than the quote you clicked.
+        """
+        now = now or time.time()
+        shares = int(shares)
+        if shares <= 0:
+            return {"ok": False, "reason": "size must be positive"}
+        pos = int(self.broker.position(symbol))
+        st = self.engine.syms.get(symbol)
+        bid, ask = st.bbo() if st else (None, None)
+        if bid is None or ask is None:
+            self._note(now, f"{symbol}: no quote yet", False)
+            return {"ok": False, "reason": "no quote"}
+        if mode == "close":
+            if not pos:
+                self._note(now, f"{symbol}: already flat, nothing to close", True)
+                return {"ok": False, "reason": "flat"}
+            shares = min(shares, abs(pos))
+            action = SELL if pos > 0 else BUY
+        elif mode == "add":
+            action = BUY if pos >= 0 else SELL
+        else:
+            return {"ok": False, "reason": "mode must be close or add"}
+        price = bid if action == SELL else ask
+        return self.submit(symbol, action, price, shares, now, bracket=False)
+
     def set_size(self, shares):
         shares = int(shares)
         if shares <= 0:

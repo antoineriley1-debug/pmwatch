@@ -36,7 +36,10 @@ body.free .win.front{z-index:3}
 .winbar .x:hover{color:var(--sell)}
 .win .wbody{flex:1;min-height:0;overflow:auto}
 #feed.win .wbody{padding:6px}
-body:not(.free) .winbar{display:none}
+.winbar .fold{cursor:pointer;padding:0 4px}
+.win.folded .wbody,.pane.folded > :not(.winbar):not(.p-head){display:none !important}
+.pane.folded{height:auto !important;min-height:0}
+body:not(.free) .winbar{cursor:default}
 .menu{position:relative}
 .menu .pop{display:none;position:absolute;right:0;top:110%;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:220px;z-index:40;box-shadow:0 8px 24px rgba(0,0,0,.5)}
 .menu.open .pop{display:block}
@@ -61,7 +64,7 @@ body:not(.free) .winbar{display:none}
 /* plain-English feed */
 #feed{max-height:150px;overflow-y:auto;padding:0}
 #feedBody{display:grid;gap:4px}
-body:not(.free) #feed.card{padding:0;background:transparent;border:0}
+body:not(.free) #feed.card{padding:0}
 .say{padding:6px 10px;border-radius:6px;background:var(--panel);border-left:4px solid var(--dim);font-size:14px}
 .say b{letter-spacing:.02em}
 .say.buyer{border-color:var(--buy)} .say.seller{border-color:var(--sell)}
@@ -143,6 +146,10 @@ td.bars.l .bar-n{float:right;margin-right:3px} td.bars.r .bar-n{margin-left:3px}
 @keyframes glowa{0%,100%{box-shadow:inset 0 0 0 1px rgba(255,77,94,.4)}50%{box-shadow:inset 0 0 12px 2px rgba(255,77,94,.9)}}
 .lad tr.rl-bid td{animation:glowb 1.6s infinite}
 .lad tr.rl-ask td{animation:glowa 1.6s infinite}
+th{position:relative}
+th .colgrip{position:absolute;right:-3px;top:0;bottom:0;width:7px;cursor:col-resize;z-index:2}
+th .colgrip:hover{background:rgba(255,197,61,.4)}
+table.sized{table-layout:fixed}
 .legend{font-size:10.5px;color:var(--dim);padding:4px 6px;border-top:1px solid var(--line)}
 /* trading */
 .lad td.act{width:58px;text-align:center;cursor:pointer;user-select:none;font-size:10.5px;color:transparent;border-left:1px solid var(--line);border-right:1px solid var(--line)}
@@ -158,7 +165,11 @@ td.bars.l .bar-n{float:right;margin-right:3px} td.bars.r .bar-n{margin-left:3px}
 .tradebar input{width:64px;font:inherit;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:5px;padding:3px 6px;text-align:right}
 .tradebar .bbuy{background:#0f3d25;border-color:var(--buy);color:#dfffee;font-weight:700}
 .tradebar .bsell{background:#4a161b;border-color:var(--sell);color:#ffe3e6;font-weight:700}
-.tradebar .bflat{border-color:var(--gold);color:var(--gold)}
+.tradebar .bflat,.acts .bflat{border-color:var(--gold);color:var(--gold)}
+.acts{text-align:left !important;white-space:nowrap}
+.acts button{padding:1px 7px;margin:0 1px;font-family:var(--mono)}
+.acts .adj.close{border-color:var(--sell);color:#ffb3bb} .acts .adj.add{border-color:var(--buy);color:#9fffcf}
+.acts button:disabled{opacity:.4}
 .tradebar button:disabled{opacity:.4;cursor:not-allowed}
 .tradebar .pos{font-family:var(--mono);font-size:12px}
 #arm{font-weight:800;letter-spacing:.06em;padding:4px 12px}
@@ -314,21 +325,49 @@ async function cancelAll(symbol){
   toast(`Cancelled ${out.cancelled} working order${out.cancelled === 1 ? "" : "s"}`, true);
 }
 
+/* ---------- resizable columns: drag the right edge of any header cell ---------- */
+function colKey(table){ return "cols." + (table.dataset.cols || "t"); }
+function makeColsResizable(table){
+  if (!table || table.dataset.gripped) return;
+  table.dataset.gripped = "1";
+  const ths = table.querySelectorAll("tr:first-child th");
+  const saved = store.get(colKey(table), null);
+  if (saved){ table.classList.add("sized"); ths.forEach((th, k) => { if (saved[k]) th.style.width = saved[k] + "px"; }); }
+  ths.forEach((th, k) => {
+    const g = document.createElement("span"); g.className = "colgrip"; th.appendChild(g);
+    g.addEventListener("mousedown", e => {
+      e.preventDefault(); e.stopPropagation();
+      const x0 = e.clientX, w0 = th.offsetWidth;
+      const move = ev => { th.style.width = Math.max(28, w0 + ev.clientX - x0) + "px"; table.classList.add("sized"); };
+      const up = () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up);
+        const widths = [...table.querySelectorAll("tr:first-child th")].map(h => h.style.width ? parseInt(h.style.width) : null);
+        store.set(colKey(table), widths); };
+      window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
+    });
+    g.addEventListener("dblclick", e => { e.stopPropagation(); ths.forEach(h => h.style.width = ""); table.classList.remove("sized"); store.set(colKey(table), null); });
+  });
+}
+
 /* ---------- windows: drag anywhere, resize, hide / show ---------- */
 const WIN = {list: [], byId: {}};
 function makeWindow(el, id, title){
   if (WIN.byId[id]) return WIN.byId[id];
   const bar = document.createElement("div");
   bar.className = "winbar";
-  bar.innerHTML = `<span>⠿</span><b>${esc(title)}</b><span class="x" title="hide this window">✕</span>`;
+  bar.innerHTML = `<span>⠿</span><b>${esc(title)}</b><span class="fold" title="collapse / expand">▾</span><span class="x" title="hide this window">✕</span>`;
   el.prepend(bar);
   const w = {el, id, title, bar};
   WIN.list.push(w); WIN.byId[id] = w;
   el.classList.add("win");
   if (store.get("hide." + id, false)) el.classList.add("hidden");
   bar.querySelector(".x").addEventListener("click", e => { e.stopPropagation(); hideWindow(id, true); });
+  const fold = bar.querySelector(".fold");
+  const setFold = on => { el.classList.toggle("folded", on); fold.textContent = on ? "▸" : "▾"; store.set("fold." + id, on); if (el._pane) drawChart(el._pane); };
+  fold.addEventListener("mousedown", e => e.stopPropagation());
+  fold.addEventListener("click", e => { e.stopPropagation(); setFold(!el.classList.contains("folded")); });
+  if (store.get("fold." + id, false)) setFold(true);
   bar.addEventListener("mousedown", e => {
-    if (e.target.classList.contains("x") || !document.body.classList.contains("free")) return;
+    if (e.target.classList.contains("x") || e.target.classList.contains("fold") || !document.body.classList.contains("free")) return;
     e.preventDefault();
     bringFront(el);
     const main = document.querySelector("main").getBoundingClientRect();
@@ -412,6 +451,7 @@ function ensurePane(i){
   if (saved && window.innerWidth > 900){ el.style.width = saved.w + "px"; el.style.height = saved.h + "px"; el.classList.add("sized"); }
   panesEl.appendChild(el);
   makeWindow(el, "ladder" + (i + 1), "LADDER " + (i + 1));
+  el._pane = null;
   el.dataset.hide = (store.get("phide." + i, []) || []).join(" ");
   el.dataset.cols = (store.get("pcols." + i, []) || []).join(" ");
   const p = {el, i, head: el.querySelector(".p-head"), changed: el.querySelector(".p-changed"),
@@ -446,13 +486,13 @@ function ensurePane(i){
         v.yLo = c - (c - lo) * f; v.yHi = c + (hi - c) * f; }
     } else if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)){   // shift+wheel or trackpad sideways: pan
       const d = (e.deltaX || e.deltaY) / v.cw;
-      v.offset = Math.max(0, v.offset - d); v.follow = v.offset < 0.5;
+      v.offset = Math.max(0, v.offset - d); v.follow = v.offset < 0.5; v.rightT = null;
     } else {                                     // zoom, keeping the bar under the cursor where it is
       const f = e.deltaY > 0 ? 1 / 1.2 : 1.2;
       const plotW = r.width - 86, barsRight = (plotW - x) / v.cw;   // bars between cursor and right edge
       v.cw = Math.max(2, Math.min(60, v.cw * f));
       v.offset = Math.max(0, v.offset + barsRight - (plotW - x) / v.cw);
-      v.follow = v.offset < 0.5;
+      v.follow = v.offset < 0.5; v.rightT = null;
     }
     saveView(); drawChart(p);
   }, {passive: false});
@@ -468,7 +508,7 @@ function ensurePane(i){
         v.yLo = c - (c - lo) * f; v.yHi = c + (hi - c) * f; }
       else {
         v.offset = Math.max(0, start.offset + dx / v.cw);
-        v.follow = v.offset < 0.5;
+        v.follow = v.offset < 0.5; v.rightT = null;
         if (start.y && !onAxis){ const [lo, hi] = start.y; const per = (hi - lo) / start.h; v.yLo = lo + dy * per; v.yHi = hi + dy * per; }
       }
       drawChart(p);
@@ -478,7 +518,7 @@ function ensurePane(i){
   });
   cv.addEventListener("mousemove", e => { const r = cv.getBoundingClientRect(); v.cross = [e.clientX - r.left, e.clientY - r.top]; drawChart(p); });
   cv.addEventListener("mouseleave", () => { v.cross = null; drawChart(p); });
-  cv.addEventListener("dblclick", () => { v.cw = 7; v.offset = 0; v.yLo = v.yHi = null; v.follow = true; saveView(); drawChart(p); });
+  cv.addEventListener("dblclick", () => { v.cw = 7; v.offset = 0; v.yLo = v.yHi = null; v.follow = true; v.rightT = null; saveView(); drawChart(p); });
   // drag panes to reorder (by the ⠿ handle)
   el.addEventListener("dragstart", e => { if (!e.target.closest(".grab") && !el.classList.contains("dragging")) { e.preventDefault(); return; } e.dataTransfer.setData("text/plain", String(i)); el.classList.add("dragging"); });
   el.addEventListener("dragend", () => el.classList.remove("dragging"));
@@ -564,6 +604,7 @@ function ensurePane(i){
   p.ladder.addEventListener("wheel", () => { p.userScroll = Date.now(); }, {passive: true});
   p.ladder.addEventListener("touchmove", () => { p.userScroll = Date.now(); }, {passive: true});
   paneEls[i] = p;
+  el._pane = p;
   renderTools(p);
   return p;
 }
@@ -608,7 +649,7 @@ function ladderHTML(L){
   const on = canTrade(), dis = on ? "" : " disabled";
   const chips = (r, side) => (r.mine || []).filter(o => (o.action === "BUY") === (side === "b")).map(o =>
     `<span class="chip ${side} ${o.status === "PreSubmitted" ? "wait" : ""}" data-id="${o.id}" title="${esc(o.role)} order — click to cancel">${sz(o.qty)}</span>`).join(" ");
-  let h = `<table class="lad"><tr>
+  let h = `<table class="lad" data-cols="ladder"><tr>
     <th class="act" title="Click a price here to BUY at that price">BUY</th>
     <th title="Shares sold INTO the bid at this price (last ${L.memory_minutes} min). Big green = a buyer absorbing.">SOLD INTO BID</th>
     <th>BID</th><th>PRICE</th><th>ASK</th>
@@ -638,10 +679,14 @@ function tapeHTML(t){
     <td class="${r.side}">${px(r.price)}${r.at?` <span class="tag">${esc(r.at)}</span>`:""}</td>
     <td class="${r.side} ${r.large?"large":""}">${sz(r.size)}</td><td class="dim">${esc(r.exchange)}</td></tr>`).join("")
     || `<tr><td colspan="4" class="dim">no prints yet</td></tr>`;
-  return `<table class="t"><tr><th>TIME & SALES <span class="dim" style="font-weight:400">IN = paid the offer · OUT = hit the bid</span></th><th>PRICE</th><th>SIZE</th><th>EX</th></tr>${rows}</table>`;
+  return `<table class="t" data-cols="tape"><tr><th>TIME & SALES <span class="dim" style="font-weight:400">IN = paid the offer · OUT = hit the bid</span></th><th>PRICE</th><th>SIZE</th><th>EX</th></tr>${rows}</table>`;
 }
 
 function renderPane(p, d){
+  if (d && p.lastSym && p.lastSym !== d.symbol){   // new stock in this ladder: go live, keep the zoom level
+    Object.assign(p.view, {offset: 0, follow: true, rightT: null, yLo: null, yHi: null});
+  }
+  p.lastSym = d ? d.symbol : null;
   p.data = d;
   const showEmpty = !d;
   p.empty.hidden = !showEmpty;
@@ -696,12 +741,14 @@ function renderPane(p, d){
   p.lines.innerHTML = d.lines.map(l => `<li>${esc(l)}</li>`).join("");
   const keep = p.ladder.scrollTop;
   p.ladder.innerHTML = ladderHTML(d.ladder);
+  makeColsResizable(p.ladder.querySelector("table"));
   // keep the current price centered unless the trader scrolled the ladder in the last 8s
   const cur = p.ladder.querySelector("tr.lastpx") || p.ladder.querySelector("tr.best-ask");
   if (cur && Date.now() - (p.userScroll || 0) > 8000){
     p.ladder.scrollTop = cur.offsetTop - p.ladder.clientHeight / 2;
   } else p.ladder.scrollTop = keep;
   p.tape.innerHTML = tapeHTML(d.tape);
+  makeColsResizable(p.tape.querySelector("table"));
   drawChart(p);
 }
 
@@ -735,8 +782,15 @@ function drawChart(p){
   const v = p.view, cw = v.cw;
   const all = aggBars(d.bars, tf);
   const n = Math.max(5, Math.floor(plotW / cw));
-  const off = Math.min(Math.round(v.offset), Math.max(0, all.length - 2));
+  // when scrolled back, the right edge is pinned to a TIMESTAMP so new bars don't shove the view
+  let off = Math.round(v.offset);
+  if (!v.follow && v.rightT != null && all.length){
+    let k = all.length - 1; while (k > 0 && all[k][0] > v.rightT) k--;
+    off = all.length - 1 - k; v.offset = off;
+  }
+  off = Math.min(off, Math.max(0, all.length - 2));
   const bars = all.slice(Math.max(0, all.length - off - n), all.length - off);
+  v.rightT = v.follow ? null : (bars.length ? bars[bars.length - 1][0] : null);
   p.chartH = plotH;
   g.font = "11px ui-monospace, Menlo, Consolas, monospace";
   if (!bars.length){
@@ -942,7 +996,7 @@ function render(s){
     <td>${px(r.last)}</td><td style="color:var(--gold)">${px(r.trigger)}</td><td style="color:var(--cyan)">${px(r.second_entry)}</td>
     <td class="status">${esc(r.status)}</td>
     <td><button data-pin="${esc(r.symbol)}" data-on="${r.pinned?0:1}" class="${r.pinned?"on":""}">${r.pinned?"📌 Unpin":"Pin to ladder"}</button></td></tr>`).join("");
-  document.getElementById("ranking").innerHTML = `<table class="t"><tr><th>#</th><th>SIDE</th><th>LAST</th><th>TRIGGER</th><th>2ND</th><th style="text-align:left">WHERE PRICE IS</th><th></th></tr>${rows}</table>`;
+  document.getElementById("ranking").innerHTML = `<table class="t" data-cols="plays"><tr><th>#</th><th>SIDE</th><th>LAST</th><th>TRIGGER</th><th>2ND</th><th style="text-align:left">WHERE PRICE IS</th><th></th></tr>${rows}</table>`;
 
   const A = s.account;
   const pend = A.pending.map(o => `<tr><td>${esc(o.symbol)} <span class="dim">${esc(o.role || "")}</span></td><td class="${o.action==="BUY"?"buy":"sell"}">${esc(o.action)}</td>
@@ -951,26 +1005,42 @@ function render(s){
     || `<tr><td colspan="7" class="dim">${A.seen ? "No working orders." : "Waiting for IBKR account data…"}</td></tr>`;
   const done = A.done.slice(0, 5).map(o => `<tr class="dim"><td>${esc(o.symbol)}</td><td>${esc(o.action)}</td><td>${sz(o.qty)}</td><td>${esc(o.type)}</td>
     <td>${o.lmt ? px(o.lmt) : ""}</td><td></td><td>${esc(o.status)}</td></tr>`).join("");
+  const lot = store.get("lot", 1), on = canTrade();
+  const btn = (sym, mode, n) => `<button class="adj ${mode}" data-adj="${mode}" data-sym="${esc(sym)}" data-n="${n * lot}" ${on ? "" : "disabled"} title="${mode} ${n * lot} shares with a limit at the ${mode === "close" ? "touch" : "touch"}">${n}</button>`;
   const pos = A.positions.map(p => { const pnl = p.last ? (p.last - p.avg_cost) * p.qty : null;
-    return `<tr><td>${esc(p.symbol)}</td><td class="${p.qty>0?"buy":"sell"}">${p.qty>0?"+":""}${sz(p.qty)}</td><td>${px(p.avg_cost)}</td><td>${px(p.last)}</td>
-    <td class="${pnl==null?"":pnl>=0?"buy":"sell"}">${pnl==null?"—":(pnl>=0?"+":"−")+"$"+sz(Math.abs(pnl).toFixed(0))}</td></tr>`; }).join("")
-    || `<tr><td colspan="5" class="dim">Flat.</td></tr>`;
+    return `<tr><td>${esc(p.symbol)}</td><td class="${p.qty>0?"buy":"sell"}">${p.qty>0?"LONG ":"SHORT "}${sz(Math.abs(p.qty))}</td><td>${px(p.avg_cost)}</td><td>${px(p.last)}</td>
+    <td class="${pnl==null?"":pnl>=0?"buy":"sell"}">${pnl==null?"—":(pnl>=0?"+":"−")+"$"+sz(Math.abs(pnl).toFixed(0))}</td>
+    <td class="acts"><span class="dim">close</span> ${btn(p.symbol,"close",1)}${btn(p.symbol,"close",5)}${btn(p.symbol,"close",10)}
+      <span class="dim">add</span> ${btn(p.symbol,"add",1)}${btn(p.symbol,"add",5)}${btn(p.symbol,"add",10)}
+      <button data-flat="${esc(p.symbol)}" ${on ? "" : "disabled"} class="bflat">Flatten</button></td></tr>`; }).join("")
+    || `<tr><td colspan="6" class="dim">Flat.</td></tr>`;
+  const lotSel = `<span class="dim" style="margin-left:8px">× <select id="lotSel" title="what 1 / 5 / 10 means, in shares">${[1,10,100].map(v => `<option value="${v}" ${v===lot?"selected":""}>${v} sh</option>`).join("")}</select></span>`;
   const fills = A.fills.map(f => `<tr><td class="dim">${esc(String(f.time).slice(-8))}</td><td>${esc(f.symbol)}</td>
     <td class="${f.side==="BOT"?"buy":"sell"}">${f.side==="BOT"?"BOUGHT":"SOLD"}</td><td>${sz(f.shares)}</td><td>${px(f.price)}</td></tr>`).join("")
     || `<tr><td colspan="5" class="dim">No fills today.</td></tr>`;
   document.getElementById("account").innerHTML = `
-    <div><h4>PENDING ORDERS</h4><div class="scroll"><table class="t"><tr><th>SYMBOL</th><th>SIDE</th><th>QTY</th><th>TYPE</th><th>PRICE</th><th>TIF</th><th>STATUS</th></tr>${pend}${done}</table></div></div>
-    <div><h4>POSITIONS</h4><div class="scroll"><table class="t"><tr><th>SYMBOL</th><th>QTY</th><th>AVG</th><th>LAST</th><th>P&amp;L</th></tr>${pos}</table></div></div>
-    <div><h4>TODAY'S FILLS</h4><div class="scroll" style="max-height:170px;overflow-y:auto"><table class="t"><tr><th>TIME</th><th>SYMBOL</th><th>SIDE</th><th>QTY</th><th>PRICE</th></tr>${fills}</table></div></div>`;
+    <div><h4>PENDING ORDERS</h4><div class="scroll"><table class="t" data-cols="orders"><tr><th>SYMBOL</th><th>SIDE</th><th>QTY</th><th>TYPE</th><th>PRICE</th><th>TIF</th><th>STATUS</th></tr>${pend}${done}</table></div></div>
+    <div><h4>POSITIONS ${lotSel}</h4><div class="scroll"><table class="t" data-cols="positions"><tr><th>SYMBOL</th><th>QTY</th><th>AVG</th><th>LAST</th><th>P&amp;L</th><th style="text-align:left">CLOSE / ADD (limit at the touch)</th></tr>${pos}</table></div></div>
+    <div><h4>TODAY'S FILLS</h4><div class="scroll" style="max-height:170px;overflow-y:auto"><table class="t" data-cols="fills"><tr><th>TIME</th><th>SYMBOL</th><th>SIDE</th><th>QTY</th><th>PRICE</th></tr>${fills}</table></div></div>`;
 
+  document.querySelectorAll("#account table, #ranking table").forEach(makeColsResizable);
   document.getElementById("messages").innerHTML = s.messages.map(m =>
     `<div class="msg-${esc(m.level)} mono" style="font-size:11px">${ago(s.now-m.t)} · ${esc(m.text)}</div>`).join("") || `<span class="dim">—</span>`;
 }
 
-document.getElementById("account").addEventListener("click", e => {
+document.getElementById("account").addEventListener("click", async e => {
   const b = e.target.closest("button[data-cxl]");
-  if (b) cancelMine(+b.dataset.cxl);
+  if (b) return cancelMine(+b.dataset.cxl);
+  const f = e.target.closest("button[data-flat]");
+  if (f) return flatten(f.dataset.flat);
+  const a = e.target.closest("button[data-adj]");
+  if (a){
+    if (!canTrade()) return toast("Can't trade: " + whyNot(), false);
+    const out = await post("/api/trade/adjust", {symbol: a.dataset.sym, shares: +a.dataset.n, mode: a.dataset.adj});
+    toast(out.ok ? "Sent: " + out.sent : "Blocked: " + (out.reason || ""), out.ok);
+  }
 });
+document.getElementById("account").addEventListener("change", e => { if (e.target.id === "lotSel") store.set("lot", +e.target.value); });
 document.getElementById("ranking").addEventListener("click", e => {
   const b = e.target.closest("button[data-pin]");
   if (b) post("/api/pin", {symbol: b.dataset.pin, pinned: b.dataset.on === "1"});

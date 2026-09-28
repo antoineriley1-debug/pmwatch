@@ -98,6 +98,25 @@ class SimTradingTests(unittest.TestCase):
         self.assertEqual(broker.position("AAA"), 0)
         self.assertEqual(e._pending("AAA"), [])
 
+    def test_close_and_add_from_positions_panel(self):
+        e, tr, gate, broker = sim_setup()
+        gate.arm(True)
+        tr.submit("AAA", "BUY", 10.00, 100, 2.0, bracket=False)     # long 100
+        self.assertEqual(broker.position("AAA"), 100)
+        out = tr.adjust("AAA", 10, "add", 3.0)                       # buys 10 at the ask
+        self.assertTrue(out["ok"], out)
+        self.assertIn("BUY 10 AAA @ 10.00", out["sent"])
+        self.assertEqual(broker.position("AAA"), 110)
+        out = tr.adjust("AAA", 5, "close", 4.0)                      # sells 5 at the bid
+        self.assertIn("SELL 5 AAA @ 9.99", out["sent"])
+        self.assertEqual(broker.position("AAA"), 105)
+        out = tr.adjust("AAA", 500, "close", 5.0)                    # never closes more than you have
+        self.assertIn("SELL 105 AAA", out["sent"])
+        self.assertEqual(broker.position("AAA"), 0)
+        self.assertFalse(tr.adjust("AAA", 1, "close", 6.0)["ok"])    # flat: nothing to close
+        gate.arm(False)
+        self.assertFalse(tr.adjust("AAA", 1, "add", 7.0)["ok"])      # disarmed: blocked by the gate
+
     def test_size_and_caps_reach_the_dashboard_snapshot(self):
         e, tr, gate, broker = sim_setup(default_shares=50, max_shares_per_order=75)
         self.assertTrue(tr.set_size(500))
