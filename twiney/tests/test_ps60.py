@@ -29,9 +29,13 @@ class SecondEntryTests(unittest.TestCase):
         self.assertEqual(se["state"], ps60.SECOND_ENTRY)
         self.assertEqual(se["second_entry"], 738.9)
         self.assertEqual(se["build"], "building")
+        g = ps60.grade(self.play, 739.1, se, ps60.measured_potential(dict(self.play, mp=4.0), 739.1, 5.0, CFG), 100,
+                       True, DEFAULTS["trading"])
+        self.assertEqual(g["grade"], "READY")
+        # without your mp there is no room on the board: PASS whatever the candles say
         g = ps60.grade(self.play, 739.1, se, ps60.measured_potential(self.play, 739.1, 5.0, CFG), 100, True,
                        DEFAULTS["trading"])
-        self.assertEqual(g["grade"], "READY")
+        self.assertEqual(g["grade"], "PASS")
 
     def test_same_candle_never_counts_and_failure_resets(self):
         # the candle that makes the high can't be the entry, even if it dips and re-takes it inside the candle
@@ -60,20 +64,21 @@ class SecondEntryTests(unittest.TestCase):
         self.assertEqual(se["state"], ps60.SECOND_ENTRY)
         self.assertEqual(se["second_entry"], 240.2)
         self.assertEqual(se["build"], "not building")
-        g = ps60.grade(play, 240.7, se, ps60.measured_potential(play, 240.7, 4.0, CFG), 100, True, DEFAULTS["trading"])
+        g = ps60.grade(play, 240.7, se, ps60.measured_potential(dict(play, mp=3.0), 240.7, 4.0, CFG), 100, True,
+                       DEFAULTS["trading"])
         self.assertEqual(g["grade"], "WATCH")
 
 
 class MeasuredPotentialTests(unittest.TestCase):
     def test_mp_atr_and_pass(self):
-        play = {"side": "long", "trigger": 100.0, "target": 101.0, "stop": 99.0}
+        play = {"side": "long", "trigger": 100.0, "target": 101.0, "stop": 99.0, "mp": 0.8}
         mp = ps60.measured_potential(play, 100.2, 4.0, CFG)
         self.assertEqual((mp["dollars"], mp["ratio"], mp["verdict"]), (0.8, 0.2, "THIN"))
         se = {"state": ps60.IDLE, "build": None, "extreme": None, "second_entry": None, "fails": 0}
         g = ps60.grade(play, 100.2, se, mp, 100, True, DEFAULTS["trading"])
         self.assertEqual(g["grade"], "PASS")
         self.assertIn("THIN", g["why"])
-        self.assertEqual(ps60.measured_potential(dict(play, target=None), 100.2, 4.0, CFG)["verdict"], "NO TARGET")
+        self.assertEqual(ps60.measured_potential(dict(play, mp=None), 100.2, 4.0, CFG)["verdict"], "NO MP")
         g = ps60.grade(dict(play, stop=None), 100.2, se, ps60.measured_potential(play, 100.2, 1.0, CFG), 100, False,
                        DEFAULTS["trading"])
         self.assertEqual(g["grade"], "PASS")
@@ -96,7 +101,7 @@ class SneakyAndRemountTests(unittest.TestCase):
         sp = ps60.sneaky_pivots(bars(seq), 2.0, CFG)
         sup = [s for s in sp if s["kind"] == "supply"]
         self.assertTrue(sup, sp)
-        self.assertEqual((sup[0]["price"], sup[0]["touches"], sup[0]["mp"]), (100.0, 3, 5.0))
+        self.assertEqual((sup[0]["price"], sup[0]["touches"], sup[0]["room"]), (100.0, 3, 5.0))
         self.assertIn("SNEAKY PIVOT · SUPPLY", sup[0]["label"])
         # macro edges never qualify: a lone candle at the top is not a sneaky pivot
         self.assertFalse([s for s in sp if s["price"] == 105])

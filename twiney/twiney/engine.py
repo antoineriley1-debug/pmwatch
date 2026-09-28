@@ -696,7 +696,7 @@ class Engine:
         """The PS60 read for one play: second entry engine, MP vs ATR, grade, sneaky pivots."""
         pc = self.cfg["ps60"]
         tc = self.cfg["trading"]
-        atr_value = st.play.get("atr") or self._atr(st, bars)
+        atr_value = st.play.get("atr") or (self._atr(st, bars) if pc["atr_from_bars"] else None)
         se = ps60.second_entry(bars, st.play, t, pc)
         mp = ps60.measured_potential(st.play, price, atr_value, pc)
         shares = self.trader.default_shares if self.trader else tc["default_shares"]

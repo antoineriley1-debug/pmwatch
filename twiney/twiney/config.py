@@ -119,9 +119,10 @@ DEFAULTS = {
         "min_retrace_fraction": 0.25,
         # after the second entry price should be going the right way within this long
         "build_seconds": 120,
-        # measured potential vs daily ATR: CLEAR at or above this ratio, THIN below
+        # your measured potential (plays.json "mp") vs your ATR ("atr"): CLEAR at or above this ratio, THIN below
         "clear_ratio": 0.5,
-        # how many daily bars the ATR uses
+        # if a play has no "atr", compute one from IBKR daily bars (off: no ATR until you enter one)
+        "atr_from_bars": False,
         "atr_days": 14,
         # sneaky pivots on the 60-minute: micro range height cap (x ATR), min candles, min MP $
         "sneaky_max_height_atr": 1.25,

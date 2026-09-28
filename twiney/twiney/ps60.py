@@ -116,27 +116,17 @@ def atr(daily, n=14):
 
 
 def measured_potential(play, price, atr_value, cfg):
-    """MP = dollars from here to the next supply (long) or demand (short) the trader marked as target."""
-    target = play.get("target")
+    """MP is the trader's number (plays.json "mp"): the distance from price to the nearest moving
+    average / supply / demand on the Daily, read off the chart. TWINEY has no moving averages, so it
+    never computes MP. Without it the play has no room on the board and grades PASS."""
     manual = play.get("mp")
-    if manual:
-        # the trader's own measured potential, taken as-is
-        dollars = round(float(manual), 4)
-        if not atr_value:
-            return {"dollars": dollars, "atr": None, "ratio": None, "verdict": "NO ATR", "manual": True}
-        ratio = round(dollars / atr_value, 2)
-        return {"dollars": dollars, "atr": atr_value, "ratio": ratio, "manual": True,
-                "verdict": "CLEAR" if ratio >= cfg["clear_ratio"] else "THIN"}
-    if not target or not price:
-        return {"dollars": None, "atr": atr_value, "ratio": None, "verdict": "NO TARGET"}
-    long_ = play["side"] == "long"
-    dollars = round((target - price) if long_ else (price - target), 4)
-    if dollars <= 0:
-        return {"dollars": dollars, "atr": atr_value, "ratio": None, "verdict": "REACHED"}
+    if not manual:
+        return {"dollars": None, "atr": atr_value, "ratio": None, "verdict": "NO MP", "manual": False}
+    dollars = round(float(manual), 4)
     if not atr_value:
-        return {"dollars": dollars, "atr": None, "ratio": None, "verdict": "NO ATR"}
+        return {"dollars": dollars, "atr": None, "ratio": None, "verdict": "NO ATR", "manual": True}
     ratio = round(dollars / atr_value, 2)
-    return {"dollars": dollars, "atr": atr_value, "ratio": ratio,
+    return {"dollars": dollars, "atr": atr_value, "ratio": ratio, "manual": True,
             "verdict": "CLEAR" if ratio >= cfg["clear_ratio"] else "THIN"}
 
 
@@ -284,7 +274,7 @@ def sneaky_pivots(bars, atr_value, cfg):
                     inset_ok = level >= macro_lo + inset and level <= macro_hi - inset
                 if touches >= min_n and inset_ok and height <= cfg["sneaky_max_height_atr"] * atr_value \
                         and mp >= cfg["sneaky_min_mp"]:
-                    cand = {"kind": kind, "price": fmt_price(level), "touches": touches, "mp": round(mp, 2),
+                    cand = {"kind": kind, "price": fmt_price(level), "touches": touches, "room": round(mp, 2),
                             "t0": win[0][0], "t1": win[-1][0], "candles": n,
                             "macro_high": fmt_price(macro_hi), "macro_low": fmt_price(macro_lo)}
                     if best is None or cand["touches"] > best["touches"]:
@@ -295,8 +285,8 @@ def sneaky_pivots(bars, atr_value, cfg):
             best["label"] = f"SNEAKY PIVOT · {kind.upper()}"
             best["text"] = (f"SNEAKY PIVOT · {kind.upper()} {_px(best['price'])}: {best['touches']} 60-minute candles "
                             f"{'rejected into' if kind == 'supply' else 'held at'} it inside the macro channel "
-                            f"{_px(best['macro_low'])}–{_px(best['macro_high'])}. MP to the macro "
-                            f"{'high' if kind == 'supply' else 'low'} ${best['mp']:.2f}. "
+                            f"{_px(best['macro_low'])}–{_px(best['macro_high'])}. Room to the macro "
+                            f"{'high' if kind == 'supply' else 'low'} ${best['room']:.2f} (your Daily MP still rules). "
                             f"Path: break it → new {'high' if kind == 'supply' else 'low'} → retrace → second entry.")
             found[kind] = best
     return [found[k] for k in ("supply", "demand") if k in found]
@@ -351,10 +341,10 @@ def grade(play, price, se, mp, shares, stop_known, caps):
     """
     long_ = play["side"] == "long"
     gates = []
-    valid = bool(play.get("trigger")) and (mp["verdict"] != "REACHED")
+    valid = bool(play.get("trigger")) and mp["dollars"] is not None
     gates.append({"q": "Pivot valid?", "ok": valid,
-                  "why": f"pivot {_px(play['trigger'])} with a path to {_px(play.get('target'))}" if valid
-                  else "price is already at or past the measured potential — no pivot to trade"})
+                  "why": f"pivot {_px(play['trigger'])} with ${mp['dollars']:.2f} of measured potential" if valid
+                  else "no measured potential on this play — put mp in plays.json"})
     dollars = (shares or 0) * (price or 0)
     size_ok = bool(shares) and shares <= caps["max_shares_per_order"] and dollars <= caps["max_dollars_per_order"]
     gates.append({"q": "Comfortable with size?", "ok": size_ok,
@@ -370,12 +360,10 @@ def grade(play, price, se, mp, shares, stop_known, caps):
     else:
         gates.append({"q": "Know the risk?", "ok": False, "why": "no stop on this play"})
     reasons = []
-    if mp["verdict"] == "NO TARGET":
-        reasons.append("no target = no measured potential on the board")
+    if mp["verdict"] == "NO MP":
+        reasons.append("no measured potential on the board — put your mp (and atr) in plays.json")
     elif mp["verdict"] == "THIN":
         reasons.append(f"measured potential ${mp['dollars']:.2f} is THIN against a ${mp['atr']:.2f} ATR")
-    elif mp["verdict"] == "REACHED":
-        reasons.append("price is already past the measured potential")
     if not stop_known:
         reasons.append("no stop = risk not known")
     if reasons:

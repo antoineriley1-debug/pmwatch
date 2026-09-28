@@ -774,15 +774,14 @@ function renderTools(p){
 function ps60HTML(d){
   const s = d.ps60; if (!s) return "";
   const mp = s.mp, se = s.se;
-  const mpTxt = mp.dollars == null ? "no target = no measured potential" :
-    mp.verdict === "REACHED" ? "measured potential reached" :
-    `MP $${mp.dollars.toFixed(2)}${mp.manual ? " (yours)" : ""}` + (mp.atr ? ` · ATR $${mp.atr.toFixed(2)}${d.play.atr ? " (yours)" : ""} · ${mp.ratio}× → <b>${mp.verdict}</b>` : " · ATR not loaded yet");
+  const mpTxt = mp.dollars == null ? "no MP yet — put \"mp\" and \"atr\" on this play in plays.json" :
+    `MP $${mp.dollars.toFixed(2)}` + (mp.atr ? ` · ATR $${mp.atr.toFixed(2)} · ${mp.ratio}× → <b>${mp.verdict}</b>` : " · no ATR yet — put \"atr\" on this play");
   const gates = (s.gates || []).map(g => `<span title="${esc(g.q + " " + g.why)}">${g.ok ? "✅" : "❌"}</span>`).join("");
   const canSet = se.extreme && ["BROKE", "RETRACE"].includes(se.state) && Math.abs((d.play.second_entry || 0) - se.extreme) > 1e-6;
-  const sneaky = (s.sneaky || []).map(x => `<span class="dim" title="${esc(x.text)}">${esc(x.label)} ${px(x.price)} ×${x.touches} · MP $${x.mp.toFixed(2)}</span>`).join("");
+  const sneaky = (s.sneaky || []).map(x => `<span class="dim" title="${esc(x.text)}">${esc(x.label)} ${px(x.price)} ×${x.touches} · room $${x.room.toFixed(2)}</span>`).join("");
   return `<span class="g ${s.grade}" title="${esc(s.why)}">${s.grade}</span><span class="dim">${esc(s.why)}</span>
     <span class="gates" title="the four questions: pivot valid · size · control · risk">${gates}</span>
-    <span title="measured potential = dollars from here to your target, judged against the daily ATR">${mpTxt}</span>
+    <span title="your measured potential and ATR from plays.json, judged as CLEAR or THIN">${mpTxt}</span>
     <span class="se">${esc(se.text)} ${canSet ? `<button class="use" data-se="${se.extreme}" title="make ${px(se.extreme)} this play's 2nd entry (saved to plays.json)">use ${px(se.extreme)} as 2nd entry</button>` : ""}</span>
     ${sneaky}`;
 }
@@ -1034,7 +1033,7 @@ function drawChart(p){
       g.strokeStyle = col; g.lineWidth = 1.2; g.setLineDash([8, 4]);
       g.beginPath(); g.moveTo(0, yy); g.lineTo(plotW, yy); g.stroke(); g.setLineDash([]);
       g.fillStyle = col; g.font = "bold 10px system-ui";
-      g.fillText(`SNEAKY PIVOT · ${sp.kind.toUpperCase()} ×${sp.touches} · MP $${sp.mp.toFixed(2)}`, 6, sp.kind === "supply" ? yy - 4 : yy + 12);
+      g.fillText(`SNEAKY PIVOT · ${sp.kind.toUpperCase()} ×${sp.touches} · room $${sp.room.toFixed(2)}`, 6, sp.kind === "supply" ? yy - 4 : yy + 12);
       g.font = "11px ui-monospace, Menlo, Consolas, monospace";
     }
   }

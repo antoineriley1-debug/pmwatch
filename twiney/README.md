@@ -99,16 +99,17 @@ off the candles you see. Settings live in `config.json → ps60`.
   **use 738.90 as 2nd entry** so the play and the reload trackers move to it. After the second entry it watches the
   **build**: "building", "just triggered", or "NOT building after two minutes — out at breakeven". A close back
   through the pivot resets it and counts a failure. Judge on 5-minute candles with `second_entry_tf: 5`.
-- **Measured potential (MP) and ATR.** Put your own numbers on the play: `"mp": 2.50, "atr": 3.10` in `plays.json`
-  and TWINEY uses them as-is (shown as "(yours)"). Without them, MP is measured from the current price to your
-  `target` and the ATR comes from 30 daily bars from IBKR (or the days of 1-minute history it has). Shown as
-  `MP $2.77 · ATR $2.87 · 0.97× → CLEAR`; below `clear_ratio` (0.5 ATR) it is THIN.
+- **Measured potential (MP) and ATR are yours.** MP is the distance from price to the nearest moving average /
+  supply / demand on the Daily, which you read off your TradingView chart. TWINEY has no moving averages, so it never
+  computes MP. Put `"mp": 2.50, "atr": 3.10` on the play in `plays.json` and it shows
+  `MP $2.50 · ATR $3.10 · 0.81× → CLEAR`; below `clear_ratio` (0.5 ATR) it is THIN. A play without `mp` grades PASS
+  (no room on the board). `target` stays what it was: the price the runner exits at.
 - **Grade READY / WATCH / PASS** on every ladder and in the plays list, with the four questions as ✅ / ❌ (pivot valid,
-  size, control, risk). PASS = no target (no MP on the board), MP THIN, or no stop (risk not known). READY only when
+  size, control, risk). PASS = no `mp` (no room on the board), MP THIN against your ATR, or no stop (risk not known). READY only when
   the second entry has triggered and is building. The order confirmation repeats the grade, so a PASS play warns you
   before you send.
 - **Sneaky pivots** on the 60-minute: a micro range inside the macro channel (≥ 2 candles, prefer 3, tight vs ATR,
-  inset from the macro edges, MP ≥ $0.50 to the next macro edge). Shown as `SNEAKY PIVOT · SUPPLY 230.71 ×3 · MP $1.52`
+  inset from the macro edges, ≥ $0.50 of room to the next macro edge). Shown as `SNEAKY PIVOT · SUPPLY 230.71 ×3 · room $1.52`
   on the chart and under the story; the second-entry path is the same.
 - **Remount / rejection calls** at your levels: price goes through the level and reclaims it (REMOUNT) or loses it
   again (REJECTION). They go to the CALLS feed with Dan's how-to (in above the level once volume reclaims; the overshoot
