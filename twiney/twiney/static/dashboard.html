@@ -163,11 +163,11 @@ td.bars.l .bar-n{float:right;margin-right:3px} td.bars.r .bar-n{margin-left:3px}
 .lad tr.gap td{border-top:2px dashed var(--line)}
 .lad tr.best-bid td.bsz{color:var(--buy);font-weight:700}
 .lad tr.best-ask td.asz{color:var(--sell);font-weight:700}
-.lad tr.lvl td.px{color:var(--gold);font-weight:700}
-.lad tr.lvl td{border-top:1px solid rgba(255,197,61,.3);border-bottom:1px solid rgba(255,197,61,.3)}
-.lad tr.lastpx td.px{background:#dbe3ee;color:#0a0d12;font-weight:800;border-radius:3px}
+.lad tr.lvl td.px{color:#dbe3ee;font-weight:700}
+.lad tr.lvl td{border-top:1px solid rgba(219,227,238,.3);border-bottom:1px solid rgba(219,227,238,.3)}
+.lad tr.lastpx td.px{background:var(--gold);color:#0a0d12;font-weight:800;border-radius:3px}
 .lad tr.lastpx td.px::before{content:"▶";position:absolute;left:2px;color:#0a0d12}
-.lad tr.lastpx td{background:rgba(219,227,238,.08)}
+.lad tr.lastpx td{background:rgba(255,197,61,.10)}
 .mine{display:inline-block;font-size:9px;font-weight:700;padding:0 4px;border-radius:3px;border:1px solid #fff;color:#fff;margin-left:3px}
 .chip.drag{opacity:.5} .lad tr.droptarget td{outline:1px dashed var(--gold)}
 .chart-wrap canvas.lvltool{cursor:cell}
@@ -873,7 +873,7 @@ function ladderHTML(L){
   }
   h += `</table><div class="legend">Every row remembers the last ${L.memory_minutes} min. <span class="buy">Green bar</span> = shares sold into the bid there,
     <span class="sell">red bar</span> = shares bought from the ask. <span class="pips b">●</span><span class="pips a">●</span> = times the size came back after being hit.
-    A lit row = a CONFIRMED reload buyer / seller sits there (only confirmed ones are shown). White row = the last price. Gold price = your level. Click BUY / SELL on a row to place a limit there; click your order chip to cancel it.</div>`;
+    A lit row = a CONFIRMED reload buyer / seller sits there (only confirmed ones are shown). Gold row = the last price. White price = your level. Click BUY / SELL on a row to place a limit there; click your order chip to cancel it.</div>`;
   return h;
 }
 
@@ -923,8 +923,8 @@ function renderPane(p, d){
     <span class="pill ${pl.side==="long"?"ok":"bad"}">${esc(pl.side.toUpperCase())}</span>
     <button data-pin="${esc(d.symbol)}" data-on="${d.pinned?0:1}" class="${d.pinned?"on":""}" title="Pinned ladders never switch symbols">${d.pinned?"📌 Pinned":"Pin"}</button>
     <span class="pill ${hcls}">${esc(h.status)}</span>
-    <span class="p-quote">LAST <b>${px(d.last)}</b> <span class="buy">${px(d.bid)}</span> × <span class="sell">${px(d.ask)}</span></span>
-    <span class="p-quote dim">PIVOT <b style="color:var(--gold)">${px(pl.trigger)}</b> · 2ND <b style="color:var(--cyan)">${px(pl.second_entry)}</b></span>
+    <span class="p-quote">LAST <b style="color:var(--gold)">${px(d.last)}</b> <span class="buy">${px(d.bid)}</span> × <span class="sell">${px(d.ask)}</span></span>
+    <span class="p-quote dim">PIVOT <b style="color:#dbe3ee">${px(pl.trigger)}</b> · 2ND <b style="color:var(--cyan)">${px(pl.second_entry)}</b></span>
     ${d.position ? `<span class="pill ${d.position.pnl >= 0 ? "ok" : "bad"}">POS ${d.position.qty > 0 ? "+" : ""}${sz(d.position.qty)} @ ${px(d.position.avg_cost)}${d.position.pnl != null ? ` · ${d.position.pnl >= 0 ? "+" : "−"}$${sz(Math.abs(d.position.pnl).toFixed(0))}` : ""}</span>` : ""}
     ${d.orders.length ? `<span class="pill">${d.orders.length} working order${d.orders.length > 1 ? "s" : ""}</span>` : ""}
     ${d.trap && d.trap.longs ? `<span class="trap l ${d.trap.longs.heavy ? "heavy" : ""}" title="bought the offer above here in the last ${d.trap.window_minutes} min, now underwater">${kfmt(d.trap.longs.shares)} LONGS TRAPPED above ${px(d.trap.longs.low)}</span>` : ""}
@@ -986,7 +986,7 @@ function aggBars(bars, tf){
   return out;
 }
 
-const LEVEL_STYLE = {trigger:["#ffc53d",[],2], second_entry:["#3fd0ff",[6,4],1.6], extra:["#b9c3d3",[3,4],1.2],
+const LEVEL_STYLE = {trigger:["#dbe3ee",[],1.6], second_entry:["#3fd0ff",[6,4],1.6], extra:["#b9c3d3",[3,4],1.2],
   target:["#26d07c",[2,4],1], stop:["#ff4d5e",[2,4],1]};
 
 function drawChart(p){
@@ -1199,9 +1199,10 @@ function drawChart(p){
   // last price
   if (d.last){
     const yy = y(d.last);
-    g.strokeStyle = "#dbe3ee"; g.setLineDash([2, 3]); g.beginPath(); g.moveTo(0, yy); g.lineTo(plotW, yy); g.stroke(); g.setLineDash([]);
-    g.fillStyle = "#dbe3ee"; g.fillRect(plotW, yy - 8, labelW, 16);
-    g.fillStyle = "#0a0d12"; g.fillText(`LAST ${px(d.last)}`, plotW + 3, yy + 4);
+    g.strokeStyle = "#ffc53d"; g.lineWidth = 1.4; g.setLineDash([2, 3]); g.beginPath(); g.moveTo(0, yy); g.lineTo(plotW, yy); g.stroke(); g.setLineDash([]); g.lineWidth = 1;
+    g.fillStyle = "#ffc53d"; g.fillRect(plotW, yy - 8, labelW, 16);
+    g.fillStyle = "#0a0d12"; g.font = "bold 11px ui-monospace, Menlo, Consolas, monospace"; g.fillText(`LAST ${px(d.last)}`, plotW + 3, yy + 4);
+    g.font = "11px ui-monospace, Menlo, Consolas, monospace";
   }
   // time axis
   g.fillStyle = "#7b889e";
@@ -1303,7 +1304,7 @@ function render(s){
   const rows = s.ranking.map(r => `<tr class="${r.depth?"onslot":""} ${r.retired?"retired":""}">
     <td>${r.retired ? "✖" : (r.rank ?? "—")} ${esc(r.symbol)}${r.depth?" ◆":""}</td>
     <td class="${r.side==="long"?"buy":"sell"}">${esc(r.side)}</td>
-    <td>${px(r.last)}</td><td style="color:var(--gold)">${px(r.trigger)}</td><td style="color:var(--cyan)">${px(r.second_entry)}</td>
+    <td style="color:var(--gold);font-weight:700">${px(r.last)}</td><td style="color:#dbe3ee">${px(r.trigger)}</td><td style="color:var(--cyan)">${px(r.second_entry)}</td>
     <td class="grade ${r.ps60 ? r.ps60.grade : ""}" title="${esc(r.ps60 ? r.ps60.why : "")}">${r.ps60 ? r.ps60.grade : ""}</td>
     <td class="status">${r.retired ? `RETIRED — ${esc(r.retired.reason)} at ${px(r.retired.price)}` : esc(r.status)}${r.ps60 && r.ps60.mp.dollars != null && r.ps60.mp.atr ? ` <span class="dim">· MP $${r.ps60.mp.dollars.toFixed(2)} ${r.ps60.mp.verdict}</span>` : ""}</td>
     <td>${r.retired ? `<button data-play="${esc(r.symbol)}" data-act="reactivate" title="Put this play back in the rotation">Reactivate</button>`

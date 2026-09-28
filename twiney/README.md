@@ -71,7 +71,7 @@ Other modes:
   orders. Turn it off to see trapped bands, sneaky pivots, reload marks, absorption bubbles and R/C/P call markers.
 - **Chart axes work like TradingView:** pull the price axis down to squeeze, up to expand; pull the time axis right for
   wider bars, left for more bars; wheel to zoom; drag to pan; double-click to reset.
-- **Ladder rows:** the white row is the last price. Gold price = your level. A lit red / green row is a CONFIRMED reload
+- **Ladder rows:** the gold row is the last price (gold = price, everywhere). White price = your pivot / level. A lit red / green row is a CONFIRMED reload
   seller / buyer with its refill count (`RELOAD SELLER ×14`); only confirmed ones are shown, and when it is gone the row
   says `SELLER CLEARED OUT` or `SELLER PULLED`.
 - **Pane controls:**
