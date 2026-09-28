@@ -9,11 +9,14 @@ Everything a prop desk does with a session after the fact starts here:
   - list recordings with their markers, and open one in the replay desk
 """
 
+import csv
+import io
 import json
 import os
 import subprocess
 import sys
 import time
+import zipfile
 
 from .book import ASK, BID, INSERT
 from .recorder import Recorder, read_events
@@ -199,6 +202,95 @@ class Desk:
                         "journal": os.path.exists(path[:-6] + ".journal.md"),
                         "current": self.recording and os.path.abspath(self.engine.recorder.path) == os.path.abspath(path)})
         return out[:40]
+
+    def export_bundle(self, name, t=None):
+        """One zip with everything about a session, made for handing to a person or an AI:
+        the raw recording, markers, journal, screenshots, and a compact SUMMARY.md + calls.csv."""
+        name = os.path.basename(name)
+        path = os.path.join(self.dir, name)
+        if not name.endswith(".jsonl") or not os.path.exists(path):
+            return None
+        stem = name[:-6]
+        current = self.recording and os.path.abspath(self.engine.recorder.path) == os.path.abspath(path)
+        journal = path[:-6] + ".journal.md"
+        if current:
+            # export while still recording: write the journal so far, keep recording
+            journal = self.write_journal(path, t or time.time())
+            os.replace(journal, path[:-6] + ".journal.md")
+            journal = path[:-6] + ".journal.md"
+        header, calls, grades, marks, notes, fills, orders = None, [], {}, [], [], [], []
+        first_t = last_t = None
+        n_events = 0
+        for ev in read_events(path):
+            n_events += 1
+            k = ev.get("ev")
+            if k == "session":
+                header = ev
+            elif k == "alert":
+                calls.append(ev)
+            elif k == "grade":
+                if ev.get("verdict"):
+                    grades[ev["key"]] = ev["verdict"]
+                else:
+                    grades.pop(ev["key"], None)
+            elif k == "mark":
+                marks.append(ev)
+            elif k == "note":
+                notes.append(ev)
+            elif k == "order":
+                orders.append(ev)
+            if ev.get("t") is not None and k not in ("session",):
+                first_t = ev["t"] if first_t is None else min(first_t, ev["t"])
+                last_t = ev["t"] if last_t is None else max(last_t, ev["t"])
+        if current:
+            fills = sorted(self.engine.fills.values(), key=lambda f: f["t"])
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+            z.write(path, f"{stem}/{name}")
+            for extra in (path[:-6] + ".marks.jsonl", journal):
+                if os.path.exists(extra):
+                    z.write(extra, f"{stem}/{os.path.basename(extra)}")
+            shots = os.path.join(self.dir, "shots")
+            if os.path.isdir(shots):
+                for f in sorted(os.listdir(shots)):
+                    if f.startswith(stem + "-"):
+                        z.write(os.path.join(shots, f), f"{stem}/shots/{f}")
+            # calls.csv
+            cs = io.StringIO()
+            w = csv.writer(cs)
+            w.writerow(["time", "symbol", "call", "price", "side", "role", "absorbed_shares", "refills", "grade", "text"])
+            for a in calls:
+                w.writerow([time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(a["t"])), a["symbol"], a["label"], a["price"],
+                            a.get("side"), a.get("role"), a.get("absorbed"), a.get("refreshes"), grades.get(a.get("key"), ""),
+                            a.get("text", "")])
+            z.writestr(f"{stem}/calls.csv", cs.getvalue())
+            # SUMMARY.md — what an AI needs first
+            fmt = lambda x: time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(x)) if x else "—"
+            s = [f"# TWINEY session {stem}", "",
+                 "This bundle is a TWINEY (PS60 order-flow workstation) session. Files:",
+                 f"- `{name}`: every raw event as JSON lines (l1 quotes, depth book ops, prints, calls, orders, marks, notes).",
+                 "- `calls.csv`: the calls TWINEY made (reload buyer/seller, cleaned up, pulled, remount, rejection) with the trader's grades.",
+                 "- `*.journal.md`: the trader's session journal. `*.marks.jsonl`: markers. `shots/`: screenshots.", "",
+                 f"- Session: {fmt(first_t)} → {fmt(last_t)}  ({((last_t or 0) - (first_t or 0)) / 60:.0f} min), {n_events:,} events",
+                 f"- TWINEY version: {header.get('version') if header else '?'}", ""]
+            if header:
+                s += ["## Plays (the trader's PS60 levels)", "", "| symbol | side | pivot | 2nd entry | target | stop | mp | atr | notes |", "|---|---|---|---|---|---|---|---|---|"]
+                for p in header.get("plays", []):
+                    s.append(f"| {p['symbol']} | {p['side']} | {p.get('trigger')} | {p.get('second_entry') or ''} | {p.get('target') or ''} | {p.get('stop') or ''} | {p.get('mp') or ''} | {p.get('atr') or ''} | {p.get('notes', '')} |")
+                s += ["", "## Settings that shaped the calls", "", "```json", json.dumps({k: header.get("config", {}).get(k) for k in ("reload", "tape", "trap", "ps60", "voice")}, indent=1), "```", ""]
+            s += ["## Calls", ""] + ([f"- {fmt(a['t'])} **{a['symbol']} {a['label']}** @ {a['price']}" + (f" — graded {grades[a['key']].upper()}" if a.get("key") in grades else "") + f"\n  {a.get('text', '')}" for a in calls] or ["_none_"])
+            s += ["", "## Notes", ""] + ([f"- {fmt(n['t'])} {n.get('symbol') or ''}: {n['text']}" for n in notes] or ["_none_"])
+            s += ["", "## Markers", ""] + ([f"- {fmt(m['t'])} {m.get('symbol') or ''} {m.get('price') or ''} — {m.get('note') or ''} {('— ' + m['headline']) if m.get('headline') else ''}" for m in marks] or ["_none_"])
+            s += ["", "## Orders sent", ""] + ([f"- {fmt(o['t'])} {o['action']} {o['qty']} {o['sym']} @ {o['px']}" + (f" + {', '.join(l['role'] + ' ' + str(l.get('aux') or l['price']) for l in o.get('legs', []))}" if o.get("legs") else "") for o in orders] or ["_none_"])
+            if fills:
+                s += ["", "## Fills (this session)", ""] + [f"- {f['time']} {f['symbol']} {f['side']} {int(f['shares'])} @ {f['price']}" for f in fills]
+            s += ["", "## Vocabulary", "",
+                  "- RELOAD BUYER / SELLER: resting size at a price kept coming back after being hit (refills) while shares traded into it (absorbed).",
+                  "- CLEANED UP: that reload got eaten and price went through the level. PULLED: it vanished without getting hit.",
+                  "- REMOUNT: price went through a level and reclaimed it. REJECTION: went through and lost it again.",
+                  "- Pivot, second entry, measured potential (MP), ATR, cash flow, runner, max pain: PS60 terms (Dan Shapiro).", ""]
+            z.writestr(f"{stem}/SUMMARY.md", "\n".join(s))
+        return buf.getvalue()
 
     def delete_recording(self, name):
         """Delete a recording and everything that belongs to it (markers, journal, screenshots)."""

@@ -44,6 +44,15 @@ class DeskTests(unittest.TestCase):
             listed = desk.list_recordings()
             self.assertEqual(listed[0]["marks"][0]["n"], m["n"])
             self.assertTrue(listed[0]["journal"])
+            import io, zipfile
+            data = desk.export_bundle(listed[0]["name"])
+            names = zipfile.ZipFile(io.BytesIO(data)).namelist()
+            stem = listed[0]["name"][:-6]
+            for want in (listed[0]["name"], "SUMMARY.md", "calls.csv", stem + ".journal.md", stem + ".marks.jsonl"):
+                self.assertIn(f"{stem}/{want}", names)
+            summary = zipfile.ZipFile(io.BytesIO(data)).read(f"{stem}/SUMMARY.md").decode()
+            self.assertIn("watching the pivot", summary)
+            self.assertIn("| AAA | long |", summary)
             out = desk.delete_recording(listed[0]["name"])
             self.assertTrue(out["ok"])
             self.assertEqual(sorted(out["removed"]), sorted([listed[0]["name"], listed[0]["name"][:-6] + ".marks.jsonl", listed[0]["name"][:-6] + ".journal.md"]))

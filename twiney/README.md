@@ -168,8 +168,12 @@ off the candles you see. Settings live in `config.json → ps60`.
 - **JOURNAL window / key J:** type a note, press Enter. Notes go into the recording and the session journal.
 - **Stop** writes `recordings/NAME.journal.md`: duration, plays, P&L, your notes, markers (with screenshots), every
   call with its grade, and every fill. The JOURNAL window links the last journals.
-- **DESK window:** every recording with size, marker count, a **▶ Replay** button and a **🗑** that deletes the
-  recording with its markers, journal and screenshots (asks first). Replay opens a second TWINEY
+- **DESK window:** every recording with size, marker count, **⬇ Export**, **▶ Replay**, and **🗑** (deletes the
+  recording with its markers, journal and screenshots, asks first).
+- **⬇ Export** downloads one zip made to hand to a person or an AI: the raw recording, `calls.csv` (every call with
+  your grade), the journal, markers, screenshots, and `SUMMARY.md` (plays, settings, calls, notes, markers, orders,
+  fills, and what the vocabulary means). The JOURNAL window has "Export this session so far" while you are still
+  recording. Replay opens a second TWINEY
   on the next port in a new tab: **space** = play / pause, **← →** = slower / faster, click a marker to jump there
   (backwards jumps restart the replay and fast-forward). Practice orders fill against the replayed book.
 - `start_replay.bat` still works for replaying from the command line.

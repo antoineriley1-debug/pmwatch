@@ -72,6 +72,19 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                         self._send(200, json.dumps({"ok": True, "layout": json.load(fh)}), "application/json")
                 else:
                     self._send(200, json.dumps({"ok": True, "layout": None}), "application/json")
+            elif path == "/api/desk/export" and desk is not None:
+                from urllib.parse import parse_qs, urlparse
+                name = os.path.basename(parse_qs(urlparse(self.path).query).get("name", [""])[0])
+                data = desk.export_bundle(name, clock())
+                if data is None:
+                    self._send(404, "not found", "text/plain")
+                else:
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/zip")
+                    self.send_header("Content-Disposition", f'attachment; filename="{name[:-6]}.zip"')
+                    self.send_header("Content-Length", str(len(data)))
+                    self.end_headers()
+                    self.wfile.write(data)
             elif path == "/api/desk/list":
                 self._send(200, json.dumps(desk.list_recordings() if desk else []), "application/json")
             elif path == "/healthz":

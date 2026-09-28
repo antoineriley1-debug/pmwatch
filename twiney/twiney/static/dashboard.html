@@ -74,6 +74,7 @@ body:not(.free) .winbar{cursor:default}
 .rec{display:flex;gap:8px;align-items:center;padding:3px 6px;border-radius:4px;background:var(--panel2);margin-bottom:3px;font-size:12px}
 .rec.cur{outline:1px solid var(--sell)} .rec .nm{flex:1;font-family:var(--mono)} .rec button{padding:1px 6px;font-size:11px}
 .rec button.del{color:var(--dim)} .rec button.del:hover{color:var(--sell);border-color:var(--sell)}
+.rec a.btn{font-size:11px;padding:1px 6px;border:1px solid var(--line);border-radius:5px;color:var(--text);text-decoration:none;background:var(--panel)} .rec a.btn:hover{border-color:var(--gold)}
 @media (max-width:900px){#deskBody{grid-template-columns:1fr}}
 .p-head .gear{position:static}
 .p-head .gear .pop{position:fixed;right:auto;top:auto}
@@ -1682,11 +1683,14 @@ function renderDesk(s){
   if (!inReplay && (!deskList || s.now - deskListT > 15)){ deskListT = s.now; fetch("/api/desk/list").then(r => r.json()).then(l => { deskList = l; renderDesk(state); }).catch(() => {}); }
   const recHTML = inReplay ? `<div class="dim">Replaying ${esc(s.replay.file || "")}</div>` : (deskList || []).map(r => `<div class="rec ${r.current ? "cur" : ""}">
       <span class="nm">${esc(r.name.replace(".jsonl", ""))}</span><span class="dim">${r.size_mb} MB · ${r.marks.length} marks${r.journal ? " · journal" : ""}</span>
+      <a class="btn" href="/api/desk/export?name=${encodeURIComponent(r.name)}" title="download a zip: recording, calls.csv, journal, markers, screenshots and a SUMMARY.md you can hand to an AI">⬇ Export</a>
       ${r.current ? `<span class="dim">recording…</span>` : `<button data-replay="${esc(r.name)}" title="open this recording in the replay desk (new tab)">▶ Replay</button><button data-del="${esc(r.name)}" class="del" title="delete this recording, its markers, journal and screenshots">🗑</button>`}</div>`).join("") || `<div class="dim">No recordings yet.</div>`;
   document.getElementById("jList").innerHTML = (dk.notes || []).slice().reverse().map(n => `<div class="jn"><b>${new Date(n.t * 1000).toLocaleTimeString()}</b>${esc(n.symbol || "")} ${esc(n.text)}</div>`).join("")
     || `<div class="dim">No notes yet. What did you see, what did you do, why.</div>`;
   const jl = (deskList || []).filter(r => r.journal && !r.current).slice(0, 5);
   if (jl.length) document.getElementById("jList").innerHTML += `<div class="dim" style="margin-top:6px">Journals: ${jl.map(r => `<a href="/recordings/${esc(r.name.replace(".jsonl", ".journal.md"))}" target="_blank">${esc(r.name.replace(".jsonl", ""))}</a>`).join(" · ")}</div>`;
+  const cur = (deskList || []).find(r => r.current);
+  if (cur) document.getElementById("jList").innerHTML += `<div style="margin-top:6px"><a class="btn" href="/api/desk/export?name=${encodeURIComponent(cur.name)}">⬇ Export this session so far</a> <span class="dim">(recording, journal, calls.csv, markers, screenshots, SUMMARY.md — for you or an AI)</span></div>`;
   document.getElementById("deskBody").innerHTML = `<div><h5>MARKERS ${inReplay ? "(click to jump)" : "this session"}</h5>${mkHTML}</div><div><h5>RECORDINGS</h5>${recHTML}</div>`;
 }
 function fmtDur(sec){ sec = Math.max(0, Math.round(sec)); const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60; return (h ? h + ":" : "") + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0"); }
