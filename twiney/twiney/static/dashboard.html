@@ -1252,7 +1252,7 @@ function drawOne(p, cv, v, isFoot){
 
   // your levels: band + line + label
   const tickOf = v => v >= 1 ? 0.01 : 0.0001;
-  for (const l of d.user_levels){
+  for (const l of (isFoot ? [] : d.user_levels)){   // the footprint window shows the footprint, nothing else
     const dl = p.dragLevel && p.dragLevel.role === l.role && Math.abs(p.dragLevel.from - l.price) < 1e-6;
     const lp = dl ? p.dragLevel.price : l.price;
     if (lp < lo || lp > hi) continue;
@@ -1335,17 +1335,16 @@ function drawOne(p, cv, v, isFoot){
       const b = bars[k], bucket = cells[b[0]] || {};
       const x = x0 + k * cw + cw / 2, rows = {};
       for (const pr in bucket){ const r0 = Math.floor((+pr + 1e-9) / step) * step; const c = rows[r0] = rows[r0] || [0, 0]; c[0] += bucket[pr][0]; c[1] += bucket[pr][1]; }
-      const hasPrints = Object.keys(rows).length > 0;
-      // every price row the candle covered gets a cell, even 0×0, so the column reads like a footprint
-      for (let r0 = Math.floor(b[3] / step) * step; r0 <= b[2] + 1e-9; r0 += step){
-        const key = Object.keys(rows).find(kk => Math.abs(+kk - r0) < step / 2);
-        const [buy, sell] = key ? rows[key] : [0, 0];
-        const p_ = r0 + step / 2; if (p_ + step / 2 < lo || p_ - step / 2 > hi) continue;
+      // only the rows that actually traded get a cell (a wick with no prints stays a wick)
+      for (const r0 in rows){
+        const [buy, sell] = rows[r0];
+        if (!buy && !sell) continue;
+        const p_ = +r0 + step / 2; if (p_ + step / 2 < lo || p_ - step / 2 > hi) continue;
         const yy = y(p_), h = Math.max(2, rowH - 1);
-        const bg = buy >= 3 * sell && buy >= 300 ? "rgba(38,208,124,.42)" : sell >= 3 * buy && sell >= 300 ? "rgba(255,77,94,.42)" : hasPrints ? "rgba(123,136,158,.18)" : "rgba(123,136,158,.06)";
+        const bg = buy >= 3 * sell && buy >= 300 ? "rgba(38,208,124,.42)" : sell >= 3 * buy && sell >= 300 ? "rgba(255,77,94,.42)" : "rgba(123,136,158,.18)";
         g.fillStyle = bg; g.fillRect(x - cw * 0.47, yy - h / 2, cw * 0.94, h);
         const f0 = n => n ? kfmt(n) : "0";
-        if (showText){ g.fillStyle = hasPrints ? "#e8eef8" : "#4a5566"; g.fillText(hasPrints ? `${f0(sell)}×${f0(buy)}` : "—", x, yy + 3); }
+        if (showText){ g.fillStyle = "#e8eef8"; g.fillText(`${f0(sell)}×${f0(buy)}`, x, yy + 3); }
       }
     }
     g.textAlign = "start"; g.font = "11px ui-monospace, Menlo, Consolas, monospace";
@@ -1417,7 +1416,7 @@ function drawOne(p, cv, v, isFoot){
   }
 
   // your working orders (a grabbed one follows the mouse)
-  for (const o of d.orders){
+  for (const o of (isFoot ? [] : d.orders)){
     if (!o.price || o.price < lo || o.price > hi) continue;
     const drag = p.dragOrder && p.dragOrder.id === o.id;
     const yy = y(drag ? p.dragOrder.price : o.price), col = o.action === "BUY" ? "#9fffcf" : "#ffb3bb";
@@ -1429,7 +1428,7 @@ function drawOne(p, cv, v, isFoot){
   // last price
   if (d.last){
     const yy = y(d.last);
-    g.strokeStyle = "#ffc53d"; g.lineWidth = 1.4; g.setLineDash([2, 3]); g.beginPath(); g.moveTo(0, yy); g.lineTo(plotW, yy); g.stroke(); g.setLineDash([]); g.lineWidth = 1;
+    if (!isFoot){ g.strokeStyle = "#ffc53d"; g.lineWidth = 1.4; g.setLineDash([2, 3]); g.beginPath(); g.moveTo(0, yy); g.lineTo(plotW, yy); g.stroke(); g.setLineDash([]); g.lineWidth = 1; }
     g.fillStyle = "#ffc53d"; g.fillRect(plotW, yy - 8, labelW, 16);
     g.fillStyle = "#0a0d12"; g.font = "bold 11px ui-monospace, Menlo, Consolas, monospace"; g.fillText(`LAST ${px(d.last)}`, plotW + 3, yy + 4);
     g.font = "11px ui-monospace, Menlo, Consolas, monospace";
