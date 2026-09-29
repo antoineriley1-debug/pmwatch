@@ -1,4 +1,4 @@
-# TWINEY v1.7
+# TWINEY v2.0
 
 An IBKR order-flow workstation built around PS60 levels, with ladder trading that is
 **locked to paper accounts** until you deliberately unlock it.
@@ -63,18 +63,19 @@ Other modes:
     candles start at 9:30 like every other chart), a session **VWAP** line (toggle), and buy/sell volume. Your pivot, 2nd entry, extra levels, target and stop are drawn as labelled lines with a band. Green/red bubbles show shares absorbed into resting buyers/sellers at watched levels. R/C/P markers show reload, cleaned-up and pulled calls. Your working orders are drawn as lines too.
   - **Level-memory ladder.** Every price row remembers the last 15 minutes: shares sold into the bid and bought from the ask there, how many times the size came back after being hit (●), and a glowing **BUYER ×n / SELLER ×n** tag when a reload is confirmed. Your levels and your orders are tagged on their rows. The ladder stays centered on price.
   - **Time & sales** with prints at your levels tagged.
-- **Build your own screen.** Every window is one view with a type and a link. **Windows ▾ → + Chart / + Footprint /
-  + Ladder / + Time & sales / + Quote & trade** adds a window; the dropdown in its title bar links it to **Ladder 1 / 2 / 3**
-  (follows whatever play holds that ladder) or to a **symbol** (always that stock; a symbol outside the three ladders
-  gets its chart and quote, but no depth or tape). Windows move (Layout: FREE, drag the title bar), resize from any edge
-  or corner, fold (▾) and hide or remove (✕). The default screen is five windows per ladder: QUOTE & TRADE, CHART,
-  LADDER, TIME & SALES, FOOTPRINT 5m, plus CALLS, WHAT'S HAPPENING, DESK, JOURNAL, plays, orders and feed messages.
-- **💾 Save layout** writes the whole screen (windows, links, sizes, positions, chart settings, columns) to
-  `layout.json` next to `config.json`. It loads on every start, in any browser. Until you save, changes live only in
-  the browser you made them in. **Reset layout** deletes the saved layout and puts everything back.
-- **Voice reads one stock at a time:** the stock in the window you last clicked (the window gets a thin gold outline).
-  To pin the voice, click **🗣** in a window's title bar — lit means the voice reads that window's stock; mark more than
-  one if you want two. The header shows which stock the voice is on. 🗣 on a QUOTE & TRADE header mutes that stock.
+- **One screen, one symbol.** Type a ticker in the box at the top (or press `/`) and Enter: TWINEY opens it, gives it a
+  ladder, and the whole screen is that stock — quote strip (last, change, bid × ask with sizes, pivot / 2nd / target /
+  stop, grade, MP and ATR), day stats (open, high, low, prev close, volume, tape read, trapped traders), the trade bar,
+  the chart, the 5-minute footprint under it, the ladder and time & sales on the right, and a bottom drawer with tabs:
+  STORY (what's happening + the PS60 read), CALLS (this symbol; tick "show every play" for all), ORDERS, PLAYS, DESK,
+  JOURNAL, MESSAGES. The watchlist on the left lists your plays closest to pivot first; click one to switch. A ticker
+  that is not in plays.json becomes a watch-only play — mark its pivot on the chart and it joins the ranking.
+- **Panels:** drag the gutters between them to resize; ▾ on a panel header collapses it; the drawer collapses too.
+  **💾** saves the sizes, chart settings and columns to `layout.json` (loads on every start). **Reset** puts it back.
+- **Ladders:** the symbol on screen is always pinned to a ladder; the other two rotate to the plays closest to their
+  pivots (⟳ turns rotation off). Pin from the quote strip to keep a symbol's ladder when you switch away.
+- **Voice and beeps follow the screen:** only the symbol you have up is spoken or beeped. 🗣 in the header turns the
+  voice off.
 - **Clean chart** (the `clean` button above the chart, on by default): only candles, volume, VWAP, your levels and your
   orders. Turn it off to see trapped bands, sneaky pivots, reload marks, absorption bubbles and R/C/P call markers.
 - **Trade from the chart:** right-click at any price for BUY / SELL limit there (and Flatten / Cancel all), or hover

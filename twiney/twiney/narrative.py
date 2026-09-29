@@ -111,9 +111,9 @@ def proximity_line(play, price):
     """'Price is approaching your pivot 128.40 — 6¢ away (0.05%).'"""
     if price is None:
         return None, None
-    options = [("trigger", play["trigger"])]
-    if play.get("second_entry"):
-        options.append(("second_entry", play["second_entry"]))
+    options = [(r, play.get(r)) for r in ("trigger", "second_entry") if play.get(r)]
+    if not options:
+        return None, None
     role, level = min(options, key=lambda o: abs(price - o[1]))
     gap = price - level
     pct = abs(gap) / price * 100
@@ -263,5 +263,5 @@ def story(play, price, levels, bars, tape, now, recent_alerts, min_shares=1000, 
 def short_status(play, price):
     text, where = proximity_line(play, price)
     if text is None:
-        return "no price yet"
+        return "no price yet" if price is None else "no pivot yet — mark one on the chart"
     return text.replace("Price is ", "").rstrip(".")

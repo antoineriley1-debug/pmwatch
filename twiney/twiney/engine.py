@@ -136,6 +136,9 @@ class Engine:
         self.alerts = deque(maxlen=300)
         self.messages = deque(maxlen=80)
         self.listeners = []
+        self.play_listeners = []   # called with a new play (typed-in ticker) so the feed subscribes it
+        self.focus = None
+        self.focus_pinned = False
         self.connection = {"state": "DISCONNECTED", "since": None, "detail": "",
                            "market_data_type": None}
         self.started = None
@@ -416,6 +419,8 @@ class Engine:
                     return False
             if role == "trigger" and price is None:
                 return False  # a play always needs a trigger
+            if role == "trigger" and price is not None:
+                st.play["watch"] = False  # a typed-in ticker becomes a real play once it has a pivot
             old = st.play.get(role)
             st.play[role] = price
             if role in ("trigger", "second_entry"):
@@ -462,7 +467,7 @@ class Engine:
         if not self.plays_path:
             return
         import json
-        keep = ("symbol", "side", "trigger", "second_entry", "target", "stop", "mp", "atr", "extra_levels", "notes", "active",
+        keep = ("symbol", "side", "trigger", "second_entry", "target", "stop", "mp", "atr", "extra_levels", "notes", "active", "watch",
                 "exchange", "primary_exchange", "currency")
         def row(p):
             r = {("pivot" if k == "trigger" else k): p[k] for k in keep if k in p}
@@ -552,7 +557,7 @@ class Engine:
         st.book = Book(self.cfg["depth"]["rows_requested"])
         st.resync_until = t + self.cfg["reload"]["resync_grace_seconds"]
         p = st.play
-        wanted = [(p["trigger"], "trigger")]
+        wanted = [(p["trigger"], "trigger")] if p.get("trigger") else []
         if p.get("second_entry"):
             wanted.append((p["second_entry"], "second_entry"))
         wanted += [(lv, "extra") for lv in p.get("extra_levels", [])]
@@ -796,6 +801,55 @@ class Engine:
             if hit:
                 self.retire_play(st.symbol, hit, t, price)
 
+    def add_play(self, symbol, t=None, side="long"):
+        """A ticker typed into the workstation: a watch-only play (no pivot yet) that gets quotes at once."""
+        symbol = str(symbol).strip().upper()
+        if not symbol or not symbol.replace(".", "").replace("-", "").isalnum() or len(symbol) > 10:
+            return None
+        with self.lock:
+            if symbol in self.syms:
+                return self.syms[symbol].play
+            play = {"symbol": symbol, "side": side, "trigger": None, "second_entry": None, "target": None, "stop": None,
+                    "mp": None, "atr": None, "extra_levels": [], "notes": "", "active": True, "watch": True,
+                    "exchange": "SMART", "primary_exchange": "", "currency": "USD"}
+            self.plays.append(play)
+            self.syms[symbol] = SymbolState(play, self.cfg)
+            self._rec({"ev": "play_add", "t": t or self.last_t, "play": play})
+            self._save_plays()
+        for fn in self.play_listeners:
+            try:
+                fn(play)
+            except Exception:
+                pass
+        return play
+
+    def flip_side(self, symbol, t=None):
+        """Long <-> short on a play (the second entry must sit beyond the pivot, so it is cleared)."""
+        with self.lock:
+            st = self._st(symbol)
+            if st is None:
+                return False
+            st.play["side"] = "short" if st.play["side"] == "long" else "long"
+            st.play["second_entry"] = None
+            self._rec({"ev": "flip", "t": t or self.last_t, "sym": symbol, "side": st.play["side"]})
+            self._save_plays()
+            return True
+
+    def set_focus(self, symbol, t=None):
+        """The symbol on screen gets a ladder: pin it (and release the previous auto-pin)."""
+        with self.lock:
+            symbol = str(symbol).upper()
+            if symbol not in self.syms:
+                return False
+            t = t or self.last_t
+            prev = getattr(self, "focus", None)
+            if prev and prev != symbol and prev in self.pinned and getattr(self, "focus_pinned", False):
+                self.pinned.discard(prev)
+            self.focus = symbol
+            self.focus_pinned = symbol not in self.pinned
+            self.pinned.add(symbol)
+            return True
+
     def retire_play(self, symbol, reason, t=None, price=None):
         with self.lock:
             st = self._st(symbol)
@@ -894,6 +948,14 @@ class Engine:
                     self.grades.pop(ev["key"], None)
         elif kind == "dbar":
             self.on_daily_bar(ev["sym"], ev["t0"], ev["o"], ev["h"], ev["l"], ev["c"])
+        elif kind == "flip":
+            with self.lock:
+                st = self._st(ev["sym"])
+                if st is not None:
+                    st.play["side"] = ev["side"]
+                    st.play["second_entry"] = None
+        elif kind == "play_add":
+            self.add_play(ev["play"]["symbol"], t, ev["play"].get("side", "long"))
         elif kind == "mark":
             with self.lock:
                 self.marks_list.append({k: ev.get(k) for k in ("t", "symbol", "price", "note", "headline", "shot", "n")})
@@ -938,7 +1000,7 @@ class Engine:
         }
 
     def _user_levels(self, play):
-        out = [{"price": play["trigger"], "role": "trigger", "label": "PIVOT"}]
+        out = [{"price": play["trigger"], "role": "trigger", "label": "PIVOT"}] if play.get("trigger") else []
         if play.get("second_entry"):
             out.append({"price": play["second_entry"], "role": "second_entry", "label": "2ND ENTRY"})
         for lv in play.get("extra_levels", []):
@@ -1121,6 +1183,9 @@ class Engine:
             "play": {k: st.play[k] for k in ("side", "trigger", "second_entry", "target", "stop", "mp", "atr", "notes")},
             "last": fmt_price(st.l1["last"]),
             "bid": fmt_price(bid), "ask": fmt_price(ask),
+            "day": {"open": fmt_price(st.l1.get("open")), "high": fmt_price(st.l1.get("high")), "low": fmt_price(st.l1.get("low")),
+                    "prev_close": fmt_price(st.l1.get("close")), "volume": st.l1.get("volume"),
+                    "bid_size": st.l1.get("bid_size"), "ask_size": st.l1.get("ask_size")},
             "spread": fmt_price(ask - bid) if bid and ask else None,
             "headline": headline, "tone": tone, "lines": lines,
             # what stays inside the ladder itself: only who is defending a level (the rest goes to the story window)
@@ -1193,6 +1258,8 @@ class Engine:
                 "ranking": ranking,
                 "panes": panes,
                 "extra": extra_panes,
+                "focus": self.focus,
+                "symbols": [p["symbol"] for p in self.plays if p["active"]],
                 "depth": [pn for pn in panes if pn],
                 "trading": self.trader.snapshot() if self.trader else {"mode": "NONE", "can_trade": False,
                                                                         "why_not": "order entry not loaded"},

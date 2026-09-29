@@ -131,7 +131,16 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                 self._send(200 if ok else 400, json.dumps({"ok": ok}), "application/json")
             elif path == "/api/play":
                 sym = str(body.get("symbol", "")).upper()
-                if body.get("action") == "reactivate":
+                if body.get("action") == "add":
+                    play = engine.add_play(sym, clock())
+                    ok = play is not None
+                    if ok:
+                        engine.set_focus(sym, clock())
+                elif body.get("action") == "flip":
+                    ok = engine.flip_side(sym, clock())
+                elif body.get("action") == "focus":
+                    ok = engine.set_focus(sym, clock())
+                elif body.get("action") == "reactivate":
                     ok = engine.reactivate_play(sym, clock())
                 elif body.get("action") == "retire":
                     ok = engine.retire_play(sym, "retired by you", clock())

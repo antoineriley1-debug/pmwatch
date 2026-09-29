@@ -74,6 +74,7 @@ def run_live(cfg, plays, args):
     engine.listeners.append(console_alert)
     gate = TradingGate(cfg)
     session = MarketDataSession(engine, cfg, plays, factory, gate=gate)
+    engine.play_listeners.append(session.add_play)
     trader = Trader(engine, cfg, IbkrBroker(engine, session), gate) if cfg["trading"]["enabled"] else None
     engine.trader = trader
     desk = Desk(engine, cfg, plays, __version__, prefix="twiney", base_dir=os.path.dirname(os.path.abspath(__file__)))

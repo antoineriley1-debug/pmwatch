@@ -140,9 +140,12 @@ def second_entry(bars, play, now, cfg):
     NEW candle = second entry. Short is the mirror. Returns a dict with the
     state, the prices that matter and a plain-English line.
     """
-    pivot = play["trigger"]
+    pivot = play.get("trigger")
     long_ = play["side"] == "long"
     tf = int(cfg.get("second_entry_tf") or 1)
+    if not pivot:
+        return {"state": IDLE, "pivot": None, "extreme": None, "retrace": None, "second_entry": None, "se_t": None,
+                "build": None, "fails": 0, "tf": tf, "text": "No pivot on this play yet — mark one on the chart (＋ mark… → pivot)."}
     candles = aggregate(session_bars(bars), tf)
     tk = tick_size(pivot)
     out = {"state": IDLE, "pivot": pivot, "extreme": None, "retrace": None, "second_entry": None,
@@ -360,6 +363,8 @@ def grade(play, price, se, mp, shares, stop_known, caps):
     else:
         gates.append({"q": "Know the risk?", "ok": False, "why": "no stop on this play"})
     reasons = []
+    if not play.get("trigger"):
+        reasons.append("no pivot yet — mark one on the chart")
     if mp["verdict"] == "NO MP":
         reasons.append("no measured potential on the board — put your mp (and atr) in plays.json")
     elif mp["verdict"] == "THIN":
@@ -371,7 +376,7 @@ def grade(play, price, se, mp, shares, stop_known, caps):
     if se["state"] == SECOND_ENTRY and se["build"] != "not building":
         return {"grade": "READY", "why": f"second entry through {_px(se['second_entry'])} — "
                 + ("building" if se["build"] == "building" else "just triggered"), "gates": gates}
-    why = {IDLE: f"waiting for the pivot {_px(play['trigger'])} to break",
+    why = {IDLE: f"waiting for the pivot {_px(play.get('trigger'))} to break",
            BROKE: f"pivot broke — waiting for the retrace, then the second entry through {_px(se['extreme'])}",
            RETRACE: f"retracing — the second entry is through {_px(se['extreme'])} on a new candle",
            SECOND_ENTRY: "second entry is not building — stand aside"}[se["state"]]

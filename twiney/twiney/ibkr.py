@@ -527,6 +527,12 @@ class MarketDataSession:
             self.app.req.clear()
 
     # subscriptions -----------------------------------------------------------
+    def add_play(self, play):
+        with self._lock:
+            self.plays[play["symbol"]] = play
+            if self.app is not None and self.ready:
+                self.subscribe_l1()
+
     def subscribe_l1(self):
         for sym, play in self.plays.items():
             if sym in self.l1_ids:

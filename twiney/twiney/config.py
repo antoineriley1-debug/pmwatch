@@ -245,10 +245,11 @@ def validate_plays(raw):
 
         if item.get("pivot") is not None and item.get("trigger") is None:
             item = dict(item, trigger=item["pivot"])
-        trigger, second = num("trigger", True), num("second_entry", False)
-        if trigger is None:
+        watch = bool(item.get("watch", False))          # a ticker you typed in: no pivot yet
+        trigger, second = num("trigger", not watch), num("second_entry", False)
+        if trigger is None and not watch:
             raise ConfigError(f"{where}: pivot is required")
-        if second is not None:
+        if second is not None and trigger is not None:
             # PS60: the 2nd entry is the new high (long) / new low (short) made after the pivot broke,
             # so it sits beyond the trigger, never behind it
             if side == "long" and second <= trigger:
@@ -271,6 +272,7 @@ def validate_plays(raw):
             "extra_levels": extra,
             "notes": str(item.get("notes", "")),
             "active": bool(item.get("active", True)),
+            "watch": watch,
             "exchange": str(item.get("exchange", "SMART")).upper(),
             "primary_exchange": str(item.get("primary_exchange", "")).upper(),
             "currency": str(item.get("currency", "USD")).upper(),

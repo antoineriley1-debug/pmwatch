@@ -5,7 +5,7 @@ def distances(play, price):
     """Fractional distance from ``price`` to the trigger and second entry."""
     if price is None or price <= 0:
         return None, None
-    d_trig = abs(price - play["trigger"]) / price
+    d_trig = abs(price - play["trigger"]) / price if play.get("trigger") else None
     d_second = abs(price - play["second_entry"]) / price if play.get("second_entry") else None
     return d_trig, d_second
 

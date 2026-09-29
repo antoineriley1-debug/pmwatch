@@ -35,15 +35,27 @@ class DemoFeed:
     def start(self, t):
         self.engine.on_connection("DEMO", "SYNTHETIC DEMO FEED — not market data", t, market_data_type=None)
         self._history(t)
+        self.engine.play_listeners.append(self.add_play)
+
+    def add_play(self, p):
+        """A typed-in ticker in the demo: a made-up price that wanders."""
+        mid = round(self.rng.uniform(20, 300), 2)
+        self.state[p["symbol"]] = {"play": p, "mid": mid, "phase": "cooldown", "n": 0, "outcome": None, "rows": {ASK: 0, BID: 0}}
+        import time as _t
+        self._history_one(p["symbol"], self.state[p["symbol"]], _t.time())
 
     def _history(self, t):
         """Five synthetic sessions of 1-minute bars and 20 daily bars per play (labelled demo, not data)."""
+        for sym, s in self.state.items():
+            self._history_one(sym, s, t)
+
+    def _history_one(self, sym, s, t):
         from .ps60 import ny_offset, SESSION_OPEN
         rng = self.rng
-        for sym, s in self.state.items():
+        if True:
             p = s["play"]
             tk = tick_size(s["mid"])
-            atr_ = max(tk * 20, p["trigger"] * 0.018)
+            atr_ = max(tk * 20, (p.get("trigger") or s["mid"]) * 0.018)
             off = ny_offset(t)
             today0 = (t + off) // 86400 * 86400 - off
             # daily bars, ending yesterday, drifting into today's level
@@ -106,6 +118,8 @@ class DemoFeed:
     def _walk(self, s):
         p, rng = s["play"], self.rng
         tk = tick_size(s["mid"])
+        if s["phase"] == "drift" and not p.get("trigger"):
+            s["phase"] = "cooldown"
         if s["phase"] == "drift":
             gap = p["trigger"] - s["mid"]
             s["mid"] = round(s["mid"] + (tk if gap > 0 else -tk) * rng.choice((0, 1, 1, 2)) + tk * rng.choice((-1, 0, 0, 1)), 2)
@@ -120,9 +134,9 @@ class DemoFeed:
     def _depth(self, sym, s, bid, ask, t):
         p, rng, eng = s["play"], self.rng, self.engine
         tk = tick_size(s["mid"])
-        level = p["trigger"]
+        level = p.get("trigger")
         seller = p["side"] == "long"  # longs need the offer at the trigger cleared
-        if s["phase"] == "drift" and abs(s["mid"] - level) <= 3 * tk:
+        if level and s["phase"] == "drift" and abs(s["mid"] - level) <= 3 * tk:
             s["phase"], s["n"] = "reload", 0
             s["outcome"] = rng.choice(("clean", "pull"))
             s["shown"] = 1500

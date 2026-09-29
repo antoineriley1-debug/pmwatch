@@ -328,3 +328,33 @@ class VoiceTests(unittest.TestCase):
         e.on_depth("AAA", 0, UPDATE, ASK, 10.00, 100, "", 32.0)
         self.assertEqual(e.voice[0]["text"], "AAA: seller at 10.00 got hit for 11k")
         self.assertEqual(len(e.snapshot(33.0)["voice"]), 4)
+
+
+class TypedTickerTests(unittest.TestCase):
+    def test_typed_ticker_becomes_a_watch_play_and_gets_the_ladder(self):
+        e = connected_engine()
+        seen = []
+        e.play_listeners.append(lambda p: seen.append(p["symbol"]))
+        play = e.add_play("msft", 1.0)
+        self.assertEqual((play["symbol"], play["watch"], play["trigger"]), ("MSFT", True, None))
+        self.assertEqual(seen, ["MSFT"])
+        self.assertIs(e.add_play("MSFT"), play)            # typing it again is harmless
+        self.assertIsNone(e.add_play("not a ticker!"))
+        e.on_l1("MSFT", "last", 400.0, 2.0)
+        snap = e.snapshot(2.0)                              # no pivot: no crash anywhere
+        row = next(r for r in snap["ranking"] if r["symbol"] == "MSFT")
+        self.assertIsNone(row["rank"])
+        self.assertIn("no pivot", row["status"])
+        self.assertEqual(row["ps60"]["grade"], "PASS")
+        self.assertIn("MSFT", snap["symbols"])
+        # the symbol on screen gets a ladder: focus pins it
+        self.assertTrue(e.set_focus("MSFT", 3.0))
+        self.assertIn("MSFT", e.pinned)
+        e.tick(3.0)
+        self.assertTrue(e.syms["MSFT"].depth_active)
+        e.set_focus("AAA", 4.0)
+        self.assertNotIn("MSFT", e.pinned)                  # the auto-pin moves with the focus
+        # marking a pivot on the chart turns it into a real play
+        e.set_play_level("MSFT", "trigger", 401.0, 5.0)
+        self.assertFalse(e.syms["MSFT"].play["watch"])
+        self.assertIsNotNone(next(r for r in e.snapshot(5.0)["ranking"] if r["symbol"] == "MSFT")["rank"])
