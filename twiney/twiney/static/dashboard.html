@@ -551,6 +551,7 @@ input:focus,select:focus,textarea:focus{outline:1px solid var(--gold);outline-of
 .datawin .ok{display:flex;justify-content:space-between;align-items:center;padding:0 4px} .datawin .ok .mn{cursor:pointer;font-weight:900;font-size:10px;line-height:11px;padding:0 3px}
 .datawin.min .r{display:none}
 .qs .qscreen{height:16px;font:500 9px var(--sans);letter-spacing:.06em;background:#0a0a0b;color:#c9c9c6;border:1px solid #2c2e33;border-radius:2px;padding:0 3px;margin-right:4px}
+.lad tr.xh td{background:rgba(255,0,0,.14)} .lad tr.xh td.px{box-shadow:inset 0 0 0 2px #ff0000}
 
 </style>
 </head>
@@ -903,7 +904,7 @@ function wireChart(p, cv, v, saveView, isFoot){
   cv.addEventListener("mousemove", e => { const r = cv.getBoundingClientRect(); v.cross = [e.clientX - r.left, e.clientY - r.top];
     cv.style.cursor = (e.clientX - r.left) > r.width - 86 ? "ns-resize" : (e.clientY - r.top) > r.height - 18 ? "ew-resize" : "";
     drawChart(p); });
-  cv.addEventListener("mouseleave", () => { v.cross = null; drawChart(p); });
+  cv.addEventListener("mouseleave", () => { v.cross = null; if (typeof ladderHighlight === "function") ladderHighlight(null); drawChart(p); });
   cv.addEventListener("contextmenu", e => {
     e.preventDefault();
     if (!p.data || !v.chartY) return;
@@ -995,7 +996,7 @@ function ladderHTML(L){
     const cls = [r.gap?"gap":"", r.best_bid?"best-bid":"", r.best_ask?"best-ask":"", r.tags.length?"lvl":"", r.last?"lastpx":"",
       r.bid_state==="RELOAD"?"rl-bid":"", r.ask_state==="RELOAD"?"rl-ask":""].join(" ");
     const sw = r.sold ? Math.max(4, 100 * r.sold / ms) : 0, bw = r.bought ? Math.max(4, 100 * r.bought / ms) : 0;
-    h += `<tr class="${cls}">
+    h += `<tr class="${cls}" data-price="${r.price}">
       <td class="act b${dis}" data-act="BUY" data-px="${r.price}" title="${on ? "BUY " + sz(T().default_shares) + " @ " + px(r.price) : whyNot()}">${chips(r, "b") || "BUY"}</td>
       <td class="bars l">${sw?`<span class="bar sold" style="width:${sw}%"></span>`:""}<span class="bar-n">${kfmt(r.sold)}</span></td>
       <td class="whoc l">${whoTag(r,"bid")}</td>
@@ -1421,10 +1422,11 @@ function drawOne(p, cv, v, isFoot){
   if (v.cross){
     const [cx, cy] = v.cross;
     if (cx < plotW && cy < plotH){
-      g.strokeStyle = "#7d7f85"; g.setLineDash([3, 3]);
+      g.strokeStyle = dan ? "#ff0000" : "#7d7f85"; g.setLineDash(dan ? [] : [3, 3]); g.lineWidth = 1;
       g.beginPath(); g.moveTo(cx, 0); g.lineTo(cx, plotH); g.moveTo(0, cy); g.lineTo(plotW, cy); g.stroke(); g.setLineDash([]);
       const pr = hi - (cy - 8) / (plotH - 8) * (hi - lo);
-      g.fillStyle = "#26282c"; g.fillRect(plotW, cy - 8, labelW, 16);
+      if (!isFoot && typeof ladderHighlight === "function") ladderHighlight(pr);
+      g.fillStyle = dan ? "#ff0000" : "#26282c"; g.fillRect(plotW, cy - 8, labelW, 16);
       g.fillStyle = "#d6d6d3"; g.fillText(px(pr), plotW + 3, cy + 4);
       const k = Math.floor((cx - x0) / cw);
       if (bars[k] && !(store.get("datawin", true) && !isFoot)){   // the data window carries this when it is on
@@ -1862,6 +1864,17 @@ let bookUserScroll = 0, bookDragging = false;
 P.chart.el.querySelector(".qs").addEventListener("change", e => { if (!e.target.dataset.qscreen) return; store.set("screen", e.target.value); P.chart.last = null; drawChart(charts.chart); renderTools(charts.chart); });
 P.chart.el.querySelector(".qs").addEventListener("click", e => { if (!e.target.dataset.tools) return; const on = !store.get("tools", false); store.set("tools", on); P.chart.el.classList.toggle("tools-on", on); e.target.classList.toggle("on", on); });
 P.chart.el.classList.toggle("tools-on", store.get("tools", false));
+/* the chart crosshair lights up the same price on the ladder */
+let hoverPx = null;
+function ladderHighlight(pr){
+  hoverPx = pr;
+  const tbl = P.book.pc.querySelector("table.lad"); if (!tbl) return;
+  let best = null, bestD = Infinity;
+  for (const tr of tbl.rows){ const p = +tr.dataset.price; if (!(p > 0)) continue; const dd = Math.abs(p - (pr == null ? -1e9 : pr)); if (dd < bestD){ bestD = dd; best = tr; } }
+  const tick = best ? (+best.dataset.price >= 1 ? 0.01 : 0.0001) : 0;
+  tbl.querySelectorAll("tr.xh").forEach(tr => { if (tr !== best || pr == null) tr.classList.remove("xh"); });
+  if (best && pr != null && bestD <= tick * 0.51 && !best.classList.contains("xh")) best.classList.add("xh");
+}
 function renderBook(d){
   const wrap = P.book.pc.querySelector(".ladder-wrap");
   if (!d){ if (P.book.last !== "-"){ P.book.last = "-"; wrap.innerHTML = `<div class="dim" style="padding:8px">${NA}</div>`; } return; }
@@ -1873,7 +1886,7 @@ function renderBook(d){
   if (P.book.last === html) return;
   P.book.last = html;
   const keep = wrap.scrollTop;
-  wrap.innerHTML = html; applyLadCols(wrap.querySelector("table")); makeColsResizable(wrap.querySelector("table"));
+  wrap.innerHTML = html; applyLadCols(wrap.querySelector("table")); makeColsResizable(wrap.querySelector("table")); if (hoverPx != null) ladderHighlight(hoverPx);
   const cur = wrap.querySelector("tr.lastpx") || wrap.querySelector("tr.best-ask");
   if (cur && Date.now() - bookUserScroll > 8000) wrap.scrollTop = cur.offsetTop - wrap.clientHeight / 2; else wrap.scrollTop = keep;
 }
