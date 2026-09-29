@@ -164,13 +164,16 @@ class FlowBook:
     def check(self, symbol, now):
         """Return an unusual dict when the detector fires for ``symbol`` right now, else None."""
         c = self.cfg
+        index = symbol in set(c.get("index_symbols", ()))
+        min_premium = c.get("index_min_premium", 5e6) if index else c["min_premium"]
+        min_prints = c.get("index_min_prints", 3) if index else c["min_prints"]
         prints = self._window(symbol, now, c["window_minutes"])
         for cp in ("C", "P"):
             hits = [p for p in prints if p["cp"] == cp and p["side"] == "ask"
                     and (p["otm_pct"] is None or p["otm_pct"] >= c["otm_pct"])
                     and (p["dte"] is None or p["dte"] <= c["max_dte"])]
             prem = sum(p["premium"] for p in hits)
-            if len(hits) >= c["min_prints"] and prem >= c["min_premium"]:
+            if len(hits) >= min_prints and prem >= min_premium:
                 key = (symbol, cp)
                 if now - self.last_call.get(key, -1e9) < c["repeat_minutes"] * 60:
                     continue
@@ -332,7 +335,10 @@ class SimFlow:
         return o[0] if o else None
 
     def _print(self, sym, spot, cp, strike, dte, size, at_ask, kind, t):
-        price = max(0.05, round(abs(spot - strike) * 0.25 + spot * 0.004 * math.sqrt(max(dte, 1) / 10.0) * self.rng.uniform(0.7, 1.4), 2))
+        intrinsic = max(0.0, spot - strike) if cp == "C" else max(0.0, strike - spot)
+        otm = max(0.0, ((strike - spot) if cp == "C" else (spot - strike)) / spot * 100.0)
+        tv = spot * 0.008 * math.sqrt(max(dte, 0.5) / 7.0) * math.exp(-otm / (1.5 + 0.35 * math.sqrt(max(dte, 0.5)))) * self.rng.uniform(0.8, 1.25)
+        price = max(0.05, round(intrinsic + tv, 2))
         return {"t": t, "symbol": sym, "strike": strike, "cp": cp, "expiry": time.strftime("%Y-%m-%d", time.localtime(t + dte * 86400)),
                 "dte": float(dte), "size": int(size), "price": price, "premium": round(price * 100 * size, 2), "spot": round(spot, 2),
                 "side": "ask" if at_ask else self.rng.choice(("bid", "mid")), "kind": kind,

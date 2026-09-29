@@ -168,3 +168,30 @@ class MarketFactorTests(unittest.TestCase):
             t += 0.25; f.step(t); sf.step(t)
         self.assertTrue(e.flow.recent and {p["symbol"] for p in e.flow.recent} <= mine)
         self.assertEqual(e.snapshot(t)["flow_scope"], "watchlist")
+
+
+class IndexFlowTests(unittest.TestCase):
+    def test_index_products_need_far_more_premium_and_all_alerts_switch(self):
+        from helpers import cfg, plays
+        from twiney.engine import Engine
+        c = cfg(); ps = plays()
+        c["flow"].update(min_premium=250000, min_prints=2, index_min_premium=5000000, index_min_prints=3)
+        e = Engine(ps, c, None)
+        base = {"strike": 600.0, "cp": "C", "expiry": "", "dte": 2.0, "size": 1000, "price": 3.0, "premium": 1000000.0,
+                "spot": 575.0, "side": "ask", "kind": "sweep", "otm_pct": 4.3, "oi": None, "iv": None}
+        # watchlist only (default): SPY is not on the watchlist, no alert however big
+        for i in range(4):
+            e.on_flow(dict(base, symbol="SPY", t=1000.0 + i), 1000.0 + i)
+        self.assertFalse([a for a in e.alerts if a["label"].startswith("UNUSUAL")])
+        e.set_flow_alerts("all", 1010.0)
+        # $2M of SPY calls in 2 prints would trip a stock; an index needs $5M in 3 prints
+        e.on_flow(dict(base, symbol="QQQ", t=1020.0), 1020.0); e.on_flow(dict(base, symbol="QQQ", t=1021.0), 1021.0)
+        self.assertFalse([a for a in e.alerts if a["symbol"] == "QQQ"])
+        for i in range(4):
+            e.on_flow(dict(base, symbol="QQQ", premium=1500000.0, t=1030.0 + i), 1030.0 + i)
+        self.assertTrue([a for a in e.alerts if a["symbol"] == "QQQ" and a["label"] == "UNUSUAL CALLS"])
+        self.assertTrue(any(v["symbol"] == "QQQ" and v["kind"] == "flow" for v in e.voice))
+        # a stock off the watchlist is called at the normal bar when ALL is on
+        e.on_flow(dict(base, symbol="COIN", premium=150000.0, t=1040.0), 1040.0); e.on_flow(dict(base, symbol="COIN", premium=150000.0, t=1041.0), 1041.0)
+        self.assertTrue([a for a in e.alerts if a["symbol"] == "COIN"])
+        self.assertEqual(e.snapshot(1042.0)["flow_alerts"], "all")

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20260929-2318">
+<meta name="build" content="20260929-2333">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -683,7 +683,7 @@ input:focus,select:focus,textarea:focus{outline:1px solid var(--gold);outline-of
   <div class="pnl" data-p="calls"><div class="pc" style="padding:6px"><div id="feedBody"></div></div></div>
   <div class="pnl fa" data-p="flow"><div class="fa-top"><div class="fa-tabs"><span class="on">OPTION FLOW</span><span class="off" title="equity prints live on TIME &amp; SALES">EQUITY FLOW</span></div>
     <div class="fa-search"><input id="flowFilter" placeholder="Filter by ticker..." spellcheck="false" autocomplete="off"><span class="mag">&#9906;</span></div>
-    <div class="fa-sub"><span>Realtime Option Flow</span><button id="flowScope" class="fsw" title="WHOLE MARKET on: the feed pulls every ticker's option flow. Off: only your watchlist is pulled (lighter on the Quant Data limit). UNUSUAL calls are watchlist-only either way.">WHOLE MARKET <b>ON</b></button><label><input type="checkbox" id="flowUnusual"> Unusual only</label><label><input type="checkbox" id="flowMine" checked> Watchlist</label><span class="src" id="flowSrc"></span></div></div><div class="pc"><div id="flowList"></div></div></div>
+    <div class="fa-sub"><span>Realtime Option Flow</span><button id="flowScope" class="fsw" title="WHOLE MARKET on: the feed pulls every ticker's option flow. Off: only your watchlist is pulled (lighter on the Quant Data limit). UNUSUAL calls are watchlist-only either way.">WHOLE MARKET <b>ON</b></button><button id="flowAlerts" class="fsw" title="UNUSUAL alerts and voice: WATCHLIST = your symbols only; ALL = every ticker in the feed. Index products (SPY, QQQ, SPX, IWM ...) need far more premium to count: flow.index_min_premium in config.json.">ALERTS <b>WATCHLIST</b></button><label><input type="checkbox" id="flowUnusual"> Unusual only</label><label><input type="checkbox" id="flowMine" checked> Watchlist</label><span class="src" id="flowSrc"></span></div></div><div class="pc"><div id="flowList"></div></div></div>
   <div class="pnl" data-p="desk"><div class="pc"><div id="deskBody"></div></div></div>
   <div class="pnl" data-p="journal"><div class="pc"><div id="journalBody"><div class="jform"><input id="jText" placeholder="journal note · Enter"><button id="jAdd">add</button></div><div id="jList"></div><div id="jTrades"></div></div></div></div>
   <div class="pnl" data-p="messages"><div class="pc" style="padding:6px"><div id="messages"></div></div></div>
@@ -2147,7 +2147,7 @@ function renderWatch(s){
 }
 function renderCalls(s){
   const all = store.get("callsAll", false);
-  const alerts = (s.alerts || []).filter(a => (all || a.symbol === curSym) && !(training() && /RELOAD|CLEANED|PULLED/.test(a.label))).slice(0, 40);
+  const alerts = (s.alerts || []).filter(a => (all || a.symbol === curSym || /^UNUSUAL/.test(a.label)) && !(training() && /RELOAD|CLEANED|PULLED/.test(a.label))).slice(0, 40);
   const html = `<div class="dim" style="margin-bottom:4px;font-size:11px"><label><input type="checkbox" id="callsAll" ${all ? "checked" : ""}> every symbol</label></div>` + (alerts.length ? alerts.map(a => {
     const age = s.now - a.t;
     const gr = a.key ? `<span class="grade" data-key="${esc(a.key)}"><button data-v="good" class="${a.grade==="good"?"on":""}">GOOD</button><button data-v="bad" class="${a.grade==="bad"?"on":""}">BAD</button></span>` : "";
@@ -2376,7 +2376,13 @@ document.getElementById("flowScope").addEventListener("click", async () => {
   const out = await post("/api/flow", {scope: on ? "all" : "watchlist"});
   if (out.ok){ savePrefs({flowScope: out.scope}); toast(out.scope === "all" ? "Whole market flow ON" : "Whole market flow OFF: watchlist only", true); poll(true); }
 });
-function renderFlowScope(s){ const b = document.getElementById("flowScope"); if (!b) return; const on = s.flow_scope !== "watchlist"; b.classList.toggle("on", on); const t = on ? "ON" : "OFF"; if (b.lastChild.textContent !== t) b.querySelector("b").textContent = t; }
+document.getElementById("flowAlerts").addEventListener("click", async () => {
+  const all = !(state && state.flow_alerts === "all");
+  const out = await post("/api/flow", {alerts: all ? "all" : "watchlist"});
+  if (out.ok){ savePrefs({flowAlerts: out.alerts}); toast(out.alerts === "all" ? `UNUSUAL alerts for every ticker (index products need ${kfmt$(state.flow_index_min || 5e6)}+)` : "UNUSUAL alerts: watchlist only", true); poll(true); }
+});
+function renderFlowScope(s){ const a = document.getElementById("flowAlerts"); if (a){ const all = s.flow_alerts === "all"; a.classList.toggle("on", all); const t = all ? "ALL" : "WATCHLIST"; if (a.querySelector("b").textContent !== t) a.querySelector("b").textContent = t; }
+  const b = document.getElementById("flowScope"); if (!b) return; const on = s.flow_scope !== "watchlist"; b.classList.toggle("on", on); const t = on ? "ON" : "OFF"; if (b.lastChild.textContent !== t) b.querySelector("b").textContent = t; }
 ["flowFilter", "flowUnusual", "flowMine"].forEach(id => document.getElementById(id).addEventListener("input", () => renderFlow(state)));
 function flowWords(a){
   if (!/^UNUSUAL/.test(a.label)) return null;
@@ -2520,7 +2526,8 @@ mkChart("chart", false); mkChart("foot", true);
 (async () => {
   await loadLayouts();
   renderRecent();
-  if (PREFS.flowScope) post("/api/flow", {scope: PREFS.flowScope});   // your WHOLE MARKET setting survives a restart
+  if (PREFS.flowScope) post("/api/flow", {scope: PREFS.flowScope});
+  if (PREFS.flowAlerts) post("/api/flow", {alerts: PREFS.flowAlerts});   // your WHOLE MARKET setting survives a restart
   if (PREFS.tabs && PREFS.tabs.length){ TABS.list = PREFS.tabs.slice(); TABS.active = PREFS.active && TABS.list.includes(PREFS.active) ? PREFS.active : TABS.list[0]; curSym = TABS.active; renderTabs(); if (curSym) post("/api/play", {symbol: curSym, action: "focus"}); }
   poll();
 })();

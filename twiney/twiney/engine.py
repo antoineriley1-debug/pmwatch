@@ -136,6 +136,7 @@ class Engine:
         self.flow = FlowBook(cfg.get("flow", {"min_premium": 250000, "min_prints": 2, "otm_pct": 3.0, "max_dte": 30,
                                               "window_minutes": 10, "repeat_minutes": 20}))
         self.flow_scope = cfg.get("quantdata", {}).get("scope", "all")
+        self.flow_alerts = cfg.get("flow", {}).get("alerts", "watchlist")
         self.marks_list = []    # markers seen while replaying a recording
         self.notes_list = []    # journal notes seen while replaying
         self.grades_path = None
@@ -356,6 +357,14 @@ class Engine:
             else:
                 self.positions.pop((account, symbol), None)
 
+    def set_flow_alerts(self, who, t=None):
+        """UNUSUAL alerts for the watchlist only, or for every ticker in the feed."""
+        who = "all" if who == "all" else "watchlist"
+        with self.lock:
+            self.flow_alerts = who
+            self._rec({"ev": "flow_alerts", "t": t or self.last_t, "who": who})
+        return who
+
     def set_flow_scope(self, scope, t=None):
         """WHOLE MARKET on ("all") or off ("watchlist"): what the flow feed pulls in."""
         scope = "watchlist" if scope == "watchlist" else "all"
@@ -372,7 +381,7 @@ class Engine:
             self._clock(t)
             self._rec({"ev": "flow", "t": t, "p": p})
             self.flow.add(p)
-            if st is None:
+            if st is None and self.flow_alerts != "all":
                 return
             u = self.flow.check(p["symbol"], t)
             if u is None:
@@ -395,9 +404,15 @@ class Engine:
                     fn(alert)
                 except Exception:
                     pass
-            self._say(st, "flow", u["cp"], "flow", t,
-                      f"unusual {what} buying, {k(u['premium'])} premium"
-                      f"{', ' + str(round(u['otm_pct'])) + ' percent out of the money' if u['otm_pct'] is not None else ''}")
+            words = (f"unusual {what} buying, {k(u['premium'])} premium"
+                     f"{', ' + str(round(u['otm_pct'])) + ' percent out of the money' if u['otm_pct'] is not None else ''}")
+            if st is not None:
+                self._say(st, "flow", u["cp"], "flow", t, words)
+            else:                                    # off the watchlist: no per-symbol state, the detector's cooldown is enough
+                item = {"t": t, "symbol": p["symbol"], "kind": "flow", "text": f"{p['symbol']}: {words}",
+                        "key": f"{round(t, 2)}|{p['symbol']}|flow|{u['cp']}"}
+                self.voice.appendleft(item)
+                self._rec(dict(item, ev="voice"))
 
     def on_fill(self, exec_id, symbol, side, shares, price, when, t):
         with self.lock:
@@ -1139,6 +1154,8 @@ class Engine:
             self.on_daily_bar(ev["sym"], ev["t0"], ev["o"], ev["h"], ev["l"], ev["c"])
         elif kind == "flow":
             self.on_flow(ev["p"], t)
+        elif kind == "flow_alerts":
+            self.set_flow_alerts(ev.get("who", "watchlist"), t)
         elif kind == "flow_scope":
             self.set_flow_scope(ev.get("scope", "all"), t)
         elif kind == "big":
@@ -1486,6 +1503,8 @@ class Engine:
                 "voice": [v for v in list(self.voice)[:20] if t - v["t"] < 60],
                 "flow": list(self.flow.recent)[:150],
                 "flow_scope": self.flow_scope,
+                "flow_alerts": self.flow_alerts,
+                "flow_index_min": self.cfg.get("flow", {}).get("index_min_premium", 5000000),
                 "messages": list(self.messages)[:25],
                 "recording": getattr(self.recorder, "path", None),
                 "desk": {"recording": self.recorder is not None,

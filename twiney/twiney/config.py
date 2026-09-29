@@ -174,6 +174,12 @@ DEFAULTS = {
         "max_dte": 30,
         "window_minutes": 10,
         "repeat_minutes": 20,
+        # index products (SPY, QQQ, SPX, IWM ...) trade huge premium all day: they need far more to count as unusual
+        "index_symbols": ["SPY", "QQQ", "SPX", "SPXW", "XSP", "NDX", "NDXP", "IWM", "RUT", "DIA", "VIX"],
+        "index_min_premium": 5000000,
+        "index_min_prints": 3,
+        # "watchlist" = UNUSUAL alerts only for your watchlist; "all" = every ticker in the feed (switchable in the window)
+        "alerts": "watchlist",
         # speak unusual flow for every watchlist symbol, not only the active tab
         "voice_all": True,
         # a play whose flow leans hard the other way is held at WATCH instead of READY (0 turns this off)
