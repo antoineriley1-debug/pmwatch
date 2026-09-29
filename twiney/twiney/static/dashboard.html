@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20260929-0543">
+<meta name="build" content="20260929-1217">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -566,6 +566,21 @@ input:focus,select:focus,textarea:focus{outline:1px solid var(--gold);outline-of
 .grid.trades select,.grid.trades input{font:11px var(--mono);background:#0a0a0b;color:var(--text);border:1px solid #26282c;border-radius:2px;padding:1px 4px;height:20px}
 .grid.trades input{width:100%;min-width:120px} #jTrades{margin-top:8px} #jTrades h5{font:500 10px var(--sans);letter-spacing:.12em;color:#7d7f85;margin:4px 0}
 
+/* option flow, FlowAlgo style */
+.flowbar{display:flex;align-items:center;gap:10px;padding:3px 8px;height:24px;flex:0 0 auto;background:#0f1012;border-bottom:1px solid #202124;font:500 9.5px var(--sans);letter-spacing:.12em;text-transform:uppercase;color:#7d7f85}
+.flowbar input[type=text],.flowbar input:not([type]){width:130px;height:18px;font:600 11px var(--mono);letter-spacing:.1em;text-transform:uppercase;background:#0a0a0b;color:var(--text);border:1px solid #26282c;padding:0 6px}
+.flowbar label{display:inline-flex;align-items:center;gap:4px} .flowbar input[type=checkbox]{accent-color:var(--gold)}
+#flowList{padding:4px 0}
+.fl{padding:6px 10px 7px;border-bottom:1px solid #1c1d20} .fl .top{display:flex;align-items:center;gap:10px;font:600 12px var(--mono)}
+.fl .tm{color:#7d7f85;font:500 10.5px var(--mono)} .fl .tk{padding:1px 8px;border-radius:2px;color:#fff;font:700 11px var(--sans);letter-spacing:.08em}
+.fl.c .tk{background:#1f8a4c} .fl.p .tk{background:#b8322e} .fl.c .prem{color:#3fd48a} .fl.p .prem{color:#f0645f} .fl .prem{font-weight:700;font-size:13px}
+.fl .dots{color:#8e9096;font-size:9px;letter-spacing:2px} .fl .aw{margin-left:auto;background:var(--gold);color:#0c0c0d;font:700 9px var(--sans);letter-spacing:.1em;padding:1px 6px}
+.fl.away{background:rgba(227,168,58,.06);box-shadow:inset 3px 0 0 var(--gold)}
+.fl .cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(72px,max-content));gap:2px 14px;margin-top:4px;font:11.5px var(--mono);color:#d6d6d3}
+.fl .cols i{display:block;font:500 8.5px var(--sans);letter-spacing:.12em;color:#7d7f85;font-style:normal;text-transform:uppercase}
+.wlrow .fb{font:700 8.5px var(--sans);padding:0 4px;margin-left:4px;border-radius:2px} .wlrow .fb.c{background:#173b28;color:#8fe0b4} .wlrow .fb.p{background:#3d1c1c;color:#f0a09c}
+.grid.trades td.flowc{font:10.5px var(--mono);color:#a9aaaf;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
 </style>
 </head>
 <body>
@@ -647,6 +662,7 @@ input:focus,select:focus,textarea:focus{outline:1px solid var(--gold);outline-of
   <div class="pnl" data-p="orders"><div class="pc"></div></div>
   <div class="pnl" data-p="watch"><div class="pc"></div></div>
   <div class="pnl" data-p="calls"><div class="pc" style="padding:6px"><div id="feedBody"></div></div></div>
+  <div class="pnl" data-p="flow"><div class="flowbar"><input id="flowFilter" placeholder="FILTER BY TICKER" spellcheck="false" autocomplete="off"><label><input type="checkbox" id="flowUnusual"> UNUSUAL ONLY</label><label><input type="checkbox" id="flowMine" checked> WATCHLIST</label><span class="spacer"></span><span class="dim" id="flowSrc"></span></div><div class="pc"><div id="flowList"></div></div></div>
   <div class="pnl" data-p="desk"><div class="pc"><div id="deskBody"></div></div></div>
   <div class="pnl" data-p="journal"><div class="pc"><div id="journalBody"><div class="jform"><input id="jText" placeholder="journal note · Enter"><button id="jAdd">add</button></div><div id="jList"></div><div id="jTrades"></div></div></div></div>
   <div class="pnl" data-p="messages"><div class="pc" style="padding:6px"><div id="messages"></div></div></div>
@@ -792,17 +808,17 @@ function makeColsResizable(table){
 const PANELS = {
   chart: "CHART", foot: "FOOTPRINT 5m", book: "LEVEL II", tape: "TIME & SALES", setup: "PLAY SETUP", ps60: "PS60", reload: "RELOADS",
   ticket: "ORDER ENTRY", positions: "POSITIONS", orders: "ORDERS", watch: "WATCHLIST", calls: "CALLS",
-  desk: "DESK", journal: "JOURNAL", messages: "MESSAGES"};
+  flow: "OPTION FLOW", desk: "DESK", journal: "JOURNAL", messages: "MESSAGES"};
 const SYMBOL_LINKED = new Set(["chart", "foot", "book", "tape", "ps60", "reload", "ticket", "calls", "setup"]);
 const ZONES = ["TL", "TC", "TR", "TX", "BL", "BC", "BR", "BX"];   // four columns × two rows; a column with one zone runs full height
 const PRESETS = {
-  "PS60 Execution": {zones: {TL: ["watch"], TC: ["chart"], TR: ["book"], TX: ["tape"], BL: ["positions", "orders"], BC: ["setup", "ps60", "reload", "calls"], BR: ["ticket"]},
+  "PS60 Execution": {zones: {TL: ["watch"], TC: ["chart"], TR: ["book"], TX: ["tape"], BL: ["positions", "orders"], BC: ["setup", "flow", "ps60", "reload", "calls"], BR: ["ticket"]},
     active: {BL: "positions", BC: "setup"}, sizes: {c1: 200, c3: 330, c4: 290, r2: 250}},
   "Scalping": {zones: {TL: ["ticket", "setup"], TC: ["book"], TR: ["tape"], BL: ["positions"], BC: ["chart"], BR: ["orders", "reload"]},
     active: {BR: "reload"}, sizes: {c1: 300, c3: 320, r2: 300}},
   "Tape Focus": {zones: {TL: ["book"], TC: ["tape"], TR: ["reload", "ps60", "setup"], BL: ["ticket"], BC: ["chart"], BR: ["positions", "orders"]},
     active: {TR: "reload"}, sizes: {c1: 380, c3: 380, r2: 260}},
-  "Chart Focus": {zones: {TL: [], TC: ["chart"], TR: ["book"], TX: ["tape"], BL: [], BC: ["foot"], BR: ["ticket"], BX: ["setup", "ps60", "reload", "positions", "orders"]},
+  "Chart Focus": {zones: {TL: [], TC: ["chart"], TR: ["book"], TX: ["tape"], BL: [], BC: ["foot"], BR: ["ticket"], BX: ["setup", "ps60", "reload", "flow", "positions", "orders"]},
     active: {BX: "setup"}, sizes: {c1: 0, c3: 330, c4: 300, r2: 220}},
   "Laptop": {zones: {TL: [], TC: ["chart", "foot", "ps60"], TR: ["book", "tape", "ticket", "reload"], BL: [], BC: ["positions", "orders", "calls", "watch", "desk", "journal", "messages"], BR: []},
     active: {}, sizes: {c1: 0, c3: 360, r2: 180}},
@@ -2105,7 +2121,7 @@ function renderReloads(d){
 function renderWatch(s){
   panelHTML("watch", (s.ranking || []).map(r => `<div class="wlrow ${r.symbol === curSym ? "cur" : ""}" data-sym="${esc(r.symbol)}">
     <span><b>${esc(r.symbol)}</b>${r.depth ? ' <span style="color:var(--gold);font-size:9px;letter-spacing:.1em">L2</span>' : ""}</span><span style="color:var(--gold)">${px(r.last)}</span>
-    <span class="g ${r.ps60 ? r.ps60.grade : ""}">${r.ps60 ? r.ps60.grade : ""}</span>
+    <span class="g ${r.ps60 ? r.ps60.grade : ""}">${r.ps60 ? r.ps60.grade : ""}</span>${r.ps60 && r.ps60.flow && r.ps60.flow.bias != null && Math.abs(r.ps60.flow.bias) >= 0.3 ? ` <span class="fb ${r.ps60.flow.bias > 0 ? "c" : "p"}" title="option flow last 30 min: ${r.ps60.flow.bias > 0 ? "call" : "put"} heavy">${r.ps60.flow.bias > 0 ? "C" : "P"}${Math.round(Math.abs(r.ps60.flow.bias) * 100)}</span>` : ""}
     <span class="w">${r.rank ? "#" + r.rank + " · " : ""}${r.side} · ${esc(r.retired ? "RETIRED" : r.status)}</span></div>`).join("") || `<div class="dim" style="padding:8px">No plays.</div>`);
 }
 function renderCalls(s){
@@ -2296,6 +2312,8 @@ function speakNew(s){
   for (const a of (s.alerts || []).slice(0, 8)){
     if (spoken.has("a" + a.key) || s.now - a.t > 30) continue;
     spoken.add("a" + a.key);
+    const fw = flowWords(a);
+    if (fw){ if (!training()) items.push(fw); continue; }   // unusual flow is for the whole watchlist, whatever tab is up
     if (a.symbol !== TABS.active || training()) continue;   // background tabs never speak; training mode says nothing
     const w = reloadWords(a); if (w) items.push(w);
   }
@@ -2309,15 +2327,41 @@ document.getElementById("voiceVol").addEventListener("change", e => store.set("v
 
 /* ---------- status bar + command bar */
 const PAGE_BUILD = (document.querySelector('meta[name="build"]') || {}).content || "";
+/* OPTION FLOW: the feed, shaped like FlowAlgo. Green = calls, red = puts; the dot row is the trade type;
+   a gold WAYS AWAY tag marks size bought at the ask well out of the money. */
+const kfmt$ = v => v >= 1e6 ? "$" + (v / 1e6).toFixed(v >= 1e7 ? 0 : 1) + "M" : v >= 1e3 ? "$" + Math.round(v / 1e3) + "K" : "$" + Math.round(v);
+function renderFlow(s){
+  const el = document.getElementById("flowList"); if (!el) return;
+  const filt = (document.getElementById("flowFilter").value || "").trim().toUpperCase();
+  const onlyU = document.getElementById("flowUnusual").checked, mine = document.getElementById("flowMine").checked;
+  const fc = (state && state.flow_cfg) || {otm_pct: 3, min_premium: 250000};
+  const rows = (s.flow || []).filter(p => (!filt || p.symbol.startsWith(filt)) && (!mine || (s.symbols || []).includes(p.symbol)))
+    .map(p => { const away = p.side === "ask" && p.otm_pct != null && p.otm_pct >= fc.otm_pct && p.premium >= 50000; return Object.assign({away}, p); })
+    .filter(p => !onlyU || p.away).slice(0, 60);
+  const src = document.getElementById("flowSrc"); const st = s.connection && s.connection.state === "DEMO" ? "PRACTICE FLOW" : "QUANT DATA"; if (src.textContent !== st) src.textContent = st;
+  const html = rows.length ? rows.map(p => { const d = new Date(p.t * 1000), cp = p.cp === "C" ? "C" : "P";
+    return `<div class="fl ${cp === "C" ? "c" : "p"} ${p.away ? "away" : ""}">
+      <div class="top"><span class="tm">${d.toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"})}</span><span class="tk">${esc(p.symbol)}</span><span class="prem">${kfmt$(p.premium)}</span><span class="dots" title="${esc(p.kind)}">${p.kind === "sweep" ? "● ●" : p.kind === "block" ? "■" : p.kind === "split" ? "● ● ●" : "·"}</span>${p.away ? `<span class="aw">WAYS AWAY</span>` : ""}</div>
+      <div class="cols"><span><i>EXP</i>${esc(p.expiry || (p.dte != null ? p.dte + "d" : NA))}</span><span><i>STRIKE</i>${px(p.strike)}</span><span><i>C/P</i>${cp}</span><span><i>SPOT</i>${p.spot != null ? px(p.spot) : NA}</span><span><i>TYPE</i>${p.side === "ask" ? "A" : p.side === "bid" ? "B" : "M"}${p.kind === "sweep" ? " S" : p.kind === "block" ? " BL" : ""}</span><span><i>DETAILS</i>${sz(p.size)} @ ${p.price != null ? p.price.toFixed(2) : NA}${p.otm_pct != null ? ` · ${p.otm_pct > 0 ? p.otm_pct.toFixed(1) + "% OTM" : Math.abs(p.otm_pct).toFixed(1) + "% ITM"}` : ""}</span></div></div>`; }).join("")
+    : `<div class="dim" style="padding:10px">${(s.flow || []).length ? "Nothing matches the filter." : (s.connection && s.connection.state === "DEMO" ? "Practice flow is warming up." : "No option flow. Put your Quant Data key in config.json under quantdata.api_key and restart.")}</div>`;
+  if (el.dataset.h !== html){ el.dataset.h = html; el.innerHTML = html; }
+}
+["flowFilter", "flowUnusual", "flowMine"].forEach(id => document.getElementById(id).addEventListener("input", () => renderFlow(state)));
+function flowWords(a){
+  if (!/^UNUSUAL/.test(a.label)) return null;
+  const what = a.cp === "C" ? "call" : "put";
+  return `${a.symbol}: unusual ${what} buying, ${a.premium >= 1e6 ? (a.premium / 1e6).toFixed(1) + " million" : Math.round(a.premium / 1e3) + " thousand"} premium${a.otm_pct != null ? ", " + Math.round(a.otm_pct) + " percent out of the money" : ""}${a.dte != null ? ", " + Math.round(a.dte) + " days out" : ""}.`;
+}
 /* the running trade journal: every round trip, with a setup dropdown so nothing has to be typed */
 function renderTrades(s){
   const el = document.getElementById("jTrades"); if (!el) return;
   const trades = ((s.desk && s.desk.trades) || []).slice().reverse();
-  const html = `<h5>TRADES ${trades.length ? `<span class="dim">${trades.length} · ${trades.reduce((a, t) => a + (t.pnl_pct || 0), 0).toFixed(2)}% total</span>` : ""}</h5>` + (trades.length ? `<table class="grid trades"><tr><th>TIME</th><th>SYM</th><th>SIDE</th><th>QTY</th><th>ENTRY</th><th>EXIT</th><th>P&amp;L %</th><th class="l">SETUP</th><th>GRADE</th><th class="l">NOTE</th></tr>${trades.map(t => `<tr data-id="${esc(t.id)}">
+  const html = `<h5>TRADES ${trades.length ? `<span class="dim">${trades.length} · ${trades.reduce((a, t) => a + (t.pnl_pct || 0), 0).toFixed(2)}% total</span>` : ""}</h5>` + (trades.length ? `<table class="grid trades"><tr><th>TIME</th><th>SYM</th><th>SIDE</th><th>QTY</th><th>ENTRY</th><th>EXIT</th><th>P&amp;L %</th><th class="l">SETUP</th><th>GRADE</th><th class="l">FLOW AT ENTRY</th><th class="l">NOTE</th></tr>${trades.map(t => `<tr data-id="${esc(t.id)}">
       <td class="l">${new Date((t.closed || t.opened) * 1000).toLocaleTimeString()}</td><td class="l">${esc(t.symbol)}</td><td class="${t.side === "long" ? "b" : "s"}">${t.side.toUpperCase()}</td><td>${sz(t.shares || 0)}</td><td>${px(t.entry)}</td><td>${px(t.exit)}</td>
       <td class="pct ${(t.pnl_pct || 0) >= 0 ? "up" : "dn"}">${t.pnl_pct != null ? (t.pnl_pct >= 0 ? "+" : "") + t.pnl_pct.toFixed(2) + "%" : NA}</td>
       <td class="l">${setupSel("", t.setup, `data-tsetup="${esc(t.id)}"`)}</td>
       <td><select data-tgrade="${esc(t.id)}"><option value="">—</option>${["A+", "A", "B", "C", "F"].map(g => `<option ${t.grade === g ? "selected" : ""}>${g}</option>`).join("")}</select></td>
+      <td class="l flowc" title="${esc(t.flow || "")}">${esc((t.flow || "").slice(0, 60))}</td>
       <td class="l"><input data-tnote="${esc(t.id)}" value="${esc(t.note || "")}" placeholder="what you saw, what you did"></td></tr>`).join("")}</table>` : `<div class="dim">No round trips yet. Every entry that gets flattened lands here, filed under the play's setup.</div>`);
   if (el.dataset.h !== html && !el.contains(document.activeElement)){ el.dataset.h = html; el.innerHTML = html; }
 }
@@ -2371,7 +2415,7 @@ function render(s){
   renderBook(d); renderTape(d); renderSetup(d); renderPS60(d); renderReloads(d);
   renderTicket(s, d);
   renderWatch(s); renderCalls(s); renderPositions(s); renderOrders(s);
-  renderDesk(s); renderTrades(s);
+  renderDesk(s); renderTrades(s); renderFlow(s);
   const msgs = s.messages.map(m => `<div class="msg-${esc(m.level)} mono" style="font-size:11px">${ago(s.now - m.t)} · ${esc(m.text)}</div>`).join("") || `<span class="dim">—</span>`;
   const me = document.getElementById("messages"); if (me.dataset.h !== msgs){ me.dataset.h = msgs; me.innerHTML = msgs; }
   for (const a of s.alerts.slice(0, 10)){ const key = a.t + a.symbol + a.label; if (!seenAlerts.has(key)){ seenAlerts.add(key); if (!firstFeed && store.get("alerts", true) && store.get("sound", true) && a.symbol === TABS.active) beep(sayClass(a)); } }

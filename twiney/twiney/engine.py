@@ -11,6 +11,7 @@ from collections import deque
 from . import narrative, ps60
 
 from .book import ASK, BID, Book
+from .flow import FLOW_LABELS, FlowBook
 from .levels import BUILDING, GONE_PENDING, RELOAD, LevelTracker, WATCHING
 from .prices import fmt_price, price_key, tick_size
 from .ranking import allocate, distances, rank
@@ -132,6 +133,8 @@ class Engine:
         self.grades = {}        # alert key -> "good" | "bad" (trader's verdict on a call)
         self.voice = deque(maxlen=60)   # spoken call-outs: big size added / pulled / hit
         self.desk = None        # recording desk (REC / markers / screenshots), set by run_twiney
+        self.flow = FlowBook(cfg.get("flow", {"min_premium": 250000, "min_prints": 2, "otm_pct": 3.0, "max_dte": 30,
+                                              "window_minutes": 10, "repeat_minutes": 20}))
         self.marks_list = []    # markers seen while replaying a recording
         self.notes_list = []    # journal notes seen while replaying
         self.grades_path = None
@@ -351,6 +354,41 @@ class Engine:
                                                      "qty": qty, "avg_cost": avg_cost}
             else:
                 self.positions.pop((account, symbol), None)
+
+    def on_flow(self, p, t=None):
+        """One option print for a watchlist symbol. Recorded, kept, and run through the unusual detector."""
+        with self.lock:
+            t = t if t is not None else p.get("t", self.last_t)
+            st = self._st(p["symbol"])
+            if st is None:
+                return
+            self._clock(t)
+            self._rec({"ev": "flow", "t": t, "p": p})
+            self.flow.add(p)
+            u = self.flow.check(p["symbol"], t)
+            if u is None:
+                return
+            k = lambda v: f"${v / 1e6:.1f}M" if v >= 1e6 else f"${v / 1e3:.0f}K"
+            label = "UNUSUAL CALLS" if u["cp"] == "C" else "UNUSUAL PUTS"
+            what = "calls" if u["cp"] == "C" else "puts"
+            text = (f"{label}: {k(u['premium'])} of {what} bought at the ask in {u['prints']} prints"
+                    f"{' · ' + str(u['otm_pct']) + '% out of the money' if u['otm_pct'] is not None else ''}"
+                    f"{' · ' + str(u['dte']) + ' days out' if u['dte'] is not None else ''}"
+                    f" · strikes {', '.join(narrative.px(s) for s in u['strikes'])}. Somebody paying up for a move that has not started.")
+            alert = {"t": t, "symbol": p["symbol"], "label": label, "price": fmt_price(u["spot"]) if u.get("spot") else None,
+                     "side": "ask", "role": "flow", "text": text, "premium": u["premium"], "cp": u["cp"],
+                     "otm_pct": u["otm_pct"], "dte": u["dte"]}
+            alert["key"] = f"{round(t, 2)}|{p['symbol']}|{label}|{u['premium']}"
+            self.alerts.appendleft(alert)
+            self._rec(dict(alert, ev="alert"))
+            for fn in self.listeners:
+                try:
+                    fn(alert)
+                except Exception:
+                    pass
+            self._say(st, "flow", u["cp"], "flow", t,
+                      f"unusual {what} buying, {k(u['premium'])} premium"
+                      f"{', ' + str(round(u['otm_pct'])) + ' percent out of the money' if u['otm_pct'] is not None else ''}")
 
     def on_fill(self, exec_id, symbol, side, shares, price, when, t):
         with self.lock:
@@ -887,7 +925,7 @@ class Engine:
             return cache[1]
         bars = st.bar_list(MAX_BARS)
         ps = self._ps60(st, t, bars, st.price())
-        out = {"grade": ps["grade"], "why": ps["why"], "mp": ps["mp"], "state": ps["se"]["state"]}
+        out = {"grade": ps["grade"], "why": ps["why"], "mp": ps["mp"], "state": ps["se"]["state"], "flow": ps.get("flow")}
         st._ps60_cache = (t, out)
         return out
 
@@ -908,7 +946,16 @@ class Engine:
         mp = ps60.measured_potential(st.play, price, atr_value, pc)
         shares = self.trader.default_shares if self.trader else tc["default_shares"]
         gr = ps60.grade(st.play, price, se, mp, shares, bool(st.play.get("stop")), tc)
-        return {"se": se, "mp": mp, "grade": gr["grade"], "why": gr["why"], "gates": gr["gates"],
+        fc = self.cfg.get("flow", {})
+        fs = self.flow.summary(st.symbol, t)
+        if gr["grade"] == "READY" and fc.get("against_bias") and fs["bias"] is not None:
+            against = fs["bias"] <= -fc["against_bias"] if st.play["side"] == "long" else fs["bias"] >= fc["against_bias"]
+            if against and (fs["calls"] + fs["puts"]) >= fc.get("against_min_premium", 0):
+                gr = dict(gr, grade="WATCH", why=(gr["why"] + "; " if gr["why"] else "")
+                          + f"option flow leans against this {st.play['side']}: {self.flow.context_text(st.symbol, t)}")
+        gr["gates"].append({"q": "Flow with you?", "ok": fs["bias"] is None or (fs["bias"] >= 0) == (st.play["side"] == "long") or abs(fs["bias"]) < 0.3,
+                            "why": self.flow.context_text(st.symbol, t)})
+        return {"se": se, "mp": mp, "grade": gr["grade"], "why": gr["why"], "gates": gr["gates"], "flow": fs,
                 "sneaky": ps60.sneaky_pivots(bars, atr_value, pc), "atr": atr_value}
 
     def _check_plays(self, t):
@@ -1081,6 +1128,8 @@ class Engine:
                     self.grades.pop(ev["key"], None)
         elif kind == "dbar":
             self.on_daily_bar(ev["sym"], ev["t0"], ev["o"], ev["h"], ev["l"], ev["c"])
+        elif kind == "flow":
+            self.on_flow(ev["p"], t)
         elif kind == "big":
             self.set_big_shares(ev["sym"], ev.get("shares"), t)
         elif kind == "setup":
@@ -1353,6 +1402,7 @@ class Engine:
             # the page keeps its own bar history: full history on request, otherwise just the live tail
             "bars": bars if full else bars[-6:],
             "bars_full": full,
+            "flow": self.flow.summary(sym, t),
             "daily": [[t0] + [fmt_price(x) for x in st.daily[t0]] + [0, 0, 0] for t0 in sorted(st.daily)] if full else None,
             "footprint": [[m, [[round(c[0], 4), round(c[1]), round(c[2])] for c in sorted(cells.values(), key=lambda c: c[0])]]
                           for m, cells in sorted(st.foot.items())[-150:]],
@@ -1423,6 +1473,7 @@ class Engine:
                 },
                 "alerts": [dict(a, grade=self.grades.get(a["key"])) for a in list(self.alerts)[:40]],
                 "voice": [v for v in list(self.voice)[:20] if t - v["t"] < 60],
+                "flow": list(self.flow.recent)[:80],
                 "messages": list(self.messages)[:25],
                 "recording": getattr(self.recorder, "path", None),
                 "desk": {"recording": self.recorder is not None,

@@ -88,9 +88,19 @@ def run_live(cfg, plays, args):
     print(f"TWINEY {__version__} · {mode} · connecting to {ib['host']}:{ib['port']} "
           f"(client id {ib['client_id']}) · {len(plays)} plays · {cfg['depth']['slots']} depth slots", flush=True)
     session.start()
+    flow = None
+    if cfg.get("quantdata", {}).get("api_key"):
+        from twiney.flow import QuantDataFeed
+        flow = QuantDataFeed(engine, cfg, [p["symbol"] for p in plays]).start()
+        engine.play_listeners.append(lambda p: flow.symbols.append(p["symbol"]))
+        print("Option flow: Quant Data (key from config.json)", flush=True)
+    else:
+        print("Option flow: off (put your key in config.json under quantdata.api_key)", flush=True)
     open_dashboard(dash, cfg, args)
 
     def stop():
+        if flow:
+            flow.stop()
         session.stop()
         dash.stop()
         desk.stop()
@@ -128,9 +138,15 @@ def run_demo(cfg, plays, args):
     open_dashboard(dash, cfg, args)
     stop_evt = threading.Event()
 
+    from twiney.flow import SimFlow
+    sim_flow = SimFlow(engine, [p["symbol"] for p in plays])
+    engine.play_listeners.append(lambda p: sim_flow.symbols.append(p["symbol"]))
+
     def loop():
         while not stop_evt.is_set():
-            feed.step(time.time())
+            now = time.time()
+            feed.step(now)
+            sim_flow.step(now)
             stop_evt.wait(0.25)
     threading.Thread(target=loop, daemon=True).start()
     wait_forever(lambda: (stop_evt.set(), dash.stop(), desk.stop()))

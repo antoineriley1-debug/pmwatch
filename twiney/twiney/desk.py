@@ -76,7 +76,8 @@ class Desk:
             tr = self._open[sym] = {"id": f"{sym}-{int(t)}", "symbol": sym, "side": "long" if signed > 0 else "short",
                                     "opened": t, "closed": None, "qty": 0.0, "entry_qty": 0.0, "entry_cost": 0.0,
                                     "exit_qty": 0.0, "exit_cost": 0.0, "setup": play.get("setup") or "",
-                                    "grade": "", "note": "", "pnl": None, "pnl_pct": None}
+                                    "grade": "", "note": "", "pnl": None, "pnl_pct": None,
+                                    "flow": self.engine.flow.context_text(sym, t) if getattr(self.engine, "flow", None) else ""}
         long_ = tr["side"] == "long"
         adding = (signed > 0) == long_
         if adding:

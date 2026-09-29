@@ -2,6 +2,7 @@
 
 import time
 
+from .flow import FLOW_LABELS
 from .engine import ALERT_LABELS, PS60_LABELS, Engine
 from .recorder import read_events
 
@@ -85,7 +86,7 @@ def compare(engine, recorded):
     def counts(alerts):
         out = {}
         for a in alerts:
-            if a["label"] in ALERT_LABELS + PS60_LABELS:
+            if a["label"] in ALERT_LABELS + PS60_LABELS + FLOW_LABELS:
                 key = (a["symbol"], a["label"], a["price"])
                 out[key] = out.get(key, 0) + 1
         return out

@@ -153,6 +153,31 @@ DEFAULTS = {
         # don't repeat the same price on the same side within this many seconds
         "repeat_seconds": 20.0,
     },
+    "quantdata": {
+        # your Quant Data API key goes here and nowhere else (never in chat, recordings or exports)
+        "api_key": "",
+        "base_url": "https://api.quantdata.us",
+        "flow_path": "/v1/options/flow",
+        "method": "POST",
+        "poll_seconds": 5,
+        "limit": 200,
+        "extra_params": {},
+    },
+    "flow": {
+        # UNUSUAL CALLS / PUTS: this much premium, in this many prints, bought at the ask, this far out of the money,
+        # this close to expiry, inside this window, on a watchlist symbol. One call per symbol and side per repeat_minutes.
+        "min_premium": 250000,
+        "min_prints": 2,
+        "otm_pct": 3.0,
+        "max_dte": 30,
+        "window_minutes": 10,
+        "repeat_minutes": 20,
+        # speak unusual flow for every watchlist symbol, not only the active tab
+        "voice_all": True,
+        # a play whose flow leans hard the other way is held at WATCH instead of READY (0 turns this off)
+        "against_bias": 0.6,
+        "against_min_premium": 500000,
+    },
     "demo": {
         # practice day type: null = a random one each session; or mixed, trend_up, trend_down, chop, capitulation, squeeze
         "scenario": None,
