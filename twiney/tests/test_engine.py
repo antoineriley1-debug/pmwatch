@@ -358,3 +358,24 @@ class TypedTickerTests(unittest.TestCase):
         e.set_play_level("MSFT", "trigger", 401.0, 5.0)
         self.assertFalse(e.syms["MSFT"].play["watch"])
         self.assertIsNotNone(next(r for r in e.snapshot(5.0)["ranking"] if r["symbol"] == "MSFT")["rank"])
+
+
+class PlaySetupTests(unittest.TestCase):
+    def test_trader_inputs_drive_everything(self):
+        e = connected_engine()
+        e.on_l1("AAA", "last", 10.01, 1.0); e.tick(1.0)
+        ok, why = e.set_play_setup("AAA", {"side": "long", "trigger": 10.0, "stop": 9.7, "target": 10.9, "mp": 0.9, "atr": 0.6, "second_entry": ""}, 2.0)
+        self.assertTrue(ok, why)
+        p = e.syms["AAA"].play
+        self.assertEqual((p["stop"], p["target"], p["mp"], p["atr"], p["second_entry"]), (9.7, 10.9, 0.9, 0.6, None))
+        row = next(r for r in e.snapshot(2.0)["ranking"] if r["symbol"] == "AAA")
+        self.assertEqual((row["ps60"]["mp"]["dollars"], row["ps60"]["mp"]["verdict"]), (0.9, "CLEAR"))
+        # bad inputs are refused with a reason, nothing changes
+        ok, why = e.set_play_setup("AAA", {"stop": 10.5}, 3.0)
+        self.assertFalse(ok); self.assertIn("below the pivot", why); self.assertEqual(e.syms["AAA"].play["stop"], 9.7)
+        ok, why = e.set_play_setup("AAA", {"mp": "abc"}, 3.0)
+        self.assertFalse(ok); self.assertIn("mp must be a number", why)
+        # a stop on a typed-in ticker with no pivot is fine
+        e.add_play("ZZZ", 4.0); e.on_l1("ZZZ", "last", 50.0, 4.0)
+        ok, why = e.set_play_setup("ZZZ", {"stop": 49.0, "mp": 2.0, "atr": 1.5}, 4.0)
+        self.assertTrue(ok, why)

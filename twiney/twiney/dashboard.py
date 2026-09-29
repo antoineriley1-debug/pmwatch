@@ -186,6 +186,10 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                     ok = play is not None
                     if ok:
                         engine.set_focus(sym, clock())
+                elif body.get("action") == "setup":
+                    ok, reason = engine.set_play_setup(sym, body.get("fields") or {}, clock())
+                    self._send(200 if ok else 400, json.dumps({"ok": ok, "reason": reason}), "application/json")
+                    return
                 elif body.get("action") == "flip":
                     ok = engine.flip_side(sym, clock())
                 elif body.get("action") == "focus":

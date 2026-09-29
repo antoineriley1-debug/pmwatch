@@ -406,6 +406,68 @@ class Engine:
             self._save_plays()
             return True
 
+    def set_play_setup(self, symbol, fields, t=None):
+        """The trader's inputs for a play, all at once: side, pivot, 2nd entry, target, stop, mp, atr, notes.
+        Everything else (grade, MP vs ATR, brackets, risk sizing) derives from these. Returns (ok, reason)."""
+        with self.lock:
+            st = self._st(symbol)
+            if st is None:
+                return False, "unknown symbol"
+            p = st.play
+
+            def num(k):
+                v = fields.get(k)
+                if v in (None, ""):
+                    return None
+                try:
+                    v = float(v)
+                except (TypeError, ValueError):
+                    raise ValueError(f"{k} must be a number")
+                if v <= 0:
+                    raise ValueError(f"{k} must be positive")
+                return v
+            try:
+                side = fields.get("side", p["side"])
+                if side not in ("long", "short"):
+                    return False, "side must be long or short"
+                trigger = num("trigger") if "trigger" in fields else p.get("trigger")
+                second = num("second_entry") if "second_entry" in fields else p.get("second_entry")
+                target = num("target") if "target" in fields else p.get("target")
+                stop = num("stop") if "stop" in fields else p.get("stop")
+                mp = num("mp") if "mp" in fields else p.get("mp")
+                atr = num("atr") if "atr" in fields else p.get("atr")
+            except ValueError as exc:
+                return False, str(exc)
+            if trigger and second:
+                if side == "long" and second <= trigger:
+                    return False, f"2nd entry {second} must be ABOVE the pivot {trigger} for a long"
+                if side == "short" and second >= trigger:
+                    return False, f"2nd entry {second} must be BELOW the pivot {trigger} for a short"
+            if trigger and stop:
+                if side == "long" and stop >= trigger:
+                    return False, f"stop {stop} must be below the pivot {trigger} for a long"
+                if side == "short" and stop <= trigger:
+                    return False, f"stop {stop} must be above the pivot {trigger} for a short"
+            if trigger and target:
+                if side == "long" and target <= trigger:
+                    return False, f"target {target} must be above the pivot {trigger} for a long"
+                if side == "short" and target >= trigger:
+                    return False, f"target {target} must be below the pivot {trigger} for a short"
+            p["side"] = side
+            if "notes" in fields:
+                p["notes"] = str(fields.get("notes") or "")[:200]
+            p["mp"], p["atr"] = mp, atr
+            for role, val in (("trigger", trigger), ("second_entry", second), ("target", target), ("stop", stop)):
+                if val != p.get(role):
+                    if role == "trigger" and val is None:
+                        continue
+                    self.set_play_level(symbol, role, val, t)
+            st.invalidation_armed = False   # new stop / target: don't retire the play on the next tick by accident
+            self._rec({"ev": "setup", "t": t or self.last_t, "sym": symbol,
+                       "fields": {k: p.get(k) for k in ("side", "trigger", "second_entry", "target", "stop", "mp", "atr", "notes")}})
+            self._save_plays()
+            return True, None
+
     def set_play_level(self, symbol, role, price, t=None):
         """Set (or clear, with price None) the play's trigger / second_entry / target / stop
         from the chart, re-point the reload trackers, and save plays.json."""
@@ -971,6 +1033,8 @@ class Engine:
                     self.grades.pop(ev["key"], None)
         elif kind == "dbar":
             self.on_daily_bar(ev["sym"], ev["t0"], ev["o"], ev["h"], ev["l"], ev["c"])
+        elif kind == "setup":
+            self.set_play_setup(ev["sym"], ev.get("fields", {}), t)
         elif kind == "flip":
             with self.lock:
                 st = self._st(ev["sym"])
