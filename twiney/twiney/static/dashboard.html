@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20260929-1506">
+<meta name="build" content="20260929-2257">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -593,6 +593,10 @@ input:focus,select:focus,textarea:focus{outline:1px solid var(--gold);outline-of
 .wlrow .fb{font:700 8.5px var(--sans);padding:0 4px;margin-left:4px;border-radius:2px} .wlrow .fb.c{background:#173b28;color:#8fe0b4} .wlrow .fb.p{background:#3d1c1c;color:#f0a09c}
 .grid.trades td.flowc{font:10.5px var(--mono);color:#a9aaaf;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
+.wlrow .gw{display:inline-flex;align-items:center;gap:3px;justify-self:end}
+.pnl.fa{container-type:inline-size}
+@container (max-width: 420px){ .fl .cols{gap:2px 9px;font-size:11.5px} .fl{padding:7px 10px 9px} .fa-sub{gap:8px} }
+
 </style>
 </head>
 <body>
@@ -826,8 +830,8 @@ const PANELS = {
 const SYMBOL_LINKED = new Set(["chart", "foot", "book", "tape", "ps60", "reload", "ticket", "calls", "setup"]);
 const ZONES = ["TL", "TC", "TR", "TX", "BL", "BC", "BR", "BX"];   // four columns × two rows; a column with one zone runs full height
 const PRESETS = {
-  "PS60 Execution": {zones: {TL: ["watch"], TC: ["chart"], TR: ["book"], TX: ["tape"], BL: ["positions", "orders"], BC: ["setup", "flow", "ps60", "reload", "calls"], BR: ["ticket"]},
-    active: {BL: "positions", BC: "setup"}, sizes: {c1: 200, c3: 330, c4: 290, r2: 250}},
+  "PS60 Execution": {zones: {TL: ["flow"], TC: ["chart"], TR: ["book"], TX: ["tape"], BL: ["watch", "positions", "orders"], BC: ["setup", "ps60", "reload", "calls"], BR: ["ticket"]},
+    active: {TL: "flow", BL: "watch", BC: "setup"}, sizes: {c1: 360, c3: 320, c4: 280, r2: 250}},
   "Scalping": {zones: {TL: ["ticket", "setup"], TC: ["book"], TR: ["tape"], BL: ["positions"], BC: ["chart"], BR: ["orders", "reload"]},
     active: {BR: "reload"}, sizes: {c1: 300, c3: 320, r2: 300}},
   "Tape Focus": {zones: {TL: ["book"], TC: ["tape"], TR: ["reload", "ps60", "setup"], BL: ["ticket"], BC: ["chart"], BR: ["positions", "orders"]},
@@ -2135,7 +2139,7 @@ function renderReloads(d){
 function renderWatch(s){
   panelHTML("watch", (s.ranking || []).map(r => `<div class="wlrow ${r.symbol === curSym ? "cur" : ""}" data-sym="${esc(r.symbol)}">
     <span><b>${esc(r.symbol)}</b>${r.depth ? ' <span style="color:var(--gold);font-size:9px;letter-spacing:.1em">L2</span>' : ""}</span><span style="color:var(--gold)">${px(r.last)}</span>
-    <span class="g ${r.ps60 ? r.ps60.grade : ""}">${r.ps60 ? r.ps60.grade : ""}</span>${r.ps60 && r.ps60.flow && r.ps60.flow.bias != null && Math.abs(r.ps60.flow.bias) >= 0.3 ? ` <span class="fb ${r.ps60.flow.bias > 0 ? "c" : "p"}" title="option flow last 30 min: ${r.ps60.flow.bias > 0 ? "call" : "put"} heavy">${r.ps60.flow.bias > 0 ? "C" : "P"}${Math.round(Math.abs(r.ps60.flow.bias) * 100)}</span>` : ""}
+    <span class="gw"><span class="g ${r.ps60 ? r.ps60.grade : ""}">${r.ps60 ? r.ps60.grade : ""}</span>${r.ps60 && r.ps60.flow && r.ps60.flow.bias != null && Math.abs(r.ps60.flow.bias) >= 0.3 ? ` <span class="fb ${r.ps60.flow.bias > 0 ? "c" : "p"}" title="option flow last 30 min: ${r.ps60.flow.bias > 0 ? "call" : "put"} heavy">${r.ps60.flow.bias > 0 ? "C" : "P"}${Math.round(Math.abs(r.ps60.flow.bias) * 100)}</span>` : ""}</span>
     <span class="w">${r.rank ? "#" + r.rank + " · " : ""}${r.side} · ${esc(r.retired ? "RETIRED" : r.status)}</span></div>`).join("") || `<div class="dim" style="padding:8px">No plays.</div>`);
 }
 function renderCalls(s){
