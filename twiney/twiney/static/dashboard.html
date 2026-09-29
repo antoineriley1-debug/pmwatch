@@ -530,6 +530,10 @@ input:focus,select:focus,textarea:focus{outline:1px solid var(--gold);outline-of
 .io.in{background:#173b28;color:#8fe0b4;border:1px solid #2c6a45} .io.out{background:#3d1c1c;color:#f0a09c;border:1px solid #7a3532}
 .p-tape table.t{table-layout:fixed;width:100%} .p-tape .t th,.p-tape .t td{overflow:hidden;white-space:nowrap} .p-tape .t th{position:relative}
 
+.chart-tools .menu.ind .pop{width:230px;white-space:normal;text-align:left} .chart-tools .menu.ind .pop label{display:block;font:11px var(--sans);letter-spacing:0;text-transform:none;color:var(--text);padding:1px 0}
+.chart-tools .menu.ind .pop h5{margin:6px 0 2px} .chart-tools .menu.ind .pop input[type=range]{accent-color:var(--gold)}
+.chart-tools .menu.ind .pop .row{display:flex;gap:6px;align-items:center;font-size:10.5px}
+
 </style>
 </head>
 <body>
@@ -1189,10 +1193,12 @@ function drawOne(p, cv, v, isFoot){
     const line = (ser, col, lw) => { g.strokeStyle = col; g.lineWidth = lw; g.setLineDash([]); g.beginPath(); let on = false;
       for (let k = 0; k < bars.length; k++){ const v = ser[k0 + k]; if (v == null || !isFinite(v)){ on = false; continue; } const xx = x0 + k * cw + cw / 2, yy = y(v); if (!on){ g.moveTo(xx, yy); on = true; } else g.lineTo(xx, yy); }
       g.stroke(); };
+    const IND = store.get("ind", {}), on = k => IND[k] !== false;      // every line can be hidden one by one
     if (store.get("mas", true)){
-      for (const [n, col, lw] of DAN_SMA) line(smaSeries(clsAll, n), col, lw);
-      for (const [n, col, lw] of DAN_EMA) line(emaSeries(clsAll, n), col, lw);
-      if (isDaily) for (const [n, col, lw] of DAN_EMA_DAILY) line(emaSeries(clsAll, n), col, lw);
+      for (const [n, col, lw] of DAN_SMA) if (on("s" + n)) line(smaSeries(clsAll, n), col, lw);
+      for (const [n, col, lw] of DAN_EMA) if (on("e" + n)) line(emaSeries(clsAll, n), col, lw);
+      // 34 / 65 / 89 EMA: Daily chart only, never on 1m / 5m / 15m / 60m
+      if (isDaily) for (const [n, col, lw] of DAN_EMA_DAILY) if (on("d" + n)) line(emaSeries(clsAll, n), col, lw);
     }
     if (store.get("bb", true)){ const bb = bbSeries(clsAll, 20, 2.0); line(bb.up, DAN_BB, 2); line(bb.dn, DAN_BB, 2); }
     if (store.get("lr", false) && clsAll.length >= 50){
@@ -1210,19 +1216,22 @@ function drawOne(p, cv, v, isFoot){
     const b = bars[k], x = x0 + k * cw + cw / 2, up = b[4] >= b[1];
     const top = y(Math.max(b[1], b[4])), bh = Math.max(1, Math.abs(y(b[1]) - y(b[4])));
     if (dan){
-      // Dan candles (eSignal look): fat bodies, thick black wicks, black body border
-      g.strokeStyle = C.wick; g.lineWidth = Math.max(1.5, cw * 0.28);
+      // Dan candles (eSignal look): fat bodies, thick black wicks, black body border. Wick / body width are yours to set.
+      g.strokeStyle = C.wick; g.lineWidth = Math.min(cw * 0.9, Math.max(1, +store.get("wick", 3)));
       g.beginPath(); g.moveTo(x, y(b[2])); g.lineTo(x, y(b[3])); g.stroke();
-      const bw = cw * 0.76;
+      const bw = cw * Math.min(0.95, Math.max(0.2, +store.get("body", 76) / 100));
       g.fillStyle = up ? C.up : C.dn; g.fillRect(x - bw / 2, top, bw, bh);
       g.strokeStyle = C.border; g.lineWidth = Math.min(2, Math.max(1, cw * 0.12)); g.strokeRect(x - bw / 2, top, bw, bh);
       g.lineWidth = 1;
       continue;
     }
     g.strokeStyle = g.fillStyle = up ? C.up : C.dn;
+    g.lineWidth = Math.min(cw * 0.9, Math.max(1, +store.get("wick", 1)));
     g.beginPath(); g.moveTo(x, y(b[2])); g.lineTo(x, y(b[3])); g.stroke();
-    if (foot){ g.lineWidth = 1; g.strokeRect(x - cw * 0.45, top, cw * 0.9, bh); }
-    else g.fillRect(x - cw * 0.35, top, cw * 0.7, bh);
+    g.lineWidth = 1;
+    const bwn = cw * Math.min(0.95, Math.max(0.2, +store.get("body", 70) / 100));
+    if (foot){ g.strokeRect(x - cw * 0.45, top, cw * 0.9, bh); }
+    else g.fillRect(x - bwn / 2, top, bwn, bh);
   }
   // footprint: per candle, per price: sold into bid × bought at ask
   if (foot){
@@ -1668,11 +1677,19 @@ function mkChart(id, isFoot){
   new ResizeObserver(() => drawChart(c)).observe(el);
   if (!isFoot){
     c.tools.addEventListener("change", e => { if (e.target.dataset.mark){ c.view.levelTool = e.target.value || null; renderTools(c); } });
+    c.tools.addEventListener("input", e => {
+      const k = e.target.dataset.indk, top = e.target.dataset.top, cs = e.target.dataset.cs;
+      if (k){ const IND = store.get("ind", {}); IND[k] = e.target.checked; store.set("ind", IND); drawChart(c); }
+      if (top){ store.set(top, e.target.checked); drawChart(c); const b = c.tools.querySelector(`button[data-${top}]`); if (b) b.classList.toggle("on", e.target.checked); }
+      if (cs){ store.set(cs, +e.target.value); const v = c.tools.querySelector(`[data-csv="${cs}"]`); if (v) v.textContent = e.target.value + (cs === "wick" ? "px" : "%"); Object.values(charts).forEach(drawChart); }
+    });
     c.tools.addEventListener("mousedown", e => e.stopPropagation());
     c.tools.addEventListener("click", e => {
       const tf = e.target.dataset.tf;
       if (tf){ store.set("tf." + id, tf === "D" ? "D" : +tf); c.view.offset = 0; c.view.follow = true; if (tf === "D" && c.view.cw < 6) c.view.cw = 8; drawChart(c); renderTools(c); }
       for (const k of ["mas", "bb", "lr", "dan"]) if (e.target.dataset[k]){ store.set(k, !store.get(k, k === "mas" || k === "bb")); drawChart(c); renderTools(c); }
+      if (e.target.dataset.ind){ e.stopPropagation(); const m = e.target.closest(".menu"), open = !m.classList.contains("open"); document.querySelectorAll(".menu.open").forEach(x => x.classList.remove("open")); m.classList.toggle("open", open); if (open){ m.querySelector(".pop").innerHTML = indPopHTML(); placePop(m); } }
+      if (e.target.closest(".menu.ind .pop")) e.stopPropagation();
       if (e.target.dataset.vwap){ store.set("vwap", !store.get("vwap", true)); drawChart(c); renderTools(c); }
       if (e.target.dataset.foot){ const on = !store.get("foot." + id, false); store.set("foot." + id, on); if (on && c.view.cw < 40){ c.view.cw = 44; c.view.offset = 0; c.view.follow = true; } drawChart(c); renderTools(c); }
       if (e.target.dataset.clean){ store.set("clean", !store.get("clean", true)); el.classList.toggle("clean", store.get("clean", true)); drawChart(c); renderTools(c); }
@@ -1681,6 +1698,19 @@ function mkChart(id, isFoot){
     renderTools(c);
   }
   charts[id] = c; return c;
+}
+function indPopHTML(){
+  const IND = store.get("ind", {}), on = k => IND[k] !== false;
+  const box = (k, label, col) => `<label><input type="checkbox" data-indk="${k}" ${on(k) ? "checked" : ""}> <i style="display:inline-block;width:14px;height:3px;background:${col};vertical-align:middle"></i> ${label}</label>`;
+  return `<h5>CANDLES</h5>
+    <div class="row"><span class="dim" style="width:64px">WICK</span><input type="range" data-cs="wick" min="1" max="8" step="0.5" value="${store.get("wick", store.get("dan", false) ? 3 : 1)}" style="flex:1"><span class="mono" data-csv="wick">${store.get("wick", store.get("dan", false) ? 3 : 1)}px</span></div>
+    <div class="row"><span class="dim" style="width:64px">BODY</span><input type="range" data-cs="body" min="20" max="95" step="5" value="${store.get("body", store.get("dan", false) ? 76 : 70)}" style="flex:1"><span class="mono" data-csv="body">${store.get("body", store.get("dan", false) ? 76 : 70)}%</span></div>
+    <h5>SMA</h5>${DAN_SMA.map(([n, col]) => box("s" + n, n + " SMA", col)).join("")}
+    <h5>EMA</h5>${DAN_EMA.map(([n, col]) => box("e" + n, n + " EMA", col)).join("")}
+    <h5>EMA · DAILY CHART ONLY</h5>${DAN_EMA_DAILY.map(([n, col]) => box("d" + n, n + " EMA", col)).join("")}
+    <h5>BANDS</h5><label><input type="checkbox" data-top="bb" ${store.get("bb", true) ? "checked" : ""}> <i style="display:inline-block;width:14px;height:3px;background:${DAN_BB};vertical-align:middle"></i> Bollinger 20 / 2.0</label>
+    <label><input type="checkbox" data-top="lr" ${store.get("lr", false) ? "checked" : ""}> <i style="display:inline-block;width:14px;height:3px;background:${DAN_LR};vertical-align:middle"></i> Linear regression 50 / 2.0</label>
+    <div class="dim" style="font-size:10.5px;margin-top:6px">MAS on the toolbar switches every average at once; these boxes pick the lines. The linear regression channel needs 50 bars of history behind it.</div>`;
 }
 function renderTools(v){
   if (!v.tools || v.type !== "chart") return;
@@ -1691,6 +1721,7 @@ function renderTools(v){
     + `<button data-bb="1" class="${store.get("bb", true) ? "on" : ""}" title="Bollinger Bands 20 / 2.0">BB</button>`
     + `<button data-lr="1" class="${store.get("lr", false) ? "on" : ""}" title="Linear regression channel 50 / 2.0 (off by default)">LR</button>`
     + `<button data-dan="1" class="${store.get("dan", false) ? "on" : ""}" title="Dan's candles: white chart, fat green / red bodies, thick black wicks">DAN</button>`
+    + `<span class="menu ind"><button data-ind="1" title="pick the lines you want, set wick and body width">IND</button><div class="pop">${indPopHTML()}</div></span>`
     + `<button data-foot="1" class="${store.get("foot." + v.id, false) ? "on" : ""}" title="footprint on this timeframe">FOOT</button>`
     + `<button data-clean="1" class="${store.get("clean", true) ? "on" : ""}" title="clean chart: candles, volume, VWAP, your levels, your orders">clean</button>`
     + `<select data-mark="1" class="lvl ${v.view.levelTool ? "on" : ""}" title="mark a level: pick it, click the chart at the price (saved to plays.json)"><option value="">MARK</option><option value="second_entry" ${v.view.levelTool==="second_entry"?"selected":""}>2nd entry</option><option value="trigger" ${v.view.levelTool==="trigger"?"selected":""}>pivot</option><option value="target" ${v.view.levelTool==="target"?"selected":""}>target</option><option value="stop" ${v.view.levelTool==="stop"?"selected":""}>stop</option><option value="extra" ${v.view.levelTool==="extra"?"selected":""}>extra level</option></select>`;
