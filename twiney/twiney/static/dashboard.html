@@ -1398,9 +1398,10 @@ function drawOne(p, cv, v, isFoot){
   // last price
   if (d.last){
     const yy = y(d.last);
-    if (!isFoot){ g.strokeStyle = "#e3a83a"; g.lineWidth = 1.4; g.setLineDash([2, 3]); g.beginPath(); g.moveTo(0, yy); g.lineTo(plotW, yy); g.stroke(); g.setLineDash([]); g.lineWidth = 1; }
-    g.fillStyle = "#e3a83a"; g.fillRect(plotW, yy - 8, labelW, 16);
-    g.fillStyle = "#0c0c0d"; g.font = "bold 11px ui-monospace, Menlo, Consolas, monospace"; g.fillText(`LAST ${px(d.last)}`, plotW + 3, yy + 4);
+    const lastCol = dan ? "#000000" : "#e3a83a";   // the price line: black on the light screens, gold on the desk
+    if (!isFoot){ g.strokeStyle = lastCol; g.lineWidth = dan ? 1.6 : 1.4; g.setLineDash([2, 3]); g.beginPath(); g.moveTo(0, yy); g.lineTo(plotW, yy); g.stroke(); g.setLineDash([]); g.lineWidth = 1; }
+    g.fillStyle = lastCol; g.fillRect(plotW, yy - 8, labelW, 16);
+    g.fillStyle = dan ? "#ffffff" : "#0c0c0d"; g.font = "bold 11px ui-monospace, Menlo, Consolas, monospace"; g.fillText(`LAST ${px(d.last)}`, plotW + 3, yy + 4);
     g.font = "11px ui-monospace, Menlo, Consolas, monospace";
   }
   // time axis
