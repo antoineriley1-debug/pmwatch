@@ -516,6 +516,16 @@ input:focus,select:focus,textarea:focus{outline:1px solid var(--gold);outline-of
 .lad tr.lastpx td.px::before{content:none} .lad tr.lastpx td.px{border-radius:0;font-weight:600} .lad tr.lastpx td{background:rgba(227,168,58,.08)}
 .lad td{white-space:nowrap;overflow:hidden;text-overflow:clip} .lad .who{font:600 9px var(--sans);letter-spacing:.08em;border-radius:0}
 
+/* Level II: fluid columns */
+.lad{table-layout:fixed} .lad th,.lad td{width:auto !important;min-width:0 !important;overflow:hidden;text-overflow:clip}
+.lad th{position:sticky;top:0;overflow:visible}
+.colgrip{position:absolute;right:-3px;top:0;bottom:0;width:7px;cursor:col-resize;z-index:4}
+.colgrip:hover,.colgrip:active{background:rgba(227,168,58,.55)}
+.lad th{position:sticky} .lad th{position:-webkit-sticky}
+.lad.notrade .act{display:none} .lad.nobars .bars{display:none} .lad.nowho .who,.lad.nowho .whoc{display:none}
+.ladbar span{white-space:nowrap} .ladbar .menu{position:relative} .ladbar .pop label{display:block;font:11px var(--sans);letter-spacing:0;text-transform:none;color:var(--text);padding:2px 0}
+.lad th.who{display:table-cell} #colsPop{width:250px;white-space:normal}
+
 </style>
 </head>
 <body>
@@ -585,7 +595,7 @@ input:focus,select:focus,textarea:focus{outline:1px solid var(--gold);outline-of
 <template id="tplPanels">
   <div class="pnl" data-p="chart"><div class="qs"></div><div class="pc nos"><div class="chart-wrap"><div class="chart-tools"></div><canvas></canvas></div></div></div>
   <div class="pnl" data-p="foot"><div class="pc nos"><div class="chart-wrap"><div class="chart-tools"><span class="dim" style="font-size:10.5px;background:rgba(17,22,31,.85);padding:1px 6px">5m FOOTPRINT · SOLD AT BID × BOUGHT AT ASK</span></div><canvas></canvas></div></div></div>
-  <div class="pnl" data-p="book"><div class="ladbar"><span>BIG ≥</span><input id="bigIn" type="number" min="100" step="500" title="shares that count as big on this symbol's ladder. Highlighted when showing; ×N = how many separate times it has shown up at that price today"><span class="dim">sh</span><button id="bigReset" title="back to the config default">DEFAULT</button><span class="spacer"></span><span class="dim" id="bigHint"></span></div><div class="pc"><div class="ladder-wrap"></div></div></div>
+  <div class="pnl" data-p="book"><div class="ladbar"><span>BIG ≥</span><input id="bigIn" type="number" min="100" step="500" title="shares that count as big on this symbol's ladder. Highlighted when showing; ×N = how many separate times it has shown up at that price today"><span class="dim">sh</span><button id="bigReset" title="back to the config default">DEFAULT</button><span class="dim" id="bigHint"></span><span class="spacer"></span><span class="menu" id="colsMenu"><button title="columns">COLS</button><div class="pop" id="colsPop"><h5>LEVEL II COLUMNS</h5><label><input type="checkbox" data-col="trade" checked> BUY / SELL buttons</label><label><input type="checkbox" data-col="bars" checked> flow bars (sold into bid / bought at ask)</label><label><input type="checkbox" data-col="who" checked> reload tags</label><div class="dim" style="font-size:10.5px;margin-top:6px">Drag the grip at the right edge of any header to resize. Double-click a grip to reset.</div></div></span></div><div class="pc"><div class="ladder-wrap"></div></div></div>
   <div class="pnl" data-p="tape"><div class="pc"><div class="p-tape"></div></div></div>
   <div class="pnl" data-p="setup"><div class="pc"></div></div>
   <div class="pnl" data-p="ps60"><div class="pc ps60p"></div></div>
@@ -708,24 +718,32 @@ async function cancelAll(symbol){
 /* ---------- resizable columns: drag the right edge of any header cell ---------- */
 function colKey(table){ return "cols." + (table.dataset.cols || "t"); }
 function makeColsResizable(table){
+  /* fluid columns: weights that always add up to the table width. Dragging a grip trades width between the
+     two columns beside it, so nothing ever overflows; double-click a grip to reset. Saved per table. */
   if (!table || table.dataset.gripped) return;
   table.dataset.gripped = "1";
-  const ths = table.querySelectorAll("tr:first-child th");
-  const saved = store.get(colKey(table), null);
-  if (saved){ table.classList.add("sized"); ths.forEach((th, k) => { if (saved[k]) th.style.width = saved[k] + "px"; }); }
+  const ths = [...table.querySelectorAll("tr:first-child th")], n = ths.length, key = colKey(table);
+  const DEF = ths.map(th => +th.dataset.w || 1);
+  let w = store.get(key, null); if (!Array.isArray(w) || w.length !== n || w.some(x => !(x > 0))) w = DEF.slice();
+  table.style.tableLayout = "fixed";
+  let cg = table.querySelector("colgroup");
+  if (!cg){ cg = document.createElement("colgroup"); for (let i = 0; i < n; i++) cg.appendChild(document.createElement("col")); table.prepend(cg); }
+  const vis = i => getComputedStyle(ths[i]).display !== "none";
+  const apply = () => { const tot = w.reduce((a, x, i) => a + (vis(i) ? x : 0), 0) || 1; [...cg.children].forEach((c, i) => { c.style.width = vis(i) ? (100 * w[i] / tot).toFixed(3) + "%" : "0px"; }); };
+  apply();
   ths.forEach((th, k) => {
-    const g = document.createElement("span"); g.className = "colgrip"; th.appendChild(g);
+    const g = document.createElement("span"); g.className = "colgrip"; g.title = "drag: resize · double-click: reset columns"; th.appendChild(g);
     g.addEventListener("mousedown", e => {
       e.preventDefault(); e.stopPropagation();
-      const x0 = e.clientX, w0 = th.offsetWidth;
-      const move = ev => { th.style.width = Math.max(28, w0 + ev.clientX - x0) + "px"; table.classList.add("sized"); };
-      const up = () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up);
-        const widths = [...table.querySelectorAll("tr:first-child th")].map(h => h.style.width ? parseInt(h.style.width) : null);
-        store.set(colKey(table), widths); };
+      let j = k + 1; while (j < n && !vis(j)) j++; if (j >= n) return;
+      const x0 = e.clientX, tw = table.offsetWidth, tot = w.reduce((a, x, i) => a + (vis(i) ? x : 0), 0), wk = w[k], wj = w[j], pair = wk + wj, min = tot * 0.04;
+      const move = ev => { let a = wk + (ev.clientX - x0) / tw * tot; a = Math.max(min, Math.min(pair - min, a)); w[k] = a; w[j] = pair - a; apply(); };
+      const up = () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); store.set(key, w); };
       window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
     });
-    g.addEventListener("dblclick", e => { e.stopPropagation(); ths.forEach(h => h.style.width = ""); table.classList.remove("sized"); store.set(colKey(table), null); });
+    g.addEventListener("dblclick", e => { e.stopPropagation(); w = DEF.slice(); store.set(key, null); apply(); });
   });
+  table._applyCols = apply;
 }
 
 /* ===================== TED — TWINEY EXECUTION DESK: panel pool ===================== */
@@ -940,13 +958,13 @@ function ladderHTML(L){
   const chips = (r, side) => (r.mine || []).filter(o => (o.action === "BUY") === (side === "b")).map(o =>
     `<span class="chip ${side} ${o.status === "PreSubmitted" ? "wait" : ""}" data-id="${o.id}" draggable="true" title="${esc(o.role)} order — click to cancel, drag to move">${sz(o.qty)}</span>`).join(" ");
   let h = `<table class="lad" data-cols="ladder"><tr>
-    <th class="act" title="Click a price here to BUY at that price">BUY</th>
-    <th class="bars" title="Shares sold INTO the bid at this price (last ${L.memory_minutes} min). Big green = a buyer absorbing.">SOLD INTO BID</th>
-    <th class="who" title="confirmed reload buyer at this price, and what became of it"></th>
-    <th>BID</th><th>PRICE</th><th>ASK</th>
-    <th class="who" title="confirmed reload seller at this price, and what became of it"></th>
-    <th class="bars" title="Shares bought FROM the ask at this price (last ${L.memory_minutes} min). Big red = a seller absorbing.">BOUGHT AT ASK</th>
-    <th class="act" title="Click a price here to SELL at that price">SELL</th></tr>`;
+    <th class="act" data-w="1.1" title="Click a price here to BUY at that price">BUY</th>
+    <th class="bars" data-w="2.2" title="Shares sold INTO the bid at this price (last ${L.memory_minutes} min). Big green = a buyer absorbing.">SOLD INTO BID</th>
+    <th class="who" data-w="1.3" title="confirmed reload buyer at this price, and what became of it"></th>
+    <th data-w="1.4">BID</th><th data-w="1.6">PRICE</th><th data-w="1.4">ASK</th>
+    <th class="who" data-w="1.3" title="confirmed reload seller at this price, and what became of it"></th>
+    <th class="bars" data-w="2.2" title="Shares bought FROM the ask at this price (last ${L.memory_minutes} min). Big red = a seller absorbing.">BOUGHT AT ASK</th>
+    <th class="act" data-w="1.1" title="Click a price here to SELL at that price">SELL</th></tr>`;
   for (const r of L.rows){
     const cls = [r.gap?"gap":"", r.best_bid?"best-bid":"", r.best_ask?"best-ask":"", r.tags.length?"lvl":"", r.last?"lastpx":"",
       r.bid_state==="RELOAD"?"rl-bid":"", r.ask_state==="RELOAD"?"rl-ask":""].join(" ");
@@ -1626,6 +1644,9 @@ function drawChart(v){ if (!v || !v.data || !v.canvas || v.el.offsetParent === n
 function chartViewFor(){ return charts.chart; }
 function curData(){ return charts.chart ? charts.chart.data : null; }
 function dataFor(s, sym){ if (!sym || !s) return null; return (s.panes || []).find(d => d && d.symbol === sym) || (s.extra && s.extra[sym]) || null; }
+/* menus live inside bars that clip overflow: place the popup with fixed coordinates when it opens */
+function placePop(m){ const b = m.querySelector(":scope > button"), pop = m.querySelector(":scope > .pop"); if (!b || !pop) return; const r = b.getBoundingClientRect(); pop.style.position = "fixed"; pop.style.top = (r.bottom + 3) + "px"; pop.style.left = "auto"; pop.style.right = Math.max(4, window.innerWidth - r.right) + "px"; pop.style.maxHeight = (window.innerHeight - r.bottom - 12) + "px"; pop.style.overflow = "auto"; }
+document.addEventListener("click", e => { const m = e.target.closest(".menu"); if (!m) return; setTimeout(() => { if (m.classList.contains("open")) placePop(m); }, 0); }, true);
 
 
 /* ===================== panel renderers ===================== */
@@ -1658,7 +1679,7 @@ function renderBook(d){
   if (P.book.last === html) return;
   P.book.last = html;
   const keep = wrap.scrollTop;
-  wrap.innerHTML = html; makeColsResizable(wrap.querySelector("table"));
+  wrap.innerHTML = html; applyLadCols(wrap.querySelector("table")); makeColsResizable(wrap.querySelector("table"));
   const cur = wrap.querySelector("tr.lastpx") || wrap.querySelector("tr.best-ask");
   if (cur && Date.now() - bookUserScroll > 8000) wrap.scrollTop = cur.offsetTop - wrap.clientHeight / 2; else wrap.scrollTop = keep;
 }
@@ -1667,6 +1688,9 @@ function renderTape(d){
   if (!d){ el.innerHTML = `<div class="dim" style="padding:8px">${NA}</div>`; P.tape.last = null; return; }
   const html = tapeHTML(d.tape); if (P.tape.last === html) return; P.tape.last = html; el.innerHTML = html;
 }
+function applyLadCols(tbl){ if (!tbl) return; const c = store.get("ladcols", {}); tbl.classList.toggle("notrade", c.trade === false); tbl.classList.toggle("nobars", c.bars === false); tbl.classList.toggle("nowho", c.who === false); if (tbl._applyCols) tbl._applyCols(); }
+document.getElementById("colsMenu").querySelector("button").addEventListener("click", e => { e.stopPropagation(); const m = document.getElementById("colsMenu"), open = !m.classList.contains("open"); document.querySelectorAll(".menu.open").forEach(x => x.classList.remove("open")); m.classList.toggle("open", open); const c = store.get("ladcols", {}); m.querySelectorAll("input[data-col]").forEach(i => { i.checked = c[i.dataset.col] !== false; }); });
+document.getElementById("colsPop").addEventListener("change", e => { const k = e.target.dataset.col; if (!k) return; const c = store.get("ladcols", {}); c[k] = e.target.checked; store.set("ladcols", c); applyLadCols(P.book.pc.querySelector("table.lad")); });
 P.book.el.addEventListener("change", async e => { if (e.target.id !== "bigIn" || !curSym) return; const v = Math.max(100, +e.target.value || 0); const out = await post("/api/ladder", {symbol: curSym, big_shares: v}); toast(out.ok ? curSym + ": big size is now " + sz(v) + " shares" : "Could not set", out.ok); poll(true); });
 P.book.el.addEventListener("click", async e => { if (e.target.id !== "bigReset" || !curSym) return; const out = await post("/api/ladder", {symbol: curSym, big_shares: null}); toast(out.ok ? curSym + ": big size back to the config default" : "Could not reset", out.ok); poll(true); });
 function renderPS60(d){
@@ -2049,6 +2073,7 @@ document.getElementById("markBtn").addEventListener("click", () => deskMark());
 document.getElementById("shotBtn").addEventListener("click", deskShot);
 // keyboard: configurable hotkeys first; then the few fixed ones (Esc closes things, / focuses the symbol box, J journal, 2 / L chart marks)
 document.addEventListener("keydown", e => {
+  if (e.key === "Escape"){ document.querySelectorAll(".menu.open").forEach(x => x.classList.remove("open")); if (e.target.matches("input, select, textarea")) e.target.blur(); }
   if (e.target.matches("input, select, textarea") || document.getElementById("modal") || document.querySelector("td.k.cap")) return;
   if (runHotkey(e)) return;
   const c = charts.chart;

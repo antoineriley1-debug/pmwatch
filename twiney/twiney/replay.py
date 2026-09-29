@@ -54,7 +54,8 @@ def replay(path, plays=None, cfg=None, speed=0.0, on_alert=None, engine_ready=No
         if t - next_tick > 120.0:
             engine.tick(next_tick, allocate_slots=False)
             next_tick = t  # long gap (e.g. overnight): jump ahead
-        while next_tick <= t:
+        # live, the tick at time T runs after every event stamped T: so tick strictly before this event's time
+        while next_tick < t:
             engine.tick(next_tick, allocate_slots=False)
             next_tick += TICK_STEP
         if control is not None:
