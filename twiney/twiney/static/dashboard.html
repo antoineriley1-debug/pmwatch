@@ -548,6 +548,10 @@ input:focus,select:focus,textarea:focus{outline:1px solid var(--gold);outline-of
 .datawin .r{display:flex;justify-content:space-between;padding:0 4px;line-height:11px;font-weight:600;border-top:1px solid rgba(0,0,0,.35)}
 .datawin .r.vol{background:#1a1ad8;color:#fff}
 
+.datawin .ok{display:flex;justify-content:space-between;align-items:center;padding:0 4px} .datawin .ok .mn{cursor:pointer;font-weight:900;font-size:10px;line-height:11px;padding:0 3px}
+.datawin.min > *:not(.ok){display:none} .datawin.min{width:90px}
+.qs .qscreen{height:16px;font:500 9px var(--sans);letter-spacing:.06em;background:#0a0a0b;color:#c9c9c6;border:1px solid #2c2e33;border-radius:2px;padding:0 3px;margin-right:4px}
+
 </style>
 </head>
 <body>
@@ -982,9 +986,9 @@ function ladderHTML(L){
   let h = `<table class="lad" data-cols="ladder"><tr>
     <th class="act" data-w="1.1" title="Click a price here to BUY at that price">BUY</th>
     <th class="bars" data-w="2.2" title="Shares sellers hit the bid with at this price (last ${L.memory_minutes} min). Big green = a buyer absorbing them.">SELLERS HIT BID</th>
-    <th class="who" data-w="1.3" title="confirmed reload buyer at this price, and what became of it"></th>
-    <th data-w="1.4">BID</th><th data-w="1.6">PRICE</th><th data-w="1.4">ASK</th>
-    <th class="who" data-w="1.3" title="confirmed reload seller at this price, and what became of it"></th>
+    <th class="who" data-w="1.0" title="confirmed reload buyer at this price, and what became of it"></th>
+    <th data-w="1.4">BID</th><th data-w="2.3">PRICE</th><th data-w="1.4">ASK</th>
+    <th class="who" data-w="1.0" title="confirmed reload seller at this price, and what became of it"></th>
     <th class="bars" data-w="2.2" title="Shares buyers paid up for at this price (last ${L.memory_minutes} min). Big red = a seller absorbing them.">BUYERS PAID UP</th>
     <th class="act" data-w="1.1" title="Click a price here to SELL at that price">SELL</th></tr>`;
   for (const r of L.rows){
@@ -1059,7 +1063,7 @@ function drawOne(p, cv, v, isFoot){
   g.clearRect(0, 0, W, H);
   const tf = isFoot ? 5 : store.get("tf." + p.id, 1), isDaily = tf === "D", span = isDaily ? 86400 : tf * 60;
   // the screen: DESK (dark) or an eSignal-style light screen — white, blue, pink or your own colour. Light screens get Dan's candles.
-  const screen = isFoot ? "desk" : store.get("screen", "desk");
+  const screen = isFoot ? "desk" : store.get("screen", "blue");
   const SCREENS = {white: "#ffffff", blue: "#a9d1f2", pink: "#f4d3e2", custom: store.get("screenColor", "#dfe9f3")};
   const dan = screen !== "desk";
   const C = dan ? {bg: SCREENS[screen] || SCREENS.white, grid: "#5d6b7a", axis: "#111111", text: "#111111", up: "#00f900", dn: "#ff2600", wick: "#000000", border: "#000000", label: "#ffffff", pivot: "#111111", dots: true}
@@ -1763,8 +1767,8 @@ function indPopHTML(){
     <label><input type="radio" name="volstyle" data-vol="dan" ${store.get("volstyle", "auto") === "dan" ? "checked" : ""}> Dan's: green up close, red down close</label>
     <label><input type="radio" name="volstyle" data-vol="desk" ${store.get("volstyle", "auto") === "desk" ? "checked" : ""}> desk: split buyers paid up / sellers hit bid</label>
     <h5>CANDLES</h5>
-    <div class="row"><span class="dim" style="width:64px">WICK</span><input type="range" data-cs="wick" min="1" max="8" step="0.5" value="${store.get("wick", store.get("screen", "desk") !== "desk" ? 3 : 1)}" style="flex:1"><span class="mono" data-csv="wick">${store.get("wick", store.get("screen", "desk") !== "desk" ? 3 : 1)}px</span></div>
-    <div class="row"><span class="dim" style="width:64px">BODY</span><input type="range" data-cs="body" min="20" max="95" step="5" value="${store.get("body", store.get("screen", "desk") !== "desk" ? 76 : 70)}" style="flex:1"><span class="mono" data-csv="body">${store.get("body", store.get("screen", "desk") !== "desk" ? 76 : 70)}%</span></div>
+    <div class="row"><span class="dim" style="width:64px">WICK</span><input type="range" data-cs="wick" min="1" max="8" step="0.5" value="${store.get("wick", store.get("screen", "blue") !== "desk" ? 3 : 1)}" style="flex:1"><span class="mono" data-csv="wick">${store.get("wick", store.get("screen", "blue") !== "desk" ? 3 : 1)}px</span></div>
+    <div class="row"><span class="dim" style="width:64px">BODY</span><input type="range" data-cs="body" min="20" max="95" step="5" value="${store.get("body", store.get("screen", "blue") !== "desk" ? 76 : 70)}" style="flex:1"><span class="mono" data-csv="body">${store.get("body", store.get("screen", "blue") !== "desk" ? 76 : 70)}%</span></div>
     <h5>SMA</h5>${DAN_SMA.map(([n, col]) => box("s" + n, n + " SMA", col)).join("")}
     <h5>EMA</h5>${DAN_EMA.map(([n, col]) => box("e" + n, n + " EMA", col)).join("")}
     <h5>EMA · DAILY CHART ONLY</h5>${DAN_EMA_DAILY.map(([n, col]) => box("d" + n, n + " EMA", col)).join("")}
@@ -1781,7 +1785,8 @@ function renderDataWin(p){
   if (!w){
     w = document.createElement("div"); w.className = "datawin"; wrap.appendChild(w);
     const pos = store.get("datawin.pos", null); if (pos){ w.style.left = pos[0] + "px"; w.style.top = pos[1] + "px"; }
-    w.addEventListener("mousedown", e => { e.stopPropagation(); e.preventDefault(); const r = w.getBoundingClientRect(), wr = wrap.getBoundingClientRect(), dx = e.clientX - r.left, dy = e.clientY - r.top;
+    w.addEventListener("click", e => { if (e.target.classList.contains("mn")){ store.set("datawin.min", !store.get("datawin.min", false)); w.dataset.h = ""; renderDataWin(p); } });
+    w.addEventListener("mousedown", e => { if (e.target.classList.contains("mn")) return; e.stopPropagation(); e.preventDefault(); const r = w.getBoundingClientRect(), wr = wrap.getBoundingClientRect(), dx = e.clientX - r.left, dy = e.clientY - r.top;
       const mv = ev => { w.style.left = Math.max(0, Math.min(wr.width - r.width, ev.clientX - wr.left - dx)) + "px"; w.style.top = Math.max(0, Math.min(wr.height - r.height, ev.clientY - wr.top - dy)) + "px"; w.style.bottom = "auto"; };
       const up = () => { window.removeEventListener("mousemove", mv); window.removeEventListener("mouseup", up); store.set("datawin.pos", [parseInt(w.style.left), parseInt(w.style.top)]); };
       window.addEventListener("mousemove", mv); window.addEventListener("mouseup", up); });
@@ -1792,7 +1797,9 @@ function renderDataWin(p){
   const lum = c => { const n = parseInt(c.slice(1), 16); return (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)); };
   const f = v => v == null ? "—" : (+v).toFixed(6).replace(/0+$/, "").replace(/\.$/, "");
   const rows = (p.dataRows || []).map(([name, col, val]) => `<div class="r" style="background:${col};color:${lum(col) > 140 ? "#000" : "#fff"}"><span>${name}</span><span>${f(val)}</span></div>`).join("");
-  const html = `<div class="ok">OK</div>
+  const min = store.get("datawin.min", false);
+  w.classList.toggle("min", min);
+  const html = `<div class="ok"><span>OK</span><b class="mn" title="${min ? "expand" : "minimize to the OK bar"}">${min ? "+" : "–"}</b></div>
     <div class="kv"><span>Symbol:</span><span>${esc(d.symbol)},${tf === "D" ? "D" : tf}</span></div>
     <div class="kv"><span>Date:</span><span>${ny({month: "2-digit", day: "2-digit", year: "2-digit"})}</span></div>
     <div class="kv"><span>Time:</span><span>${tf === "D" ? "00:00" : ny({hour: "2-digit", minute: "2-digit", hourCycle: "h23"})}</span></div>
@@ -1810,7 +1817,7 @@ function renderTools(v){
     + `<button data-fit="1">fit</button><button data-vwap="1" class="${store.get("vwap", true) ? "on" : ""}">VWAP</button>`
     + `<button data-mas="1" class="${store.get("mas", true) ? "on" : ""}" title="Dan's moving averages: SMA 5/10/20/50/100/150/200, EMA 5/10/20/50/100/150/200, plus 34/65/89 EMA on Daily only">MAS</button>`
     + `<button data-bb="1" class="${store.get("bb", true) ? "on" : ""}" title="Bollinger Bands 20 / 2.0">BB</button>`
-    + `<select data-screen="1" class="${store.get("screen", "desk") !== "desk" ? "on" : ""}" title="the screen: dark desk, or an eSignal-style light screen with Dan's candles">${[["desk", "DESK"], ["white", "WHITE"], ["blue", "BLUE"], ["pink", "PINK"], ["custom", "CUSTOM"]].map(([v, l]) => `<option value="${v}" ${store.get("screen", "desk") === v ? "selected" : ""}>${l}</option>`).join("")}</select>`
+    + `<select data-screen="1" class="${store.get("screen", "blue") !== "desk" ? "on" : ""}" title="the screen: dark desk, or an eSignal-style light screen with Dan's candles">${[["desk", "DESK"], ["white", "WHITE"], ["blue", "BLUE"], ["pink", "PINK"], ["custom", "CUSTOM"]].map(([v, l]) => `<option value="${v}" ${store.get("screen", "blue") === v ? "selected" : ""}>${l}</option>`).join("")}</select>`
     + `<span class="menu ind"><button data-ind="1" title="pick the lines you want, set wick and body width">IND</button><div class="pop">${indPopHTML()}</div></span>`
     + `<button data-foot="1" class="${store.get("foot." + v.id, false) ? "on" : ""}" title="footprint on this timeframe">FOOT</button>`
     + `<button data-clean="1" class="${store.get("clean", true) ? "on" : ""}" title="clean chart: candles, volume, VWAP, your levels, your orders">clean</button>`
@@ -1843,10 +1850,12 @@ function renderQuote(d){
     <span class="dim">PIVOT <b style="color:#d6d6d3">${px(pl.trigger)}</b> 2ND <b style="color:var(--cyan)">${px(pl.second_entry)}</b> TGT <b style="color:var(--buy)">${px(pl.target)}</b> STOP <b style="color:var(--sell)">${px(pl.stop)}</b></span>
     ${g ? `<span class="p-ps60" style="margin:0;height:auto;overflow:visible"><span class="g ${g.grade}" title="${esc(g.why)}">${g.grade}</span></span>` : ""}
     <span class="dim">${esc(d.health.status)}${d.pinned ? " · PINNED" : ""}${(d.book && (d.book.bids.length || d.book.asks.length)) ? "" : " · no depth"}</span>`;
-  const html2 = html + `<span class="spacer"></span><button class="qtools ${store.get("tools", false) ? "on" : ""}" data-tools="1" title="show / hide the chart toolbar">TOOLS</button>`;
+  const scr = store.get("screen", "blue");
+  const html2 = html + `<span class="spacer"></span><select class="qscreen" data-qscreen="1" title="chart screen">${[["blue", "BLUE"], ["white", "WHITE"], ["pink", "PINK"], ["custom", "CUSTOM"], ["desk", "DESK"]].map(([v, l]) => `<option value="${v}" ${scr === v ? "selected" : ""}>${l}</option>`).join("")}</select><button class="qtools ${store.get("tools", false) ? "on" : ""}" data-tools="1" title="show / hide the chart toolbar">TOOLS</button>`;
   if (el.dataset.h !== html2){ el.dataset.h = html2; el.innerHTML = html2; }
 }
 let bookUserScroll = 0, bookDragging = false;
+P.chart.el.querySelector(".qs").addEventListener("change", e => { if (!e.target.dataset.qscreen) return; store.set("screen", e.target.value); P.chart.last = null; drawChart(charts.chart); renderTools(charts.chart); });
 P.chart.el.querySelector(".qs").addEventListener("click", e => { if (!e.target.dataset.tools) return; const on = !store.get("tools", false); store.set("tools", on); P.chart.el.classList.toggle("tools-on", on); e.target.classList.toggle("on", on); });
 P.chart.el.classList.toggle("tools-on", store.get("tools", false));
 function renderBook(d){
