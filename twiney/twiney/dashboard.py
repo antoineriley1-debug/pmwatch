@@ -176,6 +176,9 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                 else:
                     ok = (engine.add_level if body.get("on", True) else engine.remove_level)(sym, body.get("price"), clock())
                 self._send(200 if ok else 400, json.dumps({"ok": ok}), "application/json")
+            elif path == "/api/ladder":
+                ok = engine.set_big_shares(str(body.get("symbol", "")).upper(), body.get("big_shares"), clock())
+                self._send(200 if ok else 400, json.dumps({"ok": ok}), "application/json")
             elif path == "/api/grade":
                 ok = engine.grade(str(body.get("key", "")), body.get("verdict"), clock())
                 self._send(200 if ok else 400, json.dumps({"ok": ok}), "application/json")

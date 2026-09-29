@@ -153,6 +153,13 @@ DEFAULTS = {
         # don't repeat the same price on the same side within this many seconds
         "repeat_seconds": 20.0,
     },
+    "ladder": {
+        # a displayed size at or above this is "big": highlighted on the ladder, and counted every time it shows up
+        # at that price. Adjustable per symbol from the LEVEL II window; that override wins over this default.
+        "big_shares": 5000,
+        # big × this = "huge": the strongest highlight
+        "huge_multiple": 3.0,
+    },
     "recording": {
         "enabled": True,
         "dir": "recordings",

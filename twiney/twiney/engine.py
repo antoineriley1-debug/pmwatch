@@ -57,6 +57,8 @@ class SymbolState:
         self.daily = {}         # day start -> [o, h, l, c] from IBKR daily bars (ATR)
         self.remounts = set()   # (level, kind, t) already called
         self.sizes = {ASK: {}, BID: {}}   # last aggregated size per price on each side (voice call-outs)
+        self.big = {ASK: {}, BID: {}}     # price_key -> [times big size has shown up here, peak, showing now]
+        self.big_shares = None            # per-symbol override of ladder.big_shares
         self.foot = {}          # minute -> {price_key: [bought at ask, sold into bid]} (footprint chart)
         self.voice_last = {}    # (side, price_key, kind) -> t of the last call-out
         self.remount_last = {}  # (level, kind) -> t of the last call (cooldown)
@@ -217,6 +219,7 @@ class Engine:
             st.book.apply(position, operation, side, price, size, market_maker)
             st.depth_t = t
             self._voice_sizes(st, side, t)
+            self._track_big(st, side)
             if self.sim_broker is not None:
                 self.sim_broker.on_market(symbol, t)
             judge = self._judge(st, t)
@@ -751,6 +754,45 @@ class Engine:
                 return []
             return self._rotate(t)
 
+    def big_shares_for(self, st):
+        return st.big_shares if st.big_shares else self.cfg.get("ladder", {}).get("big_shares", 5000)
+
+    def set_big_shares(self, symbol, shares, t=None):
+        """The trader's bar for 'big size' on this symbol's ladder (None = back to the config default)."""
+        with self.lock:
+            st = self._st(symbol)
+            if st is None:
+                return False
+            st.big_shares = float(shares) if shares else None
+            for side in (ASK, BID):   # re-judge what is showing right now against the new bar
+                for k, rec in st.big[side].items():
+                    rec[2] = False
+            self._track_big(st, ASK); self._track_big(st, BID)
+            self._rec({"ev": "big", "t": t or self.last_t, "sym": symbol, "shares": st.big_shares})
+            return True
+
+    def _track_big(self, st, side):
+        """Count how many separate times big size has appeared at each price (shows up, leaves, shows up again)."""
+        if st.book is None:
+            return
+        big = self.big_shares_for(st)
+        showing = {price_key(p): s for p, s, _n in st.book.levels(side)}
+        recs = st.big[side]
+        for k, s in showing.items():
+            rec = recs.get(k)
+            if s >= big:
+                if rec is None:
+                    recs[k] = [1, s, True]
+                elif not rec[2]:
+                    rec[0] += 1; rec[2] = True; rec[1] = max(rec[1], s)
+                else:
+                    rec[1] = max(rec[1], s)
+            elif rec is not None:
+                rec[2] = False
+        for k, rec in recs.items():
+            if k not in showing:
+                rec[2] = False
+
     def _voice_sizes(self, st, side, t):
         """Call out big size showing up at a price, and big size leaving it (pulled or hit)."""
         vc = self.cfg["voice"]
@@ -1033,6 +1075,8 @@ class Engine:
                     self.grades.pop(ev["key"], None)
         elif kind == "dbar":
             self.on_daily_bar(ev["sym"], ev["t0"], ev["o"], ev["h"], ev["l"], ev["c"])
+        elif kind == "big":
+            self.set_big_shares(ev["sym"], ev.get("shares"), t)
         elif kind == "setup":
             self.set_play_setup(ev["sym"], ev.get("fields", {}), t)
         elif kind == "flip":
@@ -1144,6 +1188,7 @@ class Engine:
         lk = price_key(last, tk) if last else None
         rows, prev = [], None
         max_size = max_traded = 0.0
+        big_bar = self.big_shares_for(st); huge_x = self.cfg.get("ladder", {}).get("huge_multiple", 3.0)
         for k in keys:
             price = round(k * tk, 4)
             b_sz = st.book.size_at(BID, price) if st.book else None
@@ -1158,6 +1203,9 @@ class Engine:
                 "best_bid": k == bb, "best_ask": k == ba, "last": k == lk,
             }
             for side in ("bid", "ask"):
+                rec = st.big[BID if side == "bid" else ASK].get(k)
+                if rec is not None and rec[2]:
+                    row[side + "_big"] = {"times": rec[0], "huge": row[side] >= big_bar * huge_x}
                 tr = trk.get((side, k))
                 if tr is not None:
                     row[side + "_refills"] = tr.refreshes_window(t)
@@ -1171,7 +1219,8 @@ class Engine:
             rows.append(row)
             prev = k
         return {"rows": rows, "max_size": round(max_size), "max_traded": round(max_traded),
-                "memory_minutes": MEMORY_SECONDS // 60}
+                "memory_minutes": MEMORY_SECONDS // 60, "big_shares": big_bar, "big_default": st.big_shares is None,
+                "huge_shares": big_bar * huge_x}
 
     def _trap(self, st, t, price):
         """Aggressive prints that are now underwater.

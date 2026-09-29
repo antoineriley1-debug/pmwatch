@@ -424,6 +424,16 @@ html,body{height:100%} body{overflow:hidden;font-size:12px}
 .setup .msg{grid-column:1/3;font-size:11px;min-height:14px}
 .ticket .risk{display:flex;gap:4px;align-items:center;font-size:11px} .ticket .risk input{width:70px;flex:none} .ticket .risk .out{color:var(--gold);font-family:var(--mono)}
 
+/* big size on the ladder: adjustable bar, stronger tint the more it matters */
+.ladbar{display:flex;align-items:center;gap:6px;padding:2px 8px;height:22px;flex:0 0 auto;background:#0f1012;border-bottom:1px solid #202124;font:500 9.5px var(--sans);letter-spacing:.12em;text-transform:uppercase;color:#7d7f85}
+.ladbar input{width:64px;height:17px;font:11px var(--mono);background:#0a0a0b;color:var(--gold);border:1px solid #26282c;padding:0 4px}
+.ladbar button{padding:0 6px;font-size:9px;height:17px}
+.lad td.sz.big{background:rgba(227,168,58,.16);color:#f2d59a;font-weight:600}
+.lad td.sz.huge{background:rgba(227,168,58,.34);color:#fff;font-weight:700;box-shadow:inset 0 0 0 1px rgba(227,168,58,.6)}
+.lad td.bsz.big,.lad td.bsz.huge{box-shadow:inset 3px 0 0 var(--buy)} .lad td.asz.big,.lad td.asz.huge{box-shadow:inset -3px 0 0 var(--sell)}
+.lad .bigx{display:inline-block;margin:0 3px;padding:0 3px;font:700 9px var(--sans);letter-spacing:.04em;background:var(--gold);color:#0c0c0d;vertical-align:middle}
+.lad .sz{width:auto;min-width:58px;white-space:nowrap}
+
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
   --buy:#3fb56f;--sell:#d9534f;--gold:#e3a83a;--cyan:#5aa9d6;--violet:#a48bd6;--warn:#d9a441;
@@ -575,7 +585,7 @@ input:focus,select:focus,textarea:focus{outline:1px solid var(--gold);outline-of
 <template id="tplPanels">
   <div class="pnl" data-p="chart"><div class="qs"></div><div class="pc nos"><div class="chart-wrap"><div class="chart-tools"></div><canvas></canvas></div></div></div>
   <div class="pnl" data-p="foot"><div class="pc nos"><div class="chart-wrap"><div class="chart-tools"><span class="dim" style="font-size:10.5px;background:rgba(17,22,31,.85);padding:1px 6px">5m FOOTPRINT · SOLD AT BID × BOUGHT AT ASK</span></div><canvas></canvas></div></div></div>
-  <div class="pnl" data-p="book"><div class="pc"><div class="ladder-wrap"></div></div></div>
+  <div class="pnl" data-p="book"><div class="ladbar"><span>BIG ≥</span><input id="bigIn" type="number" min="100" step="500" title="shares that count as big on this symbol's ladder. Highlighted when showing; ×N = how many separate times it has shown up at that price today"><span class="dim">sh</span><button id="bigReset" title="back to the config default">DEFAULT</button><span class="spacer"></span><span class="dim" id="bigHint"></span></div><div class="pc"><div class="ladder-wrap"></div></div></div>
   <div class="pnl" data-p="tape"><div class="pc"><div class="p-tape"></div></div></div>
   <div class="pnl" data-p="setup"><div class="pc"></div></div>
   <div class="pnl" data-p="ps60"><div class="pc ps60p"></div></div>
@@ -945,9 +955,9 @@ function ladderHTML(L){
       <td class="act b${dis}" data-act="BUY" data-px="${r.price}" title="${on ? "BUY " + sz(T().default_shares) + " @ " + px(r.price) : whyNot()}">${chips(r, "b") || "BUY"}</td>
       <td class="bars l">${sw?`<span class="bar sold" style="width:${sw}%"></span>`:""}<span class="bar-n">${kfmt(r.sold)}</span></td>
       <td class="whoc l">${whoTag(r,"bid")}</td>
-      <td class="sz bsz">${pips(r.bid_refills,"b")} ${r.bid?kfmt(r.bid):""}</td>
+      <td class="sz bsz ${r.bid_big ? (r.bid_big.huge ? "huge" : "big") : ""}">${pips(r.bid_refills,"b")} ${r.bid_big && r.bid_big.times > 1 ? `<span class="bigx" title="big size has shown up here ${r.bid_big.times} times today">×${r.bid_big.times}</span>` : ""}${r.bid?kfmt(r.bid):""}</td>
       <td class="px">${px(r.price)}${r.tags.map(t => `<span class="tag">${esc(t)}</span>`).join("")}</td>
-      <td class="sz asz">${r.ask?kfmt(r.ask):""} ${pips(r.ask_refills,"a")}</td>
+      <td class="sz asz ${r.ask_big ? (r.ask_big.huge ? "huge" : "big") : ""}">${r.ask_big && r.ask_big.times > 1 ? `<span class="bigx" title="big size has shown up here ${r.ask_big.times} times today">×${r.ask_big.times}</span>` : ""}${r.ask?kfmt(r.ask):""} ${pips(r.ask_refills,"a")}</td>
       <td class="whoc r">${whoTag(r,"ask")}</td>
       <td class="bars r">${bw?`<span class="bar bought" style="width:${bw}%"></span>`:""}<span class="bar-n">${kfmt(r.bought)}</span></td>
       <td class="act s${dis}" data-act="SELL" data-px="${r.price}" title="${on ? "SELL " + sz(T().default_shares) + " @ " + px(r.price) : whyNot()}">${chips(r, "s") || "SELL"}</td></tr>`;
@@ -1641,6 +1651,9 @@ function renderBook(d){
   const wrap = P.book.pc.querySelector(".ladder-wrap");
   if (!d){ if (P.book.last !== "-"){ P.book.last = "-"; wrap.innerHTML = `<div class="dim" style="padding:8px">${NA}</div>`; } return; }
   if (bookDragging) return;
+  const bi = document.getElementById("bigIn"), L = d.ladder || {};
+  if (bi && document.activeElement !== bi && L.big_shares != null && bi.dataset.sym + ":" + L.big_shares !== d.symbol + ":" + L.big_shares){ bi.value = Math.round(L.big_shares); bi.dataset.sym = d.symbol; }
+  const hint = document.getElementById("bigHint"); if (hint){ const txt = L.big_shares != null ? (L.big_default ? "config default" : d.symbol + " only") + " · huge ≥ " + kfmt(L.huge_shares) : ""; if (hint.textContent !== txt) hint.textContent = txt; }
   const html = ladderHTML(d.ladder);
   if (P.book.last === html) return;
   P.book.last = html;
@@ -1654,6 +1667,8 @@ function renderTape(d){
   if (!d){ el.innerHTML = `<div class="dim" style="padding:8px">${NA}</div>`; P.tape.last = null; return; }
   const html = tapeHTML(d.tape); if (P.tape.last === html) return; P.tape.last = html; el.innerHTML = html;
 }
+P.book.el.addEventListener("change", async e => { if (e.target.id !== "bigIn" || !curSym) return; const v = Math.max(100, +e.target.value || 0); const out = await post("/api/ladder", {symbol: curSym, big_shares: v}); toast(out.ok ? curSym + ": big size is now " + sz(v) + " shares" : "Could not set", out.ok); poll(true); });
+P.book.el.addEventListener("click", async e => { if (e.target.id !== "bigReset" || !curSym) return; const out = await post("/api/ladder", {symbol: curSym, big_shares: null}); toast(out.ok ? curSym + ": big size back to the config default" : "Could not reset", out.ok); poll(true); });
 function renderPS60(d){
   if (!d){ panelHTML("ps60", `<div class="dim">${NA}</div>`); return; }
   const g = d.ps60 || {}, se = g.se || {}, mp = g.mp || {};

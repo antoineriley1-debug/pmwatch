@@ -381,3 +381,25 @@ class PlaySetupTests(unittest.TestCase):
         e.add_play("ZZZ", 4.0); e.on_l1("ZZZ", "last", 50.0, 4.0)
         ok, why = e.set_play_setup("ZZZ", {"stop": 49.0, "mp": 2.0, "atr": 1.5}, 4.0)
         self.assertTrue(ok, why)
+
+
+class BigSizeTests(unittest.TestCase):
+    def test_big_size_is_highlighted_and_counted_each_time_it_shows(self):
+        e = connected_engine()
+        e.on_l1("AAA", "last", 10.01, 1.0); e.tick(1.0)
+        e.on_depth("AAA", 0, INSERT, ASK, 10.02, 400, "", 2.0)
+        e.on_depth("AAA", 1, INSERT, ASK, 10.03, 8000, "", 2.1)
+        row = lambda t, p: [r for r in e.snapshot(t)["panes"][0]["ladder"]["rows"] if r["price"] == p][0]
+        self.assertEqual(row(2.2, 10.03)["ask_big"], {"times": 1, "huge": False})
+        self.assertNotIn("ask_big", row(2.2, 10.02))
+        e.on_depth("AAA", 1, UPDATE, ASK, 10.03, 300, "", 3.0)      # he leaves
+        self.assertNotIn("ask_big", row(3.1, 10.03))
+        e.on_depth("AAA", 1, UPDATE, ASK, 10.03, 20000, "", 4.0)    # and comes back, huge this time
+        self.assertEqual(row(4.1, 10.03)["ask_big"], {"times": 2, "huge": True})
+        # adjustable per symbol from the desk
+        self.assertTrue(e.set_big_shares("AAA", 30000, 5.0))
+        self.assertNotIn("ask_big", row(5.1, 10.03))
+        lad = e.snapshot(5.1)["panes"][0]["ladder"]
+        self.assertEqual((lad["big_shares"], lad["big_default"]), (30000, False))
+        e.set_big_shares("AAA", None, 6.0)
+        self.assertEqual(row(6.1, 10.03)["ask_big"]["times"], 3)
