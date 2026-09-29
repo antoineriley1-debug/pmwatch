@@ -558,6 +558,9 @@ input:focus,select:focus,textarea:focus{outline:1px solid var(--gold);outline-of
 .typer input{font:700 22px var(--mono);letter-spacing:.12em;text-transform:uppercase;background:#0a0a0b;color:var(--gold);border:1px solid #2c2e33;padding:4px 8px;width:100%;box-sizing:border-box}
 .typer .hint{font:500 9.5px var(--sans);letter-spacing:.08em;color:#8e9096;text-transform:uppercase}
 
+.qs .tfp{display:inline-flex;gap:2px;margin-left:6px} .qs .tfp button{padding:0 6px;height:16px;font:600 9.5px var(--sans);letter-spacing:.06em;line-height:1;border-radius:2px}
+.qs .tfp button.on{background:#2a2412;border-color:var(--gold);color:var(--gold)}
+
 </style>
 </head>
 <body>
@@ -829,6 +832,8 @@ function wireChart(p, cv, v, saveView, isFoot){
     saveView(); drawChart(p);
   }, {passive: false});
   cv.addEventListener("mousedown", e => {
+    // clicking the chart takes the keyboard: whatever box had focus (symbol box, ticket) lets go, so typing lands on the chart
+    if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
     const r = cv.getBoundingClientRect(), x0 = e.clientX, y0 = e.clientY, onAxis = (e.clientX - r.left) > r.width - 86;
     const onTime = !onAxis && (e.clientY - r.top) > r.height - 18;   // the time axis: drag left / right to squeeze / stretch bars
     const yAt = () => v.chartY ? v.chartY[1] - ((e.clientY - r.top) - 8) / ((v.chartH || 1) - 8) * (v.chartY[1] - v.chartY[0]) : null;
@@ -1039,6 +1044,7 @@ function tfLabel(tf){
   if (typeof tf === "number") return tf % 60 === 0 && tf >= 60 ? (tf / 60) + " HOUR" : tf + " MIN";
   const m = /^(\d*)([DWM])$/.exec(String(tf)); if (!m) return String(tf);
   const n = +m[1] || 1, u = {D: "DAY", W: "WEEK", M: "MONTH"}[m[2]];
+  if (u === "MONTH" && n % 12 === 0) return n === 12 ? "YEARLY" : (n / 12) + " YEAR";
   return n === 1 ? (u === "DAY" ? "DAILY" : u === "WEEK" ? "WEEKLY" : "MONTHLY") : n + " " + u;
 }
 function aggDaily(daily, tf){
@@ -1848,7 +1854,7 @@ function renderDataWin(p){
 function renderTools(v){
   if (!v.tools || v.type !== "chart") return;
   const tf = store.get("tf." + v.id, 1);
-  v.tools.innerHTML = [1, 5, 15, 60, "D"].map(m => `<button data-tf="${m}" class="${tf===m?"on":""}">${m === "D" ? "D" : m + "m"}</button>`).join("")
+  v.tools.innerHTML = [1, 5, 15, 60, "D"].map(m => `<button data-tf="${m}" class="${String(tf)===String(m)?"on":""}">${m === "D" ? "D" : m + "m"}</button>`).join("")
     + `<button data-fit="1">fit</button><button data-vwap="1" class="${store.get("vwap", true) ? "on" : ""}">VWAP</button>`
     + `<button data-mas="1" class="${store.get("mas", true) ? "on" : ""}" title="Dan's moving averages: SMA 5/10/20/50/100/150/200, EMA 5/10/20/50/100/150/200, plus 34/65/89 EMA on Daily only">MAS</button>`
     + `<button data-bb="1" class="${store.get("bb", true) ? "on" : ""}" title="Bollinger Bands 20 / 2.0">BB</button>`
@@ -1878,7 +1884,8 @@ function renderQuote(d){
   const day = d.day || {}, pl = d.play, g = d.ps60;
   const chg = d.last && day.prev_close ? d.last - day.prev_close : null;
   const tfNow = store.get("tf.chart", 1);
-  const html = `<span class="sym">${esc(d.symbol)}</span><span class="tfn" title="click the chart and type: 5 = 5 min, 1H, 1D, 1W, 5M = 5 months, or a ticker">${tfLabel(tfNow)}</span>
+  const TFP = [["1", 1], ["5", 5], ["1H", 60], ["4H", 240], ["1D", "D"], ["1W", "W"], ["1M", "M"], ["1Y", "12M"]];
+  const html = `<span class="sym">${esc(d.symbol)}</span><span class="tfp" title="timeframe · or click the chart and type: 5, 1H, 1D, 1W, 5M, or a ticker">${TFP.map(([l, v]) => `<button data-tfp="${v}" class="${String(tfNow) === String(v) ? "on" : ""}">${l}</button>`).join("")}</span><span class="tfn">${tfLabel(tfNow)}</span>
     <span>LAST <b style="color:var(--gold)">${px(d.last)}</b>${chg != null ? ` <span class="${chg >= 0 ? "buy" : "sell"}">${chg >= 0 ? "+" : ""}${chg.toFixed(2)} ${(chg / day.prev_close * 100).toFixed(2)}%</span>` : ""}</span>
     <span><span class="buy">${px(d.bid)}</span><span class="dim">${day.bid_size ? "×" + kfmt(day.bid_size) : ""}</span> / <span class="sell">${px(d.ask)}</span><span class="dim">${day.ask_size ? "×" + kfmt(day.ask_size) : ""}</span></span>
     <span class="dim">O ${px(day.open)} H ${px(day.high)} L ${px(day.low)} V ${day.volume ? kfmt(day.volume) : NA}</span>
@@ -1891,7 +1898,10 @@ function renderQuote(d){
 }
 let bookUserScroll = 0, bookDragging = false;
 P.chart.el.querySelector(".qs").addEventListener("change", e => { if (!e.target.dataset.qscreen) return; store.set("screen", e.target.value); P.chart.last = null; drawChart(charts.chart); renderTools(charts.chart); });
-P.chart.el.querySelector(".qs").addEventListener("click", e => { if (!e.target.dataset.tools) return; const on = !store.get("tools", false); store.set("tools", on); P.chart.el.classList.toggle("tools-on", on); e.target.classList.toggle("on", on); });
+function setChartTf(tf){ store.set("tf.chart", tf); const c = charts.chart; c.view.offset = 0; c.view.follow = true; c.view.autoY = null; if (typeof tf === "string" && c.view.cw < 6) c.view.cw = 8; drawChart(c); renderTools(c); P.chart.last = null; renderQuote(curData()); }
+P.chart.el.querySelector(".qs").addEventListener("click", e => {
+  if (e.target.dataset.tfp){ const v = e.target.dataset.tfp; setChartTf(/^\d+$/.test(v) ? +v : v); return; }
+  if (!e.target.dataset.tools) return; const on = !store.get("tools", false); store.set("tools", on); P.chart.el.classList.toggle("tools-on", on); e.target.classList.toggle("on", on); });
 P.chart.el.classList.toggle("tools-on", store.get("tools", false));
 /* the chart crosshair lights up the same price on the ladder */
 let hoverPx = null;
@@ -1924,6 +1934,8 @@ function parseTyped(text){
   if (/^[A-Z][A-Z .]{0,9}$/.test(t)) return {symbol: NAMES[t] || t};
   return null;
 }
+P.chart.el.addEventListener("mousedown", () => { P.chart.el.classList.add("typing"); }, true);
+document.addEventListener("mousedown", e => { if (!P.chart.el.contains(e.target)) P.chart.el.classList.remove("typing"); }, true);
 function openTyper(first){
   const wrap = P.chart.el.querySelector(".chart-wrap"); if (!wrap) return;
   let box = wrap.querySelector(".typer");
@@ -1935,7 +1947,7 @@ function openTyper(first){
       if (e.key !== "Enter") return;
       const r = parseTyped(inp.value); box.remove();
       if (!r){ toast("Type a timeframe (5, 1H, 1D, 5M) or a ticker", false); return; }
-      if (r.tf != null){ store.set("tf.chart", r.tf); const c = charts.chart; c.view.offset = 0; c.view.follow = true; c.view.autoY = null; if (typeof r.tf === "string" && c.view.cw < 6) c.view.cw = 8; drawChart(c); renderTools(c); P.chart.last = null; renderQuote(curData()); toast("Chart: " + tfLabel(r.tf), true); }
+      if (r.tf != null){ setChartTf(r.tf); toast("Chart: " + tfLabel(r.tf), true); }
       else openTab(r.symbol, true);
     });
     inp.addEventListener("blur", () => setTimeout(() => box.remove(), 150));
@@ -1945,7 +1957,8 @@ function openTyper(first){
 function chartTypeKey(e){
   // the mouse is over the chart and a plain letter or digit was pressed: that is typing, not a hotkey
   if (e.ctrlKey || e.metaKey || e.altKey || e.key.length !== 1 || !/[a-zA-Z0-9]/.test(e.key)) return false;
-  const c = charts.chart; if (!c || c.el.offsetParent === null || !c.el.matches(":hover")) return false;
+  const c = charts.chart; if (!c || c.el.offsetParent === null) return false;
+  if (!(c.el.matches(":hover") || c.view.cross || c.el.classList.contains("typing"))) return false;
   e.preventDefault(); openTyper(e.key); return true;
 }
 function renderBook(d){
@@ -2354,8 +2367,9 @@ document.getElementById("shotBtn").addEventListener("click", deskShot);
 // keyboard: configurable hotkeys first; then the few fixed ones (Esc closes things, / focuses the symbol box, J journal, 2 / L chart marks)
 document.addEventListener("keydown", e => {
   if (e.key === "Escape"){ document.querySelectorAll(".menu.open").forEach(x => x.classList.remove("open")); if (e.target.matches("input, select, textarea")) e.target.blur(); }
-  if (e.target.matches("input, select, textarea") || document.getElementById("modal") || document.querySelector("td.k.cap")) return;
-  if (chartTypeKey(e)) return;
+  if (document.getElementById("modal") || document.querySelector("td.k.cap")) return;
+  if (!e.target.matches("input, select, textarea") && chartTypeKey(e)) return;
+  if (e.target.matches("input, select, textarea")) return;
   if (runHotkey(e)) return;
   const c = charts.chart;
   if (e.key === "/"){ e.preventDefault(); document.getElementById("symIn").focus(); }
