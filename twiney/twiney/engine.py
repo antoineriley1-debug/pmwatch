@@ -1106,7 +1106,7 @@ class Engine:
         def at_level(price):
             for lv in user_levels:
                 if lv["role"] in ("trigger", "second_entry", "extra") and \
-                        abs(price_key(price) - price_key(lv["price"])) <= 1:
+                        price_key(price) == price_key(lv["price"]):
                     return lv["label"]
             return None
 
