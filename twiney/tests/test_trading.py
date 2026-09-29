@@ -209,3 +209,25 @@ class PS60ExitTests(unittest.TestCase):
         e.on_depth("AAA", 0, UPDATE, BID, 9.98, 300, "", 5.1)
         self.assertEqual(broker.position("AAA"), 0)
         self.assertEqual(e.snapshot(5.5)["account"]["pending"], [])
+
+
+class TicketTests(unittest.TestCase):
+    def test_nonce_blocks_double_submit_and_stop_limit_entry(self):
+        e, tr, gate, broker = sim_setup()
+        gate.arm(True)
+        a = tr.submit("AAA", "BUY", 9.99, 100, 2.0, False, "LMT", None, "DAY", "n1")
+        b = tr.submit("AAA", "BUY", 9.99, 100, 2.1, False, "LMT", None, "DAY", "n1")   # the same click twice
+        self.assertTrue(a["ok"]); self.assertTrue(b.get("duplicate")); self.assertEqual(a["id"], b["id"])
+        self.assertEqual(len([o for o in broker.orders.values()]), 1)
+        # stop-limit entry: trigger 10.20, limit 10.25
+        c = tr.submit("AAA", "BUY", 10.25, 100, 3.0, False, "STP LMT", 10.20, "DAY", "n2")
+        self.assertTrue(c["ok"], c); self.assertIn("STP LMT stop 10.20", c["sent"])
+        # market stays off by default
+        m = tr.submit("AAA", "BUY", None, 100, 4.0, False, "MKT", None, "DAY", "n3")
+        self.assertFalse(m["ok"]); self.assertIn("LIMIT", m["reason"])
+        # order states as the trader sees them
+        snap = e.snapshot(4.5)["account"]
+        self.assertEqual({o["state"] for o in snap["pending"]}, {"ACKNOWLEDGED"})
+        self.assertEqual(e.order_state({"status": "PendingCancel"}), "CANCEL PENDING")
+        self.assertEqual(e.order_state({"status": "Submitted", "filled": 40.0, "remaining": 60.0}), "PARTIALLY FILLED")
+        self.assertEqual(e.order_state({"status": "Inactive"}), "REJECTED")

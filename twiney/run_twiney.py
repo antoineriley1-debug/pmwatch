@@ -106,7 +106,7 @@ def run_demo(cfg, plays, args):
         recorder.write(session_header(plays, cfg, __version__))
         print(f"Recording the demo to {recorder.path} (replay it or grade its calls for tune.py)", flush=True)
     engine = Engine(plays, cfg, recorder)
-    engine.plays_path = args.plays if os.path.exists(args.plays) else None
+    engine.plays_path = args.plays if os.path.exists(args.plays) and not args.plays.endswith("plays.example.json") else None
     engine.grades_path = os.path.join(cfg["recording"]["dir"], "grades.jsonl")
     engine.listeners.append(console_alert)
     feed = DemoFeed(engine, plays)

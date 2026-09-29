@@ -104,8 +104,11 @@ class TradingGate:
                 return self._block(reason, action, qty, price, now)
             if action not in (BUY, SELL):
                 return self._block(f"bad action {action}", action, qty, price, now)
-            if order_type not in ("LMT", "STP"):
-                return self._block("only LIMIT orders (and bracket stops) are allowed", action, qty, price, now)
+            if order_type in ("MKT", "STP") and not self.cfg.get("allow_market"):
+                return self._block("only LIMIT and STOP-LIMIT orders by your rules (limit ~99%); market and naked stops "
+                                   "stay off unless trading.allow_market is on", action, qty, price, now)
+            if order_type not in ("LMT", "STP LMT", "MKT", "STP"):
+                return self._block(f"order type {order_type} is not supported", action, qty, price, now)
             try:
                 qty = int(qty)
                 price = float(price)
@@ -113,7 +116,7 @@ class TradingGate:
                 return self._block("size and price must be numbers", action, qty, price, now)
             if qty <= 0:
                 return self._block("size must be positive", action, qty, price, now)
-            if price <= 0:
+            if price <= 0 and order_type != "MKT":
                 return self._block("price must be positive", action, qty, price, now)
             if qty > self.cfg["max_shares_per_order"]:
                 return self._block(f"{qty} shares is over your cap of {self.cfg['max_shares_per_order']}",
@@ -140,6 +143,7 @@ class TradingGate:
                 "mode": self.mode,
                 "armed": self.armed,
                 "one_click": self.one_click,
+                "allow_market": bool(self.cfg.get("allow_market")),
                 "can_trade": self.can_trade(),
                 "why_not": self.why_not(),
                 "accounts": list(self.accounts),
@@ -285,6 +289,9 @@ class SimBroker:
                     hit = last is not None and ((o["action"] == SELL and last <= o["price"]) or
                                                 (o["action"] == BUY and last >= o["price"]))
                     fill_px = last
+                elif o["type"] == "MKT":
+                    hit = (o["action"] == BUY and ask is not None) or (o["action"] == SELL and bid is not None)
+                    fill_px = ask if o["action"] == BUY else bid
                 elif o["type"] == "STP LMT":
                     trig = last is not None and ((o["action"] == SELL and last <= o["aux"]) or
                                                  (o["action"] == BUY and last >= o["aux"]))
@@ -391,21 +398,41 @@ class Trader:
         self.bracket = bool(self.cfg["bracket"])
         self.scale = bool(self.cfg["scale_plan"]["enabled"])
         self.families = {}   # entry order id -> {"symbol", "entry", "stop", "cash": [...], "be_done"}
+        self.nonces = {}     # ticket nonce -> result (double-submit protection)
         self.log = deque(maxlen=200)
 
     def _note(self, now, text, ok):
         self.log.appendleft({"t": now, "text": text, "ok": ok})
         self.engine._message("info" if ok else "error", text, now)
 
-    def submit(self, symbol, action, price, qty=None, now=None, bracket=None):
+    def submit(self, symbol, action, price, qty=None, now=None, bracket=None, order_type="LMT", aux=None,
+               tif="DAY", nonce=None):
         now = now or time.time()
         qty = int(qty or self.default_shares)
         play = self.engine.syms[symbol].play if symbol in self.engine.syms else None
         if play is None:
             self._note(now, f"{symbol}: not one of your plays", False)
             return {"ok": False, "reason": "unknown symbol"}
-        price = round(float(price), 4)
-        reason = self.gate.check(action, qty, price, now)
+        order_type = (order_type or "LMT").upper()
+        tif = (tif or "DAY").upper()
+        if tif not in ("DAY", "GTC", "IOC"):
+            return {"ok": False, "reason": f"time in force {tif} is not supported"}
+        # the same ticket sent twice (double-click, retry, lag) is one order
+        if nonce:
+            seen = self.nonces.get(nonce)
+            if seen is not None:
+                return dict(seen, duplicate=True)
+        price = round(float(price or 0), 4)
+        if order_type == "STP LMT":
+            try:
+                aux = round(float(aux), 4)
+            except (TypeError, ValueError):
+                return {"ok": False, "reason": "a stop-limit needs a stop price"}
+            if aux <= 0:
+                return {"ok": False, "reason": "stop price must be positive"}
+        else:
+            aux = None
+        reason = self.gate.check(action, qty, price if order_type != "MKT" else (self.engine.syms[symbol].price() or 0), now, order_type)
         if not reason:
             pos = int(self.broker.position(symbol))
             after = pos + (qty if action == BUY else -qty)
@@ -418,9 +445,10 @@ class Trader:
             return {"ok": False, "reason": reason}
         use_bracket = self.bracket if bracket is None else bool(bracket)
         plan = self.cfg["scale_plan"]["cash_flow"] if self.scale else None
-        legs = bracket_legs(play, action, qty, price, self.cfg["stop_limit_ticks"], plan) if use_bracket else []
+        ref = price if order_type in ("LMT", "STP LMT") else (self.engine.syms[symbol].price() or price)
+        legs = bracket_legs(play, action, qty, ref, self.cfg["stop_limit_ticks"], plan) if use_bracket and ref else []
         try:
-            parent_id = self.broker.place(symbol, action, qty, price, now, "LMT", None, "entry")
+            parent_id = self.broker.place(symbol, action, qty, price, now, order_type, None, "entry", tif, aux=aux)
             fam = {"symbol": symbol, "entry": price, "stop": None, "cash": [], "be_done": False}
             for leg in legs:
                 lid = self.broker.place(symbol, leg["action"], leg["qty"], leg["price"], now, leg["type"], parent_id,
@@ -434,15 +462,21 @@ class Trader:
         except Exception as exc:
             self._note(now, f"FAILED {action} {qty} {symbol} @ {money(price)}: {exc}", False)
             return {"ok": False, "reason": str(exc)}
-        what = f"{action} {qty} {symbol} @ {money(price)} LMT"
+        what = f"{action} {qty} {symbol} " + (f"@ {money(price)} " if order_type != "MKT" else "") + order_type + (f" stop {money(aux)}" if aux else "") + ("" if tif == "DAY" else " " + tif)
         if legs:
             what += " + " + " + ".join(
                 f"stop {money(l['aux'])} (limit {money(l['price'])})" if l["role"] == "stop"
                 else f"{l['role'].replace('_', ' ')} {l['qty']} @ {money(l['price'])}" for l in legs)
         self._note(now, f"SENT {what}", True)
         self.engine._rec({"ev": "order", "t": now, "sym": symbol, "action": action, "qty": qty, "px": price,
-                          "legs": legs, "id": parent_id})
-        return {"ok": True, "id": parent_id, "sent": what}
+                          "type": order_type, "aux": aux, "tif": tif, "legs": legs, "id": parent_id})
+        out = {"ok": True, "id": parent_id, "sent": what}
+        if nonce:
+            self.nonces[nonce] = out
+            if len(self.nonces) > 500:
+                for k in list(self.nonces)[:250]:
+                    del self.nonces[k]
+        return out
 
     def cancel(self, oid, now=None):
         now = now or time.time()

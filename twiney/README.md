@@ -1,7 +1,35 @@
-# TWINEY v2.0
+# PS60 EXECUTION DESK (TWINEY v3.0)
 
-An IBKR order-flow workstation built around PS60 levels, with ladder trading that is
-**locked to paper accounts** until you deliberately unlock it.
+A professional single-screen trading workstation on top of Interactive Brokers, built around PS60 and order flow,
+with ladder trading that is **locked to paper accounts** until you deliberately unlock it.
+
+## The desk
+- **Symbol box** (top left, `Ctrl+L`): type a ticker, Enter. Every symbol-linked panel switches together: chart,
+  Level II, time & sales, PS60, reloads, calls, the order ticket. Recent symbols are in the ▾ next to it. A ticker that
+  is not in plays.json becomes a watch-only play (mark its pivot on the chart to rank it).
+- **Symbol tabs**: NVDA | TSLA | AMD | +. Each tab keeps its own chart zoom. **Only the active tab speaks**: voice reads
+  reload buyer / seller calls ("Reload seller at 140.00. 30 reloads. 40 thousand shares observed."), cleared out and
+  pulled, for the tab you are on. Background tabs are silent. VOICE: ON/OFF and a volume slider in the command bar.
+- **Dockable panels**: CHART, FOOTPRINT 5m, LEVEL II, TIME & SALES, PS60, RELOADS, ORDER ENTRY, POSITIONS, ORDERS,
+  WATCHLIST, CALLS, DESK, JOURNAL, MESSAGES. Six dock zones (left / center / right × top / bottom), each holding tabbed
+  panels. Drag a panel's tab to another zone, or off the zones to float it. ⤢ maximizes, ⧉ undocks, ✕ hides (Panels ▾
+  brings it back). Drag the gutters to resize. Nothing scrolls the page.
+- **Layouts**: ★ PS60 Execution (default), ★ Scalping, ★ Tape Focus, ★ Chart Focus, ★ Laptop. Save your own under a
+  name, rename, duplicate, delete. Layouts live in `layouts.json` next to config.json and the last one used loads on the
+  next start, on any browser.
+- **Order ticket**: symbol (linked), BUY / SELL, quantity, LIMIT or STOP LIMIT (MARKET and naked STOP are off by your
+  rules; `trading.allow_market` turns them on), price with bid / ask / mid / last, TIF (DAY / GTC / IOC), stop+target,
+  PS60 exits, TRANSMIT. A double-click, retry or lag can never send twice: every ticket carries a nonce. The ticket log
+  shows SUBMITTED → what IBKR says. Order states are IBKR's, never assumed: CREATED, SUBMITTED, ACKNOWLEDGED,
+  PARTIALLY FILLED, FILLED, CANCEL PENDING, CANCELED, REJECTED.
+- **POSITIONS**: symbol, side, qty, average entry, last, **P&L %** (no dollars), ½ / ¼ / custom reduce, CLOSE (asks).
+- **ORDERS**: working orders with filled / remaining / status, MODIFY, CANCEL, CANCEL ALL; click a row to jump to that
+  symbol; "history" shows done orders.
+- **Hotkeys** (command bar): every action is configurable. Execution hotkeys (buy, sell, cancel, flatten) are unassigned
+  until you set them; they go through the same checks as the mouse.
+- **Status bar**: IBKR connection, data type, ORDERS state (why not, if not), ladders in use, REC timer, the day loss
+  lock, the clock. When order routing is down the ticket's TRANSMIT is disabled and the reason is shown.
+- **Data**: a value that is not there shows as —. Nothing is invented.
 
 ## Trading from the ladder (paper only)
 - **ARM** in the header. TWINEY starts DISARMED every launch; nothing can be sent until you arm it.
@@ -246,7 +274,7 @@ tune.py                  reload-threshold tuner scored against your graded calls
 ## Tests
 `python -m unittest discover -s tests -v`
 
-This runs 117 tests covering the book, reload verdicts, 317 resets, ranking/rotation, a fake TWS session (reconnect, 1100/1101, 309, rotation cancels), the safety guard and source scan, replay fidelity and the dashboard.
+This runs 119 tests covering the book, reload verdicts, 317 resets, ranking/rotation, a fake TWS session (reconnect, 1100/1101, 309, rotation cancels), the safety guard and source scan, replay fidelity and the dashboard.
 One test checks the guard against the real `EClient`. It only runs when `ibapi` is installed.
 
 ## Before connecting to a live-data session (handoff checklist)

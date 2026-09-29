@@ -479,6 +479,29 @@ class Engine:
         import os
         os.replace(tmp, self.plays_path)
 
+    @staticmethod
+    def order_state(o):
+        """One word the trader can trust, from IBKR's status (IBKR is authoritative; submitted is not filled)."""
+        s = o.get("status") or ""
+        filled = o.get("filled") or 0
+        if s == "Filled":
+            return "FILLED"
+        if s in ("Cancelled", "ApiCancelled"):
+            return "CANCELED"
+        if s == "PendingCancel":
+            return "CANCEL PENDING"
+        if s == "Inactive":
+            return "REJECTED"
+        if filled and (o.get("remaining") or 0) > 0:
+            return "PARTIALLY FILLED"
+        if s in ("Submitted", "PreSubmitted"):
+            return "ACKNOWLEDGED"
+        if s in ("PendingSubmit", "ApiPending"):
+            return "SUBMITTED"
+        if s == "Done":
+            return "FILLED"
+        return s.upper() or "CREATED"
+
     def _pending(self, symbol=None):
         return [o for o in self.orders.values()
                 if o.get("status") not in self.DONE_STATUSES + ("Done",)
@@ -1266,8 +1289,8 @@ class Engine:
                 "replay": dict(self.replay) if self.replay else None,
                 "account": {
                     "seen": self.account_seen,
-                    "pending": sorted(self._pending(), key=lambda o: -o.get("first_seen", 0)),
-                    "done": sorted((o for o in self.orders.values() if o not in self._pending()),
+                    "pending": sorted((dict(o, state=self.order_state(o)) for o in self._pending()), key=lambda o: -o.get("first_seen", 0)),
+                    "done": sorted((dict(o, state=self.order_state(o)) for o in self.orders.values() if o not in self._pending()),
                                    key=lambda o: -o["t"])[:15],
                     "positions": [dict(p, last=fmt_price(self.syms[p["symbol"]].price())
                                        if p["symbol"] in self.syms else None) for p in self.positions.values()],

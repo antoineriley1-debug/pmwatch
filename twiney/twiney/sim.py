@@ -22,7 +22,7 @@ class DemoFeed:
             if not p["active"]:
                 continue
             drift = self.rng.uniform(0.002, 0.008) * self.rng.choice((-1, 1))
-            mid = round(p["trigger"] * (1 + drift), 2)
+            mid = round((p.get("trigger") or self.rng.uniform(20, 300)) * (1 + drift), 2)
             # start inside the play's stop / target band so the demo doesn't retire the play at once
             lo, hi = sorted(x for x in (p.get("stop"), p.get("target")) if x) or (None, None)
             if lo and hi:

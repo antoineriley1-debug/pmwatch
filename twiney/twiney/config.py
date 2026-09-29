@@ -111,6 +111,8 @@ DEFAULTS = {
         },
         # stops go out as STOP-LIMIT (never a naked stop): limit this many ticks through the stop
         "stop_limit_ticks": 10,
+        # market and naked stop entries stay off unless you turn this on (Dan: limit ~99%)
+        "allow_market": False,
     },
     "ps60": {
         # candle size the second entry is judged on (1 or 5); Dan: "always on a new candle"

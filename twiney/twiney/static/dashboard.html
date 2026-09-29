@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>TWINEY</title>
+<title>PS60 Execution Desk</title>
 <style>
 :root{
   --bg:#0a0d12; --panel:#11161f; --panel2:#161d29; --line:#243044; --text:#dbe3ee; --dim:#7b889e;
@@ -288,149 +288,207 @@ tr.atlvl td{background:rgba(255,197,61,.12)}
 tr.onslot td:first-child{color:var(--gold)}
 td.status{text-align:left !important;white-space:normal !important;color:#c4cddb}
 @media (max-width:900px){#bottom{grid-template-columns:1fr} .p-body{grid-template-columns:1fr} .divider{display:none} .pane{height:auto;resize:none;flex:1 1 100%} .chart-wrap{height:260px}}
-/* ===== workstation layout (one symbol at a time) ===== */
-html,body{height:100%} body{overflow:hidden}
-header{padding:4px 10px;gap:6px;position:static;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;height:40px;box-sizing:border-box}
-header > *{white-space:nowrap;flex:0 0 auto} header label{display:inline-flex;align-items:center;gap:3px;font-size:11px} header #meta{font-size:10px}
-header button{padding:2px 7px;font-size:12px}
-header::-webkit-scrollbar{height:0}
-#tick{display:flex;align-items:center;gap:4px;margin:0 6px}
-#tick input{width:118px;font:700 15px var(--mono);letter-spacing:.08em;text-transform:uppercase;background:var(--bg);color:var(--gold);border:1px solid var(--gold);border-radius:6px;padding:3px 8px}
-#tick input::placeholder{color:var(--dim);font-weight:400;letter-spacing:0;font-size:12px;text-transform:none}
-#ws{display:grid;grid-template-columns:var(--rail,200px) 6px minmax(0,1fr) 6px var(--right,480px);grid-template-rows:minmax(0,1fr) 6px var(--drawer,240px);height:calc(100vh - 40px);min-height:0}
-#ws.replaying{height:calc(100vh - 76px)}
-#ws.drawer-folded{grid-template-rows:minmax(0,1fr) 6px 30px}
-#rail{grid-column:1;grid-row:1;overflow:auto;background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
-#center{grid-column:3;grid-row:1;display:grid;grid-template-rows:auto auto auto minmax(0,1fr) 6px var(--foot,220px);min-height:0;min-width:0}
-#center.foot-folded{grid-template-rows:auto auto auto minmax(0,1fr) 6px 26px}
-#right{grid-column:5;grid-row:1;display:grid;grid-template-rows:minmax(0,1fr) 6px var(--tape,240px);min-height:0;min-width:0}
-#right.tape-folded{grid-template-rows:minmax(0,1fr) 6px 26px}
-#drawer{grid-column:1/6;grid-row:3;display:flex;flex-direction:column;min-height:0;background:var(--panel);border-top:1px solid var(--line)}
-.split{background:transparent;z-index:2} .split.v{cursor:col-resize;grid-row:1} .split.h{cursor:row-resize}
-.split:hover{background:rgba(255,197,61,.35)}
-#ws > .split.v.rail{grid-column:2} #ws > .split.v.right{grid-column:4} #ws > .split.h.drawer{grid-column:1/6;grid-row:2}
-.panel{display:flex;flex-direction:column;min-height:0;min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:6px;margin:3px;overflow:hidden;position:relative}
-.panel > .ph{display:flex;align-items:center;gap:8px;padding:2px 8px;font-size:10.5px;letter-spacing:.08em;color:var(--dim);background:#0f141c;border-bottom:1px solid var(--line);flex:0 0 auto;user-select:none;height:22px;box-sizing:border-box;white-space:nowrap;overflow:hidden}
-.panel > .ph b{color:var(--text)}
-.panel > .pb{flex:1 1 0;min-height:0;position:relative;overflow:auto}
-.panel.folded > .pb{display:none}
-.ph .fold{margin-left:auto;cursor:pointer;padding:0 4px}
-#chartPanel .pb, #footPanel .pb{overflow:hidden}
-#chartPanel .chart-wrap, #footPanel .chart-wrap{position:absolute;inset:0;border:0;border-radius:0}
-#quote{display:flex;flex-wrap:nowrap;gap:6px 12px;align-items:center;padding:3px 8px;margin:3px 3px 0;background:var(--panel);border:1px solid var(--line);border-radius:6px;height:38px;box-sizing:border-box;white-space:nowrap;overflow:hidden}
-#quote .sym{font-size:22px;font-weight:800;letter-spacing:.04em;color:var(--gold)}
-#quote .q{font-family:var(--mono);font-size:13px} #quote .lvl{font-family:var(--mono);font-size:12px;color:var(--dim)}
-#quote .lvl b{color:#dbe3ee} #quote .lvl b.c{color:var(--cyan)} #quote .lvl b.g{color:var(--buy)} #quote .lvl b.r{color:var(--sell)}
-#quote .chg.up{color:var(--buy)} #quote .chg.dn{color:var(--sell)}
-#stats{display:flex;gap:14px;padding:2px 10px;margin:2px 3px 0;font-family:var(--mono);font-size:11px;color:var(--dim);white-space:nowrap;overflow:hidden;height:20px;box-sizing:border-box}
-#stats b{color:var(--text)}
-#tradebar{margin:2px 3px 0} .tradebar{margin:0}
-#rail h5{margin:6px 8px 2px;font-size:10px;color:var(--dim);letter-spacing:.08em}
-.wl{display:grid;grid-template-columns:1fr auto;gap:1px 6px;padding:4px 8px;cursor:pointer;border-left:3px solid transparent;font-size:12px;align-items:center;border-bottom:1px solid #151b25}
-.wl:hover{background:var(--panel2)} .wl.cur{background:#1a2230;border-left-color:var(--gold)}
-.wl .s{font-weight:700;font-family:var(--mono)} .wl .s.dep::after{content:" ◆";color:var(--gold);font-size:10px}
-.wl .l{font-family:var(--mono);color:var(--gold);text-align:right}
-.wl .w{grid-column:1/3;font-size:10.5px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.wl .g{font-size:9.5px;font-weight:700;padding:0 5px;border-radius:8px;justify-self:end}
-.wl .g.READY{background:#163a28;color:var(--buy)} .wl .g.WATCH{background:#3a3016;color:var(--gold)} .wl .g.PASS{background:#3a1a1e;color:var(--sell)}
-.wl.retired .s{text-decoration:line-through;color:var(--dim)}
-#tabs{display:flex;gap:2px;padding:3px 6px 0;border-bottom:1px solid var(--line);flex:0 0 auto;align-items:center;height:28px;box-sizing:border-box}
-#tabs button{border-radius:6px 6px 0 0;border-bottom:0;background:transparent;color:var(--dim);padding:2px 10px;font-size:11px;letter-spacing:.06em}
-#tabs button.on{background:var(--panel2);color:var(--text);font-weight:700}
-#tabs button .n{margin-left:4px;background:var(--sell);color:#fff;border-radius:8px;padding:0 5px;font-size:9.5px}
-#tabs .fold{margin-left:auto;cursor:pointer;color:var(--dim);padding:0 8px}
-#drawerBody{flex:1 1 0;min-height:0;overflow:auto;padding:6px 8px}
-.tab{display:none} .tab.on{display:block}
-#feedBody{display:grid;gap:4px} #storyBody .st{margin-bottom:6px}
-#account{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px} #account h4{margin:0 0 4px;font-size:10.5px;color:var(--dim);letter-spacing:.08em}
-@media (max-width:1100px){#account{grid-template-columns:1fr}}
-#voiceBtn.on{color:var(--gold);border-color:var(--gold)}
-.book-tools{position:absolute;right:26px;top:0;z-index:4} .book-tools > button{padding:0 6px;font-size:11px;border:0;background:transparent}
-.book-tools .pop{position:fixed;right:auto;top:auto}
-.pane.max{position:fixed;inset:8px;z-index:10;height:auto !important;width:auto !important;margin:0}
-body.has-max #ws > :not(.max){visibility:hidden}
+/* ===== PS60 EXECUTION DESK — application shell ===== */
+html,body{height:100%} body{overflow:hidden;font-size:12px}
+#app{display:grid;grid-template-rows:34px 26px minmax(0,1fr) 22px;height:100vh}
+#cmd{display:flex;align-items:center;gap:6px;padding:0 8px;background:#0b0f15;border-bottom:1px solid var(--line);white-space:nowrap;overflow:hidden}
+#cmd > *{flex:0 0 auto}
+#cmd button{padding:2px 7px;font-size:11px;border-radius:3px}
+#cmd label{display:inline-flex;align-items:center;gap:3px;font-size:11px;color:var(--dim)}
+#brand{font-size:12px;font-weight:800;letter-spacing:.14em;color:var(--gold);margin-right:4px}
+#symbox{display:flex;align-items:center;gap:2px}
+#symIn{width:96px;font:700 14px var(--mono);letter-spacing:.06em;text-transform:uppercase;background:#05070b;color:var(--gold);border:1px solid #3b3410;border-radius:3px;padding:3px 6px}
+#symIn:focus{outline:1px solid var(--gold)}
+#symIn::placeholder{color:#4a5566;font:400 11px system-ui;letter-spacing:0;text-transform:none}
+#symHist{font:inherit;font-size:11px;background:#05070b;color:var(--dim);border:1px solid var(--line);border-radius:3px;max-width:40px}
+#cmd .spacer{flex:1 1 0 !important;min-width:4px}
+#cmd .sep{width:1px;height:18px;background:var(--line);margin:0 3px}
+.led{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--dim);margin-right:4px;vertical-align:middle}
+.led.ok{background:var(--buy);box-shadow:0 0 5px var(--buy)} .led.warn{background:var(--warn)} .led.bad{background:var(--sell)}
+#armBtn{font-weight:800;letter-spacing:.06em} #armBtn.armed{background:#0f3d25;border-color:var(--buy);color:#dfffee} #armBtn.off{color:var(--dim)}
+#armBtn.locked{background:#5a1218;border-color:var(--sell);color:#fff}
+/* workspace tab bar */
+#wsbar{display:flex;align-items:center;gap:2px;padding:0 6px;background:#0d121a;border-bottom:1px solid var(--line);white-space:nowrap;overflow:hidden}
+.stab{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;font:700 12px var(--mono);letter-spacing:.06em;color:var(--dim);border:1px solid transparent;border-bottom:0;border-radius:3px 3px 0 0;cursor:pointer;height:24px;box-sizing:border-box}
+.stab.on{background:var(--panel);color:var(--gold);border-color:var(--line)}
+.stab .x{font-size:10px;color:var(--dim);padding:0 2px} .stab .x:hover{color:var(--sell)}
+.stab .v{font-size:10px;opacity:.7}
+#wsbar .add{padding:1px 8px;font-size:12px;border-radius:3px}
+#wsbar .right{margin-left:auto;display:flex;gap:4px;align-items:center}
+#wsbar select,#wsbar button{font-size:11px;padding:1px 6px;border-radius:3px}
+/* docking workspace */
+#work{position:relative;display:grid;min-height:0;min-width:0;background:#070a0f;
+  grid-template-columns:var(--c1,0px) var(--g1,0px) minmax(0,1fr) var(--g2,0px) var(--c3,0px);
+  grid-template-rows:minmax(0,1fr) var(--gr,0px) var(--r2,0px)}
+.zone{display:flex;flex-direction:column;min-height:0;min-width:0;position:relative;background:var(--panel);border:1px solid var(--line);margin:1px}
+.zone.empty{display:none}
+.zone[data-zone="TL"]{grid-column:1;grid-row:1} .zone[data-zone="TC"]{grid-column:3;grid-row:1} .zone[data-zone="TR"]{grid-column:5;grid-row:1}
+.zone[data-zone="BL"]{grid-column:1;grid-row:3} .zone[data-zone="BC"]{grid-column:3;grid-row:3} .zone[data-zone="BR"]{grid-column:5;grid-row:3}
+.zone.drop{outline:2px solid var(--gold);outline-offset:-2px}
+.ztabs{display:flex;align-items:stretch;height:22px;flex:0 0 auto;background:#0f141c;border-bottom:1px solid var(--line);overflow:hidden}
+.ztab{display:inline-flex;align-items:center;gap:6px;padding:0 8px;font-size:10.5px;letter-spacing:.08em;color:var(--dim);cursor:grab;border-right:1px solid var(--line);user-select:none;white-space:nowrap}
+.ztab.on{background:var(--panel);color:var(--text);font-weight:700}
+.ztab .sym{color:var(--gold);font-family:var(--mono);letter-spacing:.02em;font-weight:700}
+.ztab .ctl{display:none;gap:2px;margin-left:2px} .ztab.on .ctl{display:inline-flex}
+.ztab .ctl span{cursor:pointer;padding:0 3px;color:var(--dim)} .ztab .ctl span:hover{color:var(--text)}
+.zbody{flex:1 1 0;min-height:0;position:relative}
+.pnl{position:absolute;inset:0;display:none;min-height:0;overflow:hidden;flex-direction:column}
+.pnl.on{display:flex}
+.pnl > .pc{flex:1 1 0;min-height:0;overflow:auto;position:relative}
+.pnl > .pc.nos{overflow:hidden}
+.gut{background:transparent;z-index:3} .gut:hover{background:rgba(255,197,61,.35)}
+.gut.v{cursor:col-resize;grid-row:1/4} .gut.h{cursor:row-resize;grid-column:1/6;grid-row:2}
+#g1{grid-column:2} #g2{grid-column:4}
+/* floating panel */
+.float{position:absolute;z-index:8;background:var(--panel);border:1px solid var(--gold);box-shadow:0 8px 30px rgba(0,0,0,.6);display:flex;flex-direction:column;min-width:240px;min-height:120px;resize:both;overflow:hidden}
+.float .ztabs{cursor:move}
+.max{position:absolute !important;inset:2px !important;z-index:9;width:auto !important;height:auto !important}
+/* chart / foot in panels */
+.pnl .chart-wrap{position:absolute;inset:0;border:0;border-radius:0}
+/* ticket */
+.ticket{display:grid;grid-template-columns:auto 1fr;gap:4px 8px;padding:6px 8px;align-items:center;font-size:12px}
+.ticket label{color:var(--dim);font-size:10.5px;letter-spacing:.06em;text-align:right}
+.ticket input,.ticket select{font:inherit;font-family:var(--mono);background:#05070b;color:var(--text);border:1px solid var(--line);border-radius:3px;padding:3px 6px;width:100%;box-sizing:border-box}
+.ticket .row{display:flex;gap:4px;align-items:center} .ticket .row input{flex:1}
+.ticket .row button{padding:2px 6px;font-size:10.5px;border-radius:3px}
+.ticket .sides{display:flex;gap:4px} .ticket .sides button{flex:1;font-weight:800;letter-spacing:.08em;padding:5px 0;border-radius:3px;opacity:.5}
+.ticket .sides button.on{opacity:1} .ticket .sides .b.on{background:#0f3d25;border-color:var(--buy);color:#dfffee} .ticket .sides .s.on{background:#4a161b;border-color:var(--sell);color:#ffe3e6}
+.ticket .go{grid-column:1/3;display:flex;gap:6px;align-items:center;margin-top:2px}
+.ticket .go button.tx{flex:1;font-weight:800;letter-spacing:.1em;padding:6px 0;border-radius:3px;font-size:13px}
+.ticket .go button.tx.b{background:#0f3d25;border-color:var(--buy);color:#dfffee} .ticket .go button.tx.s{background:#4a161b;border-color:var(--sell);color:#ffe3e6}
+.ticket .go button.tx:disabled{opacity:.35;cursor:not-allowed}
+.ticket .why{grid-column:1/3;font-size:11px;color:var(--warn);min-height:14px}
+.ticket .st{grid-column:1/3;font-family:var(--mono);font-size:11px;color:var(--dim);border-top:1px solid var(--line);padding-top:4px;max-height:80px;overflow:auto}
+.ticket .st b{color:var(--text)}
+.ticket .qbtn{padding:2px 6px}
+.ticket .val{font-family:var(--mono)} .ticket .opts{grid-column:1/3;display:flex;gap:12px;color:var(--dim);font-size:11px}
+/* tables */
+.grid{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:11.5px;font-variant-numeric:tabular-nums}
+.grid th{position:sticky;top:0;background:#0f141c;color:var(--dim);font-weight:500;font-size:10px;letter-spacing:.06em;padding:3px 6px;text-align:right;border-bottom:1px solid var(--line)}
+.grid td{padding:2px 6px;text-align:right;border-bottom:1px solid #131923;white-space:nowrap}
+.grid th:first-child,.grid td:first-child{text-align:left}
+.grid tr.sel td{background:#1a2230} .grid tr:hover td{background:#141b26}
+.grid td.l{text-align:left} .grid .b{color:var(--buy)} .grid .s{color:var(--sell)}
+.grid button{padding:1px 6px;font-size:10.5px;border-radius:3px}
+.grid button.danger{border-color:var(--sell);color:var(--sell)} .grid button.danger:hover{background:#4a161b;color:#fff}
+.stt{font-size:10px;font-weight:700;letter-spacing:.06em;padding:0 5px;border-radius:2px;background:#1a2230}
+.stt.FILLED{color:var(--buy)} .stt.CANCELED,.stt.REJECTED{color:var(--sell)} .stt.ACKNOWLEDGED{color:var(--cyan)} .stt.SUBMITTED,.stt.CREATED,.stt.CANCEL{color:var(--warn)} .stt.PARTIALLY{color:var(--gold)}
+.pct.up{color:var(--buy)} .pct.dn{color:var(--sell)}
+/* quote strip inside the chart panel */
+.qs{display:flex;gap:10px;align-items:center;padding:2px 8px;font-family:var(--mono);font-size:12px;white-space:nowrap;overflow:hidden;background:#0f141c;border-bottom:1px solid var(--line);flex:0 0 auto;height:22px}
+.qs .sym{font-weight:800;color:var(--gold);font-size:13px} .qs .dim{font-size:11px}
+/* status bar */
+#status{display:flex;align-items:center;gap:14px;padding:0 10px;background:#0b0f15;border-top:1px solid var(--line);font-family:var(--mono);font-size:11px;color:var(--dim);white-space:nowrap;overflow:hidden}
+#status b{color:var(--text)} #status .spacer{flex:1}
+/* PS60 panel */
+.ps60p{padding:6px 10px;font-size:12px} .ps60p .hl{font-size:13px;font-weight:600;margin-bottom:4px}
+.ps60p ul{margin:2px 0 6px 16px;padding:0;color:#c4cddb} .ps60p li{margin:1px 0}
+.ps60p .kv{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;font-family:var(--mono);font-size:11.5px;margin:4px 0}
+.ps60p .kv span:nth-child(odd){color:var(--dim);letter-spacing:.06em;font-size:10px}
+.reloads{display:grid;gap:4px;padding:6px 10px}
+.rl{display:grid;grid-template-columns:auto 1fr;gap:1px 10px;padding:6px 10px;border-left:4px solid var(--dim);background:var(--panel2);font-family:var(--mono)}
+.rl.buyer{border-color:var(--buy)} .rl.seller{border-color:var(--sell)} .rl.gone{opacity:.55}
+.rl .t{grid-column:1/3;font-weight:800;letter-spacing:.08em;font-size:12px} .rl.buyer .t{color:var(--buy)} .rl.seller .t{color:var(--sell)}
+.rl .k{color:var(--dim);font-size:10px;letter-spacing:.06em} .rl .v{font-size:12px;color:var(--text)}
+/* menus */
+.menu .pop{min-width:200px}
+.pop .row{display:flex;gap:6px;align-items:center;padding:2px 0} .pop input{font:inherit;font-size:11px;background:#05070b;color:var(--text);border:1px solid var(--line);border-radius:3px;padding:2px 5px}
+.pop button{font-size:11px;padding:1px 6px;border-radius:3px}
+/* hotkeys */
+.hk{width:100%;border-collapse:collapse;font-size:12px} .hk td{padding:3px 6px;border-bottom:1px solid #131923} .hk td.k{font-family:var(--mono);color:var(--gold);width:120px}
+.hk td.k.cap{outline:1px solid var(--gold)} .hk .danger{color:var(--sell);font-size:10px}
+.ladder-wrap{border:0;border-radius:0;height:100%}
+.lad{font-size:11.5px} .lad td{height:18px}
+#modal .box{border-radius:4px}
 .legend{display:none}
-.st .p-ps60{height:auto;overflow:visible}
-#tabs button.hot{color:var(--gold)}
-
-header #conn,header #mode{max-width:190px;overflow:hidden;text-overflow:ellipsis}
-header .spacer{flex:1 1 0 !important;min-width:4px}
+.toast{border-radius:3px}
+.pane .chart-hint{display:none}
+.dz{position:absolute;inset:0;z-index:5;pointer-events:none}
+.wlrow{display:grid;grid-template-columns:1fr auto auto;gap:6px;padding:3px 8px;font-family:var(--mono);font-size:11.5px;cursor:pointer;border-bottom:1px solid #131923;align-items:center}
+.wlrow:hover{background:#141b26} .wlrow.cur{background:#1a2230;box-shadow:inset 3px 0 0 var(--gold)}
+.wlrow .g{font-size:9.5px;font-weight:700;padding:0 5px;border-radius:2px}
+.wlrow .g.READY{background:#163a28;color:var(--buy)} .wlrow .g.WATCH{background:#3a3016;color:var(--gold)} .wlrow .g.PASS{background:#3a1a1e;color:var(--sell)}
+.wlrow .w{grid-column:1/4;font-size:10px;color:var(--dim);font-family:system-ui;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
 </style>
 </head>
 <body>
-<header>
-  <h1>TWINEY</h1>
-  <span id="tick"><input id="tickIn" placeholder="ticker + Enter  ( / )" autocomplete="off" spellcheck="false"><button id="tickGo" title="open this ticker">▸</button></span>
-  <span class="pill none" id="mode">…</span>
-  <span class="pill" id="conn">…</span>
-  <span class="pill dim" id="mdt"></span>
-  <button id="arm" class="off" title="Arm order entry (A). Disarmed at every launch.">ARM</button>
-  <label class="dim" title="Skip the confirmation box on every order"><input type="checkbox" id="oneclick"> one-click</label>
-  <label class="dim" title="Attach the play's stop and target to every entry"><input type="checkbox" id="bracket"> stop+target</label>
-  <label class="dim" title="PS60 exits: pay yourself along the way (½ at +$0.50, ¼ at +$1.50 by default), the rest runs to the target; after the first cash flow the stop moves to breakeven. Edit the plan in config.json → trading.scale_plan."><input type="checkbox" id="scale"> PS60 exits</label>
-  <span id="pnl" class="mono" title="today: realized + open">P&amp;L —</span>
-  <span class="spacer"></span>
-  <button id="recBtn" title="Record this session (space bar).">● REC</button>
+<div id="app">
+<div id="cmd">
+  <span id="brand">PS60 EXECUTION DESK</span>
+  <span id="symbox"><input id="symIn" placeholder="symbol ⏎  (Ctrl+L)" autocomplete="off" spellcheck="false"><select id="symHist" title="recent symbols"><option value="">▾</option></select></span>
+  <span class="sep"></span>
+  <button id="armBtn" class="off" title="Arm order entry. Disarmed at every launch.">ARM</button>
+  <label title="Skip the confirmation box on every order"><input type="checkbox" id="oneclick"> one-click</label>
+  <label title="Attach the play's stop and target to every entry"><input type="checkbox" id="bracket"> stop+target</label>
+  <label title="PS60 exits: cash-flow scale-outs, runner to target, stop to breakeven after the first cash flow"><input type="checkbox" id="scale"> PS60 exits</label>
+  <span class="sep"></span>
+  <button id="recBtn" title="Record this session (space)">● REC</button>
   <button id="markBtn" title="Marker (M)">⚑</button>
   <button id="shotBtn" title="Screenshot (P)">📷</button>
-  <button id="soundBtn" title="beep on every call for the symbol on screen">🔊</button>
-  <button id="voiceBtn" title="Voice reads the symbol on screen: big size added / pulled / hit and every call. Click to turn off.">🗣</button>
-  <button id="alertsBtn" title="beeps on / off">🔔</button>
-  <button id="rotate" title="Auto-rotate the other ladders to the plays closest to their pivots">Auto-rotate: ON</button>
-  <button id="saveLayout" title="Save panel sizes, chart settings and columns to layout.json (loads on every start)">💾</button>
-  <button id="resetLayout" title="Put everything back">Reset</button>
-  <span id="meta" class="dim mono" style="font-size:11px"></span>
-</header>
+  <span class="sep"></span>
+  <button id="voiceBtn" title="Voice: reload buyer / seller calls for the ACTIVE tab only">VOICE: ON</button>
+  <input type="range" id="voiceVol" min="0" max="1" step="0.1" style="width:60px" title="voice volume">
+  <button id="soundBtn" title="beep on calls (active tab)">🔊</button>
+  <span class="spacer"></span>
+  <span class="menu" id="panelsMenu"><button>Panels ▾</button><div class="pop" id="panelsPop"></div></span>
+  <span class="menu" id="hkMenu"><button>Hotkeys</button><div class="pop" id="hkPop"></div></span>
+  <button id="rotate" title="Auto-rotate the other ladders to the plays closest to their pivots">⟳ ON</button>
+</div>
+<div id="wsbar">
+  <span id="symTabs"></span>
+  <button class="add" id="addTab" title="new symbol tab">+</button>
+  <span class="right">
+    <span class="dim" style="font-size:10.5px;letter-spacing:.06em">LAYOUT</span>
+    <select id="layoutSel" title="saved layouts"></select>
+    <span class="menu" id="layoutMenu"><button>▾</button><div class="pop" id="layoutPop"></div></span>
+  </span>
+</div>
+<div id="work">
+  <div class="zone" data-zone="TL"><div class="ztabs"></div><div class="zbody"></div></div>
+  <div class="gut v" id="g1" data-gut="c1"></div>
+  <div class="zone" data-zone="TC"><div class="ztabs"></div><div class="zbody"></div></div>
+  <div class="gut v" id="g2" data-gut="c3"></div>
+  <div class="zone" data-zone="TR"><div class="ztabs"></div><div class="zbody"></div></div>
+  <div class="gut h" id="gr" data-gut="r2"></div>
+  <div class="zone" data-zone="BL"><div class="ztabs"></div><div class="zbody"></div></div>
+  <div class="zone" data-zone="BC"><div class="ztabs"></div><div class="zbody"></div></div>
+  <div class="zone" data-zone="BR"><div class="ztabs"></div><div class="zbody"></div></div>
+</div>
+<div id="status">
+  <span id="stConn"><span class="led"></span>IBKR <b>…</b></span>
+  <span id="stData">DATA <b>—</b></span>
+  <span id="stOrders"><span class="led"></span>ORDERS <b>—</b></span>
+  <span id="stLadders">LADDERS <b>—</b></span>
+  <span id="stRec"></span>
+  <span class="spacer"></span>
+  <span id="stLoss" title="day loss lock: realized + open P&L against your daily limit">DAY LOSS LIMIT <b>—</b></span>
+  <span id="stClock"></span>
+</div>
+</div>
 <div id="replaybar">
   <b>REPLAY</b> <span id="rpFile" class="dim"></span>
   <button id="rpPlay">⏸ Pause</button>
   <span class="dim">speed</span><input type="range" id="rpSpeed" min="1" max="50" step="1"><span id="rpSpeedV" class="mono"></span>
   <span id="rpPos" class="mono dim"></span>
-  <span class="keys" style="margin-left:auto">space = play / pause · ← → = slower / faster · click a marker in DESK to jump · practice orders fill against the replayed book</span>
-</div>
-<div id="ws">
-  <aside id="rail"><h5>WATCHLIST · closest to pivot first</h5><div id="watch"></div></aside>
-  <div class="split v rail" data-split="rail"></div>
-  <section id="center">
-    <div id="quote"></div>
-    <div id="stats"></div>
-    <div id="tradebar" class="tradebar"></div>
-    <div class="panel pane" id="chartPanel"><div class="ph"><b>CHART</b><span id="chartSym" class="dim"></span><span class="fold" title="collapse">▾</span></div>
-      <div class="pb"><div class="chart-wrap"><div class="chart-tools"></div><canvas></canvas><div class="chart-hint">right-click = BUY / SELL at that price · hover + B / S = same · wheel = zoom · drag = pan · pull price axis = squeeze/expand · pull time axis = more/fewer bars · dbl-click = reset</div></div></div></div>
-    <div class="split h" data-split="foot"></div>
-    <div class="panel pane" id="footPanel"><div class="ph"><b>FOOTPRINT 5m</b><span class="dim">sold into bid × bought at ask · fills in from live prints</span><span class="fold" title="collapse">▾</span></div>
-      <div class="pb"><div class="chart-wrap"><div class="chart-tools"></div><canvas></canvas></div></div></div>
-  </section>
-  <div class="split v right" data-split="right"></div>
-  <section id="right">
-    <div class="panel pane" id="bookPanel"><div class="ph"><b>LADDER</b><span class="dim" id="bookMeta"></span><span class="menu gear book-tools"><button title="ladder columns">⚙</button><div class="pop"></div></span><span class="fold" title="collapse">▾</span></div>
-      <div class="pb"><div class="ladder-wrap" id="ladder"></div></div></div>
-    <div class="split h" data-split="tape"></div>
-    <div class="panel pane" id="tapePanel"><div class="ph"><b>TIME &amp; SALES</b><span class="dim">IN = paid the offer · OUT = hit the bid</span><span class="fold" title="collapse">▾</span></div>
-      <div class="pb"><div class="p-tape" id="tape"></div></div></div>
-  </section>
-  <div class="split h drawer" data-split="drawer"></div>
-  <section id="drawer">
-    <div id="tabs">
-      <button data-tab="story" class="on">STORY</button><button data-tab="calls">CALLS<span class="n" id="callsN" hidden></span></button>
-      <button data-tab="orders">ORDERS</button><button data-tab="plays">PLAYS</button><button data-tab="desk">DESK</button><button data-tab="journal">JOURNAL</button><button data-tab="messages">MESSAGES</button>
-      <span class="fold" id="drawerFold" title="collapse / expand">▾</span>
-    </div>
-    <div id="drawerBody">
-      <div class="tab on" data-tab="story"><div id="storyBody"></div></div>
-      <div class="tab" data-tab="calls"><div style="margin-bottom:6px" class="dim">Calls for <b id="callsSym"></b> <label style="margin-left:10px"><input type="checkbox" id="callsAll"> show every play</label></div><div id="feedBody"></div></div>
-      <div class="tab" data-tab="orders"><div id="account"></div></div>
-      <div class="tab" data-tab="plays"><div class="scroll" id="ranking"></div></div>
-      <div class="tab" data-tab="desk"><div id="deskBody"></div></div>
-      <div class="tab" data-tab="journal"><div id="journalBody">
-        <div class="jform"><input id="jText" placeholder="Type a note and press Enter — it goes into the recording and the session journal (J focuses this box)"><button id="jAdd">add</button></div>
-        <div id="jList"></div></div></div>
-      <div class="tab" data-tab="messages"><div id="messages"></div></div>
-    </div>
-  </section>
 </div>
 <div id="toasts"></div>
+<template id="tplPanels">
+  <div class="pnl" data-p="chart"><div class="qs"></div><div class="pc nos"><div class="chart-wrap"><div class="chart-tools"></div><canvas></canvas></div></div></div>
+  <div class="pnl" data-p="foot"><div class="pc nos"><div class="chart-wrap"><div class="chart-tools"><span class="dim" style="font-size:10.5px;background:rgba(17,22,31,.85);padding:1px 6px">5-minute footprint · sold into bid × bought at ask · fills from live prints</span></div><canvas></canvas></div></div></div>
+  <div class="pnl" data-p="book"><div class="pc"><div class="ladder-wrap"></div></div></div>
+  <div class="pnl" data-p="tape"><div class="pc"><div class="p-tape"></div></div></div>
+  <div class="pnl" data-p="ps60"><div class="pc ps60p"></div></div>
+  <div class="pnl" data-p="reload"><div class="pc reloads"></div></div>
+  <div class="pnl" data-p="ticket"><div class="pc"></div></div>
+  <div class="pnl" data-p="positions"><div class="pc"></div></div>
+  <div class="pnl" data-p="orders"><div class="pc"></div></div>
+  <div class="pnl" data-p="watch"><div class="pc"></div></div>
+  <div class="pnl" data-p="calls"><div class="pc" style="padding:6px"><div id="feedBody"></div></div></div>
+  <div class="pnl" data-p="desk"><div class="pc"><div id="deskBody"></div></div></div>
+  <div class="pnl" data-p="journal"><div class="pc"><div id="journalBody"><div class="jform"><input id="jText" placeholder="note + Enter (J)"><button id="jAdd">add</button></div><div id="jList"></div></div></div></div>
+  <div class="pnl" data-p="messages"><div class="pc" style="padding:6px"><div id="messages"></div></div></div>
+</template>
 
 <script>
 "use strict";
@@ -560,26 +618,35 @@ function makeColsResizable(table){
   });
 }
 
-/* ---------- layout save / load (a file next to config.json, so it survives a browser reset) */
-function layoutSnapshot(){
-  const out = {};
-  for (let i = 0; i < localStorage.length; i++){ const k = localStorage.key(i); if (k.startsWith("twiney.")) out[k.slice(7)] = JSON.parse(localStorage.getItem(k)); }
-  return out;
-}
-async function saveLayout(){
-  const out = await post("/api/layout", {layout: layoutSnapshot()});
-  toast(out.ok ? "Layout saved to " + out.path + " — it loads on every start" : "Could not save layout: " + (out.reason || ""), out.ok);
-  document.getElementById("saveLayout").textContent = "💾 Saved";
-  setTimeout(() => { document.getElementById("saveLayout").textContent = "💾 Save layout"; }, 2000);
-}
-async function loadLayout(force){
-  try {
-    const r = await fetch("/api/layout", {cache: "no-store"}); const j = await r.json();
-    if (!j.ok || !j.layout) return false;
-    if (!force && localStorage.getItem("twiney.views")) return false;   // this browser already has a layout
-    for (const [k, val] of Object.entries(j.layout)) localStorage.setItem("twiney." + k, JSON.stringify(val));
-    return true;
-  } catch (e) { return false; }
+/* ===================== PS60 EXECUTION DESK: panel pool ===================== */
+const PANELS = {
+  chart: "CHART", foot: "FOOTPRINT 5m", book: "LEVEL II", tape: "TIME & SALES", ps60: "PS60", reload: "RELOADS",
+  ticket: "ORDER ENTRY", positions: "POSITIONS", orders: "ORDERS", watch: "WATCHLIST", calls: "CALLS",
+  desk: "DESK", journal: "JOURNAL", messages: "MESSAGES"};
+const SYMBOL_LINKED = new Set(["chart", "foot", "book", "tape", "ps60", "reload", "ticket", "calls"]);
+const ZONES = ["TL", "TC", "TR", "BL", "BC", "BR"];
+const PRESETS = {
+  "PS60 Execution": {zones: {TL: ["watch"], TC: ["chart"], TR: ["book", "tape"], BL: ["positions", "orders"], BC: ["ps60", "reload", "calls"], BR: ["ticket"]},
+    active: {TR: "book", BL: "positions", BC: "ps60"}, sizes: {c1: 200, c3: 420, r2: 250}},
+  "Scalping": {zones: {TL: ["ticket"], TC: ["book"], TR: ["tape"], BL: ["positions"], BC: ["chart"], BR: ["orders", "reload"]},
+    active: {BR: "reload"}, sizes: {c1: 300, c3: 320, r2: 300}},
+  "Tape Focus": {zones: {TL: ["book"], TC: ["tape"], TR: ["reload", "ps60"], BL: ["ticket"], BC: ["chart"], BR: ["positions", "orders"]},
+    active: {TR: "reload"}, sizes: {c1: 380, c3: 380, r2: 260}},
+  "Chart Focus": {zones: {TL: [], TC: ["chart"], TR: ["book", "tape", "ticket"], BL: [], BC: ["foot"], BR: ["ps60", "reload", "positions", "orders"]},
+    active: {TR: "ticket", BR: "ps60"}, sizes: {c1: 0, c3: 400, r2: 220}},
+  "Laptop": {zones: {TL: [], TC: ["chart", "foot", "ps60"], TR: ["book", "tape", "ticket", "reload"], BL: [], BC: ["positions", "orders", "calls", "watch", "desk", "journal", "messages"], BR: []},
+    active: {}, sizes: {c1: 0, c3: 360, r2: 180}},
+};
+let LAY = null, layoutName = null, LAYOUTS = {}, PREFS = {};
+const P = {};                       // panel id -> {id, el, pc, ...}
+let curSym = null, focusedPane = null;
+const TABS = {list: [], active: null};
+const VIEWS = {};                   // symbol -> {chart: view, foot: view} so each tab keeps its zoom
+/* ---------- panels: build once, keep in a hidden pool, move between zones */
+const pool = document.createElement("div"); pool.style.display = "none"; document.body.appendChild(pool);
+for (const el of document.getElementById("tplPanels").content.querySelectorAll(".pnl")){
+  const id = el.dataset.p; const node = el.cloneNode(true); pool.appendChild(node);
+  P[id] = {id, el: node, pc: node.querySelector(".pc"), title: PANELS[id], last: null};
 }
 
 function wireChart(p, cv, v, saveView, isFoot){
@@ -821,7 +888,6 @@ function aggBars(bars, tf){
 
 const LEVEL_STYLE = {trigger:["#dbe3ee",[],1.6], second_entry:["#3fd0ff",[6,4],1.6], extra:["#b9c3d3",[3,4],1.2],
   target:["#26d07c",[2,4],1], stop:["#ff4d5e",[2,4],1]};
-
 
 function drawOne(p, cv, v, isFoot){
   const d = p.data;
@@ -1126,347 +1192,6 @@ function drawOne(p, cv, v, isFoot){
 /* ---------- page ---------- */
 function sayClass(a){ return a.label.includes("BUYER") ? "buyer" : a.label.includes("SELLER") ? "seller" : a.label === "CLEANED UP" ? "cleaned" : a.label === "REMOUNT" ? "remount" : a.label === "REJECTION" ? "rejection" : "pulled"; }
 
-
-/* ===== the workstation: one symbol on screen, everything on it ===== */
-let focusSym = store.get("focus", null);
-let focusedPane = null;              // the chart panel object (hotkeys / markers use its data)
-const panels = {};
-function mkPanel(id, isFoot){
-  const el = document.getElementById(id);
-  const p = {id, type: isFoot ? "foot" : "chart", el, data: null, isFoot,
-    canvas: el.querySelector("canvas"), tools: el.querySelector(".chart-tools"),
-    view: Object.assign({cw: isFoot ? 64 : 7, offset: 0, yLo: null, yHi: null, follow: true, cross: null}, store.get("view." + id, {}))};
-  el._pane = p;
-  const saveView = () => store.set("view." + p.id, {cw: p.view.cw, offset: p.view.offset, yLo: p.view.yLo, yHi: p.view.yHi, follow: p.view.follow});
-  wireChart(p, p.canvas, p.view, saveView, isFoot);
-  new ResizeObserver(() => drawChart(p)).observe(el);
-  if (!isFoot){
-    p.tools.addEventListener("change", e => { if (e.target.dataset.mark){ p.view.levelTool = e.target.value || null; renderTools(p); } });
-    p.tools.addEventListener("mousedown", e => e.stopPropagation());
-    p.tools.addEventListener("click", e => {
-      const tf = e.target.dataset.tf;
-      if (tf){ store.set("tf." + p.id, +tf); p.view.offset = 0; p.view.follow = true; drawChart(p); renderTools(p); }
-      if (e.target.dataset.vwap){ store.set("vwap", !store.get("vwap", true)); drawChart(p); renderTools(p); }
-      if (e.target.dataset.foot){ const on = !store.get("foot." + p.id, false); store.set("foot." + p.id, on);
-        if (on && p.view.cw < 40){ p.view.cw = 44; p.view.offset = 0; p.view.follow = true; saveView(); } drawChart(p); renderTools(p); }
-      if (e.target.dataset.clean){ store.set("clean", !store.get("clean", true)); el.classList.toggle("clean", store.get("clean", true)); drawChart(p); renderTools(p); }
-      if (e.target.dataset.max){ const on = !el.classList.contains("max"); el.classList.toggle("max", on); document.body.classList.toggle("has-max", on); setTimeout(() => drawChart(p), 50); renderTools(p); }
-      if (e.target.dataset.fit){ const n = aggBars(p.data ? p.data.bars : [], store.get("tf." + p.id, 1)).length || 1;
-        p.view.cw = Math.max(2, Math.min(40, (p.canvas.clientWidth - 86) / n)); p.view.offset = 0; p.view.follow = true; p.view.yLo = p.view.yHi = null; saveView(); drawChart(p); }
-    });
-    renderTools(p);
-  }
-  return p;
-}
-function renderTools(v){
-  if (!v.tools || v.type !== "chart") return;
-  const tf = store.get("tf." + v.id, 1);
-  v.tools.innerHTML = [1, 5, 15, 60].map(m => `<button data-tf="${m}" class="${tf===m?"on":""}">${m}m</button>`).join("")
-    + `<button data-fit="1" title="show all bars">fit</button>`
-    + `<button data-vwap="1" class="${store.get("vwap", true) ? "on" : ""}" title="Session VWAP">VWAP</button>`
-    + `<button data-foot="1" class="${store.get("foot." + v.id, false) ? "on" : ""}" title="Footprint on this chart's timeframe (the FOOTPRINT panel below is always 5-minute)">FOOT</button>`
-    + `<button data-clean="1" class="${store.get("clean", true) ? "on" : ""}" title="Clean chart: only candles, volume, VWAP, your levels and your orders. Off = trapped bands, sneaky pivots, reload marks, bubbles, R/C/P calls.">clean</button>`
-    + `<button data-max="1" title="maximize / restore">${v.el.classList.contains("max") ? "⤡" : "⤢"}</button>`
-    + `<select data-mark="1" class="lvl ${v.view.levelTool ? "on" : ""}" title="Mark a level on the chart: pick what it is, then click the chart at the price. Saved to plays.json.">
-        <option value="">＋ mark…</option><option value="second_entry" ${v.view.levelTool==="second_entry"?"selected":""}>2nd entry</option>
-        <option value="trigger" ${v.view.levelTool==="trigger"?"selected":""}>pivot</option><option value="target" ${v.view.levelTool==="target"?"selected":""}>target</option>
-        <option value="stop" ${v.view.levelTool==="stop"?"selected":""}>stop</option><option value="extra" ${v.view.levelTool==="extra"?"selected":""}>extra level</option></select>`;
-  v.canvas.classList.toggle("lvltool", !!v.view.levelTool);
-}
-function drawChart(v){
-  if (!v || !v.data || !v.canvas || v.el.offsetParent === null || v.el.classList.contains("folded")) return;
-  drawOne(v, v.canvas, v.view, v.isFoot);
-}
-function chartViewFor(){ return panels.chart; }
-function curData(){ return panels.chart ? panels.chart.data : null; }
-function dataFor(s, sym){
-  if (!sym || !s) return null;
-  return (s.panes || []).find(d => d && d.symbol === sym) || (s.extra && s.extra[sym]) || null;
-}
-
-/* ---------- focus: the symbol on screen */
-async function setFocus(sym, add){
-  sym = String(sym || "").trim().toUpperCase();
-  if (!sym) return;
-  const known = state && state.symbols && state.symbols.includes(sym);
-  const out = await post("/api/play", {symbol: sym, action: known || !add ? "focus" : "add"});
-  if (!out.ok){ toast(known ? "Could not open " + sym : sym + " is not a valid ticker", false); return; }
-  focusSym = sym; store.set("focus", sym);
-  if (!known) toast(sym + " added as a watch-only play — mark its pivot on the chart (＋ mark… → pivot)", true);
-  for (const p of Object.values(panels)) Object.assign(p.view, {offset: 0, follow: true, rightT: null, yLo: null, yHi: null});
-  poll(true);
-}
-document.getElementById("tickGo").addEventListener("click", () => { const i = document.getElementById("tickIn"); setFocus(i.value, true); i.value = ""; i.blur(); });
-document.getElementById("tickIn").addEventListener("keydown", e => { e.stopPropagation(); if (e.key === "Enter"){ setFocus(e.target.value, true); e.target.value = ""; e.target.blur(); } if (e.key === "Escape") e.target.blur(); });
-document.getElementById("watch").addEventListener("click", e => { const r = e.target.closest(".wl"); if (r) setFocus(r.dataset.sym, false); });
-
-/* ---------- splits: drag the gutters, sizes are remembered */
-const SPLIT = {rail: ["--rail", 200, "x", 1], right: ["--right", 480, "x", -1], foot: ["--foot", 220, "y", -1], tape: ["--tape", 240, "y", -1], drawer: ["--drawer", 240, "y", -1]};
-function applySplits(){ for (const [k, [v, d]] of Object.entries(SPLIT)) document.getElementById("ws").style.setProperty(v, store.get("split." + k, d) + "px"); }
-applySplits();
-document.querySelectorAll(".split").forEach(g => g.addEventListener("mousedown", e => {
-  e.preventDefault();
-  const k = g.dataset.split, [v, d, axis, sign] = SPLIT[k], start = axis === "x" ? e.clientX : e.clientY, base = store.get("split." + k, d);
-  const move = ev => { const cur = axis === "x" ? ev.clientX : ev.clientY; const nv = Math.max(k === "drawer" ? 30 : 60, Math.min(axis === "x" ? window.innerWidth * 0.6 : window.innerHeight * 0.8, base + sign * (cur - start)));
-    document.getElementById("ws").style.setProperty(v, nv + "px"); store.set("split." + k, Math.round(nv)); };
-  const up = () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); Object.values(panels).forEach(drawChart); };
-  window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
-}));
-document.querySelectorAll(".panel .fold").forEach(f => f.addEventListener("click", () => {
-  const p = f.closest(".panel"); p.classList.toggle("folded"); f.textContent = p.classList.contains("folded") ? "▸" : "▾";
-  store.set("fold." + p.id, p.classList.contains("folded"));
-  document.getElementById("center").classList.toggle("foot-folded", document.getElementById("footPanel").classList.contains("folded"));
-  document.getElementById("right").classList.toggle("tape-folded", document.getElementById("tapePanel").classList.contains("folded"));
-  Object.values(panels).forEach(drawChart);
-}));
-document.querySelectorAll(".panel").forEach(p => { if (store.get("fold." + p.id, false)){ p.classList.add("folded"); p.querySelector(".fold").textContent = "▸"; } });
-document.getElementById("center").classList.toggle("foot-folded", document.getElementById("footPanel").classList.contains("folded"));
-document.getElementById("right").classList.toggle("tape-folded", document.getElementById("tapePanel").classList.contains("folded"));
-document.getElementById("drawerFold").addEventListener("click", () => { const ws = document.getElementById("ws"); ws.classList.toggle("drawer-folded"); store.set("drawerFolded", ws.classList.contains("drawer-folded")); Object.values(panels).forEach(drawChart); });
-if (store.get("drawerFolded", false)) document.getElementById("ws").classList.add("drawer-folded");
-function showTab(name){ document.querySelectorAll("#tabs button").forEach(x => x.classList.toggle("on", x.dataset.tab === name)); document.querySelectorAll(".tab").forEach(x => x.classList.toggle("on", x.dataset.tab === name)); store.set("tab", name); }
-document.getElementById("tabs").addEventListener("click", e => { const b = e.target.closest("button[data-tab]"); if (b) showTab(b.dataset.tab); });
-showTab(store.get("tab", "story"));
-
-/* ---------- ladder columns menu */
-{ const book = document.getElementById("bookPanel"), gear = book.querySelector(".gear"), pop = gear.querySelector(".pop");
-  book.dataset.cols = (store.get("pcols.book", []) || []).join(" ");
-  const col = (k, label) => `<label><input type="checkbox" data-col="${k}" ${(book.dataset.cols || "").includes(k) ? "" : "checked"}> ${label}</label>`;
-  gear.querySelector("button").addEventListener("click", e => { e.stopPropagation(); const open = !gear.classList.contains("open");
-    document.querySelectorAll(".menu.open").forEach(m => m.classList.remove("open"));
-    pop.innerHTML = `<h5>LADDER COLUMNS</h5>${col("notrade", "BUY / SELL click columns")}${col("nomem", "Sold-into-bid / bought-at-ask memory bars")}`;
-    gear.classList.toggle("open", open); if (open){ const r = e.target.getBoundingClientRect(); pop.style.left = Math.min(r.left, window.innerWidth - 260) + "px"; pop.style.top = (r.bottom + 4) + "px"; } });
-  pop.addEventListener("change", e => { const t = e.target; if (!t.dataset.col) return; const cols = new Set((book.dataset.cols || "").split(" ").filter(Boolean));
-    t.checked ? cols.delete(t.dataset.col) : cols.add(t.dataset.col); book.dataset.cols = [...cols].join(" "); store.set("pcols.book", [...cols]); });
-}
-
-/* ---------- ladder + tape + trade bar events */
-const ladderEl = document.getElementById("ladder"), tradebarEl = document.getElementById("tradebar");
-let ladderDragging = false, userScroll = 0, riskVal = "";
-ladderEl.addEventListener("dragstart", e => { const chip = e.target.closest(".chip[data-id]"); if (!chip){ e.preventDefault(); return; } e.dataTransfer.setData("text/plain", "order:" + chip.dataset.id); chip.classList.add("drag"); ladderDragging = true; });
-ladderEl.addEventListener("dragend", () => { ladderDragging = false; ladderEl.querySelectorAll(".droptarget").forEach(r => r.classList.remove("droptarget")); });
-ladderEl.addEventListener("dragover", e => { const row = e.target.closest("tr"); if (!row || !row.querySelector("td.px")) return; e.preventDefault(); ladderEl.querySelectorAll(".droptarget").forEach(r => r.classList.remove("droptarget")); row.classList.add("droptarget"); });
-ladderEl.addEventListener("drop", async e => { const row = e.target.closest("tr"); const data = e.dataTransfer.getData("text/plain"); if (!row || !data.startsWith("order:")) return; e.preventDefault();
-  const cell = row.querySelector("td.act"); if (!cell) return; const out = await post("/api/trade/modify", {id: +data.slice(6), price: +cell.dataset.px}); toast(out.ok ? "Moved to " + px(out.price) : "Move blocked: " + (out.reason || ""), out.ok); });
-ladderEl.addEventListener("click", e => { if (ladderDragging) return; const chip = e.target.closest(".chip[data-id]"); if (chip){ cancelMine(+chip.dataset.id); return; }
-  const cell = e.target.closest("td.act"); const d = curData(); if (cell && d) sendOrder(d.symbol, cell.dataset.act, +cell.dataset.px); });
-ladderEl.addEventListener("wheel", () => { userScroll = Date.now(); }, {passive: true});
-tradebarEl.addEventListener("click", e => {
-  const b = e.target.closest("button[data-do]"), d = curData(); if (!b || !d) return;
-  const qty = +tradebarEl.querySelector("input").value || T().default_shares;
-  if (b.dataset.do === "buy" && d.bid) sendOrder(d.symbol, "BUY", d.bid, qty);
-  if (b.dataset.do === "sell" && d.ask) sendOrder(d.symbol, "SELL", d.ask, qty);
-  if (b.dataset.do === "flat") flatten(d.symbol);
-  if (b.dataset.do === "cxl") cancelAll(d.symbol);
-  if (b.dataset.do === "risk"){ const risk = +tradebarEl.querySelector(".risk").value, ref = d.play.side === "long" ? (d.ask || d.last) : (d.bid || d.last); const dist = Math.abs(ref - d.play.stop);
-    if (!risk || !dist){ toast("Enter a risk amount, and the play needs a stop", false); return; }
-    const shares = Math.max(1, Math.floor(risk / dist)); tradebarEl.querySelector("input[type=number]").value = shares;
-    post("/api/trade/size", {shares}).then(out => toast(`Size ${sz(out.default_shares)} sh = $${sz(risk)} risk ÷ ${px(dist)} to your stop`, true)); }
-});
-tradebarEl.addEventListener("input", e => { if (e.target.classList.contains("risk")) riskVal = e.target.value; });
-tradebarEl.addEventListener("change", e => { if (e.target.tagName === "INPUT" && !e.target.classList.contains("risk")) post("/api/trade/size", {shares: +e.target.value}); });
-document.getElementById("quote").addEventListener("click", e => {
-  const b = e.target.closest("button[data-pin]"); if (b) post("/api/pin", {symbol: b.dataset.pin, pinned: b.dataset.on === "1"}).then(() => poll(true));
-  const s = e.target.closest("button[data-side]"); if (s) post("/api/play", {symbol: s.dataset.side, action: "flip"}).then(() => poll(true));
-});
-document.getElementById("callsAll").addEventListener("change", () => poll(true));
-
-/* ---------- render the symbol on screen */
-function renderSymbol(s, d){
-  const q = document.getElementById("quote"), tb = tradebarEl, stats = document.getElementById("stats");
-  document.getElementById("chartSym").textContent = focusSym || "";
-  document.getElementById("callsSym").textContent = focusSym || "";
-  if (!d){
-    q.innerHTML = `<span class="sym">${esc(focusSym || "")}</span><span class="dim">${focusSym ? "loading…" : "Type a ticker above, or click one in the watchlist."}</span>`;
-    stats.innerHTML = ""; tb.innerHTML = ""; document.getElementById("ladder").innerHTML = ""; document.getElementById("tape").innerHTML = "";
-    document.getElementById("storyBody").innerHTML = ""; panels.chart.data = panels.foot.data = null; return;
-  }
-  const h = d.health, pl = d.play, g = d.ps60, day = d.day || {};
-  const hcls = h.status==="OK"?"ok":(h.status==="STALE"||h.status==="NO DATA")?"bad":"warn";
-  const mp = g && g.mp;
-  const chg = d.last && day.prev_close ? d.last - day.prev_close : null;
-  q.innerHTML = `<span class="sym">${esc(d.symbol)}</span>
-    <button data-side="${esc(d.symbol)}" class="pill ${pl.side==="long"?"ok":"bad"}" title="click to flip long / short" style="cursor:pointer">${esc(pl.side.toUpperCase())}</button>
-    <span class="q">LAST <b style="color:var(--gold);font-size:15px">${px(d.last)}</b>${chg != null ? ` <span class="chg ${chg >= 0 ? "up" : "dn"}">${chg >= 0 ? "+" : ""}${chg.toFixed(2)} (${(chg / day.prev_close * 100).toFixed(2)}%)</span>` : ""}</span>
-    <span class="q"><span class="buy">${px(d.bid)}</span><span class="dim" style="font-size:10px"> ${day.bid_size ? "×" + kfmt(day.bid_size) : ""}</span> / <span class="sell">${px(d.ask)}</span><span class="dim" style="font-size:10px"> ${day.ask_size ? "×" + kfmt(day.ask_size) : ""}</span></span>
-    <span class="lvl">PIVOT <b>${px(pl.trigger)}</b> · 2ND <b class="c">${px(pl.second_entry)}</b> · TGT <b class="g">${px(pl.target)}</b> · STOP <b class="r">${px(pl.stop)}</b></span>
-    ${g ? `<span class="p-ps60" style="margin:0;height:auto;overflow:visible"><span class="g ${g.grade}" title="${esc(g.why)}">${g.grade}</span></span>` : ""}
-    ${mp && mp.dollars != null ? `<span class="lvl">MP <b>$${mp.dollars.toFixed(2)}</b>${mp.atr ? ` · ATR <b>$${mp.atr.toFixed(2)}</b> · <b>${mp.verdict}</b>` : ""}</span>` : `<span class="lvl dim">no MP — put mp + atr on the play</span>`}
-    <span class="pill ${hcls}">${esc(h.status)}</span>
-    <button data-pin="${esc(d.symbol)}" data-on="${d.pinned?0:1}" class="${d.pinned?"on":""}" title="${d.depth ? "has a ladder" : "no ladder yet"} · pinned ladders never rotate">${d.depth ? "◆ " : ""}${d.pinned ? "📌 Pinned" : "Pin"}</button>
-    ${d.position ? `<span class="pill ${d.position.pnl >= 0 ? "ok" : "bad"}">POS ${d.position.qty > 0 ? "+" : ""}${sz(d.position.qty)} @ ${px(d.position.avg_cost)}${d.position.pnl != null ? ` · ${d.position.pnl >= 0 ? "+" : "−"}$${sz(Math.abs(d.position.pnl).toFixed(0))}` : ""}</span>` : ""}
-    ${d.orders.length ? `<span class="pill">${d.orders.length} working</span>` : ""}`;
-  stats.innerHTML = `<span>O <b>${px(day.open)}</b></span><span>H <b>${px(day.high)}</b></span><span>L <b>${px(day.low)}</b></span><span>PREV <b>${px(day.prev_close)}</b></span><span>VOL <b>${day.volume ? kfmt(day.volume) : "—"}</b></span>
-    <span>TAPE <b>${esc((d.tape && d.tape.state) || "QUIET")}</b>${d.tape && d.tape.buy_pct != null ? ` <span class="dim">${d.tape.buy_pct.toFixed(0)}% buys</span>` : ""}</span>
-    ${d.trap && d.trap.longs ? `<span class="trap l ${d.trap.longs.heavy ? "heavy" : ""}">${kfmt(d.trap.longs.shares)} LONGS TRAPPED above ${px(d.trap.longs.low)}</span>` : ""}
-    ${d.trap && d.trap.shorts ? `<span class="trap s ${d.trap.shorts.heavy ? "heavy" : ""}">${kfmt(d.trap.shorts.shares)} SHORTS TRAPPED below ${px(d.trap.shorts.high)}</span>` : ""}
-    ${(d.keep_lines || []).length ? `<span style="color:#c4cddb">${esc(d.keep_lines.join("  ·  "))}</span>` : ""}`;
-  const t = T(), on = canTrade(), pos = d.position;
-  const sizeVal = tb.querySelector("input") ? tb.querySelector("input").value : t.default_shares;
-  tb.innerHTML = `
-    <span class="dim">Size</span><input type="number" min="1" step="100" value="${document.activeElement && document.activeElement.closest && document.activeElement.closest(".tradebar") === tb ? sizeVal : t.default_shares}">
-    <span class="dim" title="shares = risk ÷ distance from the current price to your stop">risk $</span><input class="risk" type="number" min="1" step="50" placeholder="—" value="${riskVal}">
-    <button data-do="risk" ${pl.stop ? "" : "disabled"}>size it</button>
-    <button class="bbuy" data-do="buy" ${on && d.bid ? "" : "disabled"} title="${on ? "Buy on the bid" : whyNot()}">BUY bid ${px(d.bid)}</button>
-    <button class="bsell" data-do="sell" ${on && d.ask ? "" : "disabled"} title="${on ? "Sell on the ask" : whyNot()}">SELL ask ${px(d.ask)}</button>
-    <button class="bflat" data-do="flat" ${on && pos ? "" : "disabled"}>Flatten</button>
-    <button data-do="cxl" ${d.orders.length ? "" : "disabled"}>Cancel all (${d.orders.length})</button>
-    <span class="pos">${pos ? `<span class="${pos.qty > 0 ? "buy" : "sell"}">${pos.qty > 0 ? "LONG" : "SHORT"} ${sz(Math.abs(pos.qty))}</span> @ ${px(pos.avg_cost)}` : `<span class="dim">flat</span>`}</span>
-    ${!on ? `<span class="dim" style="font-size:11px">${esc(whyNot())}</span>` : `<span class="keys">B / S = buy / sell at the mouse price on the chart · + − add / close · F flatten · Esc cancel · 2 mark 2nd entry · L level · A arm</span>`}`;
-  panels.chart.data = d; panels.foot.data = d;
-  panels.chart.el.classList.toggle("clean", store.get("clean", true));
-  drawChart(panels.chart); drawChart(panels.foot);
-  const hasBook = d.book && (d.book.bids.length || d.book.asks.length);
-  document.getElementById("bookMeta").textContent = hasBook ? "" : (d.pinned ? "waiting for depth…" : "no depth yet — Pin to give it a ladder");
-  const keep = ladderEl.scrollTop;
-  if (!ladderDragging){ ladderEl.innerHTML = ladderHTML(d.ladder); makeColsResizable(ladderEl.querySelector("table")); }
-  const cur = ladderEl.querySelector("tr.lastpx") || ladderEl.querySelector("tr.best-ask");
-  if (cur && Date.now() - userScroll > 8000) ladderEl.scrollTop = cur.offsetTop - ladderEl.clientHeight / 2; else ladderEl.scrollTop = keep;
-  document.getElementById("tape").innerHTML = tapeHTML(d.tape);
-  makeColsResizable(document.getElementById("tape").querySelector("table"));
-  document.getElementById("storyBody").innerHTML = `<div class="st ${esc(d.tone || "")}"><span class="sym">${esc(d.symbol)}</span><span class="hl">${esc(d.headline)}</span>
-      <ul>${d.lines.map(l => `<li>${esc(l)}</li>`).join("")}</ul><div class="p-ps60">${ps60HTML(d)}</div></div>`;
-}
-function renderWatch(s){
-  const rows = s.ranking.map(r => `<div class="wl ${r.symbol === focusSym ? "cur" : ""} ${r.retired ? "retired" : ""}" data-sym="${esc(r.symbol)}" title="${esc(r.status)}">
-      <span class="s ${r.depth ? "dep" : ""}">${esc(r.symbol)}</span><span class="l">${px(r.last)}</span>
-      <span class="w">${r.rank ? "#" + r.rank + " · " : ""}${r.side} · ${esc(r.retired ? "RETIRED" : r.status)}</span>
-      ${r.ps60 ? `<span class="g ${r.ps60.grade}" style="grid-column:2">${r.ps60.grade}</span>` : ""}</div>`).join("");
-  document.getElementById("watch").innerHTML = rows || `<div class="dim" style="padding:8px">No plays yet.</div>`;
-}
-function render(s){
-  state = s;
-  if (!focusSym || !(s.symbols || []).includes(focusSym)) focusSym = s.focus || (s.panes.find(Boolean) || {}).symbol || (s.symbols || [])[0] || null;
-  const c = s.connection, conn = document.getElementById("conn");
-  conn.textContent = c.state + (c.detail ? " · " + c.detail : "");
-  conn.className = "pill " + (c.state==="CONNECTED"?"ok":["CONNECTING","REPLAY","DEMO"].includes(c.state)?"warn":"bad");
-  document.getElementById("mdt").textContent = c.market_data_type ? "DATA " + (MDT[c.market_data_type]||c.market_data_type) : "";
-  document.getElementById("meta").textContent = `${s.depth.length}/${s.slots} ladders · up ${ago(s.uptime)}`;
-  const t = s.trading || {};
-  const mode = document.getElementById("mode");
-  const modeText = {SIM: "PRACTICE", PAPER: "PAPER", LIVE: t.can_trade ? "LIVE — REAL MONEY" : "LIVE · locked", NONE: "no account"};
-  mode.textContent = modeText[t.mode] || t.mode; mode.className = "pill " + (t.mode || "none").toLowerCase();
-  const arm = document.getElementById("arm");
-  arm.textContent = t.locked ? "LOCKED" : t.armed ? "ARMED" : "ARM";
-  arm.className = t.locked ? "" : t.armed ? "armed" : "off";
-  if (t.locked) arm.setAttribute("style", "background:#5a1218;border-color:var(--sell);color:#fff"); else arm.removeAttribute("style");
-  arm.disabled = !t.can_trade; arm.title = t.can_trade ? "" : (t.why_not || "");
-  const pnlEl = document.getElementById("pnl");
-  if (t.pnl){ const v = t.pnl.total; pnlEl.textContent = `P&L ${v >= 0 ? "+" : "−"}$${sz(Math.abs(v).toFixed(0))}` + (t.max_daily_loss ? ` / −$${sz(t.max_daily_loss)}` : "");
-    pnlEl.className = v > 0 ? "up" : v < 0 ? "dn" : ""; pnlEl.title = `realized ${t.pnl.realized} · open ${t.pnl.open}`; }
-  document.getElementById("oneclick").checked = !!t.one_click; document.getElementById("bracket").checked = !!t.bracket; document.getElementById("scale").checked = !!t.scale;
-  const rot = document.getElementById("rotate"); rot.textContent = "⟳ " + (s.auto_rotate ? "ON" : "OFF"); rot.title = "Auto-rotate the other ladders to the plays closest to their pivots — " + (s.auto_rotate ? "on" : "off"); rot.className = s.auto_rotate ? "" : "on";
-  document.getElementById("soundBtn").textContent = store.get("sound", true) ? "🔊" : "🔇";
-  document.getElementById("voiceBtn").className = store.get("voice", true) ? "on" : "";
-  document.getElementById("voiceBtn").textContent = store.get("voice", true) ? "🗣 " + (focusSym || "") : "🔇 voice off";
-  const rp = s.replay, rb = document.getElementById("replaybar");
-  rb.classList.toggle("on", !!rp); document.getElementById("ws").classList.toggle("replaying", !!rp);
-  if (rp){
-    document.getElementById("rpFile").textContent = rp.file || "";
-    document.getElementById("rpPlay").textContent = rp.done ? "✔ finished" : rp.paused ? "▶ Play" : "⏸ Pause";
-    if (document.activeElement !== document.getElementById("rpSpeed")) document.getElementById("rpSpeed").value = rp.speed || 5;
-    document.getElementById("rpSpeedV").textContent = (rp.speed || 5) + "×";
-    document.getElementById("rpPos").textContent = rp.position ? new Date(rp.position * 1000).toLocaleTimeString() : "";
-  }
-  for (const a of s.alerts.slice(0, 10)){ const key = a.t + a.symbol + a.label; if (!seenAlerts.has(key)){ seenAlerts.add(key); if (!firstFeed && store.get("alerts", true) && a.symbol === focusSym) beep(sayClass(a)); } }
-  firstFeed = false;
-  speakNew(s);
-  renderDesk(s);
-  const d = dataFor(s, focusSym);
-  focusedPane = panels.chart;
-  renderSymbol(s, d);
-  renderWatch(s);
-  const all = document.getElementById("callsAll").checked;
-  const alerts = s.alerts.filter(a => all || a.symbol === focusSym).slice(0, 30);
-  const fresh = s.alerts.filter(a => a.symbol === focusSym && s.now - a.t < 60).length;
-  const nEl = document.getElementById("callsN"); nEl.hidden = !fresh; nEl.textContent = fresh;
-  document.getElementById("feedBody").innerHTML = alerts.length ? alerts.map(a => {
-    const age = s.now - a.t;
-    const gr = a.key ? `<span class="grade" data-key="${esc(a.key)}" title="Grade this call (tune.bat learns from it)"><button data-v="good" class="${a.grade==="good"?"on":""}">👍</button><button data-v="bad" class="${a.grade==="bad"?"on":""}">👎</button></span>` : "";
-    return `<div class="say ${sayClass(a)} ${age < 15 ? "fresh" : ""}"><span class="age">${ago(age)} ago</span>${gr}<b>${esc(a.symbol)}</b> — ${esc(a.text || a.label)}</div>`;
-  }).join("") : `<div class="say">No calls for ${esc(focusSym || "this symbol")} yet. TWINEY speaks only when the evidence is there.</div>`;
-  const rows = s.ranking.map(r => `<tr class="${r.depth?"onslot":""} ${r.retired?"retired":""}">
-    <td><a href="#" data-open="${esc(r.symbol)}">${r.retired ? "✖" : (r.rank ?? "—")} ${esc(r.symbol)}</a>${r.depth?" ◆":""}</td>
-    <td class="${r.side==="long"?"buy":"sell"}">${esc(r.side)}</td>
-    <td style="color:var(--gold);font-weight:700">${px(r.last)}</td><td style="color:#dbe3ee">${px(r.trigger)}</td><td style="color:var(--cyan)">${px(r.second_entry)}</td>
-    <td class="grade ${r.ps60 ? r.ps60.grade : ""}" title="${esc(r.ps60 ? r.ps60.why : "")}">${r.ps60 ? r.ps60.grade : ""}</td>
-    <td class="status">${r.retired ? `RETIRED — ${esc(r.retired.reason)} at ${px(r.retired.price)}` : esc(r.status)}${r.ps60 && r.ps60.mp.dollars != null && r.ps60.mp.atr ? ` <span class="dim">· MP $${r.ps60.mp.dollars.toFixed(2)} ${r.ps60.mp.verdict}</span>` : ""}</td>
-    <td>${r.retired ? `<button data-play="${esc(r.symbol)}" data-act="reactivate">Reactivate</button>`
-      : `<button data-pin="${esc(r.symbol)}" data-on="${r.pinned?0:1}" class="${r.pinned?"on":""}">${r.pinned?"📌 Unpin":"Pin to ladder"}</button> <button data-play="${esc(r.symbol)}" data-act="retire" class="dim" title="retire this play">✖</button>`}</td></tr>`).join("");
-  document.getElementById("ranking").innerHTML = `<table class="t" data-cols="plays"><tr><th>#</th><th>SIDE</th><th>LAST</th><th>PIVOT</th><th>2ND</th><th>PS60</th><th style="text-align:left">WHERE PRICE IS</th><th></th></tr>${rows}</table>`;
-  const A = s.account;
-  const pend = A.pending.map(o => `<tr><td>${esc(o.symbol)} <span class="dim">${esc(o.role || "")}</span></td><td class="${o.action==="BUY"?"buy":"sell"}">${esc(o.action)}</td>
-    <td>${sz(o.remaining ?? o.qty)}${o.filled ? ` <span class="dim">(${sz(o.filled)} filled)</span>` : ""}</td><td>${esc(o.type)}</td>
-    <td>${o.lmt ? px(o.lmt) : ""}${o.aux ? ` <span class="dim">stop ${px(o.aux)}</span>` : ""}</td><td class="dim">${esc(o.tif || "")}</td><td>${esc(o.status || "")}${o.order_id != null ? ` <button class="cxl" data-cxl="${o.order_id}">✕</button>` : ""}</td></tr>`).join("")
-    || `<tr><td colspan="7" class="dim">${A.seen ? "No working orders." : "Waiting for IBKR account data…"}</td></tr>`;
-  const done = A.done.slice(0, 5).map(o => `<tr class="dim"><td>${esc(o.symbol)}</td><td>${esc(o.action)}</td><td>${sz(o.qty)}</td><td>${esc(o.type)}</td><td>${o.lmt ? px(o.lmt) : ""}</td><td></td><td>${esc(o.status)}</td></tr>`).join("");
-  const lot = store.get("lot", 1), on = canTrade();
-  const btn = (sym, mode, n) => `<button class="adj ${mode}" data-adj="${mode}" data-sym="${esc(sym)}" data-n="${n * lot}" ${on ? "" : "disabled"}>${n}</button>`;
-  const pos = A.positions.map(p => { const pnl = p.last ? (p.last - p.avg_cost) * p.qty : null;
-    return `<tr><td>${esc(p.symbol)}</td><td class="${p.qty>0?"buy":"sell"}">${p.qty>0?"LONG ":"SHORT "}${sz(Math.abs(p.qty))}</td><td>${px(p.avg_cost)}</td><td>${px(p.last)}</td>
-    <td class="${pnl==null?"":pnl>=0?"buy":"sell"}">${pnl==null?"—":(pnl>=0?"+":"−")+"$"+sz(Math.abs(pnl).toFixed(0))}</td>
-    <td class="acts"><span class="dim">close</span> ${btn(p.symbol,"close",1)}${btn(p.symbol,"close",5)}${btn(p.symbol,"close",10)} <span class="dim">add</span> ${btn(p.symbol,"add",1)}${btn(p.symbol,"add",5)}${btn(p.symbol,"add",10)}
-      <button data-flat="${esc(p.symbol)}" ${on ? "" : "disabled"} class="bflat">Flatten</button></td></tr>`; }).join("") || `<tr><td colspan="6" class="dim">Flat.</td></tr>`;
-  const lotSel = `<span class="dim" style="margin-left:8px">× <select id="lotSel">${[1,10,100].map(v => `<option value="${v}" ${v===lot?"selected":""}>${v} sh</option>`).join("")}</select></span>`;
-  const fills = A.fills.map(f => `<tr><td class="dim">${esc(String(f.time).slice(-8))}</td><td>${esc(f.symbol)}</td><td class="${f.side==="BOT"?"buy":"sell"}">${f.side==="BOT"?"BOUGHT":"SOLD"}</td><td>${sz(f.shares)}</td><td>${px(f.price)}</td></tr>`).join("") || `<tr><td colspan="5" class="dim">No fills today.</td></tr>`;
-  document.getElementById("account").innerHTML = `
-    <div><h4>PENDING ORDERS</h4><div class="scroll"><table class="t" data-cols="orders"><tr><th>SYMBOL</th><th>SIDE</th><th>QTY</th><th>TYPE</th><th>PRICE</th><th>TIF</th><th>STATUS</th></tr>${pend}${done}</table></div></div>
-    <div><h4>POSITIONS ${lotSel}</h4><div class="scroll"><table class="t" data-cols="positions"><tr><th>SYMBOL</th><th>QTY</th><th>AVG</th><th>LAST</th><th>P&amp;L</th><th style="text-align:left">CLOSE / ADD (limit at the touch)</th></tr>${pos}</table></div></div>
-    <div><h4>TODAY'S FILLS</h4><div class="scroll"><table class="t" data-cols="fills"><tr><th>TIME</th><th>SYMBOL</th><th>SIDE</th><th>QTY</th><th>PRICE</th></tr>${fills}</table></div></div>`;
-  document.querySelectorAll("#account table, #ranking table").forEach(makeColsResizable);
-  document.getElementById("messages").innerHTML = s.messages.map(m => `<div class="msg-${esc(m.level)} mono" style="font-size:11px">${ago(s.now-m.t)} · ${esc(m.text)}</div>`).join("") || `<span class="dim">—</span>`;
-}
-document.getElementById("ranking").addEventListener("click", e => { const a = e.target.closest("a[data-open]"); if (a){ e.preventDefault(); setFocus(a.dataset.open, false); } });
-function voiceAllowed(sym){ return !!sym && sym === focusSym && !store.get("mute." + sym, false); }
-
-document.getElementById("account").addEventListener("click", async e => {
-  const b = e.target.closest("button[data-cxl]");
-  if (b) return cancelMine(+b.dataset.cxl);
-  const f = e.target.closest("button[data-flat]");
-  if (f) return flatten(f.dataset.flat);
-  const a = e.target.closest("button[data-adj]");
-  if (a){
-    if (!canTrade()) return toast("Can't trade: " + whyNot(), false);
-    const out = await post("/api/trade/adjust", {symbol: a.dataset.sym, shares: +a.dataset.n, mode: a.dataset.adj});
-    toast(out.ok ? "Sent: " + out.sent : "Blocked: " + (out.reason || ""), out.ok);
-  }
-});
-document.getElementById("account").addEventListener("change", e => { if (e.target.id === "lotSel") store.set("lot", +e.target.value); });
-document.getElementById("ranking").addEventListener("click", e => {
-  const b = e.target.closest("button[data-pin]");
-  if (b) post("/api/pin", {symbol: b.dataset.pin, pinned: b.dataset.on === "1"});
-  const pb = e.target.closest("button[data-play]");
-  if (pb) post("/api/play", {symbol: pb.dataset.play, action: pb.dataset.act}).then(() => poll(true));
-});
-document.getElementById("storyBody").addEventListener("click", async e => {
-  const b = e.target.closest("button[data-se]");
-  if (!b) return;
-  const d = curData();
-  if (!d) return;
-  const out = await post("/api/level", {symbol: d.symbol, role: "second_entry", price: +b.dataset.se});
-  toast(out.ok ? `2nd entry set to ${px(+b.dataset.se)} and saved` : "Could not set the 2nd entry", out.ok);
-  poll(true);
-});
-document.getElementById("feedBody").addEventListener("click", async e => {
-  const b = e.target.closest(".grade button");
-  if (!b) return;
-  const key = b.parentElement.dataset.key, verdict = b.classList.contains("on") ? null : b.dataset.v;
-  const out = await post("/api/grade", {key, verdict});
-  if (out.ok) toast(verdict ? (verdict === "good" ? "Marked as a good call" : "Marked as a bad call") + " — run tune.bat later to fit the settings to your grades" : "Grade cleared", true);
-  poll(true);
-});
-document.getElementById("arm").addEventListener("click", async () => {
-  const out = await post("/api/trade/arm", {on: !T().armed});
-  if (!out.ok) toast("Can't arm: " + out.reason, false);
-  else toast(out.armed ? "ARMED — clicks on the ladder now send orders" : "Disarmed", true);
-});
-document.getElementById("oneclick").addEventListener("change", e => post("/api/trade/oneclick", {on: e.target.checked}));
-document.getElementById("bracket").addEventListener("change", e => post("/api/trade/bracket", {on: e.target.checked}));
-document.getElementById("scale").addEventListener("change", e => post("/api/trade/scale", {on: e.target.checked}));
-document.getElementById("soundBtn").addEventListener("click", () => { store.set("sound", !store.get("sound", true)); beep("buyer"); poll(true); });
-document.getElementById("voiceBtn").addEventListener("click", () => { const on = !store.get("voice", true); store.set("voice", on);
-  document.getElementById("voiceBtn").className = on ? "on" : "";
-  say(on ? "Voice on. I will read the calls." : "Voice off.", true); toast(on ? "Voice ON — if you hear nothing, your browser has no voice installed" : "Voice OFF", true); poll(true); });
 // ---------- voice: the browser reads call-outs aloud (Windows / Mac built-in voices, no internet needed)
 const spoken = new Set(); let voiceFirst = true;
 let voicePick = null;
@@ -1486,7 +1211,7 @@ function say(text, force){
     if (speechSynthesis.paused) speechSynthesis.resume();
     const u = new SpeechSynthesisUtterance(text.replace(/×/g, " times ").replace(/\$/g, "").replace(/\bk\b/g, " thousand"));
     if (voicePick) u.voice = voicePick;
-    u.rate = 1.1; u.pitch = 1; u.volume = 1;
+    u.rate = 1.05; u.pitch = 1; u.volume = store.get("voiceVol", 1);
     u.onerror = ev => { if (force) toast("Voice error: " + (ev.error || "unknown") + ". Windows: Settings → Time & language → Speech → add a voice.", false); };
     speechSynthesis.speak(u);
     if (force && !speechSynthesis.getVoices().length) toast("No voices installed in this browser yet. Windows: Settings → Time & language → Speech → Manage voices.", false);
@@ -1522,13 +1247,13 @@ function fmtDur(sec){ sec = Math.max(0, Math.round(sec)); const h = Math.floor(s
 async function deskRec(){ const out = await post("/api/desk/rec", {}); if (out.ok) toast(out.recording ? "Recording: " + (out.path || "").split(/[\\/]/).pop() : "Recording stopped — journal written next to it", true); else toast(out.reason || "no desk", false); poll(true); }
 async function deskMark(note){ const d = focusedPane && focusedPane.data; const out = await post("/api/desk/mark", {symbol: d ? d.symbol : null, note: note || ""}); if (out.ok) toast("Marker " + out.mark.n + (d ? " · " + d.symbol : ""), true); else toast(out.reason || "no desk", false); poll(true); }
 async function deskShot(){ const d = focusedPane && focusedPane.data; toast("Screenshot…", true); const out = await post("/api/desk/shot", {symbol: d ? d.symbol : null}); toast(out.ok ? "Saved " + out.path.split(/[\\/]/).pop() : out.reason, out.ok); poll(true); }
-document.getElementById("recBtn").addEventListener("click", deskRec);
+
 async function jAdd(){ const inp = document.getElementById("jText"), text = inp.value.trim(); if (!text) return; const d = focusedPane && focusedPane.data;
   const out = await post("/api/desk/journal", {text, symbol: d ? d.symbol : null}); if (out.ok){ inp.value = ""; toast("Noted", true); poll(true); } else toast(out.reason || "no desk", false); }
 document.getElementById("jAdd").addEventListener("click", jAdd);
 document.getElementById("jText").addEventListener("keydown", e => { if (e.key === "Enter") jAdd(); e.stopPropagation(); });
-document.getElementById("markBtn").addEventListener("click", () => deskMark());
-document.getElementById("shotBtn").addEventListener("click", deskShot);
+
+
 document.getElementById("deskBody").addEventListener("click", async e => {
   const db = e.target.closest("button[data-del]");
   if (db){ if (!confirm("Delete " + db.dataset.del.replace(".jsonl", "") + " and its markers, journal and screenshots? This cannot be undone.")) return;
@@ -1562,52 +1287,594 @@ function speakNew(s){
 document.getElementById("rpPlay").addEventListener("click", () => post("/api/replay", {paused: !(state && state.replay && state.replay.paused)}));
 document.getElementById("rpSpeed").addEventListener("change", e => post("/api/replay", {speed: +e.target.value}));
 
-// hotkeys (ignored while typing in a box)
-document.addEventListener("keydown", e => {
-  if (e.target.matches("input, select, textarea") || document.getElementById("modal")) return;
-  if (e.key === "/" || (e.ctrlKey && (e.key === "k" || e.key === "K"))){ e.preventDefault(); document.getElementById("tickIn").focus(); return; }
-  const p = panels.chart, d = curData();
-  if (e.key === "a" || e.key === "A"){ document.getElementById("arm").click(); return; }
-  if (e.key === " "){ e.preventDefault(); if (state && state.replay) post("/api/replay", {paused: !state.replay.paused}); else deskRec(); return; }
-  if (e.key === "m" || e.key === "M"){ e.preventDefault(); if (!(state && state.replay)) deskMark(); return; }
-  if (e.key === "p" || e.key === "P"){ e.preventDefault(); if (!(state && state.replay)) deskShot(); return; }
-  if (e.key === "j" || e.key === "J"){ e.preventDefault(); showTab("journal"); document.getElementById("jText").focus(); return; }
-  if (state && state.replay && (e.key === "ArrowLeft" || e.key === "ArrowRight")){ e.preventDefault();
-    const sp = state.replay.speed || 1, ns = e.key === "ArrowRight" ? Math.min(50, sp * 2) : Math.max(1, sp / 2); post("/api/replay", {speed: ns}); return; }
-  if (!d) return;
-  const lot = store.get("lot", 1);
-  if (e.key === "f" || e.key === "F") flatten(d.symbol);
-  else if (e.key === "Escape") cancelAll(d.symbol);
-  else if (e.key === "+" || e.key === "=") post("/api/trade/adjust", {symbol: d.symbol, shares: lot, mode: "add"}).then(o => toast(o.ok ? "Sent: " + o.sent : "Blocked: " + o.reason, o.ok));
-  else if (e.key === "-" || e.key === "_") post("/api/trade/adjust", {symbol: d.symbol, shares: lot, mode: "close"}).then(o => toast(o.ok ? "Sent: " + o.sent : "Blocked: " + o.reason, o.ok));
-  else if (e.key === "2"){ p.view.levelTool = "second_entry"; renderTools(p); toast("Click the chart where the 2nd entry is", true); }
-  else if (e.key === "l" || e.key === "L"){ p.view.levelTool = p.view.levelTool ? null : "extra"; renderTools(p); }
-  else if (e.key === "b" || e.key === "B"){ const cp = chartPrice(p) || chartPrice(panels.foot); if (cp) sendOrder(d.symbol, "BUY", cp); else if (d.bid) sendOrder(d.symbol, "BUY", d.bid); }
-  else if (e.key === "s" || e.key === "S"){ const cp = chartPrice(p) || chartPrice(panels.foot); if (cp) sendOrder(d.symbol, "SELL", cp); else if (d.ask) sendOrder(d.symbol, "SELL", d.ask); }
-  else return;
-  e.preventDefault();
+/* ===================== PS60 EXECUTION DESK ===================== */
+/* state is kept in separate objects: market/engine snapshot (state), broker (state.account/trading),
+   UI layout (LAY), voice (VOICE), tabs (TABS). Panels re-render only when their own slice changed. */
+
+
+function panelHTML(id, html){ const p = P[id]; if (p.last === html) return false; p.last = html; p.pc.innerHTML = html; return true; }
+
+/* ---------- docking */
+function emptyLayout(){ return {zones: {TL: [], TC: [], TR: [], BL: [], BC: [], BR: []}, active: {}, sizes: {c1: 250, c3: 430, r2: 300}, floats: {}, hidden: [], max: null}; }
+function normalize(l){
+  const out = Object.assign(emptyLayout(), JSON.parse(JSON.stringify(l || {})));
+  for (const z of ZONES) out.zones[z] = (out.zones[z] || []).filter(id => P[id]);
+  const placed = new Set([].concat(...ZONES.map(z => out.zones[z])).concat(Object.keys(out.floats || {})));
+  out.hidden = Object.keys(P).filter(id => !placed.has(id));
+  return out;
+}
+function zoneOf(id){ for (const z of ZONES) if (LAY.zones[z].includes(id)) return z; return null; }
+function applyLayout(){
+  const work = document.getElementById("work");
+  const s = LAY.sizes;
+  const has = z => LAY.zones[z].length > 0;
+  const leftW = (has("TL") || has("BL")) ? s.c1 : 0, rightW = (has("TR") || has("BR")) ? s.c3 : 0;
+  const botH = (has("BL") || has("BC") || has("BR")) ? s.r2 : 0;
+  work.style.setProperty("--c1", leftW + "px"); work.style.setProperty("--c3", rightW + "px"); work.style.setProperty("--r2", botH + "px");
+  work.style.setProperty("--g1", leftW ? "5px" : "0px"); work.style.setProperty("--g2", rightW ? "5px" : "0px"); work.style.setProperty("--gr", botH ? "5px" : "0px");
+  document.getElementById("g1").style.display = leftW ? "" : "none"; document.getElementById("g2").style.display = rightW ? "" : "none"; document.getElementById("gr").style.display = botH ? "" : "none";
+  for (const z of ZONES){
+    const zel = work.querySelector(`.zone[data-zone="${z}"]`), tabs = zel.querySelector(".ztabs"), body = zel.querySelector(".zbody");
+    const ids = LAY.zones[z];
+    zel.classList.toggle("empty", !ids.length);
+    if (!ids.includes(LAY.active[z])) LAY.active[z] = ids[0] || null;
+    tabs.innerHTML = ids.map(id => `<span class="ztab ${LAY.active[z] === id ? "on" : ""}" draggable="true" data-p="${id}">${PANELS[id]}${SYMBOL_LINKED.has(id) ? ` <span class="sym">${esc(curSym || "")}</span>` : ""}
+        <span class="ctl"><span data-act="max" title="maximize / restore">⤢</span><span data-act="float" title="undock (floating window)">⧉</span><span data-act="hide" title="hide (Panels menu brings it back)">✕</span></span></span>`).join("");
+    for (const id of ids){ const p = P[id]; if (p.el.parentElement !== body) body.appendChild(p.el); p.el.classList.toggle("on", LAY.active[z] === id); p.el.classList.remove("float"); p.el.style.cssText = ""; }
+  }
+  // floating
+  for (const [id, f] of Object.entries(LAY.floats || {})){
+    const p = P[id]; if (!p) continue;
+    if (!p.el.querySelector(":scope > .ztabs")){ const t = document.createElement("div"); t.className = "ztabs"; p.el.prepend(t); }
+    p.el.querySelector(":scope > .ztabs").innerHTML = `<span class="ztab on" draggable="true" data-p="${id}">${PANELS[id]}${SYMBOL_LINKED.has(id) ? ` <span class="sym">${esc(curSym || "")}</span>` : ""}<span class="ctl"><span data-act="dock" title="dock back">⧈</span><span data-act="hide" title="hide">✕</span></span></span>`;
+    p.el.classList.add("on", "float"); work.appendChild(p.el);
+    Object.assign(p.el.style, {left: f.l + "px", top: f.t + "px", width: f.w + "px", height: f.h + "px"});
+  }
+  for (const id of LAY.hidden){ const p = P[id]; p.el.classList.remove("on", "float"); if (p.el.parentElement !== pool) pool.appendChild(p.el); }
+  // a docked panel that has a stray float tab strip
+  for (const id of Object.keys(P)) if (!(LAY.floats || {})[id]){ const t = P[id].el.querySelector(":scope > .ztabs"); if (t) t.remove(); }
+  // maximize
+  document.querySelectorAll(".pnl.max").forEach(e => e.classList.remove("max"));
+  if (LAY.max && P[LAY.max]){ const p = P[LAY.max]; work.appendChild(p.el); p.el.classList.add("on", "max"); }
+  renderPanelsMenu();
+  Object.values(charts).forEach(c => drawChart(c));
+  saveLayoutLocal();
+}
+function movePanel(id, zone, floatPos){
+  for (const z of ZONES) LAY.zones[z] = LAY.zones[z].filter(x => x !== id);
+  delete LAY.floats[id]; LAY.hidden = LAY.hidden.filter(x => x !== id);
+  if (zone === "float") LAY.floats[id] = floatPos || {l: 80, t: 60, w: 520, h: 360};
+  else if (zone){ LAY.zones[zone].push(id); LAY.active[zone] = id; }
+  else LAY.hidden.push(id);
+  if (LAY.max === id && zone !== "max") LAY.max = null;
+  applyLayout();
+}
+function showPanel(id){ if (LAY.hidden.includes(id)){ movePanel(id, LAY.zones.TC.length ? "BC" : "TC"); } else { const z = zoneOf(id); if (z){ LAY.active[z] = id; applyLayout(); } } }
+function saveLayoutLocal(){ store.set("lay", LAY); store.set("layName", layoutName); }
+/* drag a panel tab into another zone (or out to float) */
+let dragId = null;
+document.addEventListener("dragstart", e => { const t = e.target.closest(".ztab"); if (!t){ return; } dragId = t.dataset.p; e.dataTransfer.setData("text/plain", dragId); e.dataTransfer.effectAllowed = "move"; });
+document.addEventListener("dragend", () => { dragId = null; document.querySelectorAll(".zone.drop").forEach(z => z.classList.remove("drop")); });
+document.getElementById("work").addEventListener("dragover", e => { if (!dragId) return; e.preventDefault(); const z = e.target.closest(".zone"); document.querySelectorAll(".zone.drop").forEach(x => x.classList.remove("drop")); if (z) z.classList.add("drop"); });
+document.getElementById("work").addEventListener("drop", e => {
+  if (!dragId) return; e.preventDefault();
+  const z = e.target.closest(".zone");
+  if (z) movePanel(dragId, z.dataset.zone);
+  else { const r = document.getElementById("work").getBoundingClientRect(); movePanel(dragId, "float", {l: e.clientX - r.left - 100, t: e.clientY - r.top - 10, w: 520, h: 360}); }
+  dragId = null;
 });
-document.getElementById("alertsBtn").addEventListener("click", () => { const on = !store.get("alerts", true); store.set("alerts", on); applyAlerts(); });
-function applyAlerts(){ const on = store.get("alerts", true); document.getElementById("alertsBtn").className = on ? "" : "off"; document.getElementById("alertsBtn").textContent = on ? "🔔" : "🔕"; }
-applyAlerts();
-document.addEventListener("click", e => { if (!e.target.closest(".menu")) document.querySelectorAll(".menu.open").forEach(m => m.classList.remove("open")); });
-document.getElementById("rotate").addEventListener("click", () => post("/api/autorotate", {on: !(state && state.auto_rotate)}));
-document.getElementById("saveLayout").addEventListener("click", saveLayout);
-document.getElementById("resetLayout").addEventListener("click", () => { store.clear(); post("/api/layout", {layout: null}).then(() => location.reload()); });
+// drop onto an empty zone: zones with no panels are display:none, so offer the 6 zones while dragging
+document.addEventListener("dragstart", () => setTimeout(() => document.querySelectorAll(".zone.empty").forEach(z => { z.classList.remove("empty"); z.dataset.wasEmpty = "1"; }), 0));
+document.addEventListener("dragend", () => document.querySelectorAll(".zone[data-wasEmpty]").forEach(z => { delete z.dataset.wasEmpty; if (!LAY.zones[z.dataset.zone].length) z.classList.add("empty"); }));
+document.addEventListener("click", e => {
+  const c = e.target.closest(".ztab .ctl span"); const tab = e.target.closest(".ztab");
+  if (c){ e.stopPropagation(); const id = tab.dataset.p, act = c.dataset.act;
+    if (act === "hide") movePanel(id, null);
+    else if (act === "float") movePanel(id, "float");
+    else if (act === "dock") movePanel(id, "TC");
+    else if (act === "max"){ LAY.max = LAY.max === id ? null : id; applyLayout(); }
+    return; }
+  if (tab){ const z = tab.closest(".zone"); if (z){ LAY.active[z.dataset.zone] = tab.dataset.p; applyLayout(); } }
+});
+// floating window: move by its tab strip; size via the corner (resize:both) is picked up on mouseup
+document.addEventListener("mousedown", e => {
+  const strip = e.target.closest(".float > .ztabs"); if (!strip || e.target.closest(".ctl")) return;
+  const el = strip.parentElement, id = el.querySelector(".ztab").dataset.p, sx = e.clientX, sy = e.clientY, ol = el.offsetLeft, ot = el.offsetTop;
+  e.preventDefault();
+  const move = ev => { el.style.left = Math.max(0, ol + ev.clientX - sx) + "px"; el.style.top = Math.max(0, ot + ev.clientY - sy) + "px"; };
+  const up = () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); LAY.floats[id] = {l: el.offsetLeft, t: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight}; saveLayoutLocal(); };
+  window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
+});
+document.addEventListener("mouseup", e => { const el = e.target.closest(".float"); if (el){ const id = el.querySelector(".ztab").dataset.p; if (LAY.floats[id]){ LAY.floats[id] = {l: el.offsetLeft, t: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight}; saveLayoutLocal(); Object.values(charts).forEach(drawChart); } } });
+// gutters
+document.querySelectorAll(".gut").forEach(g => g.addEventListener("mousedown", e => {
+  e.preventDefault();
+  const k = g.dataset.gut, axis = k === "r2" ? "y" : "x", sign = k === "c1" ? 1 : -1, start = axis === "x" ? e.clientX : e.clientY, base = LAY.sizes[k];
+  const move = ev => { const cur = axis === "x" ? ev.clientX : ev.clientY; LAY.sizes[k] = Math.max(120, Math.min(axis === "x" ? window.innerWidth * 0.6 : window.innerHeight * 0.75, base + sign * (cur - start))); applyLayout(); };
+  const up = () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); };
+  window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
+}));
+function renderPanelsMenu(){
+  document.getElementById("panelsPop").innerHTML = `<h5>PANELS</h5>` + Object.keys(PANELS).map(id => `<label><input type="checkbox" data-show="${id}" ${LAY.hidden.includes(id) ? "" : "checked"}> ${PANELS[id]}</label>`).join("");
+}
+document.getElementById("panelsPop").addEventListener("change", e => { const id = e.target.dataset.show; if (!id) return; if (e.target.checked) showPanel(id); else movePanel(id, null); });
+
+/* ---------- layouts: presets + named, server-side */
+function layoutFromPreset(name){ const p = PRESETS[name]; const l = emptyLayout(); l.zones = JSON.parse(JSON.stringify(p.zones)); l.active = Object.assign({}, p.active); l.sizes = Object.assign(l.sizes, p.sizes); return normalize(l); }
+function renderLayoutSel(){
+  const sel = document.getElementById("layoutSel");
+  const names = [...Object.keys(PRESETS).map(n => "★ " + n), ...Object.keys(LAYOUTS)];
+  sel.innerHTML = names.map(n => `<option value="${esc(n)}" ${n === layoutName ? "selected" : ""}>${esc(n)}</option>`).join("");
+  if (!names.includes(layoutName)) sel.value = "";
+}
+async function useLayout(name){
+  if (name.startsWith("★ ")){ LAY = layoutFromPreset(name.slice(2)); }
+  else if (LAYOUTS[name]) LAY = normalize(LAYOUTS[name]);
+  else return;
+  layoutName = name; applyLayout(); renderLayoutSel();
+  post("/api/layouts", {action: "use", name});
+}
+document.getElementById("layoutSel").addEventListener("change", e => useLayout(e.target.value));
+document.getElementById("layoutMenu").querySelector("button").addEventListener("click", e => { e.stopPropagation();
+  const m = document.getElementById("layoutMenu"), open = !m.classList.contains("open"); document.querySelectorAll(".menu.open").forEach(x => x.classList.remove("open")); m.classList.toggle("open", open);
+  document.getElementById("layoutPop").innerHTML = `<h5>LAYOUTS</h5>
+    <div class="row"><input id="layName" placeholder="name" value="${esc(layoutName && !layoutName.startsWith("★") ? layoutName : "")}"><button data-lay="save">Save</button></div>
+    <div class="row"><button data-lay="dup">Duplicate</button><button data-lay="rename">Rename</button><button data-lay="delete">Delete</button><button data-lay="reset">Reset to preset</button></div>
+    <div class="dim" style="font-size:10.5px;margin-top:4px">★ presets can't be changed — save a copy under your own name. The last layout you used loads on the next start.</div>`;
+});
+document.getElementById("layoutPop").addEventListener("click", async e => {
+  const b = e.target.closest("button[data-lay]"); if (!b) return;
+  const act = b.dataset.lay, inp = document.getElementById("layName"), name = (inp.value || "").trim();
+  if (act === "save" || act === "dup"){ const nm = name || prompt("Layout name:"); if (!nm) return; const out = await post("/api/layouts", {action: "save", name: nm, layout: LAY}); if (out.ok){ LAYOUTS = out.layouts; layoutName = nm; renderLayoutSel(); toast("Layout saved: " + nm, true); } }
+  else if (act === "rename"){ if (!layoutName || layoutName.startsWith("★")) return toast("Pick a saved layout first", false); const to = prompt("New name:", layoutName); if (!to) return; const out = await post("/api/layouts", {action: "rename", name: layoutName, to}); if (out.ok){ LAYOUTS = out.layouts; layoutName = to; renderLayoutSel(); } }
+  else if (act === "delete"){ if (!layoutName || layoutName.startsWith("★")) return toast("Presets can't be deleted", false); if (!confirm("Delete layout " + layoutName + "?")) return; const out = await post("/api/layouts", {action: "delete", name: layoutName}); if (out.ok){ LAYOUTS = out.layouts; useLayout("★ PS60 Execution"); } }
+  else if (act === "reset"){ useLayout("★ PS60 Execution"); }
+  document.getElementById("layoutMenu").classList.remove("open");
+});
+async function loadLayouts(){
+  try { const j = await (await fetch("/api/layouts", {cache: "no-store"})).json(); LAYOUTS = j.layouts || {}; PREFS = j.prefs || {};
+    const last = j.last; const local = store.get("lay", null), localName = store.get("layName", null);
+    if (local && localName === last){ LAY = normalize(local); layoutName = localName; }
+    else if (last && last.startsWith("★ ") && PRESETS[last.slice(2)]){ LAY = layoutFromPreset(last.slice(2)); layoutName = last; }
+    else if (last && LAYOUTS[last]){ LAY = normalize(LAYOUTS[last]); layoutName = last; }
+  } catch (e) {}
+  if (!LAY){ LAY = layoutFromPreset("PS60 Execution"); layoutName = "★ PS60 Execution"; }
+  renderLayoutSel(); applyLayout();
+}
+
+/* ---------- symbol tabs */
+function renderTabs(){
+  document.getElementById("symTabs").innerHTML = TABS.list.map(s => `<span class="stab ${s === TABS.active ? "on" : ""}" data-sym="${esc(s)}">${esc(s)}${s === TABS.active && store.get("voice", true) ? `<span class="v" title="voice reads this tab">🗣</span>` : ""}<span class="x" data-close="${esc(s)}" title="close tab">✕</span></span>`).join("");
+  document.querySelectorAll(".ztab .sym").forEach(el => el.textContent = curSym || "");
+}
+async function openTab(sym, add){
+  sym = String(sym || "").trim().toUpperCase(); if (!sym) return;
+  const known = state && state.symbols && state.symbols.includes(sym);
+  const out = await post("/api/play", {symbol: sym, action: known || !add ? "focus" : "add"});
+  if (!out.ok){ toast(known ? "Could not open " + sym : sym + " is not a valid ticker", false); return; }
+  if (!TABS.list.includes(sym)) TABS.list.push(sym);
+  TABS.active = sym; curSym = sym;
+  const rec = (PREFS.recent || []).filter(x => x !== sym); rec.unshift(sym); PREFS.recent = rec.slice(0, 12);
+  savePrefs({tabs: TABS.list, active: sym, recent: PREFS.recent});
+  if (!known) toast(sym + " added as a watch-only play — mark its pivot on the chart", true);
+  for (const c of Object.values(charts)){ c.view = viewFor(sym, c.id); }
+  renderTabs(); renderRecent(); poll(true);
+}
+function closeTab(sym){ TABS.list = TABS.list.filter(s => s !== sym); if (TABS.active === sym){ TABS.active = TABS.list[TABS.list.length - 1] || null; curSym = TABS.active; if (curSym) post("/api/play", {symbol: curSym, action: "focus"}); } savePrefs({tabs: TABS.list, active: TABS.active}); renderTabs(); poll(true); }
+document.getElementById("symTabs").addEventListener("click", e => { const x = e.target.closest("[data-close]"); if (x){ closeTab(x.dataset.close); return; } const t = e.target.closest(".stab"); if (t) openTab(t.dataset.sym, false); });
+document.getElementById("addTab").addEventListener("click", () => document.getElementById("symIn").focus());
+document.getElementById("symIn").addEventListener("keydown", e => { e.stopPropagation(); if (e.key === "Enter"){ openTab(e.target.value, true); e.target.value = ""; e.target.blur(); } if (e.key === "Escape") e.target.blur(); });
+document.getElementById("symHist").addEventListener("change", e => { if (e.target.value) openTab(e.target.value, false); e.target.value = ""; });
+function renderRecent(){ document.getElementById("symHist").innerHTML = `<option value="">▾</option>` + (PREFS.recent || []).map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join(""); }
+let prefsTimer = null;
+function savePrefs(p){ Object.assign(PREFS, p); clearTimeout(prefsTimer); prefsTimer = setTimeout(() => post("/api/layouts", {action: "prefs", prefs: p}), 300); }
+function viewFor(sym, id){ VIEWS[sym] = VIEWS[sym] || {}; if (!VIEWS[sym][id]) VIEWS[sym][id] = {cw: id === "foot" ? 64 : 7, offset: 0, yLo: null, yHi: null, follow: true, cross: null}; return VIEWS[sym][id]; }
+
+/* ---------- charts (reuse the drawing engine) */
+const charts = {};
+function mkChart(id, isFoot){
+  const p = P[id]; const el = p.el;
+  const c = {id, type: isFoot ? "foot" : "chart", el, isFoot, data: null, canvas: el.querySelector("canvas"), tools: el.querySelector(".chart-tools"), view: viewFor("_", id)};
+  el._pane = c;
+  wireChart(c, c.canvas, c.view, () => {}, isFoot);
+  // wireChart captured the first view object: keep the same object and copy state on symbol change
+  c.setView = v => { Object.assign(c.view, v); };
+  new ResizeObserver(() => drawChart(c)).observe(el);
+  if (!isFoot){
+    c.tools.addEventListener("change", e => { if (e.target.dataset.mark){ c.view.levelTool = e.target.value || null; renderTools(c); } });
+    c.tools.addEventListener("mousedown", e => e.stopPropagation());
+    c.tools.addEventListener("click", e => {
+      const tf = e.target.dataset.tf;
+      if (tf){ store.set("tf." + id, +tf); c.view.offset = 0; c.view.follow = true; drawChart(c); renderTools(c); }
+      if (e.target.dataset.vwap){ store.set("vwap", !store.get("vwap", true)); drawChart(c); renderTools(c); }
+      if (e.target.dataset.foot){ const on = !store.get("foot." + id, false); store.set("foot." + id, on); if (on && c.view.cw < 40){ c.view.cw = 44; c.view.offset = 0; c.view.follow = true; } drawChart(c); renderTools(c); }
+      if (e.target.dataset.clean){ store.set("clean", !store.get("clean", true)); el.classList.toggle("clean", store.get("clean", true)); drawChart(c); renderTools(c); }
+      if (e.target.dataset.fit){ const n = aggBars(c.data ? c.data.bars : [], store.get("tf." + id, 1)).length || 1; c.view.cw = Math.max(2, Math.min(40, (c.canvas.clientWidth - 86) / n)); c.view.offset = 0; c.view.follow = true; c.view.yLo = c.view.yHi = null; drawChart(c); }
+    });
+    renderTools(c);
+  }
+  charts[id] = c; return c;
+}
+function renderTools(v){
+  if (!v.tools || v.type !== "chart") return;
+  const tf = store.get("tf." + v.id, 1);
+  v.tools.innerHTML = [1, 5, 15, 60].map(m => `<button data-tf="${m}" class="${tf===m?"on":""}">${m}m</button>`).join("")
+    + `<button data-fit="1">fit</button><button data-vwap="1" class="${store.get("vwap", true) ? "on" : ""}">VWAP</button>`
+    + `<button data-foot="1" class="${store.get("foot." + v.id, false) ? "on" : ""}" title="footprint on this timeframe">FOOT</button>`
+    + `<button data-clean="1" class="${store.get("clean", true) ? "on" : ""}" title="clean chart: candles, volume, VWAP, your levels, your orders">clean</button>`
+    + `<select data-mark="1" class="lvl ${v.view.levelTool ? "on" : ""}" title="mark a level: pick it, click the chart at the price (saved to plays.json)"><option value="">＋ mark…</option><option value="second_entry" ${v.view.levelTool==="second_entry"?"selected":""}>2nd entry</option><option value="trigger" ${v.view.levelTool==="trigger"?"selected":""}>pivot</option><option value="target" ${v.view.levelTool==="target"?"selected":""}>target</option><option value="stop" ${v.view.levelTool==="stop"?"selected":""}>stop</option><option value="extra" ${v.view.levelTool==="extra"?"selected":""}>extra level</option></select>`;
+  v.canvas.classList.toggle("lvltool", !!v.view.levelTool);
+}
+function drawChart(v){ if (!v || !v.data || !v.canvas || v.el.offsetParent === null) return; drawOne(v, v.canvas, v.view, v.isFoot); }
+function chartViewFor(){ return charts.chart; }
+function curData(){ return charts.chart ? charts.chart.data : null; }
+function dataFor(s, sym){ if (!sym || !s) return null; return (s.panes || []).find(d => d && d.symbol === sym) || (s.extra && s.extra[sym]) || null; }
+
+
+/* ===================== panel renderers ===================== */
+const NA = "—";
+const pctFmt = (v) => v == null ? NA : (v >= 0 ? "+" : "") + v.toFixed(2) + "%";
+
+function renderQuote(d){
+  const el = P.chart.el.querySelector(".qs");
+  if (!d){ el.innerHTML = `<span class="sym">${esc(curSym || "")}</span><span class="dim">${curSym ? "waiting for data…" : "no symbol — type one above (Ctrl+L)"}</span>`; return; }
+  const day = d.day || {}, pl = d.play, g = d.ps60;
+  const chg = d.last && day.prev_close ? d.last - day.prev_close : null;
+  const html = `<span class="sym">${esc(d.symbol)}</span>
+    <span>LAST <b style="color:var(--gold)">${px(d.last)}</b>${chg != null ? ` <span class="${chg >= 0 ? "buy" : "sell"}">${chg >= 0 ? "+" : ""}${chg.toFixed(2)} ${(chg / day.prev_close * 100).toFixed(2)}%</span>` : ""}</span>
+    <span><span class="buy">${px(d.bid)}</span><span class="dim">${day.bid_size ? "×" + kfmt(day.bid_size) : ""}</span> / <span class="sell">${px(d.ask)}</span><span class="dim">${day.ask_size ? "×" + kfmt(day.ask_size) : ""}</span></span>
+    <span class="dim">O ${px(day.open)} H ${px(day.high)} L ${px(day.low)} V ${day.volume ? kfmt(day.volume) : NA}</span>
+    <span class="dim">PIVOT <b style="color:#dbe3ee">${px(pl.trigger)}</b> 2ND <b style="color:var(--cyan)">${px(pl.second_entry)}</b> TGT <b style="color:var(--buy)">${px(pl.target)}</b> STOP <b style="color:var(--sell)">${px(pl.stop)}</b></span>
+    ${g ? `<span class="p-ps60" style="margin:0;height:auto;overflow:visible"><span class="g ${g.grade}" title="${esc(g.why)}">${g.grade}</span></span>` : ""}
+    <span class="dim">${esc(d.health.status)}${d.pinned ? " · 📌" : ""}${(d.book && (d.book.bids.length || d.book.asks.length)) ? "" : " · no depth"}</span>`;
+  if (el.dataset.h !== html){ el.dataset.h = html; el.innerHTML = html; }
+}
+let bookUserScroll = 0, bookDragging = false;
+function renderBook(d){
+  const wrap = P.book.pc.querySelector(".ladder-wrap");
+  if (!d){ if (P.book.last !== "-"){ P.book.last = "-"; wrap.innerHTML = `<div class="dim" style="padding:8px">${NA}</div>`; } return; }
+  if (bookDragging) return;
+  const html = ladderHTML(d.ladder);
+  if (P.book.last === html) return;
+  P.book.last = html;
+  const keep = wrap.scrollTop;
+  wrap.innerHTML = html; makeColsResizable(wrap.querySelector("table"));
+  const cur = wrap.querySelector("tr.lastpx") || wrap.querySelector("tr.best-ask");
+  if (cur && Date.now() - bookUserScroll > 8000) wrap.scrollTop = cur.offsetTop - wrap.clientHeight / 2; else wrap.scrollTop = keep;
+}
+function renderTape(d){
+  const el = P.tape.pc.querySelector(".p-tape");
+  if (!d){ el.innerHTML = `<div class="dim" style="padding:8px">${NA}</div>`; P.tape.last = null; return; }
+  const html = tapeHTML(d.tape); if (P.tape.last === html) return; P.tape.last = html; el.innerHTML = html;
+}
+function renderPS60(d){
+  if (!d){ panelHTML("ps60", `<div class="dim">${NA}</div>`); return; }
+  const g = d.ps60 || {}, se = g.se || {}, mp = g.mp || {};
+  panelHTML("ps60", `<div class="hl">${esc(d.headline || "")}</div>
+    <div class="kv"><span>GRADE</span><span><span class="p-ps60" style="margin:0;height:auto;overflow:visible"><span class="g ${g.grade}">${g.grade || NA}</span></span> <span class="dim">${esc(g.why || "")}</span></span>
+      <span>PIVOT</span><span>${px(d.play.trigger)} · 2nd ${px(d.play.second_entry)} · target ${px(d.play.target)} · stop ${px(d.play.stop)}</span>
+      <span>MP / ATR</span><span>${mp.dollars != null ? "$" + mp.dollars.toFixed(2) : NA} / ${mp.atr != null ? "$" + mp.atr.toFixed(2) : NA} ${mp.verdict && mp.dollars != null ? "→ " + mp.verdict : ""}</span>
+      <span>2ND ENTRY</span><span>${esc(se.text || NA)}</span>
+      <span>TAPE</span><span>${esc((d.tape && d.tape.state) || "QUIET")}${d.tape && d.tape.buy_pct != null ? " · " + d.tape.buy_pct.toFixed(0) + "% buys" : ""}</span></div>
+    <ul>${(d.lines || []).map(l => `<li>${esc(l)}</li>`).join("")}</ul>
+    ${(g.sneaky || []).map(x => `<div class="dim">${esc(x.label)} ${px(x.price)} ×${x.touches} · room $${x.room.toFixed(2)}</div>`).join("")}
+    ${se.extreme && ["BROKE", "RETRACE"].includes(se.state) ? `<button data-se="${se.extreme}" style="margin-top:4px">use ${px(se.extreme)} as 2nd entry</button>` : ""}`);
+}
+function renderReloads(d){
+  if (!d){ panelHTML("reload", `<div class="dim">${NA}</div>`); return; }
+  const lv = (d.levels || []).filter(l => l.state === "RELOAD" || l.last_verdict);
+  const rows = lv.sort((a, b) => (a.state === "RELOAD" ? 0 : 1) - (b.state === "RELOAD" ? 0 : 1) || b.absorbed_total - a.absorbed_total).slice(0, 8).map(l => {
+    const who = l.side === "bid" ? "buyer" : "seller", gone = l.state !== "RELOAD";
+    return `<div class="rl ${who} ${gone ? "gone" : ""}"><span class="t">${gone ? (l.last_verdict === "CLEANED UP" ? "CLEARED OUT" : l.last_verdict || "") : "RELOAD " + who.toUpperCase()}</span>
+      <span class="k">PRICE</span><span class="v">$${px(l.price)} <span class="dim">${esc((l.role || "").split("+")[0] === "auto" ? "big level" : "your " + (l.role || "").split("+")[0].replace("trigger", "pivot").replace("_", " "))}</span></span>
+      <span class="k">RELOADS</span><span class="v">${l.refreshes != null ? l.refreshes : NA}</span>
+      <span class="k">SHARES OBSERVED</span><span class="v">${l.absorbed_total != null ? sz(l.absorbed_total) : NA}</span>
+      <span class="k">SHOWING</span><span class="v">${l.displayed != null ? sz(l.displayed) : NA}</span></div>`;
+  }).join("");
+  panelHTML("reload", rows || `<div class="dim">No confirmed reload buyer or seller on ${esc(d.symbol)} right now.</div>`);
+}
+function renderWatch(s){
+  panelHTML("watch", (s.ranking || []).map(r => `<div class="wlrow ${r.symbol === curSym ? "cur" : ""}" data-sym="${esc(r.symbol)}">
+    <span><b>${esc(r.symbol)}</b>${r.depth ? ' <span style="color:var(--gold)">◆</span>' : ""}</span><span style="color:var(--gold)">${px(r.last)}</span>
+    <span class="g ${r.ps60 ? r.ps60.grade : ""}">${r.ps60 ? r.ps60.grade : ""}</span>
+    <span class="w">${r.rank ? "#" + r.rank + " · " : ""}${r.side} · ${esc(r.retired ? "RETIRED" : r.status)}</span></div>`).join("") || `<div class="dim" style="padding:8px">No plays.</div>`);
+}
+function renderCalls(s){
+  const all = store.get("callsAll", false);
+  const alerts = (s.alerts || []).filter(a => all || a.symbol === curSym).slice(0, 40);
+  const html = `<div class="dim" style="margin-bottom:4px;font-size:11px"><label><input type="checkbox" id="callsAll" ${all ? "checked" : ""}> every symbol</label></div>` + (alerts.length ? alerts.map(a => {
+    const age = s.now - a.t;
+    const gr = a.key ? `<span class="grade" data-key="${esc(a.key)}"><button data-v="good" class="${a.grade==="good"?"on":""}">👍</button><button data-v="bad" class="${a.grade==="bad"?"on":""}">👎</button></span>` : "";
+    return `<div class="say ${sayClass(a)} ${age < 15 ? "fresh" : ""}"><span class="age">${ago(age)}</span>${gr}<b>${esc(a.symbol)}</b> — ${esc(a.text || a.label)}</div>`;
+  }).join("") : `<div class="say">No calls for ${esc(curSym || "this symbol")} yet.</div>`);
+  const fb = document.getElementById("feedBody"); if (fb.dataset.h !== html){ fb.dataset.h = html; fb.innerHTML = html; }
+}
+function renderPositions(s){
+  const A = s.account, on = canTrade();
+  const rows = (A.positions || []).map(p => {
+    const long = p.qty > 0, pct = p.last && p.avg_cost ? ((p.last - p.avg_cost) / p.avg_cost * 100) * (long ? 1 : -1) : null;
+    const q = Math.abs(p.qty);
+    return `<tr data-sym="${esc(p.symbol)}"><td class="l"><b>${esc(p.symbol)}</b></td><td class="${long ? "b" : "s"}">${long ? "LONG" : "SHORT"}</td><td>${sz(q)}</td><td>${px(p.avg_cost)}</td><td>${px(p.last)}</td>
+      <td class="pct ${pct == null ? "" : pct >= 0 ? "up" : "dn"}">${pctFmt(pct)}</td>
+      <td class="l"><button data-red="${esc(p.symbol)}" data-n="${Math.max(1, Math.floor(q / 2))}" ${on ? "" : "disabled"} title="reduce by half">½</button><button data-red="${esc(p.symbol)}" data-n="${Math.max(1, Math.floor(q / 4))}" ${on ? "" : "disabled"} title="reduce by a quarter">¼</button><button data-red="${esc(p.symbol)}" data-n="ask" ${on ? "" : "disabled"} title="reduce by a number of shares">…</button>
+        <button class="danger" data-close="${esc(p.symbol)}" ${on ? "" : "disabled"} title="CLOSE the whole position with a limit at the touch">CLOSE</button></td></tr>`;
+  }).join("");
+  panelHTML("positions", `<table class="grid"><tr><th>SYMBOL</th><th>SIDE</th><th>QTY</th><th>AVG ENTRY</th><th>LAST</th><th>P&amp;L %</th><th style="text-align:left">REDUCE / CLOSE</th></tr>${rows || `<tr><td colspan="7" class="dim l">${A.seen ? "Flat." : "Waiting for account data…"}</td></tr>`}</table>`);
+}
+let showHistory = false, selOrder = null;
+function renderOrders(s){
+  const A = s.account;
+  const live = (A.pending || []), done = (A.done || []);
+  const row = o => `<tr class="${selOrder === o.order_id ? "sel" : ""}" data-oid="${o.order_id ?? ""}" data-sym="${esc(o.symbol)}"><td class="l"><b>${esc(o.symbol)}</b> <span class="dim">${esc(o.role || "")}</span></td><td class="${o.action === "BUY" ? "b" : "s"}">${esc(o.action)}</td><td>${sz(o.qty)}</td><td>${esc(o.type)}</td>
+    <td>${o.lmt ? px(o.lmt) : NA}${o.aux ? ` <span class="dim">stp ${px(o.aux)}</span>` : ""}</td><td>${sz(o.filled || 0)}</td><td>${sz(o.remaining ?? o.qty)}</td><td><span class="stt ${(o.state || "").split(" ")[0]}">${esc(o.state || o.status || NA)}</span></td>
+    <td class="l">${o.order_id != null && !["FILLED", "CANCELED", "REJECTED"].includes(o.state) ? `<button data-mod="${o.order_id}" data-px="${o.lmt || o.aux || ""}" title="change the price">MODIFY</button> <button class="danger" data-cxl="${o.order_id}">CANCEL</button>` : ""}</td></tr>`;
+  panelHTML("orders", `<div style="display:flex;gap:8px;align-items:center;padding:3px 6px;font-size:11px" class="dim"><label><input type="checkbox" id="ordHist" ${showHistory ? "checked" : ""}> history</label><span class="spacer" style="flex:1"></span><button data-cxlall="1" class="danger" ${live.length ? "" : "disabled"}>CANCEL ALL (${live.length})</button></div>
+    <table class="grid"><tr><th>SYMBOL</th><th>SIDE</th><th>QTY</th><th>TYPE</th><th>LIMIT / STOP</th><th>FILLED</th><th>REMAIN</th><th>STATUS</th><th style="text-align:left"></th></tr>
+    ${live.map(row).join("") || `<tr><td colspan="9" class="dim l">${A.seen ? "No working orders." : "Waiting for account data…"}</td></tr>`}
+    ${showHistory ? done.map(row).join("") : ""}</table>`);
+}
+
+/* ---------- order ticket */
+const TK = {side: "BUY", type: "LMT", tif: "DAY", qty: null, inflight: false, log: []};
+function tkNonce(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+function renderTicket(s, d){
+  const t = s.trading || {}, on = canTrade();
+  if (TK.qty == null) TK.qty = t.default_shares || 100;
+  const allowMkt = !!(t.allow_market);
+  const price = d ? (TK.side === "BUY" ? d.bid : d.ask) : null;
+  const html = `<div class="ticket">
+    <label>SYMBOL</label><div class="val" style="color:var(--gold);font-weight:800;font-size:14px">${esc(curSym || NA)} <span class="dim" style="font-size:11px;font-weight:400">${d ? `${px(d.bid)} / ${px(d.ask)}` : ""}</span></div>
+    <label>SIDE</label><div class="sides"><button class="b ${TK.side === "BUY" ? "on" : ""}" data-side="BUY">BUY</button><button class="s ${TK.side === "SELL" ? "on" : ""}" data-side="SELL">SELL</button></div>
+    <label>QTY</label><div class="row"><button class="qbtn" data-q="-100">−</button><input id="tkQty" type="number" min="1" step="100" value="${TK.qty}"><button class="qbtn" data-q="100">+</button><button class="qbtn" data-q="set:100">100</button><button class="qbtn" data-q="set:500">500</button></div>
+    <label>TYPE</label><select id="tkType"><option value="LMT" ${TK.type === "LMT" ? "selected" : ""}>LIMIT</option><option value="STP LMT" ${TK.type === "STP LMT" ? "selected" : ""}>STOP LIMIT</option><option value="MKT" ${TK.type === "MKT" ? "selected" : ""} ${allowMkt ? "" : "disabled"}>MARKET${allowMkt ? "" : " (off by your rules)"}</option><option value="STP" ${TK.type === "STP" ? "selected" : ""} ${allowMkt ? "" : "disabled"}>STOP${allowMkt ? "" : " (off by your rules)"}</option></select>
+    ${TK.type !== "MKT" ? `<label>${TK.type === "STP" ? "STOP" : "LIMIT"}</label><div class="row"><input id="tkPx" type="number" step="0.01" value="${TK.px != null ? TK.px : (price != null ? price : "")}"><button data-px="bid">bid</button><button data-px="ask">ask</button><button data-px="mid">mid</button><button data-px="last">last</button></div>` : ""}
+    ${TK.type === "STP LMT" ? `<label>STOP</label><div class="row"><input id="tkAux" type="number" step="0.01" value="${TK.aux != null ? TK.aux : ""}" placeholder="trigger price"></div>` : ""}
+    <label>TIF</label><select id="tkTif"><option ${TK.tif === "DAY" ? "selected" : ""}>DAY</option><option ${TK.tif === "GTC" ? "selected" : ""}>GTC</option><option ${TK.tif === "IOC" ? "selected" : ""}>IOC</option></select>
+    <div class="opts"><label><input type="checkbox" id="tkBracket" ${t.bracket ? "checked" : ""}> stop+target</label><label><input type="checkbox" id="tkScale" ${t.scale ? "checked" : ""}> PS60 exits</label></div>
+    <div class="go"><button class="tx ${TK.side === "BUY" ? "b" : "s"}" id="tkGo" ${on && d && !TK.inflight ? "" : "disabled"}>${TK.inflight ? "SENDING…" : "TRANSMIT " + TK.side}</button><button id="tkCxl" ${d && d.orders && d.orders.length ? "" : "disabled"} class="danger">CANCEL ALL</button></div>
+    <div class="why">${on ? "" : esc(whyNot())}</div>
+    <div class="st">${TK.log.slice(0, 5).map(l => `<div>${esc(l)}</div>`).join("")}</div></div>`;
+  panelHTML("ticket", html);
+}
+function tkNote(txt){ TK.log.unshift(new Date().toLocaleTimeString() + " " + txt); TK.log = TK.log.slice(0, 20); P.ticket.last = null; renderTicket(state, curData()); }
+async function transmit(){
+  const d = curData(), t = T();
+  if (TK.inflight) return;
+  const qty = +document.getElementById("tkQty").value, type = TK.type, tif = TK.tif;
+  const pxEl = document.getElementById("tkPx"), auxEl = document.getElementById("tkAux");
+  const price = pxEl ? +pxEl.value : null, aux = auxEl ? +auxEl.value : null;
+  if (!d){ tkNote("no symbol"); return; }
+  if (!(t.can_trade && t.armed)){ tkNote("blocked: " + whyNot()); return; }
+  if (!(qty > 0)){ tkNote("quantity must be positive"); return; }
+  if (type !== "MKT" && !(price > 0)){ tkNote("price required"); return; }
+  if (type === "STP LMT" && !(aux > 0)){ tkNote("stop price required"); return; }
+  if (!d.bid && !d.ask && !d.last){ tkNote("no quote for " + d.symbol + " — not sending"); return; }
+  const send = async () => {
+    TK.inflight = true; P.ticket.last = null; renderTicket(state, d);
+    const nonce = tkNonce();
+    try {
+      const out = await post("/api/trade/order", {symbol: d.symbol, action: TK.side, price, qty, type, aux, tif, nonce, bracket: document.getElementById("tkBracket").checked});
+      tkNote(out.ok ? "SUBMITTED #" + out.id + " " + out.sent + " — waiting for IBKR acknowledgement" : "REJECTED: " + (out.reason || ""));
+      toast(out.ok ? "Submitted: " + out.sent : "Rejected: " + out.reason, out.ok);
+    } catch (e) { tkNote("send failed: " + e.message); }
+    TK.inflight = false; P.ticket.last = null; renderTicket(state, d); poll(true);
+  };
+  if (t.one_click) return send();
+  confirmBox(`${TK.side} ${sz(qty)} ${d.symbol} ${type}${type !== "MKT" ? " @ " + px(price) : ""}${aux ? " stop " + px(aux) : ""}`, `about $${sz(Math.round(qty * (price || d.last || 0)))} · ${tif}` + (d.ps60 && d.ps60.grade === "PASS" ? ` ⚠ PS60 says PASS: ${d.ps60.why}` : ""), TK.side === "BUY" ? "b" : "s", send);
+}
+P.ticket.el.addEventListener("click", e => {
+  const d = curData();
+  const sb = e.target.closest("button[data-side]"); if (sb){ TK.side = sb.dataset.side; TK.px = null; P.ticket.last = null; renderTicket(state, d); return; }
+  const qb = e.target.closest("button[data-q]"); if (qb){ const v = qb.dataset.q; TK.qty = v.startsWith("set:") ? +v.slice(4) : Math.max(1, (+document.getElementById("tkQty").value || 0) + +v); P.ticket.last = null; renderTicket(state, d); return; }
+  const pb = e.target.closest("button[data-px]"); if (pb && d){ const m = pb.dataset.px; TK.px = m === "bid" ? d.bid : m === "ask" ? d.ask : m === "last" ? d.last : (d.bid && d.ask ? +((d.bid + d.ask) / 2).toFixed(2) : d.last); P.ticket.last = null; renderTicket(state, d); return; }
+  if (e.target.id === "tkGo") transmit();
+  if (e.target.id === "tkCxl" && d) cancelAll(d.symbol);
+});
+P.ticket.el.addEventListener("change", e => {
+  if (e.target.id === "tkType"){ TK.type = e.target.value; TK.px = null; P.ticket.last = null; renderTicket(state, curData()); }
+  if (e.target.id === "tkTif") TK.tif = e.target.value;
+  if (e.target.id === "tkQty"){ TK.qty = +e.target.value; post("/api/trade/size", {shares: TK.qty}); }
+  if (e.target.id === "tkPx") TK.px = +e.target.value;
+  if (e.target.id === "tkAux") TK.aux = +e.target.value;
+  if (e.target.id === "tkBracket") post("/api/trade/bracket", {on: e.target.checked});
+  if (e.target.id === "tkScale") post("/api/trade/scale", {on: e.target.checked});
+});
+P.ticket.el.addEventListener("keydown", e => { e.stopPropagation(); if (e.key === "Enter" && e.target.tagName === "INPUT") transmit(); });
+P.positions.el.addEventListener("click", async e => {
+  const c = e.target.closest("button[data-close]"); if (c){ if (!confirm("CLOSE the whole " + c.dataset.close + " position?")) return; flatten(c.dataset.close); return; }
+  const r = e.target.closest("button[data-red]"); if (r){ let n = r.dataset.n; if (n === "ask"){ n = prompt("Reduce " + r.dataset.red + " by how many shares?"); if (!n) return; } if (!canTrade()) return toast("Can't trade: " + whyNot(), false);
+    const out = await post("/api/trade/adjust", {symbol: r.dataset.red, shares: +n, mode: "close"}); toast(out.ok ? "Sent: " + out.sent : "Blocked: " + (out.reason || ""), out.ok); return; }
+  const tr = e.target.closest("tr[data-sym]"); if (tr) openTab(tr.dataset.sym, false);
+});
+P.orders.el.addEventListener("click", async e => {
+  if (e.target.id === "ordHist") return;
+  const m = e.target.closest("button[data-mod]"); if (m){ const np = prompt("New price for order #" + m.dataset.mod + ":", m.dataset.px); if (!np) return; const out = await post("/api/trade/modify", {id: +m.dataset.mod, price: +np}); toast(out.ok ? "Modified" : "Modify blocked: " + (out.reason || ""), out.ok); return; }
+  const c = e.target.closest("button[data-cxl]"); if (c){ cancelMine(+c.dataset.cxl); return; }
+  if (e.target.closest("button[data-cxlall]")){ if (confirm("Cancel ALL working orders?")) cancelAll(null); return; }
+  const tr = e.target.closest("tr[data-sym]"); if (tr){ selOrder = +tr.dataset.oid || null; if (tr.dataset.sym && tr.dataset.sym !== curSym) openTab(tr.dataset.sym, false); P.orders.last = null; }
+});
+P.orders.el.addEventListener("change", e => { if (e.target.id === "ordHist"){ showHistory = e.target.checked; P.orders.last = null; poll(true); } });
+P.watch.el.addEventListener("click", e => { const r = e.target.closest(".wlrow"); if (r) openTab(r.dataset.sym, false); });
+P.calls.el.addEventListener("change", e => { if (e.target.id === "callsAll"){ store.set("callsAll", e.target.checked); poll(true); } });
+P.ps60.el.addEventListener("click", async e => { const b = e.target.closest("button[data-se]"); if (!b || !curSym) return; const out = await post("/api/level", {symbol: curSym, role: "second_entry", price: +b.dataset.se}); toast(out.ok ? "2nd entry set to " + px(+b.dataset.se) : "Could not set", out.ok); poll(true); });
+{ const wrap = P.book.pc.querySelector(".ladder-wrap");
+  wrap.addEventListener("wheel", () => { bookUserScroll = Date.now(); }, {passive: true});
+  wrap.addEventListener("dragstart", e => { const chip = e.target.closest(".chip[data-id]"); if (!chip){ e.preventDefault(); return; } e.dataTransfer.setData("text/plain", "order:" + chip.dataset.id); bookDragging = true; });
+  wrap.addEventListener("dragend", () => { bookDragging = false; });
+  wrap.addEventListener("dragover", e => { const row = e.target.closest("tr"); if (row && row.querySelector("td.px")) e.preventDefault(); });
+  wrap.addEventListener("drop", async e => { const row = e.target.closest("tr"); const data = e.dataTransfer.getData("text/plain"); if (!row || !data.startsWith("order:")) return; e.preventDefault(); const cell = row.querySelector("td.act"); if (!cell) return; const out = await post("/api/trade/modify", {id: +data.slice(6), price: +cell.dataset.px}); toast(out.ok ? "Moved to " + px(out.price) : "Move blocked: " + (out.reason || ""), out.ok); });
+  wrap.addEventListener("click", e => { if (bookDragging) return; const chip = e.target.closest(".chip[data-id]"); if (chip){ cancelMine(+chip.dataset.id); return; } const cell = e.target.closest("td.act"); const d = curData(); if (cell && d) sendOrder(d.symbol, cell.dataset.act, +cell.dataset.px); });
+}
+
+/* ---------- hotkeys: configurable, dangerous ones unassigned until you set them */
+const HK_ACTIONS = [["focusSymbol", "Focus symbol box", false], ["focusTicket", "Focus order ticket", false], ["qtyUp", "Increase quantity", false], ["qtyDown", "Decrease quantity", false],
+  ["buy", "BUY at ticket price (or bid)", true], ["sell", "SELL at ticket price (or ask)", true], ["cancelSel", "Cancel selected order", true], ["cancelSym", "Cancel symbol orders", true], ["flatten", "FLATTEN current symbol", true],
+  ["rec", "Record on / off", false], ["mark", "Marker", false], ["shot", "Screenshot", false], ["arm", "Arm / disarm", false]];
+const HK_DEFAULT = {focusSymbol: "Ctrl+L", focusTicket: "T", qtyUp: "+", qtyDown: "-", rec: " ", mark: "M", shot: "P", arm: "A"};
+function hotkeys(){ return Object.assign({}, HK_DEFAULT, PREFS.hotkeys || {}); }
+function keyName(e){ const k = e.key === " " ? "Space" : e.key.length === 1 ? e.key.toUpperCase() : e.key; return (e.ctrlKey || e.metaKey ? "Ctrl+" : "") + (e.altKey ? "Alt+" : "") + (e.shiftKey && e.key.length > 1 ? "Shift+" : "") + k; }
+function renderHK(){
+  const hk = hotkeys();
+  document.getElementById("hkPop").innerHTML = `<h5>HOTKEYS — click a key cell, press the keys, Esc to clear</h5><table class="hk">` + HK_ACTIONS.map(([id, label, danger]) => `<tr><td>${label}${danger ? ' <span class="danger">execution</span>' : ""}</td><td class="k" data-hk="${id}">${esc(hk[id] === " " ? "Space" : (hk[id] || "—"))}</td></tr>`).join("") + `</table><div class="dim" style="font-size:10.5px;margin-top:4px">Execution hotkeys go through the same checks as the mouse: connection, ARM, caps, quotes.</div>`;
+}
+document.getElementById("hkMenu").querySelector("button").addEventListener("click", e => { e.stopPropagation(); const m = document.getElementById("hkMenu"), open = !m.classList.contains("open"); document.querySelectorAll(".menu.open").forEach(x => x.classList.remove("open")); m.classList.toggle("open", open); renderHK(); });
+document.getElementById("hkPop").addEventListener("click", e => { const td = e.target.closest("td.k"); if (!td) return; document.querySelectorAll("td.k.cap").forEach(x => x.classList.remove("cap")); td.classList.add("cap"); td.textContent = "press keys…"; });
+document.addEventListener("keydown", e => {
+  const cap = document.querySelector("td.k.cap"); if (!cap) return;
+  e.preventDefault(); e.stopPropagation();
+  const hk = Object.assign({}, PREFS.hotkeys || {});
+  if (e.key === "Escape") hk[cap.dataset.hk] = null; else if (["Control", "Shift", "Alt", "Meta"].includes(e.key)) return; else hk[cap.dataset.hk] = keyName(e);
+  savePrefs({hotkeys: hk}); renderHK();
+}, true);
+function runHotkey(e){
+  const hk = hotkeys(), name = keyName(e), d = curData();
+  const act = Object.keys(hk).find(k => hk[k] && (hk[k] === name || (hk[k] === " " && name === "Space")));
+  if (!act) return false;
+  e.preventDefault();
+  const q = document.getElementById("tkQty");
+  switch (act){
+    case "focusSymbol": document.getElementById("symIn").focus(); break;
+    case "focusTicket": showPanel("ticket"); if (q) q.focus(); break;
+    case "qtyUp": TK.qty = (TK.qty || 0) + 100; P.ticket.last = null; renderTicket(state, d); break;
+    case "qtyDown": TK.qty = Math.max(1, (TK.qty || 0) - 100); P.ticket.last = null; renderTicket(state, d); break;
+    case "buy": if (d){ TK.side = "BUY"; TK.px = chartPrice(charts.chart) || chartPrice(charts.foot) || d.bid; P.ticket.last = null; renderTicket(state, d); transmit(); } break;
+    case "sell": if (d){ TK.side = "SELL"; TK.px = chartPrice(charts.chart) || chartPrice(charts.foot) || d.ask; P.ticket.last = null; renderTicket(state, d); transmit(); } break;
+    case "cancelSel": if (selOrder) cancelMine(selOrder); else toast("select an order first", false); break;
+    case "cancelSym": if (d) cancelAll(d.symbol); break;
+    case "flatten": if (d) flatten(d.symbol); break;
+    case "rec": if (state && state.replay) post("/api/replay", {paused: !state.replay.paused}); else deskRec(); break;
+    case "mark": deskMark(); break;
+    case "shot": deskShot(); break;
+    case "arm": document.getElementById("armBtn").click(); break;
+  }
+  return true;
+}
+
+/* ---------- voice: reload buyer / seller only, active tab only */
+function reloadWords(a){
+  const who = a.side === "bid" ? "buyer" : "seller";
+  const n = a.refreshes != null ? a.refreshes : null, sh = a.absorbed != null ? Math.round(a.absorbed) : null;
+  const shares = sh == null ? "" : (sh >= 1000 ? `${Math.round(sh / 1000)} thousand` : String(sh)) + " shares observed";
+  if (a.label.startsWith("RELOAD")) return `Reload ${who} at ${px(a.price)}.${n != null ? ` ${n} reloads.` : ""}${shares ? ` ${shares}.` : ""}`;
+  if (a.label === "CLEANED UP") return `Reload ${who} at ${px(a.price)} cleared out.`;
+  if (a.label === "PULLED") return `Reload ${who} at ${px(a.price)} pulled.`;
+  return null;
+}
+function speakNew(s){
+  const items = [];
+  for (const a of (s.alerts || []).slice(0, 8)){
+    if (spoken.has("a" + a.key) || s.now - a.t > 30) continue;
+    spoken.add("a" + a.key);
+    if (a.symbol !== TABS.active) continue;                 // background tabs never speak
+    const w = reloadWords(a); if (w) items.push(w);
+  }
+  if (voiceFirst){ voiceFirst = false; return; }
+  if (!store.get("voice", true)) return;
+  for (const t of items.slice(-2)) say(t);
+}
+document.getElementById("voiceBtn").addEventListener("click", () => { const on = !store.get("voice", true); store.set("voice", on); document.getElementById("voiceBtn").textContent = on ? "VOICE: ON" : "VOICE: OFF"; if (on) say("Voice on.", true); renderTabs(); });
+document.getElementById("voiceVol").value = store.get("voiceVol", 1);
+document.getElementById("voiceVol").addEventListener("change", e => store.set("voiceVol", +e.target.value));
+
+/* ---------- status bar + command bar */
+function renderStatus(s){
+  const c = s.connection, t = s.trading || {};
+  const led = document.querySelector("#stConn .led"), cls = c.state === "CONNECTED" ? "ok" : ["CONNECTING", "REPLAY", "DEMO"].includes(c.state) ? "warn" : "bad";
+  led.className = "led " + cls; document.querySelector("#stConn b").textContent = c.state + (c.detail && c.state !== "CONNECTED" ? " · " + c.detail.slice(0, 40) : "");
+  document.querySelector("#stData b").textContent = c.market_data_type ? (MDT[c.market_data_type] || c.market_data_type) : (c.state === "DEMO" ? "DEMO" : c.state === "REPLAY" ? "REPLAY" : NA);
+  const oled = document.querySelector("#stOrders .led"); oled.className = "led " + (t.locked ? "bad" : t.can_trade ? (t.armed ? "ok" : "warn") : "bad");
+  document.querySelector("#stOrders b").textContent = t.locked ? "LOCKED" : t.can_trade ? (t.armed ? "ARMED · " + (t.mode || "") : "READY · disarmed") : "OFF · " + (t.why_not || "");
+  document.querySelector("#stLadders b").textContent = `${s.depth.length}/${s.slots}`;
+  document.getElementById("stRec").innerHTML = s.desk && s.desk.recording ? `<span class="led bad"></span>REC <b>${fmtDur(s.now - (s.desk.started || s.now))}</b>` : "";
+  if (t.pnl) document.querySelector("#stLoss b").textContent = `${t.pnl.total >= 0 ? "+" : "−"}$${sz(Math.abs(t.pnl.total).toFixed(0))} / −$${sz(t.max_daily_loss || 0)}`;
+  document.getElementById("stClock").textContent = new Date().toLocaleTimeString();
+  const arm = document.getElementById("armBtn");
+  arm.textContent = t.locked ? "LOCKED" : t.armed ? "ARMED" : "ARM"; arm.className = t.locked ? "locked" : t.armed ? "armed" : "off"; arm.disabled = !t.can_trade; arm.title = t.can_trade ? "" : (t.why_not || "");
+  document.getElementById("oneclick").checked = !!t.one_click; document.getElementById("bracket").checked = !!t.bracket; document.getElementById("scale").checked = !!t.scale;
+  document.getElementById("voiceBtn").textContent = store.get("voice", true) ? "VOICE: ON" : "VOICE: OFF";
+  document.getElementById("soundBtn").textContent = store.get("sound", true) ? "🔊" : "🔇";
+  const rot = document.getElementById("rotate"); rot.textContent = "⟳ " + (s.auto_rotate ? "ON" : "OFF");
+  const rec = document.getElementById("recBtn"); rec.className = s.desk && s.desk.recording ? "on" : ""; rec.textContent = s.desk && s.desk.recording ? "■ STOP" : "● REC";
+  const rp = s.replay, rb = document.getElementById("replaybar"); rb.classList.toggle("on", !!rp);
+  if (rp){ document.getElementById("rpFile").textContent = rp.file || ""; document.getElementById("rpPlay").textContent = rp.done ? "✔ finished" : rp.paused ? "▶ Play" : "⏸ Pause";
+    if (document.activeElement !== document.getElementById("rpSpeed")) document.getElementById("rpSpeed").value = rp.speed || 5; document.getElementById("rpSpeedV").textContent = (rp.speed || 5) + "×"; document.getElementById("rpPos").textContent = rp.position ? new Date(rp.position * 1000).toLocaleTimeString() : ""; }
+}
+
+/* ---------- the frame: one snapshot in, each panel decides if it changes */
+function render(s){
+  state = s;
+  if (!TABS.list.length && s.symbols && s.symbols.length){ TABS.list = (PREFS.tabs || []).filter(x => s.symbols.includes(x)); if (!TABS.list.length) TABS.list = [s.focus || s.symbols[0]]; TABS.active = (PREFS.active && TABS.list.includes(PREFS.active)) ? PREFS.active : TABS.list[0]; curSym = TABS.active; renderTabs(); }
+  const d = dataFor(s, curSym);
+  for (const c of Object.values(charts)){
+    if (c.sym !== curSym){ if (c.sym) VIEWS[c.sym] = VIEWS[c.sym] || {}, VIEWS[c.sym][c.id] = Object.assign({}, c.view); c.sym = curSym; Object.assign(c.view, viewFor(curSym || "_", c.id), {cross: null, rightT: null}); }
+    c.data = d;
+  }
+  focusedPane = charts.chart;
+  renderStatus(s);
+  renderQuote(d);
+  charts.chart.el.classList.toggle("clean", store.get("clean", true));
+  drawChart(charts.chart); drawChart(charts.foot);
+  renderBook(d); renderTape(d); renderPS60(d); renderReloads(d);
+  renderTicket(s, d);
+  renderWatch(s); renderCalls(s); renderPositions(s); renderOrders(s);
+  renderDesk(s);
+  const msgs = s.messages.map(m => `<div class="msg-${esc(m.level)} mono" style="font-size:11px">${ago(s.now - m.t)} · ${esc(m.text)}</div>`).join("") || `<span class="dim">—</span>`;
+  const me = document.getElementById("messages"); if (me.dataset.h !== msgs){ me.dataset.h = msgs; me.innerHTML = msgs; }
+  for (const a of s.alerts.slice(0, 10)){ const key = a.t + a.symbol + a.label; if (!seenAlerts.has(key)){ seenAlerts.add(key); if (!firstFeed && store.get("alerts", true) && store.get("sound", true) && a.symbol === TABS.active) beep(sayClass(a)); } }
+  firstFeed = false;
+  speakNew(s);
+}
 let timer = null;
 async function poll(now){
   clearTimeout(timer);
   try {
-    const extra = focusSym ? "?extra=" + encodeURIComponent(focusSym) : "";
-    const r = await fetch("/api/state" + extra, {cache:"no-store"});
+    const extra = [...new Set(TABS.list.concat(curSym ? [curSym] : []))].join(",");
+    const r = await fetch("/api/state" + (extra ? "?extra=" + encodeURIComponent(extra) : ""), {cache: "no-store"});
     render(await r.json());
-  } catch(e){ const conn = document.getElementById("conn"); conn.textContent = "DASHBOARD LOST CONTACT WITH TWINEY"; conn.className = "pill bad"; }
+  } catch (e){ document.querySelector("#stConn b").textContent = "DASHBOARD LOST CONTACT WITH TWINEY"; document.querySelector("#stConn .led").className = "led bad"; }
   timer = setTimeout(poll, 500);
 }
-panels.chart = mkPanel("chartPanel", false);
-panels.foot = mkPanel("footPanel", true);
-focusedPane = panels.chart;
-loadLayout(false).then(() => poll());
+
+
+/* ---------- command bar wiring */
+document.getElementById("armBtn").addEventListener("click", async () => { const out = await post("/api/trade/arm", {on: !T().armed}); if (!out.ok) toast("Can't arm: " + out.reason, false); else toast(out.armed ? "ARMED — orders will transmit" : "Disarmed", true); poll(true); });
+document.getElementById("oneclick").addEventListener("change", e => post("/api/trade/oneclick", {on: e.target.checked}));
+document.getElementById("bracket").addEventListener("change", e => post("/api/trade/bracket", {on: e.target.checked}));
+document.getElementById("scale").addEventListener("change", e => post("/api/trade/scale", {on: e.target.checked}));
+document.getElementById("soundBtn").addEventListener("click", () => { store.set("sound", !store.get("sound", true)); beep("buyer"); poll(true); });
+document.getElementById("rotate").addEventListener("click", () => post("/api/autorotate", {on: !(state && state.auto_rotate)}));
+document.getElementById("feedBody").addEventListener("click", async e => {
+  const b = e.target.closest(".grade button"); if (!b) return;
+  const key = b.parentElement.dataset.key, verdict = b.classList.contains("on") ? null : b.dataset.v;
+  const out = await post("/api/grade", {key, verdict}); if (out.ok) toast(verdict ? "Graded " + verdict : "Grade cleared", true); poll(true);
+});
+document.addEventListener("click", e => { if (!e.target.closest(".menu")) document.querySelectorAll(".menu.open").forEach(m => m.classList.remove("open")); });
+document.getElementById("panelsMenu").querySelector("button").addEventListener("click", e => { e.stopPropagation(); const m = document.getElementById("panelsMenu"), open = !m.classList.contains("open"); document.querySelectorAll(".menu.open").forEach(x => x.classList.remove("open")); m.classList.toggle("open", open); renderPanelsMenu(); });
+document.getElementById("recBtn").addEventListener("click", deskRec);
+document.getElementById("markBtn").addEventListener("click", () => deskMark());
+document.getElementById("shotBtn").addEventListener("click", deskShot);
+// keyboard: configurable hotkeys first; then the few fixed ones (Esc closes things, / focuses the symbol box, J journal, 2 / L chart marks)
+document.addEventListener("keydown", e => {
+  if (e.target.matches("input, select, textarea") || document.getElementById("modal") || document.querySelector("td.k.cap")) return;
+  if (runHotkey(e)) return;
+  const c = charts.chart;
+  if (e.key === "/"){ e.preventDefault(); document.getElementById("symIn").focus(); }
+  else if (e.key === "j" || e.key === "J"){ e.preventDefault(); showPanel("journal"); const j = document.getElementById("jText"); if (j) j.focus(); }
+  else if (e.key === "2" && c){ c.view.levelTool = "second_entry"; renderTools(c); toast("Click the chart where the 2nd entry is", true); }
+  else if ((e.key === "l" || e.key === "L") && c){ c.view.levelTool = c.view.levelTool ? null : "extra"; renderTools(c); }
+  else if (state && state.replay && (e.key === "ArrowLeft" || e.key === "ArrowRight")){ e.preventDefault(); const sp = state.replay.speed || 1; post("/api/replay", {speed: e.key === "ArrowRight" ? Math.min(50, sp * 2) : Math.max(1, sp / 2)}); }
+  else if (e.key === "Escape"){ const m = document.getElementById("cmenu"); if (m) m.remove(); document.querySelectorAll(".menu.open").forEach(x => x.classList.remove("open")); }
+});
+window.addEventListener("resize", () => Object.values(charts).forEach(drawChart));
+setInterval(() => { document.getElementById("stClock").textContent = new Date().toLocaleTimeString(); }, 1000);
+/* ---------- boot: panels, charts, layout, tabs, first poll */
+mkChart("chart", false); mkChart("foot", true);
+(async () => {
+  await loadLayouts();
+  renderRecent();
+  if (PREFS.tabs && PREFS.tabs.length){ TABS.list = PREFS.tabs.slice(); TABS.active = PREFS.active && TABS.list.includes(PREFS.active) ? PREFS.active : TABS.list[0]; curSym = TABS.active; renderTabs(); if (curSym) post("/api/play", {symbol: curSym, action: "focus"}); }
+  poll();
+})();
 
 </script>
 </body>

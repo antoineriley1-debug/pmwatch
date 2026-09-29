@@ -13,6 +13,54 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 STATIC = os.path.join(os.path.dirname(__file__), "static", "dashboard.html")
 
 
+def _layouts_file(layout_path):
+    base = os.path.dirname(os.path.abspath(layout_path or "layout.json"))
+    return os.path.join(base, "layouts.json")
+
+
+def _load_layouts(layout_path):
+    fp = _layouts_file(layout_path)
+    if os.path.exists(fp):
+        try:
+            with open(fp, encoding="utf-8") as fh:
+                return json.load(fh)
+        except (OSError, json.JSONDecodeError):
+            pass
+    return {"layouts": {}, "last": None, "prefs": {}}
+
+
+def _save_layouts(layout_path, body):
+    """Named layouts + preferences (hotkeys, recent symbols, tabs) in layouts.json next to config.json."""
+    data = _load_layouts(layout_path)
+    act = body.get("action")
+    name = str(body.get("name", "")).strip()[:40]
+    if act == "save" and name:
+        data["layouts"][name] = body.get("layout")
+        data["last"] = name
+    elif act == "delete" and name:
+        data["layouts"].pop(name, None)
+        if data.get("last") == name:
+            data["last"] = None
+    elif act == "rename" and name and body.get("to"):
+        to = str(body["to"]).strip()[:40]
+        if name in data["layouts"]:
+            data["layouts"][to] = data["layouts"].pop(name)
+            if data.get("last") == name:
+                data["last"] = to
+    elif act == "use" and name:
+        data["last"] = name
+    elif act == "prefs":
+        data.setdefault("prefs", {}).update(body.get("prefs") or {})
+    else:
+        return {"ok": False, "reason": "bad action"}
+    fp = _layouts_file(layout_path)
+    tmp = fp + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(data, fh, indent=1)
+    os.replace(tmp, fp)
+    return dict(data, ok=True)
+
+
 class EngineRef:
     """Forwards to whichever engine is current (the replay desk restarts its engine on a backward jump)."""
 
@@ -65,6 +113,8 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                         self._send(200, fh.read(), "text/plain; charset=utf-8")
                 else:
                     self._send(404, "not found", "text/plain")
+            elif path == "/api/layouts":
+                self._send(200, json.dumps(_load_layouts(layout_path)), "application/json")
             elif path == "/api/layout":
                 lp = layout_path or "layout.json"
                 if os.path.exists(lp):
@@ -147,6 +197,8 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                 else:
                     ok = False
                 self._send(200 if ok else 400, json.dumps({"ok": ok}), "application/json")
+            elif path == "/api/layouts":
+                self._send(200, json.dumps(_save_layouts(layout_path, body)), "application/json")
             elif path == "/api/layout":
                 lp = layout_path or "layout.json"
                 lay = body.get("layout")
@@ -243,7 +295,8 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                     out = {"ok": True}
                 elif action == "order":
                     out = tr.submit(sym, str(body.get("action", "")).upper(), body.get("price"),
-                                        body.get("qty"), now, body.get("bracket"))
+                                    body.get("qty"), now, body.get("bracket"), str(body.get("type", "LMT")),
+                                    body.get("aux"), str(body.get("tif", "DAY")), body.get("nonce"))
                 elif action == "cancel":
                     out = tr.cancel(body.get("id"), now)
                 elif action == "cancel_all":
