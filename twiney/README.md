@@ -1,4 +1,4 @@
-# TED — TWINEY EXECUTION DESK (v3.0)
+# TED — TWINEY EXECUTION DESK (v3.1)
 
 A professional single-screen trading workstation on top of Interactive Brokers, built around PS60 and order flow,
 with ladder trading that is **locked to paper accounts** until you deliberately unlock it.

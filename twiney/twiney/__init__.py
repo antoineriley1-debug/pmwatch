@@ -3,4 +3,4 @@
 Market data only. There is no order-placement path anywhere in this package.
 """
 
-__version__ = "3.0.0"
+__version__ = "3.1.0"

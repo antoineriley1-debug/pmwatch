@@ -13,6 +13,20 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 STATIC = os.path.join(os.path.dirname(__file__), "static", "dashboard.html")
 
 
+def _static_build():
+    """The build stamp baked into dashboard.html; the page reloads itself when the server's build is newer."""
+    try:
+        with open(STATIC, "r", encoding="utf-8") as fh:
+            head = fh.read(4000)
+        i = head.find('name="build" content="')
+        return head[i + 22:head.find('"', i + 22)] if i >= 0 else ""
+    except OSError:
+        return ""
+
+
+BUILD = _static_build()
+
+
 def _layouts_file(layout_path):
     base = os.path.dirname(os.path.abspath(layout_path or "layout.json"))
     return os.path.join(base, "layouts.json")
@@ -97,6 +111,7 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                 q = parse_qs(urlparse(self.path).query)
                 extra = [x.strip().upper() for x in (q.get("extra", [""])[0]).split(",") if x.strip()][:12]
                 snap = engine.snapshot(clock(), extra)
+                snap["build"] = BUILD
                 self._send(200, json.dumps(snap, default=str), "application/json")
             elif path.startswith("/recordings/shots/") and rec_dir:
                 name = os.path.basename(path)

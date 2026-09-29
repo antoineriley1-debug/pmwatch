@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="build" content="20260929-0503">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -617,6 +618,7 @@ input:focus,select:focus,textarea:focus{outline:1px solid var(--gold);outline-of
   <span id="stRec"></span>
   <span class="spacer"></span>
   <span id="stLoss" title="day loss lock: realized + open P&L against your daily limit">DAY LOSS LIMIT <b>—</b></span>
+  <span id="stBuild" title="the build of this page; the desk reloads itself when a newer build starts">BUILD <b>—</b></span>
   <span id="stClock"></span>
 </div>
 </div>
@@ -2288,7 +2290,11 @@ document.getElementById("voiceVol").value = store.get("voiceVol", 1);
 document.getElementById("voiceVol").addEventListener("change", e => store.set("voiceVol", +e.target.value));
 
 /* ---------- status bar + command bar */
+const PAGE_BUILD = (document.querySelector('meta[name="build"]') || {}).content || "";
 function renderStatus(s){
+  document.querySelector("#stBuild b").textContent = PAGE_BUILD || "—";
+  // an old tab left open from a previous run: reload it onto the build the server is now serving
+  if (s.build && PAGE_BUILD && s.build !== PAGE_BUILD && !window._reloading){ window._reloading = true; toast("New build " + s.build + " is running: reloading", true); setTimeout(() => location.reload(), 800); }
   const c = s.connection, t = s.trading || {};
   const led = document.querySelector("#stConn .led"), cls = c.state === "CONNECTED" ? "ok" : ["CONNECTING", "REPLAY", "DEMO"].includes(c.state) ? "warn" : "bad";
   led.className = "led " + cls; document.querySelector("#stConn b").textContent = c.state + (c.detail && c.state !== "CONNECTED" ? " · " + c.detail.slice(0, 40) : "");
