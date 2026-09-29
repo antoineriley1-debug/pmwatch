@@ -535,6 +535,19 @@ input:focus,select:focus,textarea:focus{outline:1px solid var(--gold);outline-of
 .chart-tools .menu.ind .pop .row{display:flex;gap:6px;align-items:center;font-size:10.5px}
 .chart-tools select[data-screen]{height:19px;padding:0 4px} .chart-tools select.on{color:var(--gold);border-color:#4a3a18}
 
+/* nothing on the chart: the toolbar lives behind TOOLS on the quote strip */
+.pnl[data-p="chart"] .chart-tools{display:none} .pnl[data-p="chart"].tools-on .chart-tools{display:flex;flex-wrap:wrap}
+.pnl[data-p="foot"] .chart-tools{display:none}
+.qs .tfn{font:600 10px var(--sans);letter-spacing:.12em;color:#8e9096;border:1px solid #2c2e33;padding:0 5px;border-radius:2px}
+.qs .qtools{padding:0 6px;height:16px;font-size:9px;line-height:1} .qs .spacer{flex:1}
+/* eSignal data window */
+.datawin{position:absolute;left:8px;bottom:70px;z-index:6;width:150px;background:#000;border:1px solid #444;font:500 8.5px/1.25 "Segoe UI",Arial,sans-serif;color:#fff;cursor:move;user-select:none;box-shadow:0 4px 14px rgba(0,0,0,.45)}
+.datawin .ok{background:#0d9a2a;color:#fff;text-align:center;font-weight:700;font-size:8px;line-height:11px;border-bottom:1px solid #063}
+.datawin .kv{display:flex;justify-content:space-between;padding:0 4px;line-height:11px}
+.datawin .kv span:first-child{color:#ddd} .datawin .kv span:last-child{font-family:"Segoe UI",Arial,sans-serif;font-weight:600}
+.datawin .r{display:flex;justify-content:space-between;padding:0 4px;line-height:11px;font-weight:600;border-top:1px solid rgba(0,0,0,.35)}
+.datawin .r.vol{background:#1a1ad8;color:#fff}
+
 </style>
 </head>
 <body>
@@ -1028,7 +1041,7 @@ function aggBars(bars, tf){
 const DAN_SMA = [[5, "#e3a878", 2], [10, "#27ca34", 2], [20, "#c2af78", 2], [50, "#1fc6fc", 3], [100, "#dc744e", 2], [150, "#49c4d9", 2], [200, "#a3495b", 3]];
 const DAN_EMA = [[5, "#e89050", 3], [10, "#1fb82e", 3], [20, "#71522b", 3], [50, "#f40606", 3], [100, "#924a85", 3], [150, "#3045e9", 3], [200, "#c8c8c8", 3]];
 const DAN_EMA_DAILY = [[34, "#FFD600", 3], [65, "#27ca34", 3], [89, "#924a85", 3]];
-const DAN_BB = "#151eed", DAN_LR = "#5234ff";
+const DAN_BB = "#151eed";
 function smaSeries(cl, n){ const out = new Array(cl.length).fill(null); let s = 0; for (let i = 0; i < cl.length; i++){ s += cl[i]; if (i >= n) s -= cl[i - n]; if (i >= n - 1) out[i] = s / n; } return out; }
 function emaSeries(cl, n){ const out = new Array(cl.length).fill(null); if (cl.length < n) return out; const k = 2 / (n + 1); let e = 0; for (let i = 0; i < n; i++) e += cl[i]; e /= n; out[n - 1] = e; for (let i = n; i < cl.length; i++){ e = cl[i] * k + e * (1 - k); out[i] = e; } return out; }
 function bbSeries(cl, n, mult){ const up = new Array(cl.length).fill(null), dn = up.slice(), mid = up.slice(); for (let i = n - 1; i < cl.length; i++){ let s = 0, s2 = 0; for (let j = i - n + 1; j <= i; j++){ s += cl[j]; s2 += cl[j] * cl[j]; } const m = s / n, sd = Math.sqrt(Math.max(0, s2 / n - m * m)); mid[i] = m; up[i] = m + mult * sd; dn[i] = m - mult * sd; } return {up, dn, mid}; }
@@ -1206,27 +1219,21 @@ function drawOne(p, cv, v, isFoot){
   if (!isFoot && !foot && clsAll.length > 1){
     const k0 = all.length - off - bars.length;
     const tags = store.get("matags", true) ? [] : null;
-    const line = (ser, col, lw) => { g.strokeStyle = col; g.lineWidth = lw; g.setLineDash([]); g.beginPath(); let on = false;
+    const hk = (v.cross && v.cross[0] < plotW) ? Math.max(0, Math.min(bars.length - 1, Math.floor((v.cross[0] - x0) / cw))) : bars.length - 1;
+    p.dataRows = []; p.dataBar = bars[hk] || null; p.dataTf = tf;
+    const line = (ser, col, lw, name) => {
+      if (name){ const hv = ser[k0 + hk]; p.dataRows.push([name, col, hv == null ? null : hv]); } g.strokeStyle = col; g.lineWidth = lw; g.setLineDash([]); g.beginPath(); let on = false;
       for (let k = 0; k < bars.length; k++){ const v = ser[k0 + k]; if (v == null || !isFinite(v)){ on = false; continue; } const xx = x0 + k * cw + cw / 2, yy = y(v); if (!on){ g.moveTo(xx, yy); on = true; } else g.lineTo(xx, yy); }
       g.stroke();
       const last = ser[k0 + bars.length - 1]; if (tags && last != null && isFinite(last) && last >= lo && last <= hi) tags.push([last, col]); };
     const IND = store.get("ind", {}), on = k => IND[k] !== false;      // every line can be hidden one by one
     if (store.get("mas", true)){
-      for (const [n, col, lw] of DAN_SMA) if (on("s" + n)) line(smaSeries(clsAll, n), col, lw);
-      for (const [n, col, lw] of DAN_EMA) if (on("e" + n)) line(emaSeries(clsAll, n), col, lw);
+      for (const [n, col, lw] of DAN_SMA) if (on("s" + n)) line(smaSeries(clsAll, n), col, lw, `MA(${n},C)s`);
+      for (const [n, col, lw] of DAN_EMA) if (on("e" + n)) line(emaSeries(clsAll, n), col, lw, `MA(${n},C)e`);
       // 34 / 65 / 89 EMA: Daily chart only, never on 1m / 5m / 15m / 60m
-      if (isDaily) for (const [n, col, lw] of DAN_EMA_DAILY) if (on("d" + n)) line(emaSeries(clsAll, n), col, lw);
+      if (isDaily) for (const [n, col, lw] of DAN_EMA_DAILY) if (on("d" + n)) line(emaSeries(clsAll, n), col, lw, `MA(${n},C)e`);
     }
-    if (store.get("bb", true)){ const bb = bbSeries(clsAll, 20, 2.0); line(bb.up, DAN_BB, 2); line(bb.dn, DAN_BB, 2); }
-    if (store.get("lr", false) && clsAll.length >= 50){
-      // linear regression channel over the last 50 bars, ±2 standard deviations
-      const n = 50, s0 = clsAll.length - n; let sx = 0, sy = 0, sxx = 0, sxy = 0;
-      for (let i = 0; i < n; i++){ const yv = clsAll[s0 + i]; sx += i; sy += yv; sxx += i * i; sxy += i * yv; }
-      const slope = (n * sxy - sx * sy) / (n * sxx - sx * sx), icpt = (sy - slope * sx) / n;
-      let ss = 0; for (let i = 0; i < n; i++){ const e = clsAll[s0 + i] - (icpt + slope * i); ss += e * e; }
-      const dev = 2.0 * Math.sqrt(ss / n);
-      for (const o of [dev, 0, -dev]){ const ser = new Array(clsAll.length).fill(null); for (let i = 0; i < n; i++) ser[s0 + i] = icpt + slope * i + o; line(ser, DAN_LR, 2); }
-    }
+    if (store.get("bb", true)){ const bb = bbSeries(clsAll, 20, 2.0); const before = p.dataRows; p.dataRows = []; line(bb.up, DAN_BB, 2, "BB(20,2,C)Upr"); line(bb.dn, DAN_BB, 2, "BB(20,2,C)Lwr"); p.dataRows.push(["BB(20,2,C)Bas", DAN_BB, bb.mid[k0 + hk]]); p.dataRows = p.dataRows.concat(before); }
     g.lineWidth = 1;
     // eSignal-style value tags on the price scale, one per line, in the line's colour
     if (tags && tags.length){
@@ -1316,15 +1323,19 @@ function drawOne(p, cv, v, isFoot){
     g.strokeStyle = C.dots ? "#333333" : C.axis; g.setLineDash([]); g.beginPath(); g.moveTo(0, H - 18 - volH + 2 + .5); g.lineTo(W, H - 18 - volH + 2 + .5); g.stroke();
     g.fillStyle = C.text; g.font = (C.dots ? "bold " : "") + "9.5px ui-monospace, Menlo, Consolas, monospace";
     g.fillText(kfmt(vmax), plotW + 4, H - 18 - volH + 12); g.fillText(kfmt(vmax / 2), plotW + 4, H - 18 - (volH - 6) / 2 + 3);
+    if (danVol){
+      g.fillStyle = "#1a1ad8"; g.font = "bold 10px system-ui"; g.fillText("Volume", 4, H - 18 - volH + 13);
+      const lb = bars[bars.length - 1]; if (lb){ const yy = H - 18 - (lb[5] / vmax) * (volH - 6); g.fillStyle = "#ff2600"; g.fillRect(plotW + 1, yy - 6, labelW - 2, 12); g.fillStyle = "#ffffff"; g.font = "bold 9.5px ui-monospace, Menlo, Consolas, monospace"; g.fillText(kfmt(lb[5]), plotW + 4, yy + 4); }
+    }
     g.font = "11px ui-monospace, Menlo, Consolas, monospace";
   }
   for (let k = 0; k < bars.length; k++){
     const b = bars[k], x = x0 + k * cw + cw * 0.15, base = H - 18, full = (b[5] / vmax) * (volH - 6);
     const known = b[6] + b[7];
     if (danVol){
-      const up = b[4] >= b[1], bw = cw * Math.min(0.95, Math.max(0.2, +store.get("body", dan ? 76 : 70) / 100)), xx = x0 + k * cw + cw / 2 - bw / 2;
-      g.fillStyle = up ? C.up : C.dn; g.fillRect(xx, base - full, bw, full);
-      if (C.border && bw >= 3 && full >= 2){ g.strokeStyle = C.border; g.lineWidth = 1; g.strokeRect(xx + .5, base - full + .5, bw - 1, full - 1); }
+      // eSignal volume: a thin stick per bar, blue when the close is up on the bar before, red when down
+      const prev = k > 0 ? bars[k - 1][4] : b[1], up = b[4] >= prev, sw = Math.max(1, Math.min(3, cw * 0.18)), xx = x0 + k * cw + cw / 2 - sw / 2;
+      g.fillStyle = up ? "#1a1ad8" : "#ff2600"; g.fillRect(xx, base - full, sw, full);
       continue;
     }
     if (known > 0){
@@ -1397,6 +1408,8 @@ function drawOne(p, cv, v, isFoot){
     g.fillText("GREEN BUYER ABSORBING · RED SELLER ABSORBING · R/C/P RELOAD / CLEANED / PULLED", 60, H - volH - 4); }
   if (off > 0){ g.fillStyle = "#e3a83a"; g.fillText(`${off} BARS BACK · DOUBLE-CLICK FOR LIVE`, plotW - 230, 14); }
   // crosshair with price / time readout
+  p.dataPrice = (v.cross && v.cross[1] < plotH && v.cross[0] < plotW) ? hi - (v.cross[1] - 8) / (plotH - 8) * (hi - lo) : null;
+  if (!isFoot && typeof renderDataWin === "function") renderDataWin(p);
   if (v.cross){
     const [cx, cy] = v.cross;
     if (cx < plotW && cy < plotH){
@@ -1406,7 +1419,7 @@ function drawOne(p, cv, v, isFoot){
       g.fillStyle = "#26282c"; g.fillRect(plotW, cy - 8, labelW, 16);
       g.fillStyle = "#d6d6d3"; g.fillText(px(pr), plotW + 3, cy + 4);
       const k = Math.floor((cx - x0) / cw);
-      if (bars[k]){
+      if (bars[k] && !(store.get("datawin", true) && !isFoot)){   // the data window carries this when it is on
         const b = bars[k], dt = new Date(b[0] * 1000).toTimeString().slice(0, 5);
         const txt = `${dt}  O ${px(b[1])} H ${px(b[2])} L ${px(b[3])} C ${px(b[4])}  vol ${kfmt(b[5])}`;
         g.fillStyle = "rgba(17,22,31,.9)"; g.fillRect(6, 4, g.measureText(txt).width + 10, 16);
@@ -1727,7 +1740,7 @@ function mkChart(id, isFoot){
     c.tools.addEventListener("click", e => {
       const tf = e.target.dataset.tf;
       if (tf){ store.set("tf." + id, tf === "D" ? "D" : +tf); c.view.offset = 0; c.view.follow = true; if (tf === "D" && c.view.cw < 6) c.view.cw = 8; drawChart(c); renderTools(c); }
-      for (const k of ["mas", "bb", "lr"]) if (e.target.dataset[k]){ store.set(k, !store.get(k, k === "mas" || k === "bb")); drawChart(c); renderTools(c); }
+      for (const k of ["mas", "bb"]) if (e.target.dataset[k]){ store.set(k, !store.get(k, k === "mas" || k === "bb")); drawChart(c); renderTools(c); }
       if (e.target.dataset.ind){ e.stopPropagation(); const m = e.target.closest(".menu"), open = !m.classList.contains("open"); document.querySelectorAll(".menu.open").forEach(x => x.classList.remove("open")); m.classList.toggle("open", open); if (open){ m.querySelector(".pop").innerHTML = indPopHTML(); placePop(m); } }
       if (e.target.closest(".menu.ind .pop")) e.stopPropagation();
       if (e.target.dataset.vwap){ store.set("vwap", !store.get("vwap", true)); drawChart(c); renderTools(c); }
@@ -1756,8 +1769,39 @@ function indPopHTML(){
     <h5>EMA</h5>${DAN_EMA.map(([n, col]) => box("e" + n, n + " EMA", col)).join("")}
     <h5>EMA · DAILY CHART ONLY</h5>${DAN_EMA_DAILY.map(([n, col]) => box("d" + n, n + " EMA", col)).join("")}
     <h5>BANDS</h5><label><input type="checkbox" data-top="bb" ${store.get("bb", true) ? "checked" : ""}> <i style="display:inline-block;width:14px;height:3px;background:${DAN_BB};vertical-align:middle"></i> Bollinger 20 / 2.0</label>
-    <label><input type="checkbox" data-top="lr" ${store.get("lr", false) ? "checked" : ""}> <i style="display:inline-block;width:14px;height:3px;background:${DAN_LR};vertical-align:middle"></i> Linear regression 50 / 2.0</label>
-    <div class="dim" style="font-size:10.5px;margin-top:6px">MAS on the toolbar switches every average at once; these boxes pick the lines. The linear regression channel needs 50 bars of history behind it.</div>`;
+    <label><input type="checkbox" data-top="datawin" ${store.get("datawin", true) ? "checked" : ""}> data window (the floating OK box: bar values and every line at the cursor)</label>
+    <div class="dim" style="font-size:10.5px;margin-top:6px">MAS on the toolbar switches every average at once; these boxes pick the lines.</div>`;
+}
+/* the floating data window: eSignal's "OK" box. Bar values and every line's value at the cursor, draggable. */
+function renderDataWin(p){
+  const wrap = p.el.querySelector(".chart-wrap"); if (!wrap) return;
+  let w = wrap.querySelector(".datawin");
+  const on = store.get("datawin", true) && p.data && p.dataBar;
+  if (!on){ if (w) w.style.display = "none"; return; }
+  if (!w){
+    w = document.createElement("div"); w.className = "datawin"; wrap.appendChild(w);
+    const pos = store.get("datawin.pos", null); if (pos){ w.style.left = pos[0] + "px"; w.style.top = pos[1] + "px"; }
+    w.addEventListener("mousedown", e => { e.stopPropagation(); e.preventDefault(); const r = w.getBoundingClientRect(), wr = wrap.getBoundingClientRect(), dx = e.clientX - r.left, dy = e.clientY - r.top;
+      const mv = ev => { w.style.left = Math.max(0, Math.min(wr.width - r.width, ev.clientX - wr.left - dx)) + "px"; w.style.top = Math.max(0, Math.min(wr.height - r.height, ev.clientY - wr.top - dy)) + "px"; w.style.bottom = "auto"; };
+      const up = () => { window.removeEventListener("mousemove", mv); window.removeEventListener("mouseup", up); store.set("datawin.pos", [parseInt(w.style.left), parseInt(w.style.top)]); };
+      window.addEventListener("mousemove", mv); window.addEventListener("mouseup", up); });
+  }
+  w.style.display = "";
+  const b = p.dataBar, d = p.data, tf = p.dataTf, dt = new Date(b[0] * 1000);
+  const ny = o => dt.toLocaleString("en-US", Object.assign({timeZone: "America/New_York"}, o));
+  const lum = c => { const n = parseInt(c.slice(1), 16); return (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)); };
+  const f = v => v == null ? "—" : (+v).toFixed(6).replace(/0+$/, "").replace(/\.$/, "");
+  const rows = (p.dataRows || []).map(([name, col, val]) => `<div class="r" style="background:${col};color:${lum(col) > 140 ? "#000" : "#fff"}"><span>${name}</span><span>${f(val)}</span></div>`).join("");
+  const html = `<div class="ok">OK</div>
+    <div class="kv"><span>Symbol:</span><span>${esc(d.symbol)},${tf === "D" ? "D" : tf}</span></div>
+    <div class="kv"><span>Date:</span><span>${ny({month: "2-digit", day: "2-digit", year: "2-digit"})}</span></div>
+    <div class="kv"><span>Time:</span><span>${tf === "D" ? "00:00" : ny({hour: "2-digit", minute: "2-digit", hourCycle: "h23"})}</span></div>
+    <div class="kv"><span>Price:</span><span>${f(p.dataPrice != null ? p.dataPrice : b[4])}</span></div>
+    <div class="kv"><span>Open:</span><span>${f(b[1])}</span></div><div class="kv"><span>High:</span><span>${f(b[2])}</span></div>
+    <div class="kv"><span>Low:</span><span>${f(b[3])}</span></div><div class="kv"><span>Close:</span><span>${f(b[4])}</span></div>
+    ${rows}
+    <div class="r vol"><span>Vol</span><span>${(b[5] || 0).toLocaleString("en-US")}</span></div>`;
+  if (w.dataset.h !== html){ w.dataset.h = html; w.innerHTML = html; }
 }
 function renderTools(v){
   if (!v.tools || v.type !== "chart") return;
@@ -1766,7 +1810,6 @@ function renderTools(v){
     + `<button data-fit="1">fit</button><button data-vwap="1" class="${store.get("vwap", true) ? "on" : ""}">VWAP</button>`
     + `<button data-mas="1" class="${store.get("mas", true) ? "on" : ""}" title="Dan's moving averages: SMA 5/10/20/50/100/150/200, EMA 5/10/20/50/100/150/200, plus 34/65/89 EMA on Daily only">MAS</button>`
     + `<button data-bb="1" class="${store.get("bb", true) ? "on" : ""}" title="Bollinger Bands 20 / 2.0">BB</button>`
-    + `<button data-lr="1" class="${store.get("lr", false) ? "on" : ""}" title="Linear regression channel 50 / 2.0 (off by default)">LR</button>`
     + `<select data-screen="1" class="${store.get("screen", "desk") !== "desk" ? "on" : ""}" title="the screen: dark desk, or an eSignal-style light screen with Dan's candles">${[["desk", "DESK"], ["white", "WHITE"], ["blue", "BLUE"], ["pink", "PINK"], ["custom", "CUSTOM"]].map(([v, l]) => `<option value="${v}" ${store.get("screen", "desk") === v ? "selected" : ""}>${l}</option>`).join("")}</select>`
     + `<span class="menu ind"><button data-ind="1" title="pick the lines you want, set wick and body width">IND</button><div class="pop">${indPopHTML()}</div></span>`
     + `<button data-foot="1" class="${store.get("foot." + v.id, false) ? "on" : ""}" title="footprint on this timeframe">FOOT</button>`
@@ -1792,16 +1835,20 @@ function renderQuote(d){
   if (!d){ el.innerHTML = `<span class="sym">${esc(curSym || "")}</span><span class="dim">${curSym ? "NO DATA" : "NO SYMBOL · Ctrl+L"}</span>`; return; }
   const day = d.day || {}, pl = d.play, g = d.ps60;
   const chg = d.last && day.prev_close ? d.last - day.prev_close : null;
-  const html = `<span class="sym">${esc(d.symbol)}</span>
+  const tfNow = store.get("tf.chart", 1);
+  const html = `<span class="sym">${esc(d.symbol)}</span><span class="tfn">${tfNow === "D" ? "DAILY" : tfNow + "M"}</span>
     <span>LAST <b style="color:var(--gold)">${px(d.last)}</b>${chg != null ? ` <span class="${chg >= 0 ? "buy" : "sell"}">${chg >= 0 ? "+" : ""}${chg.toFixed(2)} ${(chg / day.prev_close * 100).toFixed(2)}%</span>` : ""}</span>
     <span><span class="buy">${px(d.bid)}</span><span class="dim">${day.bid_size ? "×" + kfmt(day.bid_size) : ""}</span> / <span class="sell">${px(d.ask)}</span><span class="dim">${day.ask_size ? "×" + kfmt(day.ask_size) : ""}</span></span>
     <span class="dim">O ${px(day.open)} H ${px(day.high)} L ${px(day.low)} V ${day.volume ? kfmt(day.volume) : NA}</span>
     <span class="dim">PIVOT <b style="color:#d6d6d3">${px(pl.trigger)}</b> 2ND <b style="color:var(--cyan)">${px(pl.second_entry)}</b> TGT <b style="color:var(--buy)">${px(pl.target)}</b> STOP <b style="color:var(--sell)">${px(pl.stop)}</b></span>
     ${g ? `<span class="p-ps60" style="margin:0;height:auto;overflow:visible"><span class="g ${g.grade}" title="${esc(g.why)}">${g.grade}</span></span>` : ""}
     <span class="dim">${esc(d.health.status)}${d.pinned ? " · PINNED" : ""}${(d.book && (d.book.bids.length || d.book.asks.length)) ? "" : " · no depth"}</span>`;
-  if (el.dataset.h !== html){ el.dataset.h = html; el.innerHTML = html; }
+  const html2 = html + `<span class="spacer"></span><button class="qtools ${store.get("tools", false) ? "on" : ""}" data-tools="1" title="show / hide the chart toolbar">TOOLS</button>`;
+  if (el.dataset.h !== html2){ el.dataset.h = html2; el.innerHTML = html2; }
 }
 let bookUserScroll = 0, bookDragging = false;
+P.chart.el.querySelector(".qs").addEventListener("click", e => { if (!e.target.dataset.tools) return; const on = !store.get("tools", false); store.set("tools", on); P.chart.el.classList.toggle("tools-on", on); e.target.classList.toggle("on", on); });
+P.chart.el.classList.toggle("tools-on", store.get("tools", false));
 function renderBook(d){
   const wrap = P.book.pc.querySelector(".ladder-wrap");
   if (!d){ if (P.book.last !== "-"){ P.book.last = "-"; wrap.innerHTML = `<div class="dim" style="padding:8px">${NA}</div>`; } return; }
