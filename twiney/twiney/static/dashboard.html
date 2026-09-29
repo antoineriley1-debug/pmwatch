@@ -4,10 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PS60 Execution Desk</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root{
-  --bg:#0a0d12; --panel:#11161f; --panel2:#161d29; --line:#243044; --text:#dbe3ee; --dim:#7b889e;
-  --buy:#26d07c; --sell:#ff4d5e; --gold:#ffc53d; --cyan:#3fd0ff; --violet:#b58cff; --warn:#f0b429;
+  --bg:#0c0c0d; --panel:#131416; --panel2:#1a1b1e; --line:#26282c; --text:#d6d6d3; --dim:#7d7f85;
+  --buy:#3fb56f; --sell:#d9534f; --gold:#e3a83a; --cyan:#5aa9d6; --violet:#a48bd6; --warn:#f0b429;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 *{box-sizing:border-box}
@@ -16,7 +17,7 @@ body{margin:0;background:var(--bg);color:var(--text);font:13px/1.35 system-ui,-a
 button{font:inherit;color:inherit;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:3px 9px;cursor:pointer}
 button:hover{border-color:var(--dim)}
 button.on{border-color:var(--gold);color:var(--gold)}
-header{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 16px;border-bottom:1px solid var(--line);background:#0d121a;position:sticky;top:0;z-index:5}
+header{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 16px;border-bottom:1px solid var(--line);background:#101113;position:sticky;top:0;z-index:5}
 h1{font-size:16px;letter-spacing:.14em;margin:0 6px 0 0}
 .pill{padding:2px 8px;border-radius:999px;border:1px solid var(--line);font-size:11px;white-space:nowrap}
 .pill.ok{border-color:var(--buy);color:var(--buy)} .pill.bad{border-color:var(--sell);color:var(--sell)}
@@ -36,15 +37,15 @@ body.free .win.front{z-index:3}
 .book-tools{display:flex;justify-content:flex-end;padding:2px 6px 0} .book-tools .gear .pop{position:fixed;right:auto;top:auto}
 .p-head button.off{color:var(--dim)}
 .winbar .vtog{cursor:pointer;opacity:.35;padding:0 4px} .winbar .vtog.on{opacity:1;color:var(--gold);text-shadow:0 0 6px var(--gold)}
-.pane.focus{outline:1px solid rgba(255,197,61,.55)}
+.pane.focus{outline:1px solid rgba(227,168,58,.55)}
 .rs{position:absolute;z-index:4;user-select:none}
 .rs.e{right:0;top:12px;bottom:12px;width:7px;cursor:ew-resize} .rs.w{left:0;top:12px;bottom:12px;width:7px;cursor:ew-resize}
 .rs.n{top:0;left:12px;right:12px;height:6px;cursor:ns-resize} .rs.s{bottom:0;left:12px;right:12px;height:6px;cursor:ns-resize}
 .rs.ne{top:0;right:0;width:14px;height:14px;cursor:nesw-resize} .rs.sw{bottom:0;left:0;width:14px;height:14px;cursor:nesw-resize}
 .rs.nw{top:0;left:0;width:14px;height:14px;cursor:nwse-resize} .rs.se{bottom:0;right:0;width:14px;height:14px;cursor:nwse-resize}
-.rs:hover{background:rgba(255,197,61,.25)}
+.rs:hover{background:rgba(227,168,58,.25)}
 .pane.max .rs, .win.folded .rs{display:none}
-.winbar{display:flex;align-items:center;gap:8px;padding:4px 8px;background:#0f141c;border-bottom:1px solid var(--line);font-size:11px;letter-spacing:.06em;color:var(--dim);user-select:none;cursor:grab}
+.winbar{display:flex;align-items:center;gap:8px;padding:4px 8px;background:#121315;border-bottom:1px solid var(--line);font-size:11px;letter-spacing:.06em;color:var(--dim);user-select:none;cursor:grab}
 .winbar:active{cursor:grabbing}
 .winbar b{color:var(--text)}
 .winbar .x{margin-left:auto;cursor:pointer;padding:0 6px;font-size:13px}
@@ -62,7 +63,7 @@ body:not(.free) .winbar{cursor:default}
 .pop h5{margin:6px 0 2px;font-size:10px;color:var(--dim);letter-spacing:.08em}
 .pop hr{border:0;border-top:1px solid var(--line);margin:6px 0}
 #alertsBtn.off{color:var(--dim);text-decoration:line-through}
-#recBtn.on{background:#4a161b;border-color:var(--sell);color:#ffe3e6;font-weight:700;animation:recblink 1.2s infinite}
+#recBtn.on{background:#3d1c1c;border-color:var(--sell);color:#f5dede;font-weight:700;animation:recblink 1.2s infinite}
 @keyframes recblink{0%,100%{box-shadow:0 0 0 0 transparent}50%{box-shadow:0 0 8px 1px var(--sell)}}
 #desk{max-height:260px;overflow-y:auto}
 #journal{max-height:220px;overflow-y:auto} #journalBody{padding:6px} .jform{display:flex;gap:6px;margin-bottom:6px}
@@ -70,7 +71,7 @@ body:not(.free) .winbar{cursor:default}
 .jn{padding:3px 6px;border-radius:4px;background:var(--panel2);margin-bottom:3px;font-size:12.5px} .jn b{color:var(--gold);margin-right:6px} #deskBody{padding:6px;display:grid;grid-template-columns:1fr 1fr;gap:10px}
 #deskBody h5{margin:2px 0 4px;font-size:10px;color:var(--dim);letter-spacing:.08em}
 .mk{display:flex;gap:8px;align-items:center;padding:3px 6px;border-radius:4px;background:var(--panel2);margin-bottom:3px;font-size:12px;cursor:pointer}
-.mk:hover{outline:1px solid var(--gold)} .mk b{color:var(--gold)} .mk .note{flex:1;color:#c4cddb} .mk .hl{color:var(--dim);font-size:11px}
+.mk:hover{outline:1px solid var(--gold)} .mk b{color:var(--gold)} .mk .note{flex:1;color:#b8b8b4} .mk .hl{color:var(--dim);font-size:11px}
 .rec{display:flex;gap:8px;align-items:center;padding:3px 6px;border-radius:4px;background:var(--panel2);margin-bottom:3px;font-size:12px}
 .rec.cur{outline:1px solid var(--sell)} .rec .nm{flex:1;font-family:var(--mono)} .rec button{padding:1px 6px;font-size:11px}
 .rec button.del{color:var(--dim)} .rec button.del:hover{color:var(--sell);border-color:var(--sell)}
@@ -101,7 +102,7 @@ body:not(.free) #feed.card{padding:0}
 .say b{letter-spacing:.02em}
 .say.buyer{border-color:var(--buy)} .say.seller{border-color:var(--sell)}
 .say.cleaned{border-color:var(--gold)} .say.pulled{border-color:var(--violet)}
-.say.fresh{background:#1a2230}
+.say.fresh{background:#1f2024}
 .say .age{float:right;color:var(--dim);font-size:11px;margin-left:10px}
 .say .grade{float:right;margin-left:8px} .say .grade button{padding:0 5px;font-size:12px;opacity:.5;border:1px solid transparent}
 .say .grade button.on{opacity:1;border-color:var(--gold);background:#2a2a1a} .say .grade button:hover{opacity:1}
@@ -130,26 +131,26 @@ tr.retired td{opacity:.55} tr.retired td.status{opacity:1;color:var(--gold)}
 .p-say.reload{border-color:var(--warn);background:#2a2412} .p-say.cleaned{border-color:var(--gold);background:#2b2610}
 .p-say.pulled{border-color:var(--violet);background:#221a33} .p-say.watch{border-color:var(--cyan)}
 .p-say.at{border-color:var(--gold)} .p-say.near{border-color:var(--cyan)}
-.p-lines{margin:0 10px 4px 26px;padding:0;font-size:12.5px;color:#c4cddb;height:78px;overflow-y:auto;flex:0 0 auto}
+.p-lines{margin:0 10px 4px 26px;padding:0;font-size:12.5px;color:#b8b8b4;height:78px;overflow-y:auto;flex:0 0 auto}
 .p-lines li{margin:1px 0}
 .p-ps60{margin:2px 10px 4px;font-size:12.5px;display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center;height:60px;overflow-y:auto;flex:0 0 auto;align-content:flex-start}
 .p-ps60 .g{font-weight:700;padding:1px 8px;border-radius:10px;font-size:11px;letter-spacing:.04em}
-.p-ps60 .g.READY{background:#163a28;color:var(--buy)} .p-ps60 .g.WATCH{background:#3a3016;color:var(--gold)} .p-ps60 .g.PASS{background:#3a1a1e;color:var(--sell)}
+.p-ps60 .g.READY{background:#173b28;color:var(--buy)} .p-ps60 .g.WATCH{background:#3a3016;color:var(--gold)} .p-ps60 .g.PASS{background:#3d1c1c;color:var(--sell)}
 .p-ps60 .gates{display:inline-flex;gap:4px} .p-ps60 .gates span{cursor:help;font-size:11px}
-.p-ps60 .se{flex-basis:100%;color:#c4cddb} .p-ps60 button.use{padding:0 6px;font-size:11px}
+.p-ps60 .se{flex-basis:100%;color:#b8b8b4} .p-ps60 button.use{padding:0 6px;font-size:11px}
 .pane[data-hide~="keep"] .p-keep{display:none !important}
-.p-keep{margin:2px 10px;height:22px;line-height:22px;font-size:12.5px;color:#c4cddb;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 0 auto}
+.p-keep{margin:2px 10px;height:22px;line-height:22px;font-size:12.5px;color:#b8b8b4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 0 auto}
 .p-keep:empty{display:none}
 #story{padding:0} #storyBody{display:grid;gap:6px;padding:6px}
 .st{background:var(--panel2);border-radius:6px;padding:6px 10px;border-left:5px solid var(--dim)}
 .st.reload{border-color:var(--warn)} .st.cleaned{border-color:var(--gold)} .st.pulled{border-color:var(--violet)} .st.watch,.st.near{border-color:var(--cyan)} .st.at{border-color:var(--gold)}
 .st .sym{font-weight:700;font-size:14px;margin-right:8px} .st .hl{font-size:14px;font-weight:600}
-.st ul{margin:3px 0 0 18px;padding:0;font-size:12.5px;color:#c4cddb} .st li{margin:1px 0}
+.st ul{margin:3px 0 0 18px;padding:0;font-size:12.5px;color:#b8b8b4} .st li{margin:1px 0}
 .st .p-ps60{margin:4px 0 0;height:auto;overflow:visible}
 .pane.clean .chart-hint{display:none}
 .cmenu{display:block;position:fixed;z-index:60;min-width:200px}
 .cmenu button{display:block;width:100%;margin:3px 0;text-align:left;padding:5px 8px}
-.cmenu .bbuy{background:#0f3d25;border-color:var(--buy);color:#dfffee;font-weight:700} .cmenu .bsell{background:#4a161b;border-color:var(--sell);color:#ffe3e6;font-weight:700}
+.cmenu .bbuy{background:#173b28;border-color:var(--buy);color:#dff5e8;font-weight:700} .cmenu .bsell{background:#3d1c1c;border-color:var(--sell);color:#f5dede;font-weight:700}
 .say.remount{border-color:var(--buy)} .say.rejection{border-color:var(--sell)}
 td.grade{font-weight:700} td.grade.READY{color:var(--buy)} td.grade.WATCH{color:var(--gold)} td.grade.PASS{color:var(--sell)}
 .p-body{flex:1 1 0;display:grid;grid-template-columns:minmax(0,1fr) 8px var(--ladder-w,340px);grid-template-rows:minmax(0,1fr);gap:4px;padding:4px 10px;min-height:300px}
@@ -175,7 +176,7 @@ body.has-max #panes .pane:not(.max){visibility:hidden}
 
 /* level-memory ladder */
 .lad{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:11.5px}
-.lad th{position:sticky;top:0;background:#0f141c;color:var(--dim);font-weight:500;font-size:10px;padding:3px 2px;z-index:3}
+.lad th{position:sticky;top:0;background:#121315;color:var(--dim);font-weight:500;font-size:10px;padding:3px 2px;z-index:3}
 .lad td{padding:1px 3px;height:19px;white-space:nowrap}
 .lad .px{text-align:center;font-weight:600;color:#cfd8e6;border-left:1px solid var(--line);border-right:1px solid var(--line);position:relative;min-width:64px}
 .lad .px .tag{margin-left:3px}
@@ -192,11 +193,11 @@ td.bars.l .bar-n{float:right;margin-right:3px} td.bars.r .bar-n{margin-left:3px}
 .lad tr.gap td{border-top:2px dashed var(--line)}
 .lad tr.best-bid td.bsz{color:var(--buy);font-weight:700}
 .lad tr.best-ask td.asz{color:var(--sell);font-weight:700}
-.lad tr.lvl td.px{color:#dbe3ee;font-weight:700}
+.lad tr.lvl td.px{color:#d6d6d3;font-weight:700}
 .lad tr.lvl td{border-top:1px solid rgba(219,227,238,.3);border-bottom:1px solid rgba(219,227,238,.3)}
-.lad tr.lastpx td.px{background:var(--gold);color:#0a0d12;font-weight:800;border-radius:3px}
-.lad tr.lastpx td.px::before{content:"▶";position:absolute;left:2px;color:#0a0d12}
-.lad tr.lastpx td{background:rgba(255,197,61,.10)}
+.lad tr.lastpx td.px{background:var(--gold);color:#0c0c0d;font-weight:800;border-radius:3px}
+.lad tr.lastpx td.px::before{content:">";position:absolute;left:2px;color:#0c0c0d}
+.lad tr.lastpx td{background:rgba(227,168,58,.10)}
 .mine{display:inline-block;font-size:9px;font-weight:700;padding:0 4px;border-radius:3px;border:1px solid #fff;color:#fff;margin-left:3px}
 .chip.drag{opacity:.5} .lad tr.droptarget td{outline:1px dashed var(--gold)}
 .chart-wrap canvas.lvltool{cursor:cell}
@@ -210,7 +211,7 @@ td.bars.l .bar-n{float:right;margin-right:3px} td.bars.r .bar-n{margin-left:3px}
 .tradebar .risk{width:70px}
 .keys{font-size:10.5px;color:var(--dim)}
 .trap{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:.03em}
-.trap.l{background:#3a1216;color:#ffb3bb;border:1px solid var(--sell)} .trap.s{background:#0f3d25;color:#9fffcf;border:1px solid var(--buy)}
+.trap.l{background:#3a1216;color:#e8a3a3;border:1px solid var(--sell)} .trap.s{background:#173b28;color:#9fe0bd;border:1px solid var(--buy)}
 .trap.heavy{animation:trapglow 1.4s infinite}
 @keyframes trapglow{0%,100%{box-shadow:0 0 0 0 transparent}50%{box-shadow:0 0 10px 1px currentColor}}
 .io{font-size:9px;font-weight:800;padding:0 3px;border-radius:2px;margin-left:4px}
@@ -229,27 +230,27 @@ td.bars.l .bar-n{float:right;margin-right:3px} td.bars.r .bar-n{margin-left:3px}
 .lad tr.rl-ask td{animation:glowa 1.6s infinite}
 th{position:relative}
 th .colgrip{position:absolute;right:-3px;top:0;bottom:0;width:7px;cursor:col-resize;z-index:2}
-th .colgrip:hover{background:rgba(255,197,61,.4)}
+th .colgrip:hover{background:rgba(227,168,58,.4)}
 table.sized{table-layout:fixed}
 .legend{font-size:10.5px;color:var(--dim);padding:4px 6px;border-top:1px solid var(--line)}
 /* trading */
 .lad td.act{width:58px;text-align:center;cursor:pointer;user-select:none;font-size:10.5px;color:transparent;border-left:1px solid var(--line);border-right:1px solid var(--line)}
-.lad td.act.b:hover{background:rgba(38,208,124,.25);color:#dfffee}
-.lad td.act.s:hover{background:rgba(255,77,94,.25);color:#ffe3e6}
+.lad td.act.b:hover{background:rgba(38,208,124,.25);color:#dff5e8}
+.lad td.act.s:hover{background:rgba(255,77,94,.25);color:#f5dede}
 .lad td.act.disabled{cursor:not-allowed}
 .lad td.act.disabled:hover{background:rgba(123,136,158,.15);color:var(--dim)}
 .lad th.act{color:var(--dim)}
-.chip{display:inline-block;padding:0 5px;border-radius:3px;font-weight:800;font-size:10.5px;cursor:pointer;color:#0a0d12}
+.chip{display:inline-block;padding:0 5px;border-radius:3px;font-weight:800;font-size:10.5px;cursor:pointer;color:#0c0c0d}
 .chip.b{background:var(--buy)} .chip.s{background:var(--sell)} .chip.wait{opacity:.6}
 .chip:hover::after{content:" ✕"}
 .tradebar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 10px 4px;padding:6px 8px;border-radius:6px;background:var(--panel2);border:1px solid var(--line)}
 .tradebar input{width:64px;font:inherit;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:5px;padding:3px 6px;text-align:right}
-.tradebar .bbuy{background:#0f3d25;border-color:var(--buy);color:#dfffee;font-weight:700}
-.tradebar .bsell{background:#4a161b;border-color:var(--sell);color:#ffe3e6;font-weight:700}
+.tradebar .bbuy{background:#173b28;border-color:var(--buy);color:#dff5e8;font-weight:700}
+.tradebar .bsell{background:#3d1c1c;border-color:var(--sell);color:#f5dede;font-weight:700}
 .tradebar .bflat,.acts .bflat{border-color:var(--gold);color:var(--gold)}
 .acts{text-align:left !important;white-space:nowrap}
 .acts button{padding:1px 7px;margin:0 1px;font-family:var(--mono)}
-.acts .adj.close{border-color:var(--sell);color:#ffb3bb} .acts .adj.add{border-color:var(--buy);color:#9fffcf}
+.acts .adj.close{border-color:var(--sell);color:#e8a3a3} .acts .adj.add{border-color:var(--buy);color:#9fe0bd}
 .acts button:disabled{opacity:.4}
 .tradebar button:disabled{opacity:.4;cursor:not-allowed}
 .tradebar .pos{font-family:var(--mono);font-size:12px}
@@ -259,7 +260,7 @@ table.sized{table-layout:fixed}
 #mode.sim{border-color:var(--cyan);color:var(--cyan)} #mode.paper{border-color:var(--gold);color:var(--gold)}
 #mode.live{border-color:var(--sell);color:var(--sell)} #mode.none{color:var(--dim)}
 #toasts{position:fixed;right:16px;bottom:16px;display:grid;gap:6px;z-index:20;max-width:420px}
-.toast{padding:8px 12px;border-radius:6px;background:#1a2230;border-left:4px solid var(--buy);font-size:13px;box-shadow:0 4px 16px rgba(0,0,0,.5)}
+.toast{padding:8px 12px;border-radius:6px;background:#1f2024;border-left:4px solid var(--buy);font-size:13px;box-shadow:0 4px 16px rgba(0,0,0,.5)}
 .toast.bad{border-color:var(--sell)}
 #modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:30}
 #modal .box{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px 20px;min-width:320px;max-width:92vw}
@@ -267,7 +268,7 @@ table.sized{table-layout:fixed}
 #modal .legs{color:var(--dim);margin:4px 0 12px}
 #modal .btns{display:flex;gap:8px;justify-content:flex-end}
 #modal .send{font-weight:800;padding:6px 16px}
-#modal .send.b{background:#0f3d25;border-color:var(--buy);color:#dfffee} #modal .send.s{background:#4a161b;border-color:var(--sell);color:#ffe3e6}
+#modal .send.b{background:#173b28;border-color:var(--buy);color:#dff5e8} #modal .send.s{background:#3d1c1c;border-color:var(--sell);color:#f5dede}
 
 /* tables */
 table.t{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12px}
@@ -276,7 +277,7 @@ table.t td{text-align:right;padding:2px 5px;white-space:nowrap}
 table.t th:first-child,table.t td:first-child{text-align:left}
 .buy{color:var(--buy)} .sell{color:var(--sell)} .mid{color:var(--dim)}
 .large{font-weight:700;text-decoration:underline}
-tr.atlvl td{background:rgba(255,197,61,.12)}
+tr.atlvl td{background:rgba(227,168,58,.12)}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px;min-width:0}
 .card h3{margin:0 0 6px;font-size:11px;color:var(--dim);letter-spacing:.08em}
 #bottom{display:grid;grid-template-columns:2fr 1fr;gap:10px}
@@ -286,29 +287,29 @@ tr.atlvl td{background:rgba(255,197,61,.12)}
 .scroll{overflow-x:auto}
 .msg-error{color:var(--sell)} .msg-warn{color:var(--warn)} .msg-info{color:var(--dim)}
 tr.onslot td:first-child{color:var(--gold)}
-td.status{text-align:left !important;white-space:normal !important;color:#c4cddb}
+td.status{text-align:left !important;white-space:normal !important;color:#b8b8b4}
 @media (max-width:900px){#bottom{grid-template-columns:1fr} .p-body{grid-template-columns:1fr} .divider{display:none} .pane{height:auto;resize:none;flex:1 1 100%} .chart-wrap{height:260px}}
 /* ===== PS60 EXECUTION DESK — application shell ===== */
 html,body{height:100%} body{overflow:hidden;font-size:12px}
 #app{display:grid;grid-template-rows:34px 26px minmax(0,1fr) 22px;height:100vh}
-#cmd{display:flex;align-items:center;gap:6px;padding:0 8px;background:#0b0f15;border-bottom:1px solid var(--line);white-space:nowrap;overflow:hidden}
+#cmd{display:flex;align-items:center;gap:6px;padding:0 8px;background:#0e0f11;border-bottom:1px solid var(--line);white-space:nowrap;overflow:hidden}
 #cmd > *{flex:0 0 auto}
 #cmd button{padding:2px 7px;font-size:11px;border-radius:3px}
 #cmd label{display:inline-flex;align-items:center;gap:3px;font-size:11px;color:var(--dim)}
 #brand{font-size:12px;font-weight:800;letter-spacing:.14em;color:var(--gold);margin-right:4px}
 #symbox{display:flex;align-items:center;gap:2px}
-#symIn{width:96px;font:700 14px var(--mono);letter-spacing:.06em;text-transform:uppercase;background:#05070b;color:var(--gold);border:1px solid #3b3410;border-radius:3px;padding:3px 6px}
+#symIn{width:96px;font:700 14px var(--mono);letter-spacing:.06em;text-transform:uppercase;background:#0a0a0b;color:var(--gold);border:1px solid #4a3a18;border-radius:3px;padding:3px 6px}
 #symIn:focus{outline:1px solid var(--gold)}
-#symIn::placeholder{color:#4a5566;font:400 11px system-ui;letter-spacing:0;text-transform:none}
-#symHist{font:inherit;font-size:11px;background:#05070b;color:var(--dim);border:1px solid var(--line);border-radius:3px;max-width:40px}
+#symIn::placeholder{color:#5b5d63;font:400 11px system-ui;letter-spacing:0;text-transform:none}
+#symHist{font:inherit;font-size:11px;background:#0a0a0b;color:var(--dim);border:1px solid var(--line);border-radius:3px;max-width:40px}
 #cmd .spacer{flex:1 1 0 !important;min-width:4px}
 #cmd .sep{width:1px;height:18px;background:var(--line);margin:0 3px}
 .led{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--dim);margin-right:4px;vertical-align:middle}
 .led.ok{background:var(--buy);box-shadow:0 0 5px var(--buy)} .led.warn{background:var(--warn)} .led.bad{background:var(--sell)}
-#armBtn{font-weight:800;letter-spacing:.06em} #armBtn.armed{background:#0f3d25;border-color:var(--buy);color:#dfffee} #armBtn.off{color:var(--dim)}
+#armBtn{font-weight:800;letter-spacing:.06em} #armBtn.armed{background:#173b28;border-color:var(--buy);color:#dff5e8} #armBtn.off{color:var(--dim)}
 #armBtn.locked{background:#5a1218;border-color:var(--sell);color:#fff}
 /* workspace tab bar */
-#wsbar{display:flex;align-items:center;gap:2px;padding:0 6px;background:#0d121a;border-bottom:1px solid var(--line);white-space:nowrap;overflow:hidden}
+#wsbar{display:flex;align-items:center;gap:2px;padding:0 6px;background:#101113;border-bottom:1px solid var(--line);white-space:nowrap;overflow:hidden}
 .stab{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;font:700 12px var(--mono);letter-spacing:.06em;color:var(--dim);border:1px solid transparent;border-bottom:0;border-radius:3px 3px 0 0;cursor:pointer;height:24px;box-sizing:border-box}
 .stab.on{background:var(--panel);color:var(--gold);border-color:var(--line)}
 .stab .x{font-size:10px;color:var(--dim);padding:0 2px} .stab .x:hover{color:var(--sell)}
@@ -317,15 +318,16 @@ html,body{height:100%} body{overflow:hidden;font-size:12px}
 #wsbar .right{margin-left:auto;display:flex;gap:4px;align-items:center}
 #wsbar select,#wsbar button{font-size:11px;padding:1px 6px;border-radius:3px}
 /* docking workspace */
-#work{position:relative;display:grid;min-height:0;min-width:0;background:#070a0f;
-  grid-template-columns:var(--c1,0px) var(--g1,0px) minmax(0,1fr) var(--g2,0px) var(--c3,0px);
+#work{position:relative;display:grid;min-height:0;min-width:0;background:#09090a;
+  grid-template-columns:var(--c1,0px) var(--g1,0px) minmax(0,1fr) var(--g2,0px) var(--c3,0px) var(--g3,0px) var(--c4,0px);
   grid-template-rows:minmax(0,1fr) var(--gr,0px) var(--r2,0px)}
 .zone{display:flex;flex-direction:column;min-height:0;min-width:0;position:relative;background:var(--panel);border:1px solid var(--line);margin:1px}
 .zone.empty{display:none}
-.zone[data-zone="TL"]{grid-column:1;grid-row:1} .zone[data-zone="TC"]{grid-column:3;grid-row:1} .zone[data-zone="TR"]{grid-column:5;grid-row:1}
-.zone[data-zone="BL"]{grid-column:1;grid-row:3} .zone[data-zone="BC"]{grid-column:3;grid-row:3} .zone[data-zone="BR"]{grid-column:5;grid-row:3}
+.zone[data-zone="TL"]{grid-column:1;grid-row:1} .zone[data-zone="TC"]{grid-column:3;grid-row:1} .zone[data-zone="TR"]{grid-column:5;grid-row:1} .zone[data-zone="TX"]{grid-column:7;grid-row:1}
+.zone[data-zone="BL"]{grid-column:1;grid-row:3} .zone[data-zone="BC"]{grid-column:3;grid-row:3} .zone[data-zone="BR"]{grid-column:5;grid-row:3} .zone[data-zone="BX"]{grid-column:7;grid-row:3}
+.zone.tall{grid-row:1/4}   /* a column with only one zone in it runs the full height */
 .zone.drop{outline:2px solid var(--gold);outline-offset:-2px}
-.ztabs{display:flex;align-items:stretch;height:22px;flex:0 0 auto;background:#0f141c;border-bottom:1px solid var(--line);overflow:hidden}
+.ztabs{display:flex;align-items:stretch;height:22px;flex:0 0 auto;background:#121315;border-bottom:1px solid var(--line);overflow:hidden}
 .ztab{display:inline-flex;align-items:center;gap:6px;padding:0 8px;font-size:10.5px;letter-spacing:.08em;color:var(--dim);cursor:grab;border-right:1px solid var(--line);user-select:none;white-space:nowrap}
 .ztab.on{background:var(--panel);color:var(--text);font-weight:700}
 .ztab .sym{color:var(--gold);font-family:var(--mono);letter-spacing:.02em;font-weight:700}
@@ -336,8 +338,8 @@ html,body{height:100%} body{overflow:hidden;font-size:12px}
 .pnl.on{display:flex}
 .pnl > .pc{flex:1 1 0;min-height:0;overflow:auto;position:relative}
 .pnl > .pc.nos{overflow:hidden}
-.gut{background:transparent;z-index:3} .gut:hover{background:rgba(255,197,61,.35)}
-.gut.v{cursor:col-resize;grid-row:1/4} .gut.h{cursor:row-resize;grid-column:1/6;grid-row:2}
+.gut{background:transparent;z-index:3} .gut:hover{background:rgba(227,168,58,.35)}
+.gut.v{cursor:col-resize;grid-row:1/4} .gut.h{cursor:row-resize;grid-column:1/8;grid-row:2}
 #g1{grid-column:2} #g2{grid-column:4}
 /* floating panel */
 .float{position:absolute;z-index:8;background:var(--panel);border:1px solid var(--gold);box-shadow:0 8px 30px rgba(0,0,0,.6);display:flex;flex-direction:column;min-width:240px;min-height:120px;resize:both;overflow:hidden}
@@ -348,14 +350,14 @@ html,body{height:100%} body{overflow:hidden;font-size:12px}
 /* ticket */
 .ticket{display:grid;grid-template-columns:auto 1fr;gap:4px 8px;padding:6px 8px;align-items:center;font-size:12px}
 .ticket label{color:var(--dim);font-size:10.5px;letter-spacing:.06em;text-align:right}
-.ticket input,.ticket select{font:inherit;font-family:var(--mono);background:#05070b;color:var(--text);border:1px solid var(--line);border-radius:3px;padding:3px 6px;width:100%;box-sizing:border-box}
+.ticket input,.ticket select{font:inherit;font-family:var(--mono);background:#0a0a0b;color:var(--text);border:1px solid var(--line);border-radius:3px;padding:3px 6px;width:100%;box-sizing:border-box}
 .ticket .row{display:flex;gap:4px;align-items:center} .ticket .row input{flex:1}
 .ticket .row button{padding:2px 6px;font-size:10.5px;border-radius:3px}
 .ticket .sides{display:flex;gap:4px} .ticket .sides button{flex:1;font-weight:800;letter-spacing:.08em;padding:5px 0;border-radius:3px;opacity:.5}
-.ticket .sides button.on{opacity:1} .ticket .sides .b.on{background:#0f3d25;border-color:var(--buy);color:#dfffee} .ticket .sides .s.on{background:#4a161b;border-color:var(--sell);color:#ffe3e6}
+.ticket .sides button.on{opacity:1} .ticket .sides .b.on{background:#173b28;border-color:var(--buy);color:#dff5e8} .ticket .sides .s.on{background:#3d1c1c;border-color:var(--sell);color:#f5dede}
 .ticket .go{grid-column:1/3;display:flex;gap:6px;align-items:center;margin-top:2px}
 .ticket .go button.tx{flex:1;font-weight:800;letter-spacing:.1em;padding:6px 0;border-radius:3px;font-size:13px}
-.ticket .go button.tx.b{background:#0f3d25;border-color:var(--buy);color:#dfffee} .ticket .go button.tx.s{background:#4a161b;border-color:var(--sell);color:#ffe3e6}
+.ticket .go button.tx.b{background:#173b28;border-color:var(--buy);color:#dff5e8} .ticket .go button.tx.s{background:#3d1c1c;border-color:var(--sell);color:#f5dede}
 .ticket .go button.tx:disabled{opacity:.35;cursor:not-allowed}
 .ticket .why{grid-column:1/3;font-size:11px;color:var(--warn);min-height:14px}
 .ticket .st{grid-column:1/3;font-family:var(--mono);font-size:11px;color:var(--dim);border-top:1px solid var(--line);padding-top:4px;max-height:80px;overflow:auto}
@@ -364,25 +366,25 @@ html,body{height:100%} body{overflow:hidden;font-size:12px}
 .ticket .val{font-family:var(--mono)} .ticket .opts{grid-column:1/3;display:flex;gap:12px;color:var(--dim);font-size:11px}
 /* tables */
 .grid{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:11.5px;font-variant-numeric:tabular-nums}
-.grid th{position:sticky;top:0;background:#0f141c;color:var(--dim);font-weight:500;font-size:10px;letter-spacing:.06em;padding:3px 6px;text-align:right;border-bottom:1px solid var(--line)}
-.grid td{padding:2px 6px;text-align:right;border-bottom:1px solid #131923;white-space:nowrap}
+.grid th{position:sticky;top:0;background:#121315;color:var(--dim);font-weight:500;font-size:10px;letter-spacing:.06em;padding:3px 6px;text-align:right;border-bottom:1px solid var(--line)}
+.grid td{padding:2px 6px;text-align:right;border-bottom:1px solid #1c1d20;white-space:nowrap}
 .grid th:first-child,.grid td:first-child{text-align:left}
-.grid tr.sel td{background:#1a2230} .grid tr:hover td{background:#141b26}
+.grid tr.sel td{background:#1f2024} .grid tr:hover td{background:#1a1b1e}
 .grid td.l{text-align:left} .grid .b{color:var(--buy)} .grid .s{color:var(--sell)}
 .grid button{padding:1px 6px;font-size:10.5px;border-radius:3px}
-.grid button.danger{border-color:var(--sell);color:var(--sell)} .grid button.danger:hover{background:#4a161b;color:#fff}
-.stt{font-size:10px;font-weight:700;letter-spacing:.06em;padding:0 5px;border-radius:2px;background:#1a2230}
+.grid button.danger{border-color:var(--sell);color:var(--sell)} .grid button.danger:hover{background:#3d1c1c;color:#fff}
+.stt{font-size:10px;font-weight:700;letter-spacing:.06em;padding:0 5px;border-radius:2px;background:#1f2024}
 .stt.FILLED{color:var(--buy)} .stt.CANCELED,.stt.REJECTED{color:var(--sell)} .stt.ACKNOWLEDGED{color:var(--cyan)} .stt.SUBMITTED,.stt.CREATED,.stt.CANCEL{color:var(--warn)} .stt.PARTIALLY{color:var(--gold)}
 .pct.up{color:var(--buy)} .pct.dn{color:var(--sell)}
 /* quote strip inside the chart panel */
-.qs{display:flex;gap:10px;align-items:center;padding:2px 8px;font-family:var(--mono);font-size:12px;white-space:nowrap;overflow:hidden;background:#0f141c;border-bottom:1px solid var(--line);flex:0 0 auto;height:22px}
+.qs{display:flex;gap:10px;align-items:center;padding:2px 8px;font-family:var(--mono);font-size:12px;white-space:nowrap;overflow:hidden;background:#121315;border-bottom:1px solid var(--line);flex:0 0 auto;height:22px}
 .qs .sym{font-weight:800;color:var(--gold);font-size:13px} .qs .dim{font-size:11px}
 /* status bar */
-#status{display:flex;align-items:center;gap:14px;padding:0 10px;background:#0b0f15;border-top:1px solid var(--line);font-family:var(--mono);font-size:11px;color:var(--dim);white-space:nowrap;overflow:hidden}
+#status{display:flex;align-items:center;gap:14px;padding:0 10px;background:#0e0f11;border-top:1px solid var(--line);font-family:var(--mono);font-size:11px;color:var(--dim);white-space:nowrap;overflow:hidden}
 #status b{color:var(--text)} #status .spacer{flex:1}
 /* PS60 panel */
 .ps60p{padding:6px 10px;font-size:12px} .ps60p .hl{font-size:13px;font-weight:600;margin-bottom:4px}
-.ps60p ul{margin:2px 0 6px 16px;padding:0;color:#c4cddb} .ps60p li{margin:1px 0}
+.ps60p ul{margin:2px 0 6px 16px;padding:0;color:#b8b8b4} .ps60p li{margin:1px 0}
 .ps60p .kv{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;font-family:var(--mono);font-size:11.5px;margin:4px 0}
 .ps60p .kv span:nth-child(odd){color:var(--dim);letter-spacing:.06em;font-size:10px}
 .reloads{display:grid;gap:4px;padding:6px 10px}
@@ -392,10 +394,10 @@ html,body{height:100%} body{overflow:hidden;font-size:12px}
 .rl .k{color:var(--dim);font-size:10px;letter-spacing:.06em} .rl .v{font-size:12px;color:var(--text)}
 /* menus */
 .menu .pop{min-width:200px}
-.pop .row{display:flex;gap:6px;align-items:center;padding:2px 0} .pop input{font:inherit;font-size:11px;background:#05070b;color:var(--text);border:1px solid var(--line);border-radius:3px;padding:2px 5px}
+.pop .row{display:flex;gap:6px;align-items:center;padding:2px 0} .pop input{font:inherit;font-size:11px;background:#0a0a0b;color:var(--text);border:1px solid var(--line);border-radius:3px;padding:2px 5px}
 .pop button{font-size:11px;padding:1px 6px;border-radius:3px}
 /* hotkeys */
-.hk{width:100%;border-collapse:collapse;font-size:12px} .hk td{padding:3px 6px;border-bottom:1px solid #131923} .hk td.k{font-family:var(--mono);color:var(--gold);width:120px}
+.hk{width:100%;border-collapse:collapse;font-size:12px} .hk td{padding:3px 6px;border-bottom:1px solid #1c1d20} .hk td.k{font-family:var(--mono);color:var(--gold);width:120px}
 .hk td.k.cap{outline:1px solid var(--gold)} .hk .danger{color:var(--sell);font-size:10px}
 .ladder-wrap{border:0;border-radius:0;height:100%}
 .lad{font-size:11.5px} .lad td{height:18px}
@@ -404,48 +406,130 @@ html,body{height:100%} body{overflow:hidden;font-size:12px}
 .toast{border-radius:3px}
 .pane .chart-hint{display:none}
 .dz{position:absolute;inset:0;z-index:5;pointer-events:none}
-.wlrow{display:grid;grid-template-columns:1fr auto auto;gap:6px;padding:3px 8px;font-family:var(--mono);font-size:11.5px;cursor:pointer;border-bottom:1px solid #131923;align-items:center}
-.wlrow:hover{background:#141b26} .wlrow.cur{background:#1a2230;box-shadow:inset 3px 0 0 var(--gold)}
+.wlrow{display:grid;grid-template-columns:1fr auto auto;gap:6px;padding:3px 8px;font-family:var(--mono);font-size:11.5px;cursor:pointer;border-bottom:1px solid #1c1d20;align-items:center}
+.wlrow:hover{background:#1a1b1e} .wlrow.cur{background:#1f2024;box-shadow:inset 3px 0 0 var(--gold)}
 .wlrow .g{font-size:9.5px;font-weight:700;padding:0 5px;border-radius:2px}
-.wlrow .g.READY{background:#163a28;color:var(--buy)} .wlrow .g.WATCH{background:#3a3016;color:var(--gold)} .wlrow .g.PASS{background:#3a1a1e;color:var(--sell)}
+.wlrow .g.READY{background:#173b28;color:var(--buy)} .wlrow .g.WATCH{background:#3a3016;color:var(--gold)} .wlrow .g.PASS{background:#3d1c1c;color:var(--sell)}
 .wlrow .w{grid-column:1/4;font-size:10px;color:var(--dim);font-family:system-ui;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
 /* PLAY SETUP: the trader's inputs; everything else derives from them */
 .setup .hdr{grid-column:1/3;display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--dim);letter-spacing:.06em}
 .setup .hdr b{color:var(--gold);font-size:13px;letter-spacing:0}
 .setup input.bad{border-color:var(--sell)}
-.setup .derived{grid-column:1/3;display:grid;grid-template-columns:auto 1fr;gap:2px 10px;font-family:var(--mono);font-size:11.5px;background:#0a0e15;border:1px solid var(--line);border-radius:3px;padding:5px 8px;margin-top:2px}
+.setup .derived{grid-column:1/3;display:grid;grid-template-columns:auto 1fr;gap:2px 10px;font-family:var(--mono);font-size:11.5px;background:#0e0f11;border:1px solid var(--line);border-radius:3px;padding:5px 8px;margin-top:2px}
 .setup .derived span:nth-child(odd){color:var(--dim);letter-spacing:.06em;font-size:10px}
 .setup .derived .ok{color:var(--buy)} .setup .derived .no{color:var(--sell)} .setup .derived .gold{color:var(--gold)}
-.setup .go button.save{flex:1;font-weight:800;letter-spacing:.1em;padding:6px 0;border-radius:3px;background:#2a2410;border-color:var(--gold);color:#ffeeb0}
+.setup .go button.save{flex:1;font-weight:800;letter-spacing:.1em;padding:6px 0;border-radius:3px;background:#3a2e12;border-color:var(--gold);color:#f2d59a}
 .setup .go button.save:disabled{opacity:.35}
 .setup .msg{grid-column:1/3;font-size:11px;min-height:14px}
 .ticket .risk{display:flex;gap:4px;align-items:center;font-size:11px} .ticket .risk input{width:70px;flex:none} .ticket .risk .out{color:var(--gold);font-family:var(--mono)}
+
+/* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
+:root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
+  --buy:#3fb56f;--sell:#d9534f;--gold:#e3a83a;--cyan:#5aa9d6;--violet:#a48bd6;--warn:#d9a441;
+  --sans:"IBM Plex Sans","Segoe UI",system-ui,sans-serif;--mono:"IBM Plex Mono","Cascadia Mono",Consolas,"SFMono-Regular",Menlo,monospace}
+body{font-family:var(--sans);font-size:12px;letter-spacing:.01em}
+button{border-radius:2px;background:#1a1b1e;border:1px solid #2c2e33;color:#c9c9c6;font:500 10.5px/1.3 var(--sans);letter-spacing:.06em;text-transform:uppercase;padding:3px 8px}
+button:hover{background:#222327;border-color:#3a3c42;color:#e6e6e3} button.on{background:#232323;border-color:var(--gold);color:var(--gold)}
+button.danger{border-color:#5a2a28;color:#e08a86} button.danger:hover{background:#3d1c1c}
+input,select,textarea{font-family:var(--mono);border-radius:2px}
+input:focus,select:focus,textarea:focus{outline:1px solid var(--gold);outline-offset:-1px}
+.pill{border-radius:2px}
+.menu .pop{border-radius:2px;box-shadow:0 10px 24px rgba(0,0,0,.55);padding:8px 10px}
+.pop h5{font-family:var(--sans);text-transform:uppercase;letter-spacing:.12em;color:#8e9096}
+#toasts{right:12px;bottom:32px} .toast{border-radius:0;background:#1a1b1e;border:1px solid #2c2e33;border-left:3px solid var(--buy);font:12px var(--sans);box-shadow:0 6px 18px rgba(0,0,0,.5)}
+#modal .box{border-radius:2px;background:#131416;border:1px solid #2c2e33} #modal h2{font-size:18px;letter-spacing:.02em}
+.led{width:6px;height:6px;border-radius:0;transform:rotate(45deg)} .led.ok{box-shadow:none}
+#cmd{height:34px;background:#0e0f11;border-bottom:1px solid #202124;gap:5px;padding:0 10px}
+#brand{display:inline-flex;align-items:center;gap:7px;font:600 11px var(--sans);letter-spacing:.18em;color:#9a9ba0;margin-right:8px}
+#brand b{color:#d6d6d3;font-weight:600} #brand i{display:inline-block;width:8px;height:8px;background:var(--gold)}
+#symIn{width:110px;height:24px;font:600 13px var(--mono);letter-spacing:.12em;background:#0a0a0b;color:var(--gold);border:1px solid #33342f;border-radius:2px}
+#symIn::placeholder{color:#55575d;font:500 10px var(--sans);letter-spacing:.14em}
+#symHist{border-radius:2px;font:500 9.5px var(--sans);letter-spacing:.08em;max-width:64px;height:24px;background:#0a0a0b;border-color:#2c2e33;color:#8e9096}
+#cmd .sep{background:#26282c;height:16px}
+#cmd label{font:500 10.5px var(--sans);letter-spacing:.06em;text-transform:uppercase;color:#8e9096}
+#cmd input[type=checkbox]{accent-color:var(--gold);width:12px;height:12px}
+#cmd input[type=range]{accent-color:var(--gold)}
+#armBtn{font-weight:700;letter-spacing:.14em;padding:3px 12px} #armBtn.off{color:#8e9096;border-color:#2c2e33}
+#armBtn.armed{background:#173b28;border-color:var(--buy);color:#dff5e8} #armBtn.locked{background:#3d1c1c;border-color:var(--sell);color:#fff}
+#recBtn.on{background:#3d1c1c;border-color:var(--sell);color:#fff}
+#wsbar{background:#101113;border-bottom:1px solid #202124;height:26px}
+.stab{font:600 11.5px var(--mono);letter-spacing:.1em;border-radius:0;height:26px;padding:0 12px;border:0;border-bottom:2px solid transparent;color:#8e9096}
+.stab.on{background:transparent;color:#e6e6e3;border-bottom-color:var(--gold)}
+.stab .v{font:600 8.5px var(--sans);letter-spacing:.12em;color:var(--gold);opacity:1;border:1px solid #4a3a18;padding:0 4px;border-radius:2px}
+#wsbar .add{border-radius:2px;padding:0 8px;height:20px;font-size:13px;line-height:1}
+#wsbar .right .dim{font:500 10px var(--sans);letter-spacing:.14em;color:#6e7076}
+#wsbar select{font:500 10.5px var(--sans);letter-spacing:.04em;background:#0a0a0b;color:#c9c9c6;border:1px solid #2c2e33;border-radius:2px;height:20px}
+#work{background:#09090a}
+.zone{background:#131416;border:1px solid #202124;margin:1px}
+.zone.drop{outline:1px solid var(--gold)}
+.ztabs{background:#0f1012;border-bottom:1px solid #202124;height:22px}
+.ztab{font:500 10px var(--sans);letter-spacing:.12em;text-transform:uppercase;color:#7d7f85;border-right:1px solid #202124;padding:0 10px}
+.ztab.on{background:#131416;color:#d6d6d3;font-weight:600;box-shadow:inset 0 2px 0 var(--gold)}
+.ztab .sym{color:var(--gold);font:600 10.5px var(--mono);letter-spacing:.06em}
+.ztab .ctl span{font-size:11px;color:#5b5d63} .ztab .ctl span:hover{color:#e6e6e3}
+.gut:hover{background:rgba(227,168,58,.3)}
+.float{border:1px solid #3a3c42;box-shadow:0 14px 40px rgba(0,0,0,.65)} .float .ztabs{box-shadow:inset 0 1px 0 var(--gold)}
+.qs{background:#0f1012;border-bottom:1px solid #202124;font:12px var(--mono);height:22px}
+.qs .sym{color:var(--gold);font-weight:600;letter-spacing:.06em}
+#status{background:#0e0f11;border-top:1px solid #202124;font:500 10.5px var(--sans);letter-spacing:.08em;text-transform:uppercase;color:#6e7076}
+#status b{color:#c9c9c6;font-weight:600;font-family:var(--mono);letter-spacing:.02em;text-transform:none}
+.grid{font:11.5px var(--mono)} .grid th{background:#0f1012;border-bottom:1px solid #26282c;font:500 9.5px var(--sans);letter-spacing:.12em;text-transform:uppercase;color:#7d7f85}
+.grid td{border-bottom:1px solid #1c1d20} .grid tr.sel td{background:#1f2024} .grid tr:hover td{background:#1a1b1e}
+.stt{border-radius:0;background:#1f2024;font:600 9.5px var(--sans);letter-spacing:.08em}
+.ticket label,.setup label{font:500 9.5px var(--sans);letter-spacing:.14em;text-transform:uppercase;color:#7d7f85}
+.ticket input,.ticket select{background:#0a0a0b;border:1px solid #26282c;border-radius:2px;font:12px var(--mono);height:24px}
+.ticket .sides button{border-radius:2px;font:700 12px var(--sans);letter-spacing:.16em;opacity:.45;height:28px}
+.ticket .sides button.on{opacity:1} .ticket .sides .b.on{background:#173b28;border-color:var(--buy);color:#dff5e8} .ticket .sides .s.on{background:#3d1c1c;border-color:var(--sell);color:#f5dede}
+.ticket .go button.tx{border-radius:2px;font:700 12.5px var(--sans);letter-spacing:.18em;height:32px}
+.ticket .go button.tx.b{background:#173b28;border-color:var(--buy);color:#dff5e8} .ticket .go button.tx.s{background:#3d1c1c;border-color:var(--sell);color:#f5dede}
+.ticket .st{border-top:1px solid #202124;font:10.5px var(--mono);color:#7d7f85}
+.ticket .opts{font:500 10px var(--sans);letter-spacing:.06em;text-transform:uppercase;color:#7d7f85} .ticket .opts input{accent-color:var(--gold)}
+.ticket .risk .out{color:var(--gold);font:11px var(--mono)}
+.setup .hdr{font:500 10px var(--sans);letter-spacing:.14em;text-transform:uppercase;color:#7d7f85} .setup .hdr b{color:var(--gold);font:600 12.5px var(--mono);letter-spacing:.08em}
+.setup .derived{background:#0e0f11;border:1px solid #202124;border-radius:0;font:11.5px var(--mono)}
+.setup .derived span:nth-child(odd){font:500 9.5px var(--sans);letter-spacing:.12em;text-transform:uppercase;color:#7d7f85}
+.setup .go button.save{border-radius:2px;background:#2a2412;border-color:var(--gold);color:#f2d59a;font:700 12px var(--sans);letter-spacing:.16em;height:30px}
+.setup .msg{font:500 10.5px var(--sans);letter-spacing:.04em}
+.ps60p{font-family:var(--sans)} .ps60p .hl{font:500 13px/1.35 var(--sans);color:#e6e6e3}
+.ps60p .kv{font:11.5px var(--mono)} .ps60p .kv span:nth-child(odd){font:500 9.5px var(--sans);letter-spacing:.12em;text-transform:uppercase}
+.ps60p ul{color:#b8b8b4}
+.rl{background:#1a1b1e;border-left-width:3px;font-family:var(--mono)} .rl .t{font:700 11px var(--sans);letter-spacing:.14em} .rl .k{font:500 9.5px var(--sans);letter-spacing:.12em}
+.wlrow{font:11.5px var(--mono);border-bottom:1px solid #1c1d20} .wlrow:hover{background:#1a1b1e} .wlrow.cur{background:#1f2024;box-shadow:inset 2px 0 0 var(--gold)}
+.wlrow .g{border-radius:0;font:600 9px var(--sans);letter-spacing:.1em} .wlrow .w{font:10px var(--sans);color:#7d7f85}
+.hk td.k{color:var(--gold);font-family:var(--mono)}
+.chart-tools button,.chart-tools select{border-radius:2px;font:500 10px var(--sans);letter-spacing:.08em;text-transform:uppercase;background:rgba(19,20,22,.92);border:1px solid #2c2e33;color:#a9aaaf}
+.chart-tools button.on{color:var(--gold);border-color:#4a3a18}
+.chart-tools .dim{font:500 9.5px var(--sans);letter-spacing:.1em;color:#7d7f85}
+::-webkit-scrollbar{width:8px;height:8px} ::-webkit-scrollbar-thumb{background:#2c2e33;border:2px solid #131416} ::-webkit-scrollbar-track{background:transparent}
+.gate{display:inline-block;width:7px;height:7px;margin:0 2px;background:#3d1c1c;border:1px solid var(--sell)} .gate.ok{background:#173b28;border-color:var(--buy)}
+.lad tr.lastpx td.px::before{content:none} .lad tr.lastpx td.px{border-radius:0;font-weight:600} .lad tr.lastpx td{background:rgba(227,168,58,.08)}
+.lad td{white-space:nowrap;overflow:hidden;text-overflow:clip} .lad .who{font:600 9px var(--sans);letter-spacing:.08em;border-radius:0}
 
 </style>
 </head>
 <body>
 <div id="app">
 <div id="cmd">
-  <span id="brand">PS60 EXECUTION DESK</span>
-  <span id="symbox"><input id="symIn" placeholder="symbol ⏎  (Ctrl+L)" autocomplete="off" spellcheck="false"><select id="symHist" title="recent symbols"><option value="">▾</option></select></span>
+  <span id="brand"><i></i>PS60 <b>EXECUTION DESK</b></span>
+  <span id="symbox"><input id="symIn" placeholder="SYMBOL" autocomplete="off" spellcheck="false"><select id="symHist" title="recent symbols"><option value="">RECENT</option></select></span>
   <span class="sep"></span>
   <button id="armBtn" class="off" title="Arm order entry. Disarmed at every launch.">ARM</button>
   <label title="Skip the confirmation box on every order"><input type="checkbox" id="oneclick"> one-click</label>
   <label title="Attach the play's stop and target to every entry"><input type="checkbox" id="bracket"> stop+target</label>
   <label title="PS60 exits: cash-flow scale-outs, runner to target, stop to breakeven after the first cash flow"><input type="checkbox" id="scale"> PS60 exits</label>
   <span class="sep"></span>
-  <button id="recBtn" title="Record this session (space)">● REC</button>
-  <button id="markBtn" title="Marker (M)">⚑</button>
-  <button id="shotBtn" title="Screenshot (P)">📷</button>
+  <button id="recBtn" title="Record this session (space)">REC</button>
+  <button id="markBtn" title="Marker (M)">MARK</button>
+  <button id="shotBtn" title="Screenshot (P)">SNAP</button>
   <span class="sep"></span>
-  <button id="voiceBtn" title="Voice: reload buyer / seller calls for the ACTIVE tab only">VOICE: ON</button>
+  <button id="voiceBtn" title="Voice: reload buyer / seller calls for the ACTIVE tab only">VOICE ON</button>
   <input type="range" id="voiceVol" min="0" max="1" step="0.1" style="width:60px" title="voice volume">
-  <button id="soundBtn" title="beep on calls (active tab)">🔊</button>
+  <button id="soundBtn" title="beep on calls (active tab)">BEEP</button>
   <span class="spacer"></span>
-  <span class="menu" id="panelsMenu"><button>Panels ▾</button><div class="pop" id="panelsPop"></div></span>
+  <span class="menu" id="panelsMenu"><button>PANELS</button><div class="pop" id="panelsPop"></div></span>
   <span class="menu" id="hkMenu"><button>Hotkeys</button><div class="pop" id="hkPop"></div></span>
-  <button id="rotate" title="Auto-rotate the other ladders to the plays closest to their pivots">⟳ ON</button>
+  <button id="rotate" title="Auto-rotate the other ladders to the plays closest to their pivots">ROTATE ON</button>
 </div>
 <div id="wsbar">
   <span id="symTabs"></span>
@@ -453,7 +537,7 @@ html,body{height:100%} body{overflow:hidden;font-size:12px}
   <span class="right">
     <span class="dim" style="font-size:10.5px;letter-spacing:.06em">LAYOUT</span>
     <select id="layoutSel" title="saved layouts"></select>
-    <span class="menu" id="layoutMenu"><button>▾</button><div class="pop" id="layoutPop"></div></span>
+    <span class="menu" id="layoutMenu"><button>MENU</button><div class="pop" id="layoutPop"></div></span>
   </span>
 </div>
 <div id="work">
@@ -462,13 +546,16 @@ html,body{height:100%} body{overflow:hidden;font-size:12px}
   <div class="zone" data-zone="TC"><div class="ztabs"></div><div class="zbody"></div></div>
   <div class="gut v" id="g2" data-gut="c3"></div>
   <div class="zone" data-zone="TR"><div class="ztabs"></div><div class="zbody"></div></div>
+  <div class="gut v" id="g3" data-gut="c4"></div>
+  <div class="zone" data-zone="TX"><div class="ztabs"></div><div class="zbody"></div></div>
   <div class="gut h" id="gr" data-gut="r2"></div>
   <div class="zone" data-zone="BL"><div class="ztabs"></div><div class="zbody"></div></div>
   <div class="zone" data-zone="BC"><div class="ztabs"></div><div class="zbody"></div></div>
   <div class="zone" data-zone="BR"><div class="ztabs"></div><div class="zbody"></div></div>
+  <div class="zone" data-zone="BX"><div class="ztabs"></div><div class="zbody"></div></div>
 </div>
 <div id="status">
-  <span id="stConn"><span class="led"></span>IBKR <b>…</b></span>
+  <span id="stConn"><span class="led"></span>FEED <b>…</b></span>
   <span id="stData">DATA <b>—</b></span>
   <span id="stOrders"><span class="led"></span>ORDERS <b>—</b></span>
   <span id="stLadders">LADDERS <b>—</b></span>
@@ -480,14 +567,14 @@ html,body{height:100%} body{overflow:hidden;font-size:12px}
 </div>
 <div id="replaybar">
   <b>REPLAY</b> <span id="rpFile" class="dim"></span>
-  <button id="rpPlay">⏸ Pause</button>
+  <button id="rpPlay">PAUSE</button>
   <span class="dim">speed</span><input type="range" id="rpSpeed" min="1" max="50" step="1"><span id="rpSpeedV" class="mono"></span>
   <span id="rpPos" class="mono dim"></span>
 </div>
 <div id="toasts"></div>
 <template id="tplPanels">
   <div class="pnl" data-p="chart"><div class="qs"></div><div class="pc nos"><div class="chart-wrap"><div class="chart-tools"></div><canvas></canvas></div></div></div>
-  <div class="pnl" data-p="foot"><div class="pc nos"><div class="chart-wrap"><div class="chart-tools"><span class="dim" style="font-size:10.5px;background:rgba(17,22,31,.85);padding:1px 6px">5-minute footprint · sold into bid × bought at ask · fills from live prints</span></div><canvas></canvas></div></div></div>
+  <div class="pnl" data-p="foot"><div class="pc nos"><div class="chart-wrap"><div class="chart-tools"><span class="dim" style="font-size:10.5px;background:rgba(17,22,31,.85);padding:1px 6px">5m FOOTPRINT · SOLD AT BID × BOUGHT AT ASK</span></div><canvas></canvas></div></div></div>
   <div class="pnl" data-p="book"><div class="pc"><div class="ladder-wrap"></div></div></div>
   <div class="pnl" data-p="tape"><div class="pc"><div class="p-tape"></div></div></div>
   <div class="pnl" data-p="setup"><div class="pc"></div></div>
@@ -499,7 +586,7 @@ html,body{height:100%} body{overflow:hidden;font-size:12px}
   <div class="pnl" data-p="watch"><div class="pc"></div></div>
   <div class="pnl" data-p="calls"><div class="pc" style="padding:6px"><div id="feedBody"></div></div></div>
   <div class="pnl" data-p="desk"><div class="pc"><div id="deskBody"></div></div></div>
-  <div class="pnl" data-p="journal"><div class="pc"><div id="journalBody"><div class="jform"><input id="jText" placeholder="note + Enter (J)"><button id="jAdd">add</button></div><div id="jList"></div></div></div></div>
+  <div class="pnl" data-p="journal"><div class="pc"><div id="journalBody"><div class="jform"><input id="jText" placeholder="journal note · Enter"><button id="jAdd">add</button></div><div id="jList"></div></div></div></div>
   <div class="pnl" data-p="messages"><div class="pc" style="padding:6px"><div id="messages"></div></div></div>
 </template>
 
@@ -574,7 +661,7 @@ async function sendOrder(symbol, action, price, qty){
     } else if (pl.target && (action === "BUY" ? pl.target > price : pl.target < price)) legs.push("target " + px(pl.target));
   }
   const g = pane && pane.ps60;
-  const warn = g && g.grade === "PASS" ? ` ⚠ PS60 says PASS: ${g.why}.` : g && g.grade === "WATCH" ? ` · PS60: WATCH — ${g.why}.` : "";
+  const warn = g && g.grade === "PASS" ? ` · PS60 PASS: ${g.why}.` : g && g.grade === "WATCH" ? ` · PS60 WATCH: ${g.why}.` : "";
   confirmBox(`${action} ${sz(qty)} ${symbol} @ ${px(price)}`, `about $${sz(Math.round(qty * price))}` + (legs.length ? " · with " + legs.join(" + ") : " · no stop/target attached") + warn,
     action === "BUY" ? "b" : "s", go);
 }
@@ -637,16 +724,16 @@ const PANELS = {
   ticket: "ORDER ENTRY", positions: "POSITIONS", orders: "ORDERS", watch: "WATCHLIST", calls: "CALLS",
   desk: "DESK", journal: "JOURNAL", messages: "MESSAGES"};
 const SYMBOL_LINKED = new Set(["chart", "foot", "book", "tape", "ps60", "reload", "ticket", "calls", "setup"]);
-const ZONES = ["TL", "TC", "TR", "BL", "BC", "BR"];
+const ZONES = ["TL", "TC", "TR", "TX", "BL", "BC", "BR", "BX"];   // four columns × two rows; a column with one zone runs full height
 const PRESETS = {
-  "PS60 Execution": {zones: {TL: ["watch"], TC: ["chart"], TR: ["book", "tape"], BL: ["positions", "orders"], BC: ["setup", "ps60", "reload", "calls"], BR: ["ticket"]},
-    active: {TR: "book", BL: "positions", BC: "setup"}, sizes: {c1: 200, c3: 420, r2: 250}},
+  "PS60 Execution": {zones: {TL: ["watch"], TC: ["chart"], TR: ["book"], TX: ["tape"], BL: ["positions", "orders"], BC: ["setup", "ps60", "reload", "calls"], BR: ["ticket"]},
+    active: {BL: "positions", BC: "setup"}, sizes: {c1: 200, c3: 330, c4: 290, r2: 250}},
   "Scalping": {zones: {TL: ["ticket", "setup"], TC: ["book"], TR: ["tape"], BL: ["positions"], BC: ["chart"], BR: ["orders", "reload"]},
     active: {BR: "reload"}, sizes: {c1: 300, c3: 320, r2: 300}},
   "Tape Focus": {zones: {TL: ["book"], TC: ["tape"], TR: ["reload", "ps60", "setup"], BL: ["ticket"], BC: ["chart"], BR: ["positions", "orders"]},
     active: {TR: "reload"}, sizes: {c1: 380, c3: 380, r2: 260}},
-  "Chart Focus": {zones: {TL: [], TC: ["chart"], TR: ["book", "tape", "ticket"], BL: [], BC: ["foot"], BR: ["setup", "ps60", "reload", "positions", "orders"]},
-    active: {TR: "ticket", BR: "setup"}, sizes: {c1: 0, c3: 400, r2: 220}},
+  "Chart Focus": {zones: {TL: [], TC: ["chart"], TR: ["book"], TX: ["tape"], BL: [], BC: ["foot"], BR: ["ticket"], BX: ["setup", "ps60", "reload", "positions", "orders"]},
+    active: {BX: "setup"}, sizes: {c1: 0, c3: 330, c4: 300, r2: 220}},
   "Laptop": {zones: {TL: [], TC: ["chart", "foot", "ps60"], TR: ["book", "tape", "ticket", "reload"], BL: [], BC: ["positions", "orders", "calls", "watch", "desk", "journal", "messages"], BR: []},
     active: {}, sizes: {c1: 0, c3: 360, r2: 180}},
 };
@@ -811,7 +898,7 @@ function ps60HTML(d){
   const mp = s.mp, se = s.se;
   const mpTxt = mp.dollars == null ? "no MP yet — put \"mp\" and \"atr\" on this play in plays.json" :
     `MP $${mp.dollars.toFixed(2)}` + (mp.atr ? ` · ATR $${mp.atr.toFixed(2)} · ${mp.ratio}× → <b>${mp.verdict}</b>` : " · no ATR yet — put \"atr\" on this play");
-  const gates = (s.gates || []).map(g => `<span title="${esc(g.q + " " + g.why)}">${g.ok ? "✅" : "❌"}</span>`).join("");
+  const gates = (s.gates || []).map(g => `<span title="${esc(g.q + " " + g.why)}"><i class="gate ${g.ok ? "ok" : "no"}"></i></span>`).join("");
   const canSet = se.extreme && ["BROKE", "RETRACE"].includes(se.state) && Math.abs((d.play.second_entry || 0) - se.extreme) > 1e-6;
   const sneaky = (s.sneaky || []).map(x => `<span class="dim" title="${esc(x.text)}">${esc(x.label)} ${px(x.price)} ×${x.touches} · room $${x.room.toFixed(2)}</span>`).join("");
   return `<span class="g ${s.grade}" title="${esc(s.why)}">${s.grade}</span><span class="dim">${esc(s.why)}</span>
@@ -899,8 +986,8 @@ function aggBars(bars, tf){
   return out;
 }
 
-const LEVEL_STYLE = {trigger:["#dbe3ee",[],1.6], second_entry:["#3fd0ff",[6,4],1.6], extra:["#b9c3d3",[3,4],1.2],
-  target:["#26d07c",[2,4],1], stop:["#ff4d5e",[2,4],1]};
+const LEVEL_STYLE = {trigger:["#d6d6d3",[],1.6], second_entry:["#5aa9d6",[6,4],1.6], extra:["#b0b0ad",[3,4],1.2],
+  target:["#3fb56f",[2,4],1], stop:["#d9534f",[2,4],1]};
 
 function drawOne(p, cv, v, isFoot){
   const d = p.data;
@@ -928,7 +1015,7 @@ function drawOne(p, cv, v, isFoot){
   v.chartH = plotH;
   g.font = "11px ui-monospace, Menlo, Consolas, monospace";
   if (!bars.length){
-    g.fillStyle = "#7b889e"; g.fillText("Chart builds as trades come in…", 12, 40);
+    g.fillStyle = "#7d7f85"; g.fillText("NO BARS YET", 12, 40);
   }
   // y range: bars plus your pivot / 2nd entry / levels so they are always on screen
   let lo = Infinity, hi = -Infinity;
@@ -962,30 +1049,30 @@ function drawOne(p, cv, v, isFoot){
   const xOf = t0 => x0 + ((t0 - (bars.length ? bars[0][0] : 0)) / span) * cw + cw / 2;
 
   // grid + a real price scale on the right, at round prices, lined up with the candles
-  g.strokeStyle = "#1b2433"; g.lineWidth = 1;
+  g.strokeStyle = "#1f2023"; g.lineWidth = 1;
   // footprint rows: 1, 2, 5, 10… ticks per row, whatever keeps a row at least 11px tall
   const ftk = lo >= 1 ? 0.01 : 0.0001, fpx = Math.abs(y(lo) - y(lo + ftk));
   const fmult = [1, 2, 5, 10, 25, 50, 100].find(m => fpx * m >= 11) || 100, fstep = ftk * fmult;
   if (isFoot){
-    g.fillStyle = "#9aa7bb"; g.font = "10px ui-monospace, Menlo, Consolas, monospace";
+    g.fillStyle = "#8e9096"; g.font = "10px ui-monospace, Menlo, Consolas, monospace";
     for (let pr = Math.floor(lo / fstep) * fstep; pr <= hi; pr += fstep){
       const yy = y(pr + fstep / 2), yb = y(pr);
-      g.strokeStyle = "#1b2433"; g.beginPath(); g.moveTo(0, yb); g.lineTo(plotW, yb); g.stroke();
+      g.strokeStyle = "#1f2023"; g.beginPath(); g.moveTo(0, yb); g.lineTo(plotW, yb); g.stroke();
       if (fpx * fmult >= 11) g.fillText(px(pr), plotW + 4, yy + 4);
     }
     g.font = "11px ui-monospace, Menlo, Consolas, monospace";
-    g.strokeStyle = "#2a3548"; g.beginPath(); g.moveTo(plotW + .5, 0); g.lineTo(plotW + .5, plotH); g.stroke();
+    g.strokeStyle = "#2c2e33"; g.beginPath(); g.moveTo(plotW + .5, 0); g.lineTo(plotW + .5, plotH); g.stroke();
   } else {
     const raw = (hi - lo) / Math.max(3, Math.floor((plotH - 8) / 34));
     const mag = Math.pow(10, Math.floor(Math.log10(raw))), m = raw / mag;
     const step = (m <= 1 ? 1 : m <= 2 ? 2 : m <= 2.5 ? 2.5 : m <= 5 ? 5 : 10) * mag;
-    g.fillStyle = "#7b889e";
+    g.fillStyle = "#7d7f85";
     for (let pr = Math.ceil(lo / step) * step; pr <= hi; pr += step){
       const yy = y(pr);
       g.beginPath(); g.moveTo(0, yy); g.lineTo(plotW, yy); g.stroke();
       g.fillText(px(pr), plotW + 4, yy + 4);
     }
-    g.strokeStyle = "#2a3548"; g.beginPath(); g.moveTo(plotW + .5, 0); g.lineTo(plotW + .5, plotH); g.stroke();
+    g.strokeStyle = "#2c2e33"; g.beginPath(); g.moveTo(plotW + .5, 0); g.lineTo(plotW + .5, plotH); g.stroke();
   }
 
   // your levels: band + line + label
@@ -1000,7 +1087,7 @@ function drawOne(p, cv, v, isFoot){
     g.strokeStyle = col; g.lineWidth = lw; g.setLineDash(dash);
     g.beginPath(); g.moveTo(0, yy); g.lineTo(plotW, yy); g.stroke(); g.setLineDash([]);
     g.fillStyle = col; g.fillRect(plotW, yy - 8, labelW, 16);
-    g.fillStyle = "#0a0d12"; g.fillText(`${l.label} ${px(lp)}`.slice(0, 13), plotW + 3, yy + 4);
+    g.fillStyle = "#0c0c0d"; g.fillText(`${l.label} ${px(lp)}`.slice(0, 13), plotW + 3, yy + 4);
   }
 
   const clean = isFoot || store.get("clean", true);
@@ -1009,15 +1096,15 @@ function drawOne(p, cv, v, isFoot){
     const se = d.ps60.se;
     if (se.extreme && ["BROKE", "RETRACE", "SECOND_ENTRY"].includes(se.state) && se.extreme >= lo && se.extreme <= hi){
       const yy = y(se.extreme);
-      g.strokeStyle = "#3fd0ff"; g.lineWidth = 1; g.setLineDash([2, 3]);
+      g.strokeStyle = "#5aa9d6"; g.lineWidth = 1; g.setLineDash([2, 3]);
       g.beginPath(); g.moveTo(0, yy); g.lineTo(plotW, yy); g.stroke(); g.setLineDash([]);
-      g.fillStyle = "#3fd0ff"; g.font = "bold 10px system-ui";
-      g.fillText(se.state === "SECOND_ENTRY" ? "2ND ENTRY ✓ " + px(se.extreme) : "2ND ENTRY = through " + px(se.extreme), 6, yy - 4);
+      g.fillStyle = "#5aa9d6"; g.font = "bold 10px system-ui";
+      g.fillText(se.state === "SECOND_ENTRY" ? "2ND ENTRY IN " + px(se.extreme) : "2ND ENTRY = through " + px(se.extreme), 6, yy - 4);
       g.font = "11px ui-monospace, Menlo, Consolas, monospace";
     }
     for (const sp of d.ps60.sneaky || []){
       if (sp.price < lo || sp.price > hi) continue;
-      const yy = y(sp.price), col = sp.kind === "supply" ? "#ff9f43" : "#7bed9f";
+      const yy = y(sp.price), col = sp.kind === "supply" ? "#d58a3a" : "#6fcf97";
       g.strokeStyle = col; g.lineWidth = 1.2; g.setLineDash([8, 4]);
       g.beginPath(); g.moveTo(0, yy); g.lineTo(plotW, yy); g.stroke(); g.setLineDash([]);
       g.fillStyle = col; g.font = "bold 10px system-ui";
@@ -1040,7 +1127,7 @@ function drawOne(p, cv, v, isFoot){
   if (d.reloaders && !clean){
     for (const r of [...d.reloaders.below, ...d.reloaders.above]){
       if (r.price < lo || r.price > hi) continue;
-      const yy = y(r.price), col = r.side === "bid" ? "#26d07c" : "#ff4d5e";
+      const yy = y(r.price), col = r.side === "bid" ? "#3fb56f" : "#d9534f";
       g.fillStyle = col; g.globalAlpha = r.kind === "confirmed" ? 1 : .45;
       g.fillRect(0, yy - 3, 5, 6);
       g.fillText((r.side === "bid" ? "B" : "S") + "×" + r.refills, 8, yy + 4);
@@ -1051,7 +1138,7 @@ function drawOne(p, cv, v, isFoot){
   const foot = (isFoot || store.get("foot." + p.id, false)) && (d.footprint || []).length;
   for (let k = 0; k < bars.length; k++){
     const b = bars[k], x = x0 + k * cw + cw / 2, up = b[4] >= b[1];
-    g.strokeStyle = g.fillStyle = up ? "#26d07c" : "#ff4d5e";
+    g.strokeStyle = g.fillStyle = up ? "#3fb56f" : "#d9534f";
     g.beginPath(); g.moveTo(x, y(b[2])); g.lineTo(x, y(b[3])); g.stroke();
     const top = y(Math.max(b[1], b[4])), bh = Math.max(1, Math.abs(y(b[1]) - y(b[4])));
     if (foot){ g.lineWidth = 1; g.strokeRect(x - cw * 0.45, top, cw * 0.9, bh); }
@@ -1082,7 +1169,7 @@ function drawOne(p, cv, v, isFoot){
         const bg = buy >= 3 * sell && buy >= 300 ? "rgba(38,208,124,.42)" : sell >= 3 * buy && sell >= 300 ? "rgba(255,77,94,.42)" : "rgba(123,136,158,.18)";
         g.fillStyle = bg; g.fillRect(x - cw * 0.47, yy - h / 2, cw * 0.94, h);
         const f0 = n => n ? kfmt(n) : "0";
-        if (showText){ g.fillStyle = "#e8eef8"; g.fillText(`${f0(sell)}×${f0(buy)}`, x, yy + 3); }
+        if (showText){ g.fillStyle = "#e6e6e3"; g.fillText(`${f0(sell)}×${f0(buy)}`, x, yy + 3); }
       }
     }
     g.textAlign = "start"; g.font = "11px ui-monospace, Menlo, Consolas, monospace";
@@ -1092,7 +1179,7 @@ function drawOne(p, cv, v, isFoot){
     const eo = etOffset(d.bars[d.bars.length - 1][0]);
     let day = null, pv = 0, vol = 0, k = 0;
     const firstT = bars[0][0], lastT = bars[bars.length - 1][0] + span;
-    g.strokeStyle = "#e8a0ff"; g.lineWidth = 1.4; g.setLineDash([]); g.beginPath();
+    g.strokeStyle = "#b48ed6"; g.lineWidth = 1.4; g.setLineDash([]); g.beginPath();
     let started = false, lastVw = null;
     for (const b of d.bars){
       const dd = Math.floor((b[0] + eo) / 86400);
@@ -1105,7 +1192,7 @@ function drawOne(p, cv, v, isFoot){
     }
     g.stroke(); g.lineWidth = 1;
     if (lastVw != null){
-      g.fillStyle = "#e8a0ff"; g.fillText("VWAP " + lastVw.toFixed(2), W - labelW + 4, y(lastVw) + 4);
+      g.fillStyle = "#b48ed6"; g.fillText("VWAP " + lastVw.toFixed(2), W - labelW + 4, y(lastVw) + 4);
     }
   }
   // volume, split buy / sell where known
@@ -1115,10 +1202,10 @@ function drawOne(p, cv, v, isFoot){
     const known = b[6] + b[7];
     if (known > 0){
       const hb = full * b[6] / b[5], hs = full * b[7] / b[5];
-      g.fillStyle = "#26d07c99"; g.fillRect(x, base - hb, cw * 0.7, hb);
-      g.fillStyle = "#ff4d5e99"; g.fillRect(x, base - hb - hs, cw * 0.7, hs);
-      g.fillStyle = "#7b889e55"; g.fillRect(x, base - full, cw * 0.7, full - hb - hs);
-    } else { g.fillStyle = "#7b889e66"; g.fillRect(x, base - full, cw * 0.7, full); }
+      g.fillStyle = "#3fb56f99"; g.fillRect(x, base - hb, cw * 0.7, hb);
+      g.fillStyle = "#d9534f99"; g.fillRect(x, base - hb - hs, cw * 0.7, hs);
+      g.fillStyle = "#7d7f8555"; g.fillRect(x, base - full, cw * 0.7, full - hb - hs);
+    } else { g.fillStyle = "#7d7f8566"; g.fillRect(x, base - full, cw * 0.7, full); }
   }
 
   // absorption bubbles: shares traded into resting size at your levels / big levels
@@ -1136,7 +1223,7 @@ function drawOne(p, cv, v, isFoot){
       if (price < lo || price > hi) continue;
       const r = 3 + 11 * Math.sqrt(shares / mx);
       g.fillStyle = side === "bid" ? "rgba(38,208,124,.45)" : "rgba(255,77,94,.45)";
-      g.strokeStyle = side === "bid" ? "#26d07c" : "#ff4d5e";
+      g.strokeStyle = side === "bid" ? "#3fb56f" : "#d9534f";
       g.beginPath(); g.arc(xOf(t0), y(price), r, 0, Math.PI * 2); g.fill(); g.stroke();
     }
     // calls: R = reload, C = cleaned up, P = pulled
@@ -1145,10 +1232,10 @@ function drawOne(p, cv, v, isFoot){
       const t0 = Math.floor(t / span) * span;
       if (t0 < first) continue;
       const letter = label.startsWith("RELOAD") ? "R" : label === "CLEANED UP" ? "C" : "P";
-      const col = letter === "C" ? "#ffc53d" : letter === "P" ? "#b58cff" : side === "bid" ? "#26d07c" : "#ff4d5e";
+      const col = letter === "C" ? "#e3a83a" : letter === "P" ? "#a48bd6" : side === "bid" ? "#3fb56f" : "#d9534f";
       const xx = xOf(t0), yy = y(price) + (side === "bid" ? 16 : -16);
       g.fillStyle = col; g.beginPath(); g.arc(xx, yy, 7, 0, Math.PI * 2); g.fill();
-      g.fillStyle = "#0a0d12"; g.font = "bold 10px system-ui"; g.fillText(letter, xx - 3.5, yy + 3.5);
+      g.fillStyle = "#0c0c0d"; g.font = "bold 10px system-ui"; g.fillText(letter, xx - 3.5, yy + 3.5);
       g.font = "11px ui-monospace, Menlo, Consolas, monospace";
     }
   }
@@ -1157,46 +1244,46 @@ function drawOne(p, cv, v, isFoot){
   for (const o of (isFoot ? [] : d.orders)){
     if (!o.price || o.price < lo || o.price > hi) continue;
     const drag = p.dragOrder && p.dragOrder.id === o.id;
-    const yy = y(drag ? p.dragOrder.price : o.price), col = o.action === "BUY" ? "#9fffcf" : "#ffb3bb";
+    const yy = y(drag ? p.dragOrder.price : o.price), col = o.action === "BUY" ? "#9fe0bd" : "#e8a3a3";
     g.strokeStyle = col; g.lineWidth = 1.2; g.setLineDash([8, 3, 2, 3]);
     g.beginPath(); g.moveTo(0, yy); g.lineTo(plotW, yy); g.stroke(); g.setLineDash([]);
-    g.fillStyle = "#0a0d12"; g.strokeStyle = col; g.fillRect(plotW, yy - 8, labelW, 16); g.strokeRect(plotW + .5, yy - 7.5, labelW - 1, 15);
-    g.fillStyle = col; g.fillText((drag ? px(p.dragOrder.price) + " ▸" : `${o.role === "entry" ? "YOU " + o.action : o.role.toUpperCase()} ${sz(o.qty)}`).slice(0, 13), plotW + 3, yy + 4);
+    g.fillStyle = "#0c0c0d"; g.strokeStyle = col; g.fillRect(plotW, yy - 8, labelW, 16); g.strokeRect(plotW + .5, yy - 7.5, labelW - 1, 15);
+    g.fillStyle = col; g.fillText((drag ? px(p.dragOrder.price) + " >" : `${o.role === "entry" ? "YOU " + o.action : o.role.toUpperCase()} ${sz(o.qty)}`).slice(0, 13), plotW + 3, yy + 4);
   }
   // last price
   if (d.last){
     const yy = y(d.last);
-    if (!isFoot){ g.strokeStyle = "#ffc53d"; g.lineWidth = 1.4; g.setLineDash([2, 3]); g.beginPath(); g.moveTo(0, yy); g.lineTo(plotW, yy); g.stroke(); g.setLineDash([]); g.lineWidth = 1; }
-    g.fillStyle = "#ffc53d"; g.fillRect(plotW, yy - 8, labelW, 16);
-    g.fillStyle = "#0a0d12"; g.font = "bold 11px ui-monospace, Menlo, Consolas, monospace"; g.fillText(`LAST ${px(d.last)}`, plotW + 3, yy + 4);
+    if (!isFoot){ g.strokeStyle = "#e3a83a"; g.lineWidth = 1.4; g.setLineDash([2, 3]); g.beginPath(); g.moveTo(0, yy); g.lineTo(plotW, yy); g.stroke(); g.setLineDash([]); g.lineWidth = 1; }
+    g.fillStyle = "#e3a83a"; g.fillRect(plotW, yy - 8, labelW, 16);
+    g.fillStyle = "#0c0c0d"; g.font = "bold 11px ui-monospace, Menlo, Consolas, monospace"; g.fillText(`LAST ${px(d.last)}`, plotW + 3, yy + 4);
     g.font = "11px ui-monospace, Menlo, Consolas, monospace";
   }
   // time axis
-  g.fillStyle = "#7b889e";
+  g.fillStyle = "#7d7f85";
   const every = Math.max(1, Math.ceil(70 / cw));
   for (let k = 0; k < bars.length; k += every){
     const dt = new Date(bars[k][0] * 1000);
     g.fillText(dt.toTimeString().slice(0, 5), x0 + k * cw, H - 4);
   }
   // key
-  if (!clean){ g.fillStyle = "#7b889e";
-    g.fillText("● green = buyer absorbing   ● red = seller absorbing   R/C/P = reload / cleaned / pulled", 60, H - volH - 4); }
-  if (off > 0){ g.fillStyle = "#ffc53d"; g.fillText(`◀ ${off} bars back — double-click to go live`, plotW - 230, 14); }
+  if (!clean){ g.fillStyle = "#7d7f85";
+    g.fillText("GREEN BUYER ABSORBING · RED SELLER ABSORBING · R/C/P RELOAD / CLEANED / PULLED", 60, H - volH - 4); }
+  if (off > 0){ g.fillStyle = "#e3a83a"; g.fillText(`${off} BARS BACK · DOUBLE-CLICK FOR LIVE`, plotW - 230, 14); }
   // crosshair with price / time readout
   if (v.cross){
     const [cx, cy] = v.cross;
     if (cx < plotW && cy < plotH){
-      g.strokeStyle = "#7b889e"; g.setLineDash([3, 3]);
+      g.strokeStyle = "#7d7f85"; g.setLineDash([3, 3]);
       g.beginPath(); g.moveTo(cx, 0); g.lineTo(cx, plotH); g.moveTo(0, cy); g.lineTo(plotW, cy); g.stroke(); g.setLineDash([]);
       const pr = hi - (cy - 8) / (plotH - 8) * (hi - lo);
-      g.fillStyle = "#243044"; g.fillRect(plotW, cy - 8, labelW, 16);
-      g.fillStyle = "#dbe3ee"; g.fillText(px(pr), plotW + 3, cy + 4);
+      g.fillStyle = "#26282c"; g.fillRect(plotW, cy - 8, labelW, 16);
+      g.fillStyle = "#d6d6d3"; g.fillText(px(pr), plotW + 3, cy + 4);
       const k = Math.floor((cx - x0) / cw);
       if (bars[k]){
         const b = bars[k], dt = new Date(b[0] * 1000).toTimeString().slice(0, 5);
         const txt = `${dt}  O ${px(b[1])} H ${px(b[2])} L ${px(b[3])} C ${px(b[4])}  vol ${kfmt(b[5])}`;
         g.fillStyle = "rgba(17,22,31,.9)"; g.fillRect(6, 4, g.measureText(txt).width + 10, 16);
-        g.fillStyle = "#dbe3ee"; g.fillText(txt, 11, 16);
+        g.fillStyle = "#d6d6d3"; g.fillText(txt, 11, 16);
       }
     }
   }
@@ -1236,24 +1323,24 @@ function renderDesk(s){
   const dk = s.desk || {}, rec = document.getElementById("recBtn");
   const inReplay = !!s.replay;
   rec.className = dk.recording ? "on" : "";
-  rec.textContent = dk.recording ? "● REC " + fmtDur(s.now - (dk.started || s.now)) : "● REC";
+  rec.textContent = dk.recording ? "REC " + fmtDur(s.now - (dk.started || s.now)) : "REC";
   rec.disabled = inReplay; document.getElementById("shotBtn").disabled = inReplay; document.getElementById("markBtn").disabled = inReplay;
   const marks = (dk.marks || []).slice().reverse();
   const mkHTML = marks.map(m => `<div class="mk" data-t="${m.t}" data-n="${m.n}" title="${inReplay ? "click to jump here" : "click to add a note"}">
       <b>${new Date(m.t * 1000).toLocaleTimeString()}</b><span>${esc(m.symbol || "")} ${m.price ? px(m.price) : ""}</span>
-      <span class="note">${esc(m.note || "")}</span>${m.shot ? `<a href="/recordings/${esc(m.shot)}" target="_blank" title="open the screenshot">📷</a>` : ""}
+      <span class="note">${esc(m.note || "")}</span>${m.shot ? `<a href="/recordings/${esc(m.shot)}" target="_blank" title="open the screenshot">SNAP</a>` : ""}
       <span class="hl">${esc((m.headline || "").slice(0, 70))}</span></div>`).join("") || `<div class="dim">No markers yet. Press M for a marker, P for a screenshot.</div>`;
   if (!inReplay && (!deskList || s.now - deskListT > 15)){ deskListT = s.now; fetch("/api/desk/list").then(r => r.json()).then(l => { deskList = l; renderDesk(state); }).catch(() => {}); }
   const recHTML = inReplay ? `<div class="dim">Replaying ${esc(s.replay.file || "")}</div>` : (deskList || []).map(r => `<div class="rec ${r.current ? "cur" : ""}">
       <span class="nm">${esc(r.name.replace(".jsonl", ""))}</span><span class="dim">${r.size_mb} MB · ${r.marks.length} marks${r.journal ? " · journal" : ""}</span>
       <a class="btn" href="/api/desk/export?name=${encodeURIComponent(r.name)}" title="download a zip: recording, calls.csv, journal, markers, screenshots and a SUMMARY.md you can hand to an AI">⬇ Export</a>
-      ${r.current ? `<span class="dim">recording…</span>` : `<button data-replay="${esc(r.name)}" title="open this recording in the replay desk (new tab)">▶ Replay</button><button data-del="${esc(r.name)}" class="del" title="delete this recording, its markers, journal and screenshots">🗑</button>`}</div>`).join("") || `<div class="dim">No recordings yet.</div>`;
+      ${r.current ? `<span class="dim">recording…</span>` : `<button data-replay="${esc(r.name)}" title="open this recording in the replay desk (new tab)">REPLAY</button><button data-del="${esc(r.name)}" class="del" title="delete this recording, its markers, journal and screenshots">DELETE</button>`}</div>`).join("") || `<div class="dim">No recordings yet.</div>`;
   document.getElementById("jList").innerHTML = (dk.notes || []).slice().reverse().map(n => `<div class="jn"><b>${new Date(n.t * 1000).toLocaleTimeString()}</b>${esc(n.symbol || "")} ${esc(n.text)}</div>`).join("")
     || `<div class="dim">No notes yet. What did you see, what did you do, why.</div>`;
   const jl = (deskList || []).filter(r => r.journal && !r.current).slice(0, 5);
   if (jl.length) document.getElementById("jList").innerHTML += `<div class="dim" style="margin-top:6px">Journals: ${jl.map(r => `<a href="/recordings/${esc(r.name.replace(".jsonl", ".journal.md"))}" target="_blank">${esc(r.name.replace(".jsonl", ""))}</a>`).join(" · ")}</div>`;
   const cur = (deskList || []).find(r => r.current);
-  if (cur) document.getElementById("jList").innerHTML += `<div style="margin-top:6px"><a class="btn" href="/api/desk/export?name=${encodeURIComponent(cur.name)}">⬇ Export this session so far</a> <span class="dim">(recording, journal, calls.csv, markers, screenshots, SUMMARY.md — for you or an AI)</span></div>`;
+  if (cur) document.getElementById("jList").innerHTML += `<div style="margin-top:6px"><a class="btn" href="/api/desk/export?name=${encodeURIComponent(cur.name)}">EXPORT THIS SESSION</a> <span class="dim">(recording, journal, calls.csv, markers, screenshots, SUMMARY.md — for you or an AI)</span></div>`;
   document.getElementById("deskBody").innerHTML = `<div><h5>MARKERS ${inReplay ? "(click to jump)" : "this session"}</h5>${mkHTML}</div><div><h5>RECORDINGS</h5>${recHTML}</div>`;
 }
 function fmtDur(sec){ sec = Math.max(0, Math.round(sec)); const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60; return (h ? h + ":" : "") + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0"); }
@@ -1308,7 +1395,7 @@ document.getElementById("rpSpeed").addEventListener("change", e => post("/api/re
 function panelHTML(id, html){ const p = P[id]; if (p.last === html) return false; p.last = html; p.pc.innerHTML = html; return true; }
 
 /* ---------- docking */
-function emptyLayout(){ return {zones: {TL: [], TC: [], TR: [], BL: [], BC: [], BR: []}, active: {}, sizes: {c1: 250, c3: 430, r2: 300}, floats: {}, hidden: [], max: null}; }
+function emptyLayout(){ return {zones: {TL: [], TC: [], TR: [], TX: [], BL: [], BC: [], BR: [], BX: []}, active: {}, sizes: {c1: 250, c3: 430, c4: 300, r2: 300}, floats: {}, hidden: [], max: null}; }
 function normalize(l){
   const out = Object.assign(emptyLayout(), JSON.parse(JSON.stringify(l || {})));
   for (const z of ZONES) out.zones[z] = (out.zones[z] || []).filter(id => P[id]);
@@ -1322,10 +1409,16 @@ function applyLayout(){
   const s = LAY.sizes;
   const has = z => LAY.zones[z].length > 0;
   const leftW = (has("TL") || has("BL")) ? s.c1 : 0, rightW = (has("TR") || has("BR")) ? s.c3 : 0;
-  const botH = (has("BL") || has("BC") || has("BR")) ? s.r2 : 0;
-  work.style.setProperty("--c1", leftW + "px"); work.style.setProperty("--c3", rightW + "px"); work.style.setProperty("--r2", botH + "px");
-  work.style.setProperty("--g1", leftW ? "5px" : "0px"); work.style.setProperty("--g2", rightW ? "5px" : "0px"); work.style.setProperty("--gr", botH ? "5px" : "0px");
-  document.getElementById("g1").style.display = leftW ? "" : "none"; document.getElementById("g2").style.display = rightW ? "" : "none"; document.getElementById("gr").style.display = botH ? "" : "none";
+  const farW = (has("TX") || has("BX")) ? (s.c4 || 300) : 0;
+  const botH = (has("BL") || has("BC") || has("BR") || has("BX")) ? s.r2 : 0;
+  work.style.setProperty("--c1", leftW + "px"); work.style.setProperty("--c3", rightW + "px"); work.style.setProperty("--c4", farW + "px"); work.style.setProperty("--r2", botH + "px");
+  work.style.setProperty("--g1", leftW ? "5px" : "0px"); work.style.setProperty("--g2", rightW ? "5px" : "0px"); work.style.setProperty("--g3", farW ? "5px" : "0px"); work.style.setProperty("--gr", botH ? "5px" : "0px");
+  document.getElementById("g1").style.display = leftW ? "" : "none"; document.getElementById("g2").style.display = rightW ? "" : "none"; document.getElementById("g3").style.display = farW ? "" : "none"; document.getElementById("gr").style.display = botH ? "" : "none";
+  // a column with a panel in only one of its two zones gives that zone the full height
+  for (const [top, bot] of [["TL", "BL"], ["TC", "BC"], ["TR", "BR"], ["TX", "BX"]]){
+    work.querySelector(`.zone[data-zone="${top}"]`).classList.toggle("tall", has(top) && !has(bot) && botH > 0);
+    work.querySelector(`.zone[data-zone="${bot}"]`).classList.toggle("tall", has(bot) && !has(top));
+  }
   for (const z of ZONES){
     const zel = work.querySelector(`.zone[data-zone="${z}"]`), tabs = zel.querySelector(".ztabs"), body = zel.querySelector(".zbody");
     const ids = LAY.zones[z];
@@ -1376,9 +1469,9 @@ document.getElementById("work").addEventListener("drop", e => {
   else { const r = document.getElementById("work").getBoundingClientRect(); movePanel(dragId, "float", {l: e.clientX - r.left - 100, t: e.clientY - r.top - 10, w: 520, h: 360}); }
   dragId = null;
 });
-// drop onto an empty zone: zones with no panels are display:none, so offer the 6 zones while dragging
-document.addEventListener("dragstart", () => setTimeout(() => document.querySelectorAll(".zone.empty").forEach(z => { z.classList.remove("empty"); z.dataset.wasEmpty = "1"; }), 0));
-document.addEventListener("dragend", () => document.querySelectorAll(".zone[data-wasEmpty]").forEach(z => { delete z.dataset.wasEmpty; if (!LAY.zones[z.dataset.zone].length) z.classList.add("empty"); }));
+// drop onto an empty zone: zones with no panels are display:none, so offer all 8 zones while dragging
+document.addEventListener("dragstart", () => setTimeout(() => { document.querySelectorAll(".zone.tall").forEach(z => z.classList.remove("tall")); document.querySelectorAll(".zone.empty").forEach(z => { z.classList.remove("empty"); z.dataset.wasEmpty = "1"; }); }, 0));
+document.addEventListener("dragend", () => { document.querySelectorAll(".zone[data-wasEmpty]").forEach(z => { delete z.dataset.wasEmpty; }); applyLayout(); });
 document.addEventListener("click", e => {
   const c = e.target.closest(".ztab .ctl span"); const tab = e.target.closest(".ztab");
   if (c){ e.stopPropagation(); const id = tab.dataset.p, act = c.dataset.act;
@@ -1417,7 +1510,7 @@ function layoutFromPreset(name){ const p = PRESETS[name]; const l = emptyLayout(
 function renderLayoutSel(){
   const sel = document.getElementById("layoutSel");
   const names = [...Object.keys(PRESETS).map(n => "★ " + n), ...Object.keys(LAYOUTS)];
-  sel.innerHTML = names.map(n => `<option value="${esc(n)}" ${n === layoutName ? "selected" : ""}>${esc(n)}</option>`).join("");
+  sel.innerHTML = `<optgroup label="PRESETS">` + names.filter(n => n.startsWith("★ ")).map(n => `<option value="${esc(n)}" ${n === layoutName ? "selected" : ""}>${esc(n.slice(2))}</option>`).join("") + `</optgroup>` + (Object.keys(LAYOUTS).length ? `<optgroup label="SAVED">` + Object.keys(LAYOUTS).map(n => `<option value="${esc(n)}" ${n === layoutName ? "selected" : ""}>${esc(n)}</option>`).join("") + `</optgroup>` : "");
   if (!names.includes(layoutName)) sel.value = "";
 }
 async function useLayout(name){
@@ -1433,7 +1526,7 @@ document.getElementById("layoutMenu").querySelector("button").addEventListener("
   document.getElementById("layoutPop").innerHTML = `<h5>LAYOUTS</h5>
     <div class="row"><input id="layName" placeholder="name" value="${esc(layoutName && !layoutName.startsWith("★") ? layoutName : "")}"><button data-lay="save">Save</button></div>
     <div class="row"><button data-lay="dup">Duplicate</button><button data-lay="rename">Rename</button><button data-lay="delete">Delete</button><button data-lay="reset">Reset to preset</button></div>
-    <div class="dim" style="font-size:10.5px;margin-top:4px">★ presets can't be changed — save a copy under your own name. The last layout you used loads on the next start.</div>`;
+    <div class="dim" style="font-size:10.5px;margin-top:4px">Presets are fixed. Save a copy under your own name to change one. The last layout used loads at the next start.</div>`;
 });
 document.getElementById("layoutPop").addEventListener("click", async e => {
   const b = e.target.closest("button[data-lay]"); if (!b) return;
@@ -1457,7 +1550,7 @@ async function loadLayouts(){
 
 /* ---------- symbol tabs */
 function renderTabs(){
-  document.getElementById("symTabs").innerHTML = TABS.list.map(s => `<span class="stab ${s === TABS.active ? "on" : ""}" data-sym="${esc(s)}">${esc(s)}${s === TABS.active && store.get("voice", true) ? `<span class="v" title="voice reads this tab">🗣</span>` : ""}<span class="x" data-close="${esc(s)}" title="close tab">✕</span></span>`).join("");
+  document.getElementById("symTabs").innerHTML = TABS.list.map(s => `<span class="stab ${s === TABS.active ? "on" : ""}" data-sym="${esc(s)}">${esc(s)}${s === TABS.active && store.get("voice", true) ? `<span class="v" title="voice reads this tab">VOICE</span>` : ""}<span class="x" data-close="${esc(s)}" title="close tab">✕</span></span>`).join("");
   document.querySelectorAll(".ztab .sym").forEach(el => el.textContent = curSym || "");
 }
 async function openTab(sym, add){
@@ -1478,7 +1571,7 @@ document.getElementById("symTabs").addEventListener("click", e => { const x = e.
 document.getElementById("addTab").addEventListener("click", () => document.getElementById("symIn").focus());
 document.getElementById("symIn").addEventListener("keydown", e => { e.stopPropagation(); if (e.key === "Enter"){ openTab(e.target.value, true); e.target.value = ""; e.target.blur(); } if (e.key === "Escape") e.target.blur(); });
 document.getElementById("symHist").addEventListener("change", e => { if (e.target.value) openTab(e.target.value, false); e.target.value = ""; });
-function renderRecent(){ document.getElementById("symHist").innerHTML = `<option value="">▾</option>` + (PREFS.recent || []).map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join(""); }
+function renderRecent(){ document.getElementById("symHist").innerHTML = `<option value="">RECENT</option>` + (PREFS.recent || []).map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join(""); }
 let prefsTimer = null;
 function savePrefs(p){ Object.assign(PREFS, p); clearTimeout(prefsTimer); prefsTimer = setTimeout(() => post("/api/layouts", {action: "prefs", prefs: p}), 300); }
 function viewFor(sym, id){ VIEWS[sym] = VIEWS[sym] || {}; if (!VIEWS[sym][id]) VIEWS[sym][id] = {cw: id === "foot" ? 64 : 7, offset: 0, yLo: null, yHi: null, follow: true, cross: null}; return VIEWS[sym][id]; }
@@ -1515,7 +1608,7 @@ function renderTools(v){
     + `<button data-fit="1">fit</button><button data-vwap="1" class="${store.get("vwap", true) ? "on" : ""}">VWAP</button>`
     + `<button data-foot="1" class="${store.get("foot." + v.id, false) ? "on" : ""}" title="footprint on this timeframe">FOOT</button>`
     + `<button data-clean="1" class="${store.get("clean", true) ? "on" : ""}" title="clean chart: candles, volume, VWAP, your levels, your orders">clean</button>`
-    + `<select data-mark="1" class="lvl ${v.view.levelTool ? "on" : ""}" title="mark a level: pick it, click the chart at the price (saved to plays.json)"><option value="">＋ mark…</option><option value="second_entry" ${v.view.levelTool==="second_entry"?"selected":""}>2nd entry</option><option value="trigger" ${v.view.levelTool==="trigger"?"selected":""}>pivot</option><option value="target" ${v.view.levelTool==="target"?"selected":""}>target</option><option value="stop" ${v.view.levelTool==="stop"?"selected":""}>stop</option><option value="extra" ${v.view.levelTool==="extra"?"selected":""}>extra level</option></select>`;
+    + `<select data-mark="1" class="lvl ${v.view.levelTool ? "on" : ""}" title="mark a level: pick it, click the chart at the price (saved to plays.json)"><option value="">MARK</option><option value="second_entry" ${v.view.levelTool==="second_entry"?"selected":""}>2nd entry</option><option value="trigger" ${v.view.levelTool==="trigger"?"selected":""}>pivot</option><option value="target" ${v.view.levelTool==="target"?"selected":""}>target</option><option value="stop" ${v.view.levelTool==="stop"?"selected":""}>stop</option><option value="extra" ${v.view.levelTool==="extra"?"selected":""}>extra level</option></select>`;
   v.canvas.classList.toggle("lvltool", !!v.view.levelTool);
 }
 function drawChart(v){ if (!v || !v.data || !v.canvas || v.el.offsetParent === null) return; drawOne(v, v.canvas, v.view, v.isFoot); }
@@ -1530,16 +1623,16 @@ const pctFmt = (v) => v == null ? NA : (v >= 0 ? "+" : "") + v.toFixed(2) + "%";
 
 function renderQuote(d){
   const el = P.chart.el.querySelector(".qs");
-  if (!d){ el.innerHTML = `<span class="sym">${esc(curSym || "")}</span><span class="dim">${curSym ? "waiting for data…" : "no symbol — type one above (Ctrl+L)"}</span>`; return; }
+  if (!d){ el.innerHTML = `<span class="sym">${esc(curSym || "")}</span><span class="dim">${curSym ? "NO DATA" : "NO SYMBOL · Ctrl+L"}</span>`; return; }
   const day = d.day || {}, pl = d.play, g = d.ps60;
   const chg = d.last && day.prev_close ? d.last - day.prev_close : null;
   const html = `<span class="sym">${esc(d.symbol)}</span>
     <span>LAST <b style="color:var(--gold)">${px(d.last)}</b>${chg != null ? ` <span class="${chg >= 0 ? "buy" : "sell"}">${chg >= 0 ? "+" : ""}${chg.toFixed(2)} ${(chg / day.prev_close * 100).toFixed(2)}%</span>` : ""}</span>
     <span><span class="buy">${px(d.bid)}</span><span class="dim">${day.bid_size ? "×" + kfmt(day.bid_size) : ""}</span> / <span class="sell">${px(d.ask)}</span><span class="dim">${day.ask_size ? "×" + kfmt(day.ask_size) : ""}</span></span>
     <span class="dim">O ${px(day.open)} H ${px(day.high)} L ${px(day.low)} V ${day.volume ? kfmt(day.volume) : NA}</span>
-    <span class="dim">PIVOT <b style="color:#dbe3ee">${px(pl.trigger)}</b> 2ND <b style="color:var(--cyan)">${px(pl.second_entry)}</b> TGT <b style="color:var(--buy)">${px(pl.target)}</b> STOP <b style="color:var(--sell)">${px(pl.stop)}</b></span>
+    <span class="dim">PIVOT <b style="color:#d6d6d3">${px(pl.trigger)}</b> 2ND <b style="color:var(--cyan)">${px(pl.second_entry)}</b> TGT <b style="color:var(--buy)">${px(pl.target)}</b> STOP <b style="color:var(--sell)">${px(pl.stop)}</b></span>
     ${g ? `<span class="p-ps60" style="margin:0;height:auto;overflow:visible"><span class="g ${g.grade}" title="${esc(g.why)}">${g.grade}</span></span>` : ""}
-    <span class="dim">${esc(d.health.status)}${d.pinned ? " · 📌" : ""}${(d.book && (d.book.bids.length || d.book.asks.length)) ? "" : " · no depth"}</span>`;
+    <span class="dim">${esc(d.health.status)}${d.pinned ? " · PINNED" : ""}${(d.book && (d.book.bids.length || d.book.asks.length)) ? "" : " · no depth"}</span>`;
   if (el.dataset.h !== html){ el.dataset.h = html; el.innerHTML = html; }
 }
 let bookUserScroll = 0, bookDragging = false;
@@ -1602,11 +1695,11 @@ function suDerive(d, f){
 function suDerivedHTML(d, f){
   const x = suDerive(d, f), $ = v => v == null ? NA : "$" + v.toFixed(2);
   const vcls = x.mpVerdict === "CLEAR" ? "ok" : x.mpVerdict === "THIN" ? "no" : "dim";
-  return `<span>MP vs ATR</span><span><span class="${vcls}">${x.mpVerdict}</span>${x.mp && x.atr ? ` <span class="dim">${(x.mp / x.atr).toFixed(2)}× ATR · needs ≥ 0.50×</span>` : ""}</span>
-    <span>MP TARGET</span><span>${x.mpTarget ? `<span class="gold">${$(x.mpTarget)}</span> <span class="dim">pivot ${x.side === "long" ? "+" : "−"} MP</span>` : NA}</span>
-    <span>RISK / SHARE</span><span>${x.risk ? `${$(x.risk)} <span class="dim">${x.entryLbl} ${$(x.entry)} → stop ${$(x.stop)}</span>` : `<span class="dim">need a stop${x.entry ? "" : " and an entry"}</span>`}</span>
-    <span>REWARD : RISK</span><span>${x.r ? `<span class="${x.r >= 2 ? "ok" : x.r >= 1 ? "" : "no"}">${x.r.toFixed(1)} R</span> <span class="dim">MP ÷ risk</span>` : NA}</span>
-    <span>SIZE</span><span>${x.shares != null ? `<span class="gold">${sz(x.shares)} sh</span> <span class="dim">risks $${riskDollars()} to the stop</span> <button data-usesize="${x.shares}" style="padding:1px 6px;font-size:10.5px">use in ticket</button>` : `<span class="dim">set a stop to size</span>`}</span>
+  return `<span>MP vs ATR</span><span><span class="${vcls}">${x.mpVerdict}</span>${x.mp && x.atr ? ` <span class="dim">${(x.mp / x.atr).toFixed(2)}× ATR · MIN 0.50×</span>` : ""}</span>
+    <span>MP TARGET</span><span>${x.mpTarget ? `<span class="gold">${$(x.mpTarget)}</span> <span class="dim">PIVOT ${x.side === "long" ? "+" : "−"} MP</span>` : NA}</span>
+    <span>RISK / SHARE</span><span>${x.risk ? `${$(x.risk)} <span class="dim">${x.entryLbl} ${$(x.entry)} → stop ${$(x.stop)}</span>` : `<span class="dim">NEEDS A STOP${x.entry ? "" : " AND AN ENTRY"}</span>`}</span>
+    <span>REWARD : RISK</span><span>${x.r ? `<span class="${x.r >= 2 ? "ok" : x.r >= 1 ? "" : "no"}">${x.r.toFixed(1)} R</span> <span class="dim">MP ÷ RISK</span>` : NA}</span>
+    <span>SIZE</span><span>${x.shares != null ? `<span class="gold">${sz(x.shares)} sh</span> <span class="dim">AT $${riskDollars()} RISK</span> <button data-usesize="${x.shares}" style="padding:1px 6px;font-size:10px">TO TICKET</button>` : `<span class="dim">NEEDS A STOP</span>`}</span>
     ${x.bad.length ? `<span></span><span class="no">${x.bad.map(k => k === "second_entry" ? "2nd entry must be beyond the pivot" : k === "stop" ? (f.side === "short" ? "stop must be above the pivot for a short" : "stop must be below the pivot for a long") : "target must be beyond the pivot").join(" · ")}</span>` : ""}`;
 }
 function suRefresh(){ const el = document.getElementById("suDerived"); if (!el) return; const f = suFields(); el.innerHTML = suDerivedHTML(curData(), f); const x = suDerive(curData(), f); for (const k of ["second_entry", "stop", "target"]){ const i = document.getElementById("su_" + k); if (i) i.classList.toggle("bad", x.bad.includes(k)); } const b = document.getElementById("suSave"); if (b) b.disabled = SU.saving || x.bad.length > 0; }
@@ -1617,19 +1710,19 @@ function renderSetup(d){
   const f = {side: p.side || "long", trigger: v("trigger"), second_entry: v("second_entry"), target: v("target"), stop: v("stop"), mp: v("mp"), atr: v("atr"), notes: p.notes || ""};
   const inp = (k, ph) => `<input id="su_${k}" type="number" step="0.01" min="0" value="${f[k]}" placeholder="${ph}">`;
   const html = `<div class="ticket setup">
-    <div class="hdr"><span><b>${esc(d.symbol)}</b> · your inputs</span><span>last ${px(d.last)}</span></div>
+    <div class="hdr"><span><b>${esc(d.symbol)}</b> PLAY</span><span>LAST ${px(d.last)}</span></div>
     <label>SIDE</label><select id="su_side"><option value="long" ${f.side === "long" ? "selected" : ""}>LONG</option><option value="short" ${f.side === "short" ? "selected" : ""}>SHORT</option></select>
-    <label>PIVOT</label>${inp("trigger", "Dan's pivot")}
-    <label>2ND ENTRY</label>${inp("second_entry", "optional · beyond the pivot")}
-    <label>MP</label>${inp("mp", "measured potential, $ per share")}
-    <label>ATR</label>${inp("atr", "daily ATR, $")}
-    <label>STOP</label>${inp("stop", "where you're wrong")}
-    <label>TARGET</label>${inp("target", "optional · defaults to your MP target")}
-    <label>RISK $</label><div class="row"><input id="su_risk" type="number" step="10" min="0" value="${riskDollars()}"><span class="dim" style="font-size:10.5px">per trade, to the stop</span></div>
-    <label>NOTES</label><input id="su_notes" type="text" maxlength="200" value="${esc(f.notes)}" placeholder="why this play">
+    <label>PIVOT</label>${inp("trigger", "")}
+    <label>2ND ENTRY</label>${inp("second_entry", "optional")}
+    <label>MP</label>${inp("mp", "$ / share")}
+    <label>ATR</label>${inp("atr", "$ / share")}
+    <label>STOP</label>${inp("stop", "")}
+    <label>TARGET</label>${inp("target", "optional · MP target if blank")}
+    <label>RISK $</label><div class="row"><input id="su_risk" type="number" step="10" min="0" value="${riskDollars()}"><span class="dim" style="font-size:10.5px">PER TRADE</span></div>
+    <label>NOTES</label><input id="su_notes" type="text" maxlength="200" value="${esc(f.notes)}" placeholder="notes">
     <div class="derived" id="suDerived">${suDerivedHTML(d, f)}</div>
-    <div class="go"><button class="save" id="suSave">SAVE PLAY</button><button id="suMpTarget" title="copy the MP target into TARGET">MP → target</button></div>
-    <div class="msg ${SU.msg.startsWith("✓") ? "ok" : "no"}" id="suMsg">${esc(SU.msg)}</div></div>`;
+    <div class="go"><button class="save" id="suSave">SAVE PLAY</button><button id="suMpTarget" title="copy the MP target into TARGET">USE MP TARGET</button></div>
+    <div class="msg ${SU.msg.startsWith("SAVED") ? "ok" : "no"}" id="suMsg">${esc(SU.msg)}</div></div>`;
   if (panelHTML("setup", html)) P.setup.pc.dataset.sym = curSym;
 }
 P.setup.el.addEventListener("input", e => { if (e.target.id === "su_risk"){ store.set("riskDollars", +e.target.value || 0); P.ticket.last = null; renderTicket(state, curData()); } else SU.dirty = true; SU.msg = ""; const m = document.getElementById("suMsg"); if (m) m.textContent = ""; suRefresh(); });
@@ -1640,7 +1733,7 @@ P.setup.el.addEventListener("click", async e => {
   const f = suFields(); if (f.target === "" ){ const x = suDerive(curData(), f); if (x.mpTarget) f.target = x.mpTarget.toFixed(2); }
   SU.saving = true; suRefresh();
   const out = await post("/api/play", {symbol: curSym, action: "setup", fields: f});
-  SU.saving = false; SU.dirty = false; SU.msg = out.ok ? "✓ saved · grade, brackets and sizing now follow these numbers" : "✗ " + (out.reason || "not saved");
+  SU.saving = false; SU.dirty = false; SU.msg = out.ok ? "SAVED · grade, brackets and sizing follow these numbers" : "REJECTED · " + (out.reason || "not saved");
   P.setup.last = null; toast(out.ok ? "Play saved for " + curSym : "Not saved: " + (out.reason || ""), out.ok); poll(true);
 });
 function renderReloads(d){
@@ -1658,7 +1751,7 @@ function renderReloads(d){
 }
 function renderWatch(s){
   panelHTML("watch", (s.ranking || []).map(r => `<div class="wlrow ${r.symbol === curSym ? "cur" : ""}" data-sym="${esc(r.symbol)}">
-    <span><b>${esc(r.symbol)}</b>${r.depth ? ' <span style="color:var(--gold)">◆</span>' : ""}</span><span style="color:var(--gold)">${px(r.last)}</span>
+    <span><b>${esc(r.symbol)}</b>${r.depth ? ' <span style="color:var(--gold);font-size:9px;letter-spacing:.1em">L2</span>' : ""}</span><span style="color:var(--gold)">${px(r.last)}</span>
     <span class="g ${r.ps60 ? r.ps60.grade : ""}">${r.ps60 ? r.ps60.grade : ""}</span>
     <span class="w">${r.rank ? "#" + r.rank + " · " : ""}${r.side} · ${esc(r.retired ? "RETIRED" : r.status)}</span></div>`).join("") || `<div class="dim" style="padding:8px">No plays.</div>`);
 }
@@ -1667,7 +1760,7 @@ function renderCalls(s){
   const alerts = (s.alerts || []).filter(a => all || a.symbol === curSym).slice(0, 40);
   const html = `<div class="dim" style="margin-bottom:4px;font-size:11px"><label><input type="checkbox" id="callsAll" ${all ? "checked" : ""}> every symbol</label></div>` + (alerts.length ? alerts.map(a => {
     const age = s.now - a.t;
-    const gr = a.key ? `<span class="grade" data-key="${esc(a.key)}"><button data-v="good" class="${a.grade==="good"?"on":""}">👍</button><button data-v="bad" class="${a.grade==="bad"?"on":""}">👎</button></span>` : "";
+    const gr = a.key ? `<span class="grade" data-key="${esc(a.key)}"><button data-v="good" class="${a.grade==="good"?"on":""}">GOOD</button><button data-v="bad" class="${a.grade==="bad"?"on":""}">BAD</button></span>` : "";
     return `<div class="say ${sayClass(a)} ${age < 15 ? "fresh" : ""}"><span class="age">${ago(age)}</span>${gr}<b>${esc(a.symbol)}</b> — ${esc(a.text || a.label)}</div>`;
   }).join("") : `<div class="say">No calls for ${esc(curSym || "this symbol")} yet.</div>`);
   const fb = document.getElementById("feedBody"); if (fb.dataset.h !== html){ fb.dataset.h = html; fb.innerHTML = html; }
@@ -1682,7 +1775,7 @@ function renderPositions(s){
       <td class="l"><button data-red="${esc(p.symbol)}" data-n="${Math.max(1, Math.floor(q / 2))}" ${on ? "" : "disabled"} title="reduce by half">½</button><button data-red="${esc(p.symbol)}" data-n="${Math.max(1, Math.floor(q / 4))}" ${on ? "" : "disabled"} title="reduce by a quarter">¼</button><button data-red="${esc(p.symbol)}" data-n="ask" ${on ? "" : "disabled"} title="reduce by a number of shares">…</button>
         <button class="danger" data-close="${esc(p.symbol)}" ${on ? "" : "disabled"} title="CLOSE the whole position with a limit at the touch">CLOSE</button></td></tr>`;
   }).join("");
-  panelHTML("positions", `<table class="grid"><tr><th>SYMBOL</th><th>SIDE</th><th>QTY</th><th>AVG ENTRY</th><th>LAST</th><th>P&amp;L %</th><th style="text-align:left">REDUCE / CLOSE</th></tr>${rows || `<tr><td colspan="7" class="dim l">${A.seen ? "Flat." : "Waiting for account data…"}</td></tr>`}</table>`);
+  panelHTML("positions", `<table class="grid"><tr><th>SYMBOL</th><th>SIDE</th><th>QTY</th><th>AVG ENTRY</th><th>LAST</th><th>P&amp;L %</th><th style="text-align:left">REDUCE / CLOSE</th></tr>${rows || `<tr><td colspan="7" class="dim l">${A.seen ? "FLAT" : "NO ACCOUNT DATA"}</td></tr>`}</table>`);
 }
 let showHistory = false, selOrder = null;
 function renderOrders(s){
@@ -1693,7 +1786,7 @@ function renderOrders(s){
     <td class="l">${o.order_id != null && !["FILLED", "CANCELED", "REJECTED"].includes(o.state) ? `<button data-mod="${o.order_id}" data-px="${o.lmt || o.aux || ""}" title="change the price">MODIFY</button> <button class="danger" data-cxl="${o.order_id}">CANCEL</button>` : ""}</td></tr>`;
   panelHTML("orders", `<div style="display:flex;gap:8px;align-items:center;padding:3px 6px;font-size:11px" class="dim"><label><input type="checkbox" id="ordHist" ${showHistory ? "checked" : ""}> history</label><span class="spacer" style="flex:1"></span><button data-cxlall="1" class="danger" ${live.length ? "" : "disabled"}>CANCEL ALL (${live.length})</button></div>
     <table class="grid"><tr><th>SYMBOL</th><th>SIDE</th><th>QTY</th><th>TYPE</th><th>LIMIT / STOP</th><th>FILLED</th><th>REMAIN</th><th>STATUS</th><th style="text-align:left"></th></tr>
-    ${live.map(row).join("") || `<tr><td colspan="9" class="dim l">${A.seen ? "No working orders." : "Waiting for account data…"}</td></tr>`}
+    ${live.map(row).join("") || `<tr><td colspan="9" class="dim l">${A.seen ? "NO WORKING ORDERS" : "NO ACCOUNT DATA"}</td></tr>`}
     ${showHistory ? done.map(row).join("") : ""}</table>`);
 }
 
@@ -1709,10 +1802,10 @@ function renderTicket(s, d){
     <label>SYMBOL</label><div class="val" style="color:var(--gold);font-weight:800;font-size:14px">${esc(curSym || NA)} <span class="dim" style="font-size:11px;font-weight:400">${d ? `${px(d.bid)} / ${px(d.ask)}` : ""}</span></div>
     <label>SIDE</label><div class="sides"><button class="b ${TK.side === "BUY" ? "on" : ""}" data-side="BUY">BUY</button><button class="s ${TK.side === "SELL" ? "on" : ""}" data-side="SELL">SELL</button></div>
     <label>QTY</label><div class="row"><button class="qbtn" data-q="-100">−</button><input id="tkQty" type="number" min="1" step="100" value="${TK.qty}"><button class="qbtn" data-q="100">+</button><button class="qbtn" data-q="set:100">100</button><button class="qbtn" data-q="set:500">500</button></div>
-    <label>TYPE</label><select id="tkType"><option value="LMT" ${TK.type === "LMT" ? "selected" : ""}>LIMIT</option><option value="STP LMT" ${TK.type === "STP LMT" ? "selected" : ""}>STOP LIMIT</option><option value="MKT" ${TK.type === "MKT" ? "selected" : ""} ${allowMkt ? "" : "disabled"}>MARKET${allowMkt ? "" : " (off by your rules)"}</option><option value="STP" ${TK.type === "STP" ? "selected" : ""} ${allowMkt ? "" : "disabled"}>STOP${allowMkt ? "" : " (off by your rules)"}</option></select>
+    <label>TYPE</label><select id="tkType"><option value="LMT" ${TK.type === "LMT" ? "selected" : ""}>LIMIT</option><option value="STP LMT" ${TK.type === "STP LMT" ? "selected" : ""}>STOP LIMIT</option><option value="MKT" ${TK.type === "MKT" ? "selected" : ""} ${allowMkt ? "" : "disabled"}>MARKET${allowMkt ? "" : " · DISABLED"}</option><option value="STP" ${TK.type === "STP" ? "selected" : ""} ${allowMkt ? "" : "disabled"}>STOP${allowMkt ? "" : " · DISABLED"}</option></select>
     ${TK.type !== "MKT" ? `<label>${TK.type === "STP" ? "STOP" : "LIMIT"}</label><div class="row"><input id="tkPx" type="number" step="0.01" value="${TK.px != null ? TK.px : (price != null ? price : "")}"><button data-px="bid">bid</button><button data-px="ask">ask</button><button data-px="mid">mid</button><button data-px="last">last</button></div>` : ""}
-    ${TK.type === "STP LMT" ? `<label>STOP</label><div class="row"><input id="tkAux" type="number" step="0.01" value="${TK.aux != null ? TK.aux : ""}" placeholder="trigger price"></div>` : ""}
-    <label>RISK $</label><div class="risk"><input id="tkRisk" type="number" step="10" min="0" value="${riskDollars()}"><span class="out">${(() => { const stop = d && d.play && d.play.stop, ent = TK.px != null ? TK.px : price; if (!stop || !ent) return `<span class="dim">no stop on this play</span>`; const r = Math.abs(ent - stop); if (r < 0.005) return `<span class="dim">entry = stop</span>`; const n = Math.min(t.max_shares || Infinity, Math.floor(riskDollars() / r)); return `→ ${sz(n)} sh <span class="dim">($${r.toFixed(2)}/sh to stop ${px(stop)})</span> <button data-q="set:${Math.max(1, n)}" style="padding:1px 6px;font-size:10.5px">size</button>`; })()}</span></div>
+    ${TK.type === "STP LMT" ? `<label>STOP</label><div class="row"><input id="tkAux" type="number" step="0.01" value="${TK.aux != null ? TK.aux : ""}" placeholder="stop price"></div>` : ""}
+    <label>RISK $</label><div class="risk"><input id="tkRisk" type="number" step="10" min="0" value="${riskDollars()}"><span class="out">${(() => { const stop = d && d.play && d.play.stop, ent = TK.px != null ? TK.px : price; if (!stop || !ent) return `<span class="dim">NO STOP</span>`; const r = Math.abs(ent - stop); if (r < 0.005) return `<span class="dim">entry = stop</span>`; const n = Math.min(t.max_shares || Infinity, Math.floor(riskDollars() / r)); return `${sz(n)} sh <span class="dim">· $${r.toFixed(2)}/sh</span> <button data-q="set:${Math.max(1, n)}" style="padding:1px 6px;font-size:10px">SIZE</button>`; })()}</span></div>
     <label>TIF</label><select id="tkTif"><option ${TK.tif === "DAY" ? "selected" : ""}>DAY</option><option ${TK.tif === "GTC" ? "selected" : ""}>GTC</option><option ${TK.tif === "IOC" ? "selected" : ""}>IOC</option></select>
     <div class="opts"><label><input type="checkbox" id="tkBracket" ${t.bracket ? "checked" : ""}> stop+target</label><label><input type="checkbox" id="tkScale" ${t.scale ? "checked" : ""}> PS60 exits</label></div>
     <div class="go"><button class="tx ${TK.side === "BUY" ? "b" : "s"}" id="tkGo" ${on && d && !TK.inflight ? "" : "disabled"}>${TK.inflight ? "SENDING…" : "TRANSMIT " + TK.side}</button><button id="tkCxl" ${d && d.orders && d.orders.length ? "" : "disabled"} class="danger">CANCEL ALL</button></div>
@@ -1744,7 +1837,7 @@ async function transmit(){
     TK.inflight = false; P.ticket.last = null; renderTicket(state, d); poll(true);
   };
   if (t.one_click) return send();
-  confirmBox(`${TK.side} ${sz(qty)} ${d.symbol} ${type}${type !== "MKT" ? " @ " + px(price) : ""}${aux ? " stop " + px(aux) : ""}`, `about $${sz(Math.round(qty * (price || d.last || 0)))} · ${tif}` + (d.ps60 && d.ps60.grade === "PASS" ? ` ⚠ PS60 says PASS: ${d.ps60.why}` : ""), TK.side === "BUY" ? "b" : "s", send);
+  confirmBox(`${TK.side} ${sz(qty)} ${d.symbol} ${type}${type !== "MKT" ? " @ " + px(price) : ""}${aux ? " stop " + px(aux) : ""}`, `about $${sz(Math.round(qty * (price || d.last || 0)))} · ${tif}` + (d.ps60 && d.ps60.grade === "PASS" ? ` · PS60 PASS: ${d.ps60.why}` : ""), TK.side === "BUY" ? "b" : "s", send);
 }
 P.ticket.el.addEventListener("click", e => {
   const d = curData();
@@ -1857,7 +1950,7 @@ function speakNew(s){
   if (!store.get("voice", true)) return;
   for (const t of items.slice(-2)) say(t);
 }
-document.getElementById("voiceBtn").addEventListener("click", () => { const on = !store.get("voice", true); store.set("voice", on); document.getElementById("voiceBtn").textContent = on ? "VOICE: ON" : "VOICE: OFF"; if (on) say("Voice on.", true); renderTabs(); });
+document.getElementById("voiceBtn").addEventListener("click", () => { const on = !store.get("voice", true); store.set("voice", on); document.getElementById("voiceBtn").textContent = on ? "VOICE ON" : "VOICE OFF"; if (on) say("Voice on.", true); renderTabs(); });
 document.getElementById("voiceVol").value = store.get("voiceVol", 1);
 document.getElementById("voiceVol").addEventListener("change", e => store.set("voiceVol", +e.target.value));
 
@@ -1876,12 +1969,12 @@ function renderStatus(s){
   const arm = document.getElementById("armBtn");
   arm.textContent = t.locked ? "LOCKED" : t.armed ? "ARMED" : "ARM"; arm.className = t.locked ? "locked" : t.armed ? "armed" : "off"; arm.disabled = !t.can_trade; arm.title = t.can_trade ? "" : (t.why_not || "");
   document.getElementById("oneclick").checked = !!t.one_click; document.getElementById("bracket").checked = !!t.bracket; document.getElementById("scale").checked = !!t.scale;
-  document.getElementById("voiceBtn").textContent = store.get("voice", true) ? "VOICE: ON" : "VOICE: OFF";
-  document.getElementById("soundBtn").textContent = store.get("sound", true) ? "🔊" : "🔇";
-  const rot = document.getElementById("rotate"); rot.textContent = "⟳ " + (s.auto_rotate ? "ON" : "OFF");
-  const rec = document.getElementById("recBtn"); rec.className = s.desk && s.desk.recording ? "on" : ""; rec.textContent = s.desk && s.desk.recording ? "■ STOP" : "● REC";
+  document.getElementById("voiceBtn").textContent = store.get("voice", true) ? "VOICE ON" : "VOICE OFF";
+  document.getElementById("soundBtn").textContent = store.get("sound", true) ? "BEEP ON" : "BEEP OFF";
+  const rot = document.getElementById("rotate"); rot.textContent = "ROTATE " + (s.auto_rotate ? "ON" : "OFF");
+  const rec = document.getElementById("recBtn"); rec.className = s.desk && s.desk.recording ? "on" : ""; rec.textContent = s.desk && s.desk.recording ? "STOP REC" : "REC";
   const rp = s.replay, rb = document.getElementById("replaybar"); rb.classList.toggle("on", !!rp);
-  if (rp){ document.getElementById("rpFile").textContent = rp.file || ""; document.getElementById("rpPlay").textContent = rp.done ? "✔ finished" : rp.paused ? "▶ Play" : "⏸ Pause";
+  if (rp){ document.getElementById("rpFile").textContent = rp.file || ""; document.getElementById("rpPlay").textContent = rp.done ? "FINISHED" : rp.paused ? "PLAY" : "PAUSE";
     if (document.activeElement !== document.getElementById("rpSpeed")) document.getElementById("rpSpeed").value = rp.speed || 5; document.getElementById("rpSpeedV").textContent = (rp.speed || 5) + "×"; document.getElementById("rpPos").textContent = rp.position ? new Date(rp.position * 1000).toLocaleTimeString() : ""; }
 }
 
@@ -1922,7 +2015,7 @@ async function poll(now){
 
 
 /* ---------- command bar wiring */
-document.getElementById("armBtn").addEventListener("click", async () => { const out = await post("/api/trade/arm", {on: !T().armed}); if (!out.ok) toast("Can't arm: " + out.reason, false); else toast(out.armed ? "ARMED — orders will transmit" : "Disarmed", true); poll(true); });
+document.getElementById("armBtn").addEventListener("click", async () => { const out = await post("/api/trade/arm", {on: !T().armed}); if (!out.ok) toast("ARM REFUSED · " + out.reason, false); else toast(out.armed ? "ARMED — orders will transmit" : "Disarmed", true); poll(true); });
 document.getElementById("oneclick").addEventListener("change", e => post("/api/trade/oneclick", {on: e.target.checked}));
 document.getElementById("bracket").addEventListener("change", e => post("/api/trade/bracket", {on: e.target.checked}));
 document.getElementById("scale").addEventListener("change", e => post("/api/trade/scale", {on: e.target.checked}));
