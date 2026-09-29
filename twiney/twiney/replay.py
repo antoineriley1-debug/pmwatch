@@ -10,7 +10,8 @@ TICK_STEP = 0.25  # the live session evaluates time-based rules every 0.25s
 
 
 def session_header(plays, cfg, version):
-    return {"ev": "session", "t": time.time(), "version": version, "plays": plays, "config": cfg}
+    from .settings import redacted
+    return {"ev": "session", "t": time.time(), "version": version, "plays": plays, "config": redacted(cfg)}
 
 
 def replay(path, plays=None, cfg=None, speed=0.0, on_alert=None, engine_ready=None, control=None):

@@ -37,8 +37,28 @@ def layout_file(args):
     return os.path.join(os.path.dirname(os.path.abspath(args.config)), "layout.json")
 
 
+def restart_process(stop=None):
+    """RESTART from the desk: stop cleanly (IBKR session, recording), then start again with the same arguments.
+    The browser tab stays and reconnects by itself."""
+    print("Restarting TED to apply settings...", flush=True)
+    try:
+        if stop:
+            stop()
+    except Exception:
+        pass
+    os.environ["TWINEY_RESTARTED"] = "1"
+    args = [sys.executable] + sys.argv
+    if os.name == "nt":
+        import subprocess
+        subprocess.Popen(args)
+        os._exit(0)
+    os.execv(sys.executable, args)
+
+
 def open_dashboard(dash, cfg, args):
     print(f"Dashboard: {dash.url}", flush=True)
+    if os.environ.get("TWINEY_RESTARTED"):
+        return                      # restarted from the desk: the tab is already open
     if cfg["dashboard"]["open_browser"] and not args.no_browser:
         threading.Timer(0.8, lambda: webbrowser.open(dash.url)).start()
 
@@ -81,7 +101,7 @@ def run_live(cfg, plays, args):
     if recorder:
         desk.started = time.time()
     dash = Dashboard(engine, cfg["dashboard"]["host"], cfg["dashboard"]["port"], trader=trader, desk=desk,
-                     rec_dir=cfg["recording"]["dir"], layout_path=layout_file(args)).start()
+                     rec_dir=cfg["recording"]["dir"], layout_path=layout_file(args), config_path=args.config).start()
     ib = cfg["ibkr"]
     mode = "order entry PAPER-ONLY" if trader and not cfg["trading"]["allow_live"] else \
         "order entry LIVE ALLOWED" if trader else "view only"
@@ -95,7 +115,7 @@ def run_live(cfg, plays, args):
         engine.play_listeners.append(lambda p: flow.symbols.append(p["symbol"]))
         print("Option flow: Quant Data (key from config.json)", flush=True)
     else:
-        print("Option flow: off (put your key in config.json under quantdata.api_key)", flush=True)
+        print("Option flow: off (add your Quant Data key in SETTINGS on the desk)", flush=True)
     open_dashboard(dash, cfg, args)
 
     def stop():
@@ -104,6 +124,7 @@ def run_live(cfg, plays, args):
         session.stop()
         dash.stop()
         desk.stop()
+    dash.hooks["restart"] = lambda: restart_process(stop)
     wait_forever(stop)
     return 0
 
@@ -132,7 +153,7 @@ def run_demo(cfg, plays, args):
     if recorder:
         desk.started = time.time()
     dash = Dashboard(engine, cfg["dashboard"]["host"], cfg["dashboard"]["port"], trader=trader, desk=desk,
-                     rec_dir=cfg["recording"]["dir"], layout_path=layout_file(args)).start()
+                     rec_dir=cfg["recording"]["dir"], layout_path=layout_file(args), config_path=args.config).start()
     print(f"TWINEY {__version__} · DEMO FEED (synthetic, not market data) · practice orders fill in the simulator",
           flush=True)
     open_dashboard(dash, cfg, args)
@@ -149,6 +170,7 @@ def run_demo(cfg, plays, args):
             sim_flow.step(now)
             stop_evt.wait(0.25)
     threading.Thread(target=loop, daemon=True).start()
+    dash.hooks["restart"] = lambda: restart_process(lambda: (stop_evt.set(), dash.stop(), desk.stop()))
     wait_forever(lambda: (stop_evt.set(), dash.stop(), desk.stop()))
     return 0
 

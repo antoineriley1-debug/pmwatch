@@ -85,7 +85,8 @@ class EngineRef:
         return getattr(self._box["engine"], name)
 
 
-def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_path=None):
+def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_path=None, config_path=None, hooks=None):
+    hooks = hooks if hooks is not None else {}
     class Handler(BaseHTTPRequestHandler):
         server_version = "TWINEY/1.0"
 
@@ -131,6 +132,10 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                         self._send(200, fh.read(), "text/plain; charset=utf-8")
                 else:
                     self._send(404, "not found", "text/plain")
+            elif path == "/api/settings":
+                from . import settings as _settings
+                self._send(200, json.dumps({"sections": _settings.schema(engine.cfg), "file": config_path,
+                                            "can_restart": bool(hooks.get("restart"))}, default=str), "application/json")
             elif path == "/api/layouts":
                 self._send(200, json.dumps(_load_layouts(layout_path)), "application/json")
             elif path == "/api/layout":
@@ -194,6 +199,24 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                 else:
                     ok = (engine.add_level if body.get("on", True) else engine.remove_level)(sym, body.get("price"), clock())
                 self._send(200 if ok else 400, json.dumps({"ok": ok}), "application/json")
+            elif path == "/api/settings":
+                from . import settings as _settings
+                from .config import ConfigError
+                try:
+                    applied, restart = _settings.apply(engine.cfg, config_path, body.get("changes") or {})
+                    engine._message("info", f"settings saved: {', '.join(applied)}" if applied else "settings: nothing changed", clock())
+                    self._send(200, json.dumps({"ok": True, "applied": applied, "restart": restart,
+                                                "sections": _settings.schema(engine.cfg)}, default=str), "application/json")
+                except (ConfigError, OSError, ValueError) as exc:
+                    self._send(400, json.dumps({"ok": False, "reason": str(exc)}), "application/json")
+                return
+            elif path == "/api/restart":
+                if not hooks.get("restart"):
+                    self._send(400, json.dumps({"ok": False, "reason": "restart is not available here"}), "application/json")
+                    return
+                self._send(200, json.dumps({"ok": True}), "application/json")
+                threading.Timer(0.4, hooks["restart"]).start()
+                return
             elif path == "/api/flow":
                 out = {"ok": True}
                 if "scope" in body:
@@ -352,8 +375,11 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
 
 
 class Dashboard:
-    def __init__(self, engine, host, port, clock=time.time, trader=None, desk=None, rec_dir=None, layout_path=None):
-        self.httpd = ThreadingHTTPServer((host, port), make_handler(engine, clock, trader, desk, rec_dir, layout_path))
+    def __init__(self, engine, host, port, clock=time.time, trader=None, desk=None, rec_dir=None, layout_path=None,
+                 config_path=None, on_restart=None):
+        self.hooks = {"restart": on_restart}
+        self.httpd = ThreadingHTTPServer((host, port), make_handler(engine, clock, trader, desk, rec_dir, layout_path,
+                                                                    config_path, self.hooks))
         self.httpd.daemon_threads = True
         self.thread = None
 

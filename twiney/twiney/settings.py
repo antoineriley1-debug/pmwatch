@@ -1,0 +1,250 @@
+"""Every setting in config.json, editable from the desk.
+
+``schema(cfg)`` describes each setting (section, label, help, type, current value, live or restart);
+``apply(cfg, path, changes)`` validates the changes, applies them to the running config in place (so the
+parts of the desk that read settings at use time pick them up at once) and writes config.json for you.
+
+The help text is read from the comments in ``config.py`` so it can never drift from the defaults.
+A few things are deliberately not editable here: trading.allow_live (TED is paper-only) and
+dashboard.host (the desk only listens on this computer).
+"""
+
+import copy
+import json
+import os
+import re
+
+from .config import DEFAULTS, ConfigError, build_config
+
+SECTIONS = [
+    ("trading", "Trading", "Order entry, sizes, caps, the day loss lock, PS60 exits."),
+    ("flow", "Option flow alerts", "When option flow counts as UNUSUAL, index products, voice."),
+    ("quantdata", "Quant Data", "Your option flow data feed."),
+    ("reload", "Reload detection", "When a buyer or seller counts as a reload, cleared out, or pulled."),
+    ("ladder", "Level II", "Big and huge size on the ladder."),
+    ("voice", "Voice", "Spoken call-outs."),
+    ("ps60", "PS60", "Second entry, measured potential, sneaky pivots, remount and rejection calls."),
+    ("tape", "Time & Sales", "How the tape is read."),
+    ("trap", "Trapped traders", "Aggressive prints now underwater."),
+    ("depth", "Market depth", "IBKR depth subscriptions and rotation."),
+    ("chart", "Chart history", "History loaded at startup."),
+    ("account", "Account", "Orders, positions and fills."),
+    ("health", "Feed health", "When a feed counts as stale."),
+    ("demo", "Practice", "The practice market."),
+    ("recording", "Recording", "Session recordings."),
+    ("ibkr", "IBKR connection", "TWS / Gateway connection."),
+    ("dashboard", "Desk", "The desk itself."),
+]
+
+# settings that are read once at startup: saved at once, used after RESTART
+RESTART = ("ibkr.", "dashboard.", "depth.slots", "depth.rows_requested", "depth.smart_depth", "recording.",
+           "chart.", "account.", "quantdata.", "demo.", "trading.enabled")
+
+LOCKED = {
+    "trading.allow_live": "Locked: TED is paper-only. Live trading is never switched on from the desk.",
+    "dashboard.host": "Locked: the desk only listens on this computer.",
+}
+
+SECRET = {"quantdata.api_key"}
+
+CHOICES = {
+    "ibkr.port": [(7497, "7497 · TWS paper"), (7496, "7496 · TWS live"), (4002, "4002 · Gateway paper"), (4001, "4001 · Gateway live")],
+    "ibkr.market_data_type": [(1, "1 · live"), (2, "2 · frozen"), (3, "3 · delayed"), (4, "4 · delayed frozen")],
+    "quantdata.method": [("POST", "POST"), ("GET", "GET")],
+    "quantdata.scope": [("all", "whole market"), ("watchlist", "watchlist only")],
+    "flow.alerts": [("watchlist", "watchlist only"), ("all", "every ticker")],
+    "demo.scenario": [(None, "random each session"), ("mixed", "mixed"), ("trend_up", "trend up"), ("trend_down", "trend down"),
+                      ("chop", "chop"), ("capitulation", "capitulation"), ("squeeze", "squeeze")],
+    "ps60.second_entry_tf": [(1, "1 minute"), (5, "5 minutes")],
+}
+
+LABELS = {
+    "min_premium": "Min premium ($)", "index_min_premium": "Index min premium ($)", "otm_pct": "Min % out of the money",
+    "max_dte": "Max days to expiry", "api_key": "API key", "base_url": "API address", "flow_path": "Flow endpoint",
+    "max_dollars_per_order": "Max $ per order", "max_daily_loss": "Day loss limit ($)", "allow_market": "Allow market / naked stop orders",
+    "stop_limit_ticks": "Stop-limit ticks", "mp": "MP", "atr_days": "ATR days", "atr_from_bars": "ATR from daily bars",
+    "big_shares": "Big size (shares)", "huge_multiple": "Huge = big ×", "min_shares": "Min shares",
+    "voice_all": "Speak flow for every watchlist symbol", "against_bias": "Hold at WATCH when flow leans against (0-1)",
+    "against_min_premium": "…and at least this premium ($)", "smart_depth": "SMART depth", "dir": "Folder",
+}
+
+
+def _label(key):
+    return LABELS.get(key) or key.replace("_", " ").capitalize()
+
+
+def _help_from_source():
+    """Map dotted path -> the comment lines written above it in config.py's DEFAULTS."""
+    src = open(os.path.join(os.path.dirname(__file__), "config.py"), encoding="utf-8").read()
+    start = src.index("DEFAULTS = {")
+    lines = src[start:].splitlines()[1:]
+    stack, pending, out = [], [], {}
+    for raw in lines:
+        line = raw.strip()
+        if line.startswith("#"):
+            pending.append(line.lstrip("# ").strip())
+            continue
+        m = re.match(r'"([a-z_0-9]+)":\s*(.*)$', line)
+        if m:
+            key, rest = m.group(1), m.group(2)
+            path = ".".join(stack + [key])
+            if pending:
+                out[path] = " ".join(pending)
+            pending = []
+            if rest.endswith("{"):
+                stack.append(key)
+            continue
+        if line.startswith("}"):
+            if not stack:
+                break
+            stack.pop()
+            pending = []
+    return out
+
+
+HELP = _help_from_source()
+
+
+def _get(d, path):
+    for k in path.split("."):
+        d = d[k]
+    return d
+
+
+def _set(d, path, value):
+    keys = path.split(".")
+    for k in keys[:-1]:
+        d = d.setdefault(k, {})
+    d[keys[-1]] = value
+
+
+def _leaves(d, prefix=""):
+    for k, v in d.items():
+        p = prefix + k
+        if isinstance(v, dict) and p not in ("quantdata.extra_params",):
+            yield from _leaves(v, p + ".")
+        else:
+            yield p, v
+
+
+def _kind(path, default):
+    if path in SECRET:
+        return "secret"
+    if path in CHOICES:
+        return "select"
+    if isinstance(default, bool):
+        return "bool"
+    if isinstance(default, int):
+        return "int"
+    if isinstance(default, float):
+        return "float"
+    if isinstance(default, list) and all(isinstance(x, str) for x in default):
+        return "list"
+    if isinstance(default, (list, dict)):
+        return "json"
+    return "text"
+
+
+def schema(cfg):
+    sections = []
+    for key, title, blurb in SECTIONS:
+        fields = []
+        for path, default in _leaves(DEFAULTS[key], key + "."):
+            kind = _kind(path, default)
+            value = _get(cfg, path)
+            f = {"path": path, "label": _label(path.split(".")[-1]), "help": HELP.get(path, ""), "type": kind,
+                 "restart": path.startswith(RESTART) or any(path == r for r in RESTART), "locked": LOCKED.get(path)}
+            if kind == "secret":
+                f["value"] = ""
+                f["set"] = bool(value)
+                f["hint"] = ("…" + str(value)[-4:]) if value else ""
+            elif kind == "json":
+                f["value"] = json.dumps(value)
+            elif kind == "list":
+                f["value"] = ", ".join(value)
+            else:
+                f["value"] = value
+            if kind == "select":
+                f["choices"] = [{"value": v, "label": lbl} for v, lbl in CHOICES[path]]
+            fields.append(f)
+        sections.append({"key": key, "title": title, "blurb": blurb, "fields": fields})
+    return sections
+
+
+def _coerce(path, raw):
+    default = _get(DEFAULTS, path)
+    kind = _kind(path, default)
+    try:
+        if kind == "bool":
+            return raw if isinstance(raw, bool) else str(raw).strip().lower() in ("1", "true", "on", "yes")
+        if kind == "int":
+            return int(float(raw))
+        if kind == "float":
+            return float(raw)
+        if kind == "list":
+            items = raw if isinstance(raw, list) else str(raw).split(",")
+            return [str(x).strip().upper() for x in items if str(x).strip()]
+        if kind == "json":
+            return raw if isinstance(raw, (list, dict)) else json.loads(raw)
+        if kind == "select":
+            allowed = [v for v, _l in CHOICES[path]]
+            v = None if raw in (None, "", "null") else raw
+            if v not in allowed:
+                v = type(allowed[-1])(v) if allowed[-1] is not None else v
+            if v not in allowed:
+                raise ValueError(f"must be one of {', '.join(str(a) for a in allowed)}")
+            return v
+        return "" if raw is None else str(raw)
+    except (TypeError, ValueError) as exc:
+        raise ConfigError(f"{path}: {exc}" if str(exc) else f"{path}: not a valid {kind}")
+
+
+def apply(cfg, config_path, changes):
+    """Validate ``changes`` ({path: value}), apply them to ``cfg`` in place and save config.json.
+    Returns (applied paths, paths that take effect after a restart)."""
+    clean = {}
+    for path, raw in (changes or {}).items():
+        try:
+            _get(DEFAULTS, path)
+        except (KeyError, TypeError):
+            raise ConfigError(f"unknown setting {path}")
+        if path in LOCKED:
+            raise ConfigError(LOCKED[path])
+        if path in SECRET and (raw is None or raw == ""):
+            continue                       # empty box = keep the key you have
+        if path in SECRET and raw == "__clear__":
+            raw = ""
+        clean[path] = _coerce(path, raw)
+    if not clean:
+        return [], []
+    # the file as you have it (comment keys and all), with the changes on top
+    raw_file = {}
+    if config_path and os.path.exists(config_path):
+        with open(config_path, encoding="utf-8") as fh:
+            raw_file = json.load(fh)
+    new_file = copy.deepcopy(raw_file)
+    for path, value in clean.items():
+        _set(new_file, path, value)
+    build_config(new_file)                 # the same checks as startup: nothing invalid gets saved
+    if config_path:
+        tmp = config_path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(new_file, fh, indent=2)
+            fh.write("\n")
+        os.replace(tmp, config_path)
+    for path, value in clean.items():      # in place: the running desk sees it at once
+        _set(cfg, path, value)
+    restart = [p for p in clean if p.startswith(RESTART) or p in RESTART]
+    return sorted(clean), restart
+
+
+def redacted(cfg):
+    """A copy safe to write into recordings and exports: secrets blanked."""
+    out = copy.deepcopy(cfg)
+    for path in SECRET:
+        try:
+            if _get(out, path):
+                _set(out, path, "***")
+        except (KeyError, TypeError):
+            pass
+    return out

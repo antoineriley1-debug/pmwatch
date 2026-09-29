@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20260929-2333">
+<meta name="build" content="20260929-2341">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -600,6 +600,35 @@ input:focus,select:focus,textarea:focus{outline:1px solid var(--gold);outline-of
 .fa-sub .fsw{background:#0f1522;border:1px solid #2a3344;border-radius:10px;color:#8b95a7;font:600 9.5px "IBM Plex Sans","Segoe UI",sans-serif;letter-spacing:.08em;padding:1px 8px;height:18px;text-transform:none}
 .fa-sub .fsw b{color:#8b95a7;margin-left:3px} .fa-sub .fsw.on{border-color:#17a86a;color:#e6e9ef} .fa-sub .fsw.on b{color:#2ec27e}
 
+/* SETTINGS */
+#settings{position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center}
+#settings[hidden]{display:none}
+#settings .sbox{width:min(1100px,94vw);height:min(760px,90vh);background:#131416;border:1px solid #2c2e33;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.7)}
+#settings .shead{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid #26282c;background:#0f1012}
+#settings .shead b{font:600 12px var(--sans);letter-spacing:.2em;color:#d6d6d3} #settings .shead .spacer{flex:1}
+#settings #setFind{width:260px;height:26px;background:#0a0a0b;border:1px solid #2c2e33;color:var(--text);font:12px var(--sans);padding:0 10px}
+#settings #setMsg{font:500 10.5px var(--sans);letter-spacing:.06em} #settings #setMsg.ok{color:var(--buy)} #settings #setMsg.no{color:var(--sell)}
+#settings button.save{background:#2a2412;border-color:var(--gold);color:#f2d59a;font-weight:700;padding:4px 16px} #settings button.save:disabled{opacity:.35}
+#settings #setRestart{background:#3d1c1c;border-color:var(--sell);color:#fff;font-weight:700}
+#settings .sbody{flex:1;display:flex;min-height:0}
+#settings .snav{width:210px;border-right:1px solid #26282c;overflow:auto;padding:6px 0;flex:none}
+#settings .sn{padding:7px 14px;font:500 12px var(--sans);color:#a9aaaf;cursor:pointer;border-left:2px solid transparent}
+#settings .sn:hover{background:#1a1b1e} #settings .sn.on{color:#e6e6e3;border-left-color:var(--gold);background:#1a1b1e} #settings .sn.none{opacity:.35}
+#settings .sn i{font-style:normal;background:var(--gold);color:#0c0c0d;font:700 9px var(--sans);padding:0 5px;margin-left:4px}
+#settings .sform{flex:1;overflow:auto;padding:6px 18px 30px}
+#settings h4{font:600 13px var(--sans);letter-spacing:.14em;text-transform:uppercase;color:#e6e6e3;margin:14px 0 2px} #settings .sb{font:12px var(--sans);color:#7d7f85;margin-bottom:8px}
+#settings .sf{display:grid;grid-template-columns:1fr 300px;gap:16px;padding:9px 0;border-bottom:1px solid #1c1d20;align-items:center}
+#settings .sf.dirty{box-shadow:inset 3px 0 0 var(--gold);padding-left:10px} #settings .sf.locked{opacity:.55}
+#settings .sl b{font:600 12.5px var(--sans);color:#e6e6e3;margin-right:8px} #settings .sl i{font:700 8.5px var(--sans);letter-spacing:.12em;font-style:normal;padding:1px 5px;border:1px solid}
+#settings .sl i.lv{color:#6fcf97;border-color:#2c6a45} #settings .sl i.rs{color:#e3a83a;border-color:#6b5420}
+#settings .sh{font:11.5px/1.45 var(--sans);color:#8e9096;margin-top:3px} #settings code{font:10px var(--mono);color:#55575d}
+#settings .si{display:flex;gap:6px;align-items:center}
+#settings .si input,#settings .si select,#settings .si textarea{flex:1;width:100%;height:28px;background:#0a0a0b;border:1px solid #2c2e33;color:var(--text);font:12.5px var(--mono);padding:0 8px;box-sizing:border-box}
+#settings .si textarea{height:auto;padding:4px 8px;resize:vertical}
+#settings .sw{position:relative;width:40px;height:20px;flex:none} #settings .sw input{opacity:0;width:0;height:0;position:absolute}
+#settings .sw span{position:absolute;inset:0;background:#2c2e33;border-radius:10px;cursor:pointer;transition:.15s} #settings .sw span:before{content:"";position:absolute;width:14px;height:14px;left:3px;top:3px;background:#8e9096;border-radius:50%;transition:.15s}
+#settings .sw input:checked+span{background:#173b28} #settings .sw input:checked+span:before{transform:translateX(20px);background:var(--buy)}
+
 </style>
 </head>
 <body>
@@ -624,6 +653,7 @@ input:focus,select:focus,textarea:focus{outline:1px solid var(--gold);outline-of
   <span class="spacer"></span>
   <span class="menu" id="panelsMenu"><button>PANELS</button><div class="pop" id="panelsPop"></div></span>
   <span class="menu" id="hkMenu"><button>Hotkeys</button><div class="pop" id="hkPop"></div></span>
+  <button id="setBtn" title="Every setting on the desk">SETTINGS</button>
   <button id="rotate" title="Auto-rotate the other ladders to the plays closest to their pivots">ROTATE ON</button>
 </div>
 <div id="wsbar">
@@ -668,6 +698,10 @@ input:focus,select:focus,textarea:focus{outline:1px solid var(--gold);outline-of
   <span id="rpPos" class="mono dim"></span>
 </div>
 <div id="toasts"></div>
+<div id="settings" hidden><div class="sbox">
+  <div class="shead"><b>SETTINGS</b><input id="setFind" placeholder="find a setting" spellcheck="false" autocomplete="off"><span class="spacer"></span><span class="dim" id="setMsg"></span><button id="setSave" class="save" disabled>SAVE</button><button id="setRestart" hidden title="Restart TED now so the settings marked RESTART take effect. The page reconnects by itself.">RESTART NOW</button><button id="setClose">CLOSE</button></div>
+  <div class="sbody"><div class="snav" id="setNav"></div><div class="sform" id="setForm"></div></div>
+</div></div>
 <template id="tplPanels">
   <div class="pnl" data-p="chart"><div class="qs"></div><div class="pc nos"><div class="chart-wrap"><div class="chart-tools"></div><canvas></canvas></div></div></div>
   <div class="pnl" data-p="foot"><div class="pc nos"><div class="chart-wrap"><div class="chart-tools"><span class="dim" style="font-size:10.5px;background:rgba(17,22,31,.85);padding:1px 6px">5m FOOTPRINT · SELLERS HIT BID × BUYERS PAID UP</span></div><canvas></canvas></div></div></div>
@@ -683,7 +717,7 @@ input:focus,select:focus,textarea:focus{outline:1px solid var(--gold);outline-of
   <div class="pnl" data-p="calls"><div class="pc" style="padding:6px"><div id="feedBody"></div></div></div>
   <div class="pnl fa" data-p="flow"><div class="fa-top"><div class="fa-tabs"><span class="on">OPTION FLOW</span><span class="off" title="equity prints live on TIME &amp; SALES">EQUITY FLOW</span></div>
     <div class="fa-search"><input id="flowFilter" placeholder="Filter by ticker..." spellcheck="false" autocomplete="off"><span class="mag">&#9906;</span></div>
-    <div class="fa-sub"><span>Realtime Option Flow</span><button id="flowScope" class="fsw" title="WHOLE MARKET on: the feed pulls every ticker's option flow. Off: only your watchlist is pulled (lighter on the Quant Data limit). UNUSUAL calls are watchlist-only either way.">WHOLE MARKET <b>ON</b></button><button id="flowAlerts" class="fsw" title="UNUSUAL alerts and voice: WATCHLIST = your symbols only; ALL = every ticker in the feed. Index products (SPY, QQQ, SPX, IWM ...) need far more premium to count: flow.index_min_premium in config.json.">ALERTS <b>WATCHLIST</b></button><label><input type="checkbox" id="flowUnusual"> Unusual only</label><label><input type="checkbox" id="flowMine" checked> Watchlist</label><span class="src" id="flowSrc"></span></div></div><div class="pc"><div id="flowList"></div></div></div>
+    <div class="fa-sub"><span>Realtime Option Flow</span><button id="flowScope" class="fsw" title="WHOLE MARKET on: the feed pulls every ticker's option flow. Off: only your watchlist is pulled (lighter on the Quant Data limit). UNUSUAL calls are watchlist-only either way.">WHOLE MARKET <b>ON</b></button><button id="flowAlerts" class="fsw" title="UNUSUAL alerts and voice: WATCHLIST = your symbols only; ALL = every ticker in the feed. Index products (SPY, QQQ, SPX, IWM ...) need far more premium to count: set it in SETTINGS, Option flow alerts.">ALERTS <b>WATCHLIST</b></button><label><input type="checkbox" id="flowUnusual"> Unusual only</label><label><input type="checkbox" id="flowMine" checked> Watchlist</label><span class="src" id="flowSrc"></span></div></div><div class="pc"><div id="flowList"></div></div></div>
   <div class="pnl" data-p="desk"><div class="pc"><div id="deskBody"></div></div></div>
   <div class="pnl" data-p="journal"><div class="pc"><div id="journalBody"><div class="jform"><input id="jText" placeholder="journal note · Enter"><button id="jAdd">add</button></div><div id="jList"></div><div id="jTrades"></div></div></div></div>
   <div class="pnl" data-p="messages"><div class="pc" style="padding:6px"><div id="messages"></div></div></div>
@@ -2026,7 +2060,7 @@ function renderBook(d){
   if (bookDragging) return;
   const bi = document.getElementById("bigIn"), L = d.ladder || {};
   if (bi && document.activeElement !== bi && L.big_shares != null && bi.dataset.sym + ":" + L.big_shares !== d.symbol + ":" + L.big_shares){ bi.value = Math.round(L.big_shares); bi.dataset.sym = d.symbol; }
-  const hint = document.getElementById("bigHint"); if (hint){ const txt = L.big_shares != null ? (L.big_default ? "config default" : d.symbol + " only") + " · huge ≥ " + kfmt(L.huge_shares) : ""; if (hint.textContent !== txt) hint.textContent = txt; }
+  const hint = document.getElementById("bigHint"); if (hint){ const txt = L.big_shares != null ? (L.big_default ? "default" : d.symbol + " only") + " · huge ≥ " + kfmt(L.huge_shares) : ""; if (hint.textContent !== txt) hint.textContent = txt; }
   const html = ladderHTML(training() ? Object.assign({}, d.ladder, {rows: d.ladder.rows.map(r => Object.assign({}, r, {bid_state: null, ask_state: null, bid_refills: 0, ask_refills: 0, bid_verdict: null, ask_verdict: null}))}) : d.ladder);
   if (P.book.last === html) return;
   P.book.last = html;
@@ -2368,7 +2402,7 @@ function renderFlow(s){
       <div class="tm">${d.toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"})}</div>
       <div class="top"><span class="tk">${esc(p.symbol)}</span><span class="prem">${kfmt$(p.premium)}</span><span class="dots ${p.side === "ask" ? "a" : ""}">${p.kind === "sweep" || p.kind === "split" ? "<i></i><i></i>" : p.kind === "block" ? "<i></i>" : ""}</span>${p.away ? `<span class="aw">WAYS AWAY</span>` : ""}</div>
       <div class="cols"><span><i>EXP</i>${exp(p.expiry)}</span><span><i>STRIKE</i>${strike(p.strike)}</span><span><i>C/P</i>${cp}</span><span><i>SPOT</i>${p.spot != null ? (+p.spot).toFixed(2) : NA}</span><span><i>TYPE</i><span class="ty">${typ(p)}</span></span><span><i>DETAILS</i>${sz(p.size)} @ ${p.price != null ? p.price.toFixed(2) : NA}</span></div></div>`; }).join("")
-    : `<div class="dim" style="padding:10px">${(s.flow || []).length ? "Nothing matches the filter." : (s.connection && s.connection.state === "DEMO" ? "Practice flow is warming up." : "No option flow. Put your Quant Data key in config.json under quantdata.api_key and restart.")}</div>`;
+    : `<div class="dim" style="padding:10px">${(s.flow || []).length ? "Nothing matches the filter." : (s.connection && s.connection.state === "DEMO" ? "Practice flow is warming up." : "No option flow. Add your Quant Data key in SETTINGS, Quant Data, then RESTART NOW.")}</div>`;
   if (el.dataset.h !== html){ el.dataset.h = html; el.innerHTML = html; }
 }
 document.getElementById("flowScope").addEventListener("click", async () => {
@@ -2409,6 +2443,66 @@ document.addEventListener("change", async e => {
 });
 /* training mode: the desk stops telling you where the reload buyers and sellers are. You read the tape; REVEAL checks your call. */
 function training(){ return store.get("training", false) && (state ? state.now : 0) > (window._revealUntil || 0); }
+/* SETTINGS: every setting on the desk, saved to config.json for you */
+const SET = {sections: null, dirty: {}, cur: null, restartPending: false};
+async function openSettings(){
+  const r = await fetch("/api/settings", {cache: "no-store"}); const j = await r.json();
+  SET.sections = j.sections; SET.dirty = {}; SET.canRestart = j.can_restart; SET.cur = SET.cur || j.sections[0].key;
+  document.getElementById("settings").hidden = false; renderSettings(); document.getElementById("setFind").focus();
+}
+function setField(f){
+  const id = "sf_" + f.path.replace(/\./g, "_"), dis = f.locked ? "disabled" : "", v = SET.dirty.hasOwnProperty(f.path) ? SET.dirty[f.path] : f.value;
+  let inp;
+  if (f.type === "bool") inp = `<label class="sw"><input type="checkbox" id="${id}" data-path="${f.path}" ${v ? "checked" : ""} ${dis}><span></span></label>`;
+  else if (f.type === "select") inp = `<select id="${id}" data-path="${f.path}" ${dis}>${f.choices.map(c => `<option value="${esc(JSON.stringify(c.value))}" ${JSON.stringify(c.value) === JSON.stringify(v) ? "selected" : ""}>${esc(c.label)}</option>`).join("")}</select>`;
+  else if (f.type === "secret") inp = `<input type="password" id="${id}" data-path="${f.path}" placeholder="${f.set ? "saved (" + esc(f.hint) + ") · type a new one to replace" : "paste your key"}" autocomplete="off">${f.set ? `<button data-clear="${f.path}">REMOVE</button>` : ""}`;
+  else if (f.type === "json") inp = `<textarea id="${id}" data-path="${f.path}" rows="2" spellcheck="false" ${dis}>${esc(v)}</textarea>`;
+  else inp = `<input type="${f.type === "int" || f.type === "float" ? "number" : "text"}" ${f.type === "float" ? 'step="any"' : ""} id="${id}" data-path="${f.path}" value="${esc(v == null ? "" : v)}" ${dis}>`;
+  return `<div class="sf ${SET.dirty.hasOwnProperty(f.path) ? "dirty" : ""} ${f.locked ? "locked" : ""}"><div class="sl"><b>${esc(f.label)}</b>${f.restart ? `<i class="rs" title="saved at once, used after RESTART NOW">RESTART</i>` : `<i class="lv" title="takes effect the moment you save">LIVE</i>`}<div class="sh">${esc(f.locked || f.help || "")}</div><code>${esc(f.path)}</code></div><div class="si">${inp}</div></div>`;
+}
+function renderSettings(){
+  const q = (document.getElementById("setFind").value || "").trim().toLowerCase();
+  const secs = SET.sections || [];
+  const match = f => !q || (f.label + " " + f.help + " " + f.path).toLowerCase().includes(q);
+  document.getElementById("setNav").innerHTML = secs.map(s => { const n = s.fields.filter(match).length; const d = s.fields.filter(f => SET.dirty.hasOwnProperty(f.path)).length;
+    return `<div class="sn ${s.key === SET.cur && !q ? "on" : ""} ${n ? "" : "none"}" data-sec="${s.key}">${esc(s.title)}${d ? ` <i>${d}</i>` : ""}${q && n ? ` <span class="dim">${n}</span>` : ""}</div>`; }).join("");
+  const show = q ? secs.filter(s => s.fields.some(match)) : secs.filter(s => s.key === SET.cur);
+  document.getElementById("setForm").innerHTML = show.map(s => `<div class="ss"><h4>${esc(s.title)}</h4><div class="sb">${esc(s.blurb)}</div>${s.fields.filter(match).map(setField).join("")}</div>`).join("") || `<div class="dim" style="padding:20px">No setting matches.</div>`;
+  const n = Object.keys(SET.dirty).length;
+  const sv = document.getElementById("setSave"); sv.disabled = !n; sv.textContent = n ? `SAVE ${n}` : "SAVE";
+  document.getElementById("setRestart").hidden = !(SET.restartPending && SET.canRestart);
+}
+function readInput(el){
+  const path = el.dataset.path, f = SET.sections.flatMap(s => s.fields).find(x => x.path === path); if (!f) return;
+  let v = f.type === "bool" ? el.checked : f.type === "select" ? JSON.parse(el.value) : el.value;
+  if (f.type === "secret" && !v) { delete SET.dirty[path]; return; }
+  const orig = f.type === "bool" ? !!f.value : f.value;
+  if (String(v) === String(orig) && f.type !== "secret") delete SET.dirty[path]; else SET.dirty[path] = v;
+}
+document.getElementById("setBtn").addEventListener("click", openSettings);
+document.getElementById("setClose").addEventListener("click", () => { if (Object.keys(SET.dirty).length && !confirm("Close without saving your changes?")) return; document.getElementById("settings").hidden = true; });
+document.getElementById("setFind").addEventListener("input", renderSettings);
+document.getElementById("setNav").addEventListener("click", e => { const s = e.target.closest("[data-sec]"); if (!s) return; SET.cur = s.dataset.sec; document.getElementById("setFind").value = ""; renderSettings(); });
+document.getElementById("setForm").addEventListener("change", e => { if (!e.target.dataset.path) return; readInput(e.target); const n = Object.keys(SET.dirty).length; const sv = document.getElementById("setSave"); sv.disabled = !n; sv.textContent = n ? `SAVE ${n}` : "SAVE"; e.target.closest(".sf").classList.toggle("dirty", SET.dirty.hasOwnProperty(e.target.dataset.path)); });
+document.getElementById("setForm").addEventListener("input", e => { if (e.target.dataset.path && e.target.type !== "checkbox") e.target.dispatchEvent(new Event("change", {bubbles: true})); });
+document.getElementById("setForm").addEventListener("click", e => { const c = e.target.dataset.clear; if (!c) return; if (!confirm("Remove the saved key?")) return; SET.dirty[c] = "__clear__"; renderSettings(); });
+document.getElementById("setForm").addEventListener("keydown", e => e.stopPropagation());
+document.getElementById("setFind").addEventListener("keydown", e => { e.stopPropagation(); if (e.key === "Escape") document.getElementById("setClose").click(); });
+document.getElementById("setSave").addEventListener("click", async () => {
+  const out = await post("/api/settings", {changes: SET.dirty});
+  const m = document.getElementById("setMsg");
+  if (!out.ok){ m.textContent = "NOT SAVED · " + out.reason; m.className = "no"; toast("Not saved: " + out.reason, false); return; }
+  SET.sections = out.sections; SET.dirty = {};
+  if (out.restart.length) SET.restartPending = true;
+  m.className = "ok"; m.textContent = `SAVED ${out.applied.length}` + (out.restart.length ? ` · ${out.restart.length} after RESTART` : " · live now");
+  toast(out.restart.length ? `Saved. ${out.restart.length} setting${out.restart.length > 1 ? "s apply" : " applies"} after RESTART NOW.` : "Saved. In effect now.", true);
+  renderSettings(); poll(true);
+});
+document.getElementById("setRestart").addEventListener("click", async () => {
+  if (!confirm("Restart TED now? Working orders stay at IBKR; the page reconnects by itself in a few seconds.")) return;
+  const out = await post("/api/restart", {}); if (!out.ok){ toast(out.reason || "Restart not available", false); return; }
+  SET.restartPending = false; document.getElementById("settings").hidden = true; toast("Restarting TED…", true);
+});
 function renderStatus(s){
   document.querySelector("#stBuild b").textContent = PAGE_BUILD || "—";
   // an old tab left open from a previous run: reload it onto the build the server is now serving
@@ -2507,6 +2601,7 @@ document.getElementById("shotBtn").addEventListener("click", deskShot);
 // keyboard: configurable hotkeys first; then the few fixed ones (Esc closes things, / focuses the symbol box, J journal, 2 / L chart marks)
 document.addEventListener("keydown", e => {
   if (e.key === "Escape"){ document.querySelectorAll(".menu.open").forEach(x => x.classList.remove("open")); if (e.target.matches("input, select, textarea")) e.target.blur(); }
+  if (!document.getElementById("settings").hidden) return;     // typing in SETTINGS never fires hotkeys
   if (document.getElementById("modal") || document.querySelector("td.k.cap")) return;
   if (!e.target.matches("input, select, textarea") && chartTypeKey(e)) return;
   if (e.target.matches("input, select, textarea")) return;

@@ -1,5 +1,8 @@
 # TED — TWINEY EXECUTION DESK (v3.1)
 
+
+> **Settings live in the app.** Click **SETTINGS** on the command bar: every setting, with its explanation, a search box, SAVE, and RESTART NOW for the few marked RESTART. The desk writes config.json for you; you never need to open it. Two things stay locked by design: live trading (paper-only) and the desk address (this computer only). Your Quant Data key is entered there too, shown only as its last four characters, and never written into recordings or exports.
+
 A professional single-screen trading workstation on top of Interactive Brokers, built around PS60 and order flow,
 with ladder trading that is **locked to paper accounts** until you deliberately unlock it.
 
