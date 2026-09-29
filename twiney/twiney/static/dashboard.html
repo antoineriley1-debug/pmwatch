@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS60 Execution Desk</title>
+<title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root{
@@ -511,7 +511,7 @@ input:focus,select:focus,textarea:focus{outline:1px solid var(--gold);outline-of
 <body>
 <div id="app">
 <div id="cmd">
-  <span id="brand"><i></i>PS60 <b>EXECUTION DESK</b></span>
+  <span id="brand"><i></i><b>TED</b> TWINEY EXECUTION DESK</span>
   <span id="symbox"><input id="symIn" placeholder="SYMBOL" autocomplete="off" spellcheck="false"><select id="symHist" title="recent symbols"><option value="">RECENT</option></select></span>
   <span class="sep"></span>
   <button id="armBtn" class="off" title="Arm order entry. Disarmed at every launch.">ARM</button>
@@ -718,7 +718,7 @@ function makeColsResizable(table){
   });
 }
 
-/* ===================== PS60 EXECUTION DESK: panel pool ===================== */
+/* ===================== TED — TWINEY EXECUTION DESK: panel pool ===================== */
 const PANELS = {
   chart: "CHART", foot: "FOOTPRINT 5m", book: "LEVEL II", tape: "TIME & SALES", setup: "PLAY SETUP", ps60: "PS60", reload: "RELOADS",
   ticket: "ORDER ENTRY", positions: "POSITIONS", orders: "ORDERS", watch: "WATCHLIST", calls: "CALLS",
@@ -1387,7 +1387,7 @@ function speakNew(s){
 document.getElementById("rpPlay").addEventListener("click", () => post("/api/replay", {paused: !(state && state.replay && state.replay.paused)}));
 document.getElementById("rpSpeed").addEventListener("change", e => post("/api/replay", {speed: +e.target.value}));
 
-/* ===================== PS60 EXECUTION DESK ===================== */
+/* ===================== TED — TWINEY EXECUTION DESK ===================== */
 /* state is kept in separate objects: market/engine snapshot (state), broker (state.account/trading),
    UI layout (LAY), voice (VOICE), tabs (TABS). Panels re-render only when their own slice changed. */
 
