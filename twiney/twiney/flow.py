@@ -142,12 +142,18 @@ class FlowBook:
         self.cfg = cfg
         self.recent = deque(maxlen=400)          # every print, newest first (the feed)
         self.by_symbol = {}                      # symbol -> deque of prints (oldest first)
+        self.max_symbols = 400                   # the whole market flows through; keep the busiest
         self.last_call = {}                      # (symbol, cp) -> t of the last unusual call
         self.unusual = {}                        # (symbol, cp) -> last unusual dict
 
     def add(self, p):
         self.recent.appendleft(p)
-        d = self.by_symbol.setdefault(p["symbol"], deque(maxlen=600))
+        d = self.by_symbol.get(p["symbol"])
+        if d is None:
+            if len(self.by_symbol) >= self.max_symbols:
+                oldest = min(self.by_symbol, key=lambda s: self.by_symbol[s][-1]["t"] if self.by_symbol[s] else 0)
+                del self.by_symbol[oldest]
+            d = self.by_symbol[p["symbol"]] = deque(maxlen=600)
         d.append(p)
 
     def _window(self, symbol, now, minutes):
@@ -242,7 +248,9 @@ class QuantDataFeed:
     def _request(self):
         import urllib.request
         url = self.cfg["base_url"].rstrip("/") + "/" + self.cfg["flow_path"].lstrip("/")
-        body = {"tickers": self.symbols, "limit": int(self.cfg.get("limit", 200))}
+        body = {"limit": int(self.cfg.get("limit", 200))}
+        if self.cfg.get("scope", "all") == "watchlist":
+            body["tickers"] = self.symbols
         body.update(self.cfg.get("extra_params") or {})
         req = urllib.request.Request(url, data=json.dumps(body).encode("utf-8"), method=self.cfg.get("method", "POST"),
                                      headers={"Authorization": f"Bearer {self.cfg['api_key']}",
@@ -299,9 +307,17 @@ class SimFlow:
     and every so often a quiet cluster of out-of-the-money buying with size while price is still away.
     Not announced anywhere: you have to see it in the feed, or let the detector call it."""
 
+    # the rest of the market for practice: ticker, rough price, how busy its options are
+    MARKET = [("SPY", 572, 5.0), ("QQQ", 488, 4.0), ("SPX", 5725, 3.0), ("IWM", 221, 1.5), ("META", 562, 1.6), ("AMZN", 186, 1.8),
+              ("MSFT", 431, 1.4), ("GOOGL", 163, 1.3), ("NFLX", 701, 0.8), ("COIN", 176, 1.0), ("MSTR", 158, 1.1), ("HOOD", 23, 0.9),
+              ("BA", 154, 0.7), ("UBER", 74, 0.7), ("AVGO", 172, 1.0), ("MU", 101, 0.9), ("SMCI", 43, 0.8), ("INTC", 22, 0.7),
+              ("RIVN", 11, 0.6), ("NIO", 6, 0.5), ("BABA", 106, 0.8), ("DIS", 94, 0.5), ("JPM", 211, 0.5), ("XOM", 118, 0.4),
+              ("TLT", 98, 0.6), ("GLD", 245, 0.5), ("ARM", 145, 0.6), ("SNOW", 115, 0.4), ("SHOP", 79, 0.5), ("CVNA", 171, 0.4)]
+
     def __init__(self, engine, symbols, seed=None):
         self.engine = engine
         self.symbols = list(symbols)
+        self.others = {}   # ticker -> [spot, busy], a random walk of its own
         self.rng = random.Random(seed if seed is not None else int(time.time()) % 99991)
         self.next_t = {}
         self.cluster = {}      # symbol -> {"cp", "until", "next", "strike", "dte"}
@@ -309,7 +325,10 @@ class SimFlow:
 
     def _spot(self, sym):
         st = self.engine.syms.get(sym)
-        return st.price() if st is not None else None
+        if st is not None:
+            return st.price()
+        o = self.others.get(sym)
+        return o[0] if o else None
 
     def _print(self, sym, spot, cp, strike, dte, size, at_ask, kind, t):
         price = max(0.05, round(abs(spot - strike) * 0.25 + spot * 0.004 * math.sqrt(max(dte, 1) / 10.0) * self.rng.uniform(0.7, 1.4), 2))
@@ -320,23 +339,31 @@ class SimFlow:
 
     def step(self, t):
         rng = self.rng
+        if not self.others:
+            for sym, spot, busy in self.MARKET:
+                if sym not in self.symbols:
+                    self.others[sym] = [spot * rng.uniform(0.97, 1.03), busy]
+        for o in self.others.values():                        # the rest of the market drifts on its own
+            o[0] *= math.exp(rng.gauss(0, 0.00025))
         if t >= self.next_cluster:
-            self.next_cluster = t + rng.uniform(600, 1800)
-            sym = rng.choice(self.symbols)
+            self.next_cluster = t + rng.uniform(300, 900)
+            pool = self.symbols + list(self.others)            # somebody-knows clusters happen anywhere
+            sym = rng.choice(pool) if rng.random() < 0.6 else rng.choice(self.symbols or pool)
             if sym not in self.cluster:
                 self.cluster[sym] = {"cp": rng.choice(("C", "P")), "until": t + rng.uniform(120, 420), "next": t,
                                      "otm": rng.uniform(3.5, 9.0), "dte": rng.choice((2, 5, 9, 16, 23))}
-        for sym in self.symbols:
+        for sym in self.symbols + list(self.others):
             spot = self._spot(sym)
             if not spot:
                 continue
-            # ordinary flow: near the money, mixed sides, mixed expiries
+            busy = self.others[sym][1] if sym in self.others else 1.0
+            # ordinary flow: near the money, mixed sides, mixed expiries; index products trade far more
             if t >= self.next_t.get(sym, 0):
-                self.next_t[sym] = t + rng.expovariate(1 / 25.0)
+                self.next_t[sym] = t + rng.expovariate(busy / 25.0)
                 cp = rng.choice(("C", "P"))
-                step = 1.0 if spot > 50 else 0.5 if spot > 10 else 0.25
+                step = 5.0 if spot > 1000 else 1.0 if spot > 50 else 0.5 if spot > 10 else 0.25
                 strike = round(round((spot * (1 + rng.gauss(0, 0.02) * (1 if cp == "C" else -1))) / step) * step, 2)
-                size = int(rng.choice((5, 10, 20, 25, 50, 75, 100, 150, 250, 400)))
+                size = int(rng.choice((5, 10, 20, 25, 50, 75, 100, 150, 250, 400, 600, 1000, 2500)))
                 self.engine.on_flow(self._print(sym, spot, cp, strike, rng.choice((1, 2, 4, 9, 16, 30, 45)), size,
                                                 rng.random() < 0.5, rng.choice(("trade", "trade", "sweep", "block")), t), t)
             cl = self.cluster.get(sym)
@@ -345,7 +372,7 @@ class SimFlow:
                     del self.cluster[sym]
                     continue
                 cl["next"] = t + rng.uniform(15, 60)
-                step = 1.0 if spot > 50 else 0.5 if spot > 10 else 0.25
+                step = 5.0 if spot > 1000 else 1.0 if spot > 50 else 0.5 if spot > 10 else 0.25
                 strike = round(round(spot * (1 + cl["otm"] / 100.0 * (1 if cl["cp"] == "C" else -1)) / step) * step, 2)
                 size = int(rng.choice((300, 500, 800, 1200, 2000)))
                 self.engine.on_flow(self._print(sym, spot, cl["cp"], strike, cl["dte"], size, True, rng.choice(("sweep", "sweep", "block")), t), t)

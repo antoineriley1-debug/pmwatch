@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20260929-2257">
+<meta name="build" content="20260929-2304">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -830,8 +830,8 @@ const PANELS = {
 const SYMBOL_LINKED = new Set(["chart", "foot", "book", "tape", "ps60", "reload", "ticket", "calls", "setup"]);
 const ZONES = ["TL", "TC", "TR", "TX", "BL", "BC", "BR", "BX"];   // four columns × two rows; a column with one zone runs full height
 const PRESETS = {
-  "PS60 Execution": {zones: {TL: ["flow"], TC: ["chart"], TR: ["book"], TX: ["tape"], BL: ["watch", "positions", "orders"], BC: ["setup", "ps60", "reload", "calls"], BR: ["ticket"]},
-    active: {TL: "flow", BL: "watch", BC: "setup"}, sizes: {c1: 360, c3: 320, c4: 280, r2: 250}},
+  "PS60 Execution": {zones: {TL: ["watch"], TC: ["chart"], TR: ["book"], TX: ["tape"], BL: ["positions", "orders"], BC: ["setup", "flow", "ps60", "reload", "calls"], BR: ["ticket"]},
+    active: {BL: "positions", BC: "setup"}, sizes: {c1: 200, c3: 330, c4: 290, r2: 250}},
   "Scalping": {zones: {TL: ["ticket", "setup"], TC: ["book"], TR: ["tape"], BL: ["positions"], BC: ["chart"], BR: ["orders", "reload"]},
     active: {BR: "reload"}, sizes: {c1: 300, c3: 320, r2: 300}},
   "Tape Focus": {zones: {TL: ["book"], TC: ["tape"], TR: ["reload", "ps60", "setup"], BL: ["ticket"], BC: ["chart"], BR: ["positions", "orders"]},

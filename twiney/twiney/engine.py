@@ -356,15 +356,15 @@ class Engine:
                 self.positions.pop((account, symbol), None)
 
     def on_flow(self, p, t=None):
-        """One option print for a watchlist symbol. Recorded, kept, and run through the unusual detector."""
+        """One option print. Every ticker goes into the feed; only watchlist symbols run the unusual detector."""
         with self.lock:
             t = t if t is not None else p.get("t", self.last_t)
             st = self._st(p["symbol"])
-            if st is None:
-                return
             self._clock(t)
             self._rec({"ev": "flow", "t": t, "p": p})
             self.flow.add(p)
+            if st is None:
+                return
             u = self.flow.check(p["symbol"], t)
             if u is None:
                 return
@@ -1473,7 +1473,7 @@ class Engine:
                 },
                 "alerts": [dict(a, grade=self.grades.get(a["key"])) for a in list(self.alerts)[:40]],
                 "voice": [v for v in list(self.voice)[:20] if t - v["t"] < 60],
-                "flow": list(self.flow.recent)[:80],
+                "flow": list(self.flow.recent)[:150],
                 "messages": list(self.messages)[:25],
                 "recording": getattr(self.recorder, "path", None),
                 "desk": {"recording": self.recorder is not None,

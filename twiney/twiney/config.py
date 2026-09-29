@@ -161,6 +161,8 @@ DEFAULTS = {
         "method": "POST",
         "poll_seconds": 5,
         "limit": 200,
+        # "all" = the whole market's flow in the feed (the unusual call is still watchlist-only); "watchlist" = only your symbols
+        "scope": "all",
         "extra_params": {},
     },
     "flow": {
