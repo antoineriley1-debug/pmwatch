@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20260929-1217">
+<meta name="build" content="20260929-1506">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -566,18 +566,30 @@ input:focus,select:focus,textarea:focus{outline:1px solid var(--gold);outline-of
 .grid.trades select,.grid.trades input{font:11px var(--mono);background:#0a0a0b;color:var(--text);border:1px solid #26282c;border-radius:2px;padding:1px 4px;height:20px}
 .grid.trades input{width:100%;min-width:120px} #jTrades{margin-top:8px} #jTrades h5{font:500 10px var(--sans);letter-spacing:.12em;color:#7d7f85;margin:4px 0}
 
-/* option flow, FlowAlgo style */
-.flowbar{display:flex;align-items:center;gap:10px;padding:3px 8px;height:24px;flex:0 0 auto;background:#0f1012;border-bottom:1px solid #202124;font:500 9.5px var(--sans);letter-spacing:.12em;text-transform:uppercase;color:#7d7f85}
-.flowbar input[type=text],.flowbar input:not([type]){width:130px;height:18px;font:600 11px var(--mono);letter-spacing:.1em;text-transform:uppercase;background:#0a0a0b;color:var(--text);border:1px solid #26282c;padding:0 6px}
-.flowbar label{display:inline-flex;align-items:center;gap:4px} .flowbar input[type=checkbox]{accent-color:var(--gold)}
-#flowList{padding:4px 0}
-.fl{padding:6px 10px 7px;border-bottom:1px solid #1c1d20} .fl .top{display:flex;align-items:center;gap:10px;font:600 12px var(--mono)}
-.fl .tm{color:#7d7f85;font:500 10.5px var(--mono)} .fl .tk{padding:1px 8px;border-radius:2px;color:#fff;font:700 11px var(--sans);letter-spacing:.08em}
-.fl.c .tk{background:#1f8a4c} .fl.p .tk{background:#b8322e} .fl.c .prem{color:#3fd48a} .fl.p .prem{color:#f0645f} .fl .prem{font-weight:700;font-size:13px}
-.fl .dots{color:#8e9096;font-size:9px;letter-spacing:2px} .fl .aw{margin-left:auto;background:var(--gold);color:#0c0c0d;font:700 9px var(--sans);letter-spacing:.1em;padding:1px 6px}
-.fl.away{background:rgba(227,168,58,.06);box-shadow:inset 3px 0 0 var(--gold)}
-.fl .cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(72px,max-content));gap:2px 14px;margin-top:4px;font:11.5px var(--mono);color:#d6d6d3}
-.fl .cols i{display:block;font:500 8.5px var(--sans);letter-spacing:.12em;color:#7d7f85;font-style:normal;text-transform:uppercase}
+/* option flow: FlowAlgo's look, colour for colour */
+.pnl.fa{background:#1c2333} .pnl.fa .pc{background:#1c2333}
+.fa-top{flex:0 0 auto;background:#1c2333;border-bottom:1px solid #2a3344}
+.fa-tabs{display:flex;justify-content:space-around;padding:8px 0 0;font:700 10.5px "IBM Plex Sans","Segoe UI",sans-serif;letter-spacing:.14em;color:#8b95a7}
+.fa-tabs span{padding:0 0 8px;border-bottom:2px solid transparent} .fa-tabs span.on{color:#f2f4f8;border-bottom-color:#f2f4f8} .fa-tabs span.off{opacity:.55}
+.fa-search{padding:10px 12px 8px;position:relative} .fa-search input{width:100%;height:30px;box-sizing:border-box;background:#0f1522;border:1px solid #2a3344;border-radius:6px;color:#e6e9ef;font:13px "IBM Plex Sans","Segoe UI",sans-serif;padding:0 32px 0 12px;text-transform:none;letter-spacing:0}
+.fa-search input::placeholder{color:#6f7a90} .fa-search .mag{position:absolute;right:22px;top:15px;color:#9aa4b8;font-size:14px;transform:rotate(-45deg)}
+.fa-sub{display:flex;align-items:center;gap:12px;padding:6px 12px 8px;white-space:nowrap;font:600 12px "IBM Plex Sans","Segoe UI",sans-serif;color:#e6e9ef;border-top:1px solid #2a3344}
+.fa-sub label{font:500 10.5px "IBM Plex Sans","Segoe UI",sans-serif;color:#8b95a7;display:inline-flex;align-items:center;gap:4px} .fa-sub input{accent-color:#2ec27e}
+.fa-sub .src{margin-left:auto;font:500 8.5px "IBM Plex Sans","Segoe UI",sans-serif;letter-spacing:.1em;color:#5f6a80;text-transform:uppercase}
+#flowList{padding:0 0 6px}
+.fl{padding:8px 12px 10px;border-bottom:1px solid #263043;font-family:"IBM Plex Sans","Segoe UI",sans-serif}
+.fl .tm{font:500 10.5px "IBM Plex Sans","Segoe UI",sans-serif;color:#8b95a7;letter-spacing:.02em;margin-bottom:5px}
+.fl .top{display:flex;align-items:center;gap:12px}
+.fl .tk{padding:2px 10px;border-radius:5px;color:#fff;font:700 12px "IBM Plex Sans","Segoe UI",sans-serif;letter-spacing:.04em;min-width:36px;text-align:center}
+.fl.c .tk{background:#17a86a} .fl.p .tk{background:#d64541}
+.fl .prem{font:700 15px "IBM Plex Sans","Segoe UI",sans-serif} .fl.c .prem{color:#2ec27e} .fl.p .prem{color:#f0605c}
+.fl .dots{display:inline-flex;gap:4px;margin-left:2px} .fl .dots i{width:5px;height:5px;border-radius:50%;background:#6e5df0;display:inline-block} .fl .dots.a i{background:#7b6cf6}
+.fl .aw{margin-left:auto;color:#e3a83a;font:700 9px "IBM Plex Sans","Segoe UI",sans-serif;letter-spacing:.14em;border:1px solid #6b5420;padding:1px 6px;border-radius:3px}
+.fl.away{background:#212a3c}
+.fl .cols{display:grid;grid-template-columns:auto auto auto auto auto 1fr;gap:2px 14px;margin-top:9px;font:600 12px "IBM Plex Sans","Segoe UI",sans-serif;color:#f2f4f8;white-space:nowrap}
+.fl .cols i{display:block;font:600 8.5px "IBM Plex Sans","Segoe UI",sans-serif;letter-spacing:.12em;color:#8b95a7;font-style:normal;text-transform:uppercase;margin-bottom:2px}
+.fl .ty{display:inline-flex;align-items:center;gap:5px} .fl .ic{display:inline-block;width:7px;height:7px;border:1.5px solid #f2b21d;border-radius:50%;font-style:normal}
+.fl .ic.sq{border-radius:1px;background:#f2b21d;border-color:#f2b21d} .fl .ic.eq{border:0;width:auto;height:auto;color:#2ec27e;font-weight:800;line-height:1} .fl .ic.dot{border:0;background:#8b95a7;width:4px;height:4px}
 .wlrow .fb{font:700 8.5px var(--sans);padding:0 4px;margin-left:4px;border-radius:2px} .wlrow .fb.c{background:#173b28;color:#8fe0b4} .wlrow .fb.p{background:#3d1c1c;color:#f0a09c}
 .grid.trades td.flowc{font:10.5px var(--mono);color:#a9aaaf;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
@@ -662,7 +674,9 @@ input:focus,select:focus,textarea:focus{outline:1px solid var(--gold);outline-of
   <div class="pnl" data-p="orders"><div class="pc"></div></div>
   <div class="pnl" data-p="watch"><div class="pc"></div></div>
   <div class="pnl" data-p="calls"><div class="pc" style="padding:6px"><div id="feedBody"></div></div></div>
-  <div class="pnl" data-p="flow"><div class="flowbar"><input id="flowFilter" placeholder="FILTER BY TICKER" spellcheck="false" autocomplete="off"><label><input type="checkbox" id="flowUnusual"> UNUSUAL ONLY</label><label><input type="checkbox" id="flowMine" checked> WATCHLIST</label><span class="spacer"></span><span class="dim" id="flowSrc"></span></div><div class="pc"><div id="flowList"></div></div></div>
+  <div class="pnl fa" data-p="flow"><div class="fa-top"><div class="fa-tabs"><span class="on">OPTION FLOW</span><span class="off" title="equity prints live on TIME &amp; SALES">EQUITY FLOW</span></div>
+    <div class="fa-search"><input id="flowFilter" placeholder="Filter by ticker..." spellcheck="false" autocomplete="off"><span class="mag">&#9906;</span></div>
+    <div class="fa-sub"><span>Realtime Option Flow</span><label><input type="checkbox" id="flowUnusual"> Unusual only</label><label><input type="checkbox" id="flowMine" checked> Watchlist</label><span class="src" id="flowSrc"></span></div></div><div class="pc"><div id="flowList"></div></div></div>
   <div class="pnl" data-p="desk"><div class="pc"><div id="deskBody"></div></div></div>
   <div class="pnl" data-p="journal"><div class="pc"><div id="journalBody"><div class="jform"><input id="jText" placeholder="journal note · Enter"><button id="jAdd">add</button></div><div id="jList"></div><div id="jTrades"></div></div></div></div>
   <div class="pnl" data-p="messages"><div class="pc" style="padding:6px"><div id="messages"></div></div></div>
@@ -2339,10 +2353,14 @@ function renderFlow(s){
     .map(p => { const away = p.side === "ask" && p.otm_pct != null && p.otm_pct >= fc.otm_pct && p.premium >= 50000; return Object.assign({away}, p); })
     .filter(p => !onlyU || p.away).slice(0, 60);
   const src = document.getElementById("flowSrc"); const st = s.connection && s.connection.state === "DEMO" ? "PRACTICE FLOW" : "QUANT DATA"; if (src.textContent !== st) src.textContent = st;
+  const exp = e => { if (!e) return NA; const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(e); return m ? `${m[2]}/${m[3]}/${m[1].slice(2)}` : e; };
+  const strike = k => Number.isInteger(k) ? String(k) : (+k).toFixed(2).replace(/\.?0+$/, "");
+  const typ = p => p.kind === "sweep" ? `<b class="ic o"></b>S` : p.kind === "block" ? `<b class="ic sq"></b>B` : p.kind === "split" ? `<b class="ic eq">=</b>S` : `<b class="ic dot"></b>T`;
   const html = rows.length ? rows.map(p => { const d = new Date(p.t * 1000), cp = p.cp === "C" ? "C" : "P";
-    return `<div class="fl ${cp === "C" ? "c" : "p"} ${p.away ? "away" : ""}">
-      <div class="top"><span class="tm">${d.toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"})}</span><span class="tk">${esc(p.symbol)}</span><span class="prem">${kfmt$(p.premium)}</span><span class="dots" title="${esc(p.kind)}">${p.kind === "sweep" ? "● ●" : p.kind === "block" ? "■" : p.kind === "split" ? "● ● ●" : "·"}</span>${p.away ? `<span class="aw">WAYS AWAY</span>` : ""}</div>
-      <div class="cols"><span><i>EXP</i>${esc(p.expiry || (p.dte != null ? p.dte + "d" : NA))}</span><span><i>STRIKE</i>${px(p.strike)}</span><span><i>C/P</i>${cp}</span><span><i>SPOT</i>${p.spot != null ? px(p.spot) : NA}</span><span><i>TYPE</i>${p.side === "ask" ? "A" : p.side === "bid" ? "B" : "M"}${p.kind === "sweep" ? " S" : p.kind === "block" ? " BL" : ""}</span><span><i>DETAILS</i>${sz(p.size)} @ ${p.price != null ? p.price.toFixed(2) : NA}${p.otm_pct != null ? ` · ${p.otm_pct > 0 ? p.otm_pct.toFixed(1) + "% OTM" : Math.abs(p.otm_pct).toFixed(1) + "% ITM"}` : ""}</span></div></div>`; }).join("")
+    return `<div class="fl ${cp === "C" ? "c" : "p"} ${p.away ? "away" : ""}" title="${p.side === "ask" ? "bought at the ask" : p.side === "bid" ? "sold at the bid" : "mid"}${p.otm_pct != null ? ` · ${p.otm_pct > 0 ? p.otm_pct.toFixed(1) + "% out of the money" : Math.abs(p.otm_pct).toFixed(1) + "% in the money"}` : ""}">
+      <div class="tm">${d.toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"})}</div>
+      <div class="top"><span class="tk">${esc(p.symbol)}</span><span class="prem">${kfmt$(p.premium)}</span><span class="dots ${p.side === "ask" ? "a" : ""}">${p.kind === "sweep" || p.kind === "split" ? "<i></i><i></i>" : p.kind === "block" ? "<i></i>" : ""}</span>${p.away ? `<span class="aw">WAYS AWAY</span>` : ""}</div>
+      <div class="cols"><span><i>EXP</i>${exp(p.expiry)}</span><span><i>STRIKE</i>${strike(p.strike)}</span><span><i>C/P</i>${cp}</span><span><i>SPOT</i>${p.spot != null ? (+p.spot).toFixed(2) : NA}</span><span><i>TYPE</i><span class="ty">${typ(p)}</span></span><span><i>DETAILS</i>${sz(p.size)} @ ${p.price != null ? p.price.toFixed(2) : NA}</span></div></div>`; }).join("")
     : `<div class="dim" style="padding:10px">${(s.flow || []).length ? "Nothing matches the filter." : (s.connection && s.connection.state === "DEMO" ? "Practice flow is warming up." : "No option flow. Put your Quant Data key in config.json under quantdata.api_key and restart.")}</div>`;
   if (el.dataset.h !== html){ el.dataset.h = html; el.innerHTML = html; }
 }
