@@ -139,7 +139,7 @@ def run_demo(cfg, plays, args):
     stop_evt = threading.Event()
 
     from twiney.flow import SimFlow
-    sim_flow = SimFlow(engine, [p["symbol"] for p in plays])
+    sim_flow = SimFlow(engine, [p["symbol"] for p in plays], market=feed)
     engine.play_listeners.append(lambda p: sim_flow.symbols.append(p["symbol"]))
 
     def loop():

@@ -249,7 +249,7 @@ class QuantDataFeed:
         import urllib.request
         url = self.cfg["base_url"].rstrip("/") + "/" + self.cfg["flow_path"].lstrip("/")
         body = {"limit": int(self.cfg.get("limit", 200))}
-        if self.cfg.get("scope", "all") == "watchlist":
+        if getattr(self.engine, "flow_scope", self.cfg.get("scope", "all")) == "watchlist":
             body["tickers"] = self.symbols
         body.update(self.cfg.get("extra_params") or {})
         req = urllib.request.Request(url, data=json.dumps(body).encode("utf-8"), method=self.cfg.get("method", "POST"),
@@ -314,10 +314,11 @@ class SimFlow:
               ("RIVN", 11, 0.6), ("NIO", 6, 0.5), ("BABA", 106, 0.8), ("DIS", 94, 0.5), ("JPM", 211, 0.5), ("XOM", 118, 0.4),
               ("TLT", 98, 0.6), ("GLD", 245, 0.5), ("ARM", 145, 0.6), ("SNOW", 115, 0.4), ("SHOP", 79, 0.5), ("CVNA", 171, 0.4)]
 
-    def __init__(self, engine, symbols, seed=None):
+    def __init__(self, engine, symbols, seed=None, market=None):
         self.engine = engine
         self.symbols = list(symbols)
-        self.others = {}   # ticker -> [spot, busy], a random walk of its own
+        self.market = market   # the practice feed: its market factor moves the rest of the market too
+        self.others = {}   # ticker -> [spot, busy], its own walk plus beta x the market
         self.rng = random.Random(seed if seed is not None else int(time.time()) % 99991)
         self.next_t = {}
         self.cluster = {}      # symbol -> {"cp", "until", "next", "strike", "dte"}
@@ -343,16 +344,26 @@ class SimFlow:
             for sym, spot, busy in self.MARKET:
                 if sym not in self.symbols:
                     self.others[sym] = [spot * rng.uniform(0.97, 1.03), busy]
-        for o in self.others.values():                        # the rest of the market drifts on its own
-            o[0] *= math.exp(rng.gauss(0, 0.00025))
+        mk = getattr(self.market, "mkt", None)
+        mret = math.log(mk.level / mk.prev_level) if mk and mk.prev_level else 0.0
+        from .sim import beta_of
+        for sym, o in self.others.items():                     # the rest of the market: beta x the market, plus its own noise
+            o[0] *= math.exp(beta_of(sym) * mret + rng.gauss(0, 0.00012))
+        lean = (mk.bias - 0.5) if mk else 0.0                  # a rallying tape buys calls, a falling one buys puts
         if t >= self.next_cluster:
             self.next_cluster = t + rng.uniform(300, 900)
-            pool = self.symbols + list(self.others)            # somebody-knows clusters happen anywhere
+            pool = self.symbols + (list(self.others) if getattr(self.engine, "flow_scope", "all") != "watchlist" else [])
             sym = rng.choice(pool) if rng.random() < 0.6 else rng.choice(self.symbols or pool)
             if sym not in self.cluster:
-                self.cluster[sym] = {"cp": rng.choice(("C", "P")), "until": t + rng.uniform(120, 420), "next": t,
+                cp = rng.choice(("C", "P"))
+                self.cluster[sym] = {"cp": cp, "until": t + rng.uniform(120, 420), "next": t,
                                      "otm": rng.uniform(3.5, 9.0), "dte": rng.choice((2, 5, 9, 16, 23))}
-        for sym in self.symbols + list(self.others):
+                # about half the time the flow was early: the stock moves their way some minutes later
+                pushes = getattr(self.market, "pushes", None)
+                if pushes is not None and sym in getattr(self.market, "state", {}) and rng.random() < 0.5:
+                    pushes[sym] = (t + rng.uniform(300, 1200), 1 if cp == "C" else -1)
+        whole = getattr(self.engine, "flow_scope", "all") != "watchlist"
+        for sym in self.symbols + (list(self.others) if whole else []):
             spot = self._spot(sym)
             if not spot:
                 continue
@@ -360,7 +371,7 @@ class SimFlow:
             # ordinary flow: near the money, mixed sides, mixed expiries; index products trade far more
             if t >= self.next_t.get(sym, 0):
                 self.next_t[sym] = t + rng.expovariate(busy / 25.0)
-                cp = rng.choice(("C", "P"))
+                cp = "C" if rng.random() < 0.5 + 1.2 * lean else "P"
                 step = 5.0 if spot > 1000 else 1.0 if spot > 50 else 0.5 if spot > 10 else 0.25
                 strike = round(round((spot * (1 + rng.gauss(0, 0.02) * (1 if cp == "C" else -1))) / step) * step, 2)
                 size = int(rng.choice((5, 10, 20, 25, 50, 75, 100, 150, 250, 400, 600, 1000, 2500)))

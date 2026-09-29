@@ -134,3 +134,37 @@ class OptionFlowTests(unittest.TestCase):
             for i in range(400):
                 sf.step(3000.0 + i * 5)
             self.assertGreater(len(e.flow.by_symbol.get(sym, [])), 10)
+
+
+class MarketFactorTests(unittest.TestCase):
+    def test_tech_names_move_with_the_market_and_flow_scope_switches(self):
+        import math
+        from helpers import cfg
+        from twiney.config import load_plays
+        from twiney.engine import Engine
+        from twiney.sim import DemoFeed
+        from twiney.flow import SimFlow
+        ps = load_plays(os.path.join(os.path.dirname(__file__), "..", "plays.example.json"))
+        e = Engine(ps, cfg(), None); f = DemoFeed(e, ps, seed=21, scenario="mixed"); t = 1000.0; f.start(t)
+        sf = SimFlow(e, [p["symbol"] for p in ps], seed=21, market=f)
+        last = {"NVDA": [], "AMD": []}; mkt = []
+        for i in range(4 * 1800):
+            t += 0.25; f.step(t); sf.step(t)
+            if i % 240 == 239:
+                for n in last: last[n].append(f.state[n].last)
+                mkt.append(f.mkt.level)
+        r = lambda x: [math.log(b / a) for a, b in zip(x, x[1:])]
+        def corr(a, b):
+            ma, mb = sum(a) / len(a), sum(b) / len(b)
+            n = sum((x - ma) * (y - mb) for x, y in zip(a, b))
+            return n / math.sqrt(sum((x - ma) ** 2 for x in a) * sum((y - mb) ** 2 for y in b))
+        self.assertGreater(corr(r(last["NVDA"]), r(mkt)), 0.3)
+        self.assertGreater(corr(r(last["NVDA"]), r(last["AMD"])), 0.3)
+        # whole market on: other tickers flow; off: only the watchlist
+        mine = {p["symbol"] for p in ps}
+        self.assertTrue({p["symbol"] for p in e.flow.recent} - mine)
+        e.set_flow_scope("watchlist", t); e.flow.recent.clear()
+        for i in range(400):
+            t += 0.25; f.step(t); sf.step(t)
+        self.assertTrue(e.flow.recent and {p["symbol"] for p in e.flow.recent} <= mine)
+        self.assertEqual(e.snapshot(t)["flow_scope"], "watchlist")

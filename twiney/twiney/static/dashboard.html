@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20260929-2304">
+<meta name="build" content="20260929-2318">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -597,6 +597,9 @@ input:focus,select:focus,textarea:focus{outline:1px solid var(--gold);outline-of
 .pnl.fa{container-type:inline-size}
 @container (max-width: 420px){ .fl .cols{gap:2px 9px;font-size:11.5px} .fl{padding:7px 10px 9px} .fa-sub{gap:8px} }
 
+.fa-sub .fsw{background:#0f1522;border:1px solid #2a3344;border-radius:10px;color:#8b95a7;font:600 9.5px "IBM Plex Sans","Segoe UI",sans-serif;letter-spacing:.08em;padding:1px 8px;height:18px;text-transform:none}
+.fa-sub .fsw b{color:#8b95a7;margin-left:3px} .fa-sub .fsw.on{border-color:#17a86a;color:#e6e9ef} .fa-sub .fsw.on b{color:#2ec27e}
+
 </style>
 </head>
 <body>
@@ -680,7 +683,7 @@ input:focus,select:focus,textarea:focus{outline:1px solid var(--gold);outline-of
   <div class="pnl" data-p="calls"><div class="pc" style="padding:6px"><div id="feedBody"></div></div></div>
   <div class="pnl fa" data-p="flow"><div class="fa-top"><div class="fa-tabs"><span class="on">OPTION FLOW</span><span class="off" title="equity prints live on TIME &amp; SALES">EQUITY FLOW</span></div>
     <div class="fa-search"><input id="flowFilter" placeholder="Filter by ticker..." spellcheck="false" autocomplete="off"><span class="mag">&#9906;</span></div>
-    <div class="fa-sub"><span>Realtime Option Flow</span><label><input type="checkbox" id="flowUnusual"> Unusual only</label><label><input type="checkbox" id="flowMine" checked> Watchlist</label><span class="src" id="flowSrc"></span></div></div><div class="pc"><div id="flowList"></div></div></div>
+    <div class="fa-sub"><span>Realtime Option Flow</span><button id="flowScope" class="fsw" title="WHOLE MARKET on: the feed pulls every ticker's option flow. Off: only your watchlist is pulled (lighter on the Quant Data limit). UNUSUAL calls are watchlist-only either way.">WHOLE MARKET <b>ON</b></button><label><input type="checkbox" id="flowUnusual"> Unusual only</label><label><input type="checkbox" id="flowMine" checked> Watchlist</label><span class="src" id="flowSrc"></span></div></div><div class="pc"><div id="flowList"></div></div></div>
   <div class="pnl" data-p="desk"><div class="pc"><div id="deskBody"></div></div></div>
   <div class="pnl" data-p="journal"><div class="pc"><div id="journalBody"><div class="jform"><input id="jText" placeholder="journal note · Enter"><button id="jAdd">add</button></div><div id="jList"></div><div id="jTrades"></div></div></div></div>
   <div class="pnl" data-p="messages"><div class="pc" style="padding:6px"><div id="messages"></div></div></div>
@@ -2368,6 +2371,12 @@ function renderFlow(s){
     : `<div class="dim" style="padding:10px">${(s.flow || []).length ? "Nothing matches the filter." : (s.connection && s.connection.state === "DEMO" ? "Practice flow is warming up." : "No option flow. Put your Quant Data key in config.json under quantdata.api_key and restart.")}</div>`;
   if (el.dataset.h !== html){ el.dataset.h = html; el.innerHTML = html; }
 }
+document.getElementById("flowScope").addEventListener("click", async () => {
+  const on = !(state && state.flow_scope !== "watchlist");
+  const out = await post("/api/flow", {scope: on ? "all" : "watchlist"});
+  if (out.ok){ savePrefs({flowScope: out.scope}); toast(out.scope === "all" ? "Whole market flow ON" : "Whole market flow OFF: watchlist only", true); poll(true); }
+});
+function renderFlowScope(s){ const b = document.getElementById("flowScope"); if (!b) return; const on = s.flow_scope !== "watchlist"; b.classList.toggle("on", on); const t = on ? "ON" : "OFF"; if (b.lastChild.textContent !== t) b.querySelector("b").textContent = t; }
 ["flowFilter", "flowUnusual", "flowMine"].forEach(id => document.getElementById(id).addEventListener("input", () => renderFlow(state)));
 function flowWords(a){
   if (!/^UNUSUAL/.test(a.label)) return null;
@@ -2437,7 +2446,7 @@ function render(s){
   renderBook(d); renderTape(d); renderSetup(d); renderPS60(d); renderReloads(d);
   renderTicket(s, d);
   renderWatch(s); renderCalls(s); renderPositions(s); renderOrders(s);
-  renderDesk(s); renderTrades(s); renderFlow(s);
+  renderDesk(s); renderTrades(s); renderFlow(s); renderFlowScope(s);
   const msgs = s.messages.map(m => `<div class="msg-${esc(m.level)} mono" style="font-size:11px">${ago(s.now - m.t)} · ${esc(m.text)}</div>`).join("") || `<span class="dim">—</span>`;
   const me = document.getElementById("messages"); if (me.dataset.h !== msgs){ me.dataset.h = msgs; me.innerHTML = msgs; }
   for (const a of s.alerts.slice(0, 10)){ const key = a.t + a.symbol + a.label; if (!seenAlerts.has(key)){ seenAlerts.add(key); if (!firstFeed && store.get("alerts", true) && store.get("sound", true) && a.symbol === TABS.active) beep(sayClass(a)); } }
@@ -2511,6 +2520,7 @@ mkChart("chart", false); mkChart("foot", true);
 (async () => {
   await loadLayouts();
   renderRecent();
+  if (PREFS.flowScope) post("/api/flow", {scope: PREFS.flowScope});   // your WHOLE MARKET setting survives a restart
   if (PREFS.tabs && PREFS.tabs.length){ TABS.list = PREFS.tabs.slice(); TABS.active = PREFS.active && TABS.list.includes(PREFS.active) ? PREFS.active : TABS.list[0]; curSym = TABS.active; renderTabs(); if (curSym) post("/api/play", {symbol: curSym, action: "focus"}); }
   poll();
 })();

@@ -135,6 +135,7 @@ class Engine:
         self.desk = None        # recording desk (REC / markers / screenshots), set by run_twiney
         self.flow = FlowBook(cfg.get("flow", {"min_premium": 250000, "min_prints": 2, "otm_pct": 3.0, "max_dte": 30,
                                               "window_minutes": 10, "repeat_minutes": 20}))
+        self.flow_scope = cfg.get("quantdata", {}).get("scope", "all")
         self.marks_list = []    # markers seen while replaying a recording
         self.notes_list = []    # journal notes seen while replaying
         self.grades_path = None
@@ -354,6 +355,14 @@ class Engine:
                                                      "qty": qty, "avg_cost": avg_cost}
             else:
                 self.positions.pop((account, symbol), None)
+
+    def set_flow_scope(self, scope, t=None):
+        """WHOLE MARKET on ("all") or off ("watchlist"): what the flow feed pulls in."""
+        scope = "watchlist" if scope == "watchlist" else "all"
+        with self.lock:
+            self.flow_scope = scope
+            self._rec({"ev": "flow_scope", "t": t or self.last_t, "scope": scope})
+        return scope
 
     def on_flow(self, p, t=None):
         """One option print. Every ticker goes into the feed; only watchlist symbols run the unusual detector."""
@@ -1130,6 +1139,8 @@ class Engine:
             self.on_daily_bar(ev["sym"], ev["t0"], ev["o"], ev["h"], ev["l"], ev["c"])
         elif kind == "flow":
             self.on_flow(ev["p"], t)
+        elif kind == "flow_scope":
+            self.set_flow_scope(ev.get("scope", "all"), t)
         elif kind == "big":
             self.set_big_shares(ev["sym"], ev.get("shares"), t)
         elif kind == "setup":
@@ -1474,6 +1485,7 @@ class Engine:
                 "alerts": [dict(a, grade=self.grades.get(a["key"])) for a in list(self.alerts)[:40]],
                 "voice": [v for v in list(self.voice)[:20] if t - v["t"] < 60],
                 "flow": list(self.flow.recent)[:150],
+                "flow_scope": self.flow_scope,
                 "messages": list(self.messages)[:25],
                 "recording": getattr(self.recorder, "path", None),
                 "desk": {"recording": self.recorder is not None,

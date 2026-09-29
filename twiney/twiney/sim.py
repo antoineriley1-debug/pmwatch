@@ -62,19 +62,42 @@ SCENARIOS = {
 }
 
 
+# how hard each name follows the market (the Nasdaq / QQQ factor). 1.0 = moves with QQQ, 2 = twice as hard,
+# near 0 = its own thing, negative = the other way. Anything not listed trades like a mid-cap tech name.
+BETAS = {"QQQ": 1.0, "SPY": 0.85, "SPX": 0.85, "IWM": 0.9, "DIA": 0.7,
+         "NVDA": 1.7, "AMD": 1.7, "TSLA": 1.8, "PLTR": 1.7, "SMCI": 2.0, "MSTR": 2.2, "COIN": 1.9, "ARM": 1.8, "MU": 1.5,
+         "AVGO": 1.4, "META": 1.3, "AMZN": 1.2, "AAPL": 1.1, "MSFT": 1.0, "GOOGL": 1.1, "NFLX": 1.1, "SHOP": 1.5, "SNOW": 1.4,
+         "SOFI": 1.4, "HOOD": 1.8, "UBER": 1.2, "INTC": 1.1, "RIVN": 1.5, "NIO": 1.3, "BABA": 0.9, "CVNA": 1.8,
+         "DIS": 0.7, "BA": 0.8, "JPM": 0.6, "XOM": 0.3, "GLD": 0.0, "TLT": -0.3}
+INDEX = {"QQQ", "SPY", "SPX", "IWM", "DIA"}
+
+
+def beta_of(sym):
+    return BETAS.get(sym, 1.2)
+
+
+class _Mkt:
+    """The market: one regime process everybody leans on. The session's day type tilts this one."""
+    __slots__ = ("regime", "regime_until", "bias", "level", "prev_level")
+
+    def __init__(self):
+        self.regime, self.regime_until, self.bias = "chop", 0.0, 0.5
+        self.level = self.prev_level = 488.0      # QQQ-like
+
+
 def _r100(x):
     return max(100, int(round(x / 100.0)) * 100)
 
 
 class _Sym:
     __slots__ = ("play", "tk", "asks", "bids", "last", "vol", "regime", "regime_until", "script", "big",
-                 "big_home", "parts", "level_cooldown", "hidden_next", "prev", "l1", "base", "mid0")
+                 "big_home", "parts", "level_cooldown", "hidden_next", "prev", "l1", "base", "mid0", "beta", "sym", "eff", "owed")
 
     def __init__(self, play, mid, t):
         self.play = play
         self.tk = tick_size(mid)
         self.mid0 = mid
-        self.base = min(3000, max(200, 600 * math.sqrt(50.0 / max(mid, 1.0))))   # typical resting size
+        self.base = min(7500, max(500, 1500 * math.sqrt(50.0 / max(mid, 1.0))))   # typical resting size
         self.asks, self.bids = [], []
         self.last = mid
         self.vol = 0
@@ -85,6 +108,10 @@ class _Sym:
         self.parts = []             # participants working a level: the one at the pivot, and hidden ones anywhere
         self.level_cooldown = t
         self.hidden_next = t
+        self.sym = play.get("symbol", "")
+        self.beta = beta_of(self.sym)
+        self.eff = (0.5, 1.2, 1.0)   # this step's blended lean, rate, size: own regime + beta x market
+        self.owed = 0.0              # dollars of move the index / basket desks still have to push through this name
         self.prev = {ASK: [], BID: []}
         self.l1 = {}
 
@@ -95,6 +122,8 @@ class DemoFeed:
         self.rng = random.Random(seed if seed is not None else int(__import__("time").time() * 1000) % 1000003)
         names = list(SCENARIOS)
         self.scenario = scenario if scenario in SCENARIOS else self.rng.choices(names, weights=[3, 2, 2, 2, 1, 1])[0]
+        self.mkt = _Mkt()
+        self.pushes = {}   # symbol -> (time, direction): a move the option flow saw coming
         self.state = {}
         self.t = None
         for p in plays:
@@ -122,7 +151,10 @@ class DemoFeed:
         """A typed-in ticker in the demo: a made-up price that trades like the others."""
         import time as _t
         t = self.t or _t.time()
-        s = _Sym(p, round(self.rng.uniform(20, 300), 2), t)
+        from .flow import SimFlow
+        known = {k: v for k, v, _b in SimFlow.MARKET}
+        base = known.get(p["symbol"])
+        s = _Sym(p, round(base * self.rng.uniform(0.98, 1.02), 2) if base else round(self.rng.uniform(20, 300), 2), t)
         self.state[p["symbol"]] = s
         self._history_one(p["symbol"], s, t)
         self._seed_book(s, t)
@@ -192,9 +224,9 @@ class DemoFeed:
     # ---- the book ------------------------------------------------------------
 
     def _fresh(self, s, side):
-        rg = REGIMES[s.regime]
-        against = (side == ASK and rg["bias"] > 0.5) or (side == BID and rg["bias"] < 0.5)
-        target = s.base * (rg["thin"] if against else 1.2)
+        b = s.eff[0]
+        against = (side == ASK and b > 0.5) or (side == BID and b < 0.5)
+        target = s.base * (max(0.3, 1 - 2.5 * abs(b - 0.5)) if against else 1.2)
         return _r100(self.rng.lognormvariate(math.log(target), 0.7))
 
     def _seed_book(self, s, t):
@@ -215,8 +247,9 @@ class DemoFeed:
         """Passive flow: rows add, cancel, thin out and refill; big size shows up, sits, gets pulled or hit."""
         rng, rg = self.rng, REGIMES[s.regime]
         for side, rows in ((ASK, s.asks), (BID, s.bids)):
-            against = (side == ASK and rg["bias"] > 0.5) or (side == BID and rg["bias"] < 0.5)
-            target = s.base * (rg["thin"] if against else 1.2)
+            b = s.eff[0]
+            against = (side == ASK and b > 0.5) or (side == BID and b < 0.5)
+            target = s.base * (max(0.3, 1 - 2.5 * abs(b - 0.5)) if against else 1.2)
             for i in range(min(ROWS, len(rows))):
                 row = rows[i]
                 key = (side, row[0])
@@ -275,7 +308,7 @@ class DemoFeed:
                 if lv is not None:
                     lv["done"] = "clean"
                 self._extend(s)
-                follow = 0.85 if (REGIMES[s.regime]["bias"] > 0.5) == is_buy else 0.55
+                follow = 0.85 if (s.eff[0] > 0.5) == is_buy else 0.55
                 if rng.random() < follow and not any(pt["side"] == (BID if is_buy else ASK) and abs(price - pt["price"]) < 1e-9 for pt in s.parts):
                     opp.insert(0, [price, self._fresh(s, BID if is_buy else ASK)])
                 if rng.random() < 0.55:
@@ -284,7 +317,7 @@ class DemoFeed:
 
     def _flow(self, sym, s, t, dt, emit_depth):
         rng = self.rng
-        bias, rate, mult = self._params(s, t)
+        bias, rate, mult = s.eff
         lam = rate * dt * self._tod(t)
         n = int(lam) + (1 if rng.random() < lam - int(lam) else 0)
         for _ in range(n):
@@ -301,10 +334,67 @@ class DemoFeed:
         rg = REGIMES[s.regime]
         while s.script and t >= s.script[0][2]:
             s.script.pop(0)
+        m = self.mkt.bias - 0.5
+        heat = 1.0 + 1.2 * abs(m)                               # a fast tape makes every name busier
         if s.script:
             b, r, _ = s.script[0]
-            return b, r, rg["size"]
-        return rg["bias"], rg["rate"], rg["size"]
+            b = 0.5 + 0.8 * (b - 0.5) + 0.6 * s.beta * m          # a level being worked still feels the market
+            return min(0.9, max(0.1, b)), r * heat, rg["size"]
+        own = 0.25 if s.sym in INDEX else 0.5                   # an index is mostly the market; a stock is part itself
+        b = 0.5 + own * (rg["bias"] - 0.5) + 1.0 * s.beta * m
+        return min(0.9, max(0.1, b)), rg["rate"] * heat, rg["size"]
+
+    def _close_spread(self, s):
+        """Market makers: a gap between bid and ask gets stepped into within a moment. Who steps in follows the
+        lean, so in a rally the bids step up and in a sell-off the offers step down."""
+        rng, tk = self.rng, s.tk
+        for _ in range(3):
+            if not s.asks or not s.bids:
+                return
+            gap = int(round((s.asks[0][0] - s.bids[0][0]) / tk))
+            if gap <= 1 or rng.random() > 0.8:
+                return
+            if rng.random() < s.eff[0]:
+                s.bids.insert(0, [round(s.bids[0][0] + tk, 2), _r100(self._fresh(s, BID) * 0.6)])
+            else:
+                s.asks.insert(0, [round(s.asks[0][0] - tk, 2), _r100(self._fresh(s, ASK) * 0.6)])
+
+    def _market_step(self, t, dt):
+        mk, rng = self.mkt, self.rng
+        self._regime(mk, t)
+        target = REGIMES[mk.regime]["bias"]
+        # the market's lean wanders on a minute scale (a slow mean-reverting drift toward the regime), it does not jump
+        target = 0.5 + 0.6 * (target - 0.5)
+        mk.bias += 0.004 * dt / 0.25 * (target - mk.bias) + rng.gauss(0, 0.004 * math.sqrt(dt / 0.25))
+        mk.bias = min(0.7, max(0.3, mk.bias))
+        mk.prev_level = mk.level
+        mk.level *= math.exp((mk.bias - 0.5) * 6.4e-5 * dt + rng.gauss(0, 1.0e-4 * math.sqrt(dt)))
+
+    BASKET = 0.75   # share of each name's move that comes from index / ETF / basket flow
+
+    def _basket(self, sym, s, t, slotted):
+        """When QQQ moves, the ETF and basket desks buy or sell every component at once. Each name owes
+        beta x the market's move; they lift offers / hit bids at the touch until it is paid. A big resting
+        participant at the touch stops them, as it would: the rally stalls into the seller."""
+        mk = self.mkt
+        if not mk.prev_level:
+            return
+        s.owed += self.BASKET * s.beta * math.log(mk.level / mk.prev_level) * s.last
+        for _ in range(4):
+            if abs(s.owed) < s.tk:
+                return
+            is_buy = s.owed > 0
+            rows = s.asks if is_buy else s.bids
+            if not rows:
+                return
+            side = ASK if is_buy else BID
+            if any(pt["side"] == side and abs(rows[0][0] - pt["price"]) < 1e-9 for pt in s.parts):
+                s.owed *= 0.9      # parked into a real participant: the move leaks away instead
+                return
+            before = rows[0][0]
+            self._market(sym, s, is_buy, int(rows[0][1]), t, slotted)
+            if (s.asks[0][0] if is_buy else s.bids[0][0]) != before:
+                s.owed -= s.tk if is_buy else -s.tk
 
     @staticmethod
     def _tod(t):
@@ -327,7 +417,7 @@ class DemoFeed:
         if t < s.regime_until:
             return
         rng = self.rng
-        tilt = SCENARIOS.get(self.scenario, {})
+        tilt = SCENARIOS.get(self.scenario, {}) if s is self.mkt else {}
         opts = [(n, w * tilt.get(n, 1.0)) for n, w in NEXT[s.regime]]
         tot = sum(w for _, w in opts)
         x = rng.uniform(0, tot)
@@ -440,14 +530,25 @@ class DemoFeed:
     def step(self, t):
         dt = 0.25 if self.t is None else max(0.05, min(1.0, t - self.t))
         self.t = t
+        self._market_step(t, dt)
+        for sym, (at, d) in list(self.pushes.items()):          # the move the option flow was early on
+            s = self.state.get(sym)
+            if s is not None and t >= at and not s.script:
+                s.script = [(0.5 + 0.17 * d, 2.4, t + self.rng.uniform(120, 300))]
+                del self.pushes[sym]
+            elif s is None or t > at + 900:
+                self.pushes.pop(sym, None)
         for sym, s in self.state.items():
             slotted = sym in self.engine.slots
             if not slotted:
                 s.prev = {ASK: [], BID: []}
             self._regime(s, t)
+            s.eff = self._params(s, t)
             self._churn(s, t)
             self._participants(sym, s, t)
             self._flow(sym, s, t, dt, slotted)
+            self._basket(sym, s, t, slotted)
+            self._close_spread(s)
             self._extend(s)
             self._emit(sym, s, t, slotted)
         for _cmd in self.engine.tick(t):
