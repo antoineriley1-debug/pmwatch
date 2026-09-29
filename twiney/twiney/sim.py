@@ -126,7 +126,7 @@ class DemoFeed:
         today0 = (t + off) // 86400 * 86400 - off
         px = s.mid0 * (1 + rng.uniform(-0.03, 0.03))
         day_bars = []
-        for d in range(20, 0, -1):
+        for d in range(300, 0, -1):
             day0 = today0 - d * 86400
             if ((day0 + off) // 86400) % 7 in (3, 4):   # skip Sat / Sun (epoch day 0 is a Thursday)
                 continue
@@ -136,6 +136,11 @@ class DemoFeed:
             l = round(min(o, c) - rng.uniform(0, atr_ * 0.4), 2)
             day_bars.append((day0, o, h, l, c))
             px = c
+        # anchor the daily history so it walks into today's price instead of ending somewhere else
+        if day_bars:
+            shift = (s.mid0 - day_bars[-1][4]) / len(day_bars)
+            day_bars = [(d0, round(o + shift * (i + 1), 2), round(h + shift * (i + 1), 2), round(l + shift * (i + 1), 2), round(c + shift * (i + 1), 2))
+                        for i, (d0, o, h, l, c) in enumerate(day_bars)]
         for day0, o, h, l, c in day_bars:
             self.engine.on_daily_bar(sym, day0, o, h, l, c)
         sessions = [b[0] for b in day_bars[-5:]]

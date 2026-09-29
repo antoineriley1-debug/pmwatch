@@ -1019,6 +1019,14 @@ function aggBars(bars, tf){
   return out;
 }
 
+/* Dan's chart pack (PS60 lock): exact hex + widths. 34/65/89 EMA are Daily only. */
+const DAN_SMA = [[5, "#e3a878", 2], [10, "#27ca34", 2], [20, "#c2af78", 2], [50, "#1fc6fc", 3], [100, "#dc744e", 2], [150, "#49c4d9", 2], [200, "#a3495b", 3]];
+const DAN_EMA = [[5, "#e89050", 3], [10, "#1fb82e", 3], [20, "#71522b", 3], [50, "#f40606", 3], [100, "#924a85", 3], [150, "#3045e9", 3], [200, "#c8c8c8", 3]];
+const DAN_EMA_DAILY = [[34, "#FFD600", 3], [65, "#27ca34", 3], [89, "#924a85", 3]];
+const DAN_BB = "#151eed", DAN_LR = "#5234ff";
+function smaSeries(cl, n){ const out = new Array(cl.length).fill(null); let s = 0; for (let i = 0; i < cl.length; i++){ s += cl[i]; if (i >= n) s -= cl[i - n]; if (i >= n - 1) out[i] = s / n; } return out; }
+function emaSeries(cl, n){ const out = new Array(cl.length).fill(null); if (cl.length < n) return out; const k = 2 / (n + 1); let e = 0; for (let i = 0; i < n; i++) e += cl[i]; e /= n; out[n - 1] = e; for (let i = n; i < cl.length; i++){ e = cl[i] * k + e * (1 - k); out[i] = e; } return out; }
+function bbSeries(cl, n, mult){ const up = new Array(cl.length).fill(null), dn = up.slice(), mid = up.slice(); for (let i = n - 1; i < cl.length; i++){ let s = 0, s2 = 0; for (let j = i - n + 1; j <= i; j++){ s += cl[j]; s2 += cl[j] * cl[j]; } const m = s / n, sd = Math.sqrt(Math.max(0, s2 / n - m * m)); mid[i] = m; up[i] = m + mult * sd; dn[i] = m - mult * sd; } return {up, dn, mid}; }
 const LEVEL_STYLE = {trigger:["#d6d6d3",[],1.6], second_entry:["#5aa9d6",[6,4],1.6], extra:["#b0b0ad",[3,4],1.2],
   target:["#3fb56f",[2,4],1], stop:["#d9534f",[2,4],1]};
 
@@ -1031,10 +1039,15 @@ function drawOne(p, cv, v, isFoot){
   const g = cv.getContext("2d");
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
   g.clearRect(0, 0, W, H);
-  const tf = isFoot ? 5 : store.get("tf." + p.id, 1), span = tf * 60;
+  const tf = isFoot ? 5 : store.get("tf." + p.id, 1), isDaily = tf === "D", span = isDaily ? 86400 : tf * 60;
+  const dan = !isFoot && store.get("dan", false);
+  const C = dan ? {bg: "#ffffff", grid: "#e6e6e6", axis: "#9a9a9a", text: "#333333", up: "#00f900", dn: "#ff2600", wick: "#000000", border: "#000000", label: "#ffffff", pivot: "#111111"}
+                : {bg: null, grid: "#1f2023", axis: "#2c2e33", text: "#7d7f85", up: "#3fb56f", dn: "#d9534f", wick: null, border: null, label: "#0c0c0d", pivot: "#d6d6d3"};
+  if (C.bg){ g.fillStyle = C.bg; g.fillRect(0, 0, W, H); }
   const labelW = 86, plotW = W - labelW, volH = Math.max(28, H * 0.16), plotH = H - volH - 18;
   const cw = v.cw;
-  const all = aggBars(d.bars, tf);
+  const all = isDaily ? (d.daily || []).map(b => b.slice()) : aggBars(d.bars, tf);
+  const clsAll = all.map(b => b[4]);
   const n = Math.max(5, Math.floor(plotW / cw));
   // when scrolled back, the right edge is pinned to a TIMESTAMP so new bars don't shove the view
   let off = Math.round(v.offset);
@@ -1082,7 +1095,7 @@ function drawOne(p, cv, v, isFoot){
   const xOf = t0 => x0 + ((t0 - (bars.length ? bars[0][0] : 0)) / span) * cw + cw / 2;
 
   // grid + a real price scale on the right, at round prices, lined up with the candles
-  g.strokeStyle = "#1f2023"; g.lineWidth = 1;
+  g.strokeStyle = C.grid; g.lineWidth = 1;
   // footprint rows: 1, 2, 5, 10… ticks per row, whatever keeps a row at least 11px tall
   const ftk = lo >= 1 ? 0.01 : 0.0001, fpx = Math.abs(y(lo) - y(lo + ftk));
   const fmult = [1, 2, 5, 10, 25, 50, 100].find(m => fpx * m >= 11) || 100, fstep = ftk * fmult;
@@ -1090,22 +1103,22 @@ function drawOne(p, cv, v, isFoot){
     g.fillStyle = "#8e9096"; g.font = "10px ui-monospace, Menlo, Consolas, monospace";
     for (let pr = Math.floor(lo / fstep) * fstep; pr <= hi; pr += fstep){
       const yy = y(pr + fstep / 2), yb = y(pr);
-      g.strokeStyle = "#1f2023"; g.beginPath(); g.moveTo(0, yb); g.lineTo(plotW, yb); g.stroke();
+      g.strokeStyle = C.grid; g.beginPath(); g.moveTo(0, yb); g.lineTo(plotW, yb); g.stroke();
       if (fpx * fmult >= 11) g.fillText(px(pr), plotW + 4, yy + 4);
     }
     g.font = "11px ui-monospace, Menlo, Consolas, monospace";
-    g.strokeStyle = "#2c2e33"; g.beginPath(); g.moveTo(plotW + .5, 0); g.lineTo(plotW + .5, plotH); g.stroke();
+    g.strokeStyle = C.axis; g.beginPath(); g.moveTo(plotW + .5, 0); g.lineTo(plotW + .5, plotH); g.stroke();
   } else {
     const raw = (hi - lo) / Math.max(3, Math.floor((plotH - 8) / 34));
     const mag = Math.pow(10, Math.floor(Math.log10(raw))), m = raw / mag;
     const step = (m <= 1 ? 1 : m <= 2 ? 2 : m <= 2.5 ? 2.5 : m <= 5 ? 5 : 10) * mag;
-    g.fillStyle = "#7d7f85";
+    g.fillStyle = C.text;
     for (let pr = Math.ceil(lo / step) * step; pr <= hi; pr += step){
       const yy = y(pr);
       g.beginPath(); g.moveTo(0, yy); g.lineTo(plotW, yy); g.stroke();
       g.fillText(px(pr), plotW + 4, yy + 4);
     }
-    g.strokeStyle = "#2c2e33"; g.beginPath(); g.moveTo(plotW + .5, 0); g.lineTo(plotW + .5, plotH); g.stroke();
+    g.strokeStyle = C.axis; g.beginPath(); g.moveTo(plotW + .5, 0); g.lineTo(plotW + .5, plotH); g.stroke();
   }
 
   // your levels: band + line + label
@@ -1114,7 +1127,8 @@ function drawOne(p, cv, v, isFoot){
     const dl = p.dragLevel && p.dragLevel.role === l.role && Math.abs(p.dragLevel.from - l.price) < 1e-6;
     const lp = dl ? p.dragLevel.price : l.price;
     if (lp < lo || lp > hi) continue;
-    const [col, dash, lw] = LEVEL_STYLE[l.role] || LEVEL_STYLE.extra;
+    let [col, dash, lw] = LEVEL_STYLE[l.role] || LEVEL_STYLE.extra;
+    if (dan && (l.role === "trigger" || l.role === "extra")) col = C.pivot;
     const yy = y(lp), band = Math.max(3, Math.abs(y(lp + tickOf(lp)) - yy));
     g.fillStyle = col + "22"; g.fillRect(0, yy - band, plotW, band * 2);
     g.strokeStyle = col; g.lineWidth = lw; g.setLineDash(dash);
@@ -1168,12 +1182,45 @@ function drawOne(p, cv, v, isFoot){
     }
   }
   // candles (hollow when the footprint is on, so the cells stay readable)
-  const foot = (isFoot || store.get("foot." + p.id, false)) && (d.footprint || []).length;
+  const foot = !isDaily && (isFoot || store.get("foot." + p.id, false)) && (d.footprint || []).length;
+  // Dan's MA pack, BB and LR: computed on the full aggregated history, drawn for the visible slice
+  if (!isFoot && !foot && clsAll.length > 1){
+    const k0 = all.length - off - bars.length;
+    const line = (ser, col, lw) => { g.strokeStyle = col; g.lineWidth = lw; g.setLineDash([]); g.beginPath(); let on = false;
+      for (let k = 0; k < bars.length; k++){ const v = ser[k0 + k]; if (v == null || !isFinite(v)){ on = false; continue; } const xx = x0 + k * cw + cw / 2, yy = y(v); if (!on){ g.moveTo(xx, yy); on = true; } else g.lineTo(xx, yy); }
+      g.stroke(); };
+    if (store.get("mas", true)){
+      for (const [n, col, lw] of DAN_SMA) line(smaSeries(clsAll, n), col, lw);
+      for (const [n, col, lw] of DAN_EMA) line(emaSeries(clsAll, n), col, lw);
+      if (isDaily) for (const [n, col, lw] of DAN_EMA_DAILY) line(emaSeries(clsAll, n), col, lw);
+    }
+    if (store.get("bb", true)){ const bb = bbSeries(clsAll, 20, 2.0); line(bb.up, DAN_BB, 2); line(bb.dn, DAN_BB, 2); }
+    if (store.get("lr", false) && clsAll.length >= 50){
+      // linear regression channel over the last 50 bars, ±2 standard deviations
+      const n = 50, s0 = clsAll.length - n; let sx = 0, sy = 0, sxx = 0, sxy = 0;
+      for (let i = 0; i < n; i++){ const yv = clsAll[s0 + i]; sx += i; sy += yv; sxx += i * i; sxy += i * yv; }
+      const slope = (n * sxy - sx * sy) / (n * sxx - sx * sx), icpt = (sy - slope * sx) / n;
+      let ss = 0; for (let i = 0; i < n; i++){ const e = clsAll[s0 + i] - (icpt + slope * i); ss += e * e; }
+      const dev = 2.0 * Math.sqrt(ss / n);
+      for (const o of [dev, 0, -dev]){ const ser = new Array(clsAll.length).fill(null); for (let i = 0; i < n; i++) ser[s0 + i] = icpt + slope * i + o; line(ser, DAN_LR, 2); }
+    }
+    g.lineWidth = 1;
+  }
   for (let k = 0; k < bars.length; k++){
     const b = bars[k], x = x0 + k * cw + cw / 2, up = b[4] >= b[1];
-    g.strokeStyle = g.fillStyle = up ? "#3fb56f" : "#d9534f";
-    g.beginPath(); g.moveTo(x, y(b[2])); g.lineTo(x, y(b[3])); g.stroke();
     const top = y(Math.max(b[1], b[4])), bh = Math.max(1, Math.abs(y(b[1]) - y(b[4])));
+    if (dan){
+      // Dan candles (eSignal look): fat bodies, thick black wicks, black body border
+      g.strokeStyle = C.wick; g.lineWidth = Math.max(1.5, cw * 0.28);
+      g.beginPath(); g.moveTo(x, y(b[2])); g.lineTo(x, y(b[3])); g.stroke();
+      const bw = cw * 0.76;
+      g.fillStyle = up ? C.up : C.dn; g.fillRect(x - bw / 2, top, bw, bh);
+      g.strokeStyle = C.border; g.lineWidth = Math.min(2, Math.max(1, cw * 0.12)); g.strokeRect(x - bw / 2, top, bw, bh);
+      g.lineWidth = 1;
+      continue;
+    }
+    g.strokeStyle = g.fillStyle = up ? C.up : C.dn;
+    g.beginPath(); g.moveTo(x, y(b[2])); g.lineTo(x, y(b[3])); g.stroke();
     if (foot){ g.lineWidth = 1; g.strokeRect(x - cw * 0.45, top, cw * 0.9, bh); }
     else g.fillRect(x - cw * 0.35, top, cw * 0.7, bh);
   }
@@ -1208,7 +1255,7 @@ function drawOne(p, cv, v, isFoot){
     g.textAlign = "start"; g.font = "11px ui-monospace, Menlo, Consolas, monospace";
   }
   // session VWAP from the 1-minute bars, restarting each New York day
-  if (!isFoot && store.get("vwap", true) && d.bars.length && bars.length){
+  if (!isFoot && !isDaily && store.get("vwap", true) && d.bars.length && bars.length){
     const eo = etOffset(d.bars[d.bars.length - 1][0]);
     let day = null, pv = 0, vol = 0, k = 0;
     const firstT = bars[0][0], lastT = bars[bars.length - 1][0] + span;
@@ -1292,11 +1339,11 @@ function drawOne(p, cv, v, isFoot){
     g.font = "11px ui-monospace, Menlo, Consolas, monospace";
   }
   // time axis
-  g.fillStyle = "#7d7f85";
+  g.fillStyle = C.text;
   const every = Math.max(1, Math.ceil(70 / cw));
   for (let k = 0; k < bars.length; k += every){
     const dt = new Date(bars[k][0] * 1000);
-    g.fillText(dt.toTimeString().slice(0, 5), x0 + k * cw, H - 4);
+    g.fillText(isDaily ? dt.toLocaleDateString("en-US", {month: "short", day: "numeric"}) : dt.toTimeString().slice(0, 5), x0 + k * cw, H - 4);
   }
   // key
   if (!clean){ g.fillStyle = "#7d7f85";
@@ -1624,7 +1671,8 @@ function mkChart(id, isFoot){
     c.tools.addEventListener("mousedown", e => e.stopPropagation());
     c.tools.addEventListener("click", e => {
       const tf = e.target.dataset.tf;
-      if (tf){ store.set("tf." + id, +tf); c.view.offset = 0; c.view.follow = true; drawChart(c); renderTools(c); }
+      if (tf){ store.set("tf." + id, tf === "D" ? "D" : +tf); c.view.offset = 0; c.view.follow = true; if (tf === "D" && c.view.cw < 6) c.view.cw = 8; drawChart(c); renderTools(c); }
+      for (const k of ["mas", "bb", "lr", "dan"]) if (e.target.dataset[k]){ store.set(k, !store.get(k, k === "mas" || k === "bb")); drawChart(c); renderTools(c); }
       if (e.target.dataset.vwap){ store.set("vwap", !store.get("vwap", true)); drawChart(c); renderTools(c); }
       if (e.target.dataset.foot){ const on = !store.get("foot." + id, false); store.set("foot." + id, on); if (on && c.view.cw < 40){ c.view.cw = 44; c.view.offset = 0; c.view.follow = true; } drawChart(c); renderTools(c); }
       if (e.target.dataset.clean){ store.set("clean", !store.get("clean", true)); el.classList.toggle("clean", store.get("clean", true)); drawChart(c); renderTools(c); }
@@ -1637,8 +1685,12 @@ function mkChart(id, isFoot){
 function renderTools(v){
   if (!v.tools || v.type !== "chart") return;
   const tf = store.get("tf." + v.id, 1);
-  v.tools.innerHTML = [1, 5, 15, 60].map(m => `<button data-tf="${m}" class="${tf===m?"on":""}">${m}m</button>`).join("")
+  v.tools.innerHTML = [1, 5, 15, 60, "D"].map(m => `<button data-tf="${m}" class="${tf===m?"on":""}">${m === "D" ? "D" : m + "m"}</button>`).join("")
     + `<button data-fit="1">fit</button><button data-vwap="1" class="${store.get("vwap", true) ? "on" : ""}">VWAP</button>`
+    + `<button data-mas="1" class="${store.get("mas", true) ? "on" : ""}" title="Dan's moving averages: SMA 5/10/20/50/100/150/200, EMA 5/10/20/50/100/150/200, plus 34/65/89 EMA on Daily only">MAS</button>`
+    + `<button data-bb="1" class="${store.get("bb", true) ? "on" : ""}" title="Bollinger Bands 20 / 2.0">BB</button>`
+    + `<button data-lr="1" class="${store.get("lr", false) ? "on" : ""}" title="Linear regression channel 50 / 2.0 (off by default)">LR</button>`
+    + `<button data-dan="1" class="${store.get("dan", false) ? "on" : ""}" title="Dan's candles: white chart, fat green / red bodies, thick black wicks">DAN</button>`
     + `<button data-foot="1" class="${store.get("foot." + v.id, false) ? "on" : ""}" title="footprint on this timeframe">FOOT</button>`
     + `<button data-clean="1" class="${store.get("clean", true) ? "on" : ""}" title="clean chart: candles, volume, VWAP, your levels, your orders">clean</button>`
     + `<select data-mark="1" class="lvl ${v.view.levelTool ? "on" : ""}" title="mark a level: pick it, click the chart at the price (saved to plays.json)"><option value="">MARK</option><option value="second_entry" ${v.view.levelTool==="second_entry"?"selected":""}>2nd entry</option><option value="trigger" ${v.view.levelTool==="trigger"?"selected":""}>pivot</option><option value="target" ${v.view.levelTool==="target"?"selected":""}>target</option><option value="stop" ${v.view.levelTool==="stop"?"selected":""}>stop</option><option value="extra" ${v.view.levelTool==="extra"?"selected":""}>extra level</option></select>`;

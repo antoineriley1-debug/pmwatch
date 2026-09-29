@@ -296,8 +296,8 @@ class Engine:
                 return
             self._rec({"ev": "dbar", "t": self.last_t or t0, "sym": symbol, "t0": t0, "o": o, "h": h, "l": l, "c": c})
             st.daily[t0] = [o, h, l, c]
-            if len(st.daily) > 60:
-                for k in sorted(st.daily)[:len(st.daily) - 60]:
+            if len(st.daily) > 300:
+                for k in sorted(st.daily)[:len(st.daily) - 300]:
                     del st.daily[k]
 
     def on_hist_bar(self, symbol, t0, o, h, l, c, v):
@@ -1345,6 +1345,7 @@ class Engine:
                        for o in self._pending(sym)],
             "position": self._position_view(sym, st.price()),
             "bars": bars,
+            "daily": [[t0] + [fmt_price(x) for x in st.daily[t0]] + [0, 0, 0] for t0 in sorted(st.daily)],
             "footprint": [[m, [[round(c[0], 4), round(c[1]), round(c[2])] for c in sorted(cells.values(), key=lambda c: c[0])]]
                           for m, cells in sorted(st.foot.items())[-150:]],
             "marks": [[m, fmt_price(v[0]), side, round(v[1])] for (m, _k, side), v in st.marks.items()
