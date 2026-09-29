@@ -553,6 +553,11 @@ input:focus,select:focus,textarea:focus{outline:1px solid var(--gold);outline-of
 .qs .qscreen{height:16px;font:500 9px var(--sans);letter-spacing:.06em;background:#0a0a0b;color:#c9c9c6;border:1px solid #2c2e33;border-radius:2px;padding:0 3px;margin-right:4px}
 .lad tr.xh td{background:rgba(255,0,0,.14)} .lad tr.xh td.px{box-shadow:inset 0 0 0 2px #ff0000}
 
+/* typing on the chart */
+.typer{position:absolute;left:50%;top:38%;transform:translate(-50%,-50%);z-index:9;background:#131416;border:1px solid var(--gold);padding:10px 12px;box-shadow:0 12px 40px rgba(0,0,0,.6);display:flex;flex-direction:column;gap:6px;min-width:260px}
+.typer input{font:700 22px var(--mono);letter-spacing:.12em;text-transform:uppercase;background:#0a0a0b;color:var(--gold);border:1px solid #2c2e33;padding:4px 8px;width:100%;box-sizing:border-box}
+.typer .hint{font:500 9.5px var(--sans);letter-spacing:.08em;color:#8e9096;text-transform:uppercase}
+
 </style>
 </head>
 <body>
@@ -1029,6 +1034,30 @@ function etOffset(t){
   const g = k => +parts.find(x => x.type === k).value;
   return Math.round(Date.UTC(g("year"), g("month") - 1, g("day"), g("hour"), g("minute"), g("second")) / 1000 - t);
 }
+/* timeframes: a number is minutes (60 = 1 hour); "D", "2D", "W", "M", "5M" build from the daily bars */
+function tfLabel(tf){
+  if (typeof tf === "number") return tf % 60 === 0 && tf >= 60 ? (tf / 60) + " HOUR" : tf + " MIN";
+  const m = /^(\d*)([DWM])$/.exec(String(tf)); if (!m) return String(tf);
+  const n = +m[1] || 1, u = {D: "DAY", W: "WEEK", M: "MONTH"}[m[2]];
+  return n === 1 ? (u === "DAY" ? "DAILY" : u === "WEEK" ? "WEEKLY" : "MONTHLY") : n + " " + u;
+}
+function aggDaily(daily, tf){
+  const m = /^(\d*)([DWM])$/.exec(String(tf)); if (!m) return (daily || []).map(b => b.slice());
+  const n = +m[1] || 1, u = m[2], out = [];
+  let key = null, cnt = 0;
+  for (const b of daily || []){
+    const dt = new Date(b[0] * 1000);
+    let k;
+    if (u === "D") k = Math.floor(cnt / n);
+    else if (u === "W"){ const wk = Math.floor((b[0] + 4 * 86400) / (7 * 86400)); k = Math.floor(wk / n); }   // weeks start Monday
+    else k = Math.floor((dt.getUTCFullYear() * 12 + dt.getUTCMonth()) / n);
+    cnt++;
+    const last = out[out.length - 1];
+    if (last && k === key){ last[2] = Math.max(last[2], b[2]); last[3] = Math.min(last[3], b[3]); last[4] = b[4]; last[5] += b[5] || 0; }
+    else { out.push([b[0], b[1], b[2], b[3], b[4], b[5] || 0, 0, 0]); key = k; }
+  }
+  return out;
+}
 function aggBars(bars, tf){
   if (tf === 1) return bars.map(b => b.slice());
   const out = [], span = tf * 60;
@@ -1062,7 +1091,7 @@ function drawOne(p, cv, v, isFoot){
   const g = cv.getContext("2d");
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
   g.clearRect(0, 0, W, H);
-  const tf = isFoot ? 5 : store.get("tf." + p.id, 1), isDaily = tf === "D", span = isDaily ? 86400 : tf * 60;
+  const tf = isFoot ? 5 : store.get("tf." + p.id, 1), isDaily = typeof tf === "string", span = isDaily ? 86400 : tf * 60;
   // the screen: DESK (dark) or an eSignal-style light screen — white, blue, pink or your own colour. Light screens get Dan's candles.
   const screen = isFoot ? "desk" : store.get("screen", "blue");
   const SCREENS = {white: "#ffffff", blue: "#a9d1f2", pink: "#f4d3e2", custom: store.get("screenColor", "#dfe9f3")};
@@ -1072,7 +1101,7 @@ function drawOne(p, cv, v, isFoot){
   if (C.bg){ g.fillStyle = C.bg; g.fillRect(0, 0, W, H); }
   const labelW = 86, plotW = W - labelW, volH = Math.max(28, H * 0.16), plotH = H - volH - 18;
   const cw = v.cw;
-  const all = isDaily ? (d.daily || []).map(b => b.slice()) : aggBars(d.bars, tf);
+  const all = isDaily ? aggDaily(d.daily, tf) : aggBars(d.bars, tf);
   const clsAll = all.map(b => b[4]);
   const n = Math.max(5, Math.floor(plotW / cw));
   // when scrolled back, the right edge is pinned to a TIMESTAMP so new bars don't shove the view
@@ -1239,7 +1268,7 @@ function drawOne(p, cv, v, isFoot){
       for (const [n, col, lw] of DAN_SMA) if (on("s" + n)) line(smaSeries(clsAll, n), col, lw, `MA(${n},C)s`);
       for (const [n, col, lw] of DAN_EMA) if (on("e" + n)) line(emaSeries(clsAll, n), col, lw, `MA(${n},C)e`);
       // 34 / 65 / 89 EMA: Daily chart only, never on 1m / 5m / 15m / 60m
-      if (isDaily) for (const [n, col, lw] of DAN_EMA_DAILY) if (on("d" + n)) line(emaSeries(clsAll, n), col, lw, `MA(${n},C)e`);
+      if (tf === "D") for (const [n, col, lw] of DAN_EMA_DAILY) if (on("d" + n)) line(emaSeries(clsAll, n), col, lw, `MA(${n},C)e`);
     }
     if (store.get("bb", true)){ const bb = bbSeries(clsAll, 20, 2.0); const before = p.dataRows; p.dataRows = []; line(bb.up, DAN_BB, 2, "BB(20,2,C)Upr"); line(bb.dn, DAN_BB, 2, "BB(20,2,C)Lwr"); p.dataRows.push(["BB(20,2,C)Bas", DAN_BB, bb.mid[k0 + hk]]); p.dataRows = p.dataRows.concat(before); }
     g.lineWidth = 1;
@@ -1410,7 +1439,7 @@ function drawOne(p, cv, v, isFoot){
   const every = Math.max(1, Math.ceil(70 / cw));
   for (let k = 0; k < bars.length; k += every){
     const dt = new Date(bars[k][0] * 1000);
-    g.fillText(isDaily ? dt.toLocaleDateString("en-US", {month: "short", day: "numeric"}) : dt.toTimeString().slice(0, 5), x0 + k * cw, H - 4);
+    g.fillText(isDaily ? dt.toLocaleDateString("en-US", /[WM]$/.test(String(tf)) ? {month: "short", year: "2-digit"} : {month: "short", day: "numeric"}) : dt.toTimeString().slice(0, 5), x0 + k * cw, H - 4);
   }
   // key
   if (!clean){ g.fillStyle = "#7d7f85";
@@ -1849,7 +1878,7 @@ function renderQuote(d){
   const day = d.day || {}, pl = d.play, g = d.ps60;
   const chg = d.last && day.prev_close ? d.last - day.prev_close : null;
   const tfNow = store.get("tf.chart", 1);
-  const html = `<span class="sym">${esc(d.symbol)}</span><span class="tfn">${tfNow === "D" ? "DAILY" : tfNow + "M"}</span>
+  const html = `<span class="sym">${esc(d.symbol)}</span><span class="tfn" title="click the chart and type: 5 = 5 min, 1H, 1D, 1W, 5M = 5 months, or a ticker">${tfLabel(tfNow)}</span>
     <span>LAST <b style="color:var(--gold)">${px(d.last)}</b>${chg != null ? ` <span class="${chg >= 0 ? "buy" : "sell"}">${chg >= 0 ? "+" : ""}${chg.toFixed(2)} ${(chg / day.prev_close * 100).toFixed(2)}%</span>` : ""}</span>
     <span><span class="buy">${px(d.bid)}</span><span class="dim">${day.bid_size ? "×" + kfmt(day.bid_size) : ""}</span> / <span class="sell">${px(d.ask)}</span><span class="dim">${day.ask_size ? "×" + kfmt(day.ask_size) : ""}</span></span>
     <span class="dim">O ${px(day.open)} H ${px(day.high)} L ${px(day.low)} V ${day.volume ? kfmt(day.volume) : NA}</span>
@@ -1874,6 +1903,50 @@ function ladderHighlight(pr){
   const tick = best ? (+best.dataset.price >= 1 ? 0.01 : 0.0001) : 0;
   tbl.querySelectorAll("tr.xh").forEach(tr => { if (tr !== best || pr == null) tr.classList.remove("xh"); });
   if (best && pr != null && bestD <= tick * 0.51 && !best.classList.contains("xh")) best.classList.add("xh");
+}
+/* type on the chart, TradingView style: 5 → 5 min · 1H · 1D · 1W · 5M (months) · TSLA / NVIDIA → that chart */
+const NAMES = {NVIDIA: "NVDA", TESLA: "TSLA", APPLE: "AAPL", AMAZON: "AMZN", MICROSOFT: "MSFT", GOOGLE: "GOOGL", ALPHABET: "GOOGL", META: "META", FACEBOOK: "META",
+  NETFLIX: "NFLX", PALANTIR: "PLTR", COINBASE: "COIN", SOFI: "SOFI", AMD: "AMD", INTEL: "INTC", BOEING: "BA", DISNEY: "DIS", NIKE: "NKE", UBER: "UBER",
+  SHOPIFY: "SHOP", SNOWFLAKE: "SNOW", MICRON: "MU", BROADCOM: "AVGO", ORACLE: "ORCL", SALESFORCE: "CRM", PAYPAL: "PYPL", VISA: "V", WALMART: "WMT",
+  COSTCO: "COST", EXXON: "XOM", CHEVRON: "CVX", JPMORGAN: "JPM", GOLDMAN: "GS", BERKSHIRE: "BRK B", QQQ: "QQQ", SPY: "SPY", NASDAQ: "QQQ", SPX: "SPY"};
+function parseTyped(text){
+  const t = text.trim().toUpperCase().replace(/\s+/g, "");
+  let m = /^(\d+)(MIN|M|H|HR|D|W|MO)?$/.exec(t);
+  if (m){
+    const n = +m[1], u = m[2] || "MIN";
+    if (!n) return null;
+    if (u === "MIN") return {tf: n};
+    if (u === "H" || u === "HR") return {tf: n * 60};
+    if (u === "D") return {tf: n === 1 ? "D" : n + "D"};
+    if (u === "W") return {tf: n === 1 ? "W" : n + "W"};
+    return {tf: n === 1 ? "M" : n + "M"};                 // M = months, like TradingView
+  }
+  if (/^[A-Z][A-Z .]{0,9}$/.test(t)) return {symbol: NAMES[t] || t};
+  return null;
+}
+function openTyper(first){
+  const wrap = P.chart.el.querySelector(".chart-wrap"); if (!wrap) return;
+  let box = wrap.querySelector(".typer");
+  if (!box){ box = document.createElement("div"); box.className = "typer"; box.innerHTML = `<input spellcheck="false" autocomplete="off"><span class="hint">Enter · 5 = 5 min · 1H · 1D · 1W · 5M = 5 months · or a ticker</span>`; wrap.appendChild(box);
+    const inp = box.querySelector("input");
+    inp.addEventListener("keydown", e => {
+      e.stopPropagation();
+      if (e.key === "Escape"){ box.remove(); return; }
+      if (e.key !== "Enter") return;
+      const r = parseTyped(inp.value); box.remove();
+      if (!r){ toast("Type a timeframe (5, 1H, 1D, 5M) or a ticker", false); return; }
+      if (r.tf != null){ store.set("tf.chart", r.tf); const c = charts.chart; c.view.offset = 0; c.view.follow = true; c.view.autoY = null; if (typeof r.tf === "string" && c.view.cw < 6) c.view.cw = 8; drawChart(c); renderTools(c); P.chart.last = null; renderQuote(curData()); toast("Chart: " + tfLabel(r.tf), true); }
+      else openTab(r.symbol, true);
+    });
+    inp.addEventListener("blur", () => setTimeout(() => box.remove(), 150));
+  }
+  const inp = box.querySelector("input"); inp.value = first; inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length);
+}
+function chartTypeKey(e){
+  // the mouse is over the chart and a plain letter or digit was pressed: that is typing, not a hotkey
+  if (e.ctrlKey || e.metaKey || e.altKey || e.key.length !== 1 || !/[a-zA-Z0-9]/.test(e.key)) return false;
+  const c = charts.chart; if (!c || c.el.offsetParent === null || !c.el.matches(":hover")) return false;
+  e.preventDefault(); openTyper(e.key); return true;
 }
 function renderBook(d){
   const wrap = P.book.pc.querySelector(".ladder-wrap");
@@ -2282,6 +2355,7 @@ document.getElementById("shotBtn").addEventListener("click", deskShot);
 document.addEventListener("keydown", e => {
   if (e.key === "Escape"){ document.querySelectorAll(".menu.open").forEach(x => x.classList.remove("open")); if (e.target.matches("input, select, textarea")) e.target.blur(); }
   if (e.target.matches("input, select, textarea") || document.getElementById("modal") || document.querySelector("td.k.cap")) return;
+  if (chartTypeKey(e)) return;
   if (runHotkey(e)) return;
   const c = charts.chart;
   if (e.key === "/"){ e.preventDefault(); document.getElementById("symIn").focus(); }
