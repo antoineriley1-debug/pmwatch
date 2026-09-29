@@ -549,7 +549,7 @@ input:focus,select:focus,textarea:focus{outline:1px solid var(--gold);outline-of
 .datawin .r.vol{background:#1a1ad8;color:#fff}
 
 .datawin .ok{display:flex;justify-content:space-between;align-items:center;padding:0 4px} .datawin .ok .mn{cursor:pointer;font-weight:900;font-size:10px;line-height:11px;padding:0 3px}
-.datawin.min > *:not(.ok){display:none} .datawin.min{width:90px}
+.datawin.min .r{display:none}
 .qs .qscreen{height:16px;font:500 9px var(--sans);letter-spacing:.06em;background:#0a0a0b;color:#c9c9c6;border:1px solid #2c2e33;border-radius:2px;padding:0 3px;margin-right:4px}
 
 </style>
@@ -1170,7 +1170,10 @@ function drawOne(p, cv, v, isFoot){
     g.strokeStyle = col; g.lineWidth = lw; g.setLineDash(dash);
     g.beginPath(); g.moveTo(0, yy); g.lineTo(plotW, yy); g.stroke(); g.setLineDash([]);
     g.fillStyle = col; g.fillRect(plotW, yy - 8, labelW, 16);
-    g.fillStyle = "#0c0c0d"; g.fillText(`${l.label} ${px(lp)}`.slice(0, 13), plotW + 3, yy + 4);
+    // readable on any tag colour: white text on a dark tag, dark text on a light one
+    const _n = parseInt(col.slice(1, 7), 16), _lum = 0.299 * (_n >> 16) + 0.587 * ((_n >> 8) & 255) + 0.114 * (_n & 255);
+    g.fillStyle = _lum > 140 ? "#0c0c0d" : "#ffffff"; g.font = "bold 11px ui-monospace, Menlo, Consolas, monospace";
+    g.fillText(`${l.label} ${px(lp)}`.slice(0, 13), plotW + 3, yy + 4); g.font = "11px ui-monospace, Menlo, Consolas, monospace";
   }
 
   const clean = isFoot || store.get("clean", true);
@@ -1799,7 +1802,7 @@ function renderDataWin(p){
   const rows = (p.dataRows || []).map(([name, col, val]) => `<div class="r" style="background:${col};color:${lum(col) > 140 ? "#000" : "#fff"}"><span>${name}</span><span>${f(val)}</span></div>`).join("");
   const min = store.get("datawin.min", false);
   w.classList.toggle("min", min);
-  const html = `<div class="ok"><span>OK</span><b class="mn" title="${min ? "expand" : "minimize to the OK bar"}">${min ? "+" : "–"}</b></div>
+  const html = `<div class="ok"><span>OK</span><b class="mn" title="${min ? "show the lines" : "hide the lines, keep the bar values"}">${min ? "+" : "–"}</b></div>
     <div class="kv"><span>Symbol:</span><span>${esc(d.symbol)},${tf === "D" ? "D" : tf}</span></div>
     <div class="kv"><span>Date:</span><span>${ny({month: "2-digit", day: "2-digit", year: "2-digit"})}</span></div>
     <div class="kv"><span>Time:</span><span>${tf === "D" ? "00:00" : ny({hour: "2-digit", minute: "2-digit", hourCycle: "h23"})}</span></div>
