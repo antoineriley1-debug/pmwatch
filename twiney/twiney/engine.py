@@ -148,6 +148,8 @@ class Engine:
         self.focus_pinned = False
         self.connection = {"state": "DISCONNECTED", "since": None, "detail": "",
                            "market_data_type": None}
+        self.data_t = None      # last market data tick of any kind (the MKT light)
+        self.flow_status = {"source": "off", "state": "off", "detail": "", "last_ok": None, "last_print": None}   # the OPT light
         self.started = None
         self.last_t = 0.0
 
@@ -206,6 +208,7 @@ class Engine:
                 return
             self._clock(t)
             self._rec({"ev": "l1", "t": t, "sym": symbol, "f": field, "v": value})
+            self.data_t = t
             st.l1[field] = value
             st.l1_t = t
             if field == "last" and not st.depth_active and value:
@@ -264,6 +267,7 @@ class Engine:
             self._clock(t)
             self._rec({"ev": "print", "t": t, "sym": symbol, "px": price, "sz": size,
                        "ex": exchange, "cond": conditions})
+            self.data_t = t
             bid, ask = st.bbo()
             rec = st.tape.add(t, price, size, bid, ask, exchange)
             st.tape_t = t
@@ -357,6 +361,46 @@ class Engine:
             else:
                 self.positions.pop((account, symbol), None)
 
+    def _feeds(self, t):
+        """The two lights in the corner. green = live and flowing, amber = connected but not live
+        (delayed, practice, replay, quiet), red = not connected."""
+        c = self.connection
+        stale = self.cfg["health"]["l1_stale_seconds"]
+        age = None if self.data_t is None else max(0.0, t - self.data_t)
+        mdt = c.get("market_data_type")
+        if c["state"] == "CONNECTED":
+            if mdt in (3, 4):
+                mkt = ("amber", "DELAYED", "IBKR connected, but market data is delayed (your data subscriptions)")
+            elif age is None or age > stale:
+                mkt = ("amber", "QUIET", f"IBKR connected, no ticks for {int(age)}s (market closed, or no subscription)" if age is not None
+                       else "IBKR connected, waiting for the first tick")
+            else:
+                mkt = ("green", "LIVE", f"live IBKR market data · last tick {age:.0f}s ago")
+        elif c["state"] == "DEMO":
+            mkt = ("amber", "PRACTICE", "practice feed: synthetic, not market data")
+        elif c["state"] == "REPLAY":
+            mkt = ("amber", "REPLAY", "replaying a recording")
+        else:
+            mkt = ("red", c["state"], f"no market data: {c['state'].lower()}" + (f" · {c['detail']}" if c.get("detail") else ""))
+        fs = self.flow_status
+        if fs["source"] == "practice":
+            opt = ("amber", "PRACTICE", "practice option flow: synthetic")
+        elif fs["source"] == "quantdata":
+            poll = float(self.cfg.get("quantdata", {}).get("poll_seconds", 5))
+            ok_age = None if fs["last_ok"] is None else t - fs["last_ok"]
+            last = "" if fs["last_print"] is None else f" · last print {int(t - fs['last_print'])}s ago"
+            if fs["state"] == "error" and (ok_age is None or ok_age > 3 * poll + 5):
+                opt = ("red", "ERROR", f"Quant Data: {fs['detail']}")
+            elif ok_age is None:
+                opt = ("amber", "CONNECTING", "Quant Data: waiting for the first answer")
+            elif ok_age > 3 * poll + 5:
+                opt = ("amber", "LATE", f"Quant Data: no answer for {int(ok_age)}s{last}")
+            else:
+                opt = ("green", "LIVE", f"Quant Data option flow · polled {int(ok_age)}s ago{last}")
+        else:
+            opt = ("red", "OFF", "no option data: add your Quant Data key in SETTINGS, then RESTART NOW")
+        return {"market": dict(zip(("color", "label", "detail"), mkt)), "options": dict(zip(("color", "label", "detail"), opt))}
+
     def set_flow_alerts(self, who, t=None):
         """UNUSUAL alerts for the watchlist only, or for every ticker in the feed."""
         who = "all" if who == "all" else "watchlist"
@@ -381,6 +425,7 @@ class Engine:
             self._clock(t)
             self._rec({"ev": "flow", "t": t, "p": p})
             self.flow.add(p)
+            self.flow_status["last_print"] = t
             if st is None and self.flow_alerts != "all":
                 return
             u = self.flow.check(p["symbol"], t)
@@ -1479,6 +1524,7 @@ class Engine:
                 "uptime": round(t - self.started, 1) if self.started else 0,
                 "mode": "PAPER-ONLY ORDER ENTRY · LIVE LOCKED" if not self.cfg["trading"]["allow_live"] else "LIVE TRADING ENABLED",
                 "connection": dict(self.connection),
+                "feeds": self._feeds(t),
                 "slots": self.cfg["depth"]["slots"],
                 "auto_rotate": self.auto_rotate,
                 "ranking": ranking,

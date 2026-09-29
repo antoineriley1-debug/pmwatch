@@ -232,6 +232,7 @@ class QuantDataFeed:
         self.errors = 0
 
     def start(self):
+        self.engine.flow_status.update(source="quantdata", state="connecting", detail="")
         threading.Thread(target=self._loop, name="quantdata", daemon=True).start()
         return self
 
@@ -243,6 +244,7 @@ class QuantDataFeed:
             try:
                 self.poll()
             except Exception as exc:      # the desk keeps running without flow
+                self.engine.flow_status.update(state="error", detail=str(exc)[:160])
                 self.errors += 1
                 if self.errors in (1, 10, 100):
                     self.engine._message("warn", f"Quant Data: {exc}", time.time())
@@ -278,6 +280,7 @@ class QuantDataFeed:
 
     def poll(self):
         payload = self._request()
+        self.engine.flow_status.update(state="ok", detail="", last_ok=time.time())
         if not self.sample_written:
             self.sample_written = True
             try:
@@ -319,6 +322,7 @@ class SimFlow:
 
     def __init__(self, engine, symbols, seed=None, market=None):
         self.engine = engine
+        engine.flow_status.update(source="practice", state="ok")
         self.symbols = list(symbols)
         self.market = market   # the practice feed: its market factor moves the rest of the market too
         self.others = {}   # ticker -> [spot, busy], its own walk plus beta x the market

@@ -51,3 +51,28 @@ class SettingsTests(unittest.TestCase):
                 settings.apply(cfg, path, {"reload.min_refreshes": "lots"})
             self.assertEqual(json.load(open(path))["reload"]["min_refreshes"], 3)
             self.assertFalse(cfg["trading"]["allow_live"])
+
+
+class FeedLightTests(unittest.TestCase):
+    def test_market_and_option_lights(self):
+        from helpers import cfg, plays
+        from twiney.engine import Engine
+        e = Engine(plays(), cfg(), None)
+        f = e.snapshot(1.0)["feeds"]
+        self.assertEqual((f["market"]["color"], f["options"]["color"], f["options"]["label"]), ("red", "red", "OFF"))
+        e.on_connection("CONNECTED", "", 2.0, market_data_type=1)
+        self.assertEqual(e.snapshot(2.0)["feeds"]["market"]["label"], "QUIET")          # connected, no tick yet
+        e.on_l1(plays()[0]["symbol"], "last", 10.0, 3.0)
+        self.assertEqual(e.snapshot(4.0)["feeds"]["market"]["color"], "green")
+        self.assertEqual(e.snapshot(40.0)["feeds"]["market"]["label"], "QUIET")         # ticks stopped
+        e.on_market_data_type(3, 41.0); e.on_l1(plays()[0]["symbol"], "last", 10.1, 41.0)
+        self.assertEqual(e.snapshot(41.0)["feeds"]["market"]["label"], "DELAYED")
+        e.flow_status.update(source="quantdata", state="connecting")
+        self.assertEqual(e.snapshot(42.0)["feeds"]["options"]["label"], "CONNECTING")
+        e.flow_status.update(state="ok", last_ok=42.0)
+        self.assertEqual(e.snapshot(44.0)["feeds"]["options"]["color"], "green")
+        e.flow_status.update(state="error", detail="401 Unauthorized")
+        self.assertEqual(e.snapshot(80.0)["feeds"]["options"]["color"], "red")
+        self.assertIn("401", e.snapshot(80.0)["feeds"]["options"]["detail"])
+        e.on_connection("DISCONNECTED", "socket closed", 81.0)
+        self.assertEqual(e.snapshot(81.0)["feeds"]["market"]["color"], "red")

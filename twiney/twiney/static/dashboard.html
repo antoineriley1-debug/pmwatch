@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20260929-2341">
+<meta name="build" content="20260929-2348">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -629,6 +629,15 @@ input:focus,select:focus,textarea:focus{outline:1px solid var(--gold);outline-of
 #settings .sw span{position:absolute;inset:0;background:#2c2e33;border-radius:10px;cursor:pointer;transition:.15s} #settings .sw span:before{content:"";position:absolute;width:14px;height:14px;left:3px;top:3px;background:#8e9096;border-radius:50%;transition:.15s}
 #settings .sw input:checked+span{background:#173b28} #settings .sw input:checked+span:before{transform:translateX(20px);background:var(--buy)}
 
+/* the two feed lights, bottom-right corner */
+#leds{display:inline-flex;gap:12px;align-items:center;margin-right:4px}
+#leds .ld{display:inline-flex;align-items:center;gap:5px;font:600 9.5px var(--sans);letter-spacing:.14em;color:#8e9096;cursor:default}
+#leds .ld i{width:8px;height:8px;border-radius:50%;background:#3a3c42;display:inline-block}
+#leds .ld.green i{background:#34d17a;box-shadow:0 0 6px #34d17a} #leds .ld.green{color:#c9f2d8}
+#leds .ld.amber i{background:#e3a83a;box-shadow:0 0 5px #e3a83a}
+#leds .ld.red i{background:#e5484d;box-shadow:0 0 6px #e5484d;animation:ledp 1.4s infinite} #leds .ld.red{color:#f0a09c}
+@keyframes ledp{50%{opacity:.35}}
+
 </style>
 </head>
 <body>
@@ -687,6 +696,7 @@ input:focus,select:focus,textarea:focus{outline:1px solid var(--gold);outline-of
   <span id="stRec"></span>
   <span class="spacer"></span>
   <span id="stLoss" title="day loss lock: realized + open P&L against your daily limit">DAY LOSS LIMIT <b>—</b></span>
+  <span id="leds"><span class="ld" id="ledMkt"><i></i>MKT</span><span class="ld" id="ledOpt"><i></i>OPT</span></span>
   <span id="stBuild" title="the build of this page; the desk reloads itself when a newer build starts">BUILD <b>—</b></span>
   <span id="stClock"></span>
 </div>
@@ -2503,7 +2513,16 @@ document.getElementById("setRestart").addEventListener("click", async () => {
   const out = await post("/api/restart", {}); if (!out.ok){ toast(out.reason || "Restart not available", false); return; }
   SET.restartPending = false; document.getElementById("settings").hidden = true; toast("Restarting TED…", true);
 });
+function renderLeds(s){
+  const f = s.feeds || {};
+  for (const [id, k, name] of [["ledMkt", "market", "Market data"], ["ledOpt", "options", "Option data"]]){
+    const el = document.getElementById(id), v = f[k]; if (!el || !v) continue;
+    const cls = "ld " + v.color; if (el.className !== cls) el.className = cls;
+    const tip = `${name}: ${v.label}\n${v.detail}`; if (el.title !== tip) el.title = tip;
+  }
+}
 function renderStatus(s){
+  renderLeds(s);
   document.querySelector("#stBuild b").textContent = PAGE_BUILD || "—";
   // an old tab left open from a previous run: reload it onto the build the server is now serving
   if (s.build && PAGE_BUILD && s.build !== PAGE_BUILD && !window._reloading){ window._reloading = true; toast("New build " + s.build + " is running: reloading", true); setTimeout(() => location.reload(), 800); }
