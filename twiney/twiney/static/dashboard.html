@@ -916,9 +916,10 @@ function pips(n, cls){
 function whoTag(row, side){
   const st = row[side + "_state"], n = row[side + "_refills"] || 0, v = row[side + "_verdict"];
   const name = side === "bid" ? "buyer" : "seller";
+  if (st === "RELOAD") return `<span class="who ${name} big" title="confirmed reload ${name}: refilled ${n}x after getting hit">${name.toUpperCase()} ×${n}</span>`;
+  if ((row[side] || 0) > 0) return "";   // size is sitting there: whatever happened earlier is history
   if (v === "CLEANED UP") return `<span class="who c" title="the reload ${name} here got eaten and price went through: cleared out">CLEARED OUT</span>`;
   if (v === "PULLED") return `<span class="who v" title="the reload ${name} here vanished without getting hit">PULLED</span>`;
-  if (st === "RELOAD") return `<span class="who ${name} big" title="confirmed reload ${name}: refilled ${n}x after getting hit">${name.toUpperCase()} ×${n}</span>`;
   return "";
 }
 

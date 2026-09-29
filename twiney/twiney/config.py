@@ -55,6 +55,8 @@ DEFAULTS = {
         "consumed_min_exec_fraction": 0.5,
         # wait this long after a disappearance before calling PULLED (tape lags book)
         "pull_grace_seconds": 1.5,
+        # a vanished level must stay gone this long before CLEANED UP can be called (book flicker is not a clear)
+        "clear_confirm_seconds": 1.0,
         # price must trade through the level within this long to call CLEANED UP
         "through_timeout_seconds": 10.0,
         # ignore disappearances this long after a book (re)sync, e.g. error 317

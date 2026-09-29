@@ -1163,8 +1163,9 @@ class Engine:
                     row[side + "_refills"] = tr.refreshes_window(t)
                     row[side + "_state"] = tr._display_state(t)
                     row[side + "_absorbed"] = round(tr.absorbed_total)
+                    # never call a level cleared while something is sitting there again
                     row[side + "_verdict"] = (tr.last_verdict[0] if tr.last_verdict and t - tr.last_verdict[1] < 60
-                                              else None)
+                                              and tr.displayed <= 0 else None)
             max_size = max(max_size, row["bid"], row["ask"])
             max_traded = max(max_traded, row["sold"], row["bought"])
             rows.append(row)

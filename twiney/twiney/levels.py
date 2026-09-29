@@ -205,7 +205,10 @@ class LevelTracker:
                              and self.last_through >= self.gone_at - c["consumed_exec_window_seconds"])
             recent = sum(s for t, s in self.prints if t >= since)
             consumed = recent > 0 and recent >= c["consumed_min_exec_fraction"] * self.size_before_gone
-            if consumed and moved_through:
+            # a level that flickers to zero for a moment (delete + re-insert, a locked book from another
+            # venue) is not cleared: it has to stay gone for clear_confirm_seconds first
+            gone_for = now - self.gone_at
+            if consumed and moved_through and gone_for >= c.get("clear_confirm_seconds", 1.0):
                 return self._verdict(CLEANED_UP, now)
             if not consumed and now - self.gone_at >= c["pull_grace_seconds"]:
                 return self._verdict(PULLED, now)
@@ -240,6 +243,7 @@ class LevelTracker:
             "absorbed_total": self.absorbed_total,
             "refreshes": self.refreshes_window(now),
             "out_of_view": self.out_of_view,
-            "last_verdict": self.last_verdict[0] if self.last_verdict else None,
-            "last_verdict_age": round(now - self.last_verdict[1], 1) if self.last_verdict else None,
+            # a verdict is history the moment size is sitting at the level again
+            "last_verdict": self.last_verdict[0] if self.last_verdict and self.displayed <= 0 else None,
+            "last_verdict_age": round(now - self.last_verdict[1], 1) if self.last_verdict and self.displayed <= 0 else None,
         }

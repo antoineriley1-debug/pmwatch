@@ -111,7 +111,9 @@ class VerdictTests(unittest.TestCase):
         h.remove(8.05)
         self.assertEqual(h.tr.state, GONE_PENDING)
         h.hit(200, 8.2, price=10.01)  # price trades through the level
-        self.assertEqual(h.alerts[-1], (8.2, "CLEANED UP"))
+        self.assertEqual(h.tr.state, GONE_PENDING)   # not yet: it has to stay gone for a moment
+        h.tick(9.1)
+        self.assertEqual(h.alerts[-1], (9.1, "CLEANED UP"))
         self.assertEqual(h.tr.state, WATCHING)
         self.assertEqual(h.tr.last_verdict[0], "CLEANED UP")
 
@@ -122,7 +124,36 @@ class VerdictTests(unittest.TestCase):
         h.remove(8.0)            # book first...
         h.hit(1000, 8.05)        # ...tape lags
         h.hit(100, 8.1, price=10.01)
-        self.assertEqual(h.alerts[-1], (8.1, "CLEANED UP"))
+        h.tick(9.05)
+        self.assertEqual(h.alerts[-1], (9.05, "CLEANED UP"))
+
+    def test_flicker_with_prints_and_a_locked_book_is_not_a_clear(self):
+        # the seller's row drops out for a moment (delete + re-insert) while the bid locks and prints hit;
+        # he is still there with size, so no CLEANED UP and the ladder must not say cleared
+        h = Harness()
+        h.build_reload()
+        h.show(59000, 7.0)
+        h.hit(1000, 8.0)
+        h.show(2000, 8.01)                       # most of the size steps down first
+        h.remove(8.05)
+        h.book.apply(0, UPDATE, BID, 10.00, 500)  # another venue locks the book at the level
+        h.hit(1200, 8.1, price=10.01)
+        self.assertEqual(h.tr.state, GONE_PENDING)
+        h.book.apply(0, INSERT, ASK, 10.00, 61000)
+        h.tr.on_book(h.book, 8.3)
+        h.tick(9.5); h.tick(20.0)
+        self.assertEqual(h.tr.state, RELOAD)
+        self.assertEqual([a for a in h.alerts if a[1] == "CLEANED UP"], [])
+        self.assertIsNone(h.tr.snapshot(9.5)["last_verdict"])
+
+    def test_verdict_hidden_once_size_is_back(self):
+        h = Harness()
+        h.build_reload()
+        h.show(1000, 7.0); h.hit(1000, 8.0); h.remove(8.05); h.hit(200, 8.2, price=10.01); h.tick(9.1)
+        self.assertEqual(h.tr.snapshot(9.2)["last_verdict"], "CLEANED UP")
+        h.show(5000, 9.5)                         # he is back
+        self.assertIsNone(h.tr.snapshot(9.6)["last_verdict"])
+        self.assertEqual(h.tr.state, BUILDING)
 
     def test_pulled_without_execution_evidence(self):
         h = Harness()
