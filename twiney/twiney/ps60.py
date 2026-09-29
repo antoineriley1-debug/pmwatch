@@ -119,14 +119,15 @@ def measured_potential(play, price, atr_value, cfg):
     """MP is the trader's number (plays.json "mp"): the distance from price to the nearest moving
     average / supply / demand on the Daily, read off the chart. TWINEY has no moving averages, so it
     never computes MP. Without it the play has no room on the board and grades PASS."""
-    manual = play.get("mp")
-    if not manual:
-        return {"dollars": None, "atr": atr_value, "ratio": None, "verdict": "NO MP", "manual": False}
-    dollars = round(float(manual), 4)
+    level = play.get("target") or play.get("mp")
+    pivot = play.get("trigger")
+    if not level or not pivot:
+        return {"dollars": None, "level": level, "atr": atr_value, "ratio": None, "verdict": "NO MP", "manual": False}
+    dollars = round(abs(float(level) - float(pivot)), 4)   # the room: from the pivot to your MP level
     if not atr_value:
-        return {"dollars": dollars, "atr": None, "ratio": None, "verdict": "NO ATR", "manual": True}
+        return {"dollars": dollars, "level": level, "atr": None, "ratio": None, "verdict": "MP", "manual": True}
     ratio = round(dollars / atr_value, 2)
-    return {"dollars": dollars, "atr": atr_value, "ratio": ratio, "manual": True,
+    return {"dollars": dollars, "level": level, "atr": atr_value, "ratio": ratio, "manual": True,
             "verdict": "CLEAR" if ratio >= cfg["clear_ratio"] else "THIN"}
 
 
@@ -347,7 +348,7 @@ def grade(play, price, se, mp, shares, stop_known, caps):
     valid = bool(play.get("trigger")) and mp["dollars"] is not None
     gates.append({"q": "Pivot valid?", "ok": valid,
                   "why": f"pivot {_px(play['trigger'])} with ${mp['dollars']:.2f} of measured potential" if valid
-                  else "no measured potential on this play — put mp in plays.json"})
+                  else "no measured potential on this play — set MP in PLAY SETUP"})
     dollars = (shares or 0) * (price or 0)
     size_ok = bool(shares) and shares <= caps["max_shares_per_order"] and dollars <= caps["max_dollars_per_order"]
     gates.append({"q": "Comfortable with size?", "ok": size_ok,
@@ -366,7 +367,7 @@ def grade(play, price, se, mp, shares, stop_known, caps):
     if not play.get("trigger"):
         reasons.append("no pivot yet — mark one on the chart")
     if mp["verdict"] == "NO MP":
-        reasons.append("no measured potential on the board — put your mp (and atr) in plays.json")
+        reasons.append("no measured potential on the board — set MP in PLAY SETUP")
     elif mp["verdict"] == "THIN":
         reasons.append(f"measured potential ${mp['dollars']:.2f} is THIN against a ${mp['atr']:.2f} ATR")
     if not stop_known:

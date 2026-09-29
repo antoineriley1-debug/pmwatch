@@ -29,12 +29,12 @@ class SecondEntryTests(unittest.TestCase):
         self.assertEqual(se["state"], ps60.SECOND_ENTRY)
         self.assertEqual(se["second_entry"], 738.9)
         self.assertEqual(se["build"], "building")
-        g = ps60.grade(self.play, 739.1, se, ps60.measured_potential(dict(self.play, mp=4.0), 739.1, 5.0, CFG), 100,
+        g = ps60.grade(self.play, 739.1, se, ps60.measured_potential(self.play, 739.1, 5.0, CFG), 100,
                        True, DEFAULTS["trading"])
-        self.assertEqual(g["grade"], "READY")
-        # without your mp there is no room on the board: PASS whatever the candles say
-        g = ps60.grade(self.play, 739.1, se, ps60.measured_potential(self.play, 739.1, 5.0, CFG), 100, True,
-                       DEFAULTS["trading"])
+        self.assertEqual(g["grade"], "READY")      # the MP level (target 745) is the room on the board
+        # without an MP level there is no room on the board: PASS whatever the candles say
+        bare = dict(self.play, target=None, mp=None)
+        g = ps60.grade(bare, 739.1, se, ps60.measured_potential(bare, 739.1, 5.0, CFG), 100, True, DEFAULTS["trading"])
         self.assertEqual(g["grade"], "PASS")
 
     def test_same_candle_never_counts_and_failure_resets(self):
@@ -71,14 +71,14 @@ class SecondEntryTests(unittest.TestCase):
 
 class MeasuredPotentialTests(unittest.TestCase):
     def test_mp_atr_and_pass(self):
-        play = {"side": "long", "trigger": 100.0, "target": 101.0, "stop": 99.0, "mp": 0.8}
+        play = {"side": "long", "trigger": 100.0, "target": 100.8, "stop": 99.0, "mp": 100.8}
         mp = ps60.measured_potential(play, 100.2, 4.0, CFG)
         self.assertEqual((mp["dollars"], mp["ratio"], mp["verdict"]), (0.8, 0.2, "THIN"))
         se = {"state": ps60.IDLE, "build": None, "extreme": None, "second_entry": None, "fails": 0}
         g = ps60.grade(play, 100.2, se, mp, 100, True, DEFAULTS["trading"])
         self.assertEqual(g["grade"], "PASS")
         self.assertIn("THIN", g["why"])
-        self.assertEqual(ps60.measured_potential(dict(play, mp=None), 100.2, 4.0, CFG)["verdict"], "NO MP")
+        self.assertEqual(ps60.measured_potential(dict(play, mp=None, target=None), 100.2, 4.0, CFG)["verdict"], "NO MP")
         g = ps60.grade(dict(play, stop=None), 100.2, se, ps60.measured_potential(play, 100.2, 1.0, CFG), 100, False,
                        DEFAULTS["trading"])
         self.assertEqual(g["grade"], "PASS")
@@ -138,9 +138,13 @@ if __name__ == "__main__":
 
 class ManualNumbersTests(unittest.TestCase):
     def test_your_mp_and_atr_win(self):
-        play = {"side": "long", "trigger": 100.0, "target": 101.0, "stop": 99.0, "mp": 2.5}
+        play = {"side": "long", "trigger": 100.0, "target": 102.5, "stop": 99.0, "mp": 102.5}
         mp = ps60.measured_potential(play, 100.2, 3.0, CFG)
         self.assertEqual((mp["dollars"], mp["ratio"], mp["verdict"], mp["manual"]), (2.5, 0.83, "CLEAR", True))
+        # no ATR: the room is still measured, nothing is called THIN
+        self.assertEqual(ps60.measured_potential(play, 100.2, None, CFG)["verdict"], "MP")
         from twiney.config import validate_plays
-        p = validate_plays([{"symbol": "x", "trigger": 10, "mp": "1.5", "atr": 0.4}])[0]
-        self.assertEqual((p["mp"], p["atr"]), (1.5, 0.4))
+        p = validate_plays([{"symbol": "x", "trigger": 10, "mp": "11.5", "atr": 0.4}])[0]
+        self.assertEqual((p["mp"], p["target"], p["atr"]), (11.5, 11.5, 0.4))
+        legacy = validate_plays([{"symbol": "x", "trigger": 10, "mp": "1.5"}])[0]     # an old file with mp in dollars
+        self.assertEqual((legacy["mp"], legacy["target"]), (11.5, 11.5))

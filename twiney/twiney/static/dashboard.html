@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20260929-0503">
+<meta name="build" content="20260929-0511">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -1993,19 +1993,19 @@ function renderPS60(d){
   const g = d.ps60 || {}, se = g.se || {}, mp = g.mp || {};
   panelHTML("ps60", `<div class="hl">${esc(d.headline || "")}</div>
     <div class="kv"><span>GRADE</span><span><span class="p-ps60" style="margin:0;height:auto;overflow:visible"><span class="g ${g.grade}">${g.grade || NA}</span></span> <span class="dim">${esc(g.why || "")}</span></span>
-      <span>PIVOT</span><span>${px(d.play.trigger)} · 2nd ${px(d.play.second_entry)} · target ${px(d.play.target)} · stop ${px(d.play.stop)}</span>
-      <span>MP / ATR</span><span>${mp.dollars != null ? "$" + mp.dollars.toFixed(2) : NA} / ${mp.atr != null ? "$" + mp.atr.toFixed(2) : NA} ${mp.verdict && mp.dollars != null ? "→ " + mp.verdict : ""}</span>
+      <span>PIVOT</span><span>${px(d.play.trigger)} · 2nd ${px(d.play.second_entry)} · stop ${px(d.play.stop)}</span>
+      <span>MP</span><span>${mp.level != null ? px(mp.level) + " · $" + (mp.dollars || 0).toFixed(2) + " of room" : NA}${mp.verdict === "CLEAR" || mp.verdict === "THIN" ? " · " + mp.verdict + " vs ATR" : ""}</span>
       <span>2ND ENTRY</span><span>${esc(se.text || NA)}</span>
       <span>TAPE</span><span>${esc((d.tape && d.tape.state) || "QUIET")}${d.tape && d.tape.buy_pct != null ? " · " + d.tape.buy_pct.toFixed(0) + "% buys" : ""}</span></div>
     <ul>${(d.lines || []).map(l => `<li>${esc(l)}</li>`).join("")}</ul>
     ${(g.sneaky || []).map(x => `<div class="dim">${esc(x.label)} ${px(x.price)} ×${x.touches} · room $${x.room.toFixed(2)}</div>`).join("")}
     ${se.extreme && ["BROKE", "RETRACE"].includes(se.state) ? `<button data-se="${se.extreme}" style="margin-top:4px">use ${px(se.extreme)} as 2nd entry</button>` : ""}`);
 }
-/* ---------- PLAY SETUP: the trader types MP, stop, pivot, 2nd entry, target, ATR — everything derives from it */
+/* ---------- PLAY SETUP: pivot, stop, MP level (the target), optional 2nd entry — everything derives from it */
 const SU = {dirty: false, msg: "", saving: false};
 function riskDollars(){ return +store.get("riskDollars", 100) || 0; }
 function suFields(){
-  const f = {}; for (const k of ["trigger", "second_entry", "target", "stop", "mp", "atr"]){ const el = document.getElementById("su_" + k); if (el) f[k] = el.value.trim(); }
+  const f = {}; for (const k of ["trigger", "second_entry", "stop", "mp"]){ const el = document.getElementById("su_" + k); if (el) f[k] = el.value.trim(); }
   const side = document.getElementById("su_side"), notes = document.getElementById("su_notes");
   if (side) f.side = side.value; if (notes) f.notes = notes.value;
   return f;
@@ -2013,59 +2013,53 @@ function suFields(){
 function suDerive(d, f){
   const n = k => { const v = parseFloat(f[k]); return isNaN(v) || v <= 0 ? null : v; };
   const side = f.side || "long", sgn = side === "long" ? 1 : -1;
-  const pivot = n("trigger"), second = n("second_entry"), target = n("target"), stop = n("stop"), mp = n("mp"), atr = n("atr");
+  const pivot = n("trigger"), second = n("second_entry"), stop = n("stop"), mp = n("mp");
   const entry = second || pivot || (d && d.last) || null, entryLbl = second ? "2nd entry" : pivot ? "pivot" : "last";
   const risk = entry && stop ? Math.abs(entry - stop) : null;
-  const mpVerdict = mp == null ? "NO MP" : atr == null ? "NO ATR" : (mp / atr >= 0.5 ? "CLEAR" : "THIN");
-  const mpTarget = pivot && mp ? pivot + sgn * mp : null;
-  const r = risk && mp ? mp / risk : null;
+  const room = mp && pivot ? Math.abs(mp - pivot) : null;                 // MP room: pivot to your MP level
+  const r = risk && room ? room / risk : null;
   const maxSh = (state && state.trading && state.trading.max_shares) || Infinity;
   const shares = risk ? Math.min(maxSh, Math.floor(riskDollars() / risk)) : null;
   const bad = [];
   if (pivot && second && sgn * (second - pivot) <= 0) bad.push("second_entry");
   if (pivot && stop && sgn * (stop - pivot) >= 0) bad.push("stop");
-  if (pivot && target && sgn * (target - pivot) <= 0) bad.push("target");
-  return {side, pivot, second, target, stop, mp, atr, entry, entryLbl, risk, mpVerdict, mpTarget, r, shares, bad};
+  if (pivot && mp && sgn * (mp - pivot) <= 0) bad.push("mp");
+  return {side, pivot, second, stop, mp, entry, entryLbl, risk, room, r, shares, bad};
 }
 function suDerivedHTML(d, f){
   const x = suDerive(d, f), $ = v => v == null ? NA : "$" + v.toFixed(2);
-  const vcls = x.mpVerdict === "CLEAR" ? "ok" : x.mpVerdict === "THIN" ? "no" : "dim";
-  return `<span>MP vs ATR</span><span><span class="${vcls}">${x.mpVerdict}</span>${x.mp && x.atr ? ` <span class="dim">${(x.mp / x.atr).toFixed(2)}× ATR · MIN 0.50×</span>` : ""}</span>
-    <span>MP TARGET</span><span>${x.mpTarget ? `<span class="gold">${$(x.mpTarget)}</span> <span class="dim">PIVOT ${x.side === "long" ? "+" : "−"} MP</span>` : NA}</span>
+  return `<span>MP ROOM</span><span>${x.room != null ? `<span class="gold">${$(x.room)}</span> <span class="dim">PIVOT ${$(x.pivot)} → MP ${$(x.mp)}</span>` : `<span class="dim">NEEDS A PIVOT AND AN MP</span>`}</span>
     <span>RISK / SHARE</span><span>${x.risk ? `${$(x.risk)} <span class="dim">${x.entryLbl} ${$(x.entry)} → stop ${$(x.stop)}</span>` : `<span class="dim">NEEDS A STOP${x.entry ? "" : " AND AN ENTRY"}</span>`}</span>
-    <span>REWARD : RISK</span><span>${x.r ? `<span class="${x.r >= 2 ? "ok" : x.r >= 1 ? "" : "no"}">${x.r.toFixed(1)} R</span> <span class="dim">MP ÷ RISK</span>` : NA}</span>
+    <span>REWARD : RISK</span><span>${x.r ? `<span class="${x.r >= 2 ? "ok" : x.r >= 1 ? "" : "no"}">${x.r.toFixed(1)} R</span> <span class="dim">MP ROOM ÷ RISK</span>` : NA}</span>
     <span>SIZE</span><span>${x.shares != null ? `<span class="gold">${sz(x.shares)} sh</span> <span class="dim">AT $${riskDollars()} RISK</span> <button data-usesize="${x.shares}" style="padding:1px 6px;font-size:10px">TO TICKET</button>` : `<span class="dim">NEEDS A STOP</span>`}</span>
-    ${x.bad.length ? `<span></span><span class="no">${x.bad.map(k => k === "second_entry" ? "2nd entry must be beyond the pivot" : k === "stop" ? (f.side === "short" ? "stop must be above the pivot for a short" : "stop must be below the pivot for a long") : "target must be beyond the pivot").join(" · ")}</span>` : ""}`;
+    ${x.bad.length ? `<span></span><span class="no">${x.bad.map(k => k === "second_entry" ? "2nd entry must be beyond the pivot" : k === "stop" ? (f.side === "short" ? "stop must be above the pivot for a short" : "stop must be below the pivot for a long") : (f.side === "short" ? "MP must be below the pivot for a short" : "MP must be above the pivot for a long")).join(" · ")}</span>` : ""}`;
 }
-function suRefresh(){ const el = document.getElementById("suDerived"); if (!el) return; const f = suFields(); el.innerHTML = suDerivedHTML(curData(), f); const x = suDerive(curData(), f); for (const k of ["second_entry", "stop", "target"]){ const i = document.getElementById("su_" + k); if (i) i.classList.toggle("bad", x.bad.includes(k)); } const b = document.getElementById("suSave"); if (b) b.disabled = SU.saving || x.bad.length > 0; }
+function suRefresh(){ const el = document.getElementById("suDerived"); if (!el) return; const f = suFields(); el.innerHTML = suDerivedHTML(curData(), f); const x = suDerive(curData(), f); for (const k of ["second_entry", "stop", "mp"]){ const i = document.getElementById("su_" + k); if (i) i.classList.toggle("bad", x.bad.includes(k)); } const b = document.getElementById("suSave"); if (b) b.disabled = SU.saving || x.bad.length > 0; }
 function renderSetup(d){
   if (!d){ SU.dirty = false; panelHTML("setup", `<div class="dim" style="padding:8px">${NA}</div>`); return; }
   if (SU.dirty && P.setup.pc.querySelector("#suSave") && P.setup.pc.dataset.sym === curSym) return;   // never wipe what the trader is typing
   const p = d.play || {}, v = k => p[k] != null ? p[k] : "";
-  const f = {side: p.side || "long", trigger: v("trigger"), second_entry: v("second_entry"), target: v("target"), stop: v("stop"), mp: v("mp"), atr: v("atr"), notes: p.notes || ""};
+  const f = {side: p.side || "long", trigger: v("trigger"), second_entry: v("second_entry"), stop: v("stop"), mp: p.target != null ? p.target : v("mp"), notes: p.notes || ""};
   const inp = (k, ph) => `<input id="su_${k}" type="number" step="0.01" min="0" value="${f[k]}" placeholder="${ph}">`;
   const html = `<div class="ticket setup">
     <div class="hdr"><span><b>${esc(d.symbol)}</b> PLAY</span><span>LAST ${px(d.last)}</span></div>
     <label>SIDE</label><select id="su_side"><option value="long" ${f.side === "long" ? "selected" : ""}>LONG</option><option value="short" ${f.side === "short" ? "selected" : ""}>SHORT</option></select>
     <label>PIVOT</label>${inp("trigger", "")}
     <label>2ND ENTRY</label>${inp("second_entry", "optional")}
-    <label>MP</label>${inp("mp", "$ / share")}
-    <label>ATR</label>${inp("atr", "$ / share")}
     <label>STOP</label>${inp("stop", "")}
-    <label>TARGET</label>${inp("target", "optional · MP target if blank")}
+    <label>MP</label>${inp("mp", "the level the move runs to")}
     <label>RISK $</label><div class="row"><input id="su_risk" type="number" step="10" min="0" value="${riskDollars()}"><span class="dim" style="font-size:10.5px">PER TRADE</span></div>
     <label>NOTES</label><input id="su_notes" type="text" maxlength="200" value="${esc(f.notes)}" placeholder="notes">
     <div class="derived" id="suDerived">${suDerivedHTML(d, f)}</div>
-    <div class="go"><button class="save" id="suSave">SAVE PLAY</button><button id="suMpTarget" title="copy the MP target into TARGET">USE MP TARGET</button></div>
+    <div class="go"><button class="save" id="suSave">SAVE PLAY</button></div>
     <div class="msg ${SU.msg.startsWith("SAVED") ? "ok" : "no"}" id="suMsg">${esc(SU.msg)}</div></div>`;
   if (panelHTML("setup", html)) P.setup.pc.dataset.sym = curSym;
 }
 P.setup.el.addEventListener("input", e => { if (e.target.id === "su_risk"){ store.set("riskDollars", +e.target.value || 0); P.ticket.last = null; renderTicket(state, curData()); } else SU.dirty = true; SU.msg = ""; const m = document.getElementById("suMsg"); if (m) m.textContent = ""; suRefresh(); });
 P.setup.el.addEventListener("click", async e => {
   const u = e.target.closest("button[data-usesize]"); if (u){ TK.qty = Math.max(1, +u.dataset.usesize); P.ticket.last = null; renderTicket(state, curData()); post("/api/trade/size", {shares: TK.qty}); toast("Ticket size " + sz(TK.qty) + " shares", true); return; }
-  if (e.target.id === "suMpTarget"){ const x = suDerive(curData(), suFields()); if (x.mpTarget){ document.getElementById("su_target").value = x.mpTarget.toFixed(2); SU.dirty = true; suRefresh(); } else toast("Need a pivot and an MP first", false); return; }
   if (e.target.id !== "suSave" || !curSym) return;
-  const f = suFields(); if (f.target === "" ){ const x = suDerive(curData(), f); if (x.mpTarget) f.target = x.mpTarget.toFixed(2); }
+  const f = suFields();
   SU.saving = true; suRefresh();
   const out = await post("/api/play", {symbol: curSym, action: "setup", fields: f});
   SU.saving = false; SU.dirty = false; SU.msg = out.ok ? "SAVED · grade, brackets and sizing follow these numbers" : "REJECTED · " + (out.reason || "not saved");

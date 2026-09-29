@@ -269,16 +269,22 @@ def validate_plays(raw):
             if side == "short" and second >= trigger:
                 raise ConfigError(f"{where}: second_entry {second} must be BELOW the pivot {trigger} for a short "
                                   f"(it is the new low after the break, not a bounce level)")
+        mp_level = num("mp", False) or num("target", False)
+        if mp_level and trigger and mp_level < 0.5 * trigger:
+            # an old file with mp in dollars: turn it into the level it meant
+            mp_level = round(trigger + mp_level if side == "long" else trigger - mp_level, 4)
+        if mp_level and trigger and ((side == "long" and mp_level <= trigger) or (side == "short" and mp_level >= trigger)):
+            raise ConfigError(f"{where}: mp {mp_level} must be {'above' if side == 'long' else 'below'} the pivot {trigger} for a {side}")
         plays.append({
             "symbol": sym,
             "side": side,
             "trigger": trigger,
             "second_entry": second,
-            "target": num("target", False),
+            "target": mp_level,
             "stop": num("stop", False),
-            # your own numbers: measured potential in dollars and the ATR. When set they are used as-is;
-            # otherwise MP is measured to the target and the ATR comes from daily bars.
-            "mp": num("mp", False),
+            # mp = your measured potential LEVEL (the price the move can run to): it is the target.
+            # atr is optional; when given the MP room is compared against it (CLEAR / THIN).
+            "mp": mp_level,
             "atr": num("atr", False),
             "extra_levels": extra,
             "notes": str(item.get("notes", "")),

@@ -435,9 +435,8 @@ class Engine:
                     return False, "side must be long or short"
                 trigger = num("trigger") if "trigger" in fields else p.get("trigger")
                 second = num("second_entry") if "second_entry" in fields else p.get("second_entry")
-                target = num("target") if "target" in fields else p.get("target")
+                target = num("mp") if "mp" in fields else num("target") if "target" in fields else p.get("target")
                 stop = num("stop") if "stop" in fields else p.get("stop")
-                mp = num("mp") if "mp" in fields else p.get("mp")
                 atr = num("atr") if "atr" in fields else p.get("atr")
             except ValueError as exc:
                 return False, str(exc)
@@ -453,18 +452,19 @@ class Engine:
                     return False, f"stop {stop} must be above the pivot {trigger} for a short"
             if trigger and target:
                 if side == "long" and target <= trigger:
-                    return False, f"target {target} must be above the pivot {trigger} for a long"
+                    return False, f"MP {target} must be above the pivot {trigger} for a long"
                 if side == "short" and target >= trigger:
-                    return False, f"target {target} must be below the pivot {trigger} for a short"
+                    return False, f"MP {target} must be below the pivot {trigger} for a short"
             p["side"] = side
             if "notes" in fields:
                 p["notes"] = str(fields.get("notes") or "")[:200]
-            p["mp"], p["atr"] = mp, atr
+            p["atr"] = atr
             for role, val in (("trigger", trigger), ("second_entry", second), ("target", target), ("stop", stop)):
                 if val != p.get(role):
                     if role == "trigger" and val is None:
                         continue
                     self.set_play_level(symbol, role, val, t)
+            p["mp"] = p.get("target")        # MP is the level: one number, two names
             st.invalidation_armed = False   # new stop / target: don't retire the play on the next tick by accident
             self._rec({"ev": "setup", "t": t or self.last_t, "sym": symbol,
                        "fields": {k: p.get(k) for k in ("side", "trigger", "second_entry", "target", "stop", "mp", "atr", "notes")}})
@@ -488,6 +488,8 @@ class Engine:
                 st.play["watch"] = False  # a typed-in ticker becomes a real play once it has a pivot
             old = st.play.get(role)
             st.play[role] = price
+            if role == "target":
+                st.play["mp"] = price
             if role in ("trigger", "second_entry"):
                 # drop the old trackers for this role (unless another role shares that price)
                 if old is not None:
