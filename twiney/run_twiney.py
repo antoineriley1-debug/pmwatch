@@ -109,8 +109,9 @@ def run_demo(cfg, plays, args):
     engine.plays_path = args.plays if os.path.exists(args.plays) and not args.plays.endswith("plays.example.json") else None
     engine.grades_path = os.path.join(cfg["recording"]["dir"], "grades.jsonl")
     engine.listeners.append(console_alert)
-    feed = DemoFeed(engine, plays)
+    feed = DemoFeed(engine, plays, seed=None, scenario=cfg.get("demo", {}).get("scenario"))
     feed.start(time.time())
+    print(f"Practice session · day type: {feed.scenario}  (not shown on the desk; set demo.scenario in config.json to pick one)", flush=True)
     gate = TradingGate(cfg)
     gate.set_sim()
     sim = SimBroker(engine)

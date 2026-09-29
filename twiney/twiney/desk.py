@@ -37,7 +37,75 @@ class Desk:
         self.notes = []   # free-text journal notes typed during the session
         self.journal_path = None
         self.replay_proc = None
+        self.trades = []          # closed round trips, each with its PS60 setup / grade / note
+        self._open = {}           # symbol -> the trade being built from fills
+        self._load_trades()
         engine.desk = self
+
+    # ---- trade journal: every round trip, categorised by the PS60 setup you were trading -------------
+
+    SETUPS = ["Macro break (60m supply)", "Macro breakdown (60m demand)", "Large MP", "Second entry", "Remount",
+              "Sneaky pivot", "50-day breakout", "50-day breakdown", "200-day break", "MA bounce", "MA rejection",
+              "Gap and go", "Gap fill", "Squeeze", "Capitulation bounce", "Range break", "Scalp", "Other"]
+
+    @property
+    def trades_path(self):
+        return os.path.join(self.dir, "trades.jsonl")
+
+    def _load_trades(self):
+        try:
+            with open(self.trades_path, encoding="utf-8") as fh:
+                self.trades = [json.loads(l) for l in fh if l.strip()][-500:]
+        except (OSError, ValueError):
+            self.trades = []
+
+    def _write_trades(self):
+        os.makedirs(self.dir, exist_ok=True)
+        with open(self.trades_path, "w", encoding="utf-8") as fh:
+            for tr in self.trades[-500:]:
+                fh.write(json.dumps(tr) + "\n")
+
+    def on_fill(self, fill, t):
+        """Build round trips from fills: open on the first fill, close when the position is back to flat."""
+        sym, qty = fill["symbol"], float(fill["shares"])
+        signed = qty if fill["side"] == "BOT" else -qty
+        tr = self._open.get(sym)
+        if tr is None:
+            play = next((p for p in self.plays if p["symbol"] == sym), None) or getattr(self.engine, "syms", {}).get(sym)
+            play = getattr(play, "play", play) or {}
+            tr = self._open[sym] = {"id": f"{sym}-{int(t)}", "symbol": sym, "side": "long" if signed > 0 else "short",
+                                    "opened": t, "closed": None, "qty": 0.0, "entry_qty": 0.0, "entry_cost": 0.0,
+                                    "exit_qty": 0.0, "exit_cost": 0.0, "setup": play.get("setup") or "",
+                                    "grade": "", "note": "", "pnl": None, "pnl_pct": None}
+        long_ = tr["side"] == "long"
+        adding = (signed > 0) == long_
+        if adding:
+            tr["entry_qty"] += qty; tr["entry_cost"] += qty * fill["price"]
+        else:
+            tr["exit_qty"] += qty; tr["exit_cost"] += qty * fill["price"]
+        tr["qty"] += signed
+        if abs(tr["qty"]) < 1e-9 and tr["entry_qty"] > 0:
+            entry = tr["entry_cost"] / tr["entry_qty"]; exit_ = tr["exit_cost"] / max(tr["exit_qty"], 1e-9)
+            tr["entry"], tr["exit"] = round(entry, 4), round(exit_, 4)
+            tr["pnl"] = round((exit_ - entry) * tr["entry_qty"] * (1 if long_ else -1), 2)
+            tr["pnl_pct"] = round((exit_ - entry) / entry * 100 * (1 if long_ else -1), 3) if entry else None
+            tr["closed"] = t
+            tr["shares"] = tr["entry_qty"]
+            self.trades.append({k: v for k, v in tr.items() if k not in ("qty", "entry_cost", "exit_cost", "exit_qty", "entry_qty")})
+            self.engine._rec({"ev": "trade", "t": t, "trade": self.trades[-1]})
+            self._write_trades()
+            del self._open[sym]
+
+    def tag_trade(self, trade_id, setup=None, grade=None, note=None):
+        for tr in self.trades:
+            if tr["id"] == trade_id:
+                if setup is not None: tr["setup"] = str(setup)[:40]
+                if grade is not None: tr["grade"] = str(grade)[:4]
+                if note is not None: tr["note"] = str(note)[:300]
+                self.engine._rec({"ev": "trade_tag", "t": time.time(), "id": trade_id, "setup": tr["setup"], "grade": tr["grade"], "note": tr["note"]})
+                self._write_trades()
+                return True
+        return False
 
     # ---- recording ------------------------------------------------------------
 

@@ -357,6 +357,8 @@ class Engine:
             self.account_seen = True
             self.fills[exec_id] = {"symbol": symbol, "side": side, "shares": shares, "price": price,
                                    "time": when, "t": t}
+            if self.desk is not None:
+                self.desk.on_fill(self.fills[exec_id], t)
             if len(self.fills) > 200:
                 for k in sorted(self.fills, key=lambda k: self.fills[k]["t"])[:len(self.fills) - 200]:
                     del self.fills[k]
@@ -458,6 +460,8 @@ class Engine:
             p["side"] = side
             if "notes" in fields:
                 p["notes"] = str(fields.get("notes") or "")[:200]
+            if "setup" in fields:
+                p["setup"] = str(fields.get("setup") or "")[:40]
             p["atr"] = atr
             for role, val in (("trigger", trigger), ("second_entry", second), ("target", target), ("stop", stop)):
                 if val != p.get(role):
@@ -534,7 +538,7 @@ class Engine:
         if not self.plays_path:
             return
         import json
-        keep = ("symbol", "side", "trigger", "second_entry", "target", "stop", "mp", "atr", "extra_levels", "notes", "active", "watch",
+        keep = ("symbol", "side", "trigger", "second_entry", "target", "stop", "mp", "atr", "extra_levels", "notes", "setup", "active", "watch",
                 "exchange", "primary_exchange", "currency")
         def row(p):
             r = {("pivot" if k == "trigger" else k): p[k] for k in keep if k in p}
@@ -1280,7 +1284,7 @@ class Engine:
         above.sort(key=lambda x: x["price"])
         return {"below": below[:3], "above": above[:3]}
 
-    def _pane(self, sym, i, t, order):
+    def _pane(self, sym, i, t, order, full=True):
         st = self.syms[sym]
         rows = self.cfg["depth"]["rows_displayed"]
         book = st.book
@@ -1319,7 +1323,7 @@ class Engine:
             "symbol": sym,
             "pinned": sym in self.pinned,
             "changed": change if change and t - change["t"] < 20 and change.get("prev") else None,
-            "play": {k: st.play[k] for k in ("side", "trigger", "second_entry", "target", "stop", "mp", "atr", "notes")},
+            "play": {k: st.play.get(k) for k in ("side", "trigger", "second_entry", "target", "stop", "mp", "atr", "notes", "setup")},
             "last": fmt_price(st.l1["last"]),
             "bid": fmt_price(bid), "ask": fmt_price(ask),
             "day": {"open": fmt_price(st.l1.get("open")), "high": fmt_price(st.l1.get("high")), "low": fmt_price(st.l1.get("low")),
@@ -1346,8 +1350,10 @@ class Engine:
                         "status": o.get("status")}
                        for o in self._pending(sym)],
             "position": self._position_view(sym, st.price()),
-            "bars": bars,
-            "daily": [[t0] + [fmt_price(x) for x in st.daily[t0]] + [0, 0, 0] for t0 in sorted(st.daily)],
+            # the page keeps its own bar history: full history on request, otherwise just the live tail
+            "bars": bars if full else bars[-6:],
+            "bars_full": full,
+            "daily": [[t0] + [fmt_price(x) for x in st.daily[t0]] + [0, 0, 0] for t0 in sorted(st.daily)] if full else None,
             "footprint": [[m, [[round(c[0], 4), round(c[1]), round(c[2])] for c in sorted(cells.values(), key=lambda c: c[0])]]
                           for m, cells in sorted(st.foot.items())[-150:]],
             "marks": [[m, fmt_price(v[0]), side, round(v[1])] for (m, _k, side), v in st.marks.items()
@@ -1357,10 +1363,12 @@ class Engine:
             "slot_age": round(t - self.slots[sym], 1) if sym in self.slots else None,
         }
 
-    def snapshot(self, t, extra=()):
+    def snapshot(self, t, extra=(), full=None):
+        """``full``: symbols the page wants the whole bar history for (None = every pane, as before)."""
         with self.lock:
             ranked = self.ranking(t)
-            extra_panes = {sym: self._pane(sym, -1, t, None) for sym in extra
+            wants = (lambda s: True) if full is None else (lambda s: s in full)
+            extra_panes = {sym: self._pane(sym, -1, t, None, wants(sym)) for sym in extra
                            if sym in self.syms and sym not in self.slots}
             order = {s: i + 1 for i, (s, _d) in enumerate(ranked)}
             ranking = []
@@ -1387,7 +1395,7 @@ class Engine:
                 })
             ranking.sort(key=lambda r: (r["rank"] is None, r["rank"] or 0, r["symbol"]))
             # panes keep a fixed screen position; an empty position is None
-            panes = [self._pane(sym, i, t, order) if sym else None for i, sym in enumerate(self.slot_order)]
+            panes = [self._pane(sym, i, t, order, wants(sym)) if sym else None for i, sym in enumerate(self.slot_order)]
             return {
                 "now": t,
                 "uptime": round(t - self.started, 1) if self.started else 0,
@@ -1420,5 +1428,6 @@ class Engine:
                 "desk": {"recording": self.recorder is not None,
                          "started": self.desk.started if self.desk else None,
                          "notes": (self.desk.notes if self.desk else self.notes_list)[-30:],
-                         "marks": (self.desk.marks if self.desk else self.marks_list)[-60:]},
+                         "marks": (self.desk.marks if self.desk else self.marks_list)[-60:],
+                         "trades": self.desk.trades[-60:] if self.desk else []},
             }

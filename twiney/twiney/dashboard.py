@@ -108,9 +108,12 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                     self._send(200, fh.read(), "text/html; charset=utf-8")
             elif path == "/api/state":
                 from urllib.parse import parse_qs, urlparse
-                q = parse_qs(urlparse(self.path).query)
+                q = parse_qs(urlparse(self.path).query, keep_blank_values=True)
                 extra = [x.strip().upper() for x in (q.get("extra", [""])[0]).split(",") if x.strip()][:12]
-                snap = engine.snapshot(clock(), extra)
+                full = None
+                if "full" in q:   # the page names the symbols it still needs history for; "" = none
+                    full = {x.strip().upper() for x in q.get("full", [""])[0].split(",") if x.strip()}
+                snap = engine.snapshot(clock(), extra, full)
                 snap["build"] = BUILD
                 self._send(200, json.dumps(snap, default=str), "application/json")
             elif path.startswith("/recordings/shots/") and rec_dir:
@@ -277,6 +280,8 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                     out = {"ok": True, "mark": desk.mark(now, sym, str(body.get("note", "")))}
                 elif action == "note":
                     out = {"ok": desk.set_note(int(body.get("n", 0)), str(body.get("note", "")))}
+                elif action == "trade":
+                    out = {"ok": desk.tag_trade(str(body.get("id", "")), body.get("setup"), body.get("grade"), body.get("note"))}
                 elif action == "journal":
                     out = {"ok": True, "notes": desk.add_note(now, str(body.get("text", "")), sym)}
                 elif action == "shot":

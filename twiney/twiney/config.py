@@ -153,6 +153,10 @@ DEFAULTS = {
         # don't repeat the same price on the same side within this many seconds
         "repeat_seconds": 20.0,
     },
+    "demo": {
+        # practice day type: null = a random one each session; or mixed, trend_up, trend_down, chop, capitulation, squeeze
+        "scenario": None,
+    },
     "ladder": {
         # a displayed size at or above this is "big": highlighted on the ladder, and counted every time it shows up
         # at that price. Adjustable per symbol from the LEVEL II window; that override wins over this default.
@@ -288,6 +292,7 @@ def validate_plays(raw):
             "atr": num("atr", False),
             "extra_levels": extra,
             "notes": str(item.get("notes", "")),
+            "setup": str(item.get("setup", "") or ""),
             "active": bool(item.get("active", True)),
             "watch": watch,
             "exchange": str(item.get("exchange", "SMART")).upper(),

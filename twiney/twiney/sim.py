@@ -51,13 +51,24 @@ NEXT = {
 }
 
 
+# day types: a scenario tilts which regimes tend to come next, so some sessions trend, some chop, some flush
+SCENARIOS = {
+    "mixed":        {},
+    "trend_up":     {"trend_up": 3, "grind_up": 2, "squeeze": 1.5, "fade": 0.6, "trend_down": 0.4, "grind_down": 0.4, "capitulation": 0.2},
+    "trend_down":   {"trend_down": 3, "grind_down": 2, "capitulation": 1.5, "bounce": 0.7, "trend_up": 0.4, "grind_up": 0.4, "squeeze": 0.2},
+    "chop":         {"chop": 3, "grind_up": 0.7, "grind_down": 0.7, "trend_up": 0.4, "trend_down": 0.4, "squeeze": 0.3, "capitulation": 0.3},
+    "capitulation": {"trend_down": 2, "capitulation": 3, "bounce": 2, "chop": 0.6, "trend_up": 0.3},
+    "squeeze":      {"trend_up": 2, "squeeze": 3, "fade": 1.5, "chop": 0.6, "trend_down": 0.3},
+}
+
+
 def _r100(x):
     return max(100, int(round(x / 100.0)) * 100)
 
 
 class _Sym:
     __slots__ = ("play", "tk", "asks", "bids", "last", "vol", "regime", "regime_until", "script", "big",
-                 "big_home", "level", "level_cooldown", "prev", "l1", "base", "mid0")
+                 "big_home", "parts", "level_cooldown", "hidden_next", "prev", "l1", "base", "mid0")
 
     def __init__(self, play, mid, t):
         self.play = play
@@ -71,16 +82,19 @@ class _Sym:
         self.script = []            # [(bias, rate, until_t)] scripted stages that override the regime
         self.big = {}               # (side, price) -> until
         self.big_home = {ASK: None, BID: None}
-        self.level = None           # the PS60 participant at the pivot
+        self.parts = []             # participants working a level: the one at the pivot, and hidden ones anywhere
         self.level_cooldown = t
+        self.hidden_next = t
         self.prev = {ASK: [], BID: []}
         self.l1 = {}
 
 
 class DemoFeed:
-    def __init__(self, engine, plays, seed=7):
+    def __init__(self, engine, plays, seed=7, scenario=None):
         self.engine = engine
-        self.rng = random.Random(seed)
+        self.rng = random.Random(seed if seed is not None else int(__import__("time").time() * 1000) % 1000003)
+        names = list(SCENARIOS)
+        self.scenario = scenario if scenario in SCENARIOS else self.rng.choices(names, weights=[3, 2, 2, 2, 1, 1])[0]
         self.state = {}
         self.t = None
         for p in plays:
@@ -212,8 +226,8 @@ class DemoFeed:
                         if rng.random() < 0.6:          # pulled
                             row[1] = _r100(rng.lognormvariate(math.log(target), 0.5))
                     continue
-                if s.level is not None and s.level["side"] == side and abs(row[0] - s.level["price"]) < 1e-9:
-                    continue                            # the PS60 participant manages this row
+                if any(pt["side"] == side and abs(row[0] - pt["price"]) < 1e-9 for pt in s.parts):
+                    continue                            # a participant manages this row
                 p = 0.3 if i < 3 else 0.12
                 if rng.random() < p:
                     row[1] = _r100(row[1] + 0.2 * (target - row[1]) + rng.gauss(0, 0.35 * target))
@@ -246,23 +260,23 @@ class DemoFeed:
             s.vol += take
             rows[0][1] -= take
             remaining -= take
-            lv = s.level
-            at_level = lv is not None and lv["side"] == (ASK if is_buy else BID) and abs(price - lv["price"]) < 1e-9
-            if at_level:
+            hit_side = ASK if is_buy else BID
+            lv = next((pt for pt in s.parts if pt["side"] == hit_side and abs(price - pt["price"]) < 1e-9), None)
+            if lv is not None:
                 lv["hit"] += take
                 if rows[0][1] <= 0 and lv["reserve"] > 0:
-                    # the reload: size comes back a moment later (refill), never in the same instant
-                    lv["refill_at"] = t + rng.uniform(0.3, 1.2)
+                    # the reload: size comes back a moment later, sometimes quick, sometimes after a beat
+                    lv["refill_at"] = t + (rng.uniform(0.2, 0.9) if rng.random() < 0.6 else rng.uniform(1.0, 3.0))
                     lv["refills"] += 1
                     rows[0][1] = 0
                     break
             if rows[0][1] <= 0:
                 rows.pop(0)
-                if at_level:
+                if lv is not None:
                     lv["done"] = "clean"
                 self._extend(s)
                 follow = 0.85 if (REGIMES[s.regime]["bias"] > 0.5) == is_buy else 0.55
-                if rng.random() < follow and not (s.level is not None and s.level["side"] == (BID if is_buy else ASK) and abs(price - s.level["price"]) < 1e-9):
+                if rng.random() < follow and not any(pt["side"] == (BID if is_buy else ASK) and abs(price - pt["price"]) < 1e-9 for pt in s.parts):
                     opp.insert(0, [price, self._fresh(s, BID if is_buy else ASK)])
                 if rng.random() < 0.55:
                     break   # most orders don't sweep several levels
@@ -313,7 +327,8 @@ class DemoFeed:
         if t < s.regime_until:
             return
         rng = self.rng
-        opts = NEXT[s.regime]
+        tilt = SCENARIOS.get(self.scenario, {})
+        opts = [(n, w * tilt.get(n, 1.0)) for n, w in NEXT[s.regime]]
         tot = sum(w for _, w in opts)
         x = rng.uniform(0, tot)
         for name, w in opts:
@@ -326,13 +341,23 @@ class DemoFeed:
 
     # ---- the PS60 participant at the pivot ---------------------------------------------
 
-    def _level(self, sym, s, t):
+    def _new_part(self, s, side, price, t, pivot):
+        """A participant working a price. Not two alike: iceberg (small shows, deep reserve), block
+        (bigger shows), or a shallow one that pulls; refills vary; some hold, some get run over."""
+        rng = self.rng
+        mode = rng.choices(("hold", "clean", "pull"), weights=(4, 4, 2))[0]
+        iceberg = rng.random() < 0.45
+        base = rng.choice((200, 300, 400, 500, 700)) if iceberg else rng.choice((900, 1200, 1500, 2000, 2800, 3500))
+        reserve = {"hold": rng.randint(30000, 120000), "clean": rng.randint(3000, 18000), "pull": rng.randint(4000, 12000)}[mode]
+        return {"side": side, "price": price, "mode": mode, "base": base, "reserve": reserve, "hit": 0, "refills": 0,
+                "refill_at": None, "done": None, "started": t, "pivot": pivot,
+                "hold_after": rng.randint(4, 10), "pull_after": rng.randint(2, 6)}
+
+    def _participants(self, sym, s, t):
         rng, p, tk = self.rng, s.play, s.tk
         pivot = p.get("trigger")
-        lv = s.level
-        if lv is None:
-            if not pivot or t < s.level_cooldown:
-                return
+        # the one at the pivot: shows up when price comes into the level
+        if pivot and t >= s.level_cooldown and not any(pt["pivot"] for pt in s.parts):
             seller = p["side"] == "long"                  # a long needs the offer at the pivot cleared
             side = ASK if seller else BID
             rows = s.asks if seller else s.bids
@@ -340,56 +365,75 @@ class DemoFeed:
             dist = (pivot - best) if seller else (best - pivot)
             steps = int(round(dist / tk))
             if steps < 0:
-                # price is past the pivot already: bring it back toward the level with a scripted lean
                 if not s.script:
-                    s.script = [(0.36 if seller else 0.64, 2.0, t + 45)]
-                return
-            if steps > 2:
+                    s.script = [(0.36 if seller else 0.64, 2.0, t + 45)]   # bring price back toward the level
+            elif steps > 2:
                 if not s.script and rng.random() < 0.5:
-                    s.script = [(0.6 if seller else 0.4, 1.6, t + 40)]   # approach the level
-                return
-            mode = rng.choice(("hold", "hold", "clean", "clean", "pull"))
-            shown = rng.choice((1500, 2000, 2500, 3000, 4000))
-            reserve = {"hold": rng.randint(60000, 120000), "clean": rng.randint(6000, 15000), "pull": rng.randint(8000, 14000)}[mode]
-            rows[steps][1] = shown
-            s.level = {"side": side, "price": pivot, "mode": mode, "shown": shown, "reserve": reserve, "hit": 0,
-                       "refills": 0, "refill_at": None, "done": None, "started": t}
-            s.script = [(0.66 if seller else 0.34, 2.6, t + 240)]      # flow leans into the level
-            return
-        # an active episode
-        side, rows = lv["side"], (s.asks if lv["side"] == ASK else s.bids)
-        seller = side == ASK
-        idx = next((i for i, r in enumerate(rows) if abs(r[0] - lv["price"]) < 1e-9), None)
-        if lv["refill_at"] is not None and t >= lv["refill_at"] and idx is not None:
-            lv["refill_at"] = None
-            if lv["mode"] == "pull" and lv["refills"] >= rng.randint(3, 6):
-                lv["done"] = "pull"
+                    s.script = [(0.6 if seller else 0.4, 1.6, t + 40)]     # approach
             else:
-                refill = min(lv["reserve"], rng.choice((1500, 2000, 2500, 3000, 4000)))
-                lv["reserve"] -= refill
-                rows[idx][1] = refill
-        if idx is not None and rows[idx][1] <= 0 and lv["refill_at"] is None and lv["reserve"] <= 0:
-            lv["done"] = "clean"
-        if lv["mode"] == "hold" and lv["refills"] >= rng.randint(4, 8) and lv["done"] is None:
-            lv["done"] = "hold"
-        if lv["done"] is None and t - lv["started"] > 300:
-            lv["done"] = "hold"
-        if lv["done"] is None:
-            return
-        # outcome
-        if lv["done"] == "hold":
-            # rejection: the level held, price backs away
-            if idx is not None:
-                rows[idx][1] = _r100(rows[idx][1] + rng.choice((2000, 4000, 8000)))
-            s.script = [(0.32 if seller else 0.68, 2.4, t + 90), (0.45 if seller else 0.55, 1.4, t + 240)]
-        else:
-            if lv["done"] == "pull" and idx is not None:
-                rows[idx][1] = _r100(rng.lognormvariate(math.log(s.base * 0.4), 0.4))
-            # break: momentum through, a retrace back toward the level, then continuation (the second entry)
-            s.script = [(0.72 if seller else 0.28, 3.2, t + 50), (0.38 if seller else 0.62, 1.8, t + 110),
-                        (0.66 if seller else 0.34, 2.4, t + 260)]
-        s.level = None
-        s.level_cooldown = t + rng.uniform(240, 600)
+                pt = self._new_part(s, side, pivot, t, True)
+                rows[steps][1] = _r100(pt["base"] * rng.uniform(0.7, 1.3))
+                s.parts.append(pt)
+                # flow leans into the level, not always hard: sometimes it takes a while to get tested
+                s.script = [(0.62 if seller else 0.38, rng.uniform(1.6, 2.8), t + rng.uniform(120, 300))]
+        # hidden participants anywhere in the book, on either side: the ones you have to find yourself
+        if t >= s.hidden_next:
+            s.hidden_next = t + rng.uniform(240, 900)
+            side = rng.choice((ASK, BID))
+            rows = s.asks if side == ASK else s.bids
+            i = rng.randint(1, min(6, len(rows) - 1))
+            if not any(abs(pt["price"] - rows[i][0]) < 1e-9 for pt in s.parts):
+                pt = self._new_part(s, side, rows[i][0], t, False)
+                rows[i][1] = _r100(pt["base"] * rng.uniform(0.7, 1.3))
+                s.parts.append(pt)
+                if rng.random() < 0.4:                     # sometimes the flow finds it, sometimes it just sits
+                    s.script = [(0.62 if side == ASK else 0.38, rng.uniform(1.4, 2.4), t + rng.uniform(60, 180))]
+        # work every active participant
+        for lv in list(s.parts):
+            side, rows = lv["side"], (s.asks if lv["side"] == ASK else s.bids)
+            seller = side == ASK
+            idx = next((i for i, r in enumerate(rows) if abs(r[0] - lv["price"]) < 1e-9), None)
+            if idx is None and lv["done"] is None:
+                # price moved away and the row rolled out of view: he is still there, nothing to see for now
+                if t - lv["started"] > 900:
+                    s.parts.remove(lv)
+                continue
+            if lv["refill_at"] is not None and t >= lv["refill_at"] and idx is not None:
+                lv["refill_at"] = None
+                if lv["mode"] == "pull" and lv["refills"] >= lv["pull_after"]:
+                    lv["done"] = "pull"
+                else:
+                    refill = min(lv["reserve"], _r100(lv["base"] * rng.uniform(0.5, 1.4)))
+                    lv["reserve"] -= refill
+                    rows[idx][1] = refill
+            if idx is not None and rows[idx][1] <= 0 and lv["refill_at"] is None and lv["reserve"] <= 0:
+                lv["done"] = "clean"
+            if lv["mode"] == "hold" and lv["refills"] >= lv["hold_after"] and lv["done"] is None:
+                lv["done"] = "hold"
+            if lv["done"] is None and t - lv["started"] > 420:
+                lv["done"] = "hold" if lv["refills"] >= 2 else "fade"
+            if lv["done"] is None:
+                continue
+            # outcome
+            if lv["done"] == "hold":
+                if idx is not None and rng.random() < 0.5:
+                    rows[idx][1] = _r100(rows[idx][1] + rng.choice((1500, 3000, 6000)))
+                if lv["pivot"] or rng.random() < 0.5:
+                    s.script = [(0.34 if seller else 0.66, 2.2, t + 80), (0.45 if seller else 0.55, 1.4, t + 200)]
+            elif lv["done"] == "fade":
+                pass                                       # never really tested: he just goes away
+            else:
+                if lv["done"] == "pull" and idx is not None:
+                    rows[idx][1] = _r100(rng.lognormvariate(math.log(s.base * 0.4), 0.4))
+                if lv["pivot"]:
+                    # break: momentum through, a retrace back toward the level, then continuation (the second entry)
+                    s.script = [(0.72 if seller else 0.28, 3.0, t + 50), (0.38 if seller else 0.62, 1.8, t + 110),
+                                (0.66 if seller else 0.34, 2.4, t + 260)]
+                elif rng.random() < 0.6:
+                    s.script = [(0.68 if seller else 0.32, 2.4, t + 60)]
+            s.parts.remove(lv)
+            if lv["pivot"]:
+                s.level_cooldown = t + rng.uniform(300, 900)
 
     # ---- one step ------------------------------------------------------------------
 
@@ -402,7 +446,7 @@ class DemoFeed:
                 s.prev = {ASK: [], BID: []}
             self._regime(s, t)
             self._churn(s, t)
-            self._level(sym, s, t)
+            self._participants(sym, s, t)
             self._flow(sym, s, t, dt, slotted)
             self._extend(s)
             self._emit(sym, s, t, slotted)

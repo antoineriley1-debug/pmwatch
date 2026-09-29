@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20260929-0511">
+<meta name="build" content="20260929-0543">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -562,6 +562,10 @@ input:focus,select:focus,textarea:focus{outline:1px solid var(--gold);outline-of
 .qs .tfp{display:inline-flex;gap:2px;margin-left:6px} .qs .tfp button{padding:0 6px;height:16px;font:600 9.5px var(--sans);letter-spacing:.06em;line-height:1;border-radius:2px}
 .qs .tfp button.on{background:#2a2412;border-color:var(--gold);color:var(--gold)}
 
+#trainBtn.on{background:#2a2412;border-color:var(--gold);color:var(--gold)}
+.grid.trades select,.grid.trades input{font:11px var(--mono);background:#0a0a0b;color:var(--text);border:1px solid #26282c;border-radius:2px;padding:1px 4px;height:20px}
+.grid.trades input{width:100%;min-width:120px} #jTrades{margin-top:8px} #jTrades h5{font:500 10px var(--sans);letter-spacing:.12em;color:#7d7f85;margin:4px 0}
+
 </style>
 </head>
 <body>
@@ -579,6 +583,7 @@ input:focus,select:focus,textarea:focus{outline:1px solid var(--gold);outline-of
   <button id="markBtn" title="Marker (M)">MARK</button>
   <button id="shotBtn" title="Screenshot (P)">SNAP</button>
   <span class="sep"></span>
+  <button id="trainBtn" title="Training: no reload calls, tags or voice. You read the tape; REVEAL in the RELOADS window checks your call.">TRAIN OFF</button>
   <button id="voiceBtn" title="Voice: reload buyer / seller calls for the ACTIVE tab only">VOICE ON</button>
   <input type="range" id="voiceVol" min="0" max="1" step="0.1" style="width:60px" title="voice volume">
   <button id="soundBtn" title="beep on calls (active tab)">BEEP</button>
@@ -643,7 +648,7 @@ input:focus,select:focus,textarea:focus{outline:1px solid var(--gold);outline-of
   <div class="pnl" data-p="watch"><div class="pc"></div></div>
   <div class="pnl" data-p="calls"><div class="pc" style="padding:6px"><div id="feedBody"></div></div></div>
   <div class="pnl" data-p="desk"><div class="pc"><div id="deskBody"></div></div></div>
-  <div class="pnl" data-p="journal"><div class="pc"><div id="journalBody"><div class="jform"><input id="jText" placeholder="journal note · Enter"><button id="jAdd">add</button></div><div id="jList"></div></div></div></div>
+  <div class="pnl" data-p="journal"><div class="pc"><div id="journalBody"><div class="jform"><input id="jText" placeholder="journal note · Enter"><button id="jAdd">add</button></div><div id="jList"></div><div id="jTrades"></div></div></div></div>
   <div class="pnl" data-p="messages"><div class="pc" style="padding:6px"><div id="messages"></div></div></div>
 </template>
 
@@ -1066,6 +1071,21 @@ function aggDaily(daily, tf){
   }
   return out;
 }
+function dailyLive(d){
+  // daily history ends yesterday: today's bar (and any session the history is missing) is built live from the 1-minute bars
+  const daily = (d.daily || []).map(b => b.slice()), bars = d.bars || [];
+  if (!bars.length) return daily;
+  const eo = etOffset(bars[bars.length - 1][0]);
+  const dayOf = t => Math.floor((t + eo) / 86400);
+  const lastDay = daily.length ? dayOf(daily[daily.length - 1][0]) : -Infinity;
+  let cur = null;
+  for (const b of bars){
+    const dk = dayOf(b[0]); if (dk <= lastDay) continue;
+    if (!cur || cur.day !== dk){ cur = {day: dk, bar: [dk * 86400 - eo, b[1], b[2], b[3], b[4], b[5] || 0, 0, 0]}; daily.push(cur.bar); continue; }
+    cur.bar[2] = Math.max(cur.bar[2], b[2]); cur.bar[3] = Math.min(cur.bar[3], b[3]); cur.bar[4] = b[4]; cur.bar[5] += b[5] || 0;
+  }
+  return daily;
+}
 function aggBars(bars, tf){
   if (tf === 1) return bars.map(b => b.slice());
   const out = [], span = tf * 60;
@@ -1109,7 +1129,7 @@ function drawOne(p, cv, v, isFoot){
   if (C.bg){ g.fillStyle = C.bg; g.fillRect(0, 0, W, H); }
   const labelW = 86, plotW = W - labelW, volH = Math.max(28, H * 0.16), plotH = H - volH - 18;
   const cw = v.cw;
-  const all = isDaily ? aggDaily(d.daily, tf) : aggBars(d.bars, tf);
+  const all = isDaily ? aggDaily(dailyLive(d), tf) : aggBars(d.bars, tf);
   const clsAll = all.map(b => b[4]);
   const n = Math.max(5, Math.floor(plotW / cw));
   // when scrolled back, the right edge is pinned to a TIMESTAMP so new bars don't shove the view
@@ -1970,7 +1990,7 @@ function renderBook(d){
   const bi = document.getElementById("bigIn"), L = d.ladder || {};
   if (bi && document.activeElement !== bi && L.big_shares != null && bi.dataset.sym + ":" + L.big_shares !== d.symbol + ":" + L.big_shares){ bi.value = Math.round(L.big_shares); bi.dataset.sym = d.symbol; }
   const hint = document.getElementById("bigHint"); if (hint){ const txt = L.big_shares != null ? (L.big_default ? "config default" : d.symbol + " only") + " · huge ≥ " + kfmt(L.huge_shares) : ""; if (hint.textContent !== txt) hint.textContent = txt; }
-  const html = ladderHTML(d.ladder);
+  const html = ladderHTML(training() ? Object.assign({}, d.ladder, {rows: d.ladder.rows.map(r => Object.assign({}, r, {bid_state: null, ask_state: null, bid_refills: 0, ask_refills: 0, bid_verdict: null, ask_verdict: null}))}) : d.ladder);
   if (P.book.last === html) return;
   P.book.last = html;
   const keep = wrap.scrollTop;
@@ -2003,11 +2023,13 @@ function renderPS60(d){
 }
 /* ---------- PLAY SETUP: pivot, stop, MP level (the target), optional 2nd entry — everything derives from it */
 const SU = {dirty: false, msg: "", saving: false};
+const SETUPS = ["Macro break (60m supply)", "Macro breakdown (60m demand)", "Large MP", "Second entry", "Remount", "Sneaky pivot", "50-day breakout", "50-day breakdown", "200-day break", "MA bounce", "MA rejection", "Gap and go", "Gap fill", "Squeeze", "Capitulation bounce", "Range break", "Scalp", "Other"];
+const setupSel = (id, cur, extra) => `<select ${id ? `id="${id}"` : ""} ${extra || ""}><option value="">— setup —</option>${SETUPS.map(x => `<option value="${x}" ${cur === x ? "selected" : ""}>${x}</option>`).join("")}</select>`;
 function riskDollars(){ return +store.get("riskDollars", 100) || 0; }
 function suFields(){
   const f = {}; for (const k of ["trigger", "second_entry", "stop", "mp"]){ const el = document.getElementById("su_" + k); if (el) f[k] = el.value.trim(); }
-  const side = document.getElementById("su_side"), notes = document.getElementById("su_notes");
-  if (side) f.side = side.value; if (notes) f.notes = notes.value;
+  const side = document.getElementById("su_side"), notes = document.getElementById("su_notes"), su = document.getElementById("su_setup");
+  if (side) f.side = side.value; if (notes) f.notes = notes.value; if (su) f.setup = su.value;
   return f;
 }
 function suDerive(d, f){
@@ -2049,6 +2071,7 @@ function renderSetup(d){
     <label>STOP</label>${inp("stop", "")}
     <label>MP</label>${inp("mp", "the level the move runs to")}
     <label>RISK $</label><div class="row"><input id="su_risk" type="number" step="10" min="0" value="${riskDollars()}"><span class="dim" style="font-size:10.5px">PER TRADE</span></div>
+    <label>SETUP</label>${setupSel("su_setup", p.setup || "", 'title="what kind of PS60 play this is; every trade on it is filed under this in the journal"')}
     <label>NOTES</label><input id="su_notes" type="text" maxlength="200" value="${esc(f.notes)}" placeholder="notes">
     <div class="derived" id="suDerived">${suDerivedHTML(d, f)}</div>
     <div class="go"><button class="save" id="suSave">SAVE PLAY</button></div>
@@ -2067,6 +2090,7 @@ P.setup.el.addEventListener("click", async e => {
 });
 function renderReloads(d){
   if (!d){ panelHTML("reload", `<div class="dim">${NA}</div>`); return; }
+  if (training()){ panelHTML("reload", `<div class="dim" style="padding:10px;line-height:1.5"><b style="color:var(--gold)">TRAINING</b> · the desk is not calling reloads for you. Read the tape and the ladder, mark your call with M, then check it.<br><button data-reveal="1" style="margin-top:8px">REVEAL 20s</button></div>`); return; }
   const lv = (d.levels || []).filter(l => l.state === "RELOAD" || l.last_verdict);
   const rows = lv.sort((a, b) => (a.state === "RELOAD" ? 0 : 1) - (b.state === "RELOAD" ? 0 : 1) || b.absorbed_total - a.absorbed_total).slice(0, 8).map(l => {
     const who = l.side === "bid" ? "buyer" : "seller", gone = l.state !== "RELOAD";
@@ -2086,7 +2110,7 @@ function renderWatch(s){
 }
 function renderCalls(s){
   const all = store.get("callsAll", false);
-  const alerts = (s.alerts || []).filter(a => all || a.symbol === curSym).slice(0, 40);
+  const alerts = (s.alerts || []).filter(a => (all || a.symbol === curSym) && !(training() && /RELOAD|CLEANED|PULLED/.test(a.label))).slice(0, 40);
   const html = `<div class="dim" style="margin-bottom:4px;font-size:11px"><label><input type="checkbox" id="callsAll" ${all ? "checked" : ""}> every symbol</label></div>` + (alerts.length ? alerts.map(a => {
     const age = s.now - a.t;
     const gr = a.key ? `<span class="grade" data-key="${esc(a.key)}"><button data-v="good" class="${a.grade==="good"?"on":""}">GOOD</button><button data-v="bad" class="${a.grade==="bad"?"on":""}">BAD</button></span>` : "";
@@ -2272,7 +2296,7 @@ function speakNew(s){
   for (const a of (s.alerts || []).slice(0, 8)){
     if (spoken.has("a" + a.key) || s.now - a.t > 30) continue;
     spoken.add("a" + a.key);
-    if (a.symbol !== TABS.active) continue;                 // background tabs never speak
+    if (a.symbol !== TABS.active || training()) continue;   // background tabs never speak; training mode says nothing
     const w = reloadWords(a); if (w) items.push(w);
   }
   if (voiceFirst){ voiceFirst = false; return; }
@@ -2285,6 +2309,25 @@ document.getElementById("voiceVol").addEventListener("change", e => store.set("v
 
 /* ---------- status bar + command bar */
 const PAGE_BUILD = (document.querySelector('meta[name="build"]') || {}).content || "";
+/* the running trade journal: every round trip, with a setup dropdown so nothing has to be typed */
+function renderTrades(s){
+  const el = document.getElementById("jTrades"); if (!el) return;
+  const trades = ((s.desk && s.desk.trades) || []).slice().reverse();
+  const html = `<h5>TRADES ${trades.length ? `<span class="dim">${trades.length} · ${trades.reduce((a, t) => a + (t.pnl_pct || 0), 0).toFixed(2)}% total</span>` : ""}</h5>` + (trades.length ? `<table class="grid trades"><tr><th>TIME</th><th>SYM</th><th>SIDE</th><th>QTY</th><th>ENTRY</th><th>EXIT</th><th>P&amp;L %</th><th class="l">SETUP</th><th>GRADE</th><th class="l">NOTE</th></tr>${trades.map(t => `<tr data-id="${esc(t.id)}">
+      <td class="l">${new Date((t.closed || t.opened) * 1000).toLocaleTimeString()}</td><td class="l">${esc(t.symbol)}</td><td class="${t.side === "long" ? "b" : "s"}">${t.side.toUpperCase()}</td><td>${sz(t.shares || 0)}</td><td>${px(t.entry)}</td><td>${px(t.exit)}</td>
+      <td class="pct ${(t.pnl_pct || 0) >= 0 ? "up" : "dn"}">${t.pnl_pct != null ? (t.pnl_pct >= 0 ? "+" : "") + t.pnl_pct.toFixed(2) + "%" : NA}</td>
+      <td class="l">${setupSel("", t.setup, `data-tsetup="${esc(t.id)}"`)}</td>
+      <td><select data-tgrade="${esc(t.id)}"><option value="">—</option>${["A+", "A", "B", "C", "F"].map(g => `<option ${t.grade === g ? "selected" : ""}>${g}</option>`).join("")}</select></td>
+      <td class="l"><input data-tnote="${esc(t.id)}" value="${esc(t.note || "")}" placeholder="what you saw, what you did"></td></tr>`).join("")}</table>` : `<div class="dim">No round trips yet. Every entry that gets flattened lands here, filed under the play's setup.</div>`);
+  if (el.dataset.h !== html && !el.contains(document.activeElement)){ el.dataset.h = html; el.innerHTML = html; }
+}
+document.addEventListener("change", async e => {
+  const k = e.target.dataset.tsetup ? "setup" : e.target.dataset.tgrade ? "grade" : e.target.dataset.tnote ? "note" : null; if (!k) return;
+  const id = e.target.dataset.tsetup || e.target.dataset.tgrade || e.target.dataset.tnote;
+  const out = await post("/api/desk/trade", {id, [k]: e.target.value}); if (out.ok) toast("Journal updated", true); const el = document.getElementById("jTrades"); if (el) el.dataset.h = ""; poll(true);
+});
+/* training mode: the desk stops telling you where the reload buyers and sellers are. You read the tape; REVEAL checks your call. */
+function training(){ return store.get("training", false) && (state ? state.now : 0) > (window._revealUntil || 0); }
 function renderStatus(s){
   document.querySelector("#stBuild b").textContent = PAGE_BUILD || "—";
   // an old tab left open from a previous run: reload it onto the build the server is now serving
@@ -2328,7 +2371,7 @@ function render(s){
   renderBook(d); renderTape(d); renderSetup(d); renderPS60(d); renderReloads(d);
   renderTicket(s, d);
   renderWatch(s); renderCalls(s); renderPositions(s); renderOrders(s);
-  renderDesk(s);
+  renderDesk(s); renderTrades(s);
   const msgs = s.messages.map(m => `<div class="msg-${esc(m.level)} mono" style="font-size:11px">${ago(s.now - m.t)} · ${esc(m.text)}</div>`).join("") || `<span class="dim">—</span>`;
   const me = document.getElementById("messages"); if (me.dataset.h !== msgs){ me.dataset.h = msgs; me.innerHTML = msgs; }
   for (const a of s.alerts.slice(0, 10)){ const key = a.t + a.symbol + a.label; if (!seenAlerts.has(key)){ seenAlerts.add(key); if (!firstFeed && store.get("alerts", true) && store.get("sound", true) && a.symbol === TABS.active) beep(sayClass(a)); } }
@@ -2336,12 +2379,25 @@ function render(s){
   speakNew(s);
 }
 let timer = null;
+const BARS = {};   // symbol -> {bars, daily}: the page's own copy of the history
 async function poll(now){
   clearTimeout(timer);
   try {
     const extra = [...new Set(TABS.list.concat(curSym ? [curSym] : []))].join(",");
-    const r = await fetch("/api/state" + (extra ? "?extra=" + encodeURIComponent(extra) : ""), {cache: "no-store"});
-    render(await r.json());
+    // history is fetched once per symbol and kept here; every poll after that carries only the last bars
+    const need = [...new Set(TABS.list.concat(curSym ? [curSym] : []).concat((state && state.symbols) || []))].filter(s => !BARS[s]);
+    const r = await fetch("/api/state?extra=" + encodeURIComponent(extra) + "&full=" + encodeURIComponent(need.join(",")), {cache: "no-store"});
+    const s = await r.json();
+    for (const d of (s.panes || []).concat(Object.values(s.extra || {}))){
+      if (!d) continue;
+      const c = BARS[d.symbol];
+      if (d.bars_full || !c){ BARS[d.symbol] = {bars: d.bars || [], daily: d.daily || []}; continue; }
+      // merge the tail: replace bars we have by timestamp, append new ones
+      for (const b of d.bars || []){ const i = c.bars.findIndex(x => x[0] >= b[0]); if (i < 0) c.bars.push(b); else if (c.bars[i][0] === b[0]) c.bars[i] = b; else c.bars.splice(i, 0, b); }
+      if (c.bars.length > 2600) c.bars.splice(0, c.bars.length - 2600);
+      d.bars = c.bars; d.daily = c.daily;
+    }
+    render(s);
   } catch (e){ document.querySelector("#stConn b").textContent = "DASHBOARD LOST CONTACT WITH TWINEY"; document.querySelector("#stConn .led").className = "led bad"; }
   timer = setTimeout(poll, 500);
 }
@@ -2362,6 +2418,9 @@ document.getElementById("feedBody").addEventListener("click", async e => {
 document.addEventListener("click", e => { if (!e.target.closest(".menu")) document.querySelectorAll(".menu.open").forEach(m => m.classList.remove("open")); });
 document.getElementById("panelsMenu").querySelector("button").addEventListener("click", e => { e.stopPropagation(); const m = document.getElementById("panelsMenu"), open = !m.classList.contains("open"); document.querySelectorAll(".menu.open").forEach(x => x.classList.remove("open")); m.classList.toggle("open", open); renderPanelsMenu(); });
 document.getElementById("recBtn").addEventListener("click", deskRec);
+document.getElementById("trainBtn").addEventListener("click", () => { const on = !store.get("training", false); store.set("training", on); const b = document.getElementById("trainBtn"); b.textContent = on ? "TRAIN ON" : "TRAIN OFF"; b.classList.toggle("on", on); P.book.last = null; P.reload.last = null; toast(on ? "Training: reload calls are hidden. REVEAL is in the RELOADS window." : "Training off: the desk calls reloads again", true); poll(true); });
+{ const b = document.getElementById("trainBtn"); if (store.get("training", false)){ b.textContent = "TRAIN ON"; b.classList.add("on"); } }
+document.addEventListener("click", e => { if (e.target.dataset.reveal){ window._revealUntil = (state ? state.now : 0) + 20; P.book.last = null; P.reload.last = null; toast("Revealed for 20 seconds", true); poll(true); } });
 document.getElementById("markBtn").addEventListener("click", () => deskMark());
 document.getElementById("shotBtn").addEventListener("click", deskShot);
 // keyboard: configurable hotkeys first; then the few fixed ones (Esc closes things, / focuses the symbol box, J journal, 2 / L chart marks)
