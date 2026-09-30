@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20260930-0309">
+<meta name="build" content="20260930-0315">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -1368,6 +1368,8 @@ function drawOne(p, cv, v, isFoot){
       g.globalAlpha = 1;
     }
   }
+  // price pane only: candles, MAs, BB and VWAP never spill into the volume pane below
+  g.save(); g.beginPath(); g.rect(0, 0, W, plotH + 1); g.clip();
   // candles (hollow when the footprint is on, so the cells stay readable)
   const foot = !isDaily && (isFoot || store.get("foot." + p.id, false)) && (d.footprint || []).length;
   // Dan's MA pack, BB and LR: computed on the full aggregated history, drawn for the visible slice
@@ -1469,6 +1471,7 @@ function drawOne(p, cv, v, isFoot){
       g.fillStyle = "#b48ed6"; g.fillText("VWAP " + lastVw.toFixed(2), W - labelW + 4, y(lastVw) + 4);
     }
   }
+  g.restore();
   // volume. Dan style: one bar per candle, green on an up close, red on a down close, black outline on the
   // light screens, with its own scale on the right. Desk style: split by who was in a rush (buyers vs sellers).
   const vmax = Math.max(1, ...bars.map(b => b[5]));
