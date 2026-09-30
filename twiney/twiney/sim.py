@@ -62,6 +62,20 @@ SCENARIOS = {
 }
 
 
+# Episodes: the market styles that have a SHAPE over time. Each stage: (lean, tape speed, print size, book on the
+# side being hit (1 = normal, lower = bids / offers pulled), seconds lo, hi). Mirrors are built for the other side.
+EPISODES = {
+    # buyers run out: the move speeds up into a climax of big fast prints, then the tape dries up, price stalls and rolls
+    "exhaustion_top": [(0.66, 2.0, 1.2, 1.0, 60, 120), (0.72, 3.2, 1.6, 0.8, 40, 80), (0.76, 5.5, 2.6, 0.6, 15, 30),
+                       (0.50, 0.40, 0.7, 1.0, 40, 90), (0.38, 1.6, 1.1, 1.0, 60, 120)],
+    # the flush: heavy selling, bids pulled, a waterfall of huge prints, then the V: buyers slam it back
+    "capitulation":   [(0.34, 2.2, 1.3, 0.8, 60, 120), (0.25, 3.6, 1.9, 0.55, 40, 80), (0.14, 6.5, 3.3, 0.35, 15, 35),
+                       (0.74, 4.2, 2.3, 1.0, 20, 45), (0.56, 1.4, 1.0, 1.0, 90, 180)],
+}
+EPISODES["exhaustion_bottom"] = [(1 - b, r, z, th, lo, hi) for b, r, z, th, lo, hi in EPISODES["exhaustion_top"]]
+EPISODES["squeeze_up"] = [(1 - b, r, z, th, lo, hi) for b, r, z, th, lo, hi in EPISODES["capitulation"]]
+
+
 # how hard each name follows the market (the Nasdaq / QQQ factor). 1.0 = moves with QQQ, 2 = twice as hard,
 # near 0 = its own thing, negative = the other way. Anything not listed trades like a mid-cap tech name.
 BETAS = {"QQQ": 1.0, "SPY": 0.85, "SPX": 0.85, "IWM": 0.9, "DIA": 0.7,
@@ -83,6 +97,8 @@ class _Mkt:
     def __init__(self):
         self.regime, self.regime_until, self.bias = "chop", 0.0, 0.5
         self.level = self.prev_level = 488.0      # QQQ-like
+
+
 
 
 def roundness(price):
@@ -110,7 +126,8 @@ def _r100(x):
 
 class _Sym:
     __slots__ = ("play", "tk", "asks", "bids", "last", "vol", "regime", "regime_until", "script", "big",
-                 "big_home", "parts", "level_cooldown", "hidden_next", "prev", "l1", "base", "mid0", "beta", "sym", "eff", "owed")
+                 "big_home", "parts", "level_cooldown", "hidden_next", "prev", "l1", "base", "mid0", "beta", "sym", "eff", "owed",
+                 "hot", "hot_dir", "mom", "last_mid", "episode", "ep_next", "thin", "ep_script")
 
     def __init__(self, play, mid, t):
         self.play = play
@@ -131,6 +148,14 @@ class _Sym:
         self.beta = beta_of(self.sym)
         self.eff = (0.5, 1.2, 1.0)   # this step's blended lean, rate, size: own regime + beta x market
         self.owed = 0.0              # dollars of move the index / basket desks still have to push through this name
+        self.hot = 0.0               # tape heat: price moving brings more orders (chasers, stops), fading in seconds
+        self.hot_dir = 0             # which way it last moved
+        self.mom = 0.0               # the market's push on this name over the last ~10 s, in ticks (signed)
+        self.last_mid = mid
+        self.episode = None          # (name, stage index) while an exhaustion / capitulation / squeeze plays out
+        self.ep_next = None          # first episode time is drawn from the feed's own (seeded) random
+        self.ep_script = None
+        self.thin = 1.0              # the book on the side being hit (pulled bids in a flush, pulled offers in a squeeze)
         self.prev = {ASK: [], BID: []}
         self.l1 = {}
 
@@ -271,6 +296,11 @@ class DemoFeed:
     def _churn(self, s, t):
         """Passive flow: rows add, cancel, thin out and refill; big size shows up, sits, gets pulled or hit."""
         rng, rg = self.rng, REGIMES[s.regime]
+        if s.thin < 1.0 and rng.random() < 0.35:
+            # a flush pulls the bids (a squeeze the offers): the side in the way thins out and price falls through
+            hit = s.bids if s.eff[0] < 0.5 else s.asks
+            for row in hit[:5]:
+                row[1] = max(100, _r100(row[1] * s.thin))
         for side, rows in ((ASK, s.asks), (BID, s.bids)):
             b = s.eff[0]
             against = (side == ASK and b > 0.5) or (side == BID and b < 0.5)
@@ -363,10 +393,45 @@ class DemoFeed:
                     break   # most orders don't sweep several levels
         # sizes from sweeps that reached nothing left are just lost (the book is contiguous, price moved)
 
+    @staticmethod
+    def _heat(s):
+        """How hot the tape is: a level that just broke, or the market pushing this name (past a few ticks)."""
+        return min(5.0, s.hot + max(0.0, abs(s.mom) - 3.0) / 3.0)
+
+    def _tempo(self, s):
+        """How fast the tape runs right now, and which way it leans on top of the regime:
+        - moving price draws orders (momentum chasers, stops): the tape speeds up with the move and leans with it
+        - price coming into a level (a reloader, a round number a few ticks ahead) makes it slow down: people wait
+          to see who holds it; AT the level the prints stay heavy (absorption) while price goes nowhere"""
+        heat = self._heat(s)
+        tempo = 1.0
+        lean = 0.0
+        d = s.hot_dir or (1 if s.eff[0] > 0.5 else -1)
+        rows = s.asks if d > 0 else s.bids
+        ahead = rows[1:4]
+        levels = {round(pt["price"], 4) for pt in s.parts}
+        if any(round(r[0], 4) in levels or roundness(r[0]) >= 2 for r in ahead) and heat < 2.5:
+            tempo *= 0.5                                  # approaching a level: the tape slows
+        if rows and (round(rows[0][0], 4) in levels):
+            tempo = max(tempo, 1.3)                       # at the level: steady, heavy prints into it
+        return tempo, lean
+
     def _flow(self, sym, s, t, dt, emit_depth):
         rng = self.rng
         bias, rate, mult = s.eff
+        tempo, lean = self._tempo(s)
+        base_rate = rate
+        rate *= tempo
         lam = rate * dt * self._tod(t)
+        # chasers: a moving price pulls in orders on the side it is moving to (momentum, stops) - the tape speeds up
+        # WITH the move; most moves start with the market, so this amplifies the market's move, not noise
+        heat = self._heat(s)
+        if s.hot_dir and heat > 0.3:
+            lc = base_rate * dt * self._tod(t) * 0.9 * heat
+            nc = int(lc) + (1 if rng.random() < lc - int(lc) else 0)
+            for _ in range(nc):
+                size = _r100(rng.lognormvariate(5.2, 0.7) * mult)
+                self._market(sym, s, s.hot_dir > 0, size, t, emit_depth)
         n = int(lam) + (1 if rng.random() < lam - int(lam) else 0)
         for _ in range(n):
             is_buy = rng.random() < bias
@@ -388,11 +453,18 @@ class DemoFeed:
             s.script.pop(0)
         m = self.mkt.bias - 0.5
         heat = 1.0 + 1.2 * abs(m)                               # a fast tape makes every name busier
+        if s.episode and s.script is not getattr(s, "ep_script", None):
+            s.episode = None          # a level's own script took over: the episode is over
         if s.script:
-            b, r, _ = s.script[0]
-            b = 0.5 + 0.8 * (b - 0.5) + 0.6 * s.beta * m          # a level being worked still feels the market
-            return min(0.9, max(0.1, b)), r * heat, rg["size"]
-        own = 0.25 if s.sym in INDEX else 0.5                   # an index is mostly the market; a stock is part itself
+            st = s.script[0]
+            b, r = st[0], st[1]
+            size = st[3] if len(st) > 3 else rg["size"]
+            s.thin = st[4] if len(st) > 4 else 1.0
+            b = 0.5 + 0.8 * (b - 0.5) + (1.0 if s.episode else 0.6) * s.beta * m   # still feels the market
+            return min(0.9, max(0.1, b)), r * heat, size
+        s.thin = 1.0
+        s.episode = None
+        own = 0.25 if s.sym in INDEX else 0.4                   # an index is mostly the market; a stock is part itself
         b = 0.5 + own * (rg["bias"] - 0.5) + 1.0 * s.beta * m
         return min(0.9, max(0.1, b)), rg["rate"] * heat, rg["size"]
 
@@ -424,7 +496,8 @@ class DemoFeed:
         mk.prev_level = mk.level
         mk.level *= math.exp((mk.bias - 0.5) * 6.4e-5 * dt + rng.gauss(0, 1.0e-4 * math.sqrt(dt)))
 
-    BASKET = 0.75   # share of each name's move that comes from index / ETF / basket flow
+    REPRICE = 0.6   # share of that move that is quotes repricing rather than prints
+    BASKET = 1.7    # share of each name's move that comes from index / ETF / basket flow
 
     def _basket(self, sym, s, t, slotted):
         """When QQQ moves, the ETF and basket desks buy or sell every component at once. Each name owes
@@ -453,15 +526,30 @@ class DemoFeed:
                 return
             touch = rows[0][1]
             wall = touch >= max(5 * s.base, 5000)
-            clip = _r100(self.rng.lognormvariate(math.log(max(100.0, s.base * 0.6)), 0.6))
+            opp = s.bids if is_buy else s.asks
+            with_push = abs(s.mom) >= 1 and (s.mom > 0) == is_buy
+            if not wall and len(rows) > 1 and opp and (not with_push or self.rng.random() < self.REPRICE):
+                # the market makers move their quotes with the index: the offer lifts / the bid drops, no print.
+                # A wiggle against the last few seconds' push is only ever that; the desks trade WITH the push
+                rows.pop(0)
+                step = s.tk if is_buy else -s.tk
+                p = round(opp[0][0] + step, 2)
+                if (p < rows[0][0]) if is_buy else (p > rows[0][0]):
+                    opp.insert(0, [p, _r100(self._fresh(s, BID if is_buy else ASK, p) * 0.6)])
+                self._extend(s)
+                s.owed -= step
+                continue
+            clip = _r100(self.rng.lognormvariate(math.log(max(100.0, s.base * 0.9)), 0.6))
             if touch - clip < 100:
                 clip = int(touch)          # the last of the level
             before = rows[0][0]
             self._market(sym, s, is_buy, int(min(touch, max(1, clip))), t, slotted)
             if (s.asks[0][0] if is_buy else s.bids[0][0]) != before:
                 s.owed -= s.tk if is_buy else -s.tk
+            else:
+                s.owed *= 0.85     # a clip that didn't move it: the rest of the push is soaked up by resting size
             if wall:
-                s.owed *= 0.97     # leaning on a wall: one clip a beat, and some of the push gives up
+                s.owed *= 0.99     # leaning on a wall: one clip a beat, a little of the push gives up
                 return
 
     @staticmethod
@@ -514,6 +602,36 @@ class DemoFeed:
         return {"side": side, "price": price, "mode": mode, "base": base, "reserve": reserve, "hit": 0, "refills": 0,
                 "refill_at": None, "done": None, "started": t, "pivot": pivot,
                 "hold_after": rng.randint(4, 10), "pull_after": rng.randint(2, 6)}
+
+    def _episodes(self, s, t):
+        """Now and then a name plays out a whole market style: exhaustion at a top / bottom, a capitulation flush,
+        a squeeze. Random timing, random pick (leaning on how it has been trading); a flush or squeeze in the whole
+        market pulls the high-beta names in with it."""
+        rng = self.rng
+        if s.ep_next is None:
+            s.ep_next = t + rng.uniform(1800, 7200)      # a name's own episode: every hour or two at most
+        if s.script or t < s.ep_next:
+            return
+        mk = self.mkt.regime
+        with_market = mk in ("capitulation", "squeeze") and s.beta >= 1.2 and rng.random() < 0.5
+        if not with_market and t < s.ep_next:
+            return
+        s.ep_next = t + rng.uniform(3600, 9000)
+        if with_market:
+            name = "capitulation" if mk == "capitulation" else "squeeze_up"
+        else:
+            lean = {"trend_up": "up", "grind_up": "up", "squeeze": "up", "bounce": "up",
+                    "trend_down": "down", "grind_down": "down", "capitulation": "down", "fade": "down"}.get(s.regime)
+            w = {"exhaustion_top": 2 if lean == "up" else 1, "squeeze_up": 1.2 if lean == "up" else 0.5,
+                 "exhaustion_bottom": 2 if lean == "down" else 1, "capitulation": 1.2 if lean == "down" else 0.5}
+            name = rng.choices(list(w), weights=list(w.values()))[0]
+        at, script = t, []
+        for b, r, z, th, lo, hi in EPISODES[name]:
+            at += rng.uniform(lo, hi)
+            script.append((b, r * rng.uniform(0.85, 1.15), at, z * rng.uniform(0.85, 1.2), th))
+        s.script = script
+        s.episode = name
+        s.ep_script = script
 
     def _participants(self, sym, s, t):
         rng, p, tk = self.rng, s.play, s.tk
@@ -587,6 +705,9 @@ class DemoFeed:
             elif lv["done"] == "fade":
                 pass                                       # never really tested: he just goes away
             else:
+                if lv["done"] == "clean":
+                    s.hot += 5.0                               # the level broke: the tape bursts through it
+                    s.hot_dir = 1 if seller else -1
                 if lv["done"] == "pull" and idx is not None:
                     rows[idx][1] = _r100(rng.lognormvariate(math.log(s.base * 0.4), 0.4))
                 if lv["pivot"]:
@@ -617,12 +738,26 @@ class DemoFeed:
             if not slotted:
                 s.prev = {ASK: [], BID: []}
             self._regime(s, t)
+            self._episodes(s, t)
             s.eff = self._params(s, t)
             self._churn(s, t)
             self._participants(sym, s, t)
             self._flow(sym, s, t, dt, slotted)
             self._basket(sym, s, t, slotted)
             self._close_spread(s)
+            # tape heat: every tick the price moves adds heat (in that direction); it cools off in a few seconds
+            if s.bids and s.asks:
+                mid = (s.bids[0][0] + s.asks[0][0]) / 2
+                # what the market's move asks of this name (beta x the index move, in ticks), summed over ~10 s: a
+                # quarter-second wiggle cancels out, a real push builds up. Chasers (momentum, stops) come in with
+                # that push, so the tape speeds up when the whole tape moves, and a level breaking (below) bursts it
+                mkt = self.mkt
+                want = s.beta * math.log(mkt.level / mkt.prev_level) * mid / s.tk if mkt.prev_level else 0.0
+                s.mom = s.mom * (0.975 ** (dt / 0.25)) + want
+                s.hot = s.hot * (0.93 ** (dt / 0.25))
+                if s.hot < 1.0:
+                    s.hot_dir = (1 if s.mom > 0 else -1) if abs(s.mom) >= 3 else 0
+                s.last_mid = mid
             self._extend(s)
             self._emit(sym, s, t, slotted)
         for _cmd in self.engine.tick(t):

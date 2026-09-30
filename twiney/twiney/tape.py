@@ -71,5 +71,38 @@ class Tape:
             "buy_pct": round(100.0 * buy / directional, 1) if directional else None,
         }
 
+    def speed(self, now, span=90, bucket=3, fast=10):
+        """How fast the tape is running: prints and shares per second over the last `fast` seconds, measured against
+        the minute before it (so SPEEDING UP / SLOWING is this stock against itself, not against another name), and
+        a per-`bucket` series of buy / sell / other shares for the sparkline, oldest first."""
+        nb = span // bucket
+        series = [[0, 0, 0, 0] for _ in range(nb)]     # buy shares, sell shares, other shares, prints
+        n_fast = sh_fast = n_before = 0
+        for p in reversed(self.prints):
+            age = now - p["t"]
+            if age >= span:
+                break
+            if age < 0:
+                age = 0
+            row = series[nb - 1 - int(age // bucket)]
+            row[0 if p["side"] == BUY else 1 if p["side"] == SELL else 2] += p["size"]
+            row[3] += 1
+            if age < fast:
+                n_fast += 1
+                sh_fast += p["size"]
+            elif age < fast + 60:
+                n_before += 1
+        pps, base = n_fast / fast, n_before / 60.0
+        if n_fast + n_before < 5:
+            trend = "QUIET"
+        elif base == 0 or pps >= 1.5 * base:
+            trend = "SPEEDING UP"
+        elif pps <= 0.6 * base:
+            trend = "SLOWING"
+        else:
+            trend = "STEADY"
+        return {"pps": round(pps, 1), "sps": round(sh_fast / fast), "base_pps": round(base, 1), "trend": trend,
+                "bucket": bucket, "series": [[round(a), round(b), round(c), d] for a, b, c, d in series]}
+
     def recent(self, limit=12):
         return list(islice(reversed(self.prints), limit))

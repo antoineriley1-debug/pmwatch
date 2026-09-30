@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20260930-0606">
+<meta name="build" content="20260930-0804">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -434,6 +434,14 @@ html,body{height:100%} body{overflow:hidden;font-size:12px}
 .lad td.bsz.big,.lad td.bsz.huge{box-shadow:inset 3px 0 0 var(--buy)} .lad td.asz.big,.lad td.asz.huge{box-shadow:inset -3px 0 0 var(--sell)}
 .lad .bigx{display:inline-block;margin:0 3px;padding:0 3px;font:700 9px var(--sans);letter-spacing:.04em;background:var(--gold);color:#0c0c0d;vertical-align:middle}
 .lad .sz{width:auto;min-width:58px;white-space:nowrap}
+
+/* tape speed meter (top of TIME & SALES) */
+.tspeed{display:grid;grid-template-columns:auto auto 1fr;grid-template-rows:auto 26px;gap:2px 10px;align-items:baseline;padding:5px 6px 6px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel);z-index:2}
+.tspeed .tsv{display:flex;gap:4px;align-items:baseline}
+.tspeed .tsv b{font:600 13px var(--mono,monospace)} .tspeed .tsv i{font-style:normal;font-size:9px;letter-spacing:.08em;color:var(--dim)}
+.tspeed .tst{justify-self:end;font-size:10px;font-weight:600;letter-spacing:.08em;color:var(--dim)} .tspeed .tst em{font-style:normal;opacity:.75}
+.tspeed.up .tst{color:var(--gold)} .tspeed.down .tst{color:var(--cyan)}
+.tspeed svg{grid-column:1/-1;width:100%;height:26px;display:block}
 
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
@@ -2313,7 +2321,29 @@ function renderBook(d){
 function renderTape(d){
   const el = P.tape.pc.querySelector(".p-tape");
   if (!d){ el.innerHTML = `<div class="dim" style="padding:8px">${NA}</div>`; P.tape.last = null; return; }
-  const html = tapeHTML(d.tape); if (P.tape.last === html) return; P.tape.last = html; el.innerHTML = html; makeColsResizable(el.querySelector("table"));
+  const html = tapeSpeedHTML(d.tape.speed) + tapeHTML(d.tape); if (P.tape.last === html) return; P.tape.last = html;
+  const keep = el.scrollTop; el.innerHTML = html; el.scrollTop = keep; makeColsResizable(el.querySelector("table"));
+}
+/* tape speed: how fast prints are coming right now against this stock's own last minute, plus the last 90 s as
+   stacked bars (green = paid up, red = hit, grey = in between). Speeding into a move, drying up into a level. */
+function tapeSpeedHTML(sp){
+  if (!sp) return "";
+  const cls = {"SPEEDING UP": "up", "SLOWING": "down", "STEADY": "flat", "QUIET": "flat"}[sp.trend] || "flat";
+  const ser = sp.series || [], n = ser.length || 1, W = 180, H = 26, bw = W / n;
+  const tot = ser.map(r => r[0] + r[1] + r[2]), mx = Math.max(1, ...tot);
+  let bars = "";
+  ser.forEach((r, i) => {
+    let y = H; const x = (i * bw + 0.5).toFixed(1), w = Math.max(1, bw - 1).toFixed(1);
+    [[r[0], "var(--buy)"], [r[1], "var(--sell)"], [r[2], "var(--dim)"]].forEach(([v, c]) => {
+      if (!v) return; const h = v / mx * H; y -= h;
+      bars += `<rect x="${x}" y="${y.toFixed(1)}" width="${w}" height="${h.toFixed(1)}" fill="${c}"/>`;
+    });
+  });
+  const ratio = sp.base_pps > 0 ? sp.pps / sp.base_pps : null;
+  return `<div class="tspeed ${cls}" title="Prints per second over the last 10 s, against the minute before it. Bars: the last 90 s, ${sp.bucket} s each (green paid up, red hit, grey between). A tape that speeds up with price is the move; one that dries up into a level is the wait to see who holds it.">
+    <span class="tsv"><b>${sp.pps.toFixed(1)}</b><i>PRINTS/S</i></span><span class="tsv"><b>${sz(sp.sps)}</b><i>SH/S</i></span>
+    <span class="tst">${sp.trend}${ratio != null && sp.trend !== "QUIET" ? ` <em>${ratio.toFixed(1)}x</em>` : ""}</span>
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${bars}</svg></div>`;
 }
 function applyLadCols(tbl){ if (!tbl) return; const c = store.get("ladcols", {}); tbl.classList.toggle("notrade", c.trade === false); tbl.classList.toggle("nobars", c.bars === false); tbl.classList.toggle("nowho", c.who === false); if (tbl._applyCols) tbl._applyCols(); }
 document.getElementById("colsMenu").querySelector("button").addEventListener("click", e => { e.stopPropagation(); const m = document.getElementById("colsMenu"), open = !m.classList.contains("open"); document.querySelectorAll(".menu.open").forEach(x => x.classList.remove("open")); m.classList.toggle("open", open); const c = store.get("ladcols", {}); m.querySelectorAll("input[data-col]").forEach(i => { i.checked = c[i.dataset.col] !== false; }); });

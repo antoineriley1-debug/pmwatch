@@ -439,3 +439,22 @@ class VerifyRound2Tests(unittest.TestCase):
         self.assertEqual(normalize(dict(base, side="At Bid"))["side"], "bid")
         self.assertEqual(normalize(dict(base, side="AT_ASK"))["side"], "ask")
         self.assertEqual(normalize(dict(base, side="Above Ask"))["side"], "ask")
+
+
+class TapeSpeedTests(unittest.TestCase):
+    def test_speed_reads_this_stock_against_its_own_last_minute(self):
+        from twiney.tape import Tape
+        tp = Tape(cfg()["tape"])
+        for i in range(60):                      # a print a second for a minute
+            tp.add(1000.0 + i, 10.0, 100, 9.99, 10.0)
+        self.assertEqual(tp.speed(1060.0)["trend"], "STEADY")
+        for i in range(40):                      # then 4 a second for 10 s: speeding up, all paid up
+            tp.add(1060.0 + i * 0.25, 10.0, 200, 9.99, 10.0)
+        sp = tp.speed(1069.9)
+        self.assertEqual(sp["trend"], "SPEEDING UP")
+        self.assertEqual(sp["pps"], 4.0)
+        self.assertEqual(sp["sps"], 800)
+        self.assertEqual(len(sp["series"]), 30)
+        self.assertEqual(sum(r[0] for r in sp["series"]), 40 * 200 + 60 * 100)   # every buy inside the 90 s
+        self.assertEqual(tp.speed(1095.0)["trend"], "SLOWING")                  # then nothing for 25 s
+        self.assertEqual(Tape(cfg()["tape"]).speed(5.0)["trend"], "QUIET")
