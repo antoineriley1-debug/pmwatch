@@ -98,7 +98,8 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
             (127.0.0.1 / localhost / [::1]) on the desk's port, so a website that re-points its own name at
             127.0.0.1 (DNS rebinding) is refused; a browser's Origin, when sent, must be one of those too."""
             port = self.server.server_address[1]
-            ok = {f"{h}:{port}" for h in ("127.0.0.1", "localhost", "[::1]")}
+            names = ("127.0.0.1", "localhost", "[::1]")
+            ok = {f"{h}:{port}" for h in names} | (set(names) if port == 80 else set())   # browsers drop :80
             host = (self.headers.get("Host") or "").strip().lower()
             if host and host not in ok:
                 return False

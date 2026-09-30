@@ -250,6 +250,10 @@ def _check_values(cfg):
                     raise ConfigError(f"{path} must be a number")
                 if v < 0:
                     raise ConfigError(f"{path} cannot be negative")
+                if isinstance(dv, int) and v != int(v):
+                    raise ConfigError(f"{path} must be a whole number")
+                if isinstance(dv, int):
+                    d[k] = int(v)          # 2.0 in the file is the whole number 2
                 if path in POSITIVE and v <= 0:
                     raise ConfigError(f"{path} must be above 0")
     walk(cfg, DEFAULTS)
@@ -258,7 +262,11 @@ def _check_values(cfg):
         raise ConfigError("trading.scale_plan.cash_flow must be a list of {fraction, dollars}")
     total = 0.0
     for i, leg in enumerate(legs):
-        f, d = (leg or {}).get("fraction"), (leg or {}).get("dollars")
+        if not isinstance(leg, dict):
+            raise ConfigError(f"trading.scale_plan.cash_flow[{i}] must be {{fraction, dollars}}")
+        f, d = leg.get("fraction"), leg.get("dollars")
+        if isinstance(f, bool) or isinstance(d, bool):
+            raise ConfigError(f"trading.scale_plan.cash_flow[{i}]: fraction and dollars must be numbers")
         if not isinstance(f, (int, float)) or not 0 < f < 1:
             raise ConfigError(f"trading.scale_plan.cash_flow[{i}].fraction must be between 0 and 1")
         if not isinstance(d, (int, float)) or not math.isfinite(d) or d <= 0:
@@ -276,10 +284,8 @@ def build_config(raw=None):
         raise ConfigError("depth.rows_displayed cannot exceed depth.rows_requested")
     _check_values(cfg)
     host = cfg["dashboard"]["host"]
-    try:
-        loopback = ipaddress.ip_address(host).is_loopback
-    except ValueError:
-        loopback = host == "localhost"
+    # this computer's own address only (the page checks every request names it)
+    loopback = str(host).strip().lower() in ("127.0.0.1", "localhost", "::1")
     if not loopback:
         raise ConfigError("dashboard.host must be a loopback address; TWINEY is a local-only workstation")
     return cfg
