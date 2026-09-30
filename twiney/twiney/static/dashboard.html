@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20260930-1416">
+<meta name="build" content="20260930-1512">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -744,13 +744,19 @@ body.resizing .zbody{pointer-events:none}
 .lad td.sz .pips,.lad td.sz .bigx{font-size:9.5px;margin-left:3px;padding:0 2px;border-radius:2px;letter-spacing:0;vertical-align:1px}
 .lad td.sz .pips.b{color:#3fb56f;background:rgba(38,208,124,.12)}
 .lad td.sz .pips.a{color:#d9534f;background:rgba(255,77,94,.12)}
+/* command bar: never runs off the screen. On a narrow or zoomed display (Windows scaling 125-150%) it wraps onto a
+   second row instead of hiding SETTINGS / PANELS / VOICE past the edge; the desk below takes whatever height is left */
+#app{grid-template-rows:auto 26px minmax(0,1fr) 22px}
+#cmd{height:auto;min-height:34px;flex-wrap:wrap;row-gap:3px;padding:4px 10px;overflow:visible;position:relative;z-index:20}
+#cmd .spacer{flex:1 1 0 !important;min-width:4px}
+@media (max-width:1500px){ #brand .long{display:none} #cmd{gap:4px} #cmd button{padding:2px 6px} }
 
 </style>
 </head>
 <body>
 <div id="app">
 <div id="cmd">
-  <span id="brand"><i></i><b>TED</b> TWINEY EXECUTION DESK</span>
+  <span id="brand"><i></i><b>TED</b><span class="long"> TWINEY EXECUTION DESK</span></span>
   <span id="symbox"><input id="symIn" placeholder="SYMBOL" autocomplete="off" spellcheck="false"><select id="symHist" title="recent symbols"><option value="">RECENT</option></select></span>
   <span class="sep"></span>
   <button id="armBtn" class="off" title="Arm order entry. Disarmed at every launch.">ARM</button>
