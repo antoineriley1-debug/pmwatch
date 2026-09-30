@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20260930-0400">
+<meta name="build" content="20260930-0411">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -1136,11 +1136,11 @@ function ladderHTML(L){
     `<span class="chip ${side} ${o.status === "PreSubmitted" ? "wait" : ""}" data-id="${o.id}" draggable="true" title="${esc(o.role)} order — click to cancel, drag to move">${sz(o.qty)}</span>`).join(" ");
   let h = `<table class="lad" data-cols="ladder"><tr>
     <th class="act" data-w="1.1" title="Click a price here to BUY at that price">BUY</th>
-    <th class="bars" data-w="2.2" title="Shares sellers hit the bid with at this price (last ${L.memory_minutes} min). Big green = a buyer absorbing them.">SELLERS HIT BID</th>
+    <th class="bars" data-w="2.2" title="Shares sellers hit the bid with at this price (last ${L.memory_minutes} min). Big green = a buyer absorbing them.">HIT</th>
     <th class="who" data-w="1.0" title="confirmed reload buyer at this price, and what became of it"></th>
     <th data-w="1.4">BID</th><th data-w="2.3">PRICE</th><th data-w="1.4">ASK</th>
     <th class="who" data-w="1.0" title="confirmed reload seller at this price, and what became of it"></th>
-    <th class="bars" data-w="2.2" title="Shares buyers paid up for at this price (last ${L.memory_minutes} min). Big red = a seller absorbing them.">BUYERS PAID UP</th>
+    <th class="bars" data-w="2.2" title="Shares buyers paid up for at this price (last ${L.memory_minutes} min). Big red = a seller absorbing them.">PAID UP</th>
     <th class="act" data-w="1.1" title="Click a price here to SELL at that price">SELL</th></tr>`;
   for (const r of L.rows){
     const cls = [r.gap?"gap":"", r.best_bid?"best-bid":"", r.best_ask?"best-ask":"", r.tags.length?"lvl":"", r.last?"lastpx":"",
