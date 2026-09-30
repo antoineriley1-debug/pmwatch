@@ -131,11 +131,6 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                 full = None
                 if "full" in q:   # the page names the symbols it still needs history for; "" = none
                     full = {x.strip().upper() for x in q.get("full", [""])[0].split(",") if x.strip()}
-                if trader is not None:     # breakeven, exit guard, loss lock: outside the engine lock
-                    try:
-                        trader.watchdog(clock())
-                    except Exception:
-                        pass
                 snap = engine.snapshot(clock(), extra, full)
                 snap["build"] = BUILD
                 self._send(200, json.dumps(snap, default=str), "application/json")
@@ -217,8 +212,13 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
             elif path == "/api/level":
                 sym = str(body.get("symbol", "")).upper()
                 role = str(body.get("role", "extra"))
+                if role == "trigger" and not body.get("confirm"):
+                    # the pivot is locked: it moves only on an explicit, confirmed request (PLAY SETUP or the mark tool)
+                    self._send(409, json.dumps({"ok": False, "reason": "the pivot is locked; change it in PLAY SETUP"}), "application/json")
+                    return
                 if role in ("trigger", "second_entry", "target", "stop"):
-                    ok = engine.set_play_level(sym, role, body.get("price") if body.get("on", True) else None, clock())
+                    ok = engine.set_play_level(sym, role, body.get("price") if body.get("on", True) else None, clock(),
+                                               source="chart")
                 else:
                     ok = (engine.add_level if body.get("on", True) else engine.remove_level)(sym, body.get("price"), clock())
                 self._send(200 if ok else 400, json.dumps({"ok": ok}), "application/json")

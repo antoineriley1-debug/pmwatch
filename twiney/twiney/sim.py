@@ -155,9 +155,10 @@ class DemoFeed:
         known = {k: v for k, v, _b in SimFlow.MARKET}
         base = known.get(p["symbol"])
         s = _Sym(p, round(base * self.rng.uniform(0.98, 1.02), 2) if base else round(self.rng.uniform(20, 300), 2), t)
-        self.state[p["symbol"]] = s
         self._history_one(p["symbol"], s, t)
         self._seed_book(s, t)
+        s.regime_until = t
+        self.state[p["symbol"]] = s     # published only once it has a book: the market loop never sees it half-built
 
     # ---- history -------------------------------------------------------------
 
@@ -174,7 +175,7 @@ class DemoFeed:
         day_bars = []
         for d in range(300, 0, -1):
             day0 = today0 - d * 86400
-            if ((day0 + off) // 86400) % 7 in (3, 4):   # skip Sat / Sun (epoch day 0 is a Thursday)
+            if ((day0 + off) // 86400) % 7 in (2, 3):   # skip Sat / Sun (epoch day 0 is a Thursday: 2 = Sat, 3 = Sun)
                 continue
             o = px
             c = round(o + rng.uniform(-atr_, atr_) * 0.7, 2)
@@ -293,13 +294,22 @@ class DemoFeed:
         while remaining > 0 and rows:
             price, avail = rows[0][0], rows[0][1]
             take = min(remaining, avail)
+            hit_side = ASK if is_buy else BID
+            lv = next((pt for pt in s.parts if pt["side"] == hit_side and abs(price - pt["price"]) < 1e-9), None)
+            if take <= 0:
+                if lv is not None and lv["refill_at"] is not None:
+                    break                  # he is reloading this very moment: the order waits, nothing trades
+                rows.pop(0)
+                self._extend(s)
+                continue
+            # the engine sees the book this order trades against before it sees the print (as on a real feed,
+            # the quote is out before the trade): so the print is read against the quote it hit
+            self._emit(sym, s, t, emit_depth)
             self.engine.on_print(sym, price, int(take), rng.choice(EXCH), t)
             s.last = price
             s.vol += take
             rows[0][1] -= take
             remaining -= take
-            hit_side = ASK if is_buy else BID
-            lv = next((pt for pt in s.parts if pt["side"] == hit_side and abs(price - pt["price"]) < 1e-9), None)
             if lv is not None:
                 lv["hit"] += take
                 if rows[0][1] <= 0 and lv["reserve"] > 0:
@@ -557,7 +567,7 @@ class DemoFeed:
                 del self.pushes[sym]
             elif s is None or t > at + 900:
                 self.pushes.pop(sym, None)
-        for sym, s in self.state.items():
+        for sym, s in list(self.state.items()):
             slotted = sym in self.engine.slots
             if not slotted:
                 s.prev = {ASK: [], BID: []}

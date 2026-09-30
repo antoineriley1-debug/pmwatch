@@ -250,7 +250,7 @@ class FlowTests(unittest.TestCase):
         e.on_print("AAA", 10.00, 100, "X", 1.0)
         s = e.snapshot(2.0)
         self.assertEqual(s["mode"], "PAPER-ONLY ORDER ENTRY · LIVE LOCKED")
-        d = s["depth"][0]
+        self.assertEqual(s["depth"], ["AAA"]); d = [p for p in s["panes"] if p][0]
         self.assertEqual(d["symbol"], "AAA")
         self.assertEqual(len(d["book"]["asks"]), 3)
         self.assertEqual(d["book"]["asks"][0], [10.0, 1000, 1])

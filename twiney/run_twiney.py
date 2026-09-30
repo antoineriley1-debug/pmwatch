@@ -97,6 +97,7 @@ def run_live(cfg, plays, args):
     engine.play_listeners.append(session.add_play)
     trader = Trader(engine, cfg, IbkrBroker(engine, session), gate) if cfg["trading"]["enabled"] else None
     engine.trader = trader
+    start_watchdog(lambda: trader)
     desk = Desk(engine, cfg, plays, __version__, prefix="twiney", base_dir=os.path.dirname(os.path.abspath(__file__)))
     if recorder:
         desk.started = time.time()
@@ -127,6 +128,24 @@ def run_live(cfg, plays, args):
     dash.hooks["restart"] = lambda: restart_process(stop)
     wait_forever(stop)
     return 0
+
+
+def start_watchdog(get_trader, clock=time.time, every=0.5):
+    """The loss lock, breakeven stops and the exit guard run on their own clock, browser open or not."""
+    def run():
+        while True:
+            tr = get_trader()
+            if tr is not None:
+                try:
+                    tr.watchdog(clock())
+                except Exception as exc:
+                    logging.getLogger("twiney").exception("watchdog failed")
+                    try:
+                        tr.engine._message("error", f"order watchdog error: {exc}", clock())
+                    except Exception:
+                        pass
+            time.sleep(every)
+    threading.Thread(target=run, name="twiney-watchdog", daemon=True).start()
 
 
 def run_demo(cfg, plays, args):
@@ -164,12 +183,18 @@ def run_demo(cfg, plays, args):
     engine.play_listeners.append(lambda p: sim_flow.symbols.append(p["symbol"]))
 
     def loop():
+        log = logging.getLogger("twiney.demo")
         while not stop_evt.is_set():
             now = time.time()
-            feed.step(now)
-            sim_flow.step(now)
+            try:                     # one bad step is logged and the practice market keeps going
+                feed.step(now)
+                sim_flow.step(now)
+            except Exception as exc:
+                log.exception("practice market step failed")
+                engine._message("error", f"practice market step failed: {exc}", now)
             stop_evt.wait(0.25)
     threading.Thread(target=loop, daemon=True).start()
+    start_watchdog(lambda: trader)
     dash.hooks["restart"] = lambda: restart_process(lambda: (stop_evt.set(), dash.stop(), desk.stop()))
     wait_forever(lambda: (stop_evt.set(), dash.stop(), desk.stop()))
     return 0
@@ -200,6 +225,9 @@ def run_replay(cfg, plays, args):
                                  layout_path=layout_file(args)).start()
                 open_dashboard(dash, cfg, args)
             dash.trader = engine.trader
+            if not control.get("_watchdog"):
+                control["_watchdog"] = True
+                start_watchdog(lambda: getattr(box.get("engine"), "trader", None), clock=lambda: box["engine"].last_t)
 
     use_file_settings = not args.override
     try:

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20260930-0317">
+<meta name="build" content="20260930-0400">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -651,6 +651,23 @@ body.dragging #work > .col{display:flex !important;min-width:150px}
 body.dragging #work .zone{display:flex !important;min-height:70px}
 body.dragging #work .zone:not(.fill){flex:0 0 auto}
 
+/* the desk stopped answering: everything on screen is old, and looks it */
+body.stale #work{filter:grayscale(.85);opacity:.6;transition:opacity .2s}
+
+/* dividers: a wide, easy grab area with a thin line in the middle that lights up on hover and while held */
+#work .gut{position:relative;background:transparent!important;z-index:6}
+#work .gut.v{width:9px;margin:0 -2px}
+#work .gut.h{height:9px;margin:-2px 0}
+#work .gut::after{content:"";position:absolute;background:transparent;transition:background .12s,box-shadow .12s}
+#work .gut.v::after{top:0;bottom:0;left:3px;width:3px}
+#work .gut.h::after{left:0;right:0;top:3px;height:3px}
+#work .gut:hover::after{background:rgba(227,168,58,.55)}
+#work .gut.grab::after{background:#e3a83a;box-shadow:0 0 0 1px rgba(227,168,58,.35),0 0 10px rgba(227,168,58,.8)}
+body.resizing{user-select:none}
+body.resizing-v, body.resizing-v *{cursor:col-resize!important}
+body.resizing-h, body.resizing-h *{cursor:row-resize!important}
+body.resizing .zbody{pointer-events:none}
+
 </style>
 </head>
 <body>
@@ -746,8 +763,22 @@ body.dragging #work .zone:not(.fill){flex:0 0 auto}
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const px = v => v == null ? "—" : Number(v).toFixed(Number(v) >= 1 ? 2 : 4);
 const sz = v => v == null ? "—" : Number(v).toLocaleString();
-const kfmt = v => !v ? "" : v >= 1e6 ? (v/1e6).toFixed(1)+"M" : v >= 1e4 ? Math.round(v/1e3)+"k" : v >= 1e3 ? (v/1e3).toFixed(1)+"k" : String(Math.round(v));
-const ago = s => s == null ? "—" : s < 60 ? s.toFixed(0) + "s" : (s/60).toFixed(1) + "m";
+// sizes: 950 · 9.9k · 10k · 999k · 1.0M. Rounded first, so 9,960 never reads "10.0k" and 999,600 never "1000k"
+const kfmt = v => { if (!v) return ""; const s = v < 0 ? "-" : "", a = Math.abs(v);
+  if (a >= 999500) return s + (a / 1e6).toFixed(1) + "M";
+  if (a >= 9950) return s + Math.round(a / 1e3) + "k";
+  if (a >= 999.5) return s + (a / 1e3).toFixed(1) + "k";
+  return s + String(Math.round(a)); };
+const ago = s => s == null ? "—" : s < 59.5 ? s.toFixed(0) + "s" : s < 3570 ? (s / 60).toFixed(1) + "m" : (s / 3600).toFixed(1) + "h";
+// every time on the desk is New York time, whatever the computer's clock is set to
+const NYF = new Intl.DateTimeFormat("en-US", {timeZone: "America/New_York", hourCycle: "h23", hour: "2-digit", minute: "2-digit", second: "2-digit"});
+const NYHM = new Intl.DateTimeFormat("en-US", {timeZone: "America/New_York", hourCycle: "h23", hour: "2-digit", minute: "2-digit"});
+const nyT = t => NYF.format(new Date(t * 1000));
+const nyHM = t => NYHM.format(new Date(t * 1000));
+const nyDate = (t, o) => new Date(t * 1000).toLocaleDateString("en-US", Object.assign({timeZone: "America/New_York"}, o));
+// a price the exchange takes: 0.01 at $1 and up, 0.0001 below
+const tickOfPx = p => p >= 1 ? 0.01 : 0.0001;
+const snapPx = p => { if (!p) return p; const k = tickOfPx(p); return +(Math.round(p / k) * k).toFixed(k < 0.01 ? 4 : 2); };
 const MDT = {1:"LIVE",2:"FROZEN",3:"DELAYED",4:"DELAYED-FROZEN"};
 const store = {
   get(k, d){ try { const v = localStorage.getItem("twiney." + k); return v == null ? d : JSON.parse(v); } catch(e){ return d; } },
@@ -800,7 +831,7 @@ async function sendOrder(symbol, action, price, qty){
     toast(out.ok ? "Sent: " + out.sent : "Blocked: " + out.reason, out.ok);
   };
   if (t.one_click) return go();
-  const pane = (state.panes || []).find(d => d && d.symbol === symbol);
+  const pane = (state.panes || []).concat(Object.values(state.extra || {})).find(d => d && d.symbol === symbol);
   const pl = pane ? pane.play : {};
   const legs = [];
   if (t.bracket){
@@ -943,7 +974,9 @@ function wireChart(p, cv, v, saveView, isFoot){
         post("/api/level", {symbol: p.data.symbol, price: hit ? hit.price : snapped, on: !hit, role: "extra"})
           .then(out => toast(out.ok ? (hit ? "Level removed " + px(hit.price) : "Level added " + px(snapped) + " — saved to plays.json") : "Could not save level", out.ok));
       } else {
-        post("/api/level", {symbol: p.data.symbol, price: snapped, role})
+        const cur = p.data.play && p.data.play[role];
+        if (role === "trigger" && cur && Math.abs(cur - snapped) > 1e-9 && !confirm(`Move the ${p.data.symbol} pivot from ${px(cur)} to ${px(snapped)}?`)){ v.levelTool = null; renderTools(p); return; }
+        post("/api/level", {symbol: p.data.symbol, price: snapped, role, confirm: role === "trigger"})
           .then(out => toast(out.ok ? `${p.data.symbol} ${names[role]} set to ${px(snapped)} — saved to plays.json` : "Could not set " + names[role], out.ok));
       }
       v.levelTool = null; renderTools(p);   // one mark per click of the tool
@@ -953,12 +986,15 @@ function wireChart(p, cv, v, saveView, isFoot){
     if (p.data && v.chartY && !onAxis && !onTime && !(e.ctrlKey || e.metaKey)){
       const price = yAt(), per = (v.chartY[1] - v.chartY[0]) / ((v.chartH || 1) - 8);
       const nearOrder = (p.data.orders || []).some(o => o.price && Math.abs(o.price - price) <= per * 5);
-      const lv = !nearOrder && (p.data.user_levels || []).find(l => Math.abs(l.price - price) <= per * 5);
+      // the pivot is locked on the chart: once set it only changes from PLAY SETUP (or the mark tool, which asks)
+      const lv = !nearOrder && (p.data.user_levels || []).find(l => l.role !== "trigger" && Math.abs(l.price - price) <= per * 5);
       if (lv){
         e.preventDefault();
         p.dragLevel = {role: lv.role, from: lv.price, price: lv.price, label: lv.label};
-        const move = ev => { const pr = v.chartY[1] - ((ev.clientY - r.top) - 8) / ((v.chartH || 1) - 8) * (v.chartY[1] - v.chartY[0]);
-          const tk = pr >= 1 ? 0.01 : 0.0001; p.dragLevel.price = +(Math.round(pr / tk) * tk).toFixed(4); drawChart(p); };
+        // a line only moves on a deliberate drag (4px), and by how far you drag it, never jumping to the cursor
+        const move = ev => { if (Math.abs(ev.clientY - y0) < 4 && p.dragLevel.price === p.dragLevel.from) return;
+          const dp = -(ev.clientY - y0) / ((v.chartH || 1) - 8) * (v.chartY[1] - v.chartY[0]);
+          const pr = lv.price + dp, tk = pr >= 1 ? 0.01 : 0.0001; p.dragLevel.price = +(Math.round(pr / tk) * tk).toFixed(4); drawChart(p); };
         const up = async () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up);
           const d = p.dragLevel; p.dragLevel = null;
           if (Math.abs(d.price - d.from) < 1e-6) return;
@@ -977,13 +1013,19 @@ function wireChart(p, cv, v, saveView, isFoot){
       const o = (p.data.orders || []).find(o => o.price && Math.abs(o.price - price) <= per * 5 && o.id != null);
       if (o){
         e.preventDefault();
-        p.dragOrder = {id: o.id, price: o.price};
-        const move = ev => { const pr = v.chartY[1] - ((ev.clientY - r.top) - 8) / ((v.chartH || 1) - 8) * (v.chartY[1] - v.chartY[0]);
-          const tk = pr >= 1 ? 0.01 : 0.0001; p.dragOrder.price = Math.round(pr / tk) * tk; drawChart(p); };
+        // a bracket line can be several orders at one price (each exit piece has its own stop): they move as one
+        const kind = x => x.role === "stop" ? "stop" : x.role === "entry" || x.role === "flatten" || x.role === "close" ? x.role + x.id : "exit";
+        const group = (p.data.orders || []).filter(x => x.id != null && Math.abs(x.price - o.price) < 1e-6 && kind(x) === kind(o) && x.action === o.action);
+        p.dragOrder = {id: o.id, ids: group.map(x => x.id), price: o.price};
+        const move = ev => { if (Math.abs(ev.clientY - y0) < 4 && p.dragOrder.price === o.price) return;
+          const dp = -(ev.clientY - y0) / ((v.chartH || 1) - 8) * (v.chartY[1] - v.chartY[0]);
+          const pr = o.price + dp, tk = pr >= 1 ? 0.01 : 0.0001; p.dragOrder.price = +(Math.round(pr / tk) * tk).toFixed(4); drawChart(p); };
         const up = async () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up);
           const d = p.dragOrder; p.dragOrder = null;
-          if (Math.abs(d.price - o.price) >= 1e-6){ const out = await post("/api/trade/modify", {id: d.id, price: d.price});
-            toast(out.ok ? "Moved to " + px(out.price) : "Move blocked: " + (out.reason || ""), out.ok); } };
+          if (Math.abs(d.price - o.price) >= 1e-6){
+            let ok = true, why = "";
+            for (const id of d.ids){ const out = await post("/api/trade/modify", {id, price: d.price}); if (!out.ok){ ok = false; why = out.reason || ""; } }
+            toast(ok ? `${o.role === "stop" ? "Stop" : o.role === "entry" ? "Order" : "Target"} moved to ${px(d.price)}` : "Move blocked: " + why, ok); } };
         window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
         return;
       }
@@ -1090,7 +1132,7 @@ function ladderHTML(L){
   if (!L || !L.rows.length) return `<div class="empty">Waiting for the book…</div>`;
   const ms = Math.max(L.max_traded, 1);
   const on = canTrade(), dis = on ? "" : " disabled";
-  const chips = (r, side) => (r.mine || []).filter(o => (o.action === "BUY") === (side === "b")).map(o =>
+  const chips = (r, side) => (r.mine || []).filter(o => o.id != null && (o.action === "BUY") === (side === "b")).map(o =>
     `<span class="chip ${side} ${o.status === "PreSubmitted" ? "wait" : ""}" data-id="${o.id}" draggable="true" title="${esc(o.role)} order — click to cancel, drag to move">${sz(o.qty)}</span>`).join(" ");
   let h = `<table class="lad" data-cols="ladder"><tr>
     <th class="act" data-w="1.1" title="Click a price here to BUY at that price">BUY</th>
@@ -1177,13 +1219,21 @@ function dailyLive(d){
   }
   return daily;
 }
+/* which candle a minute belongs to. 30 min and up: counted from that day's 9:30 New York open (2H = 9:30, 11:30,
+   13:30, 15:30; 4H = 9:30, 13:30), like every charting package. Shorter: clock-aligned. */
+const _eoCache = new Map();
+function eoDay(t){ const k = Math.floor(t / 43200); let v = _eoCache.get(k); if (v == null){ v = etOffset(t); _eoCache.set(k, v); if (_eoCache.size > 4000) _eoCache.clear(); } return v; }
+function bucketFn(tf){
+  const span = tf * 60;
+  if (tf < 30) return t => Math.floor(t / span) * span;
+  return t => { const eo = eoDay(t), local = t + eo, day = Math.floor(local / 86400) * 86400, open = day + 34200;
+    return open + Math.floor((local - open) / span) * span - eo; };
+}
 function aggBars(bars, tf){
   if (tf === 1) return bars.map(b => b.slice());
-  const out = [], span = tf * 60;
-  // 60-minute candles start at 9:30 like the rest of the world's charts, not on the hour
-  const anchor = tf >= 30 && bars.length ? (etOffset(bars[bars.length - 1][0]) - 1800) : 0;
+  const out = [], bucket = bucketFn(tf);
   for (const b of bars){
-    const t0 = Math.floor((b[0] + anchor) / span) * span - anchor, last = out[out.length - 1];
+    const t0 = bucket(b[0]), last = out[out.length - 1];
     if (last && last[0] === t0){ last[2] = Math.max(last[2], b[2]); last[3] = Math.min(last[3], b[3]); last[4] = b[4]; last[5] += b[5]; last[6] += b[6]; last[7] += b[7]; }
     else out.push([t0, b[1], b[2], b[3], b[4], b[5], b[6], b[7]]);
   }
@@ -1243,6 +1293,11 @@ function drawOne(p, cv, v, isFoot){
   if (d.last){ lo = Math.min(lo, d.last); hi = Math.max(hi, d.last); }
   const core = isFoot ? [] : d.user_levels.filter(l => ["trigger","second_entry","extra"].includes(l.role));
   for (const l of core){ lo = Math.min(lo, l.price); hi = Math.max(hi, l.price); }
+  // an open position keeps its whole bracket on screen: entry, stop and target
+  if (!isFoot && d.position && d.position.qty){
+    for (const pr of [d.position.avg_cost].concat((d.orders || []).filter(o => o.role && o.role !== "entry").map(o => o.price)))
+      if (pr > 0){ lo = Math.min(lo, pr); hi = Math.max(hi, pr); }
+  }
   // target / stop are drawn only when they fall inside this range (they never squash the chart)
   if (!isFinite(lo)) return;
   const pad = isFoot ? Math.max((hi - lo) * 0.03, lo * 0.0002) : Math.max((hi - lo) * 0.08, lo * 0.0005);
@@ -1266,7 +1321,10 @@ function drawOne(p, cv, v, isFoot){
   v.chartY = [lo, hi];
   const y = v => 8 + (hi - v) / (hi - lo) * (plotH - 8);
   const x0 = plotW - bars.length * cw;
-  const xOf = t0 => x0 + ((t0 - (bars.length ? bars[0][0] : 0)) / span) * cw + cw / 2;
+  // candles sit by index (gaps overnight / weekends take no room), so anything placed by time goes through the
+  // candle it belongs to: VWAP, bubbles, call markers
+  const bucketOf = isDaily ? (t => t) : bucketFn(tf), kOf = new Map(bars.map((b, i) => [b[0], i]));
+  const xOf = t0 => { const k = kOf.get(isDaily ? t0 : bucketOf(t0)); return k == null ? null : x0 + k * cw + cw / 2; };
 
   // grid + a real price scale on the right, at round prices, lined up with the candles
   g.strokeStyle = C.grid; g.lineWidth = 1;
@@ -1308,7 +1366,10 @@ function drawOne(p, cv, v, isFoot){
 
   // your levels: band + line + label
   const tickOf = v => v >= 1 ? 0.01 : 0.0001;
+  const exitOrders = (d.orders || []).filter(o => o.role && o.role !== "entry" && o.role !== "flatten" && o.role !== "close");
+  const bracketOn = !!(d.position && d.position.qty && exitOrders.length);
   for (const l of (isFoot ? [] : d.user_levels)){   // the footprint window shows the footprint, nothing else
+    if (bracketOn && (l.role === "stop" || l.role === "target")) continue;
     const dl = p.dragLevel && p.dragLevel.role === l.role && Math.abs(p.dragLevel.from - l.price) < 1e-6;
     const lp = dl ? p.dragLevel.price : l.price;
     if (lp < lo || lp > hi) continue;
@@ -1322,7 +1383,8 @@ function drawOne(p, cv, v, isFoot){
     // readable on any tag colour: white text on a dark tag, dark text on a light one
     const _n = parseInt(col.slice(1, 7), 16), _lum = 0.299 * (_n >> 16) + 0.587 * ((_n >> 8) & 255) + 0.114 * (_n & 255);
     g.fillStyle = _lum > 140 ? "#0c0c0d" : "#ffffff"; g.font = "bold 11px ui-monospace, Menlo, Consolas, monospace";
-    g.fillText(`${l.label} ${px(lp)}`.slice(0, 13), plotW + 3, yy + 4); g.font = "11px ui-monospace, Menlo, Consolas, monospace";
+    const _p = px(lp), _room = Math.max(0, 12 - _p.length);
+    g.fillText(`${_room ? l.label.slice(0, _room) + " " : ""}${_p}`, plotW + 3, yy + 4); g.font = "11px ui-monospace, Menlo, Consolas, monospace";
   }
 
   const clean = isFoot || store.get("clean", true);
@@ -1374,11 +1436,12 @@ function drawOne(p, cv, v, isFoot){
   // candles (hollow when the footprint is on, so the cells stay readable)
   const foot = !isDaily && (isFoot || store.get("foot." + p.id, false)) && (d.footprint || []).length;
   // Dan's MA pack, BB and LR: computed on the full aggregated history, drawn for the visible slice
+  // the bar under the cursor (or the last one), for the data window, whatever else is drawn
+  const hk = (v.cross && v.cross[0] < plotW) ? Math.max(0, Math.min(bars.length - 1, Math.floor((v.cross[0] - x0) / cw))) : bars.length - 1;
+  p.dataRows = []; p.dataBar = bars[hk] || null; p.dataTf = tf;
   if (!isFoot && !foot && clsAll.length > 1){
     const k0 = all.length - off - bars.length;
     const tags = store.get("matags", true) ? [] : null;
-    const hk = (v.cross && v.cross[0] < plotW) ? Math.max(0, Math.min(bars.length - 1, Math.floor((v.cross[0] - x0) / cw))) : bars.length - 1;
-    p.dataRows = []; p.dataBar = bars[hk] || null; p.dataTf = tf;
     const line = (ser, col, lw, name) => {
       if (name){ const hv = ser[k0 + hk]; p.dataRows.push([name, col, hv == null ? null : hv]); } g.strokeStyle = col; g.lineWidth = lw; g.setLineDash([]); g.beginPath(); let on = false;
       for (let k = 0; k < bars.length; k++){ const v = ser[k0 + k]; if (v == null || !isFinite(v)){ on = false; continue; } const xx = x0 + k * cw + cw / 2, yy = y(v); if (!on){ g.moveTo(xx, yy); on = true; } else g.lineTo(xx, yy); }
@@ -1463,13 +1526,14 @@ function drawOne(p, cv, v, isFoot){
       if (dd !== day){ day = dd; pv = 0; vol = 0; started = false; }
       pv += (b[2] + b[3] + b[4]) / 3 * b[5]; vol += b[5];
       if (!vol || b[0] < firstT || b[0] >= lastT) continue;
-      const vw = pv / vol, x = x0 + (b[0] - firstT) / span * cw + cw / 2;
+      const vw = pv / vol, x = xOf(b[0]);
+      if (x == null){ started = false; continue; }
       if (!started){ g.moveTo(x, y(vw)); started = true; } else g.lineTo(x, y(vw));
       lastVw = vw;
     }
     g.stroke(); g.lineWidth = 1;
     if (lastVw != null){
-      g.fillStyle = "#b48ed6"; g.fillText("VWAP " + lastVw.toFixed(2), W - labelW + 4, y(lastVw) + 4);
+      g.fillStyle = "#b48ed6"; g.fillText("VWAP " + px(lastVw), W - labelW + 4, y(lastVw) + 4);
     }
   }
   g.restore();
@@ -1509,8 +1573,8 @@ function drawOne(p, cv, v, isFoot){
   if (bars.length && !clean){
     const first = bars[0][0], bucket = {};
     for (const [m, price, side, shares] of d.marks){
-      const t0 = Math.floor(m / span) * span;
-      if (t0 < first) continue;
+      const t0 = bucketOf(m);
+      if (t0 < first || !kOf.has(t0)) continue;
       const key = t0 + "|" + price + "|" + side;
       bucket[key] = bucket[key] || [t0, price, side, 0];
       bucket[key][3] += shares;
@@ -1521,24 +1585,63 @@ function drawOne(p, cv, v, isFoot){
       const r = 3 + 11 * Math.sqrt(shares / mx);
       g.fillStyle = side === "bid" ? "rgba(38,208,124,.45)" : "rgba(255,77,94,.45)";
       g.strokeStyle = side === "bid" ? "#3fb56f" : "#d9534f";
-      g.beginPath(); g.arc(xOf(t0), y(price), r, 0, Math.PI * 2); g.fill(); g.stroke();
+      const bx = xOf(t0); if (bx == null) continue;
+      g.beginPath(); g.arc(bx, y(price), r, 0, Math.PI * 2); g.fill(); g.stroke();
     }
     // calls: R = reload, C = cleaned up, P = pulled
     for (const [t, price, label, side] of d.events){
       if (price < lo || price > hi) continue;
-      const t0 = Math.floor(t / span) * span;
-      if (t0 < first) continue;
+      const t0 = bucketOf(t);
+      if (t0 < first || !kOf.has(t0)) continue;
       const letter = label.startsWith("RELOAD") ? "R" : label === "CLEANED UP" ? "C" : "P";
       const col = letter === "C" ? "#e3a83a" : letter === "P" ? "#a48bd6" : side === "bid" ? "#3fb56f" : "#d9534f";
       const xx = xOf(t0), yy = y(price) + (side === "bid" ? 16 : -16);
+      if (xx == null) continue;
       g.fillStyle = col; g.beginPath(); g.arc(xx, yy, 7, 0, Math.PI * 2); g.fill();
       g.fillStyle = "#0c0c0d"; g.font = "bold 10px system-ui"; g.fillText(letter, xx - 3.5, yy + 3.5);
       g.font = "11px ui-monospace, Menlo, Consolas, monospace";
     }
   }
 
-  // your working orders (a grabbed one follows the mouse)
+  // the position's bracket: entry line, stop and target as solid draggable lines with the risk / reward zones and
+  // what each one is worth in dollars. Shown on every chart of that symbol, whichever tab you come back from.
+  if (bracketOn && !isFoot){
+    const pos = d.position, ent = pos.avg_cost, long = pos.qty > 0, qa = Math.abs(pos.qty);
+    const groups = {};
+    for (const o of exitOrders){ if (!o.price) continue; const kind = o.role === "stop" ? "stop" : "tgt"; const key = kind + "|" + o.price;
+      (groups[key] = groups[key] || {kind, price: o.price, qty: 0, ids: []}).qty += +o.qty || 0; groups[key].ids.push(o.id); }
+    const yE = y(ent);
+    for (const gr of Object.values(groups)){
+      const drag = p.dragOrder && gr.ids.includes(p.dragOrder.id), gp = drag ? p.dragOrder.price : gr.price;
+      const yy = y(gp), stop = gr.kind === "stop", col = stop ? "#ff2d55" : "#16c784";
+      g.fillStyle = stop ? "rgba(255,45,85,.10)" : "rgba(22,199,132,.10)";
+      g.fillRect(0, Math.min(yE, yy), plotW, Math.abs(yy - yE));
+      g.strokeStyle = col; g.lineWidth = drag ? 2.5 : 2; g.setLineDash([]);
+      g.beginPath(); g.moveTo(0, yy); g.lineTo(plotW, yy); g.stroke();
+      const pnl = (gp - ent) * gr.qty * (long ? 1 : -1);
+      const tag = `${stop ? "STOP" : "TGT"} ${sz(gr.qty)}  ${pnl >= 0 ? "+" : "−"}$${Math.abs(pnl).toFixed(0)}`;
+      g.font = "bold 11px ui-monospace, Menlo, Consolas, monospace";
+      const tw = g.measureText(tag).width + 26;
+      g.fillStyle = col; g.fillRect(plotW - tw - 4, yy - 9, tw, 18);
+      g.fillStyle = "#ffffff"; g.fillText("≡ " + tag, plotW - tw + 2, yy + 4);   // ≡ = grab here
+      g.fillStyle = col; g.fillRect(plotW, yy - 8, labelW, 16);
+      g.fillStyle = "#ffffff"; g.fillText(px(gp), plotW + 3, yy + 4);
+      g.font = "11px ui-monospace, Menlo, Consolas, monospace";
+    }
+    const openPnl = d.last ? (d.last - ent) * pos.qty : 0;
+    g.strokeStyle = "#1a1a1a"; g.lineWidth = 1.5; g.setLineDash([6, 3]);
+    g.beginPath(); g.moveTo(0, yE); g.lineTo(plotW, yE); g.stroke(); g.setLineDash([]);
+    const etag = `${long ? "LONG" : "SHORT"} ${sz(qa)} @ ${px(ent)}  ${openPnl >= 0 ? "+" : "−"}$${Math.abs(openPnl).toFixed(0)}`;
+    g.font = "bold 11px ui-monospace, Menlo, Consolas, monospace";
+    const ew = g.measureText(etag).width + 12;
+    g.fillStyle = openPnl >= 0 ? "#0b7a4b" : "#b3123a"; g.fillRect(plotW - ew - 4, yE - 9, ew, 18);
+    g.fillStyle = "#ffffff"; g.fillText(etag, plotW - ew + 2, yE + 4);
+    g.fillStyle = "#1a1a1a"; g.fillRect(plotW, yE - 8, labelW, 16); g.fillStyle = "#ffffff"; g.fillText(px(ent), plotW + 3, yE + 4);
+    g.font = "11px ui-monospace, Menlo, Consolas, monospace";
+  }
+  // your working orders (a grabbed one follows the mouse); with a bracket on, its exits are drawn above
   for (const o of (isFoot ? [] : d.orders)){
+    if (bracketOn && exitOrders.includes(o)) continue;
     if (!o.price || o.price < lo || o.price > hi) continue;
     const drag = p.dragOrder && p.dragOrder.id === o.id;
     const yy = y(drag ? p.dragOrder.price : o.price), col = o.action === "BUY" ? "#9fe0bd" : "#e8a3a3";
@@ -1560,8 +1663,7 @@ function drawOne(p, cv, v, isFoot){
   g.fillStyle = C.text;
   const every = Math.max(1, Math.ceil(70 / cw));
   for (let k = 0; k < bars.length; k += every){
-    const dt = new Date(bars[k][0] * 1000);
-    g.fillText(isDaily ? dt.toLocaleDateString("en-US", /[WM]$/.test(String(tf)) ? {month: "short", year: "2-digit"} : {month: "short", day: "numeric"}) : dt.toTimeString().slice(0, 5), x0 + k * cw, H - 4);
+    g.fillText(isDaily ? nyDate(bars[k][0], /[WM]$/.test(String(tf)) ? {month: "short", year: "2-digit"} : {month: "short", day: "numeric"}) : nyHM(bars[k][0]), x0 + k * cw, H - 4);
   }
   // key
   if (!clean){ g.fillStyle = "#7d7f85";
@@ -1581,7 +1683,7 @@ function drawOne(p, cv, v, isFoot){
       g.fillStyle = "#d6d6d3"; g.fillText(px(pr), plotW + 3, cy + 4);
       const k = Math.floor((cx - x0) / cw);
       if (bars[k] && !(store.get("datawin", true) && !isFoot)){   // the data window carries this when it is on
-        const b = bars[k], dt = new Date(b[0] * 1000).toTimeString().slice(0, 5);
+        const b = bars[k], dt = isDaily ? nyDate(b[0], {month: "short", day: "numeric"}) : nyHM(b[0]);
         const txt = `${dt}  O ${px(b[1])} H ${px(b[2])} L ${px(b[3])} C ${px(b[4])}  vol ${kfmt(b[5])}`;
         g.fillStyle = "rgba(17,22,31,.9)"; g.fillRect(6, 4, g.measureText(txt).width + 10, 16);
         g.fillStyle = "#d6d6d3"; g.fillText(txt, 11, 16);
@@ -1628,7 +1730,7 @@ function renderDesk(s){
   rec.disabled = inReplay; document.getElementById("shotBtn").disabled = inReplay; document.getElementById("markBtn").disabled = inReplay;
   const marks = (dk.marks || []).slice().reverse();
   const mkHTML = marks.map(m => `<div class="mk" data-t="${m.t}" data-n="${m.n}" title="${inReplay ? "click to jump here" : "click to add a note"}">
-      <b>${new Date(m.t * 1000).toLocaleTimeString()}</b><span>${esc(m.symbol || "")} ${m.price ? px(m.price) : ""}</span>
+      <b>${nyT(m.t)}</b><span>${esc(m.symbol || "")} ${m.price ? px(m.price) : ""}</span>
       <span class="note">${esc(m.note || "")}</span>${m.shot ? `<a href="/recordings/${esc(m.shot)}" target="_blank" title="open the screenshot">SNAP</a>` : ""}
       <span class="hl">${esc((m.headline || "").slice(0, 70))}</span></div>`).join("") || `<div class="dim">No markers yet. Press M for a marker, P for a screenshot.</div>`;
   if (!inReplay && (!deskList || s.now - deskListT > 15)){ deskListT = s.now; fetch("/api/desk/list").then(r => r.json()).then(l => { deskList = l; renderDesk(state); }).catch(() => {}); }
@@ -1636,7 +1738,7 @@ function renderDesk(s){
       <span class="nm">${esc(r.name.replace(".jsonl", ""))}</span><span class="dim">${r.size_mb} MB · ${r.marks.length} marks${r.journal ? " · journal" : ""}</span>
       <a class="btn" href="/api/desk/export?name=${encodeURIComponent(r.name)}" title="download a zip: recording, calls.csv, journal, markers, screenshots and a SUMMARY.md you can hand to an AI">⬇ Export</a>
       ${r.current ? `<span class="dim">recording…</span>` : `<button data-replay="${esc(r.name)}" title="open this recording in the replay desk (new tab)">REPLAY</button><button data-del="${esc(r.name)}" class="del" title="delete this recording, its markers, journal and screenshots">DELETE</button>`}</div>`).join("") || `<div class="dim">No recordings yet.</div>`;
-  document.getElementById("jList").innerHTML = (dk.notes || []).slice().reverse().map(n => `<div class="jn"><b>${new Date(n.t * 1000).toLocaleTimeString()}</b>${esc(n.symbol || "")} ${esc(n.text)}</div>`).join("")
+  document.getElementById("jList").innerHTML = (dk.notes || []).slice().reverse().map(n => `<div class="jn"><b>${nyT(n.t)}</b>${esc(n.symbol || "")} ${esc(n.text)}</div>`).join("")
     || `<div class="dim">No notes yet. What did you see, what did you do, why.</div>`;
   const jl = (deskList || []).filter(r => r.journal && !r.current).slice(0, 5);
   if (jl.length) document.getElementById("jList").innerHTML += `<div class="dim" style="margin-top:6px">Journals: ${jl.map(r => `<a href="/recordings/${esc(r.name.replace(".jsonl", ".journal.md"))}" target="_blank">${esc(r.name.replace(".jsonl", ""))}</a>`).join(" · ")}</div>`;
@@ -1663,7 +1765,7 @@ document.getElementById("deskBody").addEventListener("click", async e => {
   if (rb){ const out = await post("/api/desk/replay", {name: rb.dataset.replay, speed: 1}); if (out.ok){ toast("Replay desk starting on " + out.url, true); setTimeout(() => window.open(out.url, "_blank"), 2500); } else toast(out.reason, false); return; }
   const mk = e.target.closest(".mk");
   if (!mk || e.target.tagName === "A") return;
-  if (state && state.replay){ post("/api/replay", {seek: +mk.dataset.t, paused: false}); toast("Jumping to " + new Date(+mk.dataset.t * 1000).toLocaleTimeString(), true); }
+  if (state && state.replay){ post("/api/replay", {seek: +mk.dataset.t, paused: false}); toast("Jumping to " + nyT(+mk.dataset.t), true); }
   else { const note = prompt("Note for this marker:", mk.querySelector(".note").textContent); if (note != null){ await post("/api/desk/note", {n: +mk.dataset.n, note}); poll(true); } }
 });
 function callWords(a){
@@ -1803,21 +1905,33 @@ document.addEventListener("mousedown", e => {
   window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
 });
 document.addEventListener("mouseup", e => { const el = e.target.closest(".float"); if (el){ const id = el.querySelector(".ztab").dataset.p; if (LAY.floats[id]){ LAY.floats[id] = {l: el.offsetLeft, t: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight}; saveLayoutLocal(); Object.values(charts).forEach(drawChart); } } });
-// gutters
+// gutters: grab any divider and pull or push. While you hold it the divider lights up as a line and only that
+// one column / window moves, once per screen frame (nothing else on the desk is rebuilt), so it follows the mouse
+// smoothly; the charts redraw at the new size as you go. Let go and the size is saved.
 document.querySelectorAll(".gut").forEach(g => g.addEventListener("mousedown", e => {
+  if (e.button !== 0) return;
   e.preventDefault();
-  const k = g.dataset.gut;
-  if (k === "h"){                                   // this column's own top / bottom split: drag up = bigger bottom window
+  const k = g.dataset.gut, horiz = k === "h";
+  let frame = 0, lastEv = null;
+  g.classList.add("grab"); document.body.classList.add("resizing", horiz ? "resizing-h" : "resizing-v");
+  let apply;
+  if (horiz){                                       // this column's own top / bottom split: drag up = bigger bottom window
     const c = g.dataset.col, col = g.parentElement, start = e.clientY, base = LAY.sizes.r2[c] || 300;
-    const move = ev => { LAY.sizes.r2[c] = Math.max(60, Math.min(col.clientHeight - 60, base - (ev.clientY - start))); applyLayout(); };
-    const up = () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); };
-    window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
-    return;
+    const zb = g.nextElementSibling && g.nextElementSibling.classList.contains("zone") ? g.nextElementSibling : col.querySelector(".zone:last-of-type");
+    apply = ev => { const v = Math.round(Math.max(60, Math.min(col.clientHeight - 60, base - (ev.clientY - start)))); LAY.sizes.r2[c] = v; if (zb) zb.style.height = v + "px"; };
+  } else {                                          // a width gutter: sizes the column on its outer side; the middle column takes the rest
+    const sign = k === "c1" ? 1 : -1, start = e.clientX, base = LAY.sizes[k] || 300;
+    const colOf = {c1: "L", c3: "R", c4: "X"}[k], col = document.querySelector(`#work .col[data-col="${colOf}"]`);
+    apply = ev => { const v = Math.round(Math.max(120, Math.min(window.innerWidth * 0.6, base + sign * (ev.clientX - start)))); LAY.sizes[k] = v; if (col) col.style.width = v + "px"; };
   }
-  // a width gutter: drag left or right. It sizes the column on its outer side; the middle column takes up the rest
-  const sign = k === "c1" ? 1 : -1, start = e.clientX, base = LAY.sizes[k] || 300;
-  const move = ev => { LAY.sizes[k] = Math.max(120, Math.min(window.innerWidth * 0.6, base + sign * (ev.clientX - start))); applyLayout(); };
-  const up = () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); };
+  const tick = () => { frame = 0; if (lastEv){ apply(lastEv); Object.values(charts).forEach(drawChart); } };
+  const move = ev => { lastEv = ev; if (!frame) frame = requestAnimationFrame(tick); };
+  const up = () => {
+    window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up);
+    if (frame) cancelAnimationFrame(frame); if (lastEv) apply(lastEv);
+    g.classList.remove("grab"); document.body.classList.remove("resizing", "resizing-h", "resizing-v");
+    applyLayout(); saveLayoutLocal(); Object.values(charts).forEach(drawChart);
+  };
   window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
 }));
 function renderPanelsMenu(){
@@ -2031,7 +2145,7 @@ function renderQuote(d){
   const html2 = html + `<span class="spacer"></span><select class="qscreen" data-qscreen="1" title="chart screen">${[["blue", "BLUE"], ["white", "WHITE"], ["pink", "PINK"], ["custom", "CUSTOM"], ["desk", "DESK"]].map(([v, l]) => `<option value="${v}" ${scr === v ? "selected" : ""}>${l}</option>`).join("")}</select><button class="qtools ${store.get("tools", false) ? "on" : ""}" data-tools="1" title="show / hide the chart toolbar">TOOLS</button>`;
   if (el.dataset.h !== html2){ el.dataset.h = html2; el.innerHTML = html2; }
 }
-let bookUserScroll = 0, bookDragging = false;
+let bookUserScroll = 0, bookDragging = false, bookHold = null;   // bookHold: the row you pressed {side, px, sym}
 P.chart.el.querySelector(".qs").addEventListener("change", e => { if (!e.target.dataset.qscreen) return; store.set("screen", e.target.value); P.chart.last = null; drawChart(charts.chart); renderTools(charts.chart); });
 function setChartTf(tf){ store.set("tf.chart", tf); const c = charts.chart; c.view.offset = 0; c.view.follow = true; c.view.autoY = null; c.view.yLo = c.view.yHi = null; if (typeof tf === "string" && c.view.cw < 6) c.view.cw = 8; drawChart(c); renderTools(c); P.chart.last = null; renderQuote(curData()); }
 P.chart.el.querySelector(".qs").addEventListener("click", e => {
@@ -2099,7 +2213,7 @@ function chartTypeKey(e){
 function renderBook(d){
   const wrap = P.book.pc.querySelector(".ladder-wrap");
   if (!d){ if (P.book.last !== "-"){ P.book.last = "-"; wrap.innerHTML = `<div class="dim" style="padding:8px">${NA}</div>`; } return; }
-  if (bookDragging) return;
+  if (bookDragging || bookHold) return;       // never redraw rows under a pressed mouse button
   const bi = document.getElementById("bigIn"), L = d.ladder || {};
   if (bi && document.activeElement !== bi && L.big_shares != null && bi.dataset.sym + ":" + L.big_shares !== d.symbol + ":" + L.big_shares){ bi.value = Math.round(L.big_shares); bi.dataset.sym = d.symbol; }
   const hint = document.getElementById("bigHint"); if (hint){ const txt = L.big_shares != null ? (L.big_default ? "default" : d.symbol + " only") + " · huge ≥ " + kfmt(L.huge_shares) : ""; if (hint.textContent !== txt) hint.textContent = txt; }
@@ -2137,10 +2251,17 @@ function renderPS60(d){
 /* ---------- PLAY SETUP: pivot, stop, MP level (the target), optional 2nd entry — everything derives from it */
 const SU = {dirty: false, msg: "", saving: false};
 const SETUPS = ["Macro break (60m supply)", "Macro breakdown (60m demand)", "Large MP", "Second entry", "Remount", "Sneaky pivot", "50-day breakout", "50-day breakdown", "200-day break", "MA bounce", "MA rejection", "Gap and go", "Gap fill", "Squeeze", "Capitulation bounce", "Range break", "Scalp", "Other"];
+// shares within BOTH your caps: max shares per order and max dollars per order
+function capShares(n, price){
+  const t = (state && state.trading) || {};
+  let cap = t.max_shares || Infinity;
+  if (t.max_dollars && price > 0) cap = Math.min(cap, Math.floor(t.max_dollars / price));
+  return Math.max(0, Math.min(n, cap));
+}
 const setupSel = (id, cur, extra) => `<select ${id ? `id="${id}"` : ""} ${extra || ""}><option value="">— setup —</option>${SETUPS.map(x => `<option value="${x}" ${cur === x ? "selected" : ""}>${x}</option>`).join("")}</select>`;
 function riskDollars(){ return +store.get("riskDollars", 100) || 0; }
 function suFields(){
-  const f = {}; for (const k of ["trigger", "second_entry", "stop", "mp"]){ const el = document.getElementById("su_" + k); if (el) f[k] = el.value.trim(); }
+  const f = {}; for (const k of ["trigger", "second_entry", "stop", "target"]){ const el = document.getElementById("su_" + k); if (el) f[k] = el.value.trim(); }
   const side = document.getElementById("su_side"), notes = document.getElementById("su_notes"), su = document.getElementById("su_setup");
   if (side) f.side = side.value; if (notes) f.notes = notes.value; if (su) f.setup = su.value;
   return f;
@@ -2148,33 +2269,33 @@ function suFields(){
 function suDerive(d, f){
   const n = k => { const v = parseFloat(f[k]); return isNaN(v) || v <= 0 ? null : v; };
   const side = f.side || "long", sgn = side === "long" ? 1 : -1;
-  const pivot = n("trigger"), second = n("second_entry"), stop = n("stop"), mp = n("mp");
+  const pivot = n("trigger"), second = n("second_entry"), stop = n("stop"), mp = n("target");
   const entry = second || pivot || (d && d.last) || null, entryLbl = second ? "2nd entry" : pivot ? "pivot" : "last";
   const risk = entry && stop ? Math.abs(entry - stop) : null;
   const room = mp && pivot ? Math.abs(mp - pivot) : null;                 // MP room: pivot to your MP level
-  const r = risk && room ? room / risk : null;
-  const maxSh = (state && state.trading && state.trading.max_shares) || Infinity;
-  const shares = risk ? Math.min(maxSh, Math.floor(riskDollars() / risk)) : null;
+  const reward = mp && entry ? Math.abs(mp - entry) : null;              // what you make from where you get in
+  const r = risk && reward ? reward / risk : null;
+  const shares = risk ? capShares(Math.floor(riskDollars() / risk), entry) : null;
   const bad = [];
   if (pivot && second && sgn * (second - pivot) <= 0) bad.push("second_entry");
   if (pivot && stop && sgn * (stop - pivot) >= 0) bad.push("stop");
-  if (pivot && mp && sgn * (mp - pivot) <= 0) bad.push("mp");
+  if (pivot && mp && sgn * (mp - pivot) <= 0) bad.push("target");
   return {side, pivot, second, stop, mp, entry, entryLbl, risk, room, r, shares, bad};
 }
 function suDerivedHTML(d, f){
   const x = suDerive(d, f), $ = v => v == null ? NA : "$" + v.toFixed(2);
-  return `<span>MP ROOM</span><span>${x.room != null ? `<span class="gold">${$(x.room)}</span> <span class="dim">PIVOT ${$(x.pivot)} → MP ${$(x.mp)}</span>` : `<span class="dim">NEEDS A PIVOT AND AN MP</span>`}</span>
+  return `<span>MP ROOM</span><span>${x.room != null ? `<span class="gold">${$(x.room)}</span> <span class="dim">PIVOT ${$(x.pivot)} → TARGET ${$(x.mp)}</span>` : `<span class="dim">NEEDS A PIVOT AND A TARGET</span>`}</span>
     <span>RISK / SHARE</span><span>${x.risk ? `${$(x.risk)} <span class="dim">${x.entryLbl} ${$(x.entry)} → stop ${$(x.stop)}</span>` : `<span class="dim">NEEDS A STOP${x.entry ? "" : " AND AN ENTRY"}</span>`}</span>
-    <span>REWARD : RISK</span><span>${x.r ? `<span class="${x.r >= 2 ? "ok" : x.r >= 1 ? "" : "no"}">${x.r.toFixed(1)} R</span> <span class="dim">MP ROOM ÷ RISK</span>` : NA}</span>
+    <span>REWARD : RISK</span><span>${x.r ? `<span class="${x.r >= 2 ? "ok" : x.r >= 1 ? "" : "no"}">${x.r.toFixed(1)} R</span> <span class="dim">${x.entryLbl} → TARGET ÷ RISK</span>` : NA}</span>
     <span>SIZE</span><span>${x.shares != null ? `<span class="gold">${sz(x.shares)} sh</span> <span class="dim">AT $${riskDollars()} RISK</span> <button data-usesize="${x.shares}" style="padding:1px 6px;font-size:10px">TO TICKET</button>` : `<span class="dim">NEEDS A STOP</span>`}</span>
-    ${x.bad.length ? `<span></span><span class="no">${x.bad.map(k => k === "second_entry" ? "2nd entry must be beyond the pivot" : k === "stop" ? (f.side === "short" ? "stop must be above the pivot for a short" : "stop must be below the pivot for a long") : (f.side === "short" ? "MP must be below the pivot for a short" : "MP must be above the pivot for a long")).join(" · ")}</span>` : ""}`;
+    ${x.bad.length ? `<span></span><span class="no">${x.bad.map(k => k === "second_entry" ? "2nd entry must be beyond the pivot" : k === "stop" ? (f.side === "short" ? "stop must be above the pivot for a short" : "stop must be below the pivot for a long") : (f.side === "short" ? "target must be below the pivot for a short" : "target must be above the pivot for a long")).join(" · ")}</span>` : ""}`;
 }
-function suRefresh(){ const el = document.getElementById("suDerived"); if (!el) return; const f = suFields(); el.innerHTML = suDerivedHTML(curData(), f); const x = suDerive(curData(), f); for (const k of ["second_entry", "stop", "mp"]){ const i = document.getElementById("su_" + k); if (i) i.classList.toggle("bad", x.bad.includes(k)); } const b = document.getElementById("suSave"); if (b) b.disabled = SU.saving || x.bad.length > 0; }
+function suRefresh(){ const el = document.getElementById("suDerived"); if (!el) return; const f = suFields(); el.innerHTML = suDerivedHTML(curData(), f); const x = suDerive(curData(), f); for (const k of ["second_entry", "stop", "target"]){ const i = document.getElementById("su_" + k); if (i) i.classList.toggle("bad", x.bad.includes(k)); } const b = document.getElementById("suSave"); if (b) b.disabled = SU.saving || x.bad.length > 0; }
 function renderSetup(d){
   if (!d){ SU.dirty = false; panelHTML("setup", `<div class="dim" style="padding:8px">${NA}</div>`); return; }
   if (SU.dirty && P.setup.pc.querySelector("#suSave") && P.setup.pc.dataset.sym === curSym) return;   // never wipe what the trader is typing
   const p = d.play || {}, v = k => p[k] != null ? p[k] : "";
-  const f = {side: p.side || "long", trigger: v("trigger"), second_entry: v("second_entry"), stop: v("stop"), mp: p.target != null ? p.target : v("mp"), notes: p.notes || ""};
+  const f = {side: p.side || "long", trigger: v("trigger"), second_entry: v("second_entry"), stop: v("stop"), target: p.target != null ? p.target : v("mp"), notes: p.notes || ""};
   const inp = (k, ph) => `<input id="su_${k}" type="number" step="0.01" min="0" value="${f[k]}" placeholder="${ph}">`;
   const html = `<div class="ticket setup">
     <div class="hdr"><span><b>${esc(d.symbol)}</b> PLAY</span><span>LAST ${px(d.last)}</span></div>
@@ -2182,7 +2303,7 @@ function renderSetup(d){
     <label>PIVOT</label>${inp("trigger", "")}
     <label>2ND ENTRY</label>${inp("second_entry", "optional")}
     <label>STOP</label>${inp("stop", "")}
-    <label>MP</label>${inp("mp", "the level the move runs to")}
+    <label>TARGET</label>${inp("target", "your take profit")}
     <label>RISK $</label><div class="row"><input id="su_risk" type="number" step="10" min="0" value="${riskDollars()}"><span class="dim" style="font-size:10.5px">PER TRADE</span></div>
     <label>SETUP</label>${setupSel("su_setup", p.setup || "", 'title="what kind of PS60 play this is; every trade on it is filed under this in the journal"')}
     <label>NOTES</label><input id="su_notes" type="text" maxlength="200" value="${esc(f.notes)}" placeholder="notes">
@@ -2259,19 +2380,27 @@ function renderOrders(s){
 /* ---------- order ticket */
 const TK = {side: "BUY", type: "LMT", tif: "DAY", qty: null, inflight: false, log: []};
 function tkNonce(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
-function renderTicket(s, d){
+function renderTicket(s, d, force){
+  // the price in the ticket belongs to ONE symbol: switching symbols clears it (never send AAPL's price on SOFI)
+  if (TK.sym !== curSym){ TK.sym = curSym; TK.px = null; TK.aux = null; force = true; }
+  // never rebuild the ticket under your fingers: while you are typing in it, only the quote line updates
+  const ae = document.activeElement;
+  if (!force && ae && P.ticket.el.contains(ae) && /^(INPUT|SELECT)$/.test(ae.tagName)){
+    const q = document.getElementById("tkQuote"); if (q && d) q.textContent = `${px(d.bid)} / ${px(d.ask)}`;
+    return;
+  }
   const t = s.trading || {}, on = canTrade();
   if (TK.qty == null) TK.qty = t.default_shares || 100;
   const allowMkt = !!(t.allow_market);
   const price = d ? (TK.side === "BUY" ? d.bid : d.ask) : null;
   const html = `<div class="ticket">
-    <label>SYMBOL</label><div class="val" style="color:var(--gold);font-weight:800;font-size:14px">${esc(curSym || NA)} <span class="dim" style="font-size:11px;font-weight:400">${d ? `${px(d.bid)} / ${px(d.ask)}` : ""}</span></div>
+    <label>SYMBOL</label><div class="val" style="color:var(--gold);font-weight:800;font-size:14px">${esc(curSym || NA)} <span class="dim" id="tkQuote" style="font-size:11px;font-weight:400">${d ? `${px(d.bid)} / ${px(d.ask)}` : ""}</span></div>
     <label>SIDE</label><div class="sides"><button class="b ${TK.side === "BUY" ? "on" : ""}" data-side="BUY">BUY</button><button class="s ${TK.side === "SELL" ? "on" : ""}" data-side="SELL">SELL</button></div>
     <label>QTY</label><div class="row"><button class="qbtn" data-q="-100">−</button><input id="tkQty" type="number" min="1" step="100" value="${TK.qty}"><button class="qbtn" data-q="100">+</button><button class="qbtn" data-q="set:100">100</button><button class="qbtn" data-q="set:500">500</button></div>
     <label>TYPE</label><select id="tkType"><option value="LMT" ${TK.type === "LMT" ? "selected" : ""}>LIMIT</option><option value="STP LMT" ${TK.type === "STP LMT" ? "selected" : ""}>STOP LIMIT</option><option value="MKT" ${TK.type === "MKT" ? "selected" : ""} ${allowMkt ? "" : "disabled"}>MARKET${allowMkt ? "" : " · DISABLED"}</option><option value="STP" ${TK.type === "STP" ? "selected" : ""} ${allowMkt ? "" : "disabled"}>STOP${allowMkt ? "" : " · DISABLED"}</option></select>
-    ${TK.type !== "MKT" ? `<label>${TK.type === "STP" ? "STOP" : "LIMIT"}</label><div class="row"><input id="tkPx" type="number" step="0.01" value="${TK.px != null ? TK.px : (price != null ? price : "")}"><button data-px="bid">bid</button><button data-px="ask">ask</button><button data-px="mid">mid</button><button data-px="last">last</button></div>` : ""}
+    ${TK.type !== "MKT" ? `<label>${TK.type === "STP" ? "STOP" : "LIMIT"}</label><div class="row"><input id="tkPx" type="number" step="${price != null && price < 1 ? "0.0001" : "0.01"}" value="${TK.px != null ? TK.px : (price != null ? price : "")}"><button data-px="bid">bid</button><button data-px="ask">ask</button><button data-px="mid">mid</button><button data-px="last">last</button></div>` : ""}
     ${TK.type === "STP LMT" ? `<label>STOP</label><div class="row"><input id="tkAux" type="number" step="0.01" value="${TK.aux != null ? TK.aux : ""}" placeholder="stop price"></div>` : ""}
-    <label>RISK $</label><div class="risk"><input id="tkRisk" type="number" step="10" min="0" value="${riskDollars()}"><span class="out">${(() => { const stop = d && d.play && d.play.stop, ent = TK.px != null ? TK.px : price; if (!stop || !ent) return `<span class="dim">NO STOP</span>`; const r = Math.abs(ent - stop); if (r < 0.005) return `<span class="dim">entry = stop</span>`; const n = Math.min(t.max_shares || Infinity, Math.floor(riskDollars() / r)); return `${sz(n)} sh <span class="dim">· $${r.toFixed(2)}/sh</span> <button data-q="set:${Math.max(1, n)}" style="padding:1px 6px;font-size:10px">SIZE</button>`; })()}</span></div>
+    <label>RISK $</label><div class="risk"><input id="tkRisk" type="number" step="10" min="0" value="${riskDollars()}"><span class="out">${(() => { const stop = d && d.play && d.play.stop, ent = TK.px != null ? TK.px : price; if (!stop || !ent) return `<span class="dim">NO STOP</span>`; const r = Math.abs(ent - stop); if (r < tickOfPx(ent) / 2) return `<span class="dim">entry = stop</span>`; const n = capShares(Math.floor(riskDollars() / r), ent); return `${sz(n)} sh <span class="dim">· $${r.toFixed(2)}/sh</span> <button data-q="set:${Math.max(1, n)}" style="padding:1px 6px;font-size:10px">SIZE</button>`; })()}</span></div>
     <label>TIF</label><select id="tkTif"><option ${TK.tif === "DAY" ? "selected" : ""}>DAY</option><option ${TK.tif === "GTC" ? "selected" : ""}>GTC</option><option ${TK.tif === "IOC" ? "selected" : ""}>IOC</option></select>
     <div class="opts"><label><input type="checkbox" id="tkBracket" ${t.bracket ? "checked" : ""}> stop+target</label><label><input type="checkbox" id="tkScale" ${t.scale ? "checked" : ""}> PS60 exits</label></div>
     <div class="go"><button class="tx ${TK.side === "BUY" ? "b" : "s"}" id="tkGo" ${on && d && !TK.inflight ? "" : "disabled"}>${TK.inflight ? "SENDING…" : "TRANSMIT " + TK.side}</button><button id="tkCxl" ${d && d.orders && d.orders.length ? "" : "disabled"} class="danger">CANCEL ALL</button></div>
@@ -2279,7 +2408,7 @@ function renderTicket(s, d){
     <div class="st">${TK.log.slice(0, 5).map(l => `<div>${esc(l)}</div>`).join("")}</div></div>`;
   panelHTML("ticket", html);
 }
-function tkNote(txt){ TK.log.unshift(new Date().toLocaleTimeString() + " " + txt); TK.log = TK.log.slice(0, 20); P.ticket.last = null; renderTicket(state, curData()); }
+function tkNote(txt){ TK.log.unshift(nyT(Date.now() / 1000) + " " + txt); TK.log = TK.log.slice(0, 20); P.ticket.last = null; renderTicket(state, curData(), true); }
 async function transmit(){
   const d = curData(), t = T();
   if (TK.inflight) return;
@@ -2287,20 +2416,21 @@ async function transmit(){
   const pxEl = document.getElementById("tkPx"), auxEl = document.getElementById("tkAux");
   const price = pxEl ? +pxEl.value : null, aux = auxEl ? +auxEl.value : null;
   if (!d){ tkNote("no symbol"); return; }
+  if (d.symbol !== TK.sym){ tkNote("symbol changed — check the price and send again"); return; }
   if (!(t.can_trade && t.armed)){ tkNote("blocked: " + whyNot()); return; }
   if (!(qty > 0)){ tkNote("quantity must be positive"); return; }
   if (type !== "MKT" && !(price > 0)){ tkNote("price required"); return; }
   if (type === "STP LMT" && !(aux > 0)){ tkNote("stop price required"); return; }
   if (!d.bid && !d.ask && !d.last){ tkNote("no quote for " + d.symbol + " — not sending"); return; }
   const send = async () => {
-    TK.inflight = true; P.ticket.last = null; renderTicket(state, d);
+    TK.inflight = true; P.ticket.last = null; renderTicket(state, d, true);
     const nonce = tkNonce();
     try {
       const out = await post("/api/trade/order", {symbol: d.symbol, action: TK.side, price, qty, type, aux, tif, nonce, bracket: document.getElementById("tkBracket").checked});
       tkNote(out.ok ? "SUBMITTED #" + out.id + " " + out.sent + " — waiting for IBKR acknowledgement" : "REJECTED: " + (out.reason || ""));
       toast(out.ok ? "Submitted: " + out.sent : "Rejected: " + out.reason, out.ok);
     } catch (e) { tkNote("send failed: " + e.message); }
-    TK.inflight = false; P.ticket.last = null; renderTicket(state, d); poll(true);
+    TK.inflight = false; P.ticket.last = null; renderTicket(state, d, true); poll(true);
   };
   if (t.one_click) return send();
   confirmBox(`${TK.side} ${sz(qty)} ${d.symbol} ${type}${type !== "MKT" ? " @ " + px(price) : ""}${aux ? " stop " + px(aux) : ""}`, `about $${sz(Math.round(qty * (price || d.last || 0)))} · ${tif}` + (d.ps60 && d.ps60.grade === "PASS" ? ` · PS60 PASS: ${d.ps60.why}` : ""), TK.side === "BUY" ? "b" : "s", send);
@@ -2309,7 +2439,7 @@ P.ticket.el.addEventListener("click", e => {
   const d = curData();
   const sb = e.target.closest("button[data-side]"); if (sb){ TK.side = sb.dataset.side; TK.px = null; P.ticket.last = null; renderTicket(state, d); return; }
   const qb = e.target.closest("button[data-q]"); if (qb){ const v = qb.dataset.q; TK.qty = v.startsWith("set:") ? +v.slice(4) : Math.max(1, (+document.getElementById("tkQty").value || 0) + +v); P.ticket.last = null; renderTicket(state, d); return; }
-  const pb = e.target.closest("button[data-px]"); if (pb && d){ const m = pb.dataset.px; TK.px = m === "bid" ? d.bid : m === "ask" ? d.ask : m === "last" ? d.last : (d.bid && d.ask ? +((d.bid + d.ask) / 2).toFixed(2) : d.last); P.ticket.last = null; renderTicket(state, d); return; }
+  const pb = e.target.closest("button[data-px]"); if (pb && d){ const m = pb.dataset.px; TK.px = m === "bid" ? d.bid : m === "ask" ? d.ask : m === "last" ? d.last : (d.bid && d.ask ? snapPx((d.bid + d.ask) / 2) : d.last); P.ticket.last = null; renderTicket(state, d, true); return; }
   if (e.target.id === "tkGo") transmit();
   if (e.target.id === "tkCxl" && d) cancelAll(d.symbol);
 });
@@ -2347,7 +2477,16 @@ P.ps60.el.addEventListener("click", async e => { const b = e.target.closest("but
   wrap.addEventListener("dragend", () => { bookDragging = false; });
   wrap.addEventListener("dragover", e => { const row = e.target.closest("tr"); if (row && row.querySelector("td.px")) e.preventDefault(); });
   wrap.addEventListener("drop", async e => { const row = e.target.closest("tr"); const data = e.dataTransfer.getData("text/plain"); if (!row || !data.startsWith("order:")) return; e.preventDefault(); const cell = row.querySelector("td.act"); if (!cell) return; const out = await post("/api/trade/modify", {id: +data.slice(6), price: +cell.dataset.px}); toast(out.ok ? "Moved to " + px(out.price) : "Move blocked: " + (out.reason || ""), out.ok); });
-  wrap.addEventListener("click", e => { if (bookDragging) return; const chip = e.target.closest(".chip[data-id]"); if (chip){ cancelMine(+chip.dataset.id); return; } const cell = e.target.closest("td.act"); const d = curData(); if (cell && d) sendOrder(d.symbol, cell.dataset.act, +cell.dataset.px); });
+  // the price is taken when you PRESS the button, and the ladder holds still until you let go: a ladder that
+  // re-centres under the mouse can never turn your click into a different price
+  wrap.addEventListener("mousedown", e => { if (e.button !== 0) return; const cell = e.target.closest("td.act"); const d = curData();
+    bookHold = cell && d ? {side: cell.dataset.act, px: +cell.dataset.px, sym: d.symbol, cell} : {cell: null}; });
+  window.addEventListener("mouseup", () => setTimeout(() => { bookHold = null; }, 0));
+  wrap.addEventListener("mouseleave", () => { if (bookHold && !bookHold.cell) bookHold = null; });
+  wrap.addEventListener("click", e => { if (bookDragging) return; const h = bookHold; const chip = e.target.closest(".chip[data-id]"); if (chip){ if (chip.dataset.id && chip.dataset.id !== "null") cancelMine(+chip.dataset.id); return; }
+    const cell = e.target.closest("td.act"); const d = curData();
+    if (!cell || !d || !h || h.cell !== cell || h.sym !== d.symbol) return;   // pressed one row, released on another: nothing
+    sendOrder(h.sym, h.side, h.px); });
 }
 
 /* ---------- hotkeys: configurable, dangerous ones unassigned until you set them */
@@ -2381,8 +2520,8 @@ function runHotkey(e){
     case "focusTicket": showPanel("ticket"); if (q) q.focus(); break;
     case "qtyUp": TK.qty = (TK.qty || 0) + 100; P.ticket.last = null; renderTicket(state, d); break;
     case "qtyDown": TK.qty = Math.max(1, (TK.qty || 0) - 100); P.ticket.last = null; renderTicket(state, d); break;
-    case "buy": if (d){ TK.side = "BUY"; TK.px = chartPrice(charts.chart) || chartPrice(charts.foot) || d.bid; P.ticket.last = null; renderTicket(state, d); transmit(); } break;
-    case "sell": if (d){ TK.side = "SELL"; TK.px = chartPrice(charts.chart) || chartPrice(charts.foot) || d.ask; P.ticket.last = null; renderTicket(state, d); transmit(); } break;
+    case "buy": if (d){ TK.side = "BUY"; TK.px = chartPrice(charts.chart) || chartPrice(charts.foot) || d.bid; P.ticket.last = null; renderTicket(state, d, true); transmit(); } break;
+    case "sell": if (d){ TK.side = "SELL"; TK.px = chartPrice(charts.chart) || chartPrice(charts.foot) || d.ask; P.ticket.last = null; renderTicket(state, d, true); transmit(); } break;
     case "cancelSel": if (selOrder) cancelMine(selOrder); else toast("select an order first", false); break;
     case "cancelSym": if (d) cancelAll(d.symbol); break;
     case "flatten": if (d) flatten(d.symbol); break;
@@ -2444,7 +2583,7 @@ function renderFlow(s){
   const typ = p => p.kind === "sweep" ? `<b class="ic o"></b>S` : p.kind === "block" ? `<b class="ic sq"></b>B` : p.kind === "split" ? `<b class="ic eq">=</b>S` : `<b class="ic dot"></b>T`;
   const html = rows.length ? rows.map(p => { const d = new Date(p.t * 1000), cp = p.cp === "C" ? "C" : "P";
     return `<div class="fl ${cp === "C" ? "c" : "p"} ${p.away ? "away" : ""}" title="${p.side === "ask" ? "bought at the ask" : p.side === "bid" ? "sold at the bid" : "mid"}${p.otm_pct != null ? ` · ${p.otm_pct > 0 ? p.otm_pct.toFixed(1) + "% out of the money" : Math.abs(p.otm_pct).toFixed(1) + "% in the money"}` : ""}">
-      <div class="tm">${d.toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"})}</div>
+      <div class="tm">${nyHM(p.t)}</div>
       <div class="top"><span class="tk">${esc(p.symbol)}</span><span class="prem">${kfmt$(p.premium)}</span><span class="dots ${p.side === "ask" ? "a" : ""}">${p.kind === "sweep" || p.kind === "split" ? "<i></i><i></i>" : p.kind === "block" ? "<i></i>" : ""}</span>${p.away ? `<span class="aw">WAYS AWAY</span>` : ""}</div>
       <div class="cols"><span><i>EXP</i>${exp(p.expiry)}</span><span><i>STRIKE</i>${strike(p.strike)}</span><span><i>C/P</i>${cp}</span><span><i>SPOT</i>${p.spot != null ? (+p.spot).toFixed(2) : NA}</span><span><i>TYPE</i><span class="ty">${typ(p)}</span></span><span><i>DETAILS</i>${sz(p.size)} @ ${p.price != null ? p.price.toFixed(2) : NA}</span></div></div>`; }).join("")
     : `<div class="dim" style="padding:10px">${(s.flow || []).length ? "Nothing matches the filter." : (s.connection && s.connection.state === "DEMO" ? "Practice flow is warming up." : "No option flow. Add your Quant Data key in SETTINGS, Quant Data, then RESTART NOW.")}</div>`;
@@ -2472,8 +2611,8 @@ function flowWords(a){
 function renderTrades(s){
   const el = document.getElementById("jTrades"); if (!el) return;
   const trades = ((s.desk && s.desk.trades) || []).slice().reverse();
-  const html = `<h5>TRADES ${trades.length ? `<span class="dim">${trades.length} · ${trades.reduce((a, t) => a + (t.pnl_pct || 0), 0).toFixed(2)}% total</span>` : ""}</h5>` + (trades.length ? `<table class="grid trades"><tr><th>TIME</th><th>SYM</th><th>SIDE</th><th>QTY</th><th>ENTRY</th><th>EXIT</th><th>P&amp;L %</th><th class="l">SETUP</th><th>GRADE</th><th class="l">FLOW AT ENTRY</th><th class="l">NOTE</th></tr>${trades.map(t => `<tr data-id="${esc(t.id)}">
-      <td class="l">${new Date((t.closed || t.opened) * 1000).toLocaleTimeString()}</td><td class="l">${esc(t.symbol)}</td><td class="${t.side === "long" ? "b" : "s"}">${t.side.toUpperCase()}</td><td>${sz(t.shares || 0)}</td><td>${px(t.entry)}</td><td>${px(t.exit)}</td>
+  const html = `<h5>TRADES ${trades.length ? `<span class="dim">${trades.length} · ${(() => { const v = trades.reduce((a, t) => a + (t.pnl || 0), 0); return (v >= 0 ? "+$" : "−$") + Math.abs(v).toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2}); })()} total · ${trades.filter(t => (t.pnl || 0) > 0).length}W / ${trades.filter(t => (t.pnl || 0) < 0).length}L</span>` : ""}</h5>` + (trades.length ? `<table class="grid trades"><tr><th>TIME</th><th>SYM</th><th>SIDE</th><th>QTY</th><th>ENTRY</th><th>EXIT</th><th>P&amp;L %</th><th class="l">SETUP</th><th>GRADE</th><th class="l">FLOW AT ENTRY</th><th class="l">NOTE</th></tr>${trades.map(t => `<tr data-id="${esc(t.id)}">
+      <td class="l">${nyT(t.closed || t.opened)}</td><td class="l">${esc(t.symbol)}</td><td class="${t.side === "long" ? "b" : "s"}">${t.side.toUpperCase()}</td><td>${sz(t.shares || 0)}</td><td>${px(t.entry)}</td><td>${px(t.exit)}</td>
       <td class="pct ${(t.pnl_pct || 0) >= 0 ? "up" : "dn"}">${t.pnl_pct != null ? (t.pnl_pct >= 0 ? "+" : "") + t.pnl_pct.toFixed(2) + "%" : NA}</td>
       <td class="l">${setupSel("", t.setup, `data-tsetup="${esc(t.id)}"`)}</td>
       <td><select data-tgrade="${esc(t.id)}"><option value="">—</option>${["A+", "A", "B", "C", "F"].map(g => `<option ${t.grade === g ? "selected" : ""}>${g}</option>`).join("")}</select></td>
@@ -2560,7 +2699,9 @@ function renderStatus(s){
   renderLeds(s);
   document.querySelector("#stBuild b").textContent = PAGE_BUILD || "—";
   // an old tab left open from a previous run: reload it onto the build the server is now serving
-  if (s.build && PAGE_BUILD && s.build !== PAGE_BUILD && !window._reloading){ window._reloading = true; toast("New build " + s.build + " is running: reloading", true); setTimeout(() => location.reload(), 800); }
+  // only onto a NEWER build, and only once per build (a page newer than the server never loops)
+  let _tried = null; try { _tried = sessionStorage.getItem("tedReloadedFor"); } catch (e) {}
+  if (s.build && PAGE_BUILD && s.build > PAGE_BUILD && _tried !== s.build && !window._reloading){ window._reloading = true; try { sessionStorage.setItem("tedReloadedFor", s.build); } catch (e) {} toast("New build " + s.build + " is running: reloading", true); setTimeout(() => location.reload(), 800); }
   const c = s.connection, t = s.trading || {};
   const led = document.querySelector("#stConn .led"), cls = c.state === "CONNECTED" ? "ok" : ["CONNECTING", "REPLAY", "DEMO"].includes(c.state) ? "warn" : "bad";
   led.className = "led " + cls; document.querySelector("#stConn b").textContent = c.state + (c.detail && c.state !== "CONNECTED" ? " · " + c.detail.slice(0, 40) : "");
@@ -2570,7 +2711,7 @@ function renderStatus(s){
   document.querySelector("#stLadders b").textContent = `${s.depth.length}/${s.slots}`;
   document.getElementById("stRec").innerHTML = s.desk && s.desk.recording ? `<span class="led bad"></span>REC <b>${fmtDur(s.now - (s.desk.started || s.now))}</b>` : "";
   if (t.pnl) document.querySelector("#stLoss b").textContent = `${t.pnl.total >= 0 ? "+" : "−"}$${sz(Math.abs(t.pnl.total).toFixed(0))} / −$${sz(t.max_daily_loss || 0)}`;
-  document.getElementById("stClock").textContent = new Date().toLocaleTimeString();
+  document.getElementById("stClock").textContent = nyT(Date.now() / 1000) + " ET";
   const arm = document.getElementById("armBtn");
   arm.textContent = t.locked ? "LOCKED" : t.armed ? "ARMED" : "ARM"; arm.className = t.locked ? "locked" : t.armed ? "armed" : "off"; arm.disabled = !t.can_trade; arm.title = t.can_trade ? "" : (t.why_not || "");
   document.getElementById("oneclick").checked = !!t.one_click; document.getElementById("bracket").checked = !!t.bracket; document.getElementById("scale").checked = !!t.scale;
@@ -2580,7 +2721,7 @@ function renderStatus(s){
   const rec = document.getElementById("recBtn"); rec.className = s.desk && s.desk.recording ? "on" : ""; rec.textContent = s.desk && s.desk.recording ? "STOP REC" : "REC";
   const rp = s.replay, rb = document.getElementById("replaybar"); rb.classList.toggle("on", !!rp);
   if (rp){ document.getElementById("rpFile").textContent = rp.file || ""; document.getElementById("rpPlay").textContent = rp.done ? "FINISHED" : rp.paused ? "PLAY" : "PAUSE";
-    if (document.activeElement !== document.getElementById("rpSpeed")) document.getElementById("rpSpeed").value = rp.speed || 5; document.getElementById("rpSpeedV").textContent = (rp.speed || 5) + "×"; document.getElementById("rpPos").textContent = rp.position ? new Date(rp.position * 1000).toLocaleTimeString() : ""; }
+    if (document.activeElement !== document.getElementById("rpSpeed")) document.getElementById("rpSpeed").value = rp.speed || 5; document.getElementById("rpSpeedV").textContent = (rp.speed || 5) + "×"; document.getElementById("rpPos").textContent = rp.position ? nyT(rp.position) : ""; }
 }
 
 /* ---------- the frame: one snapshot in, each panel decides if it changes */
@@ -2607,7 +2748,7 @@ function render(s){
   firstFeed = false;
   speakNew(s);
 }
-let timer = null;
+let timer = null, lastGood = Date.now();
 const BARS = {};   // symbol -> {bars, daily, ver}: the page's own copy of the history
 const HVER = {};   // symbol -> the history version the engine last reported
 async function poll(now){
@@ -2625,14 +2766,22 @@ async function poll(now){
       HVER[d.symbol] = d.hist_ver;
       if (d.bars_full){ BARS[d.symbol] = {bars: d.bars || [], daily: d.daily || [], ver: d.hist_ver}; continue; }
       if (!c){ d.daily = []; continue; }   // only the live tail came: show it, never keep it as the history
+      // the tail must join onto what we hold (no missing minutes); if not, fetch the full history next poll
+      const tb = (d.bars || [])[0], lastC = c.bars.length ? c.bars[c.bars.length - 1][0] : null;
+      if (tb && lastC != null && tb[0] > lastC + 60){ c.ver = -1; d.bars = c.bars.concat(d.bars); d.daily = c.daily; continue; }
       // merge the tail: replace bars we have by timestamp, append new ones
       for (const b of d.bars || []){ const i = c.bars.findIndex(x => x[0] >= b[0]); if (i < 0) c.bars.push(b); else if (c.bars[i][0] === b[0]) c.bars[i] = b; else c.bars.splice(i, 0, b); }
       if (c.bars.length > 2600) c.bars.splice(0, c.bars.length - 2600);
       d.bars = c.bars; d.daily = c.daily;
     }
     render(s);
-  } catch (e){ document.querySelector("#stConn b").textContent = "DASHBOARD LOST CONTACT WITH TWINEY"; document.querySelector("#stConn .led").className = "led bad"; }
-  timer = setTimeout(poll, 500);
+    lastGood = Date.now();
+  } catch (e){ document.querySelector("#stConn b").textContent = "DASHBOARD LOST CONTACT WITH TED"; document.querySelector("#stConn .led").className = "led bad"; }
+  // no answer for 2 s: the lights say so (never green over frozen prices) and the page greys out
+  const lost = Date.now() - lastGood > 2000;
+  document.body.classList.toggle("stale", lost);
+  if (lost) for (const id of ["ledMkt", "ledOpt"]){ const el = document.getElementById(id); if (el){ el.className = "ld red"; el.title = "No answer from TED for " + Math.round((Date.now() - lastGood) / 1000) + " s — prices on screen are NOT live"; } }
+  timer = setTimeout(poll, document.hidden ? 1000 : 250);   // 4 updates a second while you are looking
 }
 
 

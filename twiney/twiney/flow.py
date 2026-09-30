@@ -30,7 +30,8 @@ _ALIASES = {
     "spot": ("spot", "underlying_price", "stock_price", "ref_price", "underlying_last", "spot_price"),
     "side": ("side", "aggressor", "at", "execution_side", "trade_side", "bid_ask"),
     "kind": ("kind", "order_type", "flow_type", "trade_type", "alert_type", "tag", "sweep_type"),
-    "t": ("t", "time", "timestamp", "executed_at", "ts", "datetime", "created_at"),
+    "t": ("t", "time", "timestamp", "executed_at", "ts", "datetime", "created_at", "trade_time", "date_time"),
+    "id": ("id", "trade_id", "tradeId", "uuid", "print_id", "flow_id"),
     "oi": ("oi", "open_interest", "openInterest"),
     "iv": ("iv", "implied_volatility", "impliedVolatility"),
 }
@@ -56,27 +57,52 @@ def _num(v):
         return None
 
 
+NY = "America/New_York"
+
+
+def _scale_epoch(x):
+    """seconds / milliseconds / microseconds / nanoseconds since 1970 -> seconds."""
+    x = float(x)
+    if x > 1e17:
+        return x / 1e9
+    if x > 1e14:
+        return x / 1e6
+    if x > 1e11:
+        return x / 1e3
+    return x
+
+
 def _epoch(v, now):
+    """The print's time, or None when it can't be read (never 'now': a re-sent print must look the same)."""
+    import datetime as _dt
+    from zoneinfo import ZoneInfo
     if v is None:
-        return now
+        return None
     if isinstance(v, (int, float)):
-        return float(v) / 1000.0 if v > 1e11 else float(v)
+        return _scale_epoch(v)
     s = str(v).strip()
     try:
-        return float(s) / 1000.0 if float(s) > 1e11 else float(s)
+        return _scale_epoch(float(s))
     except ValueError:
         pass
-    for fmt in ("%Y-%m-%dT%H:%M:%S.%f%z", "%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%S.%fZ", "%Y-%m-%dT%H:%M:%SZ",
-                "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
-        try:
-            import datetime as _dt
-            d = _dt.datetime.strptime(s, fmt)
-            if d.tzinfo is None:
-                d = d.replace(tzinfo=_dt.timezone.utc)
-            return d.timestamp()
-        except ValueError:
-            continue
-    return now
+    # ISO with more than 6 fractional digits (nanoseconds): keep 6
+    import re
+    s = re.sub(r"(\.\d{6})\d+", r"\1", s)
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    try:
+        d = _dt.datetime.fromisoformat(s.replace(" ", "T", 1) if len(s) > 10 and s[10] == " " else s)
+        if d.tzinfo is None:
+            d = d.replace(tzinfo=ZoneInfo(NY))     # a US vendor's clock time with no zone is New York time
+        return d.timestamp()
+    except ValueError:
+        pass
+    m = re.fullmatch(r"(\d{1,2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?", s)
+    if m:                                          # a bare time of day: today, New York
+        today = _dt.datetime.fromtimestamp(now, ZoneInfo(NY))
+        d = today.replace(hour=int(m.group(1)), minute=int(m.group(2)), second=int(m.group(3) or 0), microsecond=0)
+        return d.timestamp()
+    return None
 
 
 def _expiry_days(v, now):
@@ -84,13 +110,15 @@ def _expiry_days(v, now):
     if v is None:
         return None
     import datetime as _dt
+    from zoneinfo import ZoneInfo
     if isinstance(v, (int, float)):
-        return max(0.0, (float(v) - now) / 86400.0)
+        return max(0.0, (_scale_epoch(v) - now) / 86400.0)
     s = str(v).strip()[:10]
     for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%m/%d/%y", "%Y%m%d"):
         try:
-            d = _dt.datetime.strptime(s, fmt).replace(tzinfo=_dt.timezone.utc)
-            return max(0.0, (d.timestamp() + 16 * 3600 - now) / 86400.0)
+            d = _dt.datetime.strptime(s, fmt)
+            close = _dt.datetime(d.year, d.month, d.day, 16, 0, tzinfo=ZoneInfo(NY))   # options stop trading 4:00 pm ET
+            return max(0.0, (close.timestamp() - now) / 86400.0)
         except ValueError:
             continue
     return None
@@ -103,7 +131,12 @@ def normalize(rec, now=None):
         return None
     ticker = _pick(rec, "ticker")
     strike = _num(_pick(rec, "strike"))
-    cp = str(_pick(rec, "cp") or "").strip().upper()[:1]
+    cp = ""
+    for k in _ALIASES["cp"]:              # "type" can mean SWEEP / BLOCK: take the first field that says call or put
+        v = str(rec.get(k) or "").strip().upper()
+        if v in ("C", "P", "CALL", "PUT", "CALLS", "PUTS"):
+            cp = v[0]
+            break
     if not ticker or not strike or cp not in ("C", "P"):
         return None
     size = _num(_pick(rec, "size")) or 0.0
@@ -113,10 +146,12 @@ def normalize(rec, now=None):
         premium = price * 100.0 * size
     spot = _num(_pick(rec, "spot"))
     side = str(_pick(rec, "side") or "").strip().upper()
-    side = "ask" if side.startswith("A") or side in ("BUY", "ABOVE") else "bid" if side.startswith("B") and side != "BUY" else "mid"
+    side = ("ask" if side.startswith("A") or side in ("BUY", "BOUGHT", "ABOVE", "BULLISH") else
+            "bid" if side.startswith("B") or side in ("SELL", "SOLD", "BELOW", "BEARISH") else "mid")
     kind = str(_pick(rec, "kind") or "").strip().lower()
     kind = "sweep" if "sweep" in kind else "block" if "block" in kind else "split" if "split" in kind else "trade"
-    t = _epoch(_pick(rec, "t"), now)
+    t0 = _epoch(_pick(rec, "t"), now)
+    t = t0 if t0 is not None else now
     exp_raw = _pick(rec, "expiry")
     dte = _expiry_days(exp_raw, now)
     otm = None
@@ -126,7 +161,8 @@ def normalize(rec, now=None):
             "dte": None if dte is None else round(dte, 1), "size": int(size), "price": price,
             "premium": round(premium or 0.0, 2), "spot": spot, "side": side, "kind": kind,
             "otm_pct": None if otm is None else round(otm, 2),
-            "oi": _num(_pick(rec, "oi")), "iv": _num(_pick(rec, "iv"))}
+            "oi": _num(_pick(rec, "oi")), "iv": _num(_pick(rec, "iv")),
+            "t_ok": t0 is not None, "vid": None if _pick(rec, "id") is None else str(_pick(rec, "id"))}
 
 
 class FlowBook:
@@ -170,7 +206,7 @@ class FlowBook:
         prints = self._window(symbol, now, c["window_minutes"])
         for cp in ("C", "P"):
             hits = [p for p in prints if p["cp"] == cp and p["side"] == "ask"
-                    and (p["otm_pct"] is None or p["otm_pct"] >= c["otm_pct"])
+                    and p["otm_pct"] is not None and p["otm_pct"] >= c["otm_pct"]
                     and (p["dte"] is None or p["dte"] <= c["max_dte"])]
             prem = sum(p["premium"] for p in hits)
             if len(hits) >= min_prints and prem >= min_premium:
@@ -191,8 +227,8 @@ class FlowBook:
     def summary(self, symbol, now, minutes=30):
         """Calls vs puts premium (bought at the ask) over the last ``minutes``, plus the unusual flags."""
         prints = self._window(symbol, now, minutes)
-        calls = sum(p["premium"] for p in prints if p["cp"] == "C" and p["side"] != "bid")
-        puts = sum(p["premium"] for p in prints if p["cp"] == "P" and p["side"] != "bid")
+        calls = sum(p["premium"] for p in prints if p["cp"] == "C" and p["side"] == "ask")
+        puts = sum(p["premium"] for p in prints if p["cp"] == "P" and p["side"] == "ask")
         tot = calls + puts
         bias = None if tot < 1 else round((calls - puts) / tot, 2)     # +1 all calls, -1 all puts
         flags = [u for (s, cp), u in self.unusual.items() if s == symbol and now - u["t"] < 3600]
@@ -297,7 +333,13 @@ class QuantDataFeed:
             p = normalize(rec, now)
             if p is None:
                 continue
-            key = (p["symbol"], p["t"], p["strike"], p["cp"], p["size"], p["premium"])
+            # the same print polled twice is one print: the vendor's id, else its time, else the whole record
+            if p.get("vid"):
+                key = ("id", p["vid"])
+            elif p.get("t_ok"):
+                key = (p["symbol"], p["t"], p["strike"], p["cp"], p["size"], p["premium"])
+            else:
+                key = ("rec", json.dumps(rec, sort_keys=True, default=str))
             if key in self.seen_set:
                 continue
             if len(self.seen) == self.seen.maxlen:

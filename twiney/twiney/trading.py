@@ -519,6 +519,17 @@ class Trader:
         else:
             aux = None
         reason = self.gate.check(action, qty, price if order_type != "MKT" else (self.engine.syms[symbol].price() or 0), now, order_type)
+        if not reason and order_type in ("LMT", "STP LMT"):
+            # a limit far through the market is a typo or a stale price (the wrong symbol's), not a trade:
+            # a BUY more than 5% over the offer / a SELL more than 5% under the bid is refused
+            bid, ask = self.engine.syms[symbol].bbo()
+            band = 0.05
+            if action == BUY and ask and price > ask * (1 + band):
+                reason = f"BUY limit {money(price)} is {100 * (price / ask - 1):.1f}% over the offer {money(ask)} — check the price"
+            elif action == SELL and bid and price < bid * (1 - band):
+                reason = f"SELL limit {money(price)} is {100 * (1 - price / bid):.1f}% under the bid {money(bid)} — check the price"
+            if reason:
+                self.gate.blocked.appendleft({"t": now, "action": action, "qty": qty, "price": price, "reason": reason})
         if not reason:
             pos = int(self.broker.position(symbol))
             # entries still working count too: five resting 500-share bids are a 2,500 share position waiting to happen

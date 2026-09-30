@@ -1,6 +1,7 @@
 """Tick-by-tick prints and a plain-language tape read."""
 
 from collections import deque
+from itertools import islice
 
 BUY, SELL, MID = "buy", "sell", "mid"
 
@@ -71,4 +72,4 @@ class Tape:
         }
 
     def recent(self, limit=12):
-        return list(self.prints)[-limit:][::-1]
+        return list(islice(reversed(self.prints), limit))

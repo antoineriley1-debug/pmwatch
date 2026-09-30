@@ -72,6 +72,9 @@ class SymbolState:
         self.remount_last = {}  # (level, kind) -> t of the last call (cooldown)
         self.remount_check_t = 0.0
         self.memory = deque()   # (t, price_key, price, aggressor side, size) for the level memory
+        self.mem_sums = {}      # (price_key, side) -> shares in the memory window, kept as prints come and go
+        self.trap_mem = deque() # the same prints for the trapped-traders window
+        self.trap_sums = {}     # (price_key, side) -> [shares, price x shares, price]
         self.marks = {}         # (minute, price_key, side) -> [price, absorbed shares]
         self.quotes = deque(maxlen=64)   # (t, bid, ask) as the best bid / offer changed: prints are read against it
         self.voice_pending = {}          # (side, price_key) -> size that left, waiting to see if it traded
@@ -96,10 +99,17 @@ class SymbolState:
             b[6] += size
 
     def bar_list(self, limit=None):
+        """Bars as lists. The finished minutes are built once and kept (they don't change unless history lands:
+        hist_ver); only the minute still forming is rebuilt on every call."""
         keys = sorted(self.bars)
-        if limit:
-            keys = keys[-limit:]
-        return [[k] + [round(x, 4) for x in self.bars[k]] for k in keys]
+        if not keys:
+            return []
+        done_key = (len(keys), keys[-2] if len(keys) > 1 else None, self.hist_ver)
+        if getattr(self, "_done_key", None) != done_key:
+            self._done = [[k] + [round(x, 4) for x in self.bars[k]] for k in keys[:-1]]
+            self._done_key = done_key
+        out = self._done + [[keys[-1]] + [round(x, 4) for x in self.bars[keys[-1]]]]
+        return out[-limit:] if limit else out
 
     def price(self):
         last = self.l1["last"]
@@ -247,6 +257,12 @@ class Engine:
             self._clock(t)
             self._rec({"ev": "l1", "t": t, "sym": symbol, "f": field, "v": value})
             self.data_t = t
+            if field == "last" and st.depth_active and st.tape_t is not None and t - st.tape_t < 10:
+                # this symbol has a tape: the price IS the last print, the same print the candle is built from.
+                # IBKR's separate quote stream can lag or lead the tape by a moment; it never moves the price here,
+                # so the candle and the price can't disagree
+                st.l1_t = t
+                return
             st.l1[field] = value      # None = IBKR says there is no bid / offer right now
             st.l1_t = t
             if field in ("bid", "ask"):
@@ -328,9 +344,17 @@ class Engine:
                 cell[1 if rec["side"] == "buy" else 2] += size
                 if len(st.foot) > 240:
                     del st.foot[min(st.foot)]
-            st.memory.append((t, k, price, rec["side"], size))
-            while st.memory and t - st.memory[0][0] > MEMORY_SECONDS:
-                st.memory.popleft()
+            item = (t, k, price, rec["side"], size)
+            st.memory.append(item)
+            key = (k, rec["side"])
+            st.mem_sums[key] = st.mem_sums.get(key, 0.0) + size
+            st.trap_mem.append(item)
+            ts = st.trap_sums.get(key)
+            if ts is None:
+                st.trap_sums[key] = [size, price * size, price]
+            else:
+                ts[0] += size; ts[1] += price * size
+            self._prune_memory(st, t)
             if self.sim_broker is not None:
                 self.sim_broker.on_market(symbol, t)
             marked = False
@@ -342,6 +366,10 @@ class Engine:
                     side = "ask" if tr.side == ASK else "bid"
                     mk = (int(t // BAR_SECONDS) * BAR_SECONDS, k, side)
                     st.marks.setdefault(mk, [price, 0.0])[1] += size
+                    if len(st.marks) > 3000:          # a day of bubbles at most (MARK_MINUTES)
+                        cut = t - MARK_MINUTES * 60
+                        for key in [key for key in st.marks if key[0] < cut]:
+                            del st.marks[key]
                 if label:
                     self._emit(st, tr, label, t)
 
@@ -482,6 +510,11 @@ class Engine:
         with self.lock:
             t = t if t is not None else p.get("t", self.last_t)
             st = self._st(p["symbol"])
+            if p.get("spot") is None and st is not None and st.price():
+                # no spot from the vendor: our own last price says how far out of the money it is
+                sp = st.price()
+                p["spot"] = sp
+                p["otm_pct"] = round(((p["strike"] - sp) if p["cp"] == "C" else (sp - p["strike"])) / sp * 100.0, 2)
             self._clock(t)
             self._rec({"ev": "flow", "t": t, "p": p})
             self.flow.add(p)
@@ -647,7 +680,7 @@ class Engine:
                 if val != p.get(role):
                     if role == "trigger" and val is None:
                         continue
-                    self.set_play_level(symbol, role, val, t)
+                    self.set_play_level(symbol, role, val, t, source="PLAY SETUP")
             p["mp"] = p.get("target")        # MP is the level: one number, two names
             st.invalidation_armed = False   # new stop / target: don't retire the play on the next tick by accident
             self._rec({"ev": "setup", "t": t or self.last_t, "sym": symbol,
@@ -655,7 +688,7 @@ class Engine:
             self._save_plays()
             return True, None
 
-    def set_play_level(self, symbol, role, price, t=None):
+    def set_play_level(self, symbol, role, price, t=None, source="setup"):
         """Set (or clear, with price None) the play's trigger / second_entry / target / stop
         from the chart, re-point the reload trackers, and save plays.json."""
         with self.lock:
@@ -672,6 +705,10 @@ class Engine:
                 st.play["watch"] = False  # a typed-in ticker becomes a real play once it has a pivot
             old = st.play.get(role)
             st.play[role] = price
+            if role == "trigger" and old is not None and price is not None and price_key(old) != price_key(price):
+                # every pivot move leaves a trace: where it was, where it is, and what moved it
+                self._message("warn", f"{symbol}: PIVOT moved {narrative.px(old)} -> {narrative.px(price)} (from {source})",
+                              t or self.last_t, symbol)
             if role == "target":
                 st.play["mp"] = price
             if role in ("trigger", "second_entry"):
@@ -1386,6 +1423,27 @@ class Engine:
                 out.append({"price": play[key], "role": key, "label": label})
         return out
 
+    def _prune_memory(self, st, t):
+        """Drop prints that left the windows, taking them off the running sums (on every print and every tick,
+        so a quiet tape still ages out)."""
+        while st.memory and t - st.memory[0][0] > MEMORY_SECONDS:
+            _t, k, _p, side, size = st.memory.popleft()
+            key = (k, side)
+            v = st.mem_sums.get(key, 0.0) - size
+            if v <= 1e-9:
+                st.mem_sums.pop(key, None)
+            else:
+                st.mem_sums[key] = v
+        tw = self.cfg["trap"]["window_seconds"]
+        while st.trap_mem and t - st.trap_mem[0][0] > tw:
+            _t, k, p, side, size = st.trap_mem.popleft()
+            key = (k, side)
+            ts = st.trap_sums.get(key)
+            if ts is not None:
+                ts[0] -= size; ts[1] -= p * size
+                if ts[0] <= 1e-9:
+                    del st.trap_sums[key]
+
     def _memory_ladder(self, st, t, user_levels, half_rows=12):
         """Price rows around the market, each carrying what happened there.
 
@@ -1407,14 +1465,10 @@ class Engine:
             if k not in keys and abs(k - ck) <= 80 and lv["role"] in ("trigger", "second_entry", "extra"):
                 keys.append(k)
         keys = sorted(set(keys), reverse=True)
-        sold, bought = {}, {}
-        for mt, k, _p, side, size in st.memory:
-            if t - mt > MEMORY_SECONDS:
-                continue
-            if side == "sell":
-                sold[k] = sold.get(k, 0.0) + size
-            elif side == "buy":
-                bought[k] = bought.get(k, 0.0) + size
+        self._prune_memory(st, t)
+        sums = st.mem_sums
+        sold = {k: sums.get((k, "sell"), 0.0) for k in keys}
+        bought = {k: sums.get((k, "buy"), 0.0) for k in keys}
         mine = {}
         for o in self._pending(st.symbol):
             for p_ in (o.get("lmt"), o.get("aux")):
@@ -1484,17 +1538,16 @@ class Engine:
         longs = shorts = 0.0
         l_lo = l_hi = s_lo = s_hi = None
         l_w = s_w = 0.0
-        for mt, k, p, side, size in st.memory:
-            if t - mt > tc["window_seconds"]:
-                continue
+        self._prune_memory(st, t)
+        for (k, side), (size, w, p) in st.trap_sums.items():   # one entry per price, not per print
             if side == "buy" and k > pk:
                 longs += size
-                l_w += p * size
+                l_w += w
                 l_lo = p if l_lo is None else min(l_lo, p)
                 l_hi = p if l_hi is None else max(l_hi, p)
             elif side == "sell" and k < pk:
                 shorts += size
-                s_w += p * size
+                s_w += w
                 s_lo = p if s_lo is None else min(s_lo, p)
                 s_hi = p if s_hi is None else max(s_hi, p)
 
@@ -1599,14 +1652,30 @@ class Engine:
             "hist_ver": st.hist_ver,
             "flow": self.flow.summary(sym, t),
             "daily": [[t0] + [fmt_price(x) for x in st.daily[t0]] + [round(st.daily_vol.get(t0) or 0), 0, 0] for t0 in sorted(st.daily)] if full else None,
-            "footprint": [[m, [[round(c[0], 4), round(c[1]), round(c[2])] for c in sorted(cells.values(), key=lambda c: c[0])]]
-                          for m, cells in sorted(st.foot.items())[-150:]],
+            "footprint": self._footprint(st, t),
             "marks": [[m, fmt_price(v[0]), side, round(v[1])] for (m, _k, side), v in st.marks.items()
-                      if m >= first_bar],
+                      if m >= max(first_bar, t - 390 * 60)],
             "events": [[a["t"], a["price"], a["label"], a["side"]] for a in sym_alerts if a["t"] >= first_bar][:60],
             "health": self._health(st, t),
             "slot_age": round(t - self.slots[sym], 1) if sym in self.slots else None,
         }
+
+    def _footprint(self, st, t):
+        """Footprint cells per minute. A finished minute never changes: it is built once and kept."""
+        cur = int(t // BAR_SECONDS) * BAR_SECONDS
+        cache = st.__dict__.setdefault("_foot_cache", {})
+        out = []
+        for m in sorted(st.foot)[-90:]:
+            row = cache.get(m) if m < cur else None
+            if row is None:
+                row = [m, [[round(c[0], 4), round(c[1]), round(c[2])] for c in sorted(st.foot[m].values(), key=lambda c: c[0])]]
+                if m < cur:
+                    cache[m] = row
+            out.append(row)
+        if len(cache) > 300:
+            for m in sorted(cache)[:-200]:
+                del cache[m]
+        return out
 
     def snapshot(self, t, extra=(), full=None):
         """``full``: symbols the page wants the whole bar history for (None = every pane, as before)."""
@@ -1654,7 +1723,7 @@ class Engine:
                 "extra": extra_panes,
                 "focus": self.focus,
                 "symbols": [p["symbol"] for p in self.plays if p["active"]],
-                "depth": [pn for pn in panes if pn],
+                "depth": [pn["symbol"] for pn in panes if pn],   # the page only counts them; the panes carry the data
                 "trading": self.trader.snapshot(run_watchdog=False) if self.trader else {"mode": "NONE", "can_trade": False,
                                                                         "why_not": "order entry not loaded"},
                 "replay": dict(self.replay) if self.replay else None,
