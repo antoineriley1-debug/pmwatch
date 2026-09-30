@@ -159,7 +159,7 @@ DEFAULTS = {
         # your Quant Data API key goes here and nowhere else (never in chat, recordings or exports)
         "api_key": "",
         "base_url": "https://api.quantdata.us",
-        "flow_path": "/v1/options/flow",
+        "flow_path": "/v1/options/tool/order-flow/consolidated",
         "method": "POST",
         "poll_seconds": 5,
         "limit": 200,
@@ -284,6 +284,9 @@ def build_config(raw=None):
     if cfg["depth"]["rows_displayed"] > cfg["depth"]["rows_requested"]:
         raise ConfigError("depth.rows_displayed cannot exceed depth.rows_requested")
     _check_values(cfg)
+    if cfg["quantdata"].get("flow_path") == "/v1/options/flow":
+        # the old placeholder path, saved before Quant Data's API docs were known: use the documented one
+        cfg["quantdata"]["flow_path"] = DEFAULTS["quantdata"]["flow_path"]
     host = cfg["dashboard"]["host"]
     # this computer's own address only (the page checks every request names it)
     loopback = str(host).strip().lower() in ("127.0.0.1", "localhost", "::1")

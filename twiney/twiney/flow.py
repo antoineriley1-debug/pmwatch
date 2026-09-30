@@ -291,18 +291,36 @@ class QuantDataFeed:
                     self.engine._message("warn", f"Quant Data: {exc}", time.time())
             self.stop_evt.wait(max(2.0, float(self.cfg.get("poll_seconds", 5))))
 
+    def _body(self, now=None):
+        """Quant Data's documented request: a POST with the session date (New York) and an optional filter.
+        One request per poll for the whole market; the watchlist-only view is filtered here, so a long
+        watchlist never costs more requests (the plan allows 240 a minute; this uses 12)."""
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        day = datetime.fromtimestamp(now or time.time(), ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
+        body = {"sessionDate": day}
+        body.update(self.cfg.get("extra_params") or {})
+        return body
+
     def _request(self):
+        import urllib.error
         import urllib.request
         url = self.cfg["base_url"].rstrip("/") + "/" + self.cfg["flow_path"].lstrip("/")
-        body = {"limit": int(self.cfg.get("limit", 200))}
-        if getattr(self.engine, "flow_scope", self.cfg.get("scope", "all")) == "watchlist":
-            body["tickers"] = self.symbols
-        body.update(self.cfg.get("extra_params") or {})
-        req = urllib.request.Request(url, data=json.dumps(body).encode("utf-8"), method=self.cfg.get("method", "POST"),
+        req = urllib.request.Request(url, data=json.dumps(self._body()).encode("utf-8"), method=self.cfg.get("method", "POST"),
                                      headers={"Authorization": f"Bearer {self.cfg['api_key']}",
                                               "Content-Type": "application/json", "Accept": "application/json"})
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            # say what Quant Data said (never the key): 401 = the key, 403 = the plan, 400 = the request
+            why = {401: "key not accepted - check it in SETTINGS", 403: "this key's plan does not include this data",
+                   429: "too many requests"}.get(exc.code, "")
+            try:
+                said = exc.read().decode("utf-8", "replace")[:200]
+            except Exception:
+                said = ""
+            raise RuntimeError(f"HTTP {exc.code}{' (' + why + ')' if why else ''}{': ' + said if said else ''}") from None
 
     @staticmethod
     def _records(payload):
@@ -337,6 +355,8 @@ class QuantDataFeed:
         for rec in reversed(self._records(payload)):          # oldest first
             p = normalize(rec, now)
             if p is None:
+                continue
+            if getattr(self.engine, "flow_scope", self.cfg.get("scope", "all")) == "watchlist" and p["symbol"] not in self.symbols:
                 continue
             # the same print polled twice is one print: the vendor's id, else its time, else the whole record
             if p.get("vid"):
