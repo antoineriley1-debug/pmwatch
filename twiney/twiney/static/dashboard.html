@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20260930-2112">
+<meta name="build" content="20260930-2157">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -222,7 +222,7 @@ td.bars.l .bar-n{float:right;margin-right:3px} td.bars.r .bar-n{margin-left:3px}
 .who.buyer{background:var(--buy);color:#04210f} .who.seller{background:var(--sell);color:#2a0409}
 .who.big{font-size:10px;padding:0 3px;box-shadow:0 0 6px currentColor}
 /* a proven row's brightness IS its conviction (--cv 0..1): ACTIVE bright and breathing, FADING steady, STALE dim */
-.lad tr.rl-ask td{background:rgba(255,77,94,calc(.04 + .16 * var(--cv,1)))} .lad tr.rl-bid td{background:rgba(38,208,124,calc(.04 + .16 * var(--cv,1)))}
+.lad tr.rl-ask td{background:rgba(255,77,94,calc(.10 + .22 * var(--cv,1)))} .lad tr.rl-bid td{background:rgba(38,208,124,calc(.10 + .22 * var(--cv,1)))}
 .lad tr.rl-ask td.px{color:var(--sell);font-weight:800} .lad tr.rl-bid td.px{color:var(--buy);font-weight:800}
 .lad tr.cv-stale td.px{opacity:.55} .lad tr.cv-fading td.px{opacity:.8}
 .who.fading{opacity:.78;box-shadow:none} .who.stale{opacity:.45;box-shadow:none}
@@ -517,6 +517,26 @@ td.bars.l .bar-n{margin-right:1px} td.bars.r .bar-n{margin-left:1px}
 .tl{display:grid;grid-template-columns:auto auto 1fr;gap:6px;padding:3px 2px;border-bottom:1px solid #1c1d20;font:11.5px var(--mono);align-items:start}
 .tl .tm{color:var(--dim);font-size:10.5px} .tl .ic{width:14px;text-align:center} .tl .tx{white-space:normal;line-height:1.35}
 .tl.level .tx{color:var(--gold)} .tl.voice .tx{color:var(--text)} .tl.typed .tx{color:#b8b8b4}
+/* reload buyer / seller: unmistakable on the ladder */
+.lad td.bars.rlw{font:800 9px var(--sans);letter-spacing:.06em;color:#fff;text-align:center;padding:0;overflow:hidden}
+.lad td.bars.rlw.b{background:var(--buy)} .lad td.bars.rlw.s{background:var(--sell)}
+.lad tr.rl-bid td.bsz{background:rgba(63,181,111,.85);color:#fff;font-weight:700} .lad tr.rl-ask td.asz{background:rgba(217,83,79,.85);color:#fff;font-weight:700}
+.lad tr.rl-bid td.px,.lad tr.rl-ask td.px{font-weight:800}
+.lad tr.rl-bid td:first-child{box-shadow:inset 3px 0 0 var(--buy)} .lad tr.rl-ask td:last-child{box-shadow:inset -3px 0 0 var(--sell)}
+.lad tr.flash td{animation:rlflash 0.5s 6}
+@keyframes rlflash{0%,100%{filter:none}50%{filter:brightness(2.2)}}
+/* the banner over the ladder */
+.rlban{display:none;flex-wrap:wrap;gap:4px;padding:3px 6px;background:#0f1012;border-bottom:1px solid #202124}
+.rlban.on{display:flex}
+.rlb{font:800 10px var(--sans);letter-spacing:.08em;padding:2px 7px;border-radius:3px;cursor:pointer;color:#fff;white-space:nowrap}
+.rlb.b{background:var(--buy)} .rlb.s{background:var(--sell)} .rlb.on{opacity:.9} .rlb.up,.rlb.down{animation:rlflash 1.2s infinite}
+/* ladder text size (COLS -> Text size) */
+.ladder-wrap{--ladz:1}
+.lad{font-size:calc(11.5px * var(--ladz))} .lad td{height:calc(18px * var(--ladz))} .lad th{font-size:calc(9px * var(--ladz))}
+.lad td.whoc .who.big,.lad td.whoc .pips,.lad td.whoc .bigx{font-size:calc(9.5px * var(--ladz))} .lad td.bars .bar-n{font-size:calc(10px * var(--ladz))}
+.lad td.act{font-size:calc(9.5px * var(--ladz))} .lad td.flow{font-size:calc(9.5px * var(--ladz))} .lad td.bars.rlw{font-size:calc(9px * var(--ladz))}
+.lad td.px .lt{font-size:calc(7.5px * var(--ladz))}
+.lad.zoomtrim th.act,.lad.zoomtrim td.act{display:none}
 
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
@@ -884,7 +904,7 @@ body.resizing .zbody{pointer-events:none}
 <template id="tplPanels">
   <div class="pnl" data-p="chart"><div class="qs"></div><div class="pc nos"><div class="chart-wrap"><div class="chart-tools"></div><canvas></canvas></div></div></div>
   <div class="pnl" data-p="foot"><div class="pc nos"><div class="chart-wrap"><div class="chart-tools"><span class="dim" style="font-size:10.5px;background:rgba(17,22,31,.85);padding:1px 6px">5m FOOTPRINT · SELLERS HIT BID × BUYERS PAID UP</span></div><canvas></canvas></div></div></div>
-  <div class="pnl" data-p="book"><div class="ladbar"><span>BIG ≥</span><input id="bigIn" type="number" min="100" step="500" title="shares that count as big on this symbol's ladder. Highlighted when showing; ×N = how many separate times it has shown up at that price today"><span class="dim">sh</span><button id="bigReset" title="back to the config default">DEFAULT</button><span class="dim" id="bigHint"></span><span class="spacer"></span><span class="menu" id="colsMenu"><button title="columns">COLS</button><div class="pop" id="colsPop"><h5>LEVEL II COLUMNS</h5><label><input type="checkbox" data-col="trade" checked> BUY / SELL buttons</label><label><input type="checkbox" data-col="bars" checked> flow bars (sold into bid / bought at ask)</label><label><input type="checkbox" data-col="who" checked> reload tags</label><label><input type="checkbox" data-col="flow" checked> option flow marks (where the stock was when big flow hit)</label><div class="dim" style="font-size:10.5px;margin-top:6px">Drag the grip at the right edge of any header to resize. Double-click a grip to reset.</div></div></span></div><div class="pc"><div class="ladder-wrap"></div></div></div>
+  <div class="pnl" data-p="book"><div class="ladbar"><span>BIG ≥</span><input id="bigIn" type="number" min="100" step="500" title="shares that count as big on this symbol's ladder. Highlighted when showing; ×N = how many separate times it has shown up at that price today"><span class="dim">sh</span><button id="bigReset" title="back to the config default">DEFAULT</button><span class="dim" id="bigHint"></span><span class="spacer"></span><span class="menu" id="colsMenu"><button title="columns">COLS</button><div class="pop" id="colsPop"><h5>LEVEL II COLUMNS</h5><label><input type="checkbox" data-col="trade" checked> BUY / SELL buttons</label><label><input type="checkbox" data-col="bars" checked> flow bars (sold into bid / bought at ask)</label><label><input type="checkbox" data-col="who" checked> reload tags</label><label><input type="checkbox" data-col="flow" checked> option flow marks (where the stock was when big flow hit)</label><label style="margin-top:6px">Text size <select data-ladz><option value="1">normal</option><option value="1.2">bigger</option><option value="1.4">biggest (widen the LEVEL II pane)</option></select></label><div class="dim" style="font-size:10.5px;margin-top:6px">Drag the grip at the right edge of any header to resize. Double-click a grip to reset.</div></div></span></div><div class="rlban" id="rlBan"></div><div class="pc"><div class="ladder-wrap"></div></div></div>
   <div class="pnl" data-p="tape"><div class="pc"><div class="p-tape"></div></div></div>
   <div class="pnl" data-p="setup"><div class="pc"></div></div>
   <div class="pnl" data-p="ps60"><div class="pc ps60p"></div></div>
@@ -1050,7 +1070,8 @@ function makeColsResizable(table){
   if (!table || table.dataset.gripped) return;
   table.dataset.gripped = "1";
   const ths = [...table.querySelectorAll("tr:first-child th")], n = ths.length, key = colKey(table);
-  const DEF = ths.map(th => +th.dataset.w || 1), MIN = ths.map(th => +th.dataset.min || 0);
+  const DEF = ths.map(th => +th.dataset.w || 1), zoom = () => parseFloat(getComputedStyle(table).getPropertyValue("--ladz")) || 1;
+  const MIN0 = ths.map(th => +th.dataset.min || 0); let MIN = MIN0.slice();
   let w = store.get(key, null); if (!Array.isArray(w) || w.length !== n || w.some(x => !(x > 0))) w = DEF.slice();
   table.style.tableLayout = "fixed";
   let cg = table.querySelector("colgroup");
@@ -1058,6 +1079,15 @@ function makeColsResizable(table){
   const vis = i => getComputedStyle(ths[i]).display !== "none";
   const OPT = ths.map(th => !!th.dataset.opt);
   const apply = () => {
+    const z = zoom(); MIN = MIN0.map(m => Math.round(m * z));
+    // bigger text needs more width: when the floors no longer fit, the blank BUY / SELL click columns go first
+    // (right-click the chart or use the ticket to trade), so the sizes and prices stay whole and nothing scrolls sideways
+    if (z > 1){
+      const availZ = (table.parentElement && table.parentElement.clientWidth) || table.offsetWidth || 0;
+      table.classList.remove("zoomtrim");
+      const need = MIN.reduce((a, m, i) => a + (OPT[i] || getComputedStyle(ths[i]).display === "none" ? 0 : m), 0);
+      if (need > availZ) table.classList.add("zoomtrim");
+    } else table.classList.remove("zoomtrim");
     // an optional column (the ladder's FLOW) shows only when the pane has room for every floor plus its own
     if (OPT.some(x => x)){
       const avail0 = (table.parentElement && table.parentElement.clientWidth) || table.offsetWidth || 0;
@@ -1448,14 +1478,14 @@ function ladderHTML(L){
     const rfb = r.bid_real ? " rf-" + r.bid_real.label : "", rfa = r.ask_real ? " rf-" + r.ask_real.label : "";
     h += `<tr class="${cls}" data-price="${r.price}" style="--cv:${cv}">
       <td class="act b${dis}" data-act="BUY" data-px="${r.price}" title="${on ? "BUY " + sz(T().default_shares) + " @ " + px(r.price) : whyNot()}">${chips(r, "b") || "BUY"}</td>
-      <td class="bars l">${sw?`<span class="bar sold" style="width:${sw}%"></span>`:""}<span class="bar-n">${kfmt(r.sold)}</span></td>
+      ${pb ? `<td class="bars l rlw b" title="RELOAD BUYER here: ${kfmt(r.sold)} shares have been sold into him at this price">BUYER</td>` : `<td class="bars l">${sw?`<span class="bar sold" style="width:${sw}%"></span>`:""}<span class="bar-n">${kfmt(r.sold)}</span></td>`}
       <td class="whoc l">${whoTag(r,"bid")}</td>
       <td class="sz bsz ${r.bid_big ? (r.bid_big.huge ? "huge" : "big") : ""}${rfb}"${szTitle(r, "bid")}><span class="szn">${r.bid?kfmt(r.bid):""}</span></td>
       <td class="px${r.tags.length ? " tagged" : ""}">${r.tags.length ? `<span class="lt" title="${esc(r.tags.join(" · "))}">${esc(r.tags.map(t => LTAG[t] || t.slice(0, 2)).join(""))}</span>` : ""}${px(r.price)}${(!pb && !pa) ? (knowsTag(r.bid_knows) || knowsTag(r.ask_knows)) : ""}</td>
       <td class="sz asz ${r.ask_big ? (r.ask_big.huge ? "huge" : "big") : ""}${rfa}"${szTitle(r, "ask")}><span class="szn">${r.ask?kfmt(r.ask):""}</span></td>
       <td class="whoc r">${whoTag(r,"ask") || flowDot(r)}</td>
       <td class="flow">${flowCell(r)}</td>
-      <td class="bars r">${bw?`<span class="bar bought" style="width:${bw}%"></span>`:""}<span class="bar-n">${kfmt(r.bought)}</span></td>
+      ${pa ? `<td class="bars r rlw s" title="RELOAD SELLER here: ${kfmt(r.bought)} shares have been bought from him at this price">SELLER</td>` : `<td class="bars r">${bw?`<span class="bar bought" style="width:${bw}%"></span>`:""}<span class="bar-n">${kfmt(r.bought)}</span></td>`}
       <td class="act s${dis}" data-act="SELL" data-px="${r.price}" title="${on ? "SELL " + sz(T().default_shares) + " @ " + px(r.price) : whyNot()}">${chips(r, "s") || "SELL"}</td></tr>`;
   }
   h += `</table><div class="legend">Every row remembers the last ${L.memory_minutes} min. <span class="buy">Green bar</span> = shares sold into the bid there,
@@ -2596,8 +2626,41 @@ function renderBook(d){
   const keep = wrap.scrollTop;
   wrap.innerHTML = html; applyLadCols(wrap.querySelector("table")); makeColsResizable(wrap.querySelector("table")); if (hoverPx != null) ladderHighlight(hoverPx);
   const cur = wrap.querySelector("tr.lastpx") || wrap.querySelector("tr.best-ask");
-  if (cur && Date.now() - bookUserScroll > 8000) wrap.scrollTop = cur.offsetTop - wrap.clientHeight / 2; else wrap.scrollTop = keep;
+  // a proven reloader within a screen of the price stays in view with it: the ladder centres between the two
+  const rl = [...wrap.querySelectorAll("tr.rl-bid, tr.rl-ask")];
+  if (cur && Date.now() - bookUserScroll > 8000){
+    const near = rl.map(r => r.offsetTop).filter(y => Math.abs(y - cur.offsetTop) < wrap.clientHeight * 0.85).sort((a, b) => Math.abs(a - cur.offsetTop) - Math.abs(b - cur.offsetTop))[0];
+    wrap.scrollTop = (near != null ? (cur.offsetTop + near) / 2 : cur.offsetTop) - wrap.clientHeight / 2;
+  } else wrap.scrollTop = keep;
+  // a fresh RELOAD call flashes its row so the eye lands on it
+  const fresh = (state.alerts || []).filter(a => a.symbol === d.symbol && /^RELOAD/.test(a.label) && state.now - a.t < 6);
+  for (const a of fresh){ const row = wrap.querySelector(`tr[data-price="${a.price}"]`); if (row && !row.classList.contains("flash")) row.classList.add("flash"); }
+  rlBanner(wrap, d);
 }
+/* the banner over the ladder: every proven reload buyer / seller on this symbol, where he is, and a click to jump there */
+function rlBanner(wrap, d){
+  const ban = document.getElementById("rlBan"); if (!ban) return;
+  const rows = (d.ladder && d.ladder.rows) || [];
+  const items = [];
+  for (const r of rows){
+    for (const side of ["bid", "ask"]){
+      if (!(r[side + "_state"] === "RELOAD" || r[side + "_proven"])) continue;
+      const el = wrap.querySelector(`tr[data-price="${r.price}"]`);
+      const y = el ? el.offsetTop : null, top = wrap.scrollTop, bot = top + wrap.clientHeight;
+      const where = y == null ? "" : y < top ? "up" : y > bot - 20 ? "down" : "on";
+      const rowsAway = el ? Math.round(Math.abs((y < top ? top - y : y - bot) / (el.offsetHeight || 18))) : 0;
+      items.push({side, price: r.price, n: r[side + "_refills"] || 0, stage: r[side + "_stage"] || "RELOADING", where, rowsAway, knows: r[side + "_knows"] && r[side + "_knows"].knows});
+    }
+  }
+  const html = items.map(i => `<span class="rlb ${i.side === "bid" ? "b" : "s"} ${i.where}" data-jump="${i.price}" title="${i.stage} · reloaded ${i.n}x · click to jump to it">${i.where === "up" ? "▲" : i.where === "down" ? "▼" : "●"} RELOAD ${i.side === "bid" ? "BUYER" : "SELLER"} ${px(i.price)}${i.where !== "on" ? ` · ${i.rowsAway} rows ${i.where}` : ""}${i.knows ? " ⚡" : ""}</span>`).join("");
+  if (ban.dataset.h !== html){ ban.dataset.h = html; ban.innerHTML = html; ban.classList.toggle("on", !!items.length); }
+}
+P.book.el.addEventListener("click", e => {
+  const j = e.target.closest(".rlb[data-jump]"); if (!j) return;
+  const wrap = P.book.pc.querySelector(".ladder-wrap"), row = wrap && wrap.querySelector(`tr[data-price="${j.dataset.jump}"]`);
+  if (row){ bookUserScroll = Date.now(); wrap.scrollTop = row.offsetTop - wrap.clientHeight / 2; row.classList.add("flash"); rlBanner(wrap, curData()); }
+});
+P.book.el.addEventListener("scroll", () => { const wrap = P.book.pc.querySelector(".ladder-wrap"); const d = curData(); if (wrap && d) rlBanner(wrap, d); }, true);
 function renderTape(d){
   const el = P.tape.pc.querySelector(".p-tape");
   if (!d){ el.innerHTML = `<div class="dim" style="padding:8px">${NA}</div>`; P.tape.last = null; return; }
@@ -2625,9 +2688,9 @@ function tapeSpeedHTML(sp){
     <span class="tst">${sp.trend}${ratio != null && sp.trend !== "QUIET" ? ` <em>${ratio.toFixed(1)}x</em>` : ""}</span>
     <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${bars}</svg></div>`;
 }
-function applyLadCols(tbl){ if (!tbl) return; const c = store.get("ladcols", {}); tbl.classList.toggle("notrade", c.trade === false); tbl.classList.toggle("nobars", c.bars === false); tbl.classList.toggle("nowho", c.who === false); tbl.classList.toggle("noflow", c.flow === false); if (tbl._applyCols) tbl._applyCols(); }
-document.getElementById("colsMenu").querySelector("button").addEventListener("click", e => { e.stopPropagation(); const m = document.getElementById("colsMenu"), open = !m.classList.contains("open"); document.querySelectorAll(".menu.open").forEach(x => x.classList.remove("open")); m.classList.toggle("open", open); const c = store.get("ladcols", {}); m.querySelectorAll("input[data-col]").forEach(i => { i.checked = c[i.dataset.col] !== false; }); });
-document.getElementById("colsPop").addEventListener("change", e => { const k = e.target.dataset.col; if (!k) return; const c = store.get("ladcols", {}); c[k] = e.target.checked; store.set("ladcols", c); applyLadCols(P.book.pc.querySelector("table.lad")); });
+function applyLadCols(tbl){ if (!tbl) return; const c = store.get("ladcols", {}); const wrap = tbl.closest(".ladder-wrap"); if (wrap) wrap.style.setProperty("--ladz", String(store.get("ladz", 1))); tbl.classList.toggle("notrade", c.trade === false); tbl.classList.toggle("nobars", c.bars === false); tbl.classList.toggle("nowho", c.who === false); tbl.classList.toggle("noflow", c.flow === false); if (tbl._applyCols) tbl._applyCols(); }
+document.getElementById("colsMenu").querySelector("button").addEventListener("click", e => { e.stopPropagation(); const m = document.getElementById("colsMenu"), open = !m.classList.contains("open"); document.querySelectorAll(".menu.open").forEach(x => x.classList.remove("open")); m.classList.toggle("open", open); const c = store.get("ladcols", {}); m.querySelectorAll("input[data-col]").forEach(i => { i.checked = c[i.dataset.col] !== false; }); const z = m.querySelector("select[data-ladz]"); if (z) z.value = String(store.get("ladz", 1)); });
+document.getElementById("colsPop").addEventListener("change", e => { if (e.target.dataset.ladz != null){ store.set("ladz", +e.target.value || 1); applyLadCols(P.book.pc.querySelector("table.lad")); P.book.last = null; poll(true); return; } const k = e.target.dataset.col; if (!k) return; const c = store.get("ladcols", {}); c[k] = e.target.checked; store.set("ladcols", c); applyLadCols(P.book.pc.querySelector("table.lad")); });
 P.book.el.addEventListener("change", async e => { if (e.target.id !== "bigIn" || !curSym) return; const v = Math.max(100, +e.target.value || 0); const out = await post("/api/ladder", {symbol: curSym, big_shares: v}); toast(out.ok ? curSym + ": big size is now " + sz(v) + " shares" : "Could not set", out.ok); poll(true); });
 P.book.el.addEventListener("click", async e => { if (e.target.id !== "bigReset" || !curSym) return; const out = await post("/api/ladder", {symbol: curSym, big_shares: null}); toast(out.ok ? curSym + ": big size back to the config default" : "Could not reset", out.ok); poll(true); });
 function renderPS60(d){
