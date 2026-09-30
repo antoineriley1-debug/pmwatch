@@ -40,6 +40,7 @@ class SymbolState:
         self.play = play
         self.symbol = play["symbol"]
         self.hist_ver = 0       # bumps whenever history arrives, so the page knows to fetch it again
+        self.daily_vol = {}     # day start -> shares traded (daily bars from IBKR carry volume)
         self.l1 = {k: None for k in L1_FIELDS}
         self.l1_t = None
         self.depth_active = False
@@ -298,18 +299,21 @@ class Engine:
                 if label:
                     self._emit(st, tr, label, t)
 
-    def on_daily_bar(self, symbol, t0, o, h, l, c):
+    def on_daily_bar(self, symbol, t0, o, h, l, c, v=None):
         """Historical daily bar (ATR / measured potential)."""
         with self.lock:
             st = self._st(symbol)
             if st is None or None in (o, h, l, c):
                 return
-            self._rec({"ev": "dbar", "t": self.last_t or t0, "sym": symbol, "t0": t0, "o": o, "h": h, "l": l, "c": c})
+            self._rec({"ev": "dbar", "t": self.last_t or t0, "sym": symbol, "t0": t0, "o": o, "h": h, "l": l, "c": c, "v": v})
             st.daily[t0] = [o, h, l, c]
+            if v is not None:
+                st.daily_vol[t0] = float(v)
             st.hist_ver += 1
             if len(st.daily) > 300:
                 for k in sorted(st.daily)[:len(st.daily) - 300]:
                     del st.daily[k]
+                    st.daily_vol.pop(k, None)
 
     def on_hist_bar(self, symbol, t0, o, h, l, c, v):
         """Historical 1-minute bar (reqHistoricalData) so the chart has context at startup."""
@@ -1199,7 +1203,7 @@ class Engine:
                 else:
                     self.grades.pop(ev["key"], None)
         elif kind == "dbar":
-            self.on_daily_bar(ev["sym"], ev["t0"], ev["o"], ev["h"], ev["l"], ev["c"])
+            self.on_daily_bar(ev["sym"], ev["t0"], ev["o"], ev["h"], ev["l"], ev["c"], ev.get("v"))
         elif kind == "flow":
             self.on_flow(ev["p"], t)
         elif kind == "flow_alerts":
@@ -1480,7 +1484,7 @@ class Engine:
             "bars_full": full,
             "hist_ver": st.hist_ver,
             "flow": self.flow.summary(sym, t),
-            "daily": [[t0] + [fmt_price(x) for x in st.daily[t0]] + [0, 0, 0] for t0 in sorted(st.daily)] if full else None,
+            "daily": [[t0] + [fmt_price(x) for x in st.daily[t0]] + [round(st.daily_vol.get(t0) or 0), 0, 0] for t0 in sorted(st.daily)] if full else None,
             "footprint": [[m, [[round(c[0], 4), round(c[1]), round(c[2])] for c in sorted(cells.values(), key=lambda c: c[0])]]
                           for m, cells in sorted(st.foot.items())[-150:]],
             "marks": [[m, fmt_price(v[0]), side, round(v[1])] for (m, _k, side), v in st.marks.items()

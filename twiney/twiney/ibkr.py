@@ -179,7 +179,7 @@ class TwineyWrapper:
                     t0 = time.mktime(time.strptime(str(bar.date)[:8], "%Y%m%d"))
                 except ValueError:
                     return
-            self.engine.on_daily_bar(sym, t0, num(bar.open), num(bar.high), num(bar.low), num(bar.close))
+            self.engine.on_daily_bar(sym, t0, num(bar.open), num(bar.high), num(bar.low), num(bar.close), num(getattr(bar, "volume", None)))
             return
         if kind != "hist":
             return

@@ -188,7 +188,10 @@ class DemoFeed:
             day_bars = [(d0, round(o + shift * (i + 1), 2), round(h + shift * (i + 1), 2), round(l + shift * (i + 1), 2), round(c + shift * (i + 1), 2))
                         for i, (d0, o, h, l, c) in enumerate(day_bars)]
         for day0, o, h, l, c in day_bars:
-            self.engine.on_daily_bar(sym, day0, o, h, l, c)
+            # a day's volume: bigger on the big-range days, like the real thing
+            rng_pct = (h - l) / max(c, 0.01)
+            vol = int(rng.lognormvariate(math.log(s.base * 3000), 0.3) * (0.6 + 25 * rng_pct))
+            self.engine.on_daily_bar(sym, day0, o, h, l, c, vol)
         sessions = [b[0] for b in day_bars[-5:]]
         n_total = 390 * len(sessions)
         end_px = s.mid0

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20260930-0019">
+<meta name="build" content="20260930-0048">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -986,6 +986,7 @@ function wireChart(p, cv, v, saveView, isFoot){
     const move = ev => {
       const dx = ev.clientX - x0, dy = ev.clientY - y0;
       if (Math.abs(dx) + Math.abs(dy) > 3) moved = true;
+      if (!moved) return;           // a click (or the jitter in one) changes nothing: only a real drag pans or scales
       if (onAxis && start.y){ const [lo, hi] = start.y; const c = (lo + hi) / 2, f = Math.exp(dy / 150);   // pull down = squeeze, up = expand
         v.yLo = c - (c - lo) * f; v.yHi = c + (hi - c) * f; }
       else if (onTime){ v.cw = Math.max(isFoot ? 34 : 2, Math.min(isFoot ? 120 : 60, start.cw * Math.exp(dx / 150))); }                     // pull right = wider bars, left = more bars
@@ -1011,7 +1012,7 @@ function wireChart(p, cv, v, saveView, isFoot){
     const tk = pr >= 1 ? 0.01 : 0.0001, price = +(Math.round(pr / tk) * tk).toFixed(4);
     chartMenu(p, v, e.clientX, e.clientY, price);
   });
-  cv.addEventListener("dblclick", () => { v.cw = isFoot ? 64 : 7; v.offset = 0; v.yLo = v.yHi = null; v.follow = true; v.rightT = null; saveView(); drawChart(p); });
+  cv.addEventListener("dblclick", () => { v.cw = isFoot ? 64 : 11; v.offset = 0; v.yLo = v.yHi = null; v.follow = true; v.rightT = null; saveView(); drawChart(p); });
 }
 
 // ---------- chart trading: right-click (or hover + B / S) = limit order at that price
@@ -1851,7 +1852,7 @@ async function openTab(sym, add){
   const rec = (PREFS.recent || []).filter(x => x !== sym); rec.unshift(sym); PREFS.recent = rec.slice(0, 12);
   savePrefs({tabs: TABS.list, active: sym, recent: PREFS.recent});
   if (!known) toast(sym + " added as a watch-only play — mark its pivot on the chart", true);
-  for (const c of Object.values(charts)){ c.view = viewFor(sym, c.id); }
+  // the chart keeps ONE view object (its mouse handlers hold it); render() swaps the per-symbol view state into it
   renderTabs(); renderRecent(); poll(true);
 }
 function closeTab(sym){ TABS.list = TABS.list.filter(s => s !== sym); if (TABS.active === sym){ TABS.active = TABS.list[TABS.list.length - 1] || null; curSym = TABS.active; if (curSym) post("/api/play", {symbol: curSym, action: "focus"}); } savePrefs({tabs: TABS.list, active: TABS.active}); renderTabs(); poll(true); }
@@ -1862,7 +1863,7 @@ document.getElementById("symHist").addEventListener("change", e => { if (e.targe
 function renderRecent(){ document.getElementById("symHist").innerHTML = `<option value="">RECENT</option>` + (PREFS.recent || []).map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join(""); }
 let prefsTimer = null;
 function savePrefs(p){ Object.assign(PREFS, p); clearTimeout(prefsTimer); prefsTimer = setTimeout(() => post("/api/layouts", {action: "prefs", prefs: p}), 300); }
-function viewFor(sym, id){ VIEWS[sym] = VIEWS[sym] || {}; if (!VIEWS[sym][id]) VIEWS[sym][id] = {cw: id === "foot" ? 64 : 7, offset: 0, yLo: null, yHi: null, follow: true, cross: null}; return VIEWS[sym][id]; }
+function viewFor(sym, id){ VIEWS[sym] = VIEWS[sym] || {}; if (!VIEWS[sym][id]) VIEWS[sym][id] = {cw: id === "foot" ? 64 : 11, offset: 0, yLo: null, yHi: null, follow: true, cross: null}; return VIEWS[sym][id]; }
 
 /* ---------- charts (reuse the drawing engine) */
 const charts = {};
@@ -1887,7 +1888,7 @@ function mkChart(id, isFoot){
     c.tools.addEventListener("mousedown", e => e.stopPropagation());
     c.tools.addEventListener("click", e => {
       const tf = e.target.dataset.tf;
-      if (tf){ store.set("tf." + id, tf === "D" ? "D" : +tf); c.view.offset = 0; c.view.follow = true; if (tf === "D" && c.view.cw < 6) c.view.cw = 8; drawChart(c); renderTools(c); }
+      if (tf){ store.set("tf." + id, tf === "D" ? "D" : +tf); c.view.offset = 0; c.view.follow = true; c.view.yLo = c.view.yHi = null; c.view.autoY = null; if (tf === "D" && c.view.cw < 6) c.view.cw = 8; drawChart(c); renderTools(c); }
       for (const k of ["mas", "bb"]) if (e.target.dataset[k]){ store.set(k, !store.get(k, k === "mas" || k === "bb")); drawChart(c); renderTools(c); }
       if (e.target.dataset.ind){ e.stopPropagation(); const m = e.target.closest(".menu"), open = !m.classList.contains("open"); document.querySelectorAll(".menu.open").forEach(x => x.classList.remove("open")); m.classList.toggle("open", open); if (open){ m.querySelector(".pop").innerHTML = indPopHTML(); placePop(m); } }
       if (e.target.closest(".menu.ind .pop")) e.stopPropagation();
@@ -2001,7 +2002,7 @@ function renderQuote(d){
 }
 let bookUserScroll = 0, bookDragging = false;
 P.chart.el.querySelector(".qs").addEventListener("change", e => { if (!e.target.dataset.qscreen) return; store.set("screen", e.target.value); P.chart.last = null; drawChart(charts.chart); renderTools(charts.chart); });
-function setChartTf(tf){ store.set("tf.chart", tf); const c = charts.chart; c.view.offset = 0; c.view.follow = true; c.view.autoY = null; if (typeof tf === "string" && c.view.cw < 6) c.view.cw = 8; drawChart(c); renderTools(c); P.chart.last = null; renderQuote(curData()); }
+function setChartTf(tf){ store.set("tf.chart", tf); const c = charts.chart; c.view.offset = 0; c.view.follow = true; c.view.autoY = null; c.view.yLo = c.view.yHi = null; if (typeof tf === "string" && c.view.cw < 6) c.view.cw = 8; drawChart(c); renderTools(c); P.chart.last = null; renderQuote(curData()); }
 P.chart.el.querySelector(".qs").addEventListener("click", e => {
   if (e.target.dataset.tfp){ const v = e.target.dataset.tfp; setChartTf(/^\d+$/.test(v) ? +v : v); return; }
   if (!e.target.dataset.tools) return; const on = !store.get("tools", false); store.set("tools", on); P.chart.el.classList.toggle("tools-on", on); e.target.classList.toggle("on", on); });

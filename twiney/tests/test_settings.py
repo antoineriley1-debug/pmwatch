@@ -95,3 +95,24 @@ class HistoryVersionTests(unittest.TestCase):
         self.assertGreater(after["hist_ver"], before)
         self.assertEqual(len(after["bars"]), 6)            # a plain poll still carries only the tail
         self.assertGreaterEqual(len(pane({sym})["bars"]), 49)   # the full fetch the page makes on the new version
+
+
+class DailyVolumeTests(unittest.TestCase):
+    def test_daily_bars_keep_their_volume_through_the_pane_and_replay(self):
+        import tempfile
+        from helpers import cfg, plays
+        from twiney.engine import Engine
+        from twiney.recorder import Recorder
+        from twiney.replay import replay
+        with tempfile.TemporaryDirectory() as d:
+            c, ps = cfg(), plays()
+            rec = Recorder(d, "t.jsonl"); rec.write(session_header(ps, c, "t"))
+            e = Engine(ps, c, rec)
+            sym = ps[0]["symbol"]
+            e.on_daily_bar(sym, 86400.0, 9, 11, 8, 10, 1234567)
+            e.on_daily_bar(sym, 2 * 86400.0, 10, 12, 9, 11)          # no volume given: 0, not an error
+            rec.close()
+            row = [r for r in e.snapshot(3 * 86400.0)["panes"] + list(e.snapshot(3 * 86400.0, [sym])["extra"].values()) if r and r["symbol"] == sym][0]["daily"]
+            self.assertEqual((row[0][5], row[1][5]), (1234567, 0))
+            eng, _ = replay(rec.path)
+            self.assertEqual(eng.syms[sym].daily_vol.get(86400.0), 1234567)
