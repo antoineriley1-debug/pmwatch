@@ -656,7 +656,8 @@ class Trader:
         if self.engine.recently_filled(symbol, self.REDUCING, now):
             return pos, 0, "the last close just filled — the position is updating, try again in a moment"
         working = sum((o.get("remaining") if o.get("remaining") is not None else o.get("qty") or 0)
-                      for o in self.engine._pending(symbol) if o.get("role") in self.REDUCING)
+                      for o in self.engine._pending(symbol)
+                      if o.get("role") in self.REDUCING and o.get("status") != "PendingCancel")
         return pos, max(0, abs(pos) - int(working)), (f"{int(working)} shares are already being closed" if working else None)
 
     def flatten(self, symbol, now=None):
@@ -667,6 +668,14 @@ class Trader:
         """Close the position with a marketable limit (through the spread by a few ticks). Works disarmed, locked
         for the day and over the caps: getting out is never blocked. One flatten at a time per symbol."""
         now = now or time.time()
+        # a ticket close resting away from the market (a SELL above it while long) is not the way out FLATTEN
+        # means: it goes, and the whole position is closed at the market
+        for o in self.engine._pending(symbol):
+            if o.get("role") == "close" and o.get("order_id") is not None and o.get("status") != "PendingCancel":
+                try:
+                    self.broker.cancel(o["order_id"], now)
+                except Exception as exc:
+                    log.warning("cancel close %s: %s", o.get("order_id"), exc)
         pos, free, why = self._can_reduce_by(symbol, now)
         if not pos:
             self._note(now, f"{symbol}: already flat", True)
