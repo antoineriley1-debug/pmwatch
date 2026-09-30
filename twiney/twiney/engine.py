@@ -185,6 +185,7 @@ class Engine:
             "role": tracker.role,
             "absorbed": round(final["absorbed"] if final else tracker.absorbed_total),
             "refreshes": final["refreshes"] if final else tracker.refreshes_window(t),
+            "showing": round(tracker.displayed),      # what the ladder shows at that price right now
         }
         if final:
             alert["size_before_gone"] = round(final["size_before_gone"])
@@ -1345,6 +1346,7 @@ class Engine:
                 if tr is not None:
                     row[side + "_refills"] = tr.refreshes_window(t)
                     row[side + "_state"] = tr._display_state(t)
+                    row[side + "_proven"] = tr.proven
                     row[side + "_absorbed"] = round(tr.absorbed_total)
                     # never call a level cleared while something is sitting there again
                     row[side + "_verdict"] = (tr.last_verdict[0] if tr.last_verdict and t - tr.last_verdict[1] < 60
@@ -1399,7 +1401,7 @@ class Engine:
         """Nearest confirmed / likely reloaders on each side of the market."""
         below, above = [], []
         for tr in st.trackers.values():
-            if tr.state == RELOAD:
+            if tr.state == RELOAD or tr.proven:
                 kind = "confirmed"
             elif tr.state == BUILDING and tr.refreshes_window(t) >= 2 and tr.absorbed_window(t) > 0:
                 kind = "likely"

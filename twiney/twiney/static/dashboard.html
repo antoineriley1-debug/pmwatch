@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20260930-0315">
+<meta name="build" content="20260930-0317">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -1078,7 +1078,8 @@ function pips(n, cls){
 function whoTag(row, side){
   const st = row[side + "_state"], n = row[side + "_refills"] || 0, v = row[side + "_verdict"];
   const name = side === "bid" ? "buyer" : "seller";
-  if (st === "RELOAD") return `<span class="who ${name} big" title="confirmed reload ${name}: refilled ${n}x after getting hit">${name.toUpperCase()} ×${n}</span>`;
+  // proven reload: stays lit from the moment it is confirmed until it is cleaned up (or pulled)
+  if (st === "RELOAD" || row[side + "_proven"]) return `<span class="who ${name} big" title="proven reload ${name}: refilled ${n}x after getting hit. Stays lit until it is cleaned up or pulled">${name.toUpperCase()} ×${n}</span>`;
   if ((row[side] || 0) > 0) return "";   // size is sitting there: whatever happened earlier is history
   if (v === "CLEANED UP") return `<span class="who c" title="the reload ${name} here got eaten and price went through: cleared out">CLEARED OUT</span>`;
   if (v === "PULLED") return `<span class="who v" title="the reload ${name} here vanished without getting hit">PULLED</span>`;
@@ -1101,7 +1102,7 @@ function ladderHTML(L){
     <th class="act" data-w="1.1" title="Click a price here to SELL at that price">SELL</th></tr>`;
   for (const r of L.rows){
     const cls = [r.gap?"gap":"", r.best_bid?"best-bid":"", r.best_ask?"best-ask":"", r.tags.length?"lvl":"", r.last?"lastpx":"",
-      r.bid_state==="RELOAD"?"rl-bid":"", r.ask_state==="RELOAD"?"rl-ask":""].join(" ");
+      (r.bid_state==="RELOAD"||r.bid_proven)?"rl-bid":"", (r.ask_state==="RELOAD"||r.ask_proven)?"rl-ask":""].join(" ");
     const sw = r.sold ? Math.max(4, 100 * r.sold / ms) : 0, bw = r.bought ? Math.max(4, 100 * r.bought / ms) : 0;
     h += `<tr class="${cls}" data-price="${r.price}">
       <td class="act b${dis}" data-act="BUY" data-px="${r.price}" title="${on ? "BUY " + sz(T().default_shares) + " @ " + px(r.price) : whyNot()}">${chips(r, "b") || "BUY"}</td>
@@ -1116,7 +1117,7 @@ function ladderHTML(L){
   }
   h += `</table><div class="legend">Every row remembers the last ${L.memory_minutes} min. <span class="buy">Green bar</span> = shares sold into the bid there,
     <span class="sell">red bar</span> = shares bought from the ask. <span class="pips b">●</span><span class="pips a">●</span> = times the size came back after being hit.
-    A lit row = a CONFIRMED reload buyer / seller sits there (only confirmed ones are shown). Gold row = the last price. White price = your level. Click BUY / SELL on a row to place a limit there; click your order chip to cancel it.</div>`;
+    A lit row = a PROVEN reload buyer / seller: it stays lit until it is cleaned up or pulled. Gold row = the last price. White price = your level. Click BUY / SELL on a row to place a limit there; click your order chip to cancel it.</div>`;
   return h;
 }
 
@@ -2395,18 +2396,21 @@ function runHotkey(e){
 
 /* ---------- voice: reload buyer / seller only, active tab only */
 function reloadWords(a){
-  const who = a.side === "bid" ? "buyer" : "seller";
-  const n = a.refreshes != null ? a.refreshes : null, sh = a.absorbed != null ? Math.round(a.absorbed) : null;
-  const shares = sh == null ? "" : (sh >= 1000 ? `${Math.round(sh / 1000)} thousand` : String(sh)) + " shares observed";
-  if (a.label.startsWith("RELOAD")) return `Reload ${who} at ${px(a.price)}.${n != null ? ` ${n} reloads.` : ""}${shares ? ` ${shares}.` : ""}`;
-  if (a.label === "CLEANED UP") return `Reload ${who} at ${px(a.price)} cleared out.`;
+  // the numbers are the ladder's own: the size showing at that price when the call fires, exact, never rounded.
+  // "traded into it" is every print that hit the level while it refilled, so it can add up past anything the ladder shows at once
+  const who = a.side === "bid" ? "buyer" : "seller", num = n => Math.round(n).toLocaleString("en-US");
+  const n = a.refreshes != null ? a.refreshes : null;
+  const showing = a.showing != null ? `${num(a.showing)} showing.` : "";
+  const traded = a.absorbed ? ` ${num(a.absorbed)} traded into it.` : "";
+  if (a.label.startsWith("RELOAD")) return `Reload ${who} at ${px(a.price)}. ${showing}${n != null ? ` Refilled ${n} time${n === 1 ? "" : "s"}.` : ""}${traded}`;
+  if (a.label === "CLEANED UP") return `Reload ${who} at ${px(a.price)} cleared out.${traded}`;
   if (a.label === "PULLED") return `Reload ${who} at ${px(a.price)} pulled.`;
   return null;
 }
 function speakNew(s){
   const items = [];
   for (const a of (s.alerts || []).slice(0, 8)){
-    if (spoken.has("a" + a.key) || s.now - a.t > 30) continue;
+    if (spoken.has("a" + a.key) || s.now - a.t > 8) continue;   // stale calls stay quiet: the ladder has moved on
     spoken.add("a" + a.key);
     const fw = flowWords(a);
     if (fw){ if (!training()) items.push(fw); continue; }   // unusual flow is for the whole watchlist, whatever tab is up

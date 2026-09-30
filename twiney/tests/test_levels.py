@@ -228,3 +228,29 @@ class VerdictTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ProvenTests(unittest.TestCase):
+    """A proven reload stays lit on the ladder until it is cleaned up."""
+
+    def test_proven_through_a_flicker_until_cleaned_up(self):
+        h = Harness()
+        self.assertFalse(h.tr.proven)
+        h.build_reload()
+        self.assertTrue(h.tr.proven)
+        h.show(1000, 7.0); h.hit(1000, 8.0); h.remove(8.05)
+        self.assertTrue(h.tr.proven)              # gone, still being judged: still lit
+        h.show(1000, 8.3)                          # he came back
+        self.assertTrue(h.tr.proven)
+        h.hit(1000, 9.0); h.remove(9.05); h.hit(200, 9.2, price=10.01); h.tick(10.2)
+        self.assertEqual(h.alerts[-1][1], "CLEANED UP")
+        self.assertFalse(h.tr.proven)
+        self.assertFalse(h.tr.snapshot(10.3)["proven"])
+
+    def test_pulled_ends_it(self):
+        h = Harness()
+        h.build_reload()
+        h.show(1000, 7.0); h.remove(7.5)
+        h.tick(30.0)
+        self.assertEqual(h.alerts[-1][1], "PULLED")
+        self.assertFalse(h.tr.proven)

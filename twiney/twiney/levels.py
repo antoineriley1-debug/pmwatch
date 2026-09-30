@@ -52,6 +52,10 @@ class LevelTracker:
         self.last_active = created
         self.last_verdict = None  # (label, t)
         self.verdict_info = None
+        # proven: confirmed as a reload once, and stays proven (lit on the ladder) until it is CLEANED UP,
+        # PULLED, or price trades through the level with nothing sitting there. A brief flicker to zero,
+        # or an inconclusive "gone" call, does not un-prove it.
+        self.proven = False
         self._reset_episode()
 
     def _reset_episode(self):
@@ -151,6 +155,8 @@ class LevelTracker:
     def on_print(self, price, size, aggressor, now, book=None):
         if self._through(price):
             self.last_through = now
+            if self.proven and self.state not in (RELOAD, GONE_PENDING) and self.displayed <= 0:
+                self.proven = False           # price went through a proven level that is no longer defended
             return self.evaluate(now, book) if self.state == GONE_PENDING else None
         if not self.matches(price):
             return None
@@ -191,6 +197,7 @@ class LevelTracker:
                     and self.displayed >= c["min_display_shares"]):
                 self.state = RELOAD
                 self.confirmed_at = now
+                self.proven = True
                 return reload_label(self.side)
             return None
 
@@ -219,6 +226,8 @@ class LevelTracker:
 
     def _verdict(self, label, now):
         self.last_verdict = (label, now)
+        if label in (CLEANED_UP, PULLED):
+            self.proven = False
         self.verdict_info = {"absorbed": self.absorbed_total, "size_before_gone": self.size_before_gone,
                              "refreshes": self.refreshes_window(now)}
         self._reset_episode()
@@ -243,6 +252,7 @@ class LevelTracker:
             "absorbed_total": self.absorbed_total,
             "refreshes": self.refreshes_window(now),
             "out_of_view": self.out_of_view,
+            "proven": self.proven,
             # a verdict is history the moment size is sitting at the level again
             "last_verdict": self.last_verdict[0] if self.last_verdict and self.displayed <= 0 else None,
             "last_verdict_age": round(now - self.last_verdict[1], 1) if self.last_verdict and self.displayed <= 0 else None,
