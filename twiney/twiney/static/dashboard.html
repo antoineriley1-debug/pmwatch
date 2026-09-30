@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20260930-0411">
+<meta name="build" content="20260930-0416">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -764,6 +764,8 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt
 const px = v => v == null ? "—" : Number(v).toFixed(Number(v) >= 1 ? 2 : 4);
 const sz = v => v == null ? "—" : Number(v).toLocaleString();
 // sizes: 950 · 9.9k · 10k · 999k · 1.0M. Rounded first, so 9,960 never reads "10.0k" and 999,600 never "1000k"
+// the standard empty space right of the last candle (IND menu, SPACE RIGHT): where "live" rests
+const restOffset = () => -Math.max(0, Math.round(+store.get("rspace", 0) || 0));
 const kfmt = v => { if (!v) return ""; const s = v < 0 ? "-" : "", a = Math.abs(v);
   if (a >= 999500) return s + (a / 1e6).toFixed(1) + "M";
   if (a >= 9950) return s + Math.round(a / 1e3) + "k";
@@ -940,6 +942,8 @@ for (const el of document.getElementById("tplPanels").content.querySelectorAll("
 }
 
 function wireChart(p, cv, v, saveView, isFoot){
+  // past the live edge: the chart can be pushed left, leaving empty space on the right (up to 85% of the width)
+  const minOff = () => -Math.floor(Math.max(0, cv.clientWidth - 86) / v.cw * 0.85);
   cv.addEventListener("wheel", e => {
     e.preventDefault();
     const r = cv.getBoundingClientRect(), x = e.clientX - r.left;
@@ -948,12 +952,12 @@ function wireChart(p, cv, v, saveView, isFoot){
         v.yLo = c - (c - lo) * f; v.yHi = c + (hi - c) * f; }
     } else if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)){   // shift+wheel or trackpad sideways: pan
       const d = (e.deltaX || e.deltaY) / v.cw;
-      v.offset = Math.max(0, v.offset - d); v.follow = v.offset < 0.5; v.rightT = null;
+      v.offset = Math.max(minOff(), v.offset - d); v.follow = v.offset < 0.5; v.rightT = null;
     } else {                                     // zoom, keeping the bar under the cursor where it is
       const f = e.deltaY > 0 ? 1 / 1.2 : 1.2;
       const plotW = r.width - 86, barsRight = (plotW - x) / v.cw;   // bars between cursor and right edge
       v.cw = Math.max(isFoot ? 34 : 2, Math.min(isFoot ? 120 : 60, v.cw * f));
-      v.offset = Math.max(0, v.offset + barsRight - (plotW - x) / v.cw);
+      v.offset = Math.max(minOff(), v.offset + barsRight - (plotW - x) / v.cw);
       v.follow = v.offset < 0.5; v.rightT = null;
     }
     saveView(); drawChart(p);
@@ -1041,7 +1045,7 @@ function wireChart(p, cv, v, saveView, isFoot){
         v.yLo = c - (c - lo) * f; v.yHi = c + (hi - c) * f; }
       else if (onTime){ v.cw = Math.max(isFoot ? 34 : 2, Math.min(isFoot ? 120 : 60, start.cw * Math.exp(dx / 150))); }                     // pull right = wider bars, left = more bars
       else {
-        v.offset = Math.max(0, start.offset + dx / v.cw);
+        v.offset = Math.max(minOff(), start.offset + dx / v.cw);
         v.follow = v.offset < 0.5; v.rightT = null;
         if (start.y && !onAxis){ const [lo, hi] = start.y; const per = (hi - lo) / start.h; v.yLo = lo + dy * per; v.yHi = hi + dy * per; }
       }
@@ -1062,7 +1066,7 @@ function wireChart(p, cv, v, saveView, isFoot){
     const tk = pr >= 1 ? 0.01 : 0.0001, price = +(Math.round(pr / tk) * tk).toFixed(4);
     chartMenu(p, v, e.clientX, e.clientY, price);
   });
-  cv.addEventListener("dblclick", () => { v.cw = isFoot ? 64 : 11; v.offset = 0; v.yLo = v.yHi = null; v.follow = true; v.rightT = null; saveView(); drawChart(p); });
+  cv.addEventListener("dblclick", () => { v.cw = isFoot ? 64 : 11; v.offset = restOffset(); v.yLo = v.yHi = null; v.follow = true; v.rightT = null; saveView(); drawChart(p); });
 }
 
 // ---------- chart trading: right-click (or hover + B / S) = limit order at that price
@@ -1164,11 +1168,11 @@ function ladderHTML(L){
 }
 
 function tapeHTML(t){
-  const rows = t.recent.map(r => `<tr class="${r.at?"atlvl":""}"><td class="dim">${ago(r.age)}</td><td class="whoc">${r.side==="buy"?`<span class="io in" title="traded at the ask: the buyer paid up to get in">BUYER PAID UP</span>`:r.side==="sell"?`<span class="io out" title="traded at the bid: the seller hit the bid to get out">SELLER HIT BID</span>`:""}</td>
+  const rows = t.recent.map(r => `<tr class="${r.at?"atlvl":""}"><td class="dim">${ago(r.age)}</td><td class="whoc">${r.side==="buy"?`<span class="io in" title="traded at the ask: the buyer paid up to get in">PAID UP</span>`:r.side==="sell"?`<span class="io out" title="traded at the bid: the seller hit the bid to get out">HIT</span>`:""}</td>
     <td class="${r.side}">${px(r.price)}${r.at?` <span class="tag">${esc(r.at)}</span>`:""}</td>
     <td class="${r.side} ${r.large?"large":""}">${sz(r.size)}</td><td class="dim">${esc(r.exchange)}</td></tr>`).join("")
     || `<tr><td colspan="5" class="dim">no prints yet</td></tr>`;
-  return `<table class="t" data-cols="tape"><tr><th data-w="0.7">TIME</th><th data-w="1.9" title="BUYER PAID UP = traded at the ask, the buyer was in a rush · SELLER HIT BID = traded at the bid, the seller was in a rush">WHO</th><th data-w="1.1">PRICE</th><th data-w="0.9">SIZE</th><th data-w="0.8">EX</th></tr>${rows}</table>`;
+  return `<table class="t" data-cols="tape"><tr><th data-w="0.7">TIME</th><th data-w="1.9" title="PAID UP = traded at the ask, the buyer was in a rush · HIT = traded at the bid, the seller hit it">WHO</th><th data-w="1.1">PRICE</th><th data-w="0.9">SIZE</th><th data-w="0.8">EX</th></tr>${rows}</table>`;
 }
 
 /* ---------- chart: candles + your levels + absorption bubbles ---------- */
@@ -1280,7 +1284,10 @@ function drawOne(p, cv, v, isFoot){
     off = all.length - 1 - k; v.offset = off;
   }
   off = Math.min(off, Math.max(0, all.length - 2));
-  const bars = all.slice(Math.max(0, all.length - off - n), all.length - off);
+  // a negative offset is empty space right of the last candle (the chart pushed left); it stays while live
+  const space = off < 0 ? Math.min(-off, n - 5) : 0;
+  if (off < 0) off = 0;
+  const bars = all.slice(Math.max(0, all.length - off - (n - space)), all.length - off);
   v.rightT = v.follow ? null : (bars.length ? bars[bars.length - 1][0] : null);
   v.chartH = plotH;
   g.font = "11px ui-monospace, Menlo, Consolas, monospace";
@@ -1320,7 +1327,7 @@ function drawOne(p, cv, v, isFoot){
   }
   v.chartY = [lo, hi];
   const y = v => 8 + (hi - v) / (hi - lo) * (plotH - 8);
-  const x0 = plotW - bars.length * cw;
+  const x0 = plotW - (bars.length + space) * cw;
   // candles sit by index (gaps overnight / weekends take no room), so anything placed by time goes through the
   // candle it belongs to: VWAP, bubbles, call markers
   const bucketOf = isDaily ? (t => t) : bucketFn(tf), kOf = new Map(bars.map((b, i) => [b[0], i]));
@@ -2008,7 +2015,7 @@ document.getElementById("symHist").addEventListener("change", e => { if (e.targe
 function renderRecent(){ document.getElementById("symHist").innerHTML = `<option value="">RECENT</option>` + (PREFS.recent || []).map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join(""); }
 let prefsTimer = null;
 function savePrefs(p){ Object.assign(PREFS, p); clearTimeout(prefsTimer); prefsTimer = setTimeout(() => post("/api/layouts", {action: "prefs", prefs: p}), 300); }
-function viewFor(sym, id){ VIEWS[sym] = VIEWS[sym] || {}; if (!VIEWS[sym][id]) VIEWS[sym][id] = {cw: id === "foot" ? 64 : 11, offset: 0, yLo: null, yHi: null, follow: true, cross: null}; return VIEWS[sym][id]; }
+function viewFor(sym, id){ VIEWS[sym] = VIEWS[sym] || {}; if (!VIEWS[sym][id]) VIEWS[sym][id] = {cw: id === "foot" ? 64 : 11, offset: restOffset(), yLo: null, yHi: null, follow: true, cross: null}; return VIEWS[sym][id]; }
 
 /* ---------- charts (reuse the drawing engine) */
 const charts = {};
@@ -2028,19 +2035,21 @@ function mkChart(id, isFoot){
       if (k){ const IND = store.get("ind", {}); IND[k] = e.target.checked; store.set("ind", IND); drawChart(c); }
       if (top){ store.set(top, e.target.checked); Object.values(charts).forEach(drawChart); const b = c.tools.querySelector(`button[data-${top}]`); if (b) b.classList.toggle("on", e.target.checked); }
       if (cs === "screenColor"){ store.set("screenColor", e.target.value); store.set("screen", "custom"); Object.values(charts).forEach(drawChart); const s = c.tools.querySelector("select[data-screen]"); if (s) s.value = "custom"; return; }
-      if (cs){ store.set(cs, +e.target.value); const v = c.tools.querySelector(`[data-csv="${cs}"]`); if (v) v.textContent = e.target.value + (cs === "wick" ? "px" : "%"); Object.values(charts).forEach(drawChart); }
+      if (cs){ store.set(cs, +e.target.value); const v = c.tools.querySelector(`[data-csv="${cs}"]`); if (v) v.textContent = e.target.value + (cs === "wick" ? "px" : cs === "rspace" ? " bars" : "%");
+        if (cs === "rspace") for (const ch of Object.values(charts)) if (ch.view && ch.view.follow){ ch.view.offset = restOffset(); ch.view.rightT = null; }   // live charts move to it now
+        Object.values(charts).forEach(drawChart); }
     });
     c.tools.addEventListener("mousedown", e => e.stopPropagation());
     c.tools.addEventListener("click", e => {
       const tf = e.target.dataset.tf;
-      if (tf){ store.set("tf." + id, tf === "D" ? "D" : +tf); c.view.offset = 0; c.view.follow = true; c.view.yLo = c.view.yHi = null; c.view.autoY = null; if (tf === "D" && c.view.cw < 6) c.view.cw = 8; drawChart(c); renderTools(c); }
+      if (tf){ store.set("tf." + id, tf === "D" ? "D" : +tf); c.view.offset = restOffset(); c.view.follow = true; c.view.yLo = c.view.yHi = null; c.view.autoY = null; if (tf === "D" && c.view.cw < 6) c.view.cw = 8; drawChart(c); renderTools(c); }
       for (const k of ["mas", "bb"]) if (e.target.dataset[k]){ store.set(k, !store.get(k, k === "mas" || k === "bb")); drawChart(c); renderTools(c); }
       if (e.target.dataset.ind){ e.stopPropagation(); const m = e.target.closest(".menu"), open = !m.classList.contains("open"); document.querySelectorAll(".menu.open").forEach(x => x.classList.remove("open")); m.classList.toggle("open", open); if (open){ m.querySelector(".pop").innerHTML = indPopHTML(); placePop(m); } }
       if (e.target.closest(".menu.ind .pop")) e.stopPropagation();
       if (e.target.dataset.vwap){ store.set("vwap", !store.get("vwap", true)); drawChart(c); renderTools(c); }
-      if (e.target.dataset.foot){ const on = !store.get("foot." + id, false); store.set("foot." + id, on); if (on && c.view.cw < 40){ c.view.cw = 44; c.view.offset = 0; c.view.follow = true; } drawChart(c); renderTools(c); }
+      if (e.target.dataset.foot){ const on = !store.get("foot." + id, false); store.set("foot." + id, on); if (on && c.view.cw < 40){ c.view.cw = 44; c.view.offset = restOffset(); c.view.follow = true; } drawChart(c); renderTools(c); }
       if (e.target.dataset.clean){ store.set("clean", !store.get("clean", true)); el.classList.toggle("clean", store.get("clean", true)); drawChart(c); renderTools(c); }
-      if (e.target.dataset.fit){ const n = aggBars(c.data ? c.data.bars : [], store.get("tf." + id, 1)).length || 1; c.view.cw = Math.max(2, Math.min(40, (c.canvas.clientWidth - 86) / n)); c.view.offset = 0; c.view.follow = true; c.view.yLo = c.view.yHi = null; drawChart(c); }
+      if (e.target.dataset.fit){ const n = aggBars(c.data ? c.data.bars : [], store.get("tf." + id, 1)).length || 1; c.view.cw = Math.max(2, Math.min(40, (c.canvas.clientWidth - 86) / n)); c.view.offset = restOffset(); c.view.follow = true; c.view.yLo = c.view.yHi = null; drawChart(c); }
     });
     renderTools(c);
   }
@@ -2058,6 +2067,7 @@ function indPopHTML(){
     <label><input type="radio" name="volstyle" data-vol="desk" ${store.get("volstyle", "auto") === "desk" ? "checked" : ""}> desk: split buyers paid up / sellers hit bid</label>
     <h5>CANDLES</h5>
     <div class="row"><span class="dim" style="width:64px">WICK</span><input type="range" data-cs="wick" min="1" max="8" step="0.5" value="${store.get("wick", store.get("screen", "blue") !== "desk" ? 3 : 1)}" style="flex:1"><span class="mono" data-csv="wick">${store.get("wick", store.get("screen", "blue") !== "desk" ? 3 : 1)}px</span></div>
+    <div class="row" title="empty bars kept right of the last candle, so price action isn't jammed against the edge. Double-click the chart to go back to it"><span class="dim" style="width:64px">SPACE →</span><input type="range" data-cs="rspace" min="0" max="40" step="1" value="${store.get("rspace", 0)}" style="flex:1"><span class="mono" data-csv="rspace">${store.get("rspace", 0)} bars</span></div>
     <div class="row"><span class="dim" style="width:64px">BODY</span><input type="range" data-cs="body" min="20" max="95" step="5" value="${store.get("body", store.get("screen", "blue") !== "desk" ? 76 : 70)}" style="flex:1"><span class="mono" data-csv="body">${store.get("body", store.get("screen", "blue") !== "desk" ? 76 : 70)}%</span></div>
     <h5>SMA</h5>${DAN_SMA.map(([n, col]) => box("s" + n, n + " SMA", col)).join("")}
     <h5>EMA</h5>${DAN_EMA.map(([n, col]) => box("e" + n, n + " EMA", col)).join("")}
@@ -2147,7 +2157,7 @@ function renderQuote(d){
 }
 let bookUserScroll = 0, bookDragging = false, bookHold = null;   // bookHold: the row you pressed {side, px, sym}
 P.chart.el.querySelector(".qs").addEventListener("change", e => { if (!e.target.dataset.qscreen) return; store.set("screen", e.target.value); P.chart.last = null; drawChart(charts.chart); renderTools(charts.chart); });
-function setChartTf(tf){ store.set("tf.chart", tf); const c = charts.chart; c.view.offset = 0; c.view.follow = true; c.view.autoY = null; c.view.yLo = c.view.yHi = null; if (typeof tf === "string" && c.view.cw < 6) c.view.cw = 8; drawChart(c); renderTools(c); P.chart.last = null; renderQuote(curData()); }
+function setChartTf(tf){ store.set("tf.chart", tf); const c = charts.chart; c.view.offset = restOffset(); c.view.follow = true; c.view.autoY = null; c.view.yLo = c.view.yHi = null; if (typeof tf === "string" && c.view.cw < 6) c.view.cw = 8; drawChart(c); renderTools(c); P.chart.last = null; renderQuote(curData()); }
 P.chart.el.querySelector(".qs").addEventListener("click", e => {
   if (e.target.dataset.tfp){ const v = e.target.dataset.tfp; setChartTf(/^\d+$/.test(v) ? +v : v); return; }
   if (!e.target.dataset.tools) return; const on = !store.get("tools", false); store.set("tools", on); P.chart.el.classList.toggle("tools-on", on); e.target.classList.toggle("on", on); });
