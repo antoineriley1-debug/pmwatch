@@ -1,3 +1,5 @@
 config.json
 plays.json
 recordings/
+layouts.json
+trades.jsonl
