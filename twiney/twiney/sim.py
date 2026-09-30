@@ -259,7 +259,9 @@ class DemoFeed:
                 if key in s.big:
                     if t >= s.big[key]:
                         del s.big[key]
-                        if rng.random() < 0.6:          # pulled
+                        # away from the touch, big size often gets pulled (it was there to be seen). At the touch
+                        # it mostly stays and has to be traded through; a pull right there is the rare spoof.
+                        if rng.random() < (0.6 if i >= 2 else 0.15):   # pulled
                             row[1] = _r100(rng.lognormvariate(math.log(target), 0.5))
                     continue
                 if any(pt["side"] == side and abs(row[0] - pt["price"]) < 1e-9 for pt in s.parts):
@@ -383,6 +385,12 @@ class DemoFeed:
         if not mk.prev_level:
             return
         s.owed += self.BASKET * s.beta * math.log(mk.level / mk.prev_level) * s.last
+        # basket desks work in clips at the touch, never the whole level in one print. A wall (big resting size)
+        # takes a lot of clips to get through and bleeds the push while they chip at it: price stalls into it,
+        # the way it does on a real ladder, and only goes through once the size has actually traded.
+        cap = s.owed / s.tk
+        if abs(cap) > 6:
+            s.owed = 6 * s.tk * (1 if cap > 0 else -1)
         for _ in range(4):
             if abs(s.owed) < s.tk:
                 return
@@ -394,10 +402,18 @@ class DemoFeed:
             if any(pt["side"] == side and abs(rows[0][0] - pt["price"]) < 1e-9 for pt in s.parts):
                 s.owed *= 0.9      # parked into a real participant: the move leaks away instead
                 return
+            touch = rows[0][1]
+            wall = touch >= max(5 * s.base, 5000)
+            clip = _r100(self.rng.lognormvariate(math.log(max(100.0, s.base * 0.6)), 0.6))
+            if touch - clip < 100:
+                clip = int(touch)          # the last of the level
             before = rows[0][0]
-            self._market(sym, s, is_buy, int(rows[0][1]), t, slotted)
+            self._market(sym, s, is_buy, int(min(touch, max(1, clip))), t, slotted)
             if (s.asks[0][0] if is_buy else s.bids[0][0]) != before:
                 s.owed -= s.tk if is_buy else -s.tk
+            if wall:
+                s.owed *= 0.97     # leaning on a wall: one clip a beat, and some of the push gives up
+                return
 
     @staticmethod
     def _tod(t):
