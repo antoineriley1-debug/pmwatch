@@ -85,6 +85,25 @@ class _Mkt:
         self.level = self.prev_level = 488.0      # QQQ-like
 
 
+def roundness(price):
+    """How much a price draws size: whole dollars most, then halves, quarters, dimes, nickels. Institutions work
+    their orders at round numbers, so that is where the liquidity (and the reloaders) sit and where the tape is heavy."""
+    if not price or price < 1:
+        return 1.0
+    c = int(round(price * 100)) % 100
+    if c == 0:
+        return 4.0
+    if c == 50:
+        return 3.0
+    if c in (25, 75):
+        return 2.0
+    if c % 10 == 0:
+        return 1.5
+    if c % 5 == 0:
+        return 1.2
+    return 1.0
+
+
 def _r100(x):
     return max(100, int(round(x / 100.0)) * 100)
 
@@ -227,25 +246,27 @@ class DemoFeed:
 
     # ---- the book ------------------------------------------------------------
 
-    def _fresh(self, s, side):
+    def _fresh(self, s, side, price=None):
         b = s.eff[0]
         against = (side == ASK and b > 0.5) or (side == BID and b < 0.5)
-        target = s.base * (max(0.3, 1 - 2.5 * abs(b - 0.5)) if against else 1.2)
+        target = s.base * (max(0.3, 1 - 2.5 * abs(b - 0.5)) if against else 1.2) * roundness(price)
         return _r100(self.rng.lognormvariate(math.log(target), 0.7))
 
     def _seed_book(self, s, t):
         tk = s.tk
         bid = round(s.mid0 - tk, 2)
-        s.asks = [[round(bid + tk * (i + 1), 2), self._fresh(s, ASK)] for i in range(ROWS + 4)]
-        s.bids = [[round(bid - tk * i, 2), self._fresh(s, BID)] for i in range(ROWS + 4)]
+        s.asks = [[round(bid + tk * (i + 1), 2), self._fresh(s, ASK, round(bid + tk * (i + 1), 2))] for i in range(ROWS + 4)]
+        s.bids = [[round(bid - tk * i, 2), self._fresh(s, BID, round(bid - tk * i, 2))] for i in range(ROWS + 4)]
         s.last = s.asks[0][0]
 
     def _extend(self, s):
         tk = s.tk
         while len(s.asks) < ROWS + 4:
-            s.asks.append([round((s.asks[-1][0] if s.asks else s.bids[0][0]) + tk, 2), self._fresh(s, ASK)])
+            p = round((s.asks[-1][0] if s.asks else s.bids[0][0]) + tk, 2)
+            s.asks.append([p, self._fresh(s, ASK, p)])
         while len(s.bids) < ROWS + 4:
-            s.bids.append([round((s.bids[-1][0] if s.bids else s.asks[0][0]) - tk, 2), self._fresh(s, BID)])
+            p = round((s.bids[-1][0] if s.bids else s.asks[0][0]) - tk, 2)
+            s.bids.append([p, self._fresh(s, BID, p)])
 
     def _churn(self, s, t):
         """Passive flow: rows add, cancel, thin out and refill; big size shows up, sits, gets pulled or hit."""
@@ -267,12 +288,24 @@ class DemoFeed:
                     continue
                 if any(pt["side"] == side and abs(row[0] - pt["price"]) < 1e-9 for pt in s.parts):
                     continue                            # a participant manages this row
-                p = 0.3 if i < 3 else 0.12
-                if rng.random() < p:
-                    row[1] = _r100(row[1] + 0.2 * (target - row[1]) + rng.gauss(0, 0.35 * target))
+                if i < 2:
+                    # the inside queue: it only goes down when prints take it or someone cancels, and grows when
+                    # someone joins - a few hundred at a time. It is never re-dealt, so a print that takes 300 off
+                    # the bid shows as 300 less on the ladder.
+                    if rng.random() < 0.18:
+                        if rng.random() < 0.6:
+                            row[1] = row[1] + rng.choice((100, 100, 200, 200, 300, 500))           # joins
+                        else:
+                            row[1] = max(100, row[1] - rng.choice((100, 100, 200, 300)))        # cancels
+                    continue
+                if rng.random() < 0.12:
+                    tg = target * roundness(row[0])
+                    row[1] = _r100(row[1] + 0.2 * (tg - row[1]) + rng.gauss(0, 0.25 * tg))
             # big resting size: 5k-40k, mostly at a fresh price, sometimes back at the same one (a repeat)
             if rng.random() < 0.006 and len(rows) > 6:
-                i = rng.randint(1, 6)
+                # big size goes where institutions work: round numbers first
+                cand = list(range(1, min(9, len(rows))))
+                i = rng.choices(cand, weights=[roundness(rows[j][0]) ** 2 for j in cand])[0]
                 if s.big_home[side] is not None and rng.random() < 0.4:
                     for j in range(min(ROWS, len(rows))):
                         if abs(rows[j][0] - s.big_home[side]) < 1e-9:
@@ -325,7 +358,7 @@ class DemoFeed:
                 self._extend(s)
                 follow = 0.85 if (s.eff[0] > 0.5) == is_buy else 0.55
                 if rng.random() < follow and not any(pt["side"] == (BID if is_buy else ASK) and abs(price - pt["price"]) < 1e-9 for pt in s.parts):
-                    opp.insert(0, [price, self._fresh(s, BID if is_buy else ASK)])
+                    opp.insert(0, [price, self._fresh(s, BID if is_buy else ASK, price)])
                 if rng.random() < 0.55:
                     break   # most orders don't sweep several levels
         # sizes from sweeps that reached nothing left are just lost (the book is contiguous, price moved)
@@ -337,12 +370,16 @@ class DemoFeed:
         n = int(lam) + (1 if rng.random() < lam - int(lam) else 0)
         for _ in range(n):
             is_buy = rng.random() < bias
+            touch = (s.asks if is_buy else s.bids)
+            r = roundness(touch[0][0]) if touch else 1.0
             if rng.random() < 0.22:
                 size = rng.randint(1, 99)                       # odd lots
             else:
-                size = _r100(rng.lognormvariate(5.4, 0.75) * mult)
+                size = _r100(rng.lognormvariate(5.4, 0.75) * mult * (1 + 0.35 * (r - 1)))   # heavier into a round number
                 if rng.random() < 0.03:
                     size *= 6                                   # a sweep
+                if r >= 2 and rng.random() < 0.04 * r:
+                    size = max(size, rng.choice((2000, 3000, 5000, 8000, 10000)))   # a block at the round number
             self._market(sym, s, is_buy, size, t, emit_depth)
 
     def _params(self, s, t):
@@ -370,9 +407,11 @@ class DemoFeed:
             if gap <= 1 or rng.random() > 0.8:
                 return
             if rng.random() < s.eff[0]:
-                s.bids.insert(0, [round(s.bids[0][0] + tk, 2), _r100(self._fresh(s, BID) * 0.6)])
+                p = round(s.bids[0][0] + tk, 2)
+                s.bids.insert(0, [p, _r100(self._fresh(s, BID, p) * 0.6)])
             else:
-                s.asks.insert(0, [round(s.asks[0][0] - tk, 2), _r100(self._fresh(s, ASK) * 0.6)])
+                p = round(s.asks[0][0] - tk, 2)
+                s.asks.insert(0, [p, _r100(self._fresh(s, ASK, p) * 0.6)])
 
     def _market_step(self, t, dt):
         mk, rng = self.mkt, self.rng
@@ -464,10 +503,14 @@ class DemoFeed:
         """A participant working a price. Not two alike: iceberg (small shows, deep reserve), block
         (bigger shows), or a shallow one that pulls; refills vary; some hold, some get run over."""
         rng = self.rng
-        mode = rng.choices(("hold", "clean", "pull"), weights=(4, 4, 2))[0]
+        r = roundness(price)
+        # at a round number the one working the level is usually bigger and more often there to stay
+        mode = rng.choices(("hold", "clean", "pull"), weights=(4 * r, 4, 2))[0]
         iceberg = rng.random() < 0.45
         base = rng.choice((200, 300, 400, 500, 700)) if iceberg else rng.choice((900, 1200, 1500, 2000, 2800, 3500))
+        base = int(base * r ** 0.6 / 100) * 100 or 100
         reserve = {"hold": rng.randint(30000, 120000), "clean": rng.randint(3000, 18000), "pull": rng.randint(4000, 12000)}[mode]
+        reserve = int(reserve * r ** 0.8)
         return {"side": side, "price": price, "mode": mode, "base": base, "reserve": reserve, "hit": 0, "refills": 0,
                 "refill_at": None, "done": None, "started": t, "pivot": pivot,
                 "hold_after": rng.randint(4, 10), "pull_after": rng.randint(2, 6)}
@@ -500,7 +543,9 @@ class DemoFeed:
             s.hidden_next = t + rng.uniform(240, 900)
             side = rng.choice((ASK, BID))
             rows = s.asks if side == ASK else s.bids
-            i = rng.randint(1, min(6, len(rows) - 1))
+            # hidden reloaders sit where the liquidity is: whole / half / quarter dollars and dimes, far more often
+            cand = list(range(1, min(9, len(rows) - 1) + 1))
+            i = rng.choices(cand, weights=[roundness(rows[j][0]) ** 3 for j in cand])[0]
             if not any(abs(pt["price"] - rows[i][0]) < 1e-9 for pt in s.parts):
                 pt = self._new_part(s, side, rows[i][0], t, False)
                 rows[i][1] = _r100(pt["base"] * rng.uniform(0.7, 1.3))

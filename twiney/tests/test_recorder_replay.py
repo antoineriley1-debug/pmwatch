@@ -20,7 +20,7 @@ class RecorderReplayTests(unittest.TestCase):
             feed = DemoFeed(live, ps, seed=3)
             t = 1000.0
             feed.start(t)
-            for _ in range(4 * 240):
+            for _ in range(4 * 600):
                 t += 0.25
                 feed.step(t)
             rec.close()

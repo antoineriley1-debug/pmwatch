@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20260930-0458">
+<meta name="build" content="20260930-0606">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -709,6 +709,13 @@ body.resizing .zbody{pointer-events:none}
 .rec.flagged .nm{color:#e3a83a;font-weight:700}
 .mk .play{padding:0 5px;font-size:10px}
 
+/* ladder size cells: the number first and always whole; refills (↻n) and repeat (×n) are small tags after it */
+.lad td.sz{white-space:nowrap;overflow:hidden}
+.lad td.sz .szn{font-weight:700}
+.lad td.sz .pips,.lad td.sz .bigx{font-size:9.5px;margin-left:3px;padding:0 2px;border-radius:2px;letter-spacing:0;vertical-align:1px}
+.lad td.sz .pips.b{color:#3fb56f;background:rgba(38,208,124,.12)}
+.lad td.sz .pips.a{color:#d9534f;background:rgba(255,77,94,.12)}
+
 </style>
 </head>
 <body>
@@ -1175,15 +1182,15 @@ function ps60HTML(d){
 }
 function pips(n, cls){
   if (!n) return "";
-  const dots = "●".repeat(Math.min(n, 6)) + (n > 6 ? "+" + (n - 6) : "");
-  return `<span class="pips ${cls}" title="size came back ${n}x after being hit">${dots}</span>`;
+  // compact, so the size itself is never pushed out of the cell
+  return `<span class="pips ${cls}" title="size came back ${n}x after being hit">↻${n}</span>`;
 }
 
 function whoTag(row, side){
   const st = row[side + "_state"], n = row[side + "_refills"] || 0, v = row[side + "_verdict"];
   const name = side === "bid" ? "buyer" : "seller";
   // proven reload: stays lit from the moment it is confirmed until it is cleaned up (or pulled)
-  if (st === "RELOAD" || row[side + "_proven"]) return `<span class="who ${name} big" title="proven reload ${name}: refilled ${n}x after getting hit. Stays lit until it is cleaned up or pulled">${name.toUpperCase()} ×${n}</span>`;
+  if (st === "RELOAD" || row[side + "_proven"]) return `<span class="who ${name} big" title="proven reload ${name}: refilled ${n}x after getting hit. Stays lit until it is cleaned up or pulled">${side === "bid" ? "BUY" : "SELL"}×${n}</span>`;
   if ((row[side] || 0) > 0) return "";   // size is sitting there: whatever happened earlier is history
   if (v === "CLEANED UP") return `<span class="who c" title="the reload ${name} here got eaten and price went through: cleared out">CLEARED OUT</span>`;
   if (v === "PULLED") return `<span class="who v" title="the reload ${name} here vanished without getting hit">PULLED</span>`;
@@ -1212,9 +1219,9 @@ function ladderHTML(L){
       <td class="act b${dis}" data-act="BUY" data-px="${r.price}" title="${on ? "BUY " + sz(T().default_shares) + " @ " + px(r.price) : whyNot()}">${chips(r, "b") || "BUY"}</td>
       <td class="bars l">${sw?`<span class="bar sold" style="width:${sw}%"></span>`:""}<span class="bar-n">${kfmt(r.sold)}</span></td>
       <td class="whoc l">${whoTag(r,"bid")}</td>
-      <td class="sz bsz ${r.bid_big ? (r.bid_big.huge ? "huge" : "big") : ""}">${pips(r.bid_refills,"b")} ${r.bid_big && r.bid_big.times > 1 ? `<span class="bigx" title="big size has shown up here ${r.bid_big.times} times today">×${r.bid_big.times}</span>` : ""}${r.bid?kfmt(r.bid):""}</td>
+      <td class="sz bsz ${r.bid_big ? (r.bid_big.huge ? "huge" : "big") : ""}"><span class="szn">${r.bid?kfmt(r.bid):""}</span>${r.bid_big && r.bid_big.times > 1 ? `<span class="bigx" title="big size has shown up here ${r.bid_big.times} times today">×${r.bid_big.times}</span>` : ""}${pips(r.bid_refills,"b")}</td>
       <td class="px">${px(r.price)}${r.tags.map(t => `<span class="tag">${esc(t)}</span>`).join("")}</td>
-      <td class="sz asz ${r.ask_big ? (r.ask_big.huge ? "huge" : "big") : ""}">${r.ask_big && r.ask_big.times > 1 ? `<span class="bigx" title="big size has shown up here ${r.ask_big.times} times today">×${r.ask_big.times}</span>` : ""}${r.ask?kfmt(r.ask):""} ${pips(r.ask_refills,"a")}</td>
+      <td class="sz asz ${r.ask_big ? (r.ask_big.huge ? "huge" : "big") : ""}"><span class="szn">${r.ask?kfmt(r.ask):""}</span>${r.ask_big && r.ask_big.times > 1 ? `<span class="bigx" title="big size has shown up here ${r.ask_big.times} times today">×${r.ask_big.times}</span>` : ""}${pips(r.ask_refills,"a")}</td>
       <td class="whoc r">${whoTag(r,"ask")}</td>
       <td class="bars r">${bw?`<span class="bar bought" style="width:${bw}%"></span>`:""}<span class="bar-n">${kfmt(r.bought)}</span></td>
       <td class="act s${dis}" data-act="SELL" data-px="${r.price}" title="${on ? "SELL " + sz(T().default_shares) + " @ " + px(r.price) : whyNot()}">${chips(r, "s") || "SELL"}</td></tr>`;
