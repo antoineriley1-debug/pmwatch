@@ -22,6 +22,16 @@ from .book import ASK, BID, INSERT
 from .recorder import Recorder, read_events
 
 
+def _hm(t):
+    """New York wall clock, HH:MM, for a log line."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    try:
+        return datetime.fromtimestamp(float(t), ZoneInfo("America/New_York")).strftime("%H:%M")
+    except (TypeError, ValueError, OSError):
+        return "--:--"
+
+
 class Desk:
     def __init__(self, engine, cfg, plays, version, prefix="twiney", base_dir=None):
         self.engine = engine
@@ -35,6 +45,7 @@ class Desk:
         self.marks = []
         self.shots = []
         self.notes = []   # free-text journal notes typed during the session
+        self.voice_notes = {}   # voice notes taken without a recording: n (negative) -> {t, symbol, audio}
         self.journal_path = None
         self.replay_proc = None
         self.trades = []          # closed round trips, each with its PS60 setup / grade / note
@@ -174,6 +185,9 @@ class Desk:
         tr["pnl_pct"] = round((exit_ - entry) / entry * 100 * (1 if long_ else -1), 3) if entry else None
         tr["closed"] = t
         tr["shares"] = tr["entry_qty"]
+        # the trade log: everything set, said and typed on this symbol from a little before the entry to the exit
+        since = (tr.get("opened") or t) - 600
+        tr["log"] = " | ".join(f"{_hm(n['t'])} {n['text']}" for n in self.notes if n.get("symbol") == sym and since <= n["t"] <= t + 1)[:4000]
         self.trades.append({k: v for k, v in tr.items() if k not in ("qty", "entry_cost", "exit_cost", "exit_qty", "entry_qty", "legs")})
         self.engine._rec({"ev": "trade", "t": t, "trade": self.trades[-1]})
         self._write_trades()
@@ -189,11 +203,11 @@ class Desk:
         out = io.StringIO()
         w = csv.writer(out)
         w.writerow(["date / time opened (ET)", "closed (ET)", "symbol", "side", "shares", "entry", "exit",
-                    "P&L $", "P&L %", "setup", "grade", "note", "option flow at entry", "trade id"])
+                    "P&L $", "P&L %", "setup", "grade", "note", "option flow at entry", "trade log", "trade id"])
         for tr in self.trades:
             w.writerow([when(tr.get("opened")), when(tr.get("closed")), tr.get("symbol"), tr.get("side"),
                         tr.get("shares"), tr.get("entry"), tr.get("exit"), tr.get("pnl"), tr.get("pnl_pct"),
-                        tr.get("setup"), tr.get("grade"), tr.get("note"), tr.get("flow"), tr.get("id")])
+                        tr.get("setup"), tr.get("grade"), tr.get("note"), tr.get("flow"), tr.get("log", ""), tr.get("id")])
         return out.getvalue()
 
     def tag_trade(self, trade_id, setup=None, grade=None, note=None):
@@ -224,6 +238,7 @@ class Desk:
         self.engine.recorder = rec
         self.started = t
         self.marks, self.shots, self.notes, self.journal_path = [], [], [], None
+        self.voice_notes = {}   # voice notes taken without a recording: n (negative) -> {t, symbol, audio}
         self.engine._message("info", f"REC — recording to {os.path.basename(rec.path)}", t)
         return rec.path
 
@@ -244,35 +259,60 @@ class Desk:
 
     # ---- the mic: spoken journal entries during a recording -----------------------------------------
     def mic_start(self, t, symbol=None):
-        """The mic went on: a marker right now, so the moment is on the recording even before anything is said."""
-        if not self.recording:
-            raise ValueError("start a recording first (REC) — voice notes go with a recording")
-        return self.mark(t, symbol, "🎙 voice note")
+        """The mic went on. Recording: a marker right now, so the moment is on the recording before anything is
+        said. Not recording: a voice note on its own, stamped now, going straight into the symbol's trade log."""
+        if self.recording:
+            return self.mark(t, symbol, "🎙 voice note")
+        n = -(len(self.voice_notes) + 1)
+        self.voice_notes[n] = {"n": n, "t": t, "symbol": symbol, "voice": True}
+        return self.voice_notes[n]
 
     def mic_text(self, n, text, t1):
-        """What was said becomes the journal entry, stamped at the moment the mic went on, and the marker's note."""
-        m = next((m for m in self.marks if m.get("n") == int(n)), None)
+        """What was said becomes the journal entry, stamped at the moment the mic went on (and the marker's note
+        when there is a recording)."""
+        n = int(n)
+        text = " ".join(str(text or "").split())[:4000]
+        if n < 0:
+            v = self.voice_notes.get(n)
+            if v is None:
+                raise ValueError("no such voice note")
+            if not text:
+                text = "(voice note — no words picked up; the audio is saved)"
+            self.add_note(v["t"], "🎙 " + text, v.get("symbol"), kind="voice", voice=n)
+            return v
+        m = next((m for m in self.marks if m.get("n") == n), None)
         if m is None:
             raise ValueError("no such marker")
-        text = " ".join(str(text or "").split())[:4000]
         if not text:
             text = "(voice note — no words picked up; the audio is saved with the marker)"
         m["note"] = "🎙 " + text[:280]
         m["voice"] = True
-        self.engine._rec({"ev": "mark_note", "t": t1, "n": int(n), "note": m["note"]})
-        self.add_note(m["t"], "🎙 " + text, m.get("symbol"), mark=int(n), rec=self.current_recording())
+        self.engine._rec({"ev": "mark_note", "t": t1, "n": n, "note": m["note"]})
+        self.add_note(m["t"], "🎙 " + text, m.get("symbol"), mark=n, rec=self.current_recording(), kind="voice")
         self._rewrite_marks()
         return m
 
     def mic_audio(self, n, data, ext, t1):
-        """The voice note's audio, saved next to the recording and hung on its marker (to hear it again)."""
-        m = next((m for m in self.marks if m.get("n") == int(n)), None)
+        """The voice note's audio, saved next to the recording and hung on its marker (to hear it again); a
+        voice note taken without a recording is saved under its own name."""
+        n = int(n)
+        folder = os.path.join(self.dir, "voice")
+        os.makedirs(folder, exist_ok=True)
+        if n < 0:
+            v = self.voice_notes.get(n)
+            if v is None:
+                raise ValueError("no such voice note")
+            name = f"note-{int(v['t'])}-{abs(n)}.{ext}"
+            with open(os.path.join(folder, name), "wb") as fh:
+                fh.write(data)
+            v["audio"] = name
+            self.engine._rec({"ev": "note_audio", "t": t1, "n": n, "audio": name})
+            return v
+        m = next((m for m in self.marks if m.get("n") == n), None)
         if m is None:
             raise ValueError("no such marker")
         rec = self.current_recording() or "session.jsonl"
-        folder = os.path.join(self.dir, "voice")
-        os.makedirs(folder, exist_ok=True)
-        name = f"{rec[:-6]}-{int(n)}.{ext}"
+        name = f"{rec[:-6]}-{n}.{ext}"
         with open(os.path.join(folder, name), "wb") as fh:
             fh.write(data)
         m["audio"] = name

@@ -771,6 +771,21 @@ class Engine:
             self._save_plays()
             return True, None
 
+    def log(self, symbol, text, t=None, kind="auto"):
+        """One line in the symbol's trade log (the journal): what you set, what you said, what you typed."""
+        t = t if t is not None else self.last_t
+        if self.desk is not None:
+            self.desk.add_note(t, text, symbol, kind=kind)
+        else:
+            self.notes_list.append({"t": t, "symbol": symbol, "text": text, "kind": kind})
+
+    def symbol_log(self, symbol, limit=40):
+        notes = self.desk.notes if self.desk is not None else self.notes_list
+        out = [n for n in notes if n.get("symbol") == symbol]
+        return [{"t": n["t"], "text": n["text"], "kind": n.get("kind", "typed")} for n in out[-limit:]]
+
+    LEVEL_NAMES = {"trigger": "PIVOT", "second_entry": "2ND ENTRY", "target": "TARGET", "stop": "STOP"}
+
     def set_play_level(self, symbol, role, price, t=None, source="setup"):
         """Set (or clear, with price None) the play's trigger / second_entry / target / stop
         from the chart, re-point the reload trackers, and save plays.json."""
@@ -788,6 +803,11 @@ class Engine:
                 st.play["watch"] = False  # a typed-in ticker becomes a real play once it has a pivot
             old = st.play.get(role)
             st.play[role] = price
+            if (old is None) != (price is None) or (old is not None and price is not None and price_key(old) != price_key(price)):
+                name = self.LEVEL_NAMES[role]
+                self.log(symbol, f"{name} cleared (was {narrative.px(old)})" if price is None else
+                         f"{name} set {narrative.px(price)}" if old is None else f"{name} {narrative.px(old)} → {narrative.px(price)}",
+                         t, kind="level")
             if role == "trigger" and old is not None and price is not None and price_key(old) != price_key(price):
                 # every pivot move leaves a trace: where it was, where it is, and what moved it
                 self._message("warn", f"{symbol}: PIVOT moved {narrative.px(old)} -> {narrative.px(price)} (from {source})",
@@ -1405,6 +1425,7 @@ class Engine:
             if st is None:
                 return False
             st.play["side"] = "short" if st.play["side"] == "long" else "long"
+            self.log(symbol, f"SIDE → {st.play['side'].upper()}", t, kind="level")
             st.play["second_entry"] = None
             self._rec({"ev": "flip", "t": t or self.last_t, "sym": symbol, "side": st.play["side"]})
             self._save_plays()
@@ -1909,7 +1930,7 @@ class Engine:
                         m.update(audio=ev.get("audio"), audio_s=ev.get("audio_s"), note=ev.get("note", m.get("note")))
         elif kind == "note":
             with self.lock:
-                self.notes_list.append({k: ev.get(k) for k in ("t", "symbol", "text")})
+                self.notes_list.append({k: ev.get(k) for k in ("t", "symbol", "text", "kind")})
         elif kind == "mark_note":
             with self.lock:
                 for m in self.marks_list:
@@ -2217,6 +2238,7 @@ class Engine:
             "trap": trap,
             "reloaders": reloaders,
             "user_levels": user_levels,
+            "log": self.symbol_log(sym),
             "orders": [{"id": o.get("order_id"), "action": o.get("action"), "qty": o.get("remaining") or o.get("qty"),
                         "type": o.get("type"),
                         "price": o.get("aux") if o.get("type") in ("STP", "STP LMT") and o.get("aux") else o.get("lmt") or o.get("aux"),

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20260930-2015">
+<meta name="build" content="20260930-2112">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -507,6 +507,16 @@ td.bars.l .bar-n{margin-right:1px} td.bars.r .bar-n{margin-left:1px}
 /* the tag column holds R16 and a ghost C / P / A: compact, never clipped; the SOMEBODY KNOWS bolt beside it only when the ladder is wide (the gold price outline says it otherwise) */
 .lad td.whoc .who.big{font-size:9.5px;padding:0 2px;letter-spacing:0} .lad td.whoc .who.gone,.lad td.whoc .who.was{padding:0 3px}
 .lad:not(.flowcol) td.whoc .knows{display:none}
+/* trade log under the play setup */
+.setup .row .suclr{padding:0 6px;font-size:10px;margin-left:4px;color:var(--dim)} .setup .row .suclr:hover{color:var(--sell);border-color:var(--sell)}
+.tlog{margin:8px 6px 6px;border-top:1px solid var(--line);padding-top:6px}
+.tlog-hd{display:flex;justify-content:space-between;align-items:baseline;font:600 10px var(--sans);letter-spacing:.12em;color:var(--dim)} .tlog-hd b{color:var(--gold);margin-left:6px}
+.tlog-in{display:flex;gap:4px;margin:5px 0} .tlog-in input{flex:1;height:22px;font:11.5px var(--mono);background:#0a0a0b;color:var(--text);border:1px solid #26282c;padding:0 6px}
+.tlog-in button{height:22px;padding:0 8px;font-size:10px;white-space:nowrap} .tlog-in button.on{background:#3d1c1c;border-color:#ff2d55;color:#e8a3a3}
+.tlog-list{max-height:220px;overflow-y:auto}
+.tl{display:grid;grid-template-columns:auto auto 1fr;gap:6px;padding:3px 2px;border-bottom:1px solid #1c1d20;font:11.5px var(--mono);align-items:start}
+.tl .tm{color:var(--dim);font-size:10.5px} .tl .ic{width:14px;text-align:center} .tl .tx{white-space:normal;line-height:1.35}
+.tl.level .tx{color:var(--gold)} .tl.voice .tx{color:var(--text)} .tl.typed .tx{color:#b8b8b4}
 
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
@@ -1292,6 +1302,8 @@ function chartMenu(p, v, x, y, price){
     ${d.position ? `<button class="bflat" data-do="flat" ${on ? "" : "disabled"}>Flatten ${esc(d.symbol)}</button>` : ""}
     ${d.orders.length ? `<button data-do="cxl">Cancel all (${d.orders.length})</button>` : ""}
     <button data-do="alert" class="balert">🔔 Alert me when ${esc(d.symbol)} hits ${px(price)}</button>
+    ${(() => { const per = v.chartY ? (v.chartY[1] - v.chartY[0]) / ((v.chartH || 1) - 8) : 0; const lv = (d.user_levels || []).find(l => l.role !== "trigger" && Math.abs(l.price - price) <= per * 6);
+      return lv ? `<button data-do="rmlevel" data-role="${esc(lv.role)}" data-lp="${lv.price}">✕ Remove ${esc(lv.label)} ${px(lv.price)}</button>` : ""; })()}
     ${!on ? `<div class="dim" style="font-size:11px;margin-top:4px">${esc(whyNot())}</div>` : ""}`;
   m.style.left = Math.min(x, window.innerWidth - 230) + "px"; m.style.top = Math.min(y, window.innerHeight - 160) + "px";
   document.body.appendChild(m);
@@ -1304,6 +1316,9 @@ function chartMenu(p, v, x, y, price){
     else if (b.dataset.do === "flat") flatten(d.symbol);
     else if (b.dataset.do === "cxl") cancelAll(d.symbol);
     else if (b.dataset.do === "alert") addAlert({symbol: d.symbol, kind: "price", price, when: "hit", repeat: false});
+    else if (b.dataset.do === "rmlevel"){ const role = b.dataset.role, lp = +b.dataset.lp;
+      (role === "extra" ? post("/api/level", {symbol: d.symbol, price: lp, on: false, role: "extra"}) : post("/api/level", {symbol: d.symbol, role, price: null}))
+        .then(out => { toast(out.ok ? "Level removed " + px(lp) : "Could not remove it", out.ok); if (out.ok) poll(true); }); }
   });
   // any click outside closes it (a click inside on a disabled button must not use that up), so does Escape or 20 s
   const away = ev => { if (!m.isConnected){ document.removeEventListener("mousedown", away, true); return; } if (!m.contains(ev.target)) m.remove(); };
@@ -2684,21 +2699,55 @@ function renderSetup(d){
   const p = d.play || {}, v = k => p[k] != null ? p[k] : "";
   const f = {side: p.side || "long", trigger: v("trigger"), second_entry: v("second_entry"), stop: v("stop"), target: p.target != null ? p.target : v("mp"), notes: p.notes || ""};
   const inp = (k, ph) => `<input id="su_${k}" type="number" step="0.01" min="0" value="${f[k]}" placeholder="${ph}">`;
+  // the x beside an optional level clears it from the chart and the play at once (a change of mind)
+  const clr = k => f[k] !== "" ? `<button class="suclr" data-clear="${k}" title="remove this level from the chart and the play">✕</button>` : "";
   const html = `<div class="ticket setup">
     <div class="hdr"><span><b>${esc(d.symbol)}</b> PLAY</span><span>LAST ${px(d.last)}</span></div>
     <label>SIDE</label><select id="su_side"><option value="long" ${f.side === "long" ? "selected" : ""}>LONG</option><option value="short" ${f.side === "short" ? "selected" : ""}>SHORT</option></select>
     <label>PIVOT</label>${inp("trigger", "")}
-    <label>2ND ENTRY</label>${inp("second_entry", "optional")}
-    <label>STOP</label>${inp("stop", "")}
-    <label>TARGET</label>${inp("target", "your take profit")}
+    <label>2ND ENTRY</label><div class="row">${inp("second_entry", "optional")}${clr("second_entry")}</div>
+    <label>STOP</label><div class="row">${inp("stop", "")}${clr("stop")}</div>
+    <label>TARGET</label><div class="row">${inp("target", "your take profit")}${clr("target")}</div>
     <label>RISK $</label><div class="row"><input id="su_risk" type="number" step="10" min="0" value="${riskDollars()}"><span class="dim" style="font-size:10.5px">PER TRADE</span></div>
     <label>SETUP</label>${setupSel("su_setup", p.setup || "", 'title="what kind of PS60 play this is; every trade on it is filed under this in the journal"')}
     <label>NOTES</label><input id="su_notes" type="text" maxlength="200" value="${esc(f.notes)}" placeholder="notes">
     <div class="derived" id="suDerived">${suDerivedHTML(d, f)}</div>
     <div class="go"><button class="save" id="suSave">SAVE PLAY</button></div>
     <div class="msg ${SU.msg.startsWith("SAVED") ? "ok" : "no"}" id="suMsg">${esc(SU.msg)}</div></div>`;
-  if (panelHTML("setup", html)) P.setup.pc.dataset.sym = curSym;
+  const pc = P.setup.pc;
+  if (!pc.querySelector("#suForm")){
+    pc.innerHTML = `<div id="suForm"></div><div class="tlog" id="suLog"><div class="tlog-hd"><span>TRADE LOG <b id="tlogSym"></b></span><span class="dim">levels you set · what you say · what you type</span></div>
+      <div class="tlog-in"><input id="tlogIn" placeholder="type a note, Enter" maxlength="600" spellcheck="false"><button id="tlogMic" title="talk: what you say lands here as a journal entry (and on the recording when one is on)">🎙 MIC</button></div><div class="tlog-list" id="tlogList"></div></div>`;
+    P.setup.last = null;
+  }
+  const form = pc.querySelector("#suForm");
+  if (form.dataset.h !== html){ form.dataset.h = html; form.innerHTML = html; pc.dataset.sym = curSym; }
+  renderTradeLog(d);
 }
+function renderTradeLog(d){
+  const list = document.getElementById("tlogList"), hd = document.getElementById("tlogSym"); if (!list) return;
+  if (hd.textContent !== (d.symbol || "")) hd.textContent = d.symbol || "";
+  const rows = (d.log || []).slice().reverse();
+  const icon = k => k === "voice" ? "🎙" : k === "level" ? "⟶" : "✎";
+  const html = rows.length ? rows.map(n => `<div class="tl ${esc(n.kind || "typed")}"><span class="tm">${nyHM(n.t)}</span><span class="ic">${icon(n.kind)}</span><span class="tx">${esc(n.text)}</span></div>`).join("")
+    : `<div class="dim" style="padding:6px 2px">Nothing yet. Set a level, press MIC and talk, or type a line.</div>`;
+  if (list.dataset.h !== html){ list.dataset.h = html; list.innerHTML = html; }
+  const mic = document.getElementById("tlogMic"); if (mic){ mic.classList.toggle("on", MIC.on); mic.textContent = MIC.on ? "● STOP" : "🎙 MIC"; }
+}
+async function tlogSend(){
+  const inp = document.getElementById("tlogIn"), text = (inp.value || "").trim(); if (!text || !curSym) return;
+  const out = await post("/api/desk/journal", {symbol: curSym, text});
+  if (out.ok){ inp.value = ""; poll(true); } else toast("Note not saved", false);
+}
+document.getElementById("app").addEventListener("keydown", e => { if (e.target.id !== "tlogIn") return; e.stopPropagation(); if (e.key === "Enter") tlogSend(); if (e.key === "Escape") e.target.blur(); });
+document.getElementById("app").addEventListener("click", async e => {
+  if (e.target.id === "tlogMic"){ MIC.on ? micStop() : micStart(); return; }
+  const c = e.target.closest("button[data-clear]"); if (!c || !curSym) return;
+  const k = c.dataset.clear, names = {second_entry: "2nd entry", stop: "stop", target: "target"};
+  const out = await post("/api/level", {symbol: curSym, role: k, price: null});
+  toast(out.ok ? `${curSym} ${names[k]} removed` : "Could not remove the " + names[k], out.ok);
+  SU.dirty = false; P.setup.last = null; poll(true);
+});
 P.setup.el.addEventListener("input", e => { if (e.target.id === "su_risk"){ store.set("riskDollars", +e.target.value || 0); P.ticket.last = null; renderTicket(state, curData()); } else SU.dirty = true; SU.msg = ""; const m = document.getElementById("suMsg"); if (m) m.textContent = ""; suRefresh(); });
 P.setup.el.addEventListener("click", async e => {
   const u = e.target.closest("button[data-usesize]"); if (u){ TK.qty = Math.max(1, +u.dataset.usesize); P.ticket.last = null; renderTicket(state, curData()); post("/api/trade/size", {shares: TK.qty}); toast("Ticket size " + sz(TK.qty) + " shares", true); return; }
@@ -3413,8 +3462,8 @@ document.addEventListener("click", e => {
 const MIC = {on: false, n: null, t0: 0, text: "", interim: "", rec: null, media: null, chunks: [], stream: null};
 function micUI(){
   const b = document.getElementById("micBtn"); if (!b) return;
-  const recOn = !!(state && state.desk && state.desk.recording);
-  b.disabled = !recOn && !MIC.on || !!(state && state.replay);
+  b.disabled = !!(state && state.replay);
+  b.title = state && state.desk && state.desk.recording ? "Voice note: it lands in the trade log and on the recording as a marker" : "Voice note: what you say lands in the symbol's trade log (start REC to put it on a recording too)";
   b.className = MIC.on ? "on mic" : "";
   b.textContent = MIC.on ? "● MIC " + fmtDur(Date.now() / 1000 - MIC.t0) : "MIC";
   let live = document.getElementById("micLive");
@@ -3425,11 +3474,11 @@ function micUI(){
 }
 setInterval(micUI, 500);
 async function micStart(){
-  if (!(state && state.desk && state.desk.recording)){ toast("Start a recording first (REC) — voice notes go with a recording", false); return; }
+  if (state && state.replay){ toast("No voice notes during a replay", false); return; }
   const out = await post("/api/desk/mic_start", {symbol: curSym});
   if (!out.ok){ toast(out.reason || "Mic not available", false); return; }
   Object.assign(MIC, {on: true, n: out.mark.n, t0: Date.now() / 1000, text: "", interim: "", chunks: []});
-  toast("🎙 Marked at " + nyT(out.mark.t) + " — talking…", true);
+  toast((out.mark.n > 0 ? "🎙 Marked at " + nyT(out.mark.t) : "🎙 " + (curSym || "") + " trade log") + " — talking…", true);
   try {                                     // the audio itself, kept with the marker
     MIC.stream = await navigator.mediaDevices.getUserMedia({audio: true});
     MIC.media = new MediaRecorder(MIC.stream);

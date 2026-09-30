@@ -62,8 +62,13 @@ class RecordingToolsTests(unittest.TestCase):
 
     def test_voice_note_becomes_the_journal_entry(self):
         e = Engine(self.ps, self.c, None); d = Desk(e, self.c, self.ps, "t")
-        with self.assertRaises(ValueError):
-            d.mic_start(10.0)                          # needs a recording
+        v = d.mic_start(9.0, "AAA")                    # no recording yet: a voice note on its own, straight into the log
+        self.assertLess(v["n"], 0)
+        d.mic_text(v["n"], "watching the half", 9.5)
+        self.assertEqual((d.notes[-1]["text"], d.notes[-1]["t"], d.notes[-1]["kind"]), ("🎙 watching the half", 9.0, "voice"))
+        d.mic_audio(v["n"], b"OggS....", "ogg", 9.6)
+        self.assertTrue(os.path.exists(os.path.join(self.dir, "voice", d.voice_notes[v["n"]]["audio"])))
+        self.assertEqual(d.marks, [])                  # no recording: no marker
         d.start(10.0)
         m = d.mic_start(11.0, "AAA")
         d.mic_text(m["n"], "  seller reloading at ten   twenty ", 15.0)
