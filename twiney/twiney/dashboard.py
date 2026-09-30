@@ -227,6 +227,9 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                 from .config import ConfigError
                 try:
                     applied, restart = _settings.apply(engine.cfg, config_path, body.get("changes") or {})
+                    if applied:     # recorded, so a replay changes the same setting at the same moment
+                        engine._rec({"ev": "settings", "t": clock(), "changes": {p: _settings._get(engine.cfg, p) for p in applied
+                                                                                  if p not in _settings.SECRET}})
                     engine._message("info", f"settings saved: {', '.join(applied)}" if applied else "settings: nothing changed", clock())
                     self._send(200, json.dumps({"ok": True, "applied": applied, "restart": restart,
                                                 "sections": _settings.schema(engine.cfg)}, default=str), "application/json")

@@ -158,7 +158,9 @@ def second_entry(bars, play, now, cfg):
         beyond = h > pivot if long_ else l < pivot          # traded through the pivot
         failed = cl < pivot - tk if long_ else cl > pivot + tk  # closed back on the wrong side
         if state == IDLE:
-            if beyond:
+            if beyond and failed:
+                out["fails"] += 1          # a wick through that closed back on the wrong side is a failed break
+            elif beyond:
                 state, ext, ext_i, retr = BROKE, (h if long_ else l), i, None
             continue
         if state in (BROKE, RETRACE):
@@ -175,16 +177,19 @@ def second_entry(bars, play, now, cfg):
             if pulled > 0:
                 retr = dip if retr is None else (min(retr, dip) if long_ else max(retr, dip))
             move = abs(ext - pivot)
-            real_retrace = pulled >= max(3 * tk, cfg["min_retrace_fraction"] * move)
+            need = max(3 * tk, cfg["min_retrace_fraction"] * move)
+            real_retrace = pulled >= need
+            # the pullback so far, from the extreme to the deepest point since: only a REAL one makes a retrace
+            deepest = None if retr is None else ((ext - retr) if long_ else (retr - ext))
             closed_through = cl > ext if long_ else cl < ext
             if state == RETRACE and new_ext:
                 state, se_price, se_t, se_i = SECOND_ENTRY, ext, t, i      # back through the extreme
             elif state == BROKE and new_ext and real_retrace and closed_through:
                 state, se_price, se_t, se_i = SECOND_ENTRY, ext, t, i      # retraced and re-took it inside one new candle
             elif new_ext:
-                ext, ext_i = (h if long_ else l), i                        # no real retrace yet: a higher extreme
-            else:
-                state = RETRACE
+                ext, ext_i, retr = (h if long_ else l), i, None             # no real retrace yet: a higher extreme
+            elif deepest is not None and deepest >= need:
+                state = RETRACE                                            # a real pullback (min fraction, 3 ticks)
             continue
         # SECOND_ENTRY: watch the build
         if failed:

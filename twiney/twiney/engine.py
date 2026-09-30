@@ -980,6 +980,7 @@ class Engine:
         """Time-based evaluation. Returns slot commands for the adapter."""
         with self.lock:
             self._clock(t)
+            self._rec({"ev": "tick", "t": t})       # replay runs its ticks at exactly these times
             rc = self.cfg["reload"]
             for st in self.syms.values():
                 if st.book is None:
@@ -1251,6 +1252,7 @@ class Engine:
             self.focus = symbol
             self.focus_pinned = symbol not in self.pinned
             self.pinned.add(symbol)
+            self._rec({"ev": "focus", "t": t, "sym": symbol})
             return True
 
     def retire_play(self, symbol, reason, t=None, price=None):
@@ -1367,6 +1369,25 @@ class Engine:
                 if st is not None:
                     st.play["side"] = ev["side"]
                     st.play["second_entry"] = None
+        elif kind == "level":
+            (self.add_level if ev.get("on", True) else self.remove_level)(ev["sym"], ev.get("px"), t)
+        elif kind == "play_level":
+            self.set_play_level(ev["sym"], ev["role"], ev.get("px"), t, source="replay")
+        elif kind == "ui":
+            if "pin" in ev:
+                self.set_pinned(ev["pin"], ev.get("on"), t)
+            elif "auto_rotate" in ev:
+                self.set_auto_rotate(ev["auto_rotate"], t)
+        elif kind == "focus":
+            self.set_focus(ev["sym"], t)
+        elif kind == "settings":
+            with self.lock:           # a setting changed mid-session: the replay changes it at the same moment
+                for path, val in (ev.get("changes") or {}).items():
+                    d = self.cfg
+                    keys = path.split(".")
+                    for k in keys[:-1]:
+                        d = d.setdefault(k, {})
+                    d[keys[-1]] = val
         elif kind == "play_add":
             self.add_play(ev["play"]["symbol"], t, ev["play"].get("side", "long"))
         elif kind == "mark":

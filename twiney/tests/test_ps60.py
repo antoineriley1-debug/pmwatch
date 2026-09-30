@@ -148,3 +148,37 @@ class ManualNumbersTests(unittest.TestCase):
         self.assertEqual((p["mp"], p["target"], p["atr"]), (11.5, 11.5, 0.4))
         legacy = validate_plays([{"symbol": "x", "trigger": 10, "mp": "1.5"}])[0]     # an old file with mp in dollars
         self.assertEqual((legacy["mp"], legacy["target"]), (11.5, 11.5))
+
+
+class SecondEntryRulesTests(unittest.TestCase):
+    play = {"symbol": "T", "side": "long", "trigger": 10.00, "target": 12.0, "stop": 9.5, "active": True}
+
+    def test_a_one_cent_dip_is_not_a_retrace(self):
+        # break 10.00 -> 11.00; a 1-cent dip; then 11.01: no retrace happened, so no second entry
+        seq = [(9.9, 10.2, 9.9, 10.2), (10.2, 11.0, 10.2, 10.95), (10.95, 11.0, 10.99, 11.0), (11.0, 11.01, 10.99, 11.01)]
+        se = ps60.second_entry(bars(seq), self.play, OPEN + 4 * 60, CFG)
+        self.assertEqual(se["state"], ps60.BROKE)
+        # a real pullback (25% of the move) and then back through: that is the second entry
+        seq += [(11.01, 11.01, 10.70, 10.75), (10.75, 11.05, 10.74, 11.04)]
+        se = ps60.second_entry(bars(seq), self.play, OPEN + 6 * 60, CFG)
+        self.assertEqual(se["state"], ps60.SECOND_ENTRY)
+
+    def test_break_candle_that_closes_back_under_is_a_failure(self):
+        seq = [(9.9, 10.5, 9.85, 9.85)]
+        se = ps60.second_entry(bars(seq), self.play, OPEN + 60, CFG)
+        self.assertEqual((se["state"], se["fails"]), (ps60.IDLE, 1))
+
+
+class FlowParsingTests(unittest.TestCase):
+    def test_times_ids_sides_and_expiry(self):
+        from twiney.flow import normalize, _epoch
+        now = OPEN + 3600
+        self.assertAlmostEqual(_epoch("2025-09-16T14:30:00.123456789Z", now), OPEN + 3600.123456, places=3)
+        self.assertAlmostEqual(_epoch(int((OPEN + 5) * 1e9), now), OPEN + 5, places=3)
+        self.assertAlmostEqual(_epoch("2025-09-16 10:30:00", now), OPEN + 3600)      # no zone: New York
+        self.assertAlmostEqual(_epoch("10:30:00", now), OPEN + 3600)                 # bare time: today, NY
+        self.assertIsNone(_epoch("yesterday-ish", now))
+        p = normalize({"ticker": "aapl", "type": "SWEEP", "call_put": "PUT", "strike": 200, "expiry": "2025-09-16",
+                       "size": 10, "price": 1.5, "side": "SOLD", "id": 77}, now)
+        self.assertEqual((p["cp"], p["side"], p["kind"], p["vid"]), ("P", "bid", "sweep", "77"))
+        self.assertAlmostEqual(p["dte"], round((OPEN + 6.5 * 3600 - now) / 86400, 1))   # to 4:00 pm ET

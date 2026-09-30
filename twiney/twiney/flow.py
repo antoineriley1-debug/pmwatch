@@ -29,7 +29,7 @@ _ALIASES = {
     "price": ("price", "option_price", "fill_price", "trade_price", "px"),
     "spot": ("spot", "underlying_price", "stock_price", "ref_price", "underlying_last", "spot_price"),
     "side": ("side", "aggressor", "at", "execution_side", "trade_side", "bid_ask"),
-    "kind": ("kind", "order_type", "flow_type", "trade_type", "alert_type", "tag", "sweep_type"),
+    "kind": ("kind", "order_type", "flow_type", "trade_type", "alert_type", "tag", "sweep_type", "type"),
     "t": ("t", "time", "timestamp", "executed_at", "ts", "datetime", "created_at", "trade_time", "date_time"),
     "id": ("id", "trade_id", "tradeId", "uuid", "print_id", "flow_id"),
     "oi": ("oi", "open_interest", "openInterest"),

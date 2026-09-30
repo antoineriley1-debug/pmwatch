@@ -11,7 +11,8 @@ TICK_STEP = 0.25  # the live session evaluates time-based rules every 0.25s
 
 def session_header(plays, cfg, version):
     from .settings import redacted
-    return {"ev": "session", "t": time.time(), "version": version, "plays": plays, "config": redacted(cfg)}
+    return {"ev": "session", "t": time.time(), "version": version, "plays": plays, "config": redacted(cfg),
+            "ticks": True}   # this recording carries the live tick times
 
 
 def replay(path, plays=None, cfg=None, speed=0.0, on_alert=None, engine_ready=None, control=None):
@@ -25,9 +26,12 @@ def replay(path, plays=None, cfg=None, speed=0.0, on_alert=None, engine_ready=No
     recorded = []
     prev_t = None
     next_tick = None
+    ticks_recorded = False
+    replayed = []           # every replayed alert (the engine itself keeps only the last 300)
 
     def new_engine(p, c):
         eng = Engine(p, c)
+        eng.listeners.append(replayed.append)
         if on_alert:
             eng.listeners.append(on_alert)
         if engine_ready is not None:
@@ -39,6 +43,8 @@ def replay(path, plays=None, cfg=None, speed=0.0, on_alert=None, engine_ready=No
         if kind == "session":
             if engine is None:
                 engine = new_engine(plays or ev["plays"], cfg or ev["config"])
+                engine.replayed_alerts = replayed
+                ticks_recorded = bool(ev.get("ticks"))
             continue
         if engine is None:
             if plays is None or cfg is None:
@@ -50,16 +56,24 @@ def replay(path, plays=None, cfg=None, speed=0.0, on_alert=None, engine_ready=No
         t = ev.get("t")
         if t is None:
             continue
-        if next_tick is None:
+        if kind == "tick":
+            if ticks_recorded:
+                engine.tick(t, allocate_slots=False)   # exactly when the live session ran it
+            prev_t = t if prev_t is None else max(prev_t, t)
+            continue
+        if ticks_recorded:
+            pass                   # ticks come from the recording itself
+        elif next_tick is None:
             next_tick = t + TICK_STEP
         # reproduce the live session's periodic evaluation (every TICK_STEP seconds)
-        if t - next_tick > 120.0:
-            engine.tick(next_tick, allocate_slots=False)
-            next_tick = t  # long gap (e.g. overnight): jump ahead
-        # live, the tick at time T runs after every event stamped T: so tick strictly before this event's time
-        while next_tick < t or (kind == "slot" and next_tick <= t):   # a slot change is made by the tick at its own time
-            engine.tick(next_tick, allocate_slots=False)
-            next_tick += TICK_STEP
+        if not ticks_recorded:     # an older recording: rebuild the ticks on the live grid
+            if t - next_tick > 120.0:
+                engine.tick(next_tick, allocate_slots=False)
+                next_tick = t  # long gap (e.g. overnight): jump ahead
+            # live, the tick at time T runs after every event stamped T: so tick strictly before this event's time
+            while next_tick < t or (kind == "slot" and next_tick <= t):   # a slot change is made by the tick at its own time
+                engine.tick(next_tick, allocate_slots=False)
+                next_tick += TICK_STEP
         if control is not None:
             control["position"] = t
             seek = control.get("seek")
@@ -77,7 +91,7 @@ def replay(path, plays=None, cfg=None, speed=0.0, on_alert=None, engine_ready=No
             time.sleep(min((t - prev_t) / speed, 5.0))
         prev_t = t if prev_t is None else max(prev_t, t)
         engine.ingest(ev)
-    if engine is not None and prev_t is not None:
+    if engine is not None and prev_t is not None and not ticks_recorded:
         engine.tick(prev_t, allocate_slots=False)
     return engine, recorded
 
@@ -91,4 +105,4 @@ def compare(engine, recorded):
                 key = (a["symbol"], a["label"], a["price"])
                 out[key] = out.get(key, 0) + 1
         return out
-    return counts(list(engine.alerts)), counts(recorded)
+    return counts(list(getattr(engine, "replayed_alerts", None) or engine.alerts)), counts(recorded)
