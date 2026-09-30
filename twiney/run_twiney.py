@@ -17,7 +17,7 @@ import time
 import webbrowser
 
 from twiney import __version__
-from twiney.config import ConfigError, build_config, load_config, load_plays
+from twiney.config import PLACEHOLDERS_STRIPPED, ConfigError, build_config, load_config, load_plays
 from twiney.dashboard import Dashboard, EngineRef
 from twiney.desk import Desk
 from twiney.engine import Engine
@@ -93,6 +93,7 @@ def run_live(cfg, plays, args):
     engine.grades_path = os.path.join(cfg["recording"]["dir"], "grades.jsonl")
     engine.load_user_alerts(os.path.join(os.path.dirname(os.path.abspath(args.plays)), "alerts.json"))
     engine.listeners.append(console_alert)
+    note_stripped(engine, args)
     gate = TradingGate(cfg)
     session = MarketDataSession(engine, cfg, plays, factory, gate=gate)
     engine.play_listeners.append(session.add_play)
@@ -131,6 +132,14 @@ def run_live(cfg, plays, args):
     return 0
 
 
+def note_stripped(engine, args):
+    """plays.json still carried the example's made-up prices for these tickers: they start blank, and the desk says so."""
+    if PLACEHOLDERS_STRIPPED:
+        syms = ", ".join(PLACEHOLDERS_STRIPPED)
+        engine._message("warn", f"{syms}: the example placeholder levels in {os.path.basename(args.plays)} were dropped — "
+                                f"those charts start blank; draw your own stop, target and 2nd entry", time.time())
+
+
 def start_watchdog(get_trader, clock=time.time, every=0.5):
     """The loss lock, breakeven stops and the exit guard run on their own clock, browser open or not."""
     def run():
@@ -161,6 +170,7 @@ def run_demo(cfg, plays, args):
     engine.grades_path = os.path.join(cfg["recording"]["dir"], "grades.jsonl")
     engine.load_user_alerts(os.path.join(os.path.dirname(os.path.abspath(args.plays)), "alerts.json"))
     engine.listeners.append(console_alert)
+    note_stripped(engine, args)
     feed = DemoFeed(engine, plays, seed=None, scenario=cfg.get("demo", {}).get("scenario"))
     feed.start(time.time())
     print(f"Practice session · day type: {feed.scenario}  (not shown on the desk; set demo.scenario in config.json to pick one)", flush=True)

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20260930-2157">
+<meta name="build" content="20260930-2209">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -537,6 +537,10 @@ td.bars.l .bar-n{margin-right:1px} td.bars.r .bar-n{margin-left:1px}
 .lad td.act{font-size:calc(9.5px * var(--ladz))} .lad td.flow{font-size:calc(9.5px * var(--ladz))} .lad td.bars.rlw{font-size:calc(9px * var(--ladz))}
 .lad td.px .lt{font-size:calc(7.5px * var(--ladz))}
 .lad.zoomtrim th.act,.lad.zoomtrim td.act{display:none}
+.setup .auto{grid-column:1/3;display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;font-family:var(--mono);font-size:11px;background:#0e0f11;border:1px solid var(--line);border-radius:3px;padding:5px 8px}
+.setup .auto label{display:flex;gap:5px;align-items:center;font-size:10px;letter-spacing:.06em;color:var(--gold);white-space:nowrap;cursor:pointer}
+.setup .auto.off label{color:var(--dim)} .setup .auto .ok{color:var(--buy)} .setup .auto .gold{color:var(--gold)} .setup .auto .dim{color:var(--dim)}
+.setup .go #suClear{padding:6px 10px;font-size:10.5px;letter-spacing:.08em}
 
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
@@ -2718,6 +2722,8 @@ function capShares(n, price){
 }
 const setupSel = (id, cur, extra) => `<select ${id ? `id="${id}"` : ""} ${extra || ""}><option value="">— setup —</option>${SETUPS.map(x => `<option value="${x}" ${cur === x ? "selected" : ""}>${x}</option>`).join("")}</select>`;
 function riskDollars(){ return +store.get("riskDollars", 100) || 0; }
+let RISK_SYNC = null;
+function syncRisk(){ clearTimeout(RISK_SYNC); RISK_SYNC = setTimeout(() => post("/api/trade/risk", {dollars: riskDollars()}), 400); }   // the auto 2nd entry is sized from it on the server
 function suFields(){
   const f = {}; for (const k of ["trigger", "second_entry", "stop", "target"]){ const el = document.getElementById("su_" + k); if (el) f[k] = el.value.trim(); }
   const side = document.getElementById("su_side"), notes = document.getElementById("su_notes"), su = document.getElementById("su_setup");
@@ -2745,6 +2751,14 @@ function suDerive(d, f){
   if ((pivot && mp && sgn * (mp - pivot) <= 0) || (mp && entry && sgn * (mp - entry) <= 0)) bad.push("target");
   if (stop && entry && sgn * (entry - stop) <= 0 && !bad.includes("stop")) bad.push("stop");
   return {side, pivot, second, stop, mp, entry, entryLbl, risk, room, r, shares, bad, seState, fromSecond: !!second};
+}
+function autoEntryHTML(d){
+  // the 2nd entry you draw is an automatic entry: what the desk has working for it right now, and why not when it has nothing
+  const t = (state && state.trading) || {}, a = (t.auto || {})[d.symbol];
+  if (!a) return "";
+  const cls = a.state === "WORKING" ? "ok" : a.state === "DONE" ? "gold" : a.state === "OFF" ? "dim" : "";
+  return `<div class="auto ${a.on ? "" : "off"}" id="suAuto"><label title="on: when a 2nd entry, a stop and a target are on the chart and the desk is ARMED, a stop-limit entry is placed through the 2nd entry with the stop and target attached, sized from your risk $. One entry per drawn level."><input type="checkbox" id="suAutoOn" ${a.on ? "checked" : ""}> AUTO 2ND ENTRY</label>
+    <span class="${cls}"><b>${esc(a.state)}</b> ${esc(a.text || "")}</span>${a.state === "WAITING" && a.qty ? ` <span class="dim">· ${sz(a.qty)} sh when it goes</span>` : ""}</div>`;
 }
 function suDerivedHTML(d, f){
   const x = suDerive(d, f), $ = v => v == null ? NA : "$" + v.toFixed(2);
@@ -2775,7 +2789,8 @@ function renderSetup(d){
     <label>SETUP</label>${setupSel("su_setup", p.setup || "", 'title="what kind of PS60 play this is; every trade on it is filed under this in the journal"')}
     <label>NOTES</label><input id="su_notes" type="text" maxlength="200" value="${esc(f.notes)}" placeholder="notes">
     <div class="derived" id="suDerived">${suDerivedHTML(d, f)}</div>
-    <div class="go"><button class="save" id="suSave">SAVE PLAY</button></div>
+    ${autoEntryHTML(d)}
+    <div class="go"><button class="save" id="suSave">SAVE PLAY</button><button id="suClear" class="danger" title="wipe the pivot, 2nd entry, stop, target and extra levels off this chart (the ticker stays on the desk)">CLEAR PLAY</button></div>
     <div class="msg ${SU.msg.startsWith("SAVED") ? "ok" : "no"}" id="suMsg">${esc(SU.msg)}</div></div>`;
   const pc = P.setup.pc;
   if (!pc.querySelector("#suForm")){
@@ -2811,9 +2826,19 @@ document.getElementById("app").addEventListener("click", async e => {
   toast(out.ok ? `${curSym} ${names[k]} removed` : "Could not remove the " + names[k], out.ok);
   SU.dirty = false; P.setup.last = null; poll(true);
 });
-P.setup.el.addEventListener("input", e => { if (e.target.id === "su_risk"){ store.set("riskDollars", +e.target.value || 0); P.ticket.last = null; renderTicket(state, curData()); } else SU.dirty = true; SU.msg = ""; const m = document.getElementById("suMsg"); if (m) m.textContent = ""; suRefresh(); });
+P.setup.el.addEventListener("input", e => { if (e.target.id === "su_risk"){ store.set("riskDollars", +e.target.value || 0); syncRisk(); P.ticket.last = null; renderTicket(state, curData()); } else SU.dirty = true; SU.msg = ""; const m = document.getElementById("suMsg"); if (m) m.textContent = ""; suRefresh(); });
 P.setup.el.addEventListener("click", async e => {
   const u = e.target.closest("button[data-usesize]"); if (u){ TK.qty = Math.max(1, +u.dataset.usesize); P.ticket.last = null; renderTicket(state, curData()); post("/api/trade/size", {shares: TK.qty}); toast("Ticket size " + sz(TK.qty) + " shares", true); return; }
+  if (e.target.id === "suClear" && curSym){
+    if (!confirm(`Clear every level off ${curSym}? The pivot, 2nd entry, stop, target and extra lines go; the ticker stays on the desk.`)) return;
+    const out = await post("/api/play", {symbol: curSym, action: "clear"});
+    toast(out.ok ? curSym + " cleared — blank chart" : "Could not clear " + curSym, out.ok);
+    SU.dirty = false; P.setup.last = null; poll(true); return;
+  }
+  if (e.target.id === "suAutoOn" && curSym){
+    const out = await post("/api/trade/auto", {symbol: curSym, on: e.target.checked});
+    toast(out.ok ? `${curSym} auto 2nd entry ${e.target.checked ? "ON" : "OFF"}` : "Could not switch", out.ok); poll(true); return;
+  }
   if (e.target.id !== "suSave" || !curSym) return;
   const f = suFields();
   SU.saving = true; suRefresh();
@@ -3032,7 +3057,7 @@ P.ticket.el.addEventListener("change", e => {
   if (e.target.id === "tkQty"){ TK.qty = +e.target.value; post("/api/trade/size", {shares: TK.qty}); }
   if (e.target.id === "tkPx") TK.px = +e.target.value;
   if (e.target.id === "tkAux") TK.aux = +e.target.value;
-  if (e.target.id === "tkRisk"){ store.set("riskDollars", +e.target.value || 0); P.ticket.last = null; renderTicket(state, curData()); P.setup.last = null; SU.dirty = false; renderSetup(curData()); }
+  if (e.target.id === "tkRisk"){ store.set("riskDollars", +e.target.value || 0); syncRisk(); P.ticket.last = null; renderTicket(state, curData()); P.setup.last = null; SU.dirty = false; renderSetup(curData()); }
   if (e.target.id === "tkBracket") post("/api/trade/bracket", {on: e.target.checked});
   if (e.target.id === "tkScale") post("/api/trade/scale", {on: e.target.checked});
 });
@@ -3627,6 +3652,7 @@ mkChart("chart", false); mkChart("foot", true);
   renderRecent();
   if (PREFS.flowScope) post("/api/flow", {scope: PREFS.flowScope});
   if (PREFS.flowAlerts) post("/api/flow", {alerts: PREFS.flowAlerts});   // your WHOLE MARKET setting survives a restart
+  post("/api/trade/risk", {dollars: riskDollars()});                    // the auto 2nd entry is sized from your risk $
   if (PREFS.tabs && PREFS.tabs.length){ TABS.list = PREFS.tabs.slice(); TABS.active = PREFS.active && TABS.list.includes(PREFS.active) ? PREFS.active : TABS.list[0]; curSym = TABS.active; renderTabs(); if (curSym) post("/api/play", {symbol: curSym, action: "focus"}); }
   poll();
 })();

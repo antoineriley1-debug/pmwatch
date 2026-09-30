@@ -12,8 +12,8 @@ if not exist config.json (
   echo Created config.json - check the "port" matches TWS: 7497 paper, 7496 live.
 )
 if not exist plays.json (
-  copy plays.example.json plays.json >nul
-  echo Created plays.json with PLACEHOLDER plays - edit it with your real PS60 levels.
+  python -c "import json;json.dump({'plays':[{'symbol':s,'watch':True} for s in ('SPY','QQQ','AAPL','NVDA','TSLA','AMD')]},open('plays.json','w'),indent=2)"
+  echo Created a blank plays.json - type tickers into the desk and draw your own stop, target and 2nd entry.
 )
 python -c "import PIL" >nul 2>nul || python -m pip install -q pillow >nul 2>nul
 python run_twiney.py %*

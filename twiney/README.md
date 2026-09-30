@@ -40,6 +40,16 @@ with ladder trading that is **locked to paper accounts** until you deliberately 
   trade bar: **BUY bid** / **SELL ask** at the current quote, **Flatten**, **Cancel all**.
 - A confirmation box shows size, price, dollar value and the stop/target legs (Enter sends, Esc cancels).
   Tick **one-click** to skip it.
+- **AUTO 2ND ENTRY** (on by default, `trading.auto_second_entry`): the 2nd entry you draw on the chart IS the entry.
+  Once a play has a 2nd entry, a stop and a target and the desk is ARMED, a stop-limit entry is placed through the
+  2nd entry (limit `auto_entry_limit_ticks` through it) with the stop and target attached, sized from your RISK $
+  (`trading.risk_dollars`, editable in PLAY SETUP and the ticket). It waits while price is already through the level
+  (PS60: the entry is back through it after the retrace), follows the levels when you move them, is cancelled when
+  you clear the 2nd entry or disarm, and enters once per drawn level. A cancel by hand switches that play's AUTO off
+  until you redraw the 2nd entry or tick it back on in PLAY SETUP, which shows what is working and why not.
+- **Charts start blank.** A new ticker has no levels; you put the stop, target and 2nd entry on it. The launcher
+  writes a watch-only `plays.json`, and any play still carrying the example file's placeholder prices is blanked
+  on load (the desk tells you). **CLEAR PLAY** in PLAY SETUP wipes every level off a chart.
 - **stop+target** (on by default) attaches the play's `stop` and `target` from `plays.json` as a bracket:
   when the entry fills the exits go live; when one exit fills the other is cancelled.
 - Your working orders show as chips on the ladder rows (click a chip to cancel), as lines on the chart,
@@ -61,7 +71,7 @@ The launchers create `config.json` and `plays.json` from the examples if they ar
 ## Workflow
 All commands run from this `twiney/` folder.
 
-1. `cp plays.example.json plays.json`, then put in your PS60 plays. The example prices are placeholders. `pivot` is the
+1. Start with a blank `plays.json` (the launcher writes one; or `{"plays": [{"symbol": "SPY", "watch": true}]}`) and draw your levels on the desk, or copy `plays.example.json` and put in your PS60 plays. The example prices are placeholders and are blanked on load. `pivot` is the
    60-minute pivot (the old `trigger` key still works); `second_entry` is optional and sits **beyond** the pivot (the new high after a long break, the new low after
    a short break) — leave it out and TWINEY finds it once the pivot breaks. `mp` and `atr` are your numbers from the chart.
 2. `cp config.example.json config.json`, then set the port: 7497 for TWS paper, 7496 for TWS live, 4002 for Gateway paper, 4001 for Gateway live.

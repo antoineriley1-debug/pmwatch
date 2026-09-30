@@ -803,6 +803,8 @@ class Engine:
                 st.play["watch"] = False  # a typed-in ticker becomes a real play once it has a pivot
             old = st.play.get(role)
             st.play[role] = price
+            if role == "second_entry" and price is not None and (old is None or price_key(old) != price_key(price)):
+                st.play["auto"] = True      # a 2nd entry drawn (or moved) is an automatic entry again
             if (old is None) != (price is None) or (old is not None and price is not None and price_key(old) != price_key(price)):
                 name = self.LEVEL_NAMES[role]
                 self.log(symbol, f"{name} cleared (was {narrative.px(old)})" if price is None else
@@ -837,6 +839,39 @@ class Engine:
             self._save_plays()
             return True
 
+    def clear_play(self, symbol, t=None):
+        """Wipe every level off a play (pivot, 2nd entry, target, stop, extras): a blank chart, still watched."""
+        with self.lock:
+            st = self._st(symbol)
+            if st is None:
+                return False
+            t = t or self.last_t
+            for role in ("second_entry", "target", "stop"):
+                if st.play.get(role) is not None:
+                    self.set_play_level(symbol, role, None, t, source="CLEAR PLAY")
+            for px_ in list(st.play.get("extra_levels") or []):
+                self.remove_level(symbol, px_, t)
+            old = st.play.get("trigger")
+            if old is not None:
+                st.play["trigger"] = None
+                for side in (BID, ASK):
+                    tr = st.trackers.get((side, price_key(old)))
+                    if tr is not None:
+                        roles = [r for r in tr.role.split("+") if r != "trigger"]
+                        if roles:
+                            tr.role = "+".join(roles)
+                        else:
+                            del st.trackers[(side, price_key(old))]
+                self.log(symbol, f"PIVOT cleared (was {narrative.px(old)})", t, kind="level")
+            st.play["watch"] = True
+            st.play["mp"] = None
+            st.invalidation_armed = False
+            st.retired = None
+            self.log(symbol, "PLAY cleared — blank chart", t, kind="level")
+            self._rec({"ev": "play_clear", "t": t, "sym": symbol})
+            self._save_plays()
+            return True
+
     def remove_level(self, symbol, price, t=None):
         with self.lock:
             st = self._st(symbol)
@@ -859,7 +894,7 @@ class Engine:
             return
         import json
         keep = ("symbol", "side", "trigger", "second_entry", "target", "stop", "mp", "atr", "extra_levels", "notes", "setup", "active", "watch",
-                "exchange", "primary_exchange", "currency")
+                "auto", "exchange", "primary_exchange", "currency")
         def row(p):
             r = {("pivot" if k == "trigger" else k): p[k] for k in keep if k in p}
             return r

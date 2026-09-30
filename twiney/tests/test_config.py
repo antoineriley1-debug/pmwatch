@@ -65,3 +65,49 @@ class PlayValidationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BlankStartTests(unittest.TestCase):
+    """A chart starts blank: the example's made-up prices never show up as your levels."""
+
+    def test_example_prices_in_plays_json_are_dropped(self):
+        import json, os, tempfile
+        from twiney.config import load_plays
+        root = os.path.join(os.path.dirname(__file__), "..")
+        with open(os.path.join(root, "plays.example.json"), encoding="utf-8") as fh:
+            ex = json.load(fh)
+        mine = dict(ex["plays"][1]); mine.update(pivot=128.40, second_entry=129.10)   # NVDA with MY 2nd entry: kept
+        raw = {"plays": [ex["plays"][0], mine, {"symbol": "SOFI", "watch": True}]}
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "plays.json")
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(raw, fh)
+            with open(os.path.join(d, "plays.example.json"), "w", encoding="utf-8") as fh:
+                json.dump(ex, fh)
+            plays = load_plays(path)
+        by = {p["symbol"]: p for p in plays}
+        self.assertTrue(by["AAPL"]["watch"])
+        self.assertIsNone(by["AAPL"]["trigger"]); self.assertIsNone(by["AAPL"]["stop"]); self.assertIsNone(by["AAPL"]["target"])
+        self.assertEqual((by["NVDA"]["trigger"], by["NVDA"]["second_entry"], by["NVDA"]["watch"]), (128.40, 129.10, False))
+        self.assertTrue(by["SOFI"]["watch"])
+        from twiney.config import PLACEHOLDERS_STRIPPED
+        self.assertEqual(PLACEHOLDERS_STRIPPED, ["AAPL"])
+
+    def test_the_example_file_itself_keeps_its_prices(self):
+        import os
+        from twiney.config import load_plays
+        plays = load_plays(os.path.join(os.path.dirname(__file__), "..", "plays.example.json"))
+        self.assertTrue(all(p["trigger"] for p in plays))
+
+    def test_clear_play_leaves_a_blank_watched_chart(self):
+        from helpers import cfg, plays
+        from twiney.engine import Engine
+        e = Engine(plays(), cfg())
+        e.syms["AAA"].play.update(stop=9.90, target=10.50, extra_levels=[10.30])
+        self.assertTrue(e.clear_play("AAA", 5.0))
+        p = e.syms["AAA"].play
+        self.assertEqual([p.get(k) for k in ("trigger", "second_entry", "target", "stop", "mp")], [None] * 5)
+        self.assertEqual(p["extra_levels"], [])
+        self.assertTrue(p["watch"])
+        self.assertEqual(e.syms["AAA"].trackers, {})
+        self.assertIn("PLAY cleared", [n["text"] for n in e.symbol_log("AAA")][-1])

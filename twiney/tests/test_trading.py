@@ -6,6 +6,8 @@ from twiney.trading import SimBroker, Trader, TradingGate, bracket_legs
 
 
 def sim_setup(**trading):
+    # the fixture play carries a 2nd entry: the auto entry stays off unless a test asks for it
+    trading.setdefault("auto_second_entry", False)
     c = cfg(trading=trading)
     e = Engine(plays(), c)
     e.on_connection("DEMO", "", 0.0)
@@ -236,3 +238,108 @@ class TicketTests(unittest.TestCase):
         self.assertEqual(e.order_state({"status": "PendingCancel"}), "CANCEL PENDING")
         self.assertEqual(e.order_state({"status": "Submitted", "filled": 40.0, "remaining": 60.0}), "PARTIALLY FILLED")
         self.assertEqual(e.order_state({"status": "Inactive"}), "REJECTED")
+
+
+class AutoSecondEntryTests(unittest.TestCase):
+    """The 2nd entry drawn on the chart is an automatic entry: a stop-limit through it with the play's stop and
+    target attached, sized from the risk dollars, placed while ARMED, one entry per drawn level."""
+
+    def _ready(self):
+        e, tr, gate, broker = sim_setup(auto_second_entry=True)
+        e.syms["AAA"].play.update(second_entry=10.10, stop=9.90, target=10.50)
+        tr.risk_dollars = 100          # $0.20 risk/share -> 500 shares (the per-order cap)
+        return e, tr, gate, broker
+
+    def _entries(self, e, sym="AAA"):
+        return [o for o in e._pending(sym) if o.get("role") == "entry"]
+
+    def test_disarmed_waits_and_says_why(self):
+        e, tr, gate, broker = self._ready()
+        tr.watchdog(2.0)
+        self.assertEqual(self._entries(e), [])
+        st = tr.auto_status()["AAA"]
+        self.assertEqual(st["state"], "WAITING")
+        self.assertIn("DISARMED", st["text"])
+
+    def test_armed_places_stop_limit_through_the_second_entry_with_bracket(self):
+        e, tr, gate, broker = self._ready()
+        gate.arm(True)
+        tr.watchdog(2.0)
+        ent = self._entries(e)
+        self.assertEqual(len(ent), 1)
+        o = ent[0]
+        self.assertEqual((o["action"], o["type"], o["aux"], o["lmt"], o["qty"]), ("BUY", "STP LMT", 10.10, 10.15, 500.0))
+        self.assertEqual({x["role"] for x in e._pending("AAA")}, {"entry", "stop", "target"})
+        self.assertEqual(tr.auto_status()["AAA"]["state"], "WORKING")
+        # the watchdog running again does not send a second one
+        tr.watchdog(2.5)
+        self.assertEqual(len(self._entries(e)), 1)
+        # price comes through the 2nd entry: the entry fills, stop and target go live, no re-entry
+        e.on_print("AAA", 10.12, 200, "X", 3.0)
+        self.assertEqual(broker.position("AAA"), 500)
+        tr.watchdog(3.5)
+        self.assertEqual({x["role"] for x in e._pending("AAA")}, {"stop", "target"})
+        self.assertEqual(tr.auto_status()["AAA"]["state"], "DONE")
+        # flat again: the same drawn level does not enter twice
+        tr.flatten("AAA", 4.0)
+        e.on_depth("AAA", 0, UPDATE, BID, 10.12, 900, "", 4.1)
+        tr.watchdog(4.5)
+        self.assertEqual(self._entries(e), [])
+        # redraw the 2nd entry: armed again
+        e.set_play_level("AAA", "second_entry", 10.20, 5.0)
+        tr.watchdog(5.5)
+        self.assertEqual([o["aux"] for o in self._entries(e)], [10.20])
+
+    def test_level_change_replaces_and_clearing_or_disarming_cancels(self):
+        e, tr, gate, broker = self._ready()
+        gate.arm(True)
+        tr.watchdog(2.0)
+        first = self._entries(e)[0]["order_id"]
+        e.set_play_level("AAA", "stop", 9.95, 2.5)          # $0.15 risk -> 500 still (cap); stop leg must follow
+        tr.watchdog(3.0)
+        ent = self._entries(e)
+        self.assertEqual(len(ent), 1)
+        self.assertNotEqual(ent[0]["order_id"], first)
+        stops = [o for o in e._pending("AAA") if o["role"] == "stop"]
+        self.assertEqual([s["aux"] for s in stops], [9.95])
+        gate.arm(False)
+        tr.watchdog(3.5)
+        self.assertEqual(e._pending("AAA"), [])
+        gate.arm(True)
+        e.set_play_level("AAA", "second_entry", None, 4.0)
+        tr.watchdog(4.5)
+        self.assertEqual(e._pending("AAA"), [])
+        self.assertIn("2nd entry", tr.auto_status()["AAA"]["text"])
+
+    def test_price_already_through_waits_for_the_retrace(self):
+        e, tr, gate, broker = self._ready()
+        gate.arm(True)
+        e.on_l1("AAA", "last", 10.30, 1.5)
+        tr.watchdog(2.0)
+        self.assertEqual(self._entries(e), [])
+        self.assertIn("retrace", tr.auto_status()["AAA"]["text"])
+        e.on_l1("AAA", "last", 10.05, 2.5)
+        tr.watchdog(3.0)
+        self.assertEqual(len(self._entries(e)), 1)
+
+    def test_hand_cancel_switches_the_play_off_until_redrawn(self):
+        e, tr, gate, broker = self._ready()
+        gate.arm(True)
+        tr.watchdog(2.0)
+        oid = self._entries(e)[0]["order_id"]
+        tr.cancel(oid, 2.5)
+        tr.watchdog(3.0)
+        self.assertEqual(self._entries(e), [])
+        self.assertFalse(e.syms["AAA"].play["auto"])
+        self.assertEqual(tr.auto_status()["AAA"]["state"], "OFF")
+        tr.set_auto(True, "AAA", 3.5)
+        self.assertEqual(len(self._entries(e)), 1)
+
+    def test_manual_position_keeps_the_auto_entry_out(self):
+        e, tr, gate, broker = self._ready()
+        gate.arm(True)
+        tr.submit("AAA", "BUY", 10.00, 100, 1.5, False)     # marketable: fills at the offer
+        self.assertEqual(broker.position("AAA"), 100)
+        tr.watchdog(2.0)
+        self.assertEqual(self._entries(e), [])
+        self.assertIn("long 100", tr.auto_status()["AAA"]["text"])

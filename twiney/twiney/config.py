@@ -4,6 +4,7 @@ import copy
 import ipaddress
 import math
 import json
+import logging
 import os
 
 DEFAULTS = {
@@ -135,6 +136,11 @@ DEFAULTS = {
         "stop_limit_ticks": 10,
         # market and naked stop entries stay off unless you turn this on (Dan: limit ~99%)
         "allow_market": False,
+        # AUTO 2ND ENTRY: the 2nd entry you draw becomes a stop-limit entry (limit this many ticks through it) with
+        # the play's stop + target attached, sized from risk_dollars, placed while ARMED, one entry per drawn level
+        "auto_second_entry": True,
+        "auto_entry_limit_ticks": 5,
+        "risk_dollars": 100,
     },
     "ps60": {
         # candle size the second entry is judged on (1 or 5); Dan: "always on a new candle"
@@ -432,6 +438,7 @@ def validate_plays(raw):
             "setup": str(item.get("setup", "") or ""),
             "active": bool(item.get("active", True)),
             "watch": watch,
+            "auto": bool(item.get("auto", True)),
             "exchange": str(item.get("exchange", "SMART")).upper(),
             "primary_exchange": str(item.get("primary_exchange", "")).upper(),
             "currency": str(item.get("currency", "USD")).upper(),
@@ -441,8 +448,43 @@ def validate_plays(raw):
     return plays
 
 
+PLACEHOLDERS_STRIPPED = []   # symbols whose example prices were dropped on the last load (the desk says so)
+
+
+def strip_placeholders(plays, example_path="plays.example.json"):
+    """A plays.json copied from the example carries the example's made-up prices. Those are not your levels:
+    a play whose pivot / 2nd entry / target / stop all equal the example's becomes a blank, watch-only play,
+    so every chart starts empty and YOU put the stop, target and 2nd entry on it."""
+    stripped = []
+    if not os.path.exists(example_path):
+        return plays, stripped
+    try:
+        with open(example_path, encoding="utf-8") as fh:
+            ex = {p["symbol"]: p for p in validate_plays(json.load(fh))}
+    except (ConfigError, ValueError, OSError):
+        return plays, stripped
+    for p in plays:
+        e = ex.get(p["symbol"])
+        if e is None or p["trigger"] is None:
+            continue
+        same = all(p.get(k) == e.get(k) for k in ("side", "trigger", "second_entry", "target", "stop"))
+        if same:
+            p.update(trigger=None, second_entry=None, target=None, mp=None, stop=None, extra_levels=[], watch=True)
+            stripped.append(p["symbol"])
+    return plays, stripped
+
+
 def load_plays(path):
     if not os.path.exists(path):
         raise ConfigError(f"{path} not found — copy plays.example.json to {path}")
     with open(path, encoding="utf-8") as fh:
-        return validate_plays(json.load(fh))
+        plays = validate_plays(json.load(fh))
+    if os.path.basename(path) == "plays.example.json":
+        return plays
+    example = os.path.join(os.path.dirname(os.path.abspath(path)), "plays.example.json")
+    plays, stripped = strip_placeholders(plays, example)
+    PLACEHOLDERS_STRIPPED[:] = stripped
+    if stripped:
+        logging.getLogger("twiney").warning("%s: example placeholder prices dropped for %s — those charts start blank",
+                                            path, ", ".join(stripped))
+    return plays

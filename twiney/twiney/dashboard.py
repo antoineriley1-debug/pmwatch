@@ -301,6 +301,8 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                     ok = engine.retire_play(sym, "retired by you", clock())
                 elif body.get("action") == "remove":
                     ok = engine.remove_play(sym, clock())
+                elif body.get("action") == "clear":
+                    ok = engine.clear_play(sym, clock())
                 else:
                     ok = False
                 self._send(200 if ok else 400, json.dumps({"ok": ok}), "application/json")
@@ -468,6 +470,10 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                 elif action == "bracket":
                     tr.bracket = bool(body.get("on"))
                     out = {"ok": True}
+                elif action == "auto":
+                    out = {"ok": tr.set_auto(bool(body.get("on")), sym or None, now)}
+                elif action == "risk":
+                    out = {"ok": tr.set_risk(body.get("dollars")), "risk_dollars": tr.risk_dollars}
                 elif action == "scale":
                     tr.scale = bool(body.get("on"))
                     out = {"ok": True}
