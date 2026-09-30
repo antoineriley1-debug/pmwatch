@@ -22,7 +22,7 @@ from twiney.dashboard import Dashboard, EngineRef
 from twiney.desk import Desk
 from twiney.engine import Engine
 from twiney.recorder import Recorder
-from twiney.replay import compare, replay, session_header
+from twiney.replay import compare, replay, session_header, span
 from twiney.trading import IbkrBroker, SimBroker, Trader, TradingGate
 
 
@@ -206,6 +206,14 @@ def run_replay(cfg, plays, args):
     ref = EngineRef(box)
 
     control = {"paused": False, "speed": args.speed, "position": None, "file": os.path.basename(args.replay)}
+    try:                                   # the scrubber's range: first and last market time in the file
+        control["start"], control["end"] = span(args.replay)
+    except OSError:
+        pass
+    if args.start:                         # open at a clip: jump to its start, pause at its end
+        control["seek"] = float(args.start)
+    if args.end:
+        control["pause_at"] = float(args.end)
 
     def ready(engine):
         box["engine"] = engine
@@ -272,6 +280,8 @@ def main(argv=None):
     ap.add_argument("--override", action="store_true",
                     help="replay with current config.json/plays.json instead of the recording's own")
     ap.add_argument("--no-browser", action="store_true")
+    ap.add_argument("--start", type=float, help="replay: jump to this time first (a clip's start)")
+    ap.add_argument("--end", type=float, help="replay: pause at this time (a clip's end)")
     ap.add_argument("--port", type=int, help="dashboard port (overrides config.json)")
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args(argv)

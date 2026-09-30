@@ -143,6 +143,15 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                         self._send(200, fh.read(), "image/png")
                 else:
                     self._send(404, "not found", "text/plain")
+            elif path.startswith("/recordings/voice/") and rec_dir:
+                name = os.path.basename(path)
+                fp = os.path.join(rec_dir, "voice", name)
+                ctype = {"webm": "audio/webm", "ogg": "audio/ogg", "mp4": "audio/mp4", "m4a": "audio/mp4"}.get(name.rsplit(".", 1)[-1])
+                if ctype and os.path.exists(fp):
+                    with open(fp, "rb") as fh:
+                        self._send(200, fh.read(), ctype)
+                else:
+                    self._send(404, "not found", "text/plain")
             elif path.startswith("/recordings/") and path.endswith(".journal.md") and rec_dir:
                 fp = os.path.join(rec_dir, os.path.basename(path))
                 if os.path.exists(fp):
@@ -184,6 +193,9 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                     self.send_header("Content-Length", str(len(data)))
                     self.end_headers()
                     self.wfile.write(data)
+            elif path == "/api/clips":
+                from . import clips as _clips
+                self._send(200, json.dumps(_clips.load(rec_dir or "recordings")), "application/json")
             elif path == "/api/desk/list":
                 self._send(200, json.dumps(desk.list_recordings() if desk else []), "application/json")
             elif path == "/healthz":
@@ -196,6 +208,9 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
             # only accept requests from this dashboard page (blocks other websites)
             if not self._local():
                 self._send(403, "forbidden", "text/plain")
+                return
+            if self.path.split("?", 1)[0] == "/api/desk/mic_audio":
+                self._mic_audio()
                 return
             if (self.headers.get("Content-Type") or "").split(";")[0].strip() != "application/json":
                 self._send(415, "json only", "text/plain")
@@ -306,6 +321,34 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                     self._send(200, json.dumps({"ok": False, "reason": str(exc)}), "application/json")
             elif path.startswith("/api/desk/"):
                 self._desk(path[len("/api/desk/"):], body)
+            elif path.startswith("/api/clips/"):
+                from . import clips as _clips
+                rd = rec_dir or "recordings"
+                act = path[len("/api/clips/"):]
+                try:
+                    if act == "add":
+                        # live: the last N seconds of the recording running now; replay: the IN / OUT points
+                        if engine.replay is not None:
+                            rec = engine.replay.get("file")
+                            t0, t1 = body.get("t0"), body.get("t1")
+                        else:
+                            rec = desk.current_recording() if desk is not None else None
+                            if not rec:
+                                raise ValueError("start a recording first (REC) — a clip is a piece of a recording")
+                            t1 = clock()
+                            t0 = t1 - max(10.0, min(3600.0, float(body.get("seconds") or 120)))
+                        out = {"ok": True, "clip": _clips.add(rd, rec, t0, t1, body.get("symbol"), body.get("note", ""))}
+                    elif act == "delete":
+                        out = {"ok": _clips.delete(rd, str(body.get("id", "")))}
+                    elif act == "note":
+                        out = {"ok": _clips.note(rd, str(body.get("id", "")), body.get("note", ""))}
+                    else:
+                        self._send(404, "not found", "text/plain")
+                        return
+                except (ValueError, TypeError, OSError) as exc:
+                    out = {"ok": False, "reason": str(exc)}
+                self._send(200, json.dumps(out), "application/json")
+                return
             elif path == "/api/replay":
                 r = engine.replay
                 if r is None:
@@ -323,6 +366,11 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                         pass
                 if "paused" in body:
                     r["paused"] = bool(body["paused"])
+                if "pause_at" in body:              # watching a clip: stop at its end
+                    try:
+                        r["pause_at"] = float(body["pause_at"]) if body["pause_at"] is not None else None
+                    except (TypeError, ValueError):
+                        pass
                 if "speed" in body:
                     try:
                         r["speed"] = max(0.25, min(100.0, float(body["speed"])))
@@ -331,6 +379,27 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                 self._send(200, json.dumps({"ok": True, "replay": dict(r)}), "application/json")
             else:
                 self._send(404, "not found", "text/plain")
+
+        def _mic_audio(self):
+            """A voice note's audio (raw bytes from the browser's recorder), up to 30 MB."""
+            from urllib.parse import parse_qs, urlparse
+            ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+            ext = {"audio/webm": "webm", "audio/ogg": "ogg", "audio/mp4": "m4a"}.get(ctype)
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                length = 0
+            if desk is None or not ext or not 0 < length <= 30 * 1024 * 1024:
+                self._send(400, json.dumps({"ok": False, "reason": "not a voice note"}), "application/json")
+                return
+            data = self.rfile.read(length)
+            q = parse_qs(urlparse(self.path).query)
+            try:
+                m = desk.mic_audio(int(q.get("n", ["0"])[0]), data, ext, clock())
+                out = {"ok": True, "mark": m}
+            except (ValueError, OSError) as exc:
+                out = {"ok": False, "reason": str(exc)}
+            self._send(200, json.dumps(out, default=str), "application/json")
 
         def _desk(self, action, body):
             if desk is None:
@@ -353,9 +422,16 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                     out = desk.screenshot(now, sym, str(body.get("note", "")))
                 elif action == "delete":
                     out = desk.delete_recording(str(body.get("name", "")))
+                elif action == "flag":
+                    out = {"ok": desk.flag(str(body.get("name", "")), bool(body.get("on", True)))}
+                elif action == "mic_start":
+                    out = {"ok": True, "mark": desk.mic_start(now, sym)}
+                elif action == "mic_text":
+                    out = {"ok": True, "mark": desk.mic_text(int(body.get("n", 0)), body.get("text", ""), now)}
                 elif action == "replay":
                     port = self.server.server_address[1] + 1
-                    out = desk.open_replay(str(body.get("name", "")), port, float(body.get("speed", 1) or 1))
+                    out = desk.open_replay(str(body.get("name", "")), port, float(body.get("speed", 1) or 1),
+                                           body.get("start"), body.get("end"))
                 else:
                     self._send(404, "not found", "text/plain")
                     return

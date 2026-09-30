@@ -1458,7 +1458,12 @@ class Engine:
             self.add_play(ev["play"]["symbol"], t, ev["play"].get("side", "long"))
         elif kind == "mark":
             with self.lock:
-                self.marks_list.append({k: ev.get(k) for k in ("t", "symbol", "price", "note", "headline", "shot", "n")})
+                self.marks_list.append({k: ev.get(k) for k in ("t", "symbol", "price", "note", "headline", "shot", "n", "audio", "audio_s")})
+        elif kind == "mark_audio":
+            with self.lock:
+                for m in self.marks_list:
+                    if m.get("n") == ev.get("n"):
+                        m.update(audio=ev.get("audio"), audio_s=ev.get("audio_s"), note=ev.get("note", m.get("note")))
         elif kind == "note":
             with self.lock:
                 self.notes_list.append({k: ev.get(k) for k in ("t", "symbol", "text")})

@@ -239,6 +239,58 @@ class Desk:
         self.engine._message("info", f"STOPPED recording {os.path.basename(path)} — journal: {os.path.basename(self.journal_path)}", t)
         return path
 
+    def current_recording(self):
+        return os.path.basename(self.engine.recorder.path) if self.recording and self.engine.recorder else None
+
+    # ---- the mic: spoken journal entries during a recording -----------------------------------------
+    def mic_start(self, t, symbol=None):
+        """The mic went on: a marker right now, so the moment is on the recording even before anything is said."""
+        if not self.recording:
+            raise ValueError("start a recording first (REC) — voice notes go with a recording")
+        return self.mark(t, symbol, "🎙 voice note")
+
+    def mic_text(self, n, text, t1):
+        """What was said becomes the journal entry, stamped at the moment the mic went on, and the marker's note."""
+        m = next((m for m in self.marks if m.get("n") == int(n)), None)
+        if m is None:
+            raise ValueError("no such marker")
+        text = " ".join(str(text or "").split())[:4000]
+        if not text:
+            text = "(voice note — no words picked up; the audio is saved with the marker)"
+        m["note"] = "🎙 " + text[:280]
+        m["voice"] = True
+        self.engine._rec({"ev": "mark_note", "t": t1, "n": int(n), "note": m["note"]})
+        self.add_note(m["t"], "🎙 " + text, m.get("symbol"), mark=int(n), rec=self.current_recording())
+        self._rewrite_marks()
+        return m
+
+    def mic_audio(self, n, data, ext, t1):
+        """The voice note's audio, saved next to the recording and hung on its marker (to hear it again)."""
+        m = next((m for m in self.marks if m.get("n") == int(n)), None)
+        if m is None:
+            raise ValueError("no such marker")
+        rec = self.current_recording() or "session.jsonl"
+        folder = os.path.join(self.dir, "voice")
+        os.makedirs(folder, exist_ok=True)
+        name = f"{rec[:-6]}-{int(n)}.{ext}"
+        with open(os.path.join(folder, name), "wb") as fh:
+            fh.write(data)
+        m["audio"] = name
+        m["audio_s"] = round(max(0.0, t1 - m["t"]), 1)
+        self.engine._rec({"ev": "mark_audio", "t": t1, "n": int(n), "audio": name, "audio_s": m["audio_s"]})
+        self._rewrite_marks()
+        return m
+
+    def _rewrite_marks(self):
+        if not self.recording:
+            return
+        path = self.engine.recorder.path[:-6] + ".marks.jsonl"
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            for x in self.marks:
+                fh.write(json.dumps(x) + "\n")
+        os.replace(tmp, path)
+
     def toggle(self, t=None):
         return {"recording": False, "path": self.stop(t)} if self.recording else {"recording": True, "path": self.start(t)}
 
@@ -264,10 +316,10 @@ class Desk:
                 fh.write(json.dumps(m) + "\n")
         return m
 
-    def add_note(self, t, text, symbol=None):
+    def add_note(self, t, text, symbol=None, **extra):
         text = text.strip()
         if text:
-            n = {"t": t, "symbol": symbol, "text": text}
+            n = dict({"t": t, "symbol": symbol, "text": text}, **extra)
             self.notes.append(n)
             self.engine._rec(dict(n, ev="note"))
         return self.notes[-30:]
@@ -353,19 +405,49 @@ class Desk:
 
     # ---- recordings on disk ------------------------------------------------------
 
+    # ---- ★ good sessions: flagged so they are easy to find among the recordings ----------------------
+    @property
+    def flags_path(self):
+        return os.path.join(self.dir, "flags.json")
+
+    def _flags(self):
+        try:
+            with open(self.flags_path, encoding="utf-8") as fh:
+                f = json.load(fh)
+            return f if isinstance(f, dict) else {}
+        except (OSError, ValueError):
+            return {}
+
+    def flag(self, name, on=True):
+        name = os.path.basename(str(name))
+        if not name.endswith(".jsonl") or not os.path.exists(os.path.join(self.dir, name)):
+            return False
+        f = self._flags()
+        if on:
+            f[name] = True
+        else:
+            f.pop(name, None)
+        os.makedirs(self.dir, exist_ok=True)
+        tmp = self.flags_path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(f, fh)
+        os.replace(tmp, self.flags_path)
+        return True
+
     def list_recordings(self):
         out = []
         if not os.path.isdir(self.dir):
             return out
+        flags = self._flags()
         for name in sorted(os.listdir(self.dir), reverse=True):
-            if not name.endswith(".jsonl") or name.endswith(".marks.jsonl") or name == "grades.jsonl":
+            if not name.endswith(".jsonl") or name.endswith(".marks.jsonl") or name in NOT_SESSIONS:
                 continue
             path = os.path.join(self.dir, name)
             marks = []
             mpath = path[:-6] + ".marks.jsonl"
             if os.path.exists(mpath):
                 marks = list(read_events(mpath))
-            out.append({"name": name, "size_mb": round(os.path.getsize(path) / 1e6, 1),
+            out.append({"name": name, "size_mb": round(os.path.getsize(path) / 1e6, 1), "flag": flags.get(name, False),
                         "modified": os.path.getmtime(path), "marks": marks,
                         "journal": os.path.exists(path[:-6] + ".journal.md"),
                         "current": self.recording and os.path.abspath(self.engine.recorder.path) == os.path.abspath(path)})
@@ -482,7 +564,7 @@ class Desk:
                     removed.append("shots/" + f)
         return {"ok": True, "removed": removed}
 
-    def open_replay(self, name, port, speed=1.0):
+    def open_replay(self, name, port, speed=1.0, start=None, end=None):
         """Start the replay desk for a recording in a second TWINEY on another port."""
         path = os.path.join(self.dir, os.path.basename(name))
         if not os.path.exists(path) or not name.endswith(".jsonl"):
@@ -491,10 +573,17 @@ class Desk:
             self.replay_proc.terminate()
         script = os.path.join(self.base_dir, "run_twiney.py")
         cmd = [sys.executable, script, "--replay", path, "--speed", str(speed), "--port", str(port), "--no-browser"]
+        if start is not None:
+            cmd += ["--start", str(float(start))]
+        if end is not None:
+            cmd += ["--end", str(float(end))]
         for flag in ("--config", "--plays"):
             pass
         self.replay_proc = subprocess.Popen(cmd, cwd=self.base_dir)
         return {"ok": True, "url": f"http://127.0.0.1:{port}", "pid": self.replay_proc.pid}
+
+
+NOT_SESSIONS = {"grades.jsonl", "trades.jsonl", "clips.jsonl"}   # journal files that live next to the recordings
 
 
 def dump_state(engine, rec, t):

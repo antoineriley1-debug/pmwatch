@@ -15,6 +15,34 @@ def session_header(plays, cfg, version):
             "ticks": True}   # this recording carries the live tick times
 
 
+def span(path):
+    """First and last market time in a recording (for the replay scrubber)."""
+    import json as _json
+    first = last = None
+    with open(path, "rb") as fh:
+        for i, line in enumerate(fh):
+            try:
+                ev = _json.loads(line)
+            except ValueError:
+                continue
+            if ev.get("ev") not in ("session", None) and ev.get("t"):
+                first = ev["t"]
+                break
+            if i > 5000:
+                break
+        fh.seek(0, 2)
+        size = fh.tell()
+        fh.seek(max(0, size - 262144))
+        for line in fh.read().splitlines()[1:] or []:
+            try:
+                ev = _json.loads(line)
+            except ValueError:
+                continue
+            if ev.get("t") and ev.get("ev") != "session":
+                last = ev["t"] if last is None else max(last, ev["t"])
+    return first, last
+
+
 def replay(path, plays=None, cfg=None, speed=0.0, on_alert=None, engine_ready=None, control=None):
     """Feed every recorded event into a new engine.
 
@@ -33,6 +61,12 @@ def replay(path, plays=None, cfg=None, speed=0.0, on_alert=None, engine_ready=No
         """Real-time pacing, pause, seek and stop: for every event, ticks included. False = stop."""
         if control is not None:
             control["position"] = t
+            end = control.get("pause_at")
+            if (end is not None and t >= end and control.get("seek") is None and not control.get("stop")
+                    and control.get("restart_at") is None):   # never on a pass that is about to rewind
+                control["pause_at"] = None          # the end of a clip: stop there, paused
+                control["paused"] = True
+                control["clip_done"] = True
             seek = control.get("seek")
             if seek is not None and t >= seek:
                 control["seek"] = None
