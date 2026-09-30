@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20260929-2348">
+<meta name="build" content="20260930-0019">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -2573,19 +2573,23 @@ function render(s){
   speakNew(s);
 }
 let timer = null;
-const BARS = {};   // symbol -> {bars, daily}: the page's own copy of the history
+const BARS = {};   // symbol -> {bars, daily, ver}: the page's own copy of the history
+const HVER = {};   // symbol -> the history version the engine last reported
 async function poll(now){
   clearTimeout(timer);
   try {
     const extra = [...new Set(TABS.list.concat(curSym ? [curSym] : []))].join(",");
     // history is fetched once per symbol and kept here; every poll after that carries only the last bars
-    const need = [...new Set(TABS.list.concat(curSym ? [curSym] : []).concat((state && state.symbols) || []))].filter(s => !BARS[s]);
+    // fetch it again whenever the engine's history for that symbol has changed (IBKR history lands after startup)
+    const need = [...new Set(TABS.list.concat(curSym ? [curSym] : []).concat((state && state.symbols) || []))].filter(s => !BARS[s] || (HVER[s] != null && BARS[s].ver !== HVER[s]));
     const r = await fetch("/api/state?extra=" + encodeURIComponent(extra) + "&full=" + encodeURIComponent(need.join(",")), {cache: "no-store"});
     const s = await r.json();
     for (const d of (s.panes || []).concat(Object.values(s.extra || {}))){
       if (!d) continue;
       const c = BARS[d.symbol];
-      if (d.bars_full || !c){ BARS[d.symbol] = {bars: d.bars || [], daily: d.daily || []}; continue; }
+      HVER[d.symbol] = d.hist_ver;
+      if (d.bars_full){ BARS[d.symbol] = {bars: d.bars || [], daily: d.daily || [], ver: d.hist_ver}; continue; }
+      if (!c){ d.daily = []; continue; }   // only the live tail came: show it, never keep it as the history
       // merge the tail: replace bars we have by timestamp, append new ones
       for (const b of d.bars || []){ const i = c.bars.findIndex(x => x[0] >= b[0]); if (i < 0) c.bars.push(b); else if (c.bars[i][0] === b[0]) c.bars[i] = b; else c.bars.splice(i, 0, b); }
       if (c.bars.length > 2600) c.bars.splice(0, c.bars.length - 2600);

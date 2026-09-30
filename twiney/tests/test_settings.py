@@ -76,3 +76,22 @@ class FeedLightTests(unittest.TestCase):
         self.assertIn("401", e.snapshot(80.0)["feeds"]["options"]["detail"])
         e.on_connection("DISCONNECTED", "socket closed", 81.0)
         self.assertEqual(e.snapshot(81.0)["feeds"]["market"]["color"], "red")
+
+
+class HistoryVersionTests(unittest.TestCase):
+    def test_history_arriving_late_bumps_the_version_the_page_watches(self):
+        from helpers import cfg, plays
+        from twiney.engine import Engine
+        e = Engine(plays(), cfg(), None)
+        sym = plays()[0]["symbol"]
+        e.on_l1(sym, "last", 10.0, 1000.0)
+        pane = lambda full: next(iter([d for d in (e.snapshot(1001.0, [sym], full)["extra"].values()) if d["symbol"] == sym]
+                                      + [d for d in e.snapshot(1001.0, [sym], full)["panes"] if d and d["symbol"] == sym]))
+        before = pane(set())["hist_ver"]
+        for k in range(1, 50):
+            e.on_hist_bar(sym, 1000.0 - k * 60, 10, 10.1, 9.9, 10, 100)
+        e.on_daily_bar(sym, 0.0, 9, 11, 8, 10)
+        after = pane(set())
+        self.assertGreater(after["hist_ver"], before)
+        self.assertEqual(len(after["bars"]), 6)            # a plain poll still carries only the tail
+        self.assertGreaterEqual(len(pane({sym})["bars"]), 49)   # the full fetch the page makes on the new version

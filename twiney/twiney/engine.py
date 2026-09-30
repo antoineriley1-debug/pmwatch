@@ -39,6 +39,7 @@ class SymbolState:
     def __init__(self, play, cfg):
         self.play = play
         self.symbol = play["symbol"]
+        self.hist_ver = 0       # bumps whenever history arrives, so the page knows to fetch it again
         self.l1 = {k: None for k in L1_FIELDS}
         self.l1_t = None
         self.depth_active = False
@@ -305,6 +306,7 @@ class Engine:
                 return
             self._rec({"ev": "dbar", "t": self.last_t or t0, "sym": symbol, "t0": t0, "o": o, "h": h, "l": l, "c": c})
             st.daily[t0] = [o, h, l, c]
+            st.hist_ver += 1
             if len(st.daily) > 300:
                 for k in sorted(st.daily)[:len(st.daily) - 300]:
                     del st.daily[k]
@@ -320,6 +322,7 @@ class Engine:
             if m in st.bars:
                 return  # live data for that minute wins
             st.bars[m] = [o, h, l, c, v or 0.0, 0.0, 0.0]
+            st.hist_ver += 1
 
     # ---- account view (read-only) --------------------------------------------
 
@@ -1475,6 +1478,7 @@ class Engine:
             # the page keeps its own bar history: full history on request, otherwise just the live tail
             "bars": bars if full else bars[-6:],
             "bars_full": full,
+            "hist_ver": st.hist_ver,
             "flow": self.flow.summary(sym, t),
             "daily": [[t0] + [fmt_price(x) for x in st.daily[t0]] + [0, 0, 0] for t0 in sorted(st.daily)] if full else None,
             "footprint": [[m, [[round(c[0], 4), round(c[1]), round(c[2])] for c in sorted(cells.values(), key=lambda c: c[0])]]
