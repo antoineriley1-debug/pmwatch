@@ -56,6 +56,7 @@ class LevelTracker:
         # PULLED, or price trades through the level with nothing sitting there. A brief flicker to zero,
         # or an inconclusive "gone" call, does not un-prove it.
         self.proven = False
+        self.proven_refills = 0
         self._reset_episode()
 
     def _reset_episode(self):
@@ -121,6 +122,8 @@ class LevelTracker:
             if displayed > prev and self.exec_since_refresh > 0:
                 # size came back after executions ate into it: a refresh
                 self.refresh_times.append(now)
+                if self.proven:
+                    self.proven_refills += 1
                 self.exec_since_refresh = 0.0
             if displayed != prev:
                 self.last_change_t = now
@@ -198,6 +201,7 @@ class LevelTracker:
                 self.state = RELOAD
                 self.confirmed_at = now
                 self.proven = True
+                self.proven_refills = self.refreshes_window(now)
                 return reload_label(self.side)
             return None
 

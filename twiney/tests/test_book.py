@@ -43,9 +43,14 @@ class BookTests(unittest.TestCase):
     def test_in_view(self):
         b = Book(rows_requested=3)
         ladder(b, ASK, [(10.00, 1), (10.01, 1), (10.02, 1)])
-        self.assertTrue(b.in_view(ASK, 10.02))
+        self.assertTrue(b.in_view(ASK, 10.01))
+        self.assertFalse(b.in_view(ASK, 10.02))   # the last row of a full window: more may sit past it
         self.assertFalse(b.in_view(ASK, 10.05))   # beyond a full ladder: unknown
         self.assertTrue(b.in_view(ASK, 9.95))     # better than best: would be visible
+        smart = Book(rows_requested=3)            # SMART depth: 3 rows, one price (three venues)
+        for i, mm in enumerate(("NSDQ", "ARCA", "BATS")):
+            smart.apply(i, 0, ASK, 10.00, 100, mm)
+        self.assertFalse(smart.in_view(ASK, 10.03))   # the window is full: 10.03 is out of sight, not empty
         partial = Book(rows_requested=10)
         ladder(partial, ASK, [(10.00, 1)])
         self.assertTrue(partial.in_view(ASK, 10.50))  # side not full: everything visible

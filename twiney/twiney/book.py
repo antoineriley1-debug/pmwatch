@@ -110,10 +110,14 @@ class Book:
         When the side holds fewer levels than requested everything is visible.
         Otherwise the price must be at or better than the worst visible level.
         """
-        lv = self._agg(side)[0]
-        if not lv:
+        rows = [r for r in self._side(side) if r[0] and r[0] > 0]
+        if not rows:
             return False
-        if len(lv) < self.rows_requested:
+        # IBKR sends N ROWS per side; with SMART depth several rows (one per exchange) share a price, so the
+        # window is the raw rows, not the distinct prices. A side holding fewer rows than asked shows everything.
+        if len(self._side(side)) < self.rows_requested:
             return True
-        k, worst = price_key(price), price_key(lv[-1][0])
-        return k <= worst if side == ASK else k >= worst
+        worst = min(r[0] for r in rows) if side == BID else max(r[0] for r in rows)
+        k, wk = price_key(price), price_key(worst)
+        # the worst visible price itself may be cut off (more size there beyond the window): not judgeable
+        return k < wk if side == ASK else k > wk

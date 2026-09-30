@@ -15,7 +15,7 @@ from .flow import FLOW_LABELS, FlowBook
 from .levels import BUILDING, GONE_PENDING, RELOAD, LevelTracker, WATCHING
 from .prices import fmt_price, price_key, tick_size
 from .ranking import allocate, distances, rank
-from .tape import Tape
+from .tape import MID, Tape, classify
 
 L1_FIELDS = ("bid", "ask", "last", "bid_size", "ask_size", "last_size", "volume",
              "high", "low", "close", "open")
@@ -25,9 +25,14 @@ PS60_LABELS = ("REMOUNT", "REJECTION")
 
 BAR_SECONDS = 60
 def _k(n):
-    """5,000 -> '5k', 18,400 -> '18k', 800 -> '800' (for speech)."""
+    """The ladder's own rounding, spoken: 800 -> '800', 5,900 -> '5.9k', 12,600 -> '13k'."""
     n = int(round(n))
-    return f"{n // 1000}k" if n >= 1000 else str(n)
+    if n < 1000:
+        return str(n)
+    if n < 10000:
+        v = round(n / 1000, 1)
+        return f"{v:g}k"
+    return f"{int(round(n / 1000))}k"
 
 
 MAX_BARS = 2400  # ~6 trading days of 1-minute bars, enough for 60-minute candles
@@ -68,6 +73,9 @@ class SymbolState:
         self.remount_check_t = 0.0
         self.memory = deque()   # (t, price_key, price, aggressor side, size) for the level memory
         self.marks = {}         # (minute, price_key, side) -> [price, absorbed shares]
+        self.quotes = deque(maxlen=64)   # (t, bid, ask) as the best bid / offer changed: prints are read against it
+        self.voice_pending = {}          # (side, price_key) -> size that left, waiting to see if it traded
+        self.l1_volume = None            # IBKR's cumulative day volume (symbols without a tape)
 
     def bar_update(self, t, price, size=0.0, side=None):
         m = int(t // BAR_SECONDS) * BAR_SECONDS
@@ -106,6 +114,29 @@ class SymbolState:
         if self.book is not None and self.book.synced:
             return self.book.best(BID), self.book.best(ASK)
         return self.l1["bid"], self.l1["ask"]
+
+    def note_quote(self, t):
+        b, a = self.bbo()
+        if not self.quotes or self.quotes[-1][1:] != (b, a):
+            self.quotes.append((t, b, a))
+
+    def aggressor(self, price, t, window=0.3):
+        """Who was in a rush. The tape and the book are separate IBKR streams: the book can already show the level
+        gone when the print that took it arrives. So a print that reads 'mid' against the quote now is read against
+        the quotes of the last moment; a locked / crossed quote is skipped for the last clean one."""
+        bid, ask = self.bbo()
+        side = classify(price, bid, ask)
+        if side != MID:
+            return side
+        for qt, b, a in reversed(self.quotes):
+            if t - qt > window and not (b is not None and a is not None and b >= a):
+                # older than the window: only used when everything since has been locked / crossed
+                if not (bid is not None and ask is not None and bid >= ask):
+                    break
+            s2 = classify(price, b, a)
+            if s2 != MID:
+                return s2
+        return MID
 
 
 class Engine:
@@ -185,9 +216,11 @@ class Engine:
             "price": fmt_price(tracker.price),
             "side": "ask" if tracker.side == ASK else "bid",
             "role": tracker.role,
-            "absorbed": round(final["absorbed"] if final else tracker.absorbed_total),
+            # a RELOAD call carries the evidence that confirmed it (the window); a verdict the whole episode
+            "absorbed": round(final["absorbed"] if final else tracker.absorbed_window(t)),
             "refreshes": final["refreshes"] if final else tracker.refreshes_window(t),
-            "showing": round(tracker.displayed),      # what the ladder shows at that price right now
+            # exactly what the ladder row shows at that price right now
+            "showing": round(st.book.size_at(tracker.side, tracker.price)) if st.book is not None else round(tracker.displayed),
         }
         if final:
             alert["size_before_gone"] = round(final["size_before_gone"])
@@ -216,8 +249,15 @@ class Engine:
             self.data_t = t
             st.l1[field] = value      # None = IBKR says there is no bid / offer right now
             st.l1_t = t
+            if field in ("bid", "ask"):
+                st.note_quote(t)
             if field == "last" and not st.depth_active and value:
                 st.bar_update(t, value)  # symbols without a tape still get a price chart
+            if field == "volume" and value is not None:
+                # no tape on this symbol: the day volume's increase is this minute's volume (charts, VWAP, daily)
+                if st.l1_volume is not None and value > st.l1_volume and not st.depth_active and st.l1["last"]:
+                    st.bar_update(t, st.l1["last"], value - st.l1_volume)
+                st.l1_volume = value
 
     def on_depth(self, symbol, position, operation, side, price, size, market_maker, t):
         with self.lock:
@@ -231,8 +271,9 @@ class Engine:
                 return  # stale update for a slot that was already released
             st.book.apply(position, operation, side, price, size, market_maker)
             st.depth_t = t
+            st.note_quote(t)
             self._voice_sizes(st, side, t)
-            self._track_big(st, side)
+            self._track_big(st, side, t)
             if self.sim_broker is not None:
                 self.sim_broker.on_market(symbol, t)
             judge = self._judge(st, t)
@@ -257,6 +298,11 @@ class Engine:
             st.resync_until = t + self.cfg["reload"]["resync_grace_seconds"]
             if st.book is not None:
                 st.book.reset()
+            for side in (ASK, BID):          # nothing is "showing" until the book is rebuilt: not a new appearance
+                for rec in st.big[side].values():
+                    if rec[2]:
+                        rec[2] = False; rec[3] = None
+            st.voice_pending.clear()
             for tr in st.trackers.values():
                 tr.on_resync()
             self._message("warn", f"{symbol}: depth book reset ({reason}); resyncing", t, symbol)
@@ -271,7 +317,7 @@ class Engine:
                        "ex": exchange, "cond": conditions})
             self.data_t = t
             bid, ask = st.bbo()
-            rec = st.tape.add(t, price, size, bid, ask, exchange)
+            rec = st.tape.add(t, price, size, bid, ask, exchange, side=st.aggressor(price, t))
             st.tape_t = t
             st.l1["last"] = price
             st.bar_update(t, price, size, rec["side"])
@@ -323,9 +369,16 @@ class Engine:
                 return
             self._rec({"ev": "hbar", "t": self.last_t or t0, "sym": symbol, "t0": t0, "o": o, "h": h, "l": l, "c": c, "v": v})
             m = int(t0 // BAR_SECONDS) * BAR_SECONDS
-            if m in st.bars:
-                return  # live data for that minute wins
-            st.bars[m] = [o, h, l, c, v or 0.0, 0.0, 0.0]
+            live = st.bars.get(m)
+            if live is not None:
+                # the minute was already started live (first ticks came in before the history): the history has
+                # the whole minute up to now, so it sets the open and widens the range; the live close stays
+                live[0] = o
+                live[1] = max(live[1], h)
+                live[2] = min(live[2], l)
+                live[4] = max(live[4], v or 0.0)
+            else:
+                st.bars[m] = [o, h, l, c, v or 0.0, 0.0, 0.0]
             st.hist_ver += 1
 
     # ---- account view (read-only) --------------------------------------------
@@ -894,6 +947,8 @@ class Engine:
             for st in self.syms.values():
                 if st.book is None:
                     continue
+                if st.voice_pending:
+                    self._voice_settle(st, t)
                 for key, tr in list(st.trackers.items()):
                     label = tr.evaluate(t, st.book)
                     if label:
@@ -924,27 +979,37 @@ class Engine:
             self._rec({"ev": "big", "t": t or self.last_t, "sym": symbol, "shares": st.big_shares})
             return True
 
-    def _track_big(self, st, side):
-        """Count how many separate times big size has appeared at each price (shows up, leaves, shows up again)."""
+    def _track_big(self, st, side, t=None):
+        """Count how many separate times big size has appeared at each price (shows up, leaves for real, shows up
+        again). Only on a synced book: a depth reset, a slot rotating back in or one venue re-quoting (delete +
+        insert) is not a new appearance; the size has to have been gone BIG_GONE_SECONDS first."""
         if st.book is None:
             return
+        t = self.last_t if t is None else t
+        if not st.book.synced:
+            return
+        settling = t < st.resync_until      # book still being rebuilt: nothing counts as coming back
         big = self.big_shares_for(st)
         showing = {price_key(p): s for p, s, _n in st.book.levels(side)}
         recs = st.big[side]
         for k, s in showing.items():
-            rec = recs.get(k)
+            rec = recs.get(k)        # [times, peak, showing now, gone since]
             if s >= big:
                 if rec is None:
-                    recs[k] = [1, s, True]
+                    recs[k] = [1, s, True, None]
                 elif not rec[2]:
-                    rec[0] += 1; rec[2] = True; rec[1] = max(rec[1], s)
+                    if rec[3] is not None and t - rec[3] >= self.BIG_GONE_SECONDS and not settling:
+                        rec[0] += 1
+                    rec[2] = True; rec[1] = max(rec[1], s); rec[3] = None
                 else:
                     rec[1] = max(rec[1], s)
-            elif rec is not None:
-                rec[2] = False
+            elif rec is not None and rec[2]:
+                rec[2] = False; rec[3] = t
         for k, rec in recs.items():
-            if k not in showing:
-                rec[2] = False
+            if k not in showing and rec[2]:
+                rec[2] = False; rec[3] = t
+
+    BIG_GONE_SECONDS = 5.0
 
     def _voice_sizes(self, st, side, t):
         """Call out big size showing up at a price, and big size leaving it (pulled or hit)."""
@@ -964,14 +1029,26 @@ class Engine:
             s = now.get(k, (p, 0.0))[1]
             gone = was - s
             if synced and was >= big and gone >= big * 0.8:
-                # hit, or pulled? look at what traded at that price in the last few seconds
-                traded = sum(pr["size"] for pr in st.tape.recent(60)
-                             if t - pr["t"] <= 3.0 and price_key(pr["price"]) == k)
-                if traded >= gone * 0.5:
-                    self._say(st, side, k, "hit", t, f"{who} at {narrative.px(p)} got hit for {_k(gone)}")
-                else:
-                    self._say(st, side, k, "pull", t, f"{who} pulled {_k(gone)} from {narrative.px(p)}")
+                if s <= 0 and not st.book.in_view(side, p):
+                    continue          # it scrolled out of the book's window: not pulled, just out of sight
+                # hit or pulled is decided a moment later, once the prints that took it have arrived
+                st.voice_pending.setdefault((side, k), (t, p, gone, who))
         st.sizes[side] = now
+
+    def _voice_settle(self, st, t, wait=1.5):
+        """Hit or pulled: what traded at that price from 3 s before it left to now (by time, not a print count)."""
+        for key, (t0, p, gone, who) in list(st.voice_pending.items()):
+            if t - t0 < wait:
+                continue
+            del st.voice_pending[key]
+            side, k = key
+            hit_side = "buy" if side == ASK else "sell"
+            traded = sum(m[4] for m in st.memory if t0 - 3.0 <= m[0] <= t and m[1] == k and m[3] != (
+                "sell" if hit_side == "buy" else "buy"))
+            if traded >= gone * 0.5:
+                self._say(st, side, k, "hit", t, f"{who} at {narrative.px(p)} got hit for {_k(gone)}")
+            else:
+                self._say(st, side, k, "pull", t, f"{who} pulled {_k(gone)} from {narrative.px(p)}")
 
     def _say(self, st, side, k, kind, t, text):
         vc = self.cfg["voice"]
@@ -1376,7 +1453,8 @@ class Engine:
                     row[side + "_big"] = {"times": rec[0], "huge": row[side] >= big_bar * huge_x}
                 tr = trk.get((side, k))
                 if tr is not None:
-                    row[side + "_refills"] = tr.refreshes_window(t)
+                    # a proven reload keeps the refills that proved it, even after they age out of the window
+                    row[side + "_refills"] = max(tr.refreshes_window(t), tr.proven_refills if tr.proven else 0)
                     row[side + "_state"] = tr._display_state(t)
                     row[side + "_proven"] = tr.proven
                     row[side + "_absorbed"] = round(tr.absorbed_total)
@@ -1442,7 +1520,9 @@ class Engine:
             item = {"price": fmt_price(tr.price), "side": "bid" if tr.side == BID else "ask", "kind": kind,
                     "role": tr.role, "refills": tr.refreshes_window(t), "absorbed": round(tr.absorbed_total),
                     "showing": round(tr.displayed)}
-            (below if price and tr.price < price else above).append(item)
+            # at the last price itself: a buyer is holding under price, a seller over it
+            at = price and abs(tr.price - price) < 1e-9
+            (below if (tr.side == BID if at else (price and tr.price < price)) else above).append(item)
         below.sort(key=lambda x: -x["price"])
         above.sort(key=lambda x: x["price"])
         return {"below": below[:3], "above": above[:3]}

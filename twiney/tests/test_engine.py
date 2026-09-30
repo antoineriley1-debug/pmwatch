@@ -321,14 +321,16 @@ class VoiceTests(unittest.TestCase):
         self.assertEqual(e.voice[0]["text"], "AAA: 18k buyer at 9.99")
         # pulled: size vanishes with nothing trading there
         e.on_depth("AAA", 0, UPDATE, BID, 9.99, 200, "", 4.0)
-        self.assertEqual(e.voice[0]["text"], "AAA: buyer pulled 17k from 9.99")
+        e.tick(5.6)                                    # decided once the tape has caught up
+        self.assertEqual(e.voice[0]["text"], "AAA: buyer pulled 18k from 9.99")
         # hit: prints at that price account for the drop
         e.on_depth("AAA", 0, UPDATE, ASK, 10.00, 12000, "", 30.0)
         self.assertEqual(e.voice[0]["text"], "AAA: 12k seller at 10.00")
         for k in range(6):
             e.on_print("AAA", 10.00, 2000, "X", 31.0 + k * 0.1)
         e.on_depth("AAA", 0, UPDATE, ASK, 10.00, 100, "", 32.0)
-        self.assertEqual(e.voice[0]["text"], "AAA: seller at 10.00 got hit for 11k")
+        e.tick(33.6)
+        self.assertEqual(e.voice[0]["text"], "AAA: seller at 10.00 got hit for 12k")
         self.assertEqual(len(e.snapshot(33.0)["voice"]), 4)
 
 
@@ -389,6 +391,7 @@ class BigSizeTests(unittest.TestCase):
     def test_big_size_is_highlighted_and_counted_each_time_it_shows(self):
         e = connected_engine()
         e.on_l1("AAA", "last", 10.01, 1.0); e.tick(1.0)
+        e.on_depth("AAA", 0, INSERT, BID, 10.00, 400, "", 2.0)
         e.on_depth("AAA", 0, INSERT, ASK, 10.02, 400, "", 2.0)
         e.on_depth("AAA", 1, INSERT, ASK, 10.03, 8000, "", 2.1)
         row = lambda t, p: [r for r in e.snapshot(t)["panes"][0]["ladder"]["rows"] if r["price"] == p][0]
@@ -396,12 +399,15 @@ class BigSizeTests(unittest.TestCase):
         self.assertNotIn("ask_big", row(2.2, 10.02))
         e.on_depth("AAA", 1, UPDATE, ASK, 10.03, 300, "", 3.0)      # he leaves
         self.assertNotIn("ask_big", row(3.1, 10.03))
-        e.on_depth("AAA", 1, UPDATE, ASK, 10.03, 20000, "", 4.0)    # and comes back, huge this time
-        self.assertEqual(row(4.1, 10.03)["ask_big"], {"times": 2, "huge": True})
+        e.on_depth("AAA", 1, UPDATE, ASK, 10.03, 9000, "", 3.5)     # a blip back half a second later is the same order
+        self.assertEqual(row(3.6, 10.03)["ask_big"]["times"], 1)
+        e.on_depth("AAA", 1, UPDATE, ASK, 10.03, 300, "", 4.0)
+        e.on_depth("AAA", 1, UPDATE, ASK, 10.03, 20000, "", 10.0)   # gone for real, then back, huge this time
+        self.assertEqual(row(10.1, 10.03)["ask_big"], {"times": 2, "huge": True})
         # adjustable per symbol from the desk
-        self.assertTrue(e.set_big_shares("AAA", 30000, 5.0))
-        self.assertNotIn("ask_big", row(5.1, 10.03))
-        lad = e.snapshot(5.1)["panes"][0]["ladder"]
+        self.assertTrue(e.set_big_shares("AAA", 30000, 11.0))
+        self.assertNotIn("ask_big", row(11.1, 10.03))
+        lad = e.snapshot(11.1)["panes"][0]["ladder"]
         self.assertEqual((lad["big_shares"], lad["big_default"]), (30000, False))
-        e.set_big_shares("AAA", None, 6.0)
-        self.assertEqual(row(6.1, 10.03)["ask_big"]["times"], 3)
+        e.set_big_shares("AAA", None, 12.0)
+        self.assertEqual(row(12.1, 10.03)["ask_big"]["times"], 2)   # changing the bar is not a new appearance

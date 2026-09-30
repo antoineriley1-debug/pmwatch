@@ -6,7 +6,10 @@ BUY, SELL, MID = "buy", "sell", "mid"
 
 
 def classify(price, bid, ask):
-    """Aggressor side from the quote in force when the print arrived."""
+    """Aggressor side from the quote in force when the print arrived. A locked / crossed quote (bid >= ask, one
+    venue against another) says nothing about who was in a rush: mid."""
+    if bid is not None and ask is not None and bid >= ask - 1e-9:
+        return MID
     if ask is not None and price >= ask - 1e-9:
         return BUY
     if bid is not None and price <= bid + 1e-9:
@@ -17,11 +20,12 @@ def classify(price, bid, ask):
 class Tape:
     def __init__(self, cfg):
         self.cfg = cfg
-        self.prints = deque(maxlen=int(cfg["keep_prints"]))
+        # at least every print of the read window, however busy the tape: keep_prints is the floor, not the cap
+        self.prints = deque(maxlen=max(int(cfg["keep_prints"]), 20000))
         self.total_volume = 0.0
 
-    def add(self, t, price, size, bid, ask, exchange=""):
-        side = classify(price, bid, ask)
+    def add(self, t, price, size, bid, ask, exchange="", side=None):
+        side = side or classify(price, bid, ask)
         rec = {"t": t, "price": price, "size": size, "side": side, "exchange": exchange,
                "large": size >= self.cfg["large_print_shares"]}
         self.prints.append(rec)
