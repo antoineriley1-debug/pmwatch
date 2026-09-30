@@ -311,16 +311,62 @@ class AutoSecondEntryTests(unittest.TestCase):
         self.assertEqual(e._pending("AAA"), [])
         self.assertIn("2nd entry", tr.auto_status()["AAA"]["text"])
 
-    def test_price_already_through_waits_for_the_retrace(self):
+    def test_price_above_the_level_is_a_limit_on_the_pullback(self):
         e, tr, gate, broker = self._ready()
         gate.arm(True)
+        for i in range(3):                                   # the market is above the 2nd entry
+            e.on_depth("AAA", i, UPDATE, BID, round(10.29 - i * 0.01, 2), 500, "", 1.4)
+            e.on_depth("AAA", i, UPDATE, ASK, round(10.30 + i * 0.01, 2), 500, "", 1.4)
         e.on_l1("AAA", "last", 10.30, 1.5)
         tr.watchdog(2.0)
+        ent = self._entries(e)
+        self.assertEqual([(o["type"], o["lmt"]) for o in ent], [("LMT", 10.10)])
+        self.assertIn("pulls back", tr.auto_status()["AAA"]["text"])
+
+    def test_lines_become_orders_as_they_are_drawn(self):
+        """2nd entry first (ticket size, no legs yet), then the target joins, then the stop joins and sizes it."""
+        e, tr, gate, broker = sim_setup(auto_second_entry=True, default_shares=100)
+        tr.risk_dollars = 50
+        gate.arm(True)
+        p = e.syms["AAA"].play
+        p.update(second_entry=None, stop=None, target=None)
+        tr.watchdog(1.5)
         self.assertEqual(self._entries(e), [])
-        self.assertIn("retrace", tr.auto_status()["AAA"]["text"])
-        e.on_l1("AAA", "last", 10.05, 2.5)
-        tr.watchdog(3.0)
-        self.assertEqual(len(self._entries(e)), 1)
+        e.set_play_level("AAA", "second_entry", 10.10, 2.0)
+        tr.watchdog(2.1)
+        self.assertEqual([(o["type"], o["aux"], o["qty"]) for o in e._pending("AAA")], [("STP LMT", 10.10, 100.0)])
+        e.set_play_level("AAA", "target", 10.50, 2.5)
+        tr.watchdog(2.6)
+        self.assertEqual(sorted(o["role"] for o in e._pending("AAA")), ["entry", "target"])
+        e.set_play_level("AAA", "stop", 9.90, 3.0)
+        tr.watchdog(3.1)
+        pend = e._pending("AAA")
+        self.assertEqual(sorted(o["role"] for o in pend), ["entry", "stop", "target"])
+        self.assertEqual([o["qty"] for o in pend if o["role"] == "entry"], [250.0])   # $50 / $0.20
+
+    def test_stop_and_target_drawn_after_the_fill_go_in_and_follow_the_line(self):
+        e, tr, gate, broker = sim_setup(auto_second_entry=True, default_shares=100)
+        gate.arm(True)
+        e.syms["AAA"].play.update(second_entry=None, stop=None, target=None)
+        e.set_play_level("AAA", "second_entry", 10.10, 1.0)
+        tr.watchdog(1.1)
+        e.on_print("AAA", 10.12, 200, "X", 1.5)              # through the level: filled, nothing protecting it yet
+        self.assertEqual(broker.position("AAA"), 100)
+        tr.watchdog(1.6)
+        self.assertEqual(e._pending("AAA"), [])
+        e.set_play_level("AAA", "stop", 9.95, 2.0)
+        tr.watchdog(2.1)
+        stops = [o for o in e._pending("AAA") if o["role"] == "stop"]
+        self.assertEqual([(s["action"], s["aux"], s["qty"]) for s in stops], [("SELL", 9.95, 100.0)])
+        e.set_play_level("AAA", "stop", 10.00, 2.5)          # drag the line: the order moves with it
+        tr.watchdog(2.6)
+        self.assertEqual([o["aux"] for o in e._pending("AAA") if o["role"] == "stop"], [10.00])
+        e.set_play_level("AAA", "target", 10.60, 3.0)
+        tr.watchdog(3.1)
+        self.assertEqual([(o["type"], o["lmt"]) for o in e._pending("AAA") if o["role"] == "target"], [("LMT", 10.60)])
+        e.set_play_level("AAA", "stop", None, 3.5)            # clearing the line never pulls the stop
+        tr.watchdog(3.6)
+        self.assertEqual(len([o for o in e._pending("AAA") if o["role"] == "stop"]), 1)
 
     def test_hand_cancel_switches_the_play_off_until_redrawn(self):
         e, tr, gate, broker = self._ready()

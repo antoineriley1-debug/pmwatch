@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20260930-2212">
+<meta name="build" content="20260930-2357">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -1511,9 +1511,20 @@ function tapeHTML(t){
 
 /* ---------- chart: candles + your levels + absorption bubbles ---------- */
 // seconds to add to a UTC timestamp to get New York wall time (session anchors: 9:30 open, day rollover)
+// New York's offset only changes at the DST switch: one answer per hour, remembered (the time axis asks per bar, per frame)
+const ET_FMT = new Intl.DateTimeFormat("en-US", {timeZone: "America/New_York", hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit"});
+const ET_OFF = new Map();
 function etOffset(t){
+  const h = Math.floor(t / 3600), c = ET_OFF.get(h);
+  if (c !== undefined) return c;
+  if (ET_OFF.size > 20000) ET_OFF.clear();
+  const v = etOffsetRaw(h * 3600);
+  ET_OFF.set(h, v);
+  return v;
+}
+function etOffsetRaw(t){
   const d = new Date(t * 1000);
-  const parts = new Intl.DateTimeFormat("en-US", {timeZone: "America/New_York", hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit"}).formatToParts(d);
+  const parts = ET_FMT.formatToParts(d);
   const g = k => +parts.find(x => x.type === k).value;
   return Math.round(Date.UTC(g("year"), g("month") - 1, g("day"), g("hour"), g("minute"), g("second")) / 1000 - t);
 }
@@ -2051,9 +2062,55 @@ function drawOne(p, cv, v, isFoot){
   g.font = "11px ui-monospace, Menlo, Consolas, monospace";
   // time axis
   g.fillStyle = C.text;
-  const every = Math.max(1, Math.ceil(70 / cw));
-  for (let k = 0; k < bars.length; k += every){
-    g.fillText(isDaily ? nyDate(bars[k][0], /[WM]$/.test(String(tf)) ? {month: "short", year: "2-digit"} : {month: "short", day: "numeric"}) : nyHM(bars[k][0]), x0 + k * cw, H - 4);
+  // time axis, TradingView's way but steadier: every bar gets a rank from the boundary it opens (a new year,
+  // month, session, then 4h / 2h / 1h / 30m / 15m / 5m clock marks) and the highest ranks win the room. A label
+  // belongs to its candle, so panning slides it with the chart and zooming only adds or drops labels, never
+  // re-picks them. Sessions show their date (gold), the rest round clock times; never "11:30 11:30 11:30"
+  {
+    const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const kA = Math.max(0, Math.floor(-x0 / cw) - 1), kB = Math.min(bars.length - 1, Math.ceil((plotW - x0) / cw) + 1);
+    const parts = t => { const d = new Date((t + etOffset(t)) * 1000); return {y: d.getUTCFullYear(), m: d.getUTCMonth(), d: d.getUTCDate(), dow: d.getUTCDay(), min: d.getUTCHours() * 60 + d.getUTCMinutes()}; };
+    const monthly = /[WM]$/.test(String(tf)), cand = [];
+    let prev = kA > 0 ? parts(bars[kA - 1][0]) : null;
+    for (let k = kA; k <= kB; k++){
+      const q = parts(bars[k][0]); let rank = 0, txt = "", kind = "t";
+      if (!prev){ rank = 45; txt = isDaily ? `${MON[q.m]} ${String(q.y).slice(2)}` : `${MON[q.m]} ${q.d}`; kind = "day"; }   // the first bar of the history: no boundary behind it
+      else if (q.y !== prev.y){ rank = 100; txt = String(q.y); kind = "y"; }
+      else if (q.m !== prev.m){ rank = 90; txt = MON[q.m]; kind = "m"; }
+      else if (isDaily){
+        if (!monthly && q.dow < prev.dow){ rank = 50; txt = String(q.d); kind = "d"; }        // a new week
+        else if (!monthly){ rank = 10; txt = String(q.d); kind = "d"; }
+      } else if (q.d !== prev.d){ rank = 80; txt = `${MON[q.m]} ${q.d}`; kind = "day"; }
+      else {
+        const mm = q.min;
+        rank = mm % 240 === 0 ? 60 : mm % 120 === 0 ? 55 : mm % 60 === 0 ? 50 : mm % 30 === 0 ? 40 : mm % 15 === 0 ? 30 : mm % 5 === 0 ? 20 : 10;
+        txt = nyHM(bars[k][0]);
+      }
+      if (rank) cand.push({k, rank, txt, kind, x: x0 + k * cw + cw / 2});
+      prev = q;
+    }
+    // the first visible bar only gets a date if nothing better is near (it isn't a real boundary)
+    if (cand.length && cand[0].k === kA && kA > 0 && cand[0].rank >= 80) cand[0].rank = 45;
+    g.font = "11px ui-monospace, Menlo, Consolas, monospace";
+    const placed = [];
+    cand.sort((a, b) => b.rank - a.rank || a.k - b.k);
+    for (const c of cand){
+      const w = g.measureText(c.txt).width, l = c.x - w / 2 - 7, r = c.x + w / 2 + 7;
+      if (l < 2 || r > plotW - 2) continue;
+      if (placed.some(p => l < p.r && r > p.l)) continue;
+      placed.push({l, r, c});
+    }
+    g.save(); g.textAlign = "center";
+    for (const {c} of placed){
+      if (c.kind !== "t" && c.kind !== "d"){               // a session / month / year boundary: brighter, bold
+        g.fillStyle = C.dots ? "#e6c15a" : "#e6c15a"; g.font = "bold 11px ui-monospace, Menlo, Consolas, monospace";
+      } else { g.fillStyle = C.text; g.font = "11px ui-monospace, Menlo, Consolas, monospace"; }
+      g.fillText(c.txt, c.x, H - 4);
+      g.strokeStyle = C.axis; g.beginPath(); g.moveTo(c.x + .5, plotH + volH); g.lineTo(c.x + .5, plotH + volH + 4); g.stroke();   // tick
+    }
+    g.restore();
+    g.font = "11px ui-monospace, Menlo, Consolas, monospace";
+    v.timeAxisY = H - 16;
   }
   // key
   if (!clean){ g.fillStyle = "#7d7f85";
@@ -2072,8 +2129,16 @@ function drawOne(p, cv, v, isFoot){
       g.fillStyle = dan ? "#ff0000" : "#26282c"; g.fillRect(plotW, cy - 8, labelW, 16);
       g.fillStyle = "#d6d6d3"; g.fillText(px(pr), plotW + 3, cy + 4);
       const k = Math.floor((cx - x0) / cw);
+      if (bars[k]){                                    // the bar's date and time, boxed on the time axis
+        const bt = bars[k][0], bx = x0 + k * cw + cw / 2;
+        const tt = isDaily ? nyDate(bt, {weekday: "short", month: "short", day: "numeric", year: "2-digit"})
+                           : nyDate(bt, {weekday: "short", month: "short", day: "numeric"}) + "  " + nyHM(bt);
+        const tw = g.measureText(tt).width + 12, lx = Math.max(0, Math.min(plotW - tw, bx - tw / 2));
+        g.fillStyle = dan ? "#ff0000" : "#26282c"; g.fillRect(lx, H - 17, tw, 17);
+        g.fillStyle = "#d6d6d3"; g.fillText(tt, lx + 6, H - 4);
+      }
       if (bars[k] && !(store.get("datawin", true) && !isFoot)){   // the data window carries this when it is on
-        const b = bars[k], dt = isDaily ? nyDate(b[0], {month: "short", day: "numeric"}) : nyHM(b[0]);
+        const b = bars[k], dt = isDaily ? nyDate(b[0], {month: "short", day: "numeric"}) : nyDate(b[0], {month: "short", day: "numeric"}) + " " + nyHM(b[0]);
         const txt = `${dt}  O ${px(b[1])} H ${px(b[2])} L ${px(b[3])} C ${px(b[4])}  vol ${kfmt(b[5])}`;
         g.fillStyle = "rgba(17,22,31,.9)"; g.fillRect(6, 4, g.measureText(txt).width + 10, 16);
         g.fillStyle = "#d6d6d3"; g.fillText(txt, 11, 16);

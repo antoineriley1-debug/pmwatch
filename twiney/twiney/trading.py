@@ -497,6 +497,7 @@ class Trader:
         self.auto_done = {}  # symbol -> price_key of the 2nd entry that already filled (one entry per drawn level)
         self.auto_why = {}   # symbol -> why there is no working auto entry right now
         self.auto_fail = {}  # symbol -> (level key, when, reason): a refused order is not retried every half second
+        self.auto_sync = {}  # symbol -> the stop / target lines the exits of a filled auto entry were last set to
         # every order action (clicks on HTTP threads, the watchdog thread) runs one at a time: a check and the order
         # it allows can never be split by another click (two flattens, two closes, the same ticket twice)
         self.lock = threading.RLock()
@@ -1001,7 +1002,12 @@ class Trader:
         return max(qty, 0)
 
     def _auto_want(self, play):
-        """The auto entry this play calls for now: (order or None, why not, may_place)."""
+        """The auto entry this play calls for now: (order or None, why not, may_place).
+
+        Drawing the 2nd entry puts the entry in at once. The target and the stop join it as you draw them (the entry
+        is re-sent with them attached), and it is sized from your risk $ once the stop is there (the ticket size
+        until then). Price under the 2nd entry (long): a BUY STOP-LIMIT that fills when price comes up through it.
+        Price above it: a BUY LIMIT that fills on the pullback into it. Short: the mirror."""
         sym = play["symbol"]
         if not self.auto_on:
             return None, "AUTO 2ND ENTRY is off on the desk", False
@@ -1010,20 +1016,26 @@ class Trader:
         if not play.get("active", True):
             return None, "play is retired", False
         se, stop, target = play.get("second_entry"), play.get("stop"), play.get("target")
-        missing = [n for n, v in (("2nd entry", se), ("stop", stop), ("target", target)) if not v]
-        if missing:
-            return None, "needs a " + " and a ".join(missing) + " on the chart", False
+        if not se:
+            return None, "draw a 2nd entry on the chart — it goes in as your entry order", False
         long_ = play.get("side", "long") == "long"
         action = BUY if long_ else SELL
-        if (long_ and not (stop < se < target)) or (not long_ and not (target < se < stop)):
-            return None, f"stop {money(stop)} and target {money(target)} must sit either side of the 2nd entry {money(se)}", False
+        if stop and (stop >= se if long_ else stop <= se):
+            return None, f"stop {money(stop)} must be {'under' if long_ else 'over'} the 2nd entry {money(se)} for a {play.get('side', 'long')}", False
+        if target and (target <= se if long_ else target >= se):
+            return None, f"target {money(target)} must be {'over' if long_ else 'under'} the 2nd entry {money(se)} for a {play.get('side', 'long')}", False
         if not (self.gate.can_trade() and self.gate.armed):
             return None, self.gate.why_not() or "trading is DISARMED — click ARM", False
         if self.auto_done.get(sym) == price_key(se):
             return None, f"entered at {money(se)} already — one entry per 2nd entry (redraw it for another)", False
-        qty = self.auto_size(play)
-        if qty < 1:
-            return None, f"${self.risk_dollars:,.0f} risk does not buy one share with the stop {money(abs(se - stop))} away", False
+        if stop:
+            qty = self.auto_size(play)
+            if qty < 1:
+                return None, f"${self.risk_dollars:,.0f} risk does not buy one share with the stop {money(abs(se - stop))} away", False
+        else:
+            qty = min(int(self.default_shares), int(self.cfg["max_shares_per_order"]))
+            if self.cfg.get("max_dollars_per_order"):
+                qty = min(qty, int(self.cfg["max_dollars_per_order"] // float(se)))
         pos = int(self.broker.position(sym))
         if pos:
             return None, f"already {'long' if pos > 0 else 'short'} {abs(pos):,} — the auto entry waits until you are flat", False
@@ -1032,15 +1044,83 @@ class Trader:
                   and not (mine and o.get("order_id") == mine["id"])]
         if others:
             return None, "a manual entry is working on this symbol — the auto entry stays out of its way", False
-        ticks = int(self.cfg.get("auto_entry_limit_ticks", 5))
-        limit = snap(round(se + (ticks * tick_size(se) if long_ else -ticks * tick_size(se)), 4))
-        want = {"action": action, "aux": snap(round(float(se), 4)), "price": limit, "qty": qty,
-                "stop": float(stop), "target": float(target)}
-        # PS60: the entry is BACK through the 2nd entry after the retrace. A stop entry placed with price already
-        # through the level would fill at once (a chase), so it waits for the retrace; one already working stays
+        aux = snap(round(float(se), 4))
+        st = self.engine.syms[sym]
+        last = st.price()
+        bid, ask = st.bbo()
+        # which side of the level the market is on, judged by the quote you would trade against (the offer for a
+        # buy, the bid for a sell): above it, a limit AT the level waits for the pullback; at or under it, a limit
+        # there would fill at once, so it is a stop-limit that fills when price comes up through it
+        ref = (ask if long_ else bid) or last
+        through = ref is not None and (ref > se if long_ else ref < se)
+        if mine and mine.get("type") in ("LMT", "STP LMT") and last is not None and abs(last - se) < tick_size(se) / 2:
+            otype = mine["type"]                      # price sitting on the level: keep what is working, no flip-flop
+        else:
+            otype = "LMT" if through else "STP LMT"
+        if otype == "LMT":
+            want = {"type": "LMT", "action": action, "aux": aux, "price": aux, "qty": qty,
+                    "stop": stop and float(stop), "target": target and float(target)}
+        else:
+            ticks = int(self.cfg.get("auto_entry_limit_ticks", 5))
+            limit = snap(round(se + (ticks * tick_size(se) if long_ else -ticks * tick_size(se)), 4))
+            want = {"type": "STP LMT", "action": action, "aux": aux, "price": limit, "qty": qty,
+                    "stop": stop and float(stop), "target": target and float(target)}
+        return want, "", True
+
+    def _auto_protect(self, play, now):
+        """After the auto entry fills, the stop and target lines are the position's exits: draw one and it goes in,
+        move it and the working order moves with it. Clearing a line leaves its order working (said once) —
+        a stop never disappears because a line was removed."""
+        sym = play["symbol"]
+        s = self.auto_sync.get(sym)
+        if not s:
+            return
+        pos = int(self.broker.position(sym))
+        long_ = s["action"] == BUY
+        if not pos or (pos > 0) != long_:
+            if now - s["t"] > 5.0:                    # the position report can trail the fill; flat for real: done
+                self.auto_sync.pop(sym, None)
+            return
+        exit_action = SELL if long_ else BUY
         last = self.engine.syms[sym].price()
-        may_place = last is None or (last < se if long_ else last > se)
-        return want, ("" if may_place else f"price {money(last)} is through the 2nd entry — waiting for the retrace {'under' if long_ else 'over'} {money(se)}"), may_place
+        pend = [o for o in self.engine._pending(sym) if o.get("action") == exit_action and o.get("order_id") is not None]
+        for role in ("stop", "target"):
+            want = play.get(role)
+            if want == s.get(role):
+                continue
+            if want is None:
+                self._note(now, f"{sym}: {role} line cleared — the {role} order stays working (cancel it from the orders list)", True)
+                s[role] = None
+                continue
+            want = snap(round(float(want), 4))
+            wrong = last is not None and ((role == "stop" and (want >= last if long_ else want <= last)) or
+                                          (role == "target" and (want <= last if long_ else want >= last)))
+            if wrong:
+                if s.get("warned_" + role) != want:
+                    s["warned_" + role] = want
+                    self._note(now, f"{sym}: {role} {money(want)} is already through the price {money(last)} — not sent "
+                                    f"(it would fill at once). Move the line", False)
+                continue
+            mine = [o for o in pend if o.get("role") == role]
+            try:
+                if mine:
+                    for o in mine:
+                        self.broker.modify(o["order_id"], want, now)
+                    self._note(now, f"{sym}: {role} order moved to {money(want)} with the line", True)
+                elif role == "stop":
+                    tk = tick_size(want)
+                    lmt = snap(want - tk * self.cfg["stop_limit_ticks"], -1) if long_ else snap(want + tk * self.cfg["stop_limit_ticks"], +1)
+                    self.broker.place(sym, exit_action, abs(pos), lmt, now, "STP LMT", None, "stop", "DAY", aux=want,
+                                      oca=f"auto-{sym}", reducing=True)
+                    self._note(now, f"{sym}: STOP order in at {money(want)} for {abs(pos):,} shares", True)
+                else:
+                    self.broker.place(sym, exit_action, abs(pos), want, now, "LMT", None, "target", "DAY",
+                                      oca=f"auto-{sym}", reducing=True)
+                    self._note(now, f"{sym}: TARGET order in at {money(want)} for {abs(pos):,} shares", True)
+                s[role] = want
+                self.engine.log(sym, f"{role.upper()} order {money(want)} ({abs(pos):,} sh)", now, kind="level")
+            except Exception as exc:
+                self._note(now, f"{sym}: {role} order failed: {exc}", False)
 
     def _auto_entries(self, now):
         for play in list(self.engine.plays):
@@ -1058,6 +1138,8 @@ class Trader:
             if status == "Filled" or (o and o.get("remaining") == 0 and (o.get("filled") or 0) > 0):
                 self.auto_done[sym] = price_key(cur["aux"])
                 self.auto.pop(sym, None)
+                # from here the lines ARE the exits: a stop or target drawn (or moved) later goes to the broker
+                self.auto_sync[sym] = {"stop": cur["stop"], "target": cur["target"], "action": cur["action"], "t": now}
                 self._note(now, f"AUTO 2ND ENTRY FILLED {sym}: {cur['action']} {cur['qty']} through {money(cur['aux'])} — "
                                 f"stop {money(cur['stop'])} and target {money(cur['target'])} are working", True)
                 self.engine.log(sym, f"AUTO 2ND ENTRY filled {cur['action']} {cur['qty']} @ {money(cur['aux'])}", now, kind="level")
@@ -1081,9 +1163,10 @@ class Trader:
                 self.auto.pop(sym, None)
                 self._note(now, f"AUTO 2ND ENTRY {sym} cancelled: {why}", True)
             self.auto_why[sym] = why
+            self._auto_protect(play, now)
             return
         if cur is not None:
-            same = all(cur.get(k) == want[k] for k in ("action", "aux", "price", "qty"))
+            same = all(cur.get(k) == want[k] for k in ("type", "action", "aux", "price", "qty"))
             if same and cur.get("stop") == want["stop"] and cur.get("target") == want["target"]:
                 self.auto_why[sym] = ""
                 return
@@ -1095,19 +1178,24 @@ class Trader:
         if not may_place:
             self.auto_why[sym] = why
             return
-        key = (price_key(want["aux"]), want["qty"], price_key(want["stop"]), price_key(want["target"]))
+        key = (want["type"], price_key(want["aux"]), want["qty"],
+               want["stop"] and price_key(want["stop"]), want["target"] and price_key(want["target"]))
         f = self.auto_fail.get(sym)
         if f and f[0] == key and now - f[1] < self.AUTO_RETRY_SECONDS:
             self.auto_why[sym] = f[2]
             return
-        out = self._submit_unlocked(sym, want["action"], want["price"], want["qty"], now, True, "STP LMT", want["aux"], "DAY")
+        out = self._submit_unlocked(sym, want["action"], want["price"], want["qty"], now, True, want["type"],
+                                    want["aux"] if want["type"] == "STP LMT" else None, "DAY")
         if out.get("ok"):
             self.auto[sym] = dict(want, id=out["id"], t=now, by_desk=False)
             self.auto_fail.pop(sym, None)
             self.auto_why[sym] = ""
-            self.engine.log(sym, f"AUTO 2ND ENTRY armed: {want['action']} {want['qty']} through {money(want['aux'])} "
-                                 f"(limit {money(want['price'])}) · stop {money(want['stop'])} · target {money(want['target'])}",
-                            now, kind="level")
+            how = (f"STOP-LIMIT through {money(want['aux'])} (limit {money(want['price'])})" if want["type"] == "STP LMT"
+                   else f"LIMIT at {money(want['aux'])}")
+            legs = " · ".join(x for x in (f"stop {money(want['stop'])}" if want["stop"] else "",
+                                          f"target {money(want['target'])}" if want["target"] else "") if x)
+            self.engine.log(sym, f"ENTRY ORDER in: {want['action']} {want['qty']} {how}" + (f" · {legs}" if legs else
+                                 " · draw the target and stop, they join it"), now, kind="level")
         else:
             reason = out.get("reason") or "refused"
             self.auto_fail[sym] = (key, now, reason)
@@ -1122,8 +1210,11 @@ class Trader:
             cur = self.auto.get(sym)
             se = play.get("second_entry")
             if cur is not None:
-                state, text = "WORKING", (f"{cur['action']} {cur['qty']:,} fills when price comes through {money(cur['aux'])} · "
-                                          f"stop {money(cur['stop'])} · target {money(cur['target'])}")
+                how = "comes through" if cur.get("type") == "STP LMT" else "pulls back to"
+                legs = " · ".join(x for x in (f"stop {money(cur['stop'])}" if cur.get("stop") else "draw the stop",
+                                              f"target {money(cur['target'])}" if cur.get("target") else "draw the target") if x)
+                state, text = "WORKING", (f"{cur['action']} {cur['qty']:,} {cur.get('type', 'STP LMT')} fills when price {how} "
+                                          f"{money(cur['aux'])} · {legs}")
             elif se and self.auto_done.get(sym) == price_key(se):
                 state, text = "DONE", f"entered at {money(se)} — the stop and target are running the trade"
             elif not on:

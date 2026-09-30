@@ -40,13 +40,13 @@ with ladder trading that is **locked to paper accounts** until you deliberately 
   trade bar: **BUY bid** / **SELL ask** at the current quote, **Flatten**, **Cancel all**.
 - A confirmation box shows size, price, dollar value and the stop/target legs (Enter sends, Esc cancels).
   Tick **one-click** to skip it.
-- **AUTO 2ND ENTRY** (on by default, `trading.auto_second_entry`): the 2nd entry you draw on the chart IS the entry.
-  Once a play has a 2nd entry, a stop and a target and the desk is ARMED, a stop-limit entry is placed through the
-  2nd entry (limit `auto_entry_limit_ticks` through it) with the stop and target attached, sized from your RISK $
-  (`trading.risk_dollars`, editable in PLAY SETUP and the ticket). It waits while price is already through the level
-  (PS60: the entry is back through it after the retrace), follows the levels when you move them, is cancelled when
-  you clear the 2nd entry or disarm, and enters once per drawn level. A cancel by hand switches that play's AUTO off
-  until you redraw the 2nd entry or tick it back on in PLAY SETUP, which shows what is working and why not.
+- **AUTO 2ND ENTRY** (on by default, `trading.auto_second_entry`): the lines you draw ARE the orders, while ARMED.
+  Draw the 2nd entry and the entry order goes in at once: a STOP-LIMIT through it when price is under it (long),
+  a LIMIT at it when price is above it (the pullback); shorts mirror. It uses the ticket size until you draw the
+  stop, then it is sized from your RISK $. Draw the target and the stop and they join the entry as its bracket.
+  Drawn after the fill, they go in as the position's stop and target, and dragging a line moves its order.
+  Clearing a line never pulls a stop that is protecting a position. One entry per drawn level; a hand cancel
+  switches that play's AUTO off until you redraw the 2nd entry or tick it back on in PLAY SETUP.
 - **Charts start blank.** A new ticker has no levels; you put the stop, target and 2nd entry on it. The launcher
   writes a watch-only `plays.json`, and any play still carrying the example file's placeholder prices is blanked
   on load (the desk tells you). **CLEAR PLAY** in PLAY SETUP wipes every level off a chart.
