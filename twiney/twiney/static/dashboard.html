@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20260930-0048">
+<meta name="build" content="20260930-0309">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -638,6 +638,19 @@ input:focus,select:focus,textarea:focus{outline:1px solid var(--gold);outline-of
 #leds .ld.red i{background:#e5484d;box-shadow:0 0 6px #e5484d;animation:ledp 1.4s infinite} #leds .ld.red{color:#f0a09c}
 @keyframes ledp{50%{opacity:.35}}
 
+/* workspace: four columns, each with its own top / bottom split */
+#work{display:flex !important;flex-direction:row;align-items:stretch}
+#work > .col{display:flex;flex-direction:column;min-width:0;min-height:0;flex:none}
+#work > .col[data-col="C"]{flex:1 1 0;width:auto !important}
+#work > .col.empty{display:none}
+#work .zone{grid-column:auto !important;grid-row:auto !important;flex:none;min-height:0}
+#work .zone.fill{flex:1 1 0}
+#work .gut.v{width:5px;flex:none;cursor:col-resize;grid-column:auto;grid-row:auto}
+#work .gut.h{height:5px;flex:none;cursor:row-resize;grid-column:auto;grid-row:auto}
+body.dragging #work > .col{display:flex !important;min-width:150px}
+body.dragging #work .zone{display:flex !important;min-height:70px}
+body.dragging #work .zone:not(.fill){flex:0 0 auto}
+
 </style>
 </head>
 <body>
@@ -675,18 +688,13 @@ input:focus,select:focus,textarea:focus{outline:1px solid var(--gold);outline-of
   </span>
 </div>
 <div id="work">
-  <div class="zone" data-zone="TL"><div class="ztabs"></div><div class="zbody"></div></div>
+  <div class="col" data-col="L"><div class="zone" data-zone="TL"><div class="ztabs"></div><div class="zbody"></div></div><div class="gut h" data-gut="h" data-col="L" title="drag to size this column's top and bottom windows"></div><div class="zone" data-zone="BL"><div class="ztabs"></div><div class="zbody"></div></div></div>
   <div class="gut v" id="g1" data-gut="c1"></div>
-  <div class="zone" data-zone="TC"><div class="ztabs"></div><div class="zbody"></div></div>
+  <div class="col" data-col="C"><div class="zone" data-zone="TC"><div class="ztabs"></div><div class="zbody"></div></div><div class="gut h" data-gut="h" data-col="C" title="drag to size this column's top and bottom windows"></div><div class="zone" data-zone="BC"><div class="ztabs"></div><div class="zbody"></div></div></div>
   <div class="gut v" id="g2" data-gut="c3"></div>
-  <div class="zone" data-zone="TR"><div class="ztabs"></div><div class="zbody"></div></div>
+  <div class="col" data-col="R"><div class="zone" data-zone="TR"><div class="ztabs"></div><div class="zbody"></div></div><div class="gut h" data-gut="h" data-col="R" title="drag to size this column's top and bottom windows"></div><div class="zone" data-zone="BR"><div class="ztabs"></div><div class="zbody"></div></div></div>
   <div class="gut v" id="g3" data-gut="c4"></div>
-  <div class="zone" data-zone="TX"><div class="ztabs"></div><div class="zbody"></div></div>
-  <div class="gut h" id="gr" data-gut="r2"></div>
-  <div class="zone" data-zone="BL"><div class="ztabs"></div><div class="zbody"></div></div>
-  <div class="zone" data-zone="BC"><div class="ztabs"></div><div class="zbody"></div></div>
-  <div class="zone" data-zone="BR"><div class="ztabs"></div><div class="zbody"></div></div>
-  <div class="zone" data-zone="BX"><div class="ztabs"></div><div class="zbody"></div></div>
+  <div class="col" data-col="X"><div class="zone" data-zone="TX"><div class="ztabs"></div><div class="zbody"></div></div><div class="gut h" data-gut="h" data-col="X" title="drag to size this column's top and bottom windows"></div><div class="zone" data-zone="BX"><div class="ztabs"></div><div class="zbody"></div></div></div>
 </div>
 <div id="status">
   <span id="stConn"><span class="led"></span>FEED <b>…</b></span>
@@ -878,7 +886,7 @@ const SYMBOL_LINKED = new Set(["chart", "foot", "book", "tape", "ps60", "reload"
 const ZONES = ["TL", "TC", "TR", "TX", "BL", "BC", "BR", "BX"];   // four columns × two rows; a column with one zone runs full height
 const PRESETS = {
   "PS60 Execution": {zones: {TL: ["watch"], TC: ["chart"], TR: ["book"], TX: ["tape"], BL: ["positions", "orders"], BC: ["setup", "flow", "ps60", "reload", "calls"], BR: ["ticket"]},
-    active: {BL: "positions", BC: "setup"}, sizes: {c1: 200, c3: 330, c4: 290, r2: 250}},
+    active: {BL: "positions", BC: "setup"}, sizes: {c1: 200, c3: 330, c4: 290, r2: {L: 250, C: 330, R: 430, X: 250}}},
   "Scalping": {zones: {TL: ["ticket", "setup"], TC: ["book"], TR: ["tape"], BL: ["positions"], BC: ["chart"], BR: ["orders", "reload"]},
     active: {BR: "reload"}, sizes: {c1: 300, c3: 320, r2: 300}},
   "Tape Focus": {zones: {TL: ["book"], TC: ["tape"], TR: ["reload", "ps60", "setup"], BL: ["ticket"], BC: ["chart"], BR: ["positions", "orders"]},
@@ -1684,10 +1692,13 @@ document.getElementById("rpSpeed").addEventListener("change", e => post("/api/re
 function panelHTML(id, html){ const p = P[id]; if (p.last === html) return false; p.last = html; p.pc.innerHTML = html; return true; }
 
 /* ---------- docking */
-function emptyLayout(){ return {zones: {TL: [], TC: [], TR: [], TX: [], BL: [], BC: [], BR: [], BX: []}, active: {}, sizes: {c1: 250, c3: 430, c4: 300, r2: 300}, floats: {}, hidden: [], max: null}; }
+function emptyLayout(){ return {zones: {TL: [], TC: [], TR: [], TX: [], BL: [], BC: [], BR: [], BX: []}, active: {}, sizes: {c1: 250, c3: 430, c4: 300, r2: {L: 300, C: 300, R: 300, X: 300}}, floats: {}, hidden: [], max: null}; }
 function normalize(l){
   const out = Object.assign(emptyLayout(), JSON.parse(JSON.stringify(l || {})));
   for (const z of ZONES) out.zones[z] = (out.zones[z] || []).filter(id => P[id]);
+  // bottom heights are per column now; an older layout had one height for the whole bottom row
+  const r2 = out.sizes.r2;
+  if (typeof r2 === "number" || !r2) out.sizes.r2 = {L: r2 || 300, C: r2 || 300, R: r2 || 300, X: r2 || 300};
   const placed = new Set([].concat(...ZONES.map(z => out.zones[z])).concat(Object.keys(out.floats || {})));
   out.hidden = Object.keys(P).filter(id => !placed.has(id));
   return out;
@@ -1697,17 +1708,24 @@ function applyLayout(){
   const work = document.getElementById("work");
   const s = LAY.sizes;
   const has = z => LAY.zones[z].length > 0;
-  const leftW = (has("TL") || has("BL")) ? s.c1 : 0, rightW = (has("TR") || has("BR")) ? s.c3 : 0;
-  const farW = (has("TX") || has("BX")) ? (s.c4 || 300) : 0;
-  const botH = (has("BL") || has("BC") || has("BR") || has("BX")) ? s.r2 : 0;
-  work.style.setProperty("--c1", leftW + "px"); work.style.setProperty("--c3", rightW + "px"); work.style.setProperty("--c4", farW + "px"); work.style.setProperty("--r2", botH + "px");
-  work.style.setProperty("--g1", leftW ? "5px" : "0px"); work.style.setProperty("--g2", rightW ? "5px" : "0px"); work.style.setProperty("--g3", farW ? "5px" : "0px"); work.style.setProperty("--gr", botH ? "5px" : "0px");
-  document.getElementById("g1").style.display = leftW ? "" : "none"; document.getElementById("g2").style.display = rightW ? "" : "none"; document.getElementById("g3").style.display = farW ? "" : "none"; document.getElementById("gr").style.display = botH ? "" : "none";
-  // a column with a panel in only one of its two zones gives that zone the full height
-  for (const [top, bot] of [["TL", "BL"], ["TC", "BC"], ["TR", "BR"], ["TX", "BX"]]){
-    work.querySelector(`.zone[data-zone="${top}"]`).classList.toggle("tall", has(top) && !has(bot) && botH > 0);
-    work.querySelector(`.zone[data-zone="${bot}"]`).classList.toggle("tall", has(bot) && !has(top));
+  // four columns; each column has its own split between its top and bottom window
+  const COLS = [["L", "TL", "BL", "c1"], ["C", "TC", "BC", null], ["R", "TR", "BR", "c3"], ["X", "TX", "BX", "c4"]];
+  const shown = {};
+  for (const [c, top, bot, wk] of COLS){
+    const col = work.querySelector(`.col[data-col="${c}"]`), t = has(top), b = has(bot);
+    shown[c] = t || b;
+    col.classList.toggle("empty", !shown[c]);
+    if (wk) col.style.width = (s[wk] || 300) + "px";
+    const zt = col.querySelector(`.zone[data-zone="${top}"]`), zb = col.querySelector(`.zone[data-zone="${bot}"]`), gh = col.querySelector(".gut.h");
+    gh.style.display = t && b ? "" : "none";
+    zt.classList.toggle("fill", t); zb.classList.toggle("fill", b && !t);
+    zb.style.height = t && b ? (s.r2[c] || 300) + "px" : "";
   }
+  // a width gutter sits between two columns that are both on screen
+  const on = ["L", "C", "R", "X"].filter(c => shown[c]);
+  document.getElementById("g1").style.display = shown.L && on.length > 1 ? "" : "none";
+  document.getElementById("g2").style.display = shown.R ? "" : "none";
+  document.getElementById("g3").style.display = shown.X && (shown.R || shown.C || shown.L) ? "" : "none";
   for (const z of ZONES){
     const zel = work.querySelector(`.zone[data-zone="${z}"]`), tabs = zel.querySelector(".ztabs"), body = zel.querySelector(".zbody");
     const ids = LAY.zones[z];
@@ -1759,8 +1777,8 @@ document.getElementById("work").addEventListener("drop", e => {
   dragId = null;
 });
 // drop onto an empty zone: zones with no panels are display:none, so offer all 8 zones while dragging
-document.addEventListener("dragstart", () => setTimeout(() => { document.querySelectorAll(".zone.tall").forEach(z => z.classList.remove("tall")); document.querySelectorAll(".zone.empty").forEach(z => { z.classList.remove("empty"); z.dataset.wasEmpty = "1"; }); }, 0));
-document.addEventListener("dragend", () => { document.querySelectorAll(".zone[data-wasEmpty]").forEach(z => { delete z.dataset.wasEmpty; }); applyLayout(); });
+document.addEventListener("dragstart", () => setTimeout(() => { document.body.classList.add("dragging"); document.querySelectorAll(".zone.tall").forEach(z => z.classList.remove("tall")); document.querySelectorAll(".zone.empty").forEach(z => { z.classList.remove("empty"); z.dataset.wasEmpty = "1"; }); }, 0));
+document.addEventListener("dragend", () => { document.body.classList.remove("dragging"); document.querySelectorAll(".zone[data-wasEmpty]").forEach(z => { delete z.dataset.wasEmpty; }); applyLayout(); });
 document.addEventListener("click", e => {
   const c = e.target.closest(".ztab .ctl span"); const tab = e.target.closest(".ztab");
   if (c){ e.stopPropagation(); const id = tab.dataset.p, act = c.dataset.act;
@@ -1784,8 +1802,17 @@ document.addEventListener("mouseup", e => { const el = e.target.closest(".float"
 // gutters
 document.querySelectorAll(".gut").forEach(g => g.addEventListener("mousedown", e => {
   e.preventDefault();
-  const k = g.dataset.gut, axis = k === "r2" ? "y" : "x", sign = k === "c1" ? 1 : -1, start = axis === "x" ? e.clientX : e.clientY, base = LAY.sizes[k];
-  const move = ev => { const cur = axis === "x" ? ev.clientX : ev.clientY; LAY.sizes[k] = Math.max(120, Math.min(axis === "x" ? window.innerWidth * 0.6 : window.innerHeight * 0.75, base + sign * (cur - start))); applyLayout(); };
+  const k = g.dataset.gut;
+  if (k === "h"){                                   // this column's own top / bottom split: drag up = bigger bottom window
+    const c = g.dataset.col, col = g.parentElement, start = e.clientY, base = LAY.sizes.r2[c] || 300;
+    const move = ev => { LAY.sizes.r2[c] = Math.max(60, Math.min(col.clientHeight - 60, base - (ev.clientY - start))); applyLayout(); };
+    const up = () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); };
+    window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
+    return;
+  }
+  // a width gutter: drag left or right. It sizes the column on its outer side; the middle column takes up the rest
+  const sign = k === "c1" ? 1 : -1, start = e.clientX, base = LAY.sizes[k] || 300;
+  const move = ev => { LAY.sizes[k] = Math.max(120, Math.min(window.innerWidth * 0.6, base + sign * (ev.clientX - start))); applyLayout(); };
   const up = () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); };
   window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
 }));
