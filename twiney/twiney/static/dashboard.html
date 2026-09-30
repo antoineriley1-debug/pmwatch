@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20260930-0804">
+<meta name="build" content="20260930-1416">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -177,8 +177,8 @@ body.has-max #panes .pane:not(.max){visibility:hidden}
 
 /* level-memory ladder */
 .lad{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:11.5px}
-.lad th{position:sticky;top:0;background:#121315;color:var(--dim);font-weight:500;font-size:10px;padding:3px 2px;z-index:3}
-.lad td{padding:1px 3px;height:19px;white-space:nowrap}
+.lad th{position:sticky;top:0;background:#121315;color:var(--dim);font-weight:600;font-size:9px;letter-spacing:.03em;padding:3px 1px;z-index:3;text-align:center}
+.lad td{padding:0 3px;height:19px;white-space:nowrap}
 .lad .px{text-align:center;font-weight:600;color:#cfd8e6;border-left:1px solid var(--line);border-right:1px solid var(--line);position:relative;min-width:64px}
 .lad .px .tag{margin-left:3px}
 .lad .sz{text-align:right;width:46px}
@@ -220,7 +220,7 @@ td.bars.l .bar-n{float:right;margin-right:3px} td.bars.r .bar-n{margin-left:3px}
 .tag{display:inline-block;font-size:9px;font-weight:700;padding:0 4px;border-radius:3px;background:var(--gold);color:#1a1300;margin-left:3px}
 .who{display:inline-block;font-size:9.5px;font-weight:800;padding:0 4px;border-radius:3px;margin:0 2px}
 .who.buyer{background:var(--buy);color:#04210f} .who.seller{background:var(--sell);color:#2a0409}
-.who.big{font-size:11px;padding:1px 6px;box-shadow:0 0 8px currentColor}
+.who.big{font-size:10px;padding:0 3px;box-shadow:0 0 6px currentColor}
 .lad tr.rl-ask td{background:rgba(255,77,94,.16)} .lad tr.rl-bid td{background:rgba(38,208,124,.16)}
 .lad tr.rl-ask td.px{color:var(--sell);font-weight:800} .lad tr.rl-bid td.px{color:var(--buy);font-weight:800}
 .who.buyer.cand{color:var(--buy)} .who.seller.cand{color:var(--sell)}
@@ -442,6 +442,27 @@ html,body{height:100%} body{overflow:hidden;font-size:12px}
 .tspeed .tst{justify-self:end;font-size:10px;font-weight:600;letter-spacing:.08em;color:var(--dim)} .tspeed .tst em{font-style:normal;opacity:.75}
 .tspeed.up .tst{color:var(--gold)} .tspeed.down .tst{color:var(--cyan)}
 .tspeed svg{grid-column:1/-1;width:100%;height:26px;display:block}
+/* ladder: compact but never clipped (column floors come from the header's data-min) */
+.ladbar{letter-spacing:.06em;gap:5px;padding:2px 6px}
+.ladbar input{width:58px}
+.ladder-wrap{overflow-x:auto}
+.lad td.sz{font-variant-numeric:tabular-nums}
+.lad td.whoc{padding:0 1px;text-align:center}
+.lad td.whoc .who{margin:0}
+.lad td.bars .bar-n{font-size:10px}
+.lad td.act{font-size:9.5px;letter-spacing:.02em}
+.lad th:last-child .colgrip{display:none}
+.lad td.px{position:relative}
+.lad td.px .lt{position:absolute;left:1px;top:50%;transform:translateY(-50%);font:700 7.5px var(--sans);letter-spacing:0;line-height:9px;padding:0 1px;background:#d6d6d3;color:#0c0c0d}
+.lad td.px.tagged{text-align:right;padding-left:13px;padding-right:2px}
+.lad td.whoc .pips,.lad td.whoc .bigx{font:600 9px var(--mono);letter-spacing:-.02em;margin:0;padding:0 1px}
+.lad td.whoc .pips.b{color:var(--buy)} .lad td.whoc .pips.a{color:var(--sell)}
+.lad td.whoc .bigx{background:none;color:var(--gold)}
+.lad td.bars{padding:0 2px}
+.lad td.act{padding:0 1px}
+td.bars.l .bar-n{margin-right:1px} td.bars.r .bar-n{margin-left:1px}
+.lad .bar{max-width:calc(100% - 4px)}
+.lad td.whoc .pips{letter-spacing:-.06em}
 
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
@@ -958,14 +979,24 @@ function makeColsResizable(table){
   if (!table || table.dataset.gripped) return;
   table.dataset.gripped = "1";
   const ths = [...table.querySelectorAll("tr:first-child th")], n = ths.length, key = colKey(table);
-  const DEF = ths.map(th => +th.dataset.w || 1);
+  const DEF = ths.map(th => +th.dataset.w || 1), MIN = ths.map(th => +th.dataset.min || 0);
   let w = store.get(key, null); if (!Array.isArray(w) || w.length !== n || w.some(x => !(x > 0))) w = DEF.slice();
   table.style.tableLayout = "fixed";
   let cg = table.querySelector("colgroup");
   if (!cg){ cg = document.createElement("colgroup"); for (let i = 0; i < n; i++) cg.appendChild(document.createElement("col")); table.prepend(cg); }
   const vis = i => getComputedStyle(ths[i]).display !== "none";
-  const apply = () => { const tot = w.reduce((a, x, i) => a + (vis(i) ? x : 0), 0) || 1; [...cg.children].forEach((c, i) => { c.style.width = vis(i) ? (100 * w[i] / tot).toFixed(3) + "%" : "0px"; }); };
+  const apply = () => {
+    const tot = w.reduce((a, x, i) => a + (vis(i) ? x : 0), 0) || 1;
+    const floor = MIN.reduce((a, m, i) => a + (vis(i) ? m : 0), 0);
+    if (!floor){ [...cg.children].forEach((c, i) => { c.style.width = vis(i) ? (100 * w[i] / tot).toFixed(3) + "%" : "0px"; }); return; }
+    // floors first, then the spare width by weight; narrower than the floors: the table keeps them and scrolls
+    const avail = (table.parentElement && table.parentElement.clientWidth) || table.offsetWidth || floor;
+    table.style.minWidth = floor + "px";
+    const tw = Math.max(avail, floor), extra = tw - floor;
+    [...cg.children].forEach((c, i) => { c.style.width = vis(i) ? ((MIN[i] + extra * w[i] / tot) / tw * 100).toFixed(3) + "%" : "0px"; });
+  };
   apply();
+  if (MIN.some(m => m) && window.ResizeObserver && table.parentElement){ const ro = new ResizeObserver(() => { if (!table.isConnected){ ro.disconnect(); return; } apply(); }); ro.observe(table.parentElement); }
   ths.forEach((th, k) => {
     const g = document.createElement("span"); g.className = "colgrip"; g.title = "drag: resize · double-click: reset columns"; th.appendChild(g);
     g.addEventListener("mousedown", e => {
@@ -1194,31 +1225,49 @@ function pips(n, cls){
   return `<span class="pips ${cls}" title="size came back ${n}x after being hit">↻${n}</span>`;
 }
 
+function szTitle(row, side){
+  const n = row[side] || 0; if (!n) return "";
+  const bg = row[side + "_big"], f = row[side + "_refills"] || 0;
+  const bits = [Math.round(n).toLocaleString("en-US") + " shares"];
+  if (f) bits.push("refilled " + f + "x after getting hit");
+  if (bg) bits.push((bg.huge ? "huge" : "big") + " size" + (bg.times > 1 ? ", shown up here " + bg.times + " times today" : ""));
+  return ` title="${bits.join(" · ")}"`;
+}
 function whoTag(row, side){
   const st = row[side + "_state"], n = row[side + "_refills"] || 0, v = row[side + "_verdict"];
   const name = side === "bid" ? "buyer" : "seller";
   // proven reload: stays lit from the moment it is confirmed until it is cleaned up (or pulled)
-  if (st === "RELOAD" || row[side + "_proven"]) return `<span class="who ${name} big" title="proven reload ${name}: refilled ${n}x after getting hit. Stays lit until it is cleaned up or pulled">${side === "bid" ? "BUY" : "SELL"}×${n}</span>`;
-  if ((row[side] || 0) > 0) return "";   // size is sitting there: whatever happened earlier is history
-  if (v === "CLEANED UP") return `<span class="who c" title="the reload ${name} here got eaten and price went through: cleared out">CLEARED OUT</span>`;
-  if (v === "PULLED") return `<span class="who v" title="the reload ${name} here vanished without getting hit">PULLED</span>`;
+  if (st === "RELOAD" || row[side + "_proven"]) return `<span class="who ${name} big" title="proven reload ${name}: refilled ${n}x after getting hit. Stays lit until it is cleaned up or pulled">R${n}</span>`;
+  if ((row[side] || 0) > 0){             // size is sitting there: whatever happened earlier is history
+    // the small column beside the size: times it refilled after getting hit, else times big size showed up here today
+    if (n) return pips(n, side === "bid" ? "b" : "a");
+    const bg = row[side + "_big"];
+    if (bg && bg.times > 1) return `<span class="bigx" title="big size has shown up here ${bg.times} times today">×${bg.times}</span>`;
+    return "";
+  }
+  if (v === "CLEANED UP") return `<span class="who c" title="the reload ${name} here got eaten and price went through: cleared out">C</span>`;
+  if (v === "PULLED") return `<span class="who v" title="the reload ${name} here vanished without getting hit: pulled">P</span>`;
   return "";
 }
 
+// your levels on the ladder: a 2-letter badge beside the price (hover it for the full name), so the price is never pushed out
+const LTAG = {"PIVOT": "PV", "2ND ENTRY": "2E", "LEVEL": "LV", "TARGET": "TG", "STOP": "SL"};
 function ladderHTML(L){
   if (!L || !L.rows.length) return `<div class="empty">Waiting for the book…</div>`;
   const ms = Math.max(L.max_traded, 1);
   const on = canTrade(), dis = on ? "" : " disabled";
   const chips = (r, side) => (r.mine || []).filter(o => o.id != null && (o.action === "BUY") === (side === "b")).map(o =>
     `<span class="chip ${side} ${o.status === "PreSubmitted" ? "wait" : ""}" data-id="${o.id}" draggable="true" title="${esc(o.role)} order — click to cancel, drag to move">${sz(o.qty)}</span>`).join(" ");
-  let h = `<table class="lad" data-cols="ladder"><tr>
-    <th class="act" data-w="1.1" title="Click a price here to BUY at that price">BUY</th>
-    <th class="bars" data-w="2.2" title="Shares sellers hit the bid with at this price (last ${L.memory_minutes} min). Big green = a buyer absorbing them.">HIT</th>
-    <th class="who" data-w="1.0" title="confirmed reload buyer at this price, and what became of it"></th>
-    <th data-w="1.4">BID</th><th data-w="2.3">PRICE</th><th data-w="1.4">ASK</th>
-    <th class="who" data-w="1.0" title="confirmed reload seller at this price, and what became of it"></th>
-    <th class="bars" data-w="2.2" title="Shares buyers paid up for at this price (last ${L.memory_minutes} min). Big red = a seller absorbing them.">PAID UP</th>
-    <th class="act" data-w="1.1" title="Click a price here to SELL at that price">SELL</th></tr>`;
+  // every column has a floor that fits what it shows (data-min, px); only the room left over is shared out by the
+  // drag weights (data-w), so nothing is ever cut off however narrow the window is
+  let h = `<table class="lad" data-cols="lad2"><tr>
+    <th class="act" data-w="0.5" data-min="26" title="Click a price here to BUY at that price">BUY</th>
+    <th class="bars" data-w="1.6" data-min="38" title="Shares sellers hit the bid with at this price (last ${L.memory_minutes} min). Big green = a buyer absorbing them.">HIT</th>
+    <th class="who" data-w="0.2" data-min="20" title="Reload buyer here: R + times refilled (lit until it is cleaned up or pulled) · C = cleared out · P = pulled"></th>
+    <th data-w="1" data-min="44">BID</th><th data-w="1" data-min="58">PRICE</th><th data-w="1" data-min="44">ASK</th>
+    <th class="who" data-w="0.2" data-min="20" title="Reload seller here: R + times refilled (lit until it is cleaned up or pulled) · C = cleared out · P = pulled"></th>
+    <th class="bars" data-w="1.6" data-min="44" title="Shares buyers paid up for at this price (last ${L.memory_minutes} min). Big red = a seller absorbing them.">PAID UP</th>
+    <th class="act" data-w="0.5" data-min="28" title="Click a price here to SELL at that price">SELL</th></tr>`;
   for (const r of L.rows){
     const cls = [r.gap?"gap":"", r.best_bid?"best-bid":"", r.best_ask?"best-ask":"", r.tags.length?"lvl":"", r.last?"lastpx":"",
       (r.bid_state==="RELOAD"||r.bid_proven)?"rl-bid":"", (r.ask_state==="RELOAD"||r.ask_proven)?"rl-ask":""].join(" ");
@@ -1227,9 +1276,9 @@ function ladderHTML(L){
       <td class="act b${dis}" data-act="BUY" data-px="${r.price}" title="${on ? "BUY " + sz(T().default_shares) + " @ " + px(r.price) : whyNot()}">${chips(r, "b") || "BUY"}</td>
       <td class="bars l">${sw?`<span class="bar sold" style="width:${sw}%"></span>`:""}<span class="bar-n">${kfmt(r.sold)}</span></td>
       <td class="whoc l">${whoTag(r,"bid")}</td>
-      <td class="sz bsz ${r.bid_big ? (r.bid_big.huge ? "huge" : "big") : ""}"><span class="szn">${r.bid?kfmt(r.bid):""}</span>${r.bid_big && r.bid_big.times > 1 ? `<span class="bigx" title="big size has shown up here ${r.bid_big.times} times today">×${r.bid_big.times}</span>` : ""}${pips(r.bid_refills,"b")}</td>
-      <td class="px">${px(r.price)}${r.tags.map(t => `<span class="tag">${esc(t)}</span>`).join("")}</td>
-      <td class="sz asz ${r.ask_big ? (r.ask_big.huge ? "huge" : "big") : ""}"><span class="szn">${r.ask?kfmt(r.ask):""}</span>${r.ask_big && r.ask_big.times > 1 ? `<span class="bigx" title="big size has shown up here ${r.ask_big.times} times today">×${r.ask_big.times}</span>` : ""}${pips(r.ask_refills,"a")}</td>
+      <td class="sz bsz ${r.bid_big ? (r.bid_big.huge ? "huge" : "big") : ""}"${szTitle(r, "bid")}><span class="szn">${r.bid?kfmt(r.bid):""}</span></td>
+      <td class="px${r.tags.length ? " tagged" : ""}">${r.tags.length ? `<span class="lt" title="${esc(r.tags.join(" · "))}">${esc(r.tags.map(t => LTAG[t] || t.slice(0, 2)).join(""))}</span>` : ""}${px(r.price)}</td>
+      <td class="sz asz ${r.ask_big ? (r.ask_big.huge ? "huge" : "big") : ""}"${szTitle(r, "ask")}><span class="szn">${r.ask?kfmt(r.ask):""}</span></td>
       <td class="whoc r">${whoTag(r,"ask")}</td>
       <td class="bars r">${bw?`<span class="bar bought" style="width:${bw}%"></span>`:""}<span class="bar-n">${kfmt(r.bought)}</span></td>
       <td class="act s${dis}" data-act="SELL" data-px="${r.price}" title="${on ? "SELL " + sz(T().default_shares) + " @ " + px(r.price) : whyNot()}">${chips(r, "s") || "SELL"}</td></tr>`;
@@ -2309,7 +2358,7 @@ function renderBook(d){
   if (bookDragging || bookHold) return;       // never redraw rows under a pressed mouse button
   const bi = document.getElementById("bigIn"), L = d.ladder || {};
   if (bi && document.activeElement !== bi && L.big_shares != null && bi.dataset.sym + ":" + L.big_shares !== d.symbol + ":" + L.big_shares){ bi.value = Math.round(L.big_shares); bi.dataset.sym = d.symbol; }
-  const hint = document.getElementById("bigHint"); if (hint){ const txt = L.big_shares != null ? (L.big_default ? "default" : d.symbol + " only") + " · huge ≥ " + kfmt(L.huge_shares) : ""; if (hint.textContent !== txt) hint.textContent = txt; }
+  const hint = document.getElementById("bigHint"); if (hint){ const txt = L.big_shares != null ? (L.big_default ? "" : d.symbol + " · ") + "huge ≥" + kfmt(L.huge_shares) : ""; if (hint.textContent !== txt) hint.textContent = txt; }
   const html = ladderHTML(training() ? Object.assign({}, d.ladder, {rows: d.ladder.rows.map(r => Object.assign({}, r, {bid_state: null, ask_state: null, bid_refills: 0, ask_refills: 0, bid_verdict: null, ask_verdict: null}))}) : d.ladder);
   if (P.book.last === html) return;
   P.book.last = html;
