@@ -667,6 +667,18 @@ class MarketDataSession:
             if self.app is not None and self.ready:
                 self.subscribe_l1()
 
+    def remove_play(self, symbol):
+        """The ticker left the desk: its quotes go, its depth is released by the engine's slot command."""
+        with self._lock:
+            self.plays.pop(symbol, None)
+            rid = self.l1_ids.pop(symbol, None)
+            if rid is not None and self.app is not None:
+                try:
+                    self.app.cancelMktData(rid)
+                except Exception:
+                    pass
+                self.app.req.pop(rid, None)
+
     def subscribe_l1(self):
         for sym, play in self.plays.items():
             if sym in self.l1_ids:

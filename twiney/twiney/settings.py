@@ -67,6 +67,11 @@ LABELS = {
     "big_shares": "Big size (shares)", "huge_multiple": "Huge = big ×", "min_shares": "Min shares",
     "voice_all": "Speak flow for every watchlist symbol", "against_bias": "Hold at WATCH when flow leans against (0-1)",
     "against_min_premium": "…and at least this premium ($)", "smart_depth": "SMART depth", "dir": "Folder",
+    "equity_enabled": "Equity flow on", "equity_path": "Equity prints endpoint", "equity_poll_seconds": "Equity poll seconds",
+    "equity_min_dollars": "Equity print min $", "flow_min_premium": "Ladder flow mark min premium ($)",
+    "flow_index_min_premium": "…index products ($)", "flow_window_minutes": "Ladder flow marks stay (min)",
+    "flow_short_dte": "Short-dated = days to expiry ≤", "flow_repeat_prints": "Repeat = prints on one strike",
+    "flow_repeat_minutes": "…inside (min)", "flow_repeat_cooldown_minutes": "Repeat call cooldown (min)",
 }
 
 

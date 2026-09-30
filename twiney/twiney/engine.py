@@ -78,6 +78,8 @@ class SymbolState:
         self.marks = {}         # (minute, price_key, side) -> [price, absorbed shares]
         self.quotes = deque(maxlen=64)   # (t, bid, ask) as the best bid / offer changed: prints are read against it
         self.voice_pending = {}          # (side, price_key) -> size that left, waiting to see if it traded
+        self.flow_marks = deque()        # big option prints on this name: where the stock was when each one hit
+        self.rflow_said = {}             # (strike, cp, expiry) -> when REPEAT FLOW was last called on it
         self.l1_volume = None            # IBKR's cumulative day volume (symbols without a tape)
         self.l1_last_raw = None          # IBKR's quote-stream last, kept even while the tape sets the price
 
@@ -195,6 +197,13 @@ class Engine:
                                               "window_minutes": 10, "repeat_minutes": 20}))
         self.flow_scope = cfg.get("quantdata", {}).get("scope", "all")
         self.flow_alerts = cfg.get("flow", {}).get("alerts", "watchlist")
+        # your alerts: a price to hit, option flow arriving, a big equity print - on any ticker you watch
+        self.user_alerts = []
+        self.alerts_path = None
+        self._alert_seq = 0
+        self.remove_listeners = []
+        self.equity = deque(maxlen=400)              # big equity prints (lit / dark), newest first
+        self.equity_status = {"last_ok": None, "last_print": None, "detail": ""}
         self.marks_list = []    # markers seen while replaying a recording
         self.notes_list = []    # journal notes seen while replaying
         self.grades_path = None
@@ -280,6 +289,8 @@ class Engine:
                 return
             st.l1[field] = value      # None = IBKR says there is no bid / offer right now
             st.l1_t = t
+            if field == "last" and value:
+                self._check_price_alerts(symbol, value, t)
             if field in ("bid", "ask"):
                 st.note_quote(t)
             tape_dead = st.tape_t is None or t - st.tape_t >= 10
@@ -353,6 +364,7 @@ class Engine:
             st.tape_t = t
             st.l1["last"] = price
             st.bar_update(t, price, size, rec["side"])
+            self._check_price_alerts(symbol, price, t)
             k = price_key(price)
             if rec["side"] in ("buy", "sell"):
                 fmin = int(t // BAR_SECONDS) * BAR_SECONDS
@@ -540,6 +552,9 @@ class Engine:
             self._rec({"ev": "flow", "t": t, "p": p})
             self.flow.add(p)
             self.flow_status["last_print"] = t
+            if st is not None:
+                self._flow_mark(st, p, t)
+            self._check_flow_alerts(p, t)
             if st is None and self.flow_alerts != "all":
                 return
             u = self.flow.check(p["symbol"], t)
@@ -1323,6 +1338,255 @@ class Engine:
             self._rec({"ev": "focus", "t": t, "sym": symbol})
             return True
 
+    def remove_play(self, symbol, t=None):
+        """Take a ticker off the desk: its quotes, depth and its place in plays.json go with it."""
+        symbol = str(symbol).strip().upper()
+        with self.lock:
+            st = self._st(symbol)
+            if st is None:
+                return False
+            t = t or self.last_t
+            if symbol in self.slots:
+                self.apply_slot(symbol, False, t, reason="removed")
+                self._slot_cmds.append(("depth_off", symbol))
+            self.pinned.discard(symbol)
+            self.plays = [p for p in self.plays if p["symbol"] != symbol]
+            del self.syms[symbol]
+            self.user_alerts = [a for a in self.user_alerts if a["symbol"] != symbol]
+            self._rec({"ev": "play_remove", "t": t, "sym": symbol})
+            self._save_plays()
+            self._save_user_alerts()
+        for fn in self.remove_listeners:
+            try:
+                fn(symbol)
+            except Exception:
+                pass
+        return True
+
+    # ---- your alerts ----------------------------------------------------------
+
+    def load_user_alerts(self, path):
+        import json, os
+        self.alerts_path = path
+        try:
+            with open(path, encoding="utf-8") as fh:
+                data = json.load(fh)
+            with self.lock:
+                self.user_alerts = [a for a in data.get("alerts", []) if isinstance(a, dict) and a.get("symbol") and a.get("kind")]
+                self._alert_seq = max([int(a.get("id", 0)) for a in self.user_alerts] + [0])
+        except (OSError, ValueError):
+            pass
+
+    def _save_user_alerts(self):
+        if not self.alerts_path:
+            return
+        import json, os
+        keep = ("id", "symbol", "kind", "price", "when", "min_premium", "cp", "min_dollars", "repeat", "note", "created", "last")
+        out = {"alerts": [{k: a[k] for k in keep if k in a} for a in self.user_alerts]}
+        tmp = self.alerts_path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(out, fh, indent=2)
+        os.replace(tmp, self.alerts_path)
+
+    def add_user_alert(self, symbol, kind, t=None, **f):
+        """kind: price (price + when: above / below / hit), flow (min_premium, cp: any / C / P), equity (min_dollars).
+        repeat=False fires once and is gone; True keeps firing (with a cooldown)."""
+        symbol = str(symbol or "").strip().upper()
+        if not symbol or kind not in ("price", "flow", "equity"):
+            return None, "bad alert"
+        with self.lock:
+            t = t or self.last_t
+            a = {"symbol": symbol, "kind": kind, "repeat": bool(f.get("repeat", False)), "note": str(f.get("note") or "")[:80],
+                 "created": t, "last": None}
+            if kind == "price":
+                try:
+                    a["price"] = float(f.get("price"))
+                except (TypeError, ValueError):
+                    return None, "price needed"
+                if a["price"] <= 0:
+                    return None, "price needed"
+                a["when"] = f.get("when") if f.get("when") in ("above", "below", "hit") else "hit"
+                st = self._st(symbol)
+                a["side"] = None if st is None or not st.price() else ("above" if st.price() > a["price"] else "below")
+            elif kind == "flow":
+                a["min_premium"] = float(f.get("min_premium") or self.cfg.get("ladder", {}).get("flow_min_premium", 100000))
+                a["cp"] = f.get("cp") if f.get("cp") in ("C", "P") else "any"
+            else:
+                a["min_dollars"] = float(f.get("min_dollars") or self.cfg.get("quantdata", {}).get("equity_min_dollars", 500000))
+            self._alert_seq += 1
+            a["id"] = self._alert_seq
+            self.user_alerts.append(a)
+            self._rec({"ev": "alert_add", "t": t, "alert": a})
+            self._save_user_alerts()
+            return a, ""
+
+    def remove_user_alert(self, aid, t=None):
+        with self.lock:
+            n = len(self.user_alerts)
+            self.user_alerts = [a for a in self.user_alerts if a.get("id") != aid]
+            if len(self.user_alerts) != n:
+                self._rec({"ev": "alert_remove", "t": t or self.last_t, "id": aid})
+                self._save_user_alerts()
+                return True
+        return False
+
+    @staticmethod
+    def _spoken(v):
+        """Dollars the voice can say: 1.2 million, 411 thousand."""
+        return f"{v / 1e6:.1f} million" if v >= 1e6 else f"{round(v / 1e3)} thousand"
+
+    def _fire_user_alert(self, a, label, text, words, t, **extra):
+        """One of your alerts goes off: it lands in CALLS, gets spoken, and (unless repeat) is done."""
+        a["last"] = t
+        alert = {"t": t, "symbol": a["symbol"], "label": label, "price": fmt_price(extra.pop("price", None)) if extra.get("price") else None,
+                 "side": "ask", "role": "alert", "text": text, "words": words, "alert_id": a["id"]}
+        alert.update(extra)
+        alert["key"] = f"{round(t, 2)}|{a['symbol']}|{label}|{a['id']}"
+        self.alerts.appendleft(alert)
+        self._rec(dict(alert, ev="alert"))
+        item = {"t": t, "symbol": a["symbol"], "kind": "alert", "text": f"{a['symbol']}: {words}", "key": alert["key"]}
+        self.voice.appendleft(item)
+        self._rec(dict(item, ev="voice"))
+        for fn in self.listeners:
+            try:
+                fn(alert)
+            except Exception:
+                pass
+        if not a.get("repeat"):
+            self.user_alerts = [x for x in self.user_alerts if x is not a]
+        self._save_user_alerts()
+
+    def _check_price_alerts(self, symbol, price, t):
+        for a in list(self.user_alerts):
+            if a["kind"] != "price" or a["symbol"] != symbol:
+                continue
+            target = a["price"]
+            side = "above" if price > target else "below" if price < target else "at"
+            prev = a.get("side")
+            a["side"] = side if side != "at" else prev
+            if a.get("repeat") and a.get("last") is not None and t - a["last"] < 60:
+                continue
+            hit = (a["when"] == "above" and price >= target and prev == "below") or \
+                  (a["when"] == "below" and price <= target and prev == "above") or \
+                  (a["when"] == "hit" and (side == "at" or (prev is not None and side != prev)))
+            if not hit:
+                continue
+            how = {"above": "went above", "below": "went below", "hit": "hit"}[a["when"]]
+            note = f" - {a['note']}" if a.get("note") else ""
+            self._fire_user_alert(a, "PRICE ALERT", f"PRICE ALERT: {symbol} {how} {narrative.px(target)} (now {narrative.px(price)}){note}",
+                                  f"price alert, {symbol} {how} {narrative.px(target)}", t, price=price)
+
+    def _check_flow_alerts(self, p, t):
+        for a in list(self.user_alerts):
+            if a["kind"] != "flow" or a["symbol"] != p["symbol"]:
+                continue
+            if p.get("side") != "ask" or (p.get("premium") or 0) < a["min_premium"]:
+                continue
+            if a["cp"] != "any" and p.get("cp") != a["cp"]:
+                continue
+            if a.get("repeat") and a.get("last") is not None and t - a["last"] < 300:
+                continue
+            what = "calls" if p["cp"] == "C" else "puts"
+            k = lambda v: f"${v / 1e6:.1f}M" if v >= 1e6 else f"${v / 1e3:.0f}K"
+            dte = f", {round(p['dte'])} days out" if p.get("dte") is not None else ""
+            self._fire_user_alert(a, "FLOW ALERT", f"FLOW ALERT: {p['symbol']} option flow - {k(p['premium'])} of {what} bought at the ask, "
+                                  f"{narrative.px(p['strike'])} strike{dte}" + (f", stock at {narrative.px(p['spot'])}" if p.get("spot") else ""),
+                                  f"option flow, {self._spoken(p['premium'])} of {what}, {narrative.px(p['strike'])} strike{dte}", t,
+                                  premium=p["premium"], cp=p["cp"])
+
+    # ---- equity prints (lit / dark) ---------------------------------------------
+
+    def on_equity(self, p, t=None):
+        """One big stock print from the flow vendor: into EQUITY FLOW, and your equity alerts."""
+        with self.lock:
+            t = t if t is not None else p.get("t", self.last_t)
+            self._clock(t)
+            self._rec({"ev": "equity", "t": t, "p": p})
+            self.equity.appendleft(p)
+            self.equity_status["last_print"] = t
+            for a in list(self.user_alerts):
+                if a["kind"] != "equity" or a["symbol"] != p["symbol"] or (p.get("dollars") or 0) < a["min_dollars"]:
+                    continue
+                if a.get("repeat") and a.get("last") is not None and t - a["last"] < 300:
+                    continue
+                k = lambda v: f"${v / 1e6:.1f}M" if v >= 1e6 else f"${v / 1e3:.0f}K"
+                where = "dark pool" if p.get("dark") else "on the tape"
+                self._fire_user_alert(a, "EQUITY FLOW", f"EQUITY FLOW: {p['symbol']} {k(p['dollars'])} print, {narrative.shares(p['size'])} shares at "
+                                      f"{narrative.px(p['price'])} {where}", f"equity print, {self._spoken(p['dollars'])} {where}", t,
+                                      price=p.get("price"), dollars=p["dollars"])
+
+    # ---- option flow on the ladder -----------------------------------------------
+
+    def _flow_mark(self, st, p, t):
+        """A big option print on a watched name: remember where the stock was when it hit, so the ladder shows
+        it on that row. The same strike bought again and again, expiring soon, is what to look for: it gets
+        marked hot and called out once."""
+        lc = self.cfg.get("ladder", {})
+        index = p["symbol"] in set(self.cfg.get("flow", {}).get("index_symbols", ()))
+        need = lc.get("flow_index_min_premium", 1e6) if index else lc.get("flow_min_premium", 1e5)
+        prem = p.get("premium") or 0.0
+        if prem < need or p.get("side") not in ("ask", "bid"):
+            return
+        spot = p.get("spot") or st.price()
+        if not spot:
+            return
+        keep = lc.get("flow_window_minutes", 60) * 60.0
+        while st.flow_marks and t - st.flow_marks[0]["t"] > keep:
+            st.flow_marks.popleft()
+        key = (p["strike"], p["cp"], p.get("expiry") or "")
+        m = {"t": t, "spot": spot, "strike": p["strike"], "cp": p["cp"], "exp": p.get("expiry") or "", "dte": p.get("dte"),
+             "prem": prem, "side": p["side"], "kind": p.get("kind", "trade"), "hot": False}
+        st.flow_marks.append(m)
+        # repeat: this strike / expiry, bought (at the ask) this many times inside the repeat window
+        short = p.get("dte") is not None and p["dte"] <= lc.get("flow_short_dte", 7)
+        rw = lc.get("flow_repeat_minutes", 30) * 60.0
+        same = [x for x in st.flow_marks if (x["strike"], x["cp"], x["exp"]) == key and x["side"] == "ask" and t - x["t"] <= rw]
+        if len(same) >= lc.get("flow_repeat_prints", 2) and short:
+            for x in same:
+                x["hot"] = True
+            cool = lc.get("flow_repeat_cooldown_minutes", 15) * 60.0
+            if t - st.rflow_said.get(key, -1e9) >= cool:
+                st.rflow_said[key] = t
+                tot = sum(x["prem"] for x in same)
+                k = lambda v: f"${v / 1e6:.1f}M" if v >= 1e6 else f"${v / 1e3:.0f}K"
+                what = "CALL" if p["cp"] == "C" else "PUT"
+                days = f"{round(p['dte'])} day{'s' if round(p['dte']) != 1 else ''}"
+                alert = {"t": t, "symbol": st.symbol, "label": "REPEAT FLOW", "price": fmt_price(spot), "side": "ask", "role": "flow",
+                         "text": f"REPEAT {what} FLOW: {st.symbol} {narrative.px(p['strike'])} strike expiring in {days} bought at the ask "
+                                 f"{len(same)} times in {int(rw / 60)} min, {k(tot)} in all, with the stock at {narrative.px(spot)}. "
+                                 f"Short-dated size hitting the same strike: they want a move now.",
+                         "premium": tot, "cp": p["cp"], "strike": p["strike"], "dte": p["dte"], "prints": len(same)}
+                alert["key"] = f"{round(t, 2)}|{st.symbol}|REPEAT FLOW|{p['strike']}{p['cp']}"
+                self.alerts.appendleft(alert)
+                self._rec(dict(alert, ev="alert"))
+                for fn in self.listeners:
+                    try:
+                        fn(alert)
+                    except Exception:
+                        pass
+                self._say(st, "flow", key, "rflow", t, f"repeat {what.lower()} flow, {narrative.px(p['strike'])} strike, {days} out, {self._spoken(tot)} total")
+
+    def _flow_rows(self, st, t, tk):
+        """The ladder's flow marks by price row: calls / puts premium at that spot, prints, the hot ones, the top few."""
+        lc = self.cfg.get("ladder", {})
+        keep = lc.get("flow_window_minutes", 60) * 60.0
+        out = {}
+        for m in st.flow_marks:
+            if t - m["t"] > keep:
+                continue
+            k = price_key(m["spot"], tk)
+            r = out.setdefault(k, {"c": 0.0, "p": 0.0, "n": 0, "hot": False, "items": []})
+            r["c" if m["cp"] == "C" else "p"] += m["prem"]
+            r["n"] += 1
+            r["hot"] = r["hot"] or m["hot"]
+            r["items"].append(m)
+        for r in out.values():
+            top = sorted(r["items"], key=lambda m: -m["prem"])[:3]
+            r["items"] = [{"cp": m["cp"], "strike": m["strike"], "exp": m["exp"][5:] if m["exp"] else "", "dte": None if m["dte"] is None else round(m["dte"]),
+                           "prem": round(m["prem"]), "side": m["side"], "kind": m["kind"], "hot": m["hot"], "age": round(t - m["t"])} for m in top]
+            r["c"] = round(r["c"]); r["p"] = round(r["p"])
+        return out
+
     def retire_play(self, symbol, reason, t=None, price=None):
         with self.lock:
             st = self._st(symbol)
@@ -1593,6 +1857,7 @@ class Engine:
         rows, prev = [], None
         max_size = max_traded = 0.0
         big_bar = self.big_shares_for(st); huge_x = self.cfg.get("ladder", {}).get("huge_multiple", 3.0)
+        flow_rows = self._flow_rows(st, t, tk) if st.flow_marks else {}
         for k in keys:
             price = round(k * tk, 4)
             b_sz = st.book.size_at(BID, price) if st.book else None
@@ -1604,6 +1869,7 @@ class Engine:
                 "sold": round(sold.get(k, 0)), "bought": round(bought.get(k, 0)),
                 "tags": tags.get(k, []),
                 "mine": mine.get(k, []),
+                "flow": flow_rows.get(k),
                 "best_bid": k == bb, "best_ask": k == ba, "last": k == lk,
             }
             for side in ("bid", "ask"):
@@ -1825,6 +2091,9 @@ class Engine:
                 "slots": self.cfg["depth"]["slots"],
                 "auto_rotate": self.auto_rotate,
                 "ranking": ranking,
+                "user_alerts": [dict(a) for a in self.user_alerts],
+                "equity": list(self.equity)[:80],
+                "equity_status": dict(self.equity_status),
                 "panes": panes,
                 "extra": extra_panes,
                 "focus": self.focus,

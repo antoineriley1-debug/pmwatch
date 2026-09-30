@@ -209,6 +209,43 @@ def normalize(rec, now=None):
             "t_ok": t0 is not None, "vid": None if _pick(rec, "id") is None else str(_pick(rec, "id"))}
 
 
+_EQ_ALIASES = {
+    "ticker": ("ticker", "symbol", "sym", "stock", "underlying", "tickersymbol"),
+    "size": ("shares", "size", "quantity", "qty", "volume", "tradesize"),
+    "price": ("price", "tradeprice", "fillprice", "px", "last"),
+    "dollars": ("notional", "notionalvalue", "dollars", "value", "dollarvalue", "premium", "amount"),
+    "side": ("side", "aggressor", "tradeside", "sentiment", "at"),
+    "venue": ("venue", "exchange", "market", "mic", "source"),
+    "type": ("type", "tradetype", "printtype", "kind", "category", "pool"),
+    "t": ("t", "time", "timestamp", "executedat", "ts", "datetime", "tradetime", "printtime"),
+    "id": ("id", "tradeid", "printid", "uid"),
+}
+
+
+def normalize_equity(rec, now=None):
+    """One vendor equity print -> {symbol, size, price, dollars, side, dark, venue, t}, or None."""
+    now = now or time.time()
+    if not isinstance(rec, dict):
+        return None
+    m = _flat(rec)
+    pick = lambda key: next((m[k] for k in _EQ_ALIASES[key] if k in m and m[k] not in (None, "")), None)
+    ticker, size, price = pick("ticker"), _num(pick("size")), _num(pick("price"))
+    if not ticker or not size or not price:
+        return None
+    dollars = _num(pick("dollars"))
+    if dollars is None:
+        dollars = size * price
+    side = str(pick("side") or "").strip().upper()
+    side = "ask" if ("ASK" in side or side.startswith("B") or side == "ABOVE") else "bid" if ("BID" in side or side.startswith("S") or side == "BELOW") else "mid"
+    venue, typ = str(pick("venue") or ""), str(pick("type") or "")
+    blob = (venue + " " + typ).upper()
+    dark = any(w in blob for w in ("DARK", "OTC", "FINRA", "TRF", "ADF", "OFF")) or str(m.get("dark", m.get("isdark", ""))).lower() in ("true", "1", "yes")
+    t0 = _epoch(pick("t"), now)
+    return {"t": t0 if t0 is not None else now, "symbol": str(ticker).upper(), "size": int(size), "price": price,
+            "dollars": round(float(dollars), 2), "side": side, "dark": bool(dark), "venue": venue[:12] or ("DARK" if dark else "LIT"),
+            "vid": None if pick("id") is None else str(pick("id"))}
+
+
 class FlowBook:
     """Per-symbol flow history plus the unusual detector.
 
@@ -304,12 +341,23 @@ class QuantDataFeed:
     def __init__(self, engine, cfg, symbols):
         self.engine = engine
         self.cfg = cfg["quantdata"]
-        self.symbols = list(symbols)
+        self._symbols = list(symbols)
         self.stop_evt = threading.Event()
         self.seen = deque(maxlen=5000)
         self.seen_set = set()
+        self.eq_seen = deque(maxlen=5000)
+        self.eq_seen_set = set()
         self.sample_written = False
+        self.eq_sample_written = False
         self.errors = 0
+        self.eq_errors = 0
+        self._eq_next = 0.0
+
+    @property
+    def symbols(self):
+        """The desk's tickers right now (plays and everything typed in), never a copy that goes stale."""
+        syms = getattr(self.engine, "syms", None)
+        return list(syms) if syms else self._symbols
 
     def start(self):
         self.engine.flow_status.update(source="quantdata", state="connecting", detail="")
@@ -328,6 +376,15 @@ class QuantDataFeed:
                 self.errors += 1
                 if self.errors in (1, 10, 100):
                     self.engine._message("warn", f"Quant Data: {exc}", time.time())
+            if self.cfg.get("equity_enabled", True) and time.time() >= self._eq_next:
+                self._eq_next = time.time() + max(5.0, float(self.cfg.get("equity_poll_seconds", 10)))
+                try:
+                    self.poll_equity()
+                except Exception as exc:
+                    self.engine.equity_status["detail"] = f"error: {str(exc)[:160]}"
+                    self.eq_errors += 1
+                    if self.eq_errors in (1, 10, 100):
+                        self.engine._message("warn", f"Quant Data equity prints: {exc}", time.time())
             self.stop_evt.wait(max(2.0, float(self.cfg.get("poll_seconds", 5))))
 
     def _body(self, now=None):
@@ -337,15 +394,15 @@ class QuantDataFeed:
         from datetime import datetime
         from zoneinfo import ZoneInfo
         day = datetime.fromtimestamp(now or time.time(), ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
-        body = {"sessionDate": day}
+        body = {"sessionDate": day, "size": 100}          # a page is 50 rows unless asked; 100 is the most allowed
         body.update(self.cfg.get("extra_params") or {})
         return body
 
-    def _request(self):
+    def _request(self, path=None, body=None):
         import urllib.error
         import urllib.request
-        url = self.cfg["base_url"].rstrip("/") + "/" + self.cfg["flow_path"].lstrip("/")
-        req = urllib.request.Request(url, data=json.dumps(self._body()).encode("utf-8"), method=self.cfg.get("method", "POST"),
+        url = self.cfg["base_url"].rstrip("/") + "/" + (path or self.cfg["flow_path"]).lstrip("/")
+        req = urllib.request.Request(url, data=json.dumps(body or self._body()).encode("utf-8"), method=self.cfg.get("method", "POST"),
                                      headers={"Authorization": f"Bearer {self.cfg['api_key']}",
                                               "Content-Type": "application/json", "Accept": "application/json"})
         try:
@@ -387,6 +444,49 @@ class QuantDataFeed:
                 json.dump({"request": self._body(), "response": payload}, fh, indent=1, default=str)
         except Exception:
             pass
+
+    def poll_equity(self):
+        """The day's big stock prints (lit and dark venues) into EQUITY FLOW; the same diagnostics as the options."""
+        payload = self._request(self.cfg.get("equity_path", "/v1/equities/tool/equity-prints"))
+        es = self.engine.equity_status
+        es["last_ok"] = time.time()
+        recs = self._records(payload)
+        if not self.eq_sample_written or es.get("last_print") is None:
+            self.eq_sample_written = True
+            try:
+                import os
+                path = os.path.join(self.engine.cfg["recording"]["dir"], "quantdata_equity_sample.json")
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                with open(path, "w", encoding="utf-8") as fh:
+                    json.dump({"request": self._body(), "response": payload}, fh, indent=1, default=str)
+            except Exception:
+                pass
+        now = time.time()
+        floor = float(self.cfg.get("equity_min_dollars", 500000))
+        n = 0
+        for rec in reversed(recs):
+            p = normalize_equity(rec, now)
+            if p is None or p["dollars"] < floor:
+                continue
+            key = ("id", p["vid"]) if p.get("vid") else (p["symbol"], p["t"], p["size"], p["price"])
+            if key in self.eq_seen_set:
+                continue
+            if len(self.eq_seen) == self.eq_seen.maxlen:
+                self.eq_seen_set.discard(self.eq_seen[0])
+            self.eq_seen.append(key); self.eq_seen_set.add(key)
+            self.engine.on_equity(p, now)
+            n += 1
+        if n == 0 and es.get("last_print") is None:
+            if recs:
+                keys = ", ".join(str(k) for k in list(recs[0])[:10] if not str(k).startswith("__"))
+                es["detail"] = f"{len(recs)} records, none readable as an equity print (or all under ${floor:,.0f}) - fields: {keys}"
+            else:
+                keys = ", ".join(str(k) for k in list(payload)[:8]) if isinstance(payload, dict) else type(payload).__name__
+                es["detail"] = f"no print list in the answer - top-level: {keys}"
+            es["detail"] += " (see recordings/quantdata_equity_sample.json)"
+        elif n:
+            es["detail"] = ""
+        return n
 
     def poll(self):
         payload = self._request()
@@ -502,6 +602,13 @@ class SimFlow:
             if not spot:
                 continue
             busy = self.others[sym][1] if sym in self.others else 1.0
+            # big stock prints, now and then: blocks on the tape and dark-pool crosses at a round-ish price
+            if rng.random() < 0.004 * busy:
+                size = int(rng.choice((10000, 25000, 40000, 75000, 120000, 250000)))
+                dark = rng.random() < 0.6
+                self.engine.on_equity({"t": t, "symbol": sym, "size": size, "price": round(spot, 2), "dollars": round(size * spot, 2),
+                                       "side": rng.choice(("ask", "bid", "mid")), "dark": dark, "venue": "DARK" if dark else rng.choice(("NYSE", "NSDQ", "ARCA")),
+                                       "vid": f"sim{int(t * 10)}{sym}"}, t)
             # ordinary flow: near the money, mixed sides, mixed expiries; index products trade far more
             if t >= self.next_t.get(sym, 0):
                 self.next_t[sym] = t + rng.expovariate(busy / 25.0)

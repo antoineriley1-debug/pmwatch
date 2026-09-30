@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20260930-1628">
+<meta name="build" content="20260930-1654">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -463,6 +463,24 @@ html,body{height:100%} body{overflow:hidden;font-size:12px}
 td.bars.l .bar-n{margin-right:1px} td.bars.r .bar-n{margin-left:1px}
 .lad .bar{max-width:calc(100% - 4px)}
 .lad td.whoc .pips{letter-spacing:-.06em}
+/* watchlist add / remove, alerts, equity flow */
+.wlx{margin-left:6px;color:var(--dim);cursor:pointer;font-size:10px;visibility:hidden} .wlrow:hover .wlx,.alrow:hover .wlx{visibility:visible} .wlx:hover{color:var(--sell)}
+.alform{display:flex;flex-wrap:wrap;gap:4px;padding:6px 8px;border-bottom:1px solid var(--line);align-items:center;font:11px var(--sans)}
+.alform input,.alform select{height:20px;font:11px var(--mono);background:#0a0a0b;color:var(--text);border:1px solid #26282c;padding:0 4px}
+.alform #alSym{width:70px;text-transform:uppercase} .alform #alVal{width:90px} .alform label{color:var(--dim);white-space:nowrap}
+.alrow{display:grid;grid-template-columns:auto 1fr auto;gap:8px;padding:3px 8px;font:11.5px var(--mono);border-bottom:1px solid #1c1d20;align-items:center}
+.alrow b{color:var(--gold)} .alrow i{font-style:normal}
+.fl.eq .venue{font:700 9.5px var(--sans);letter-spacing:.08em;padding:1px 6px;border-radius:3px;background:#2c2e33;color:#d6d6d3} .fl.eq .venue.dk{background:#3b2a52;color:#e2d4ff}
+.fl.eq.dk .tk{background:#5a3f86} .fl.eq.lt .tk{background:#3a4658} .fl.eq.c .tk{background:#17a86a} .fl.eq.p .tk{background:#d64541}
+.cmenu .balert{background:#3a2e12;border-color:var(--gold);color:#f2d59a}
+/* ladder option-flow marks */
+.lad th.flow,.lad td.flow{display:none} .lad.flowcol th.flow,.lad.flowcol td.flow{display:table-cell} .lad.flowcol .fdot{display:none}
+.lad td.flow{padding:0 2px;text-align:left;font:600 9.5px var(--mono);white-space:nowrap;overflow:hidden}
+.lad .fm b{padding:0 2px;border-radius:2px;margin-right:2px} .lad .fm b.c{background:rgba(63,181,111,.25);color:#9fe0bd} .lad .fm b.p{background:rgba(217,83,79,.25);color:#f5b3b0}
+.lad .fm i{font-style:normal;color:var(--dim);margin-right:2px} .lad .fm u{text-decoration:none;color:var(--gold)}
+.lad .fm.hot b,.lad .fdot.hot{box-shadow:0 0 0 1px var(--gold),0 0 6px var(--gold);animation:flowring 1.4s infinite}
+@keyframes flowring{0%,100%{box-shadow:0 0 0 1px var(--gold),0 0 4px var(--gold)}50%{box-shadow:0 0 0 1px var(--gold),0 0 10px var(--gold)}}
+.lad .fdot{font-size:10px;line-height:1;border-radius:50%} .lad .fdot.c{color:var(--buy)} .lad .fdot.p{color:var(--sell)} .lad .fdot u{text-decoration:none;font-size:8px;color:var(--gold);vertical-align:top}
 
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
@@ -830,7 +848,7 @@ body.resizing .zbody{pointer-events:none}
 <template id="tplPanels">
   <div class="pnl" data-p="chart"><div class="qs"></div><div class="pc nos"><div class="chart-wrap"><div class="chart-tools"></div><canvas></canvas></div></div></div>
   <div class="pnl" data-p="foot"><div class="pc nos"><div class="chart-wrap"><div class="chart-tools"><span class="dim" style="font-size:10.5px;background:rgba(17,22,31,.85);padding:1px 6px">5m FOOTPRINT · SELLERS HIT BID × BUYERS PAID UP</span></div><canvas></canvas></div></div></div>
-  <div class="pnl" data-p="book"><div class="ladbar"><span>BIG ≥</span><input id="bigIn" type="number" min="100" step="500" title="shares that count as big on this symbol's ladder. Highlighted when showing; ×N = how many separate times it has shown up at that price today"><span class="dim">sh</span><button id="bigReset" title="back to the config default">DEFAULT</button><span class="dim" id="bigHint"></span><span class="spacer"></span><span class="menu" id="colsMenu"><button title="columns">COLS</button><div class="pop" id="colsPop"><h5>LEVEL II COLUMNS</h5><label><input type="checkbox" data-col="trade" checked> BUY / SELL buttons</label><label><input type="checkbox" data-col="bars" checked> flow bars (sold into bid / bought at ask)</label><label><input type="checkbox" data-col="who" checked> reload tags</label><div class="dim" style="font-size:10.5px;margin-top:6px">Drag the grip at the right edge of any header to resize. Double-click a grip to reset.</div></div></span></div><div class="pc"><div class="ladder-wrap"></div></div></div>
+  <div class="pnl" data-p="book"><div class="ladbar"><span>BIG ≥</span><input id="bigIn" type="number" min="100" step="500" title="shares that count as big on this symbol's ladder. Highlighted when showing; ×N = how many separate times it has shown up at that price today"><span class="dim">sh</span><button id="bigReset" title="back to the config default">DEFAULT</button><span class="dim" id="bigHint"></span><span class="spacer"></span><span class="menu" id="colsMenu"><button title="columns">COLS</button><div class="pop" id="colsPop"><h5>LEVEL II COLUMNS</h5><label><input type="checkbox" data-col="trade" checked> BUY / SELL buttons</label><label><input type="checkbox" data-col="bars" checked> flow bars (sold into bid / bought at ask)</label><label><input type="checkbox" data-col="who" checked> reload tags</label><label><input type="checkbox" data-col="flow" checked> option flow marks (where the stock was when big flow hit)</label><div class="dim" style="font-size:10.5px;margin-top:6px">Drag the grip at the right edge of any header to resize. Double-click a grip to reset.</div></div></span></div><div class="pc"><div class="ladder-wrap"></div></div></div>
   <div class="pnl" data-p="tape"><div class="pc"><div class="p-tape"></div></div></div>
   <div class="pnl" data-p="setup"><div class="pc"></div></div>
   <div class="pnl" data-p="ps60"><div class="pc ps60p"></div></div>
@@ -838,9 +856,17 @@ body.resizing .zbody{pointer-events:none}
   <div class="pnl" data-p="ticket"><div class="pc"></div></div>
   <div class="pnl" data-p="positions"><div class="pc"></div></div>
   <div class="pnl" data-p="orders"><div class="pc"></div></div>
-  <div class="pnl" data-p="watch"><div class="pc"></div></div>
+  <div class="pnl" data-p="watch"><div class="ladbar"><input id="wlAdd" placeholder="ADD TICKER" maxlength="10" spellcheck="false" autocomplete="off" style="width:96px;color:var(--text);letter-spacing:.06em"><button id="wlAddBtn" title="add this ticker to your watchlist: quotes, flow and alerts for it from now on">ADD</button><span class="dim" id="wlHint">type a ticker, Enter</span></div><div class="pc"></div></div>
+  <div class="pnl" data-p="myalerts"><div class="ladbar"><span>NEW ALERT</span><span class="spacer"></span></div><div class="pc"><div id="alForm" class="alform">
+      <input id="alSym" placeholder="TICKER" maxlength="10" spellcheck="false" autocomplete="off">
+      <select id="alKind"><option value="price">PRICE hits</option><option value="above">PRICE goes above</option><option value="below">PRICE goes below</option><option value="flow">OPTION FLOW ≥ $</option><option value="flowC">CALL flow ≥ $</option><option value="flowP">PUT flow ≥ $</option><option value="equity">EQUITY print ≥ $</option></select>
+      <input id="alVal" type="number" step="any" min="0" placeholder="price or $">
+      <label title="off: fires once and is gone · on: keeps firing (with a cooldown)"><input type="checkbox" id="alRepeat"> every time</label>
+      <button id="alAdd">ADD ALERT</button><span class="dim" id="alMsg"></span></div><div id="alList"></div></div></div>
+  <div class="pnl fa" data-p="eqflow"><div class="fa-top"><div class="fa-tabs"><span class="off" data-go="flow" title="option flow">OPTION FLOW</span><span class="on">EQUITY FLOW</span></div>
+    <div class="fa-sub"><span>Big stock prints · lit and dark</span><label><input type="checkbox" id="eqDark"> Dark pool only</label><label><input type="checkbox" id="eqMine"> Watchlist</label><span class="src" id="eqSrc"></span></div></div><div class="pc"><div id="eqList"></div></div></div>
   <div class="pnl" data-p="calls"><div class="pc" style="padding:6px"><div id="feedBody"></div></div></div>
-  <div class="pnl fa" data-p="flow"><div class="fa-top"><div class="fa-tabs"><span class="on">OPTION FLOW</span><span class="off" title="equity prints live on TIME &amp; SALES">EQUITY FLOW</span></div>
+  <div class="pnl fa" data-p="flow"><div class="fa-top"><div class="fa-tabs"><span class="on">OPTION FLOW</span><span class="off" data-go="eqflow" title="big stock prints, lit and dark">EQUITY FLOW</span></div>
     <div class="fa-search"><input id="flowFilter" placeholder="Filter by ticker..." spellcheck="false" autocomplete="off"><span class="mag">&#9906;</span></div>
     <div class="fa-sub"><span>Realtime Option Flow</span><button id="flowScope" class="fsw" title="WHOLE MARKET on: the feed pulls every ticker's option flow. Off: only your watchlist is pulled (lighter on the Quant Data limit). UNUSUAL calls are watchlist-only either way.">WHOLE MARKET <b>ON</b></button><button id="flowAlerts" class="fsw" title="UNUSUAL alerts and voice: WATCHLIST = your symbols only; ALL = every ticker in the feed. Index products (SPY, QQQ, SPX, IWM ...) need far more premium to count: set it in SETTINGS, Option flow alerts.">ALERTS <b>WATCHLIST</b></button><label><input type="checkbox" id="flowUnusual"> Unusual only</label><label><input type="checkbox" id="flowMine" checked> Watchlist</label><span class="src" id="flowSrc"></span></div></div><div class="pc"><div id="flowList"></div></div></div>
   <div class="pnl" data-p="desk"><div class="pc"><div id="deskBody"></div></div></div>
@@ -992,7 +1018,16 @@ function makeColsResizable(table){
   let cg = table.querySelector("colgroup");
   if (!cg){ cg = document.createElement("colgroup"); for (let i = 0; i < n; i++) cg.appendChild(document.createElement("col")); table.prepend(cg); }
   const vis = i => getComputedStyle(ths[i]).display !== "none";
+  const OPT = ths.map(th => !!th.dataset.opt);
   const apply = () => {
+    // an optional column (the ladder's FLOW) shows only when the pane has room for every floor plus its own
+    if (OPT.some(x => x)){
+      const avail0 = (table.parentElement && table.parentElement.clientWidth) || table.offsetWidth || 0;
+      const base = MIN.reduce((a, m, i) => a + (OPT[i] || getComputedStyle(ths[i]).display === "none" ? 0 : m), 0);
+      const extraNeed = MIN.reduce((a, m, i) => a + (OPT[i] ? m : 0), 0);
+      const room = avail0 >= base + extraNeed && !table.classList.contains("noflow");
+      table.classList.toggle("flowcol", room);
+    }
     const tot = w.reduce((a, x, i) => a + (vis(i) ? x : 0), 0) || 1;
     const floor = MIN.reduce((a, m, i) => a + (vis(i) ? m : 0), 0);
     if (!floor){ [...cg.children].forEach((c, i) => { c.style.width = vis(i) ? (100 * w[i] / tot).toFixed(3) + "%" : "0px"; }); return; }
@@ -1023,11 +1058,11 @@ function makeColsResizable(table){
 const PANELS = {
   chart: "CHART", foot: "FOOTPRINT 5m", book: "LEVEL II", tape: "TIME & SALES", setup: "PLAY SETUP", ps60: "PS60", reload: "RELOADS",
   ticket: "ORDER ENTRY", positions: "POSITIONS", orders: "ORDERS", watch: "WATCHLIST", calls: "CALLS",
-  flow: "OPTION FLOW", desk: "DESK", journal: "JOURNAL", messages: "MESSAGES"};
+  flow: "OPTION FLOW", eqflow: "EQUITY FLOW", myalerts: "ALERTS", desk: "DESK", journal: "JOURNAL", messages: "MESSAGES"};
 const SYMBOL_LINKED = new Set(["chart", "foot", "book", "tape", "ps60", "reload", "ticket", "calls", "setup"]);
 const ZONES = ["TL", "TC", "TR", "TX", "BL", "BC", "BR", "BX"];   // four columns × two rows; a column with one zone runs full height
 const PRESETS = {
-  "PS60 Execution": {zones: {TL: ["watch"], TC: ["chart"], TR: ["book"], TX: ["tape"], BL: ["positions", "orders"], BC: ["setup", "flow", "ps60", "reload", "calls"], BR: ["ticket"]},
+  "PS60 Execution": {zones: {TL: ["watch", "myalerts"], TC: ["chart"], TR: ["book"], TX: ["tape"], BL: ["positions", "orders"], BC: ["setup", "flow", "eqflow", "ps60", "reload", "calls"], BR: ["ticket"]},
     active: {BL: "positions", BC: "setup"}, sizes: {c1: 200, c3: 330, c4: 290, r2: {L: 250, C: 330, R: 430, X: 250}}},
   "Scalping": {zones: {TL: ["ticket", "setup"], TC: ["book"], TR: ["tape"], BL: ["positions"], BC: ["chart"], BR: ["orders", "reload"]},
     active: {BR: "reload"}, sizes: {c1: 300, c3: 320, r2: 300}},
@@ -1224,6 +1259,7 @@ function chartMenu(p, v, x, y, price){
     <button class="bsell" data-do="sell" ${on ? "" : "disabled"}>SELL ${sz(t.default_shares)} limit @ ${px(price)}</button>
     ${d.position ? `<button class="bflat" data-do="flat" ${on ? "" : "disabled"}>Flatten ${esc(d.symbol)}</button>` : ""}
     ${d.orders.length ? `<button data-do="cxl">Cancel all (${d.orders.length})</button>` : ""}
+    <button data-do="alert" class="balert">🔔 Alert me when ${esc(d.symbol)} hits ${px(price)}</button>
     ${!on ? `<div class="dim" style="font-size:11px;margin-top:4px">${esc(whyNot())}</div>` : ""}`;
   m.style.left = Math.min(x, window.innerWidth - 230) + "px"; m.style.top = Math.min(y, window.innerHeight - 160) + "px";
   document.body.appendChild(m);
@@ -1235,6 +1271,7 @@ function chartMenu(p, v, x, y, price){
     else if (b.dataset.do === "sell") sendOrder(d.symbol, "SELL", price);
     else if (b.dataset.do === "flat") flatten(d.symbol);
     else if (b.dataset.do === "cxl") cancelAll(d.symbol);
+    else if (b.dataset.do === "alert") addAlert({symbol: d.symbol, kind: "price", price, when: "hit", repeat: false});
   });
   // any click outside closes it (a click inside on a disabled button must not use that up), so does Escape or 20 s
   const away = ev => { if (!m.isConnected){ document.removeEventListener("mousedown", away, true); return; } if (!m.contains(ev.target)) m.remove(); };
@@ -1269,6 +1306,19 @@ function szTitle(row, side){
   if (bg) bits.push((bg.huge ? "huge" : "big") + " size" + (bg.times > 1 ? ", shown up here " + bg.times + " times today" : ""));
   return ` title="${bits.join(" · ")}"`;
 }
+// option flow marks on a ladder row: the FLOW column when the ladder is wide enough, else a dot in the tag column
+function flowK(v){ return v >= 1e6 ? (v / 1e6).toFixed(1) + "M" : Math.round(v / 1e3) + "K"; }
+function flowStrike(k){ return Number.isInteger(+k) ? String(k) : (+k).toFixed(2).replace(/\.?0+$/, ""); }
+function flowTitle(f){ return f.items.map(m => `${m.cp === "C" ? "CALL" : "PUT"} ${px(m.strike)} ${m.exp}${m.dte != null ? " (" + m.dte + "d)" : ""} $${flowK(m.prem)} ${m.side === "ask" ? "at the ask" : "at the bid"}${m.kind !== "trade" ? " " + m.kind : ""}${m.hot ? " · REPEAT, short-dated" : ""} · ${ago(m.age)} ago`).join("\n"); }
+function flowCell(r){
+  const f = r.flow; if (!f) return "";
+  const lead = f.c >= f.p ? "c" : "p", top = f.items[0];
+  return `<span class="fm ${lead} ${f.hot ? "hot" : ""}" title="${esc(flowTitle(f))}">${f.c ? `<b class="c">C$${flowK(f.c)}</b>` : ""}${f.p ? `<b class="p">P$${flowK(f.p)}</b>` : ""}${top ? `<i>${flowStrike(top.strike)}${top.dte != null ? "·" + top.dte + "d" : ""}</i>` : ""}${f.n > 1 ? `<u>×${f.n}</u>` : ""}</span>`;
+}
+function flowDot(r){
+  const f = r.flow; if (!f) return "";
+  return `<span class="fdot ${f.c >= f.p ? "c" : "p"} ${f.hot ? "hot" : ""}" title="${esc(flowTitle(f))}">●${f.n > 1 ? `<u>${f.n}</u>` : ""}</span>`;
+}
 function whoTag(row, side){
   const st = row[side + "_state"], n = row[side + "_refills"] || 0, v = row[side + "_verdict"];
   const name = side === "bid" ? "buyer" : "seller";
@@ -1302,6 +1352,7 @@ function ladderHTML(L){
     <th class="who" data-w="0.2" data-min="20" title="Reload buyer here: R + times refilled (lit until it is cleaned up or pulled) · C = cleared out · P = pulled"></th>
     <th data-w="1" data-min="44">BID</th><th data-w="1" data-min="58">PRICE</th><th data-w="1" data-min="44">ASK</th>
     <th class="who" data-w="0.2" data-min="20" title="Reload seller here: R + times refilled (lit until it is cleaned up or pulled) · C = cleared out · P = pulled"></th>
+    <th class="flow" data-w="1.2" data-min="86" data-opt="1" title="Option flow that hit while the stock traded at this price: calls green, puts red, the premium, ×prints. A ring = the same strike bought again and again, expiring within days: the hot one">FLOW</th>
     <th class="bars" data-w="1.6" data-min="44" title="Shares buyers paid up for at this price (last ${L.memory_minutes} min). Big red = a seller absorbing them.">PAID UP</th>
     <th class="act" data-w="0.5" data-min="28" title="Click a price here to SELL at that price">SELL</th></tr>`;
   for (const r of L.rows){
@@ -1315,7 +1366,8 @@ function ladderHTML(L){
       <td class="sz bsz ${r.bid_big ? (r.bid_big.huge ? "huge" : "big") : ""}"${szTitle(r, "bid")}><span class="szn">${r.bid?kfmt(r.bid):""}</span></td>
       <td class="px${r.tags.length ? " tagged" : ""}">${r.tags.length ? `<span class="lt" title="${esc(r.tags.join(" · "))}">${esc(r.tags.map(t => LTAG[t] || t.slice(0, 2)).join(""))}</span>` : ""}${px(r.price)}</td>
       <td class="sz asz ${r.ask_big ? (r.ask_big.huge ? "huge" : "big") : ""}"${szTitle(r, "ask")}><span class="szn">${r.ask?kfmt(r.ask):""}</span></td>
-      <td class="whoc r">${whoTag(r,"ask")}</td>
+      <td class="whoc r">${whoTag(r,"ask") || flowDot(r)}</td>
+      <td class="flow">${flowCell(r)}</td>
       <td class="bars r">${bw?`<span class="bar bought" style="width:${bw}%"></span>`:""}<span class="bar-n">${kfmt(r.bought)}</span></td>
       <td class="act s${dis}" data-act="SELL" data-px="${r.price}" title="${on ? "SELL " + sz(T().default_shares) + " @ " + px(r.price) : whyNot()}">${chips(r, "s") || "SELL"}</td></tr>`;
   }
@@ -2030,6 +2082,11 @@ function normalize(l){
   const r2 = out.sizes.r2;
   if (typeof r2 === "number" || !r2) out.sizes.r2 = {L: r2 || 300, C: r2 || 300, R: r2 || 300, X: r2 || 300};
   const placed = new Set([].concat(...ZONES.map(z => out.zones[z])).concat(Object.keys(out.floats || {})));
+  // a panel new in a build docks itself once (ALERTS beside the watchlist, EQUITY FLOW beside the option flow), so it is
+  // not lost behind the PANELS menu; a panel you hid yourself stays hidden
+  const NEW_PANELS = {myalerts: "TL", eqflow: "BC"};
+  out.seen = Array.isArray(out.seen) ? out.seen : Object.keys(P).filter(id => !(id in NEW_PANELS));
+  for (const id of Object.keys(NEW_PANELS)) if (P[id] && !out.seen.includes(id)){ out.seen.push(id); if (!placed.has(id)){ out.zones[NEW_PANELS[id]].push(id); placed.add(id); } }
   out.hidden = Object.keys(P).filter(id => !placed.has(id));
   return out;
 }
@@ -2479,7 +2536,7 @@ function tapeSpeedHTML(sp){
     <span class="tst">${sp.trend}${ratio != null && sp.trend !== "QUIET" ? ` <em>${ratio.toFixed(1)}x</em>` : ""}</span>
     <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${bars}</svg></div>`;
 }
-function applyLadCols(tbl){ if (!tbl) return; const c = store.get("ladcols", {}); tbl.classList.toggle("notrade", c.trade === false); tbl.classList.toggle("nobars", c.bars === false); tbl.classList.toggle("nowho", c.who === false); if (tbl._applyCols) tbl._applyCols(); }
+function applyLadCols(tbl){ if (!tbl) return; const c = store.get("ladcols", {}); tbl.classList.toggle("notrade", c.trade === false); tbl.classList.toggle("nobars", c.bars === false); tbl.classList.toggle("nowho", c.who === false); tbl.classList.toggle("noflow", c.flow === false); if (tbl._applyCols) tbl._applyCols(); }
 document.getElementById("colsMenu").querySelector("button").addEventListener("click", e => { e.stopPropagation(); const m = document.getElementById("colsMenu"), open = !m.classList.contains("open"); document.querySelectorAll(".menu.open").forEach(x => x.classList.remove("open")); m.classList.toggle("open", open); const c = store.get("ladcols", {}); m.querySelectorAll("input[data-col]").forEach(i => { i.checked = c[i.dataset.col] !== false; }); });
 document.getElementById("colsPop").addEventListener("change", e => { const k = e.target.dataset.col; if (!k) return; const c = store.get("ladcols", {}); c[k] = e.target.checked; store.set("ladcols", c); applyLadCols(P.book.pc.querySelector("table.lad")); });
 P.book.el.addEventListener("change", async e => { if (e.target.id !== "bigIn" || !curSym) return; const v = Math.max(100, +e.target.value || 0); const out = await post("/api/ladder", {symbol: curSym, big_shares: v}); toast(out.ok ? curSym + ": big size is now " + sz(v) + " shares" : "Could not set", out.ok); poll(true); });
@@ -2518,8 +2575,13 @@ function suFields(){
 function suDerive(d, f){
   const n = k => { const v = parseFloat(f[k]); return isNaN(v) || v <= 0 ? null : v; };
   const side = f.side || "long", sgn = side === "long" ? 1 : -1;
-  const pivot = n("trigger"), second = n("second_entry"), stop = n("stop"), mp = n("target");
-  const entry = second || pivot || (d && d.last) || null, entryLbl = second ? "2nd entry" : pivot ? "pivot" : "last";
+  const pivot = n("trigger"), stop = n("stop"), mp = n("target");
+  // the entry the numbers run from: YOUR second entry if you typed one, else the one PS60 found once the pivot broke
+  // (new high / low, a real retrace, back through it). Until then the pivot only stands in, and says so.
+  const se = d && d.ps60 && d.ps60.se, found = se && se.state === "SECOND_ENTRY" && +se.second_entry > 0 ? +se.second_entry : null;
+  const second = n("second_entry") || found;
+  const entry = second || pivot || (d && d.last) || null, entryLbl = n("second_entry") ? "2nd entry" : found ? "2nd entry (found)" : pivot ? "pivot (no 2nd entry yet)" : "last";
+  const seState = !pivot ? "NEEDS A PIVOT" : !se ? "" : se.state === "SECOND_ENTRY" ? `2ND ENTRY ${px(se.second_entry)} · ${se.build || ""}` : se.state === "RETRACE" ? `RETRACED to ${px(se.retrace)} · 2nd entry = back through ${px(se.extreme)}` : se.state === "BROKE" ? `PIVOT BROKE · ${side === "long" ? "high" : "low"} ${px(se.extreme)} · waiting for the retrace` : "WAITING FOR THE PIVOT TO BREAK";
   const risk = entry && stop ? Math.abs(entry - stop) : null;
   const room = mp && pivot ? Math.abs(mp - pivot) : null;                 // MP room: pivot to your MP level
   const reward = mp && entry ? sgn * (mp - entry) : null;               // what you make from where you get in (signed)
@@ -2530,13 +2592,14 @@ function suDerive(d, f){
   if (pivot && stop && sgn * (stop - pivot) >= 0) bad.push("stop");
   if ((pivot && mp && sgn * (mp - pivot) <= 0) || (mp && entry && sgn * (mp - entry) <= 0)) bad.push("target");
   if (stop && entry && sgn * (entry - stop) <= 0 && !bad.includes("stop")) bad.push("stop");
-  return {side, pivot, second, stop, mp, entry, entryLbl, risk, room, r, shares, bad};
+  return {side, pivot, second, stop, mp, entry, entryLbl, risk, room, r, shares, bad, seState, fromSecond: !!second};
 }
 function suDerivedHTML(d, f){
   const x = suDerive(d, f), $ = v => v == null ? NA : "$" + v.toFixed(2);
-  return `<span>MP ROOM</span><span>${x.room != null ? `<span class="gold">${$(x.room)}</span> <span class="dim">PIVOT ${$(x.pivot)} → TARGET ${$(x.mp)}</span>` : `<span class="dim">NEEDS A PIVOT AND A TARGET</span>`}</span>
+  return `<span>2ND ENTRY</span><span>${x.seState ? `<span class="${x.fromSecond ? "ok" : "dim"}">${esc(x.seState)}</span>` : NA}</span>
+    <span>MP ROOM</span><span>${x.room != null ? `<span class="gold">${$(x.room)}</span> <span class="dim">PIVOT ${$(x.pivot)} → TARGET ${$(x.mp)}</span>` : `<span class="dim">NEEDS A PIVOT AND A TARGET</span>`}</span>
     <span>RISK / SHARE</span><span>${x.risk ? `${$(x.risk)} <span class="dim">${x.entryLbl} ${$(x.entry)} → stop ${$(x.stop)}</span>` : `<span class="dim">NEEDS A STOP${x.entry ? "" : " AND AN ENTRY"}</span>`}</span>
-    <span>REWARD : RISK</span><span>${x.r ? `<span class="${x.r >= 2 ? "ok" : x.r >= 1 ? "" : "no"}">${x.r.toFixed(1)} R</span> <span class="dim">${x.entryLbl} → TARGET ÷ RISK</span>` : NA}</span>
+    <span>REWARD : RISK</span><span>${x.r ? `<span class="${x.r >= 2 ? "ok" : x.r >= 1 ? "" : "no"}">${x.r.toFixed(1)} R</span> <span class="dim">${x.entryLbl} → TARGET ÷ RISK${x.fromSecond ? "" : " · real number comes with the 2nd entry"}</span>` : NA}</span>
     <span>SIZE</span><span>${x.shares != null ? `<span class="gold">${sz(x.shares)} sh</span> <span class="dim">AT $${riskDollars()} RISK</span> <button data-usesize="${x.shares}" style="padding:1px 6px;font-size:10px">TO TICKET</button>` : `<span class="dim">NEEDS A STOP</span>`}</span>
     ${x.bad.length ? `<span></span><span class="no">${x.bad.map(k => k === "second_entry" ? "2nd entry must be beyond the pivot" : k === "stop" ? (f.side === "short" ? "stop must be above the pivot for a short" : "stop must be below the pivot for a long") : (f.side === "short" ? "target must be below the pivot for a short" : "target must be above the pivot for a long")).join(" · ")}</span>` : ""}`;
 }
@@ -2588,7 +2651,7 @@ function renderReloads(d){
 }
 function renderWatch(s){
   panelHTML("watch", (s.ranking || []).map(r => `<div class="wlrow ${r.symbol === curSym ? "cur" : ""}" data-sym="${esc(r.symbol)}">
-    <span><b>${esc(r.symbol)}</b>${r.depth ? ' <span style="color:var(--gold);font-size:9px;letter-spacing:.1em">L2</span>' : ""}</span><span style="color:var(--gold)">${px(r.last)}</span>
+    <span><b>${esc(r.symbol)}</b>${r.depth ? ' <span style="color:var(--gold);font-size:9px;letter-spacing:.1em">L2</span>' : ""}<span class="wlx" data-rm="${esc(r.symbol)}" title="take ${esc(r.symbol)} off the watchlist">✕</span></span><span style="color:var(--gold)">${px(r.last)}</span>
     <span class="gw"><span class="g ${r.ps60 ? r.ps60.grade : ""}">${r.ps60 ? r.ps60.grade : ""}</span>${r.ps60 && r.ps60.flow && r.ps60.flow.bias != null && Math.abs(r.ps60.flow.bias) >= 0.3 ? ` <span class="fb ${r.ps60.flow.bias > 0 ? "c" : "p"}" title="option flow last 30 min: ${r.ps60.flow.bias > 0 ? "call" : "put"} heavy">${r.ps60.flow.bias > 0 ? "C" : "P"}${Math.round(Math.abs(r.ps60.flow.bias) * 100)}</span>` : ""}</span>
     <span class="w">${r.rank ? "#" + r.rank + " · " : ""}${r.side} · ${esc(r.retired ? "RETIRED" : r.status)}</span></div>`).join("") || `<div class="dim" style="padding:8px">No plays.</div>`);
 }
@@ -2796,7 +2859,59 @@ P.orders.el.addEventListener("click", async e => {
   const tr = e.target.closest("tr[data-sym]"); if (tr){ selOrder = +tr.dataset.oid || null; if (tr.dataset.sym && tr.dataset.sym !== curSym) openTab(tr.dataset.sym, false); P.orders.last = null; }
 });
 P.orders.el.addEventListener("change", e => { if (e.target.id === "ordHist"){ showHistory = e.target.checked; P.orders.last = null; poll(true); } });
-P.watch.el.addEventListener("click", e => { const r = e.target.closest(".wlrow"); if (r) openTab(r.dataset.sym, false); });
+P.watch.el.addEventListener("click", async e => {
+  const x = e.target.closest(".wlx");
+  if (x){ e.stopPropagation(); const sym = x.dataset.rm; if (!confirm(`Take ${sym} off the watchlist? Its quotes, flow marks and alerts go with it.`)) return;
+    const out = await post("/api/play", {symbol: sym, action: "remove"}); if (out.ok){ TABS.list = TABS.list.filter(t => t !== sym); if (TABS.active === sym){ TABS.active = TABS.list[0] || null; curSym = TABS.active; } savePrefs({tabs: TABS.list, active: TABS.active}); renderTabs(); toast(sym + " removed", true); poll(true); } else toast("Could not remove " + sym, false); return; }
+  const r = e.target.closest(".wlrow"); if (r) openTab(r.dataset.sym, false); });
+async function wlAdd(){ const inp = document.getElementById("wlAdd"), sym = inp.value.trim().toUpperCase(); if (!sym) return;
+  const out = await post("/api/play", {symbol: sym, action: "add"}); if (!out.ok){ toast(sym + " is not a valid ticker", false); return; }
+  inp.value = ""; toast(sym + " added to the watchlist", true); poll(true); }
+document.getElementById("wlAddBtn").addEventListener("click", wlAdd);
+document.getElementById("wlAdd").addEventListener("keydown", e => { e.stopPropagation(); if (e.key === "Enter") wlAdd(); if (e.key === "Escape") e.target.blur(); });
+/* ---------- your alerts: a price to hit, option flow arriving, a big equity print */
+function alertLine(a){
+  const $ = v => v >= 1e6 ? "$" + (v / 1e6).toFixed(1) + "M" : "$" + Math.round(v / 1e3) + "K";
+  if (a.kind === "price") return `${a.when === "hit" ? "hits" : "goes " + a.when} ${px(a.price)}`;
+  if (a.kind === "flow") return `${a.cp === "C" ? "call" : a.cp === "P" ? "put" : "option"} flow ≥ ${$(a.min_premium)}`;
+  return `equity print ≥ ${$(a.min_dollars)}`;
+}
+function renderMyAlerts(s){
+  const el = document.getElementById("alList"); if (!el) return;
+  const list = s.user_alerts || [];
+  const html = list.length ? list.map(a => `<div class="alrow"><b>${esc(a.symbol)}</b><span>${esc(alertLine(a))}${a.repeat ? ' <i class="dim">every time</i>' : ""}${a.last ? ` <i class="dim">· last ${ago(s.now - a.last)}</i>` : ""}</span><span class="wlx" data-al="${a.id}" title="remove">✕</span></div>`).join("")
+    : `<div class="dim" style="padding:8px">No alerts. Set one above, or right-click a price on the chart.</div>`;
+  if (el.dataset.h !== html){ el.dataset.h = html; el.innerHTML = html; }
+  const sym = document.getElementById("alSym"); if (sym && !sym.value && curSym && document.activeElement !== sym) sym.placeholder = curSym;
+}
+async function addAlert(body){ const out = await post("/api/alerts", body); toast(out.ok ? `Alert set: ${body.symbol} ${alertLine(out.alert)}` : "Could not set the alert: " + (out.reason || ""), out.ok); if (out.ok) poll(true); return out.ok; }
+document.getElementById("alAdd").addEventListener("click", async () => {
+  const sym = (document.getElementById("alSym").value.trim() || curSym || "").toUpperCase(), k = document.getElementById("alKind").value, v = parseFloat(document.getElementById("alVal").value);
+  const rep = document.getElementById("alRepeat").checked, msg = document.getElementById("alMsg");
+  if (!sym){ msg.textContent = "ticker?"; return; }
+  let body;
+  if (k === "price" || k === "above" || k === "below"){ if (!(v > 0)){ msg.textContent = "price?"; return; } body = {symbol: sym, kind: "price", price: v, when: k === "price" ? "hit" : k, repeat: rep}; }
+  else if (k.startsWith("flow")) body = {symbol: sym, kind: "flow", min_premium: v > 0 ? v : undefined, cp: k === "flowC" ? "C" : k === "flowP" ? "P" : "any", repeat: rep};
+  else body = {symbol: sym, kind: "equity", min_dollars: v > 0 ? v : undefined, repeat: rep};
+  msg.textContent = ""; if (await addAlert(body)){ document.getElementById("alVal").value = ""; }
+});
+["alSym", "alVal"].forEach(id => document.getElementById(id).addEventListener("keydown", e => { e.stopPropagation(); if (e.key === "Enter") document.getElementById("alAdd").click(); }));
+document.getElementById("alList").addEventListener("click", async e => { const x = e.target.closest(".wlx"); if (!x) return; const out = await post("/api/alerts", {action: "remove", id: +x.dataset.al}); if (out.ok) poll(true); });
+/* ---------- equity flow: big stock prints, lit and dark */
+function renderEquity(s){
+  const el = document.getElementById("eqList"); if (!el) return;
+  const dark = document.getElementById("eqDark").checked, mine = document.getElementById("eqMine").checked;
+  const rows = (s.equity || []).filter(p => (!dark || p.dark) && (!mine || (s.symbols || []).includes(p.symbol))).slice(0, 80);
+  const src = document.getElementById("eqSrc"); const st = s.connection && s.connection.state === "DEMO" ? "PRACTICE PRINTS" : (s.equity_status && s.equity_status.detail ? "NO PRINTS READ · hover" : "QUANT DATA"); if (src.textContent !== st){ src.textContent = st; src.title = (s.equity_status && s.equity_status.detail) || ""; }
+  const html = rows.length ? rows.map(p => `<div class="fl eq ${p.dark ? "dk" : "lt"} ${p.side === "ask" ? "c" : p.side === "bid" ? "p" : ""}" title="${p.dark ? "off-exchange (dark pool) print" : "on the tape"}${p.side === "ask" ? " · at the ask (buyer paid up)" : p.side === "bid" ? " · at the bid (seller hit it)" : ""}">
+      <div class="tm">${nyHM(p.t)}</div>
+      <div class="top"><span class="tk">${esc(p.symbol)}</span><span class="prem">${kfmt$(p.dollars)}</span><span class="venue ${p.dark ? "dk" : ""}">${p.dark ? "DARK" : esc(p.venue || "LIT")}</span></div>
+      <div class="cols"><span><i>SHARES</i>${sz(p.size)}</span><span><i>PRICE</i>${px(p.price)}</span><span><i>SIDE</i>${p.side === "ask" ? "PAID UP" : p.side === "bid" ? "HIT" : "MID"}</span></div></div>`).join("")
+    : `<div class="dim" style="padding:10px">${s.connection && s.connection.state === "DEMO" ? "Practice prints are warming up." : (s.equity_status && s.equity_status.detail) ? "Quant Data answered but no equity print could be read: " + esc(s.equity_status.detail) : "No big equity prints yet (prints under the minimum in SETTINGS, Quant Data, are left out)."}</div>`;
+  if (el.dataset.h !== html){ el.dataset.h = html; el.innerHTML = html; }
+}
+["eqDark", "eqMine"].forEach(id => document.getElementById(id).addEventListener("input", () => renderEquity(state)));
+document.querySelectorAll(".fa-tabs [data-go]").forEach(t => t.addEventListener("click", () => showPanel(t.dataset.go)));
 P.calls.el.addEventListener("change", e => { if (e.target.id === "callsAll"){ store.set("callsAll", e.target.checked); poll(true); } });
 P.ps60.el.addEventListener("click", async e => { const b = e.target.closest("button[data-se]"); if (!b || !curSym) return; const out = await post("/api/level", {symbol: curSym, role: "second_entry", price: +b.dataset.se}); toast(out.ok ? "2nd entry set to " + px(+b.dataset.se) : "Could not set", out.ok); poll(true); });
 { const wrap = P.book.pc.querySelector(".ladder-wrap");
@@ -2934,6 +3049,8 @@ function renderFlowScope(s){ const a = document.getElementById("flowAlerts"); if
   const b = document.getElementById("flowScope"); if (!b) return; const on = s.flow_scope !== "watchlist"; b.classList.toggle("on", on); const t = on ? "ON" : "OFF"; if (b.lastChild.textContent !== t) b.querySelector("b").textContent = t; }
 ["flowFilter", "flowUnusual", "flowMine"].forEach(id => document.getElementById(id).addEventListener("input", () => renderFlow(state)));
 function flowWords(a){
+  if (a.words) return `${a.symbol}: ${a.words}`;                                   // PRICE ALERT / FLOW ALERT / EQUITY FLOW
+  if (a.label === "REPEAT FLOW"){ const what = a.cp === "C" ? "call" : "put"; return `${a.symbol}: repeat ${what} flow, ${px(a.strike)} strike${a.dte != null ? ", " + Math.round(a.dte) + " days out" : ""}, ${a.premium >= 1e6 ? (a.premium / 1e6).toFixed(1) + " million" : Math.round(a.premium / 1e3) + " thousand"} total.`; }
   if (!/^UNUSUAL/.test(a.label)) return null;
   const what = a.cp === "C" ? "call" : "put";
   return `${a.symbol}: unusual ${what} buying, ${a.premium >= 1e6 ? (a.premium / 1e6).toFixed(1) + " million" : Math.round(a.premium / 1e3) + " thousand"} premium${a.otm_pct != null ? ", " + Math.round(a.otm_pct) + " percent out of the money" : ""}${a.dte != null ? ", " + Math.round(a.dte) + " days out" : ""}.`;
@@ -3075,7 +3192,7 @@ function render(s){
   renderBook(d); renderTape(d); renderSetup(d); renderPS60(d); renderReloads(d);
   renderTicket(s, d);
   renderWatch(s); renderCalls(s); renderPositions(s); renderOrders(s);
-  renderDesk(s); renderTrades(s); renderFlow(s); renderFlowScope(s);
+  renderDesk(s); renderTrades(s); renderFlow(s); renderFlowScope(s); renderEquity(s); renderMyAlerts(s);
   const msgs = s.messages.map(m => `<div class="msg-${esc(m.level)} mono" style="font-size:11px">${ago(s.now - m.t)} · ${esc(m.text)}</div>`).join("") || `<span class="dim">—</span>`;
   const me = document.getElementById("messages"); if (me.dataset.h !== msgs){ me.dataset.h = msgs; me.innerHTML = msgs; }
   for (const a of s.alerts.slice(0, 10)){ const key = a.t + a.symbol + a.label; if (!seenAlerts.has(key)){ seenAlerts.add(key); if (!firstFeed && store.get("alerts", true) && store.get("sound", true) && a.symbol === TABS.active) beep(sayClass(a)); } }

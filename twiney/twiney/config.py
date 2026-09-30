@@ -160,6 +160,12 @@ DEFAULTS = {
         "api_key": "",
         "base_url": "https://api.quantdata.us",
         "flow_path": "/v1/options/tool/order-flow/consolidated",
+        # equity prints (lit and dark venues): the day's big stock prints, shown in EQUITY FLOW
+        "equity_enabled": True,
+        "equity_path": "/v1/equities/tool/equity-prints",
+        "equity_poll_seconds": 10,
+        # equity prints under this many dollars are left out (the tape shows every print; this is the size that matters)
+        "equity_min_dollars": 500000,
         "method": "POST",
         "poll_seconds": 5,
         "limit": 200,
@@ -198,6 +204,16 @@ DEFAULTS = {
         "big_shares": 5000,
         # big × this = "huge": the strongest highlight
         "huge_multiple": 3.0,
+        # option flow marks on the ladder: a print of at least this premium is marked on the row where the stock was
+        # trading when it hit (index products need far more). Marks stay this many minutes. A strike that keeps getting
+        # bought, expiring inside flow_short_dte days, is the hot one: it gets the ring, and a REPEAT FLOW call
+        "flow_min_premium": 100000,
+        "flow_index_min_premium": 1000000,
+        "flow_window_minutes": 60,
+        "flow_short_dte": 7,
+        "flow_repeat_prints": 2,
+        "flow_repeat_minutes": 30,
+        "flow_repeat_cooldown_minutes": 15,
     },
     "recording": {
         "enabled": True,

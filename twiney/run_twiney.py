@@ -91,10 +91,12 @@ def run_live(cfg, plays, args):
     engine = Engine(plays, cfg, recorder)
     engine.plays_path = args.plays
     engine.grades_path = os.path.join(cfg["recording"]["dir"], "grades.jsonl")
+    engine.load_user_alerts(os.path.join(os.path.dirname(os.path.abspath(args.plays)), "alerts.json"))
     engine.listeners.append(console_alert)
     gate = TradingGate(cfg)
     session = MarketDataSession(engine, cfg, plays, factory, gate=gate)
     engine.play_listeners.append(session.add_play)
+    engine.remove_listeners.append(session.remove_play)
     trader = Trader(engine, cfg, IbkrBroker(engine, session), gate) if cfg["trading"]["enabled"] else None
     engine.trader = trader
     start_watchdog(lambda: trader)
@@ -113,8 +115,7 @@ def run_live(cfg, plays, args):
     if cfg.get("quantdata", {}).get("api_key"):
         from twiney.flow import QuantDataFeed
         flow = QuantDataFeed(engine, cfg, [p["symbol"] for p in plays]).start()
-        engine.play_listeners.append(lambda p: flow.symbols.append(p["symbol"]))
-        print("Option flow: Quant Data (key from config.json)", flush=True)
+        print("Option flow: Quant Data (key from config.json)" + (" · equity prints on" if cfg["quantdata"].get("equity_enabled") else ""), flush=True)
     else:
         print("Option flow: off (add your Quant Data key in SETTINGS on the desk)", flush=True)
     open_dashboard(dash, cfg, args)
@@ -158,6 +159,7 @@ def run_demo(cfg, plays, args):
     engine = Engine(plays, cfg, recorder)
     engine.plays_path = args.plays if os.path.exists(args.plays) and not args.plays.endswith("plays.example.json") else None
     engine.grades_path = os.path.join(cfg["recording"]["dir"], "grades.jsonl")
+    engine.load_user_alerts(os.path.join(os.path.dirname(os.path.abspath(args.plays)), "alerts.json"))
     engine.listeners.append(console_alert)
     feed = DemoFeed(engine, plays, seed=None, scenario=cfg.get("demo", {}).get("scenario"))
     feed.start(time.time())

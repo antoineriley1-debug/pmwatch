@@ -299,9 +299,19 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                     ok = engine.reactivate_play(sym, clock())
                 elif body.get("action") == "retire":
                     ok = engine.retire_play(sym, "retired by you", clock())
+                elif body.get("action") == "remove":
+                    ok = engine.remove_play(sym, clock())
                 else:
                     ok = False
                 self._send(200 if ok else 400, json.dumps({"ok": ok}), "application/json")
+            elif path == "/api/alerts":
+                if body.get("action") == "remove":
+                    ok = engine.remove_user_alert(int(body.get("id", 0)), clock())
+                    self._send(200 if ok else 400, json.dumps({"ok": ok}), "application/json")
+                    return
+                a, why = engine.add_user_alert(body.get("symbol"), body.get("kind"), clock(),
+                                               **{k: body.get(k) for k in ("price", "when", "min_premium", "cp", "min_dollars", "repeat", "note") if k in body})
+                self._send(200 if a else 400, json.dumps({"ok": a is not None, "reason": why, "alert": a}), "application/json")
             elif path == "/api/layouts":
                 self._send(200, json.dumps(_save_layouts(layout_path, body)), "application/json")
             elif path == "/api/layout":
