@@ -19,7 +19,7 @@ Clearly labelled DEMO everywhere; it is not market data. What it mimics:
 import math
 import random
 
-from .book import ASK, BID, INSERT, UPDATE
+from .book import ASK, BID, DELETE, INSERT, UPDATE
 from .prices import tick_size
 
 ROWS = 10
@@ -127,7 +127,7 @@ def _r100(x):
 class _Sym:
     __slots__ = ("play", "tk", "asks", "bids", "last", "vol", "regime", "regime_until", "script", "big",
                  "big_home", "parts", "level_cooldown", "hidden_next", "prev", "l1", "base", "mid0", "beta", "sym", "eff", "owed",
-                 "hot", "hot_dir", "mom", "last_mid", "episode", "ep_next", "thin", "ep_script")
+                 "hot", "hot_dir", "mom", "spent", "now", "last_mid", "episode", "ep_next", "thin", "ep_script")
 
     def __init__(self, play, mid, t):
         self.play = play
@@ -140,6 +140,8 @@ class _Sym:
         self.regime, self.regime_until = "chop", t
         self.script = []            # [(bias, rate, until_t)] scripted stages that override the regime
         self.big = {}               # (side, price) -> until
+        self.spent = {}             # (side, price) -> until: a reloader was just cleaned / pulled there, it stays thin
+        self.now = 0.0
         self.big_home = {ASK: None, BID: None}
         self.parts = []             # participants working a level: the one at the pivot, and hidden ones anywhere
         self.level_cooldown = t
@@ -271,10 +273,21 @@ class DemoFeed:
 
     # ---- the book ------------------------------------------------------------
 
+    @staticmethod
+    def _rn(s, side, price):
+        """How much size a price draws: round numbers more - except one where a reloader was just cleaned or
+        pulled. That size is gone; for a while there is less there than anywhere around it, not a new wall."""
+        until = s.spent.get((side, round(price, 4))) if price is not None else None
+        if until is not None:
+            if s.now < until:
+                return 0.4
+            del s.spent[(side, round(price, 4))]
+        return roundness(price)
+
     def _fresh(self, s, side, price=None):
         b = s.eff[0]
         against = (side == ASK and b > 0.5) or (side == BID and b < 0.5)
-        target = s.base * (max(0.3, 1 - 2.5 * abs(b - 0.5)) if against else 1.2) * roundness(price)
+        target = s.base * (max(0.3, 1 - 2.5 * abs(b - 0.5)) if against else 1.2) * self._rn(s, side, price)
         return _r100(self.rng.lognormvariate(math.log(target), 0.7))
 
     def _seed_book(self, s, t):
@@ -329,13 +342,13 @@ class DemoFeed:
                             row[1] = max(100, row[1] - rng.choice((100, 100, 200, 300)))        # cancels
                     continue
                 if rng.random() < 0.12:
-                    tg = target * roundness(row[0])
+                    tg = target * self._rn(s, side, row[0])
                     row[1] = _r100(row[1] + 0.2 * (tg - row[1]) + rng.gauss(0, 0.25 * tg))
             # big resting size: 5k-40k, mostly at a fresh price, sometimes back at the same one (a repeat)
             if rng.random() < 0.006 and len(rows) > 6:
                 # big size goes where institutions work: round numbers first
                 cand = list(range(1, min(9, len(rows))))
-                i = rng.choices(cand, weights=[roundness(rows[j][0]) ** 2 for j in cand])[0]
+                i = rng.choices(cand, weights=[self._rn(s, side, rows[j][0]) ** 2 for j in cand])[0]
                 if s.big_home[side] is not None and rng.random() < 0.4:
                     for j in range(min(ROWS, len(rows))):
                         if abs(rows[j][0] - s.big_home[side]) < 1e-9:
@@ -527,6 +540,9 @@ class DemoFeed:
             touch = rows[0][1]
             wall = touch >= max(5 * s.base, 5000)
             opp = s.bids if is_buy else s.asks
+            if s.hot >= 2.0 and s.hot_dir and (s.hot_dir > 0) != is_buy:
+                s.owed *= 0.5      # a level just broke: for a few seconds the break's momentum wins over the index
+                return
             with_push = abs(s.mom) >= 1 and (s.mom > 0) == is_buy
             if not wall and len(rows) > 1 and opp and (not with_push or self.rng.random() < self.REPRICE):
                 # the market makers move their quotes with the index: the offer lifts / the bid drops, no print.
@@ -663,7 +679,7 @@ class DemoFeed:
             rows = s.asks if side == ASK else s.bids
             # hidden reloaders sit where the liquidity is: whole / half / quarter dollars and dimes, far more often
             cand = list(range(1, min(9, len(rows) - 1) + 1))
-            i = rng.choices(cand, weights=[roundness(rows[j][0]) ** 3 for j in cand])[0]
+            i = rng.choices(cand, weights=[self._rn(s, side, rows[j][0]) ** 3 for j in cand])[0]
             if not any(abs(pt["price"] - rows[i][0]) < 1e-9 for pt in s.parts):
                 pt = self._new_part(s, side, rows[i][0], t, False)
                 rows[i][1] = _r100(pt["base"] * rng.uniform(0.7, 1.3))
@@ -705,6 +721,7 @@ class DemoFeed:
             elif lv["done"] == "fade":
                 pass                                       # never really tested: he just goes away
             else:
+                s.spent[(side, round(lv["price"], 4))] = t + rng.uniform(45, 150)
                 if lv["done"] == "clean":
                     s.hot += 5.0                               # the level broke: the tape bursts through it
                     s.hot_dir = 1 if seller else -1
@@ -737,6 +754,7 @@ class DemoFeed:
             slotted = sym in self.engine.slots
             if not slotted:
                 s.prev = {ASK: [], BID: []}
+            s.now = t
             self._regime(s, t)
             self._episodes(s, t)
             s.eff = self._params(s, t)
@@ -773,8 +791,12 @@ class DemoFeed:
         if not slotted:
             return
         for side, rows in ((ASK, s.asks), (BID, s.bids)):
-            cur = [(r[0], int(r[1])) for r in rows[:ROWS]]
+            # a price with nothing on it (a reloader between refills) is not a row on a real feed: it is deleted,
+            # and inserted again when his size comes back
+            cur = [(r[0], int(r[1])) for r in rows if r[1] > 0][:ROWS]
             prev = s.prev[side]
+            for i in range(len(prev) - 1, len(cur) - 1, -1):
+                eng.on_depth(sym, i, DELETE, side, prev[i][0], 0, "", t)
             for i, (price, size) in enumerate(cur):
                 if i < len(prev) and prev[i] == (price, size):
                     continue

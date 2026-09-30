@@ -113,7 +113,9 @@ class VerdictTests(unittest.TestCase):
         h.hit(200, 8.2, price=10.01)  # price trades through the level
         self.assertEqual(h.tr.state, GONE_PENDING)   # not yet: it has to stay gone for a moment
         h.tick(9.1)
-        self.assertEqual(h.alerts[-1], (9.1, "CLEANED UP"))
+        self.assertEqual(h.tr.state, GONE_PENDING)   # still not: 3 s gone with price through, not 1
+        h.tick(11.1)
+        self.assertEqual(h.alerts[-1], (11.1, "CLEANED UP"))
         self.assertEqual(h.tr.state, WATCHING)
         self.assertEqual(h.tr.last_verdict[0], "CLEANED UP")
 
@@ -124,8 +126,8 @@ class VerdictTests(unittest.TestCase):
         h.remove(8.0)            # book first...
         h.hit(1000, 8.05)        # ...tape lags
         h.hit(100, 8.1, price=10.01)
-        h.tick(9.05)
-        self.assertEqual(h.alerts[-1], (9.05, "CLEANED UP"))
+        h.tick(11.05)
+        self.assertEqual(h.alerts[-1], (11.05, "CLEANED UP"))
 
     def test_flicker_with_prints_and_a_locked_book_is_not_a_clear(self):
         # the seller's row drops out for a moment (delete + re-insert) while the bid locks and prints hit;
@@ -149,10 +151,10 @@ class VerdictTests(unittest.TestCase):
     def test_verdict_hidden_once_size_is_back(self):
         h = Harness()
         h.build_reload()
-        h.show(1000, 7.0); h.hit(1000, 8.0); h.remove(8.05); h.hit(200, 8.2, price=10.01); h.tick(9.1)
-        self.assertEqual(h.tr.snapshot(9.2)["last_verdict"], "CLEANED UP")
-        h.show(5000, 9.5)                         # he is back
-        self.assertIsNone(h.tr.snapshot(9.6)["last_verdict"])
+        h.show(1000, 7.0); h.hit(1000, 8.0); h.remove(8.05); h.hit(200, 8.2, price=10.01); h.tick(11.1)
+        self.assertEqual(h.tr.snapshot(11.2)["last_verdict"], "CLEANED UP")
+        h.show(5000, 11.5)                        # he is back
+        self.assertIsNone(h.tr.snapshot(11.6)["last_verdict"])
         self.assertEqual(h.tr.state, BUILDING)
 
     def test_pulled_without_execution_evidence(self):
@@ -164,7 +166,9 @@ class VerdictTests(unittest.TestCase):
         h.tick(9.5)
         self.assertEqual(h.alerts[-1][1], "RELOAD SELLER DETECTED")  # grace not over yet
         h.tick(10.6)
-        self.assertEqual(h.alerts[-1], (10.6, "PULLED"))
+        self.assertEqual(h.alerts[-1][1], "RELOAD SELLER DETECTED")  # it has to stay gone 3 s
+        h.tick(12.1)
+        self.assertEqual(h.alerts[-1], (12.1, "PULLED"))
 
     def test_pulled_even_if_price_then_moves_through(self):
         h = Harness()
@@ -172,7 +176,7 @@ class VerdictTests(unittest.TestCase):
         h.show(1000, 7.0)
         h.remove(9.0)
         h.hit(100, 9.2, price=10.01)
-        h.tick(11.0)
+        h.tick(12.1)
         self.assertEqual(h.alerts[-1][1], "PULLED")
 
     def test_consumed_but_no_follow_through_is_inconclusive_and_silent(self):
@@ -242,7 +246,7 @@ class ProvenTests(unittest.TestCase):
         self.assertTrue(h.tr.proven)              # gone, still being judged: still lit
         h.show(1000, 8.3)                          # he came back
         self.assertTrue(h.tr.proven)
-        h.hit(1000, 9.0); h.remove(9.05); h.hit(200, 9.2, price=10.01); h.tick(10.2)
+        h.hit(1000, 9.0); h.remove(9.05); h.hit(200, 9.2, price=10.01); h.tick(12.1)
         self.assertEqual(h.alerts[-1][1], "CLEANED UP")
         self.assertFalse(h.tr.proven)
         self.assertFalse(h.tr.snapshot(10.3)["proven"])
@@ -254,3 +258,15 @@ class ProvenTests(unittest.TestCase):
         h.tick(30.0)
         self.assertEqual(h.alerts[-1][1], "PULLED")
         self.assertFalse(h.tr.proven)
+
+
+class ClearHoldsTests(unittest.TestCase):
+    def test_price_back_at_the_level_is_not_cleaned_up(self):
+        # the offer is taken and price pokes through, then comes straight back: new size sits at the level again
+        h = Harness()
+        h.build_reload()
+        h.show(1000, 7.0); h.hit(1000, 8.0); h.remove(8.05); h.hit(200, 8.2, price=10.01)
+        h.book.apply(0, DELETE, ASK, 10.01, 0)
+        h.book.apply(0, INSERT, ASK, 9.99, 800)     # sellers back under the level: price fell back
+        h.tick(11.1)
+        self.assertEqual([a for a in h.alerts if a[1] == "CLEANED UP"], [])

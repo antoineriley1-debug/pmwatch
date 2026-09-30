@@ -142,7 +142,9 @@ class FlowTests(unittest.TestCase):
         e.on_depth("AAA", 0, DELETE, ASK, 10.00, 0, "", t + 0.05)
         e.on_print("AAA", 10.01, 300, "ARCA", t + 0.1)
         self.assertEqual(got[-1]["label"], "RELOAD SELLER DETECTED")   # a flicker is not a clear yet
-        e.tick(t + 1.2)                                                  # still gone after the confirm delay
+        e.tick(t + 1.2)
+        self.assertEqual(got[-1]["label"], "RELOAD SELLER DETECTED")   # 1 s is not enough to call it cleared
+        e.tick(t + 3.2)                                                  # still gone, price still through
         self.assertEqual(got[-1]["label"], "CLEANED UP")
         self.assertIn("CLEANED UP — the SELLER at 10.00 (your pivot) is gone", got[-1]["text"])
         self.assertIn("RELOAD SELLER at 10.00", got[0]["text"])

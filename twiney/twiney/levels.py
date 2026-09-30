@@ -156,6 +156,18 @@ class LevelTracker:
                 pass
         return self.evaluate(now, book)
 
+    def _holding_through(self, book):
+        """Right now nothing of this side is left at or before the level: the offer is above it (the bid below
+        it). If price comes back, the offer is back at or under the level - that is not cleaned up, it is still
+        being fought over."""
+        if book is None:
+            return True
+        own = book.best(self.side)
+        if own is None:
+            return True
+        k = price_key(own, self.tick)
+        return k > self.key if self.side == ASK else k < self.key
+
     def _level_inside_or_through(self, book):
         best = book.best(self.side)
         k = price_key(best, self.tick)
@@ -226,7 +238,7 @@ class LevelTracker:
             # a level that flickers to zero for a moment (delete + re-insert, a locked book from another
             # venue) is not cleared: it has to stay gone for clear_confirm_seconds first
             gone_for = now - self.gone_at
-            if consumed and moved_through and gone_for >= c.get("clear_confirm_seconds", 1.0):
+            if consumed and moved_through and gone_for >= c.get("clear_confirm_seconds", 3.0) and self._holding_through(book):
                 return self._verdict(CLEANED_UP, now)
             if not consumed and now - self.gone_at >= c["pull_grace_seconds"]:
                 return self._verdict(PULLED, now)
