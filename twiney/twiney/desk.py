@@ -126,15 +126,45 @@ class Desk:
             if (signed > 0) == long_:                       # adding
                 tr["entry_qty"] += abs(signed); tr["entry_cost"] += abs(signed) * fill["price"]
                 tr["qty"] += signed
+                tr.setdefault("legs", []).append([ex, signed, fill["price"], "entry"])
                 signed = 0.0
             else:                                            # reducing: never past flat inside one trade
                 take = min(abs(signed), abs(tr["qty"]))
                 tr["exit_qty"] += take; tr["exit_cost"] += take * fill["price"]
-                tr["qty"] += take if signed > 0 else -take
-                signed += -take if signed > 0 else take
+                part = take if signed > 0 else -take
+                tr["qty"] += part
+                tr.setdefault("legs", []).append([ex, part, fill["price"], "exit"])
+                signed -= part
             if abs(tr["qty"]) < 1e-9 and tr["entry_qty"] > 0:
                 self._close(sym, tr, t)
         self._write_open()
+
+    def correct_fill(self, old, new, t):
+        """IBKR corrected an execution: take the old one out of the open trade and put the corrected one in."""
+        ex = old.get("exec_id")
+        tr = self._open.get(old["symbol"])
+        if tr is None or not any(l[0] == ex for l in tr.get("legs", [])):
+            self.engine._message("warn", f"{old['symbol']}: a corrected execution belongs to a trade already closed "
+                                         f"in the journal — check that trade's numbers", t, old["symbol"])
+            return
+        keep = []
+        for leg in tr["legs"]:
+            if leg[0] != ex:
+                keep.append(leg)
+                continue
+            _e, part, px, kind = leg
+            if kind == "entry":
+                tr["entry_qty"] -= abs(part); tr["entry_cost"] -= abs(part) * px
+            else:
+                tr["exit_qty"] -= abs(part); tr["exit_cost"] -= abs(part) * px
+            tr["qty"] -= part
+        tr["legs"] = keep
+        if ex in tr.get("execs", []):
+            tr["execs"].remove(ex)
+        self._seen.discard(ex)
+        if abs(tr["qty"]) < 1e-9 and not keep:
+            del self._open[old["symbol"]]
+        self.on_fill(new, t)
 
     def _close(self, sym, tr, t):
         long_ = tr["side"] == "long"
@@ -144,10 +174,27 @@ class Desk:
         tr["pnl_pct"] = round((exit_ - entry) / entry * 100 * (1 if long_ else -1), 3) if entry else None
         tr["closed"] = t
         tr["shares"] = tr["entry_qty"]
-        self.trades.append({k: v for k, v in tr.items() if k not in ("qty", "entry_cost", "exit_cost", "exit_qty", "entry_qty")})
+        self.trades.append({k: v for k, v in tr.items() if k not in ("qty", "entry_cost", "exit_cost", "exit_qty", "entry_qty", "legs")})
         self.engine._rec({"ev": "trade", "t": t, "trade": self.trades[-1]})
         self._write_trades()
         del self._open[sym]
+
+    def trades_csv(self):
+        """The whole trade journal as a spreadsheet (opens in Excel / Google Sheets). Times in New York time."""
+        import csv, io
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        ny = ZoneInfo("America/New_York")
+        when = lambda x: datetime.fromtimestamp(x, ny).strftime("%Y-%m-%d %H:%M:%S") if x else ""
+        out = io.StringIO()
+        w = csv.writer(out)
+        w.writerow(["date / time opened (ET)", "closed (ET)", "symbol", "side", "shares", "entry", "exit",
+                    "P&L $", "P&L %", "setup", "grade", "note", "option flow at entry", "trade id"])
+        for tr in self.trades:
+            w.writerow([when(tr.get("opened")), when(tr.get("closed")), tr.get("symbol"), tr.get("side"),
+                        tr.get("shares"), tr.get("entry"), tr.get("exit"), tr.get("pnl"), tr.get("pnl_pct"),
+                        tr.get("setup"), tr.get("grade"), tr.get("note"), tr.get("flow"), tr.get("id")])
+        return out.getvalue()
 
     def tag_trade(self, trade_id, setup=None, grade=None, note=None):
         for tr in self.trades:

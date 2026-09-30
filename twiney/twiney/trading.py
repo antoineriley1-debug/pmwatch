@@ -225,7 +225,8 @@ def bracket_legs(play, action, qty, entry_price, stop_limit_ticks=10, scale_plan
         targets = [t for t in targets if t["price"] > 0 and
                    (t["price"] > entry_price if action == BUY else t["price"] < entry_price)]
     elif target and (target > entry_price if action == BUY else target < entry_price):
-        targets = [{"action": exit_action, "qty": qty, "type": "LMT", "price": target, "role": "target"}]
+        targets = [{"action": exit_action, "qty": qty, "type": "LMT", "price": snap(target), "role": "target"}]
+    stop = snap(stop) if stop else stop
     stop_leg = None
     if stop and stop_ok(play, action, entry_price):
         tk = tick_size(stop)
@@ -254,7 +255,10 @@ class SimBroker:
         self.orders = {}       # id -> order dict
         self.next_id = 1
         self.pos = {}          # symbol -> [qty, avg_cost]
-        self.lock = threading.RLock()
+        # the engine's own lock: the broker is called from the engine (on every print) and calls back into it
+        # (orders, fills). One lock, one order: no deadlock between the feed and a click
+        self.lock = engine.lock
+        self.session = int(time.time() * 1000) % 100000000   # fill ids unique across restarts (the journal dedupes on them)
         self.n_fills = 0
 
     def place(self, symbol, action, qty, price, now, order_type="LMT", parent=None, role="entry", tif="DAY",
@@ -333,7 +337,7 @@ class SimBroker:
                              remaining=float(o["remaining"]), filled=float(o["qty"] - o["remaining"]),
                              type=o["type"], lmt=o["price"] if o["type"] in ("LMT", "STP LMT") else None,
                              aux=o["price"] if o["type"] == "STP" else o.get("aux"), tif=o["tif"], status=o["status"],
-                             role=o["role"], order_id=o["id"], sim=True)
+                             role=o["role"], order_id=o["id"], sim=True, mine=True, parent=o["parent"])
 
     def on_market(self, symbol, now):
         """Called by the engine after each print / book update for ``symbol``."""
@@ -393,7 +397,7 @@ class SimBroker:
             elif (p[0] > 0) == (signed > 0):
                 p[1] = price
         self.engine.on_position(self.account, o["symbol"], p[0], p[1], now)
-        self.engine.on_fill(f"sim{o['id']}-{self.n_fills}", o["symbol"], "BOT" if o["action"] == BUY else "SLD",
+        self.engine.on_fill(f"sim{self.session}-{o['id']}-{self.n_fills}", o["symbol"], "BOT" if o["action"] == BUY else "SLD",
                             float(qty), price, time.strftime("%H:%M:%S", time.localtime(now)), now)
         self._report(o, now)
         # activate children
@@ -485,13 +489,20 @@ class Trader:
         self.families = {}   # entry order id -> {"symbol", "entry", "stop", "cash": [...], "be_done"}
         self.nonces = {}     # ticket nonce -> result (double-submit protection)
         self.mismatch = {}   # symbol -> since when its working exits have not matched the position
+        # every order action (clicks on HTTP threads, the watchdog thread) runs one at a time: a check and the order
+        # it allows can never be split by another click (two flattens, two closes, the same ticket twice)
+        self.lock = threading.RLock()
         self.log = deque(maxlen=200)
 
     def _note(self, now, text, ok):
         self.log.appendleft({"t": now, "text": text, "ok": ok})
         self.engine._message("info" if ok else "error", text, now)
 
-    def submit(self, symbol, action, price, qty=None, now=None, bracket=None, order_type="LMT", aux=None,
+    def submit(self, symbol, action, price, qty=None, now=None, bracket=None, order_type="LMT", aux=None, tif="DAY", nonce=None):
+        with self.lock:
+            return self._submit_unlocked(symbol, action, price, qty, now, bracket, order_type, aux, tif, nonce)
+
+    def _submit_unlocked(self, symbol, action, price, qty=None, now=None, bracket=None, order_type="LMT", aux=None,
                tif="DAY", nonce=None):
         now = now or time.time()
         qty = int(qty or self.default_shares)
@@ -508,10 +519,11 @@ class Trader:
             seen = self.nonces.get(nonce)
             if seen is not None:
                 return dict(seen, duplicate=True)
+            self.nonces[nonce] = {"ok": False, "reason": "this ticket is already being sent"}   # reserved
         price = snap(round(float(price or 0), 4))          # a price the exchange takes
         if order_type == "STP LMT":
             try:
-                aux = round(float(aux), 4)
+                aux = snap(round(float(aux), 4))
             except (TypeError, ValueError):
                 return {"ok": False, "reason": "a stop-limit needs a stop price"}
             if aux <= 0:
@@ -522,27 +534,34 @@ class Trader:
         if not reason and order_type in ("LMT", "STP LMT"):
             # a limit far through the market is a typo or a stale price (the wrong symbol's), not a trade:
             # a BUY more than 5% over the offer / a SELL more than 5% under the bid is refused
-            bid, ask = self.engine.syms[symbol].bbo()
+            st_ = self.engine.syms[symbol]
+            bid, ask = st_.bbo()
+            ref_last = st_.l1.get("last") or st_.l1.get("close")
             band = 0.05
+            if order_type == "STP LMT":       # a stop entry sits away from the market on purpose: judge its limit by its trigger
+                ask = bid = aux
+            ask, bid = ask or ref_last, bid or ref_last
             if action == BUY and ask and price > ask * (1 + band):
-                reason = f"BUY limit {money(price)} is {100 * (price / ask - 1):.1f}% over the offer {money(ask)} — check the price"
+                reason = f"BUY limit {money(price)} is {100 * (price / ask - 1):.1f}% over {money(ask)} — check the price"
             elif action == SELL and bid and price < bid * (1 - band):
-                reason = f"SELL limit {money(price)} is {100 * (1 - price / bid):.1f}% under the bid {money(bid)} — check the price"
+                reason = f"SELL limit {money(price)} is {100 * (1 - price / bid):.1f}% under {money(bid)} — check the price"
             if reason:
                 self.gate.blocked.appendleft({"t": now, "action": action, "qty": qty, "price": price, "reason": reason})
         if not reason:
             pos = int(self.broker.position(symbol))
             # entries still working count too: five resting 500-share bids are a 2,500 share position waiting to happen
-            working = sum((o.get("remaining") if o.get("remaining") is not None else o.get("qty") or 0) *
-                          (1 if o.get("action") == BUY else -1)
-                          for o in self.engine._pending(symbol) if o.get("role") == "entry")
-            after = pos + int(working) + (qty if action == BUY else -qty)
+            # the worst case on this side: opposite working orders may never fill
+            same = sum((o.get("remaining") if o.get("remaining") is not None else o.get("qty") or 0)
+                       for o in self.engine._pending(symbol) if o.get("role") == "entry" and o.get("action") == action)
+            after = pos + (int(same) + qty) * (1 if action == BUY else -1)
             cap = self.cfg["max_position_shares"]
             if abs(after) > cap and abs(after) > abs(pos):
                 reason = f"that would make the {symbol} position {abs(after):,} shares — your cap is {cap:,}"
                 self.gate.blocked.appendleft({"t": now, "action": action, "qty": qty, "price": price, "reason": reason})
         if reason:
             self._note(now, f"BLOCKED {action} {qty} {symbol} @ {money(price)}: {reason}", False)
+            if nonce:
+                self.nonces.pop(nonce, None)
             return {"ok": False, "reason": reason}
         use_bracket = self.bracket if bracket is None else bool(bracket)
         plan = self.cfg["scale_plan"]["cash_flow"] if self.scale else None
@@ -588,28 +607,54 @@ class Trader:
         return out
 
     def cancel(self, oid, now=None):
+        with self.lock:
+            return self._cancel_unlocked(oid, now)
+
+    def _cancel_unlocked(self, oid, now=None):
         now = now or time.time()
         ok = self.broker.cancel(oid, now)
         self._note(now, f"cancel {oid}: {'sent' if ok else 'nothing to cancel'}", ok)
         return {"ok": ok}
 
     def cancel_all(self, symbol=None, now=None):
+        with self.lock:
+            return self._cancel_all_unlocked(symbol, now)
+
+    def _cancel_all_unlocked(self, symbol=None, now=None):
         now = now or time.time()
         n = self.broker.cancel_all(now, symbol)
         self._note(now, f"cancelled {n} working order{'s' if n != 1 else ''}{' in ' + symbol if symbol else ''}", True)
         return {"ok": True, "cancelled": n}
 
+    REDUCING = ("flatten", "close")
+
+    def _can_reduce_by(self, symbol, now):
+        """Shares that can still be taken off: the position less the flatten / close orders already working. A close
+        that filled a moment ago may not show in the position yet: then nothing more is sent until it does."""
+        pos = int(self.broker.position(symbol))
+        if self.engine.recently_filled(symbol, self.REDUCING, now):
+            return pos, 0, "the last close just filled — the position is updating, try again in a moment"
+        working = sum((o.get("remaining") if o.get("remaining") is not None else o.get("qty") or 0)
+                      for o in self.engine._pending(symbol) if o.get("role") in self.REDUCING)
+        return pos, max(0, abs(pos) - int(working)), (f"{int(working)} shares are already being closed" if working else None)
+
     def flatten(self, symbol, now=None):
+        with self.lock:
+            return self._flatten_unlocked(symbol, now)
+
+    def _flatten_unlocked(self, symbol, now=None):
         """Close the position with a marketable limit (through the spread by a few ticks). Works disarmed, locked
         for the day and over the caps: getting out is never blocked. One flatten at a time per symbol."""
         now = now or time.time()
-        qty = int(self.broker.position(symbol))
-        if not qty:
+        pos, free, why = self._can_reduce_by(symbol, now)
+        if not pos:
             self._note(now, f"{symbol}: already flat", True)
             return {"ok": True, "flat": True}
-        if any(o.get("role") == "flatten" for o in self.engine._pending(symbol)):
-            self._note(now, f"{symbol}: a flatten order is already working", False)
-            return {"ok": False, "reason": "a flatten order is already working"}
+        if any(o.get("role") == "flatten" for o in self.engine._pending(symbol)) or not free:
+            reason = "a flatten order is already working" if any(o.get("role") == "flatten" for o in self.engine._pending(symbol)) else why
+            self._note(now, f"{symbol}: {reason}", False)
+            return {"ok": False, "reason": reason}
+        qty = free if pos > 0 else -free
         st = self.engine.syms.get(symbol)
         bid, ask = st.bbo() if st else (None, None)
         if bid is None or ask is None:
@@ -638,13 +683,17 @@ class Trader:
         return {"ok": True, "id": oid, "sent": f"{action} {qty} {symbol} @ {money(price)} ({role})"}
 
     def modify(self, oid, price, now=None):
+        with self.lock:
+            return self._modify_unlocked(oid, price, now)
+
+    def _modify_unlocked(self, oid, price, now=None):
         """Move a working order to a new price (drag on the ladder / chart)."""
         now = now or time.time()
         oid = int(oid)
         info = self.broker.order_info(oid)
         if not info:
             return {"ok": False, "reason": "no such order"}
-        price = round(float(price), 4)
+        price = snap(round(float(price), 4))
         qty = int(info.get("remaining") or info.get("qty") or 0)
         reason = self.gate.check(info.get("action"), qty, price, now, order_type=info.get("type", "LMT"))
         if reason:
@@ -675,14 +724,20 @@ class Trader:
         mismatch has held for 2 seconds (fills and position reports settle), exits for shares you no longer hold are
         trimmed or cancelled. Nothing is touched while an entry of that symbol is still working."""
         by_sym = {}
-        for o in self.engine._pending():
-            if self._is_exit(o) and o.get("order_id") is not None:
+        pend = self.engine._pending()
+        working_ids = {o.get("order_id") for o in pend}
+        for o in pend:
+            # exits of an entry that is still working wait for it (they aren't live yet): leave them alone
+            if self._is_exit(o) and o.get("order_id") is not None and o.get("parent") not in working_ids:
                 by_sym.setdefault(o.get("symbol"), []).append(o)
         for sym in list(self.mismatch):
             if sym not in by_sym:
                 del self.mismatch[sym]
         for sym, exits in by_sym.items():
-            if any(o.get("role") == "entry" for o in self.engine._pending(sym)):
+            # only on a SETTLED position: the broker reported it after the last fill, and 2 s have passed since that
+            # fill (IBKR's position report can trail the fill; a stop is never cancelled on a stale 0)
+            ft, pt = self.engine.fill_t.get(sym), self.engine.pos_t.get(sym)
+            if pt is None or (ft is not None and (pt < ft or now - ft < 2.0)):
                 self.mismatch.pop(sym, None)
                 continue
             pos = self.broker.position(sym)
@@ -715,6 +770,10 @@ class Trader:
                        f"{sym}: flat — leftover exit orders cancelled", True)
 
     def watchdog(self, now=None):
+        with self.lock:
+            return self._watchdog_unlocked(now)
+
+    def _watchdog_unlocked(self, now=None):
         """Called on every dashboard snapshot: breakeven stops after cash flow; exits never bigger than the
         position; daily-loss lock."""
         self._breakeven(now or time.time())
@@ -723,7 +782,10 @@ class Trader:
         except Exception as exc:
             log.warning("exit guard: %s", exc)
         limit = self.cfg["max_daily_loss"]
-        if not limit or self.gate.locked:
+        if self.gate.locked:
+            self._cancel_entries(now or time.time())   # every run while locked: one that failed or came in late goes too
+            return
+        if not limit:
             return
         pnl = self.day_pnl()
         if pnl["total"] <= -abs(limit):
@@ -731,12 +793,15 @@ class Trader:
             self._note(now or time.time(), f"TRADING LOCKED — day P&L {pnl['total']:+,.0f} hit your {limit:,.0f} loss limit", False)
             # entries that have not filled are cancelled (with their legs); the stops and targets protecting
             # what you hold stay working, and flatten / close still work while locked
-            for o in self.engine._pending():
-                if o.get("role") == "entry" and o.get("order_id") is not None:
-                    try:
-                        self.broker.cancel(o["order_id"], now or time.time())
-                    except Exception:
-                        pass
+            self._cancel_entries(now or time.time())
+
+    def _cancel_entries(self, now):
+        for o in self.engine._pending():
+            if o.get("role") == "entry" and o.get("order_id") is not None and o.get("status") != "PendingCancel":
+                try:
+                    self.broker.cancel(o["order_id"], now)
+                except Exception as exc:
+                    log.warning("cancel entry %s: %s", o.get("order_id"), exc)
 
     def _breakeven(self, now):
         """PS60: once the first cash-flow leg fills, the stop goes to breakeven (the entry price)."""
@@ -760,6 +825,10 @@ class Trader:
                     self._note(now, f"{fam['symbol']}: could not move the stop to breakeven: {exc}", False)
 
     def adjust(self, symbol, shares, mode, now=None):
+        with self.lock:
+            return self._adjust_unlocked(symbol, shares, mode, now)
+
+    def _adjust_unlocked(self, symbol, shares, mode, now=None):
         """Close or add ``shares`` to the position with a limit at the touch.
 
         mode "close": trade against the position (sell for a long, buy for a short).
@@ -781,7 +850,11 @@ class Trader:
             if not pos:
                 self._note(now, f"{symbol}: already flat, nothing to close", True)
                 return {"ok": False, "reason": "flat"}
-            shares = min(shares, abs(pos))
+            _p, free, why = self._can_reduce_by(symbol, now)
+            if not free:
+                self._note(now, f"{symbol}: {why}", False)
+                return {"ok": False, "reason": why}
+            shares = min(shares, free)            # never more than is left to close
             action = SELL if pos > 0 else BUY
         elif mode == "add":
             action = BUY if pos >= 0 else SELL

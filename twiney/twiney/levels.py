@@ -66,6 +66,7 @@ class LevelTracker:
         self.episode_start = None
         self.absorbed_total = 0.0
         self.prints = deque()  # (t, size) executions against this side at the level
+        self._psum = 0.0       # running total of self.prints (a busy level must not cost more with every print)
         self.refresh_times = deque()
         self.exec_since_refresh = 0.0
         self.confirmed_at = None
@@ -91,12 +92,17 @@ class LevelTracker:
         w = self.cfg["window_seconds"]
         keep = max(w, self.cfg["consumed_exec_window_seconds"])
         while self.prints and now - self.prints[0][0] > keep:
-            self.prints.popleft()
+            self._psum -= self.prints.popleft()[1]
+        if not self.prints:
+            self._psum = 0.0
         while self.refresh_times and now - self.refresh_times[0] > w:
             self.refresh_times.popleft()
 
     def absorbed_window(self, now):
         w = self.cfg["window_seconds"]
+        if w >= self.cfg["consumed_exec_window_seconds"]:
+            self._prune(now)             # the deque now holds exactly the window
+            return max(0.0, self._psum)
         return sum(s for t, s in self.prints if now - t <= w)
 
     def refreshes_window(self, now):
@@ -171,6 +177,7 @@ class LevelTracker:
             self.episode_start = now
         self.last_active = now
         self.prints.append((now, size))
+        self._psum += size
         self.absorbed_total += size
         self.exec_since_refresh += size
         return self.evaluate(now, book)

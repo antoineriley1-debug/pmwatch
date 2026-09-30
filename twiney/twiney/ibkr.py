@@ -118,6 +118,17 @@ class TwineyWrapper:
         if kind is None and req_id in self.session.my_orders and code < 2000:
             # an order of ours was refused or cancelled by IBKR: say so on the order, never leave it "working"
             info = self.session.my_orders[req_id]
+            if info.get("_mod_t") is not None and self.clock() - info["_mod_t"] < 10 and code != 202:
+                # IBKR refused a MOVE: the order is still working where it was. Put our record back, say so
+                prev = info.pop("_prev", None)
+                info.pop("_mod_t", None)
+                if prev:
+                    info["aux"], info["price"], info["qty"] = prev
+                    self.engine.on_order(self.session.perm_ids.get(req_id) or f"id{req_id}", t, order_id=req_id,
+                                         lmt=prev[1] if info["type"] in ("LMT", "STP LMT") else None,
+                                         aux=prev[0] if info["type"] in ("STP", "STP LMT") else None)
+                self.engine.on_error(info["symbol"], code, f"move of order {req_id} refused, it is still working at its old price: {msg}", t, level="error")
+                return
             if code in ORDER_DEAD_CODES:
                 self.engine.on_order(self.session.perm_ids.get(req_id) or f"id{req_id}", t,
                                      status="Cancelled" if code == 202 else "Inactive", order_id=req_id,
@@ -202,7 +213,7 @@ class TwineyWrapper:
             role=self.session.order_roles.get(int(orderId)) if mine else "manual")
 
     def orderStatus(self, orderId, status, filled, remaining, avgFillPrice, permId, *rest):
-        client = rest[3] if len(rest) > 3 else None     # parentId, lastFillPrice, clientId, ...
+        client = rest[2] if len(rest) > 2 else None     # rest = parentId, lastFillPrice, clientId, whyHeld, ...
         mine = self.session.is_mine(orderId, client)
         key = self.session.order_key(orderId, permId, mine)
         self.engine.on_order(key, self.clock(), status=status, filled=num(filled),
@@ -457,7 +468,7 @@ class MarketDataSession:
             self.app.reqMarketDataType(mdt)
             self.engine.on_connection("CONNECTED", "", self.clock(), market_data_type=mdt)
             self.subscribe_l1()
-            if self.cfg["account"]["show"]:
+            if self.cfg["account"]["show"] or self.cfg["trading"]["enabled"]:
                 self.engine.clear_positions()   # IBKR re-sends every open position right after this
                 self.app.reqPositions()  # streams position updates
             self._next_orders = self._next_fills = 0.0
@@ -547,7 +558,7 @@ class MarketDataSession:
             self.engine.on_order(f"id{oid}", now, symbol=symbol, action=action, qty=float(qty), remaining=float(qty),
                                  type=order_type, lmt=price if order_type in ("LMT", "STP LMT") else None,
                                  aux=price if order_type == "STP" else aux, tif=tif, status="PendingSubmit",
-                                 order_id=oid, role=role, mine=True)
+                                 order_id=oid, role=role, mine=True, parent=parent)
             self._orders_seen.add(f"id{oid}")
             self._next_orders = now + 1.0  # refresh the open-order list soon
             return oid
@@ -572,6 +583,7 @@ class MarketDataSession:
                 self.app.cancelOrder(int(oid), cancel_arg())
                 return True
             extra = {"oca": info.get("oca")} if info.get("oca") else {}
+            info["_prev"], info["_mod_t"] = (info.get("aux"), info["price"], info["qty"]), now
             if info["type"] == "STP LMT":
                 if price is None:
                     price = info["aux"]
@@ -625,7 +637,7 @@ class MarketDataSession:
 
     def refresh_account(self, now):
         """Poll open orders and today's fills for the display (read-only requests)."""
-        if not self.cfg["account"]["show"] or self.app is None:
+        if not (self.cfg["account"]["show"] or self.cfg["trading"]["enabled"]) or self.app is None:
             return
         if now >= self._next_orders:
             self._next_orders = now + self.cfg["account"]["orders_refresh_seconds"]

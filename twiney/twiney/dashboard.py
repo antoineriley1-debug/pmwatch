@@ -163,6 +163,14 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                         self._send(200, json.dumps({"ok": True, "layout": json.load(fh)}), "application/json")
                 else:
                     self._send(200, json.dumps({"ok": True, "layout": None}), "application/json")
+            elif path == "/api/desk/trades.csv" and desk is not None:
+                data = desk.trades_csv().encode("utf-8-sig")        # utf-8 with BOM: Excel opens it cleanly
+                self.send_response(200)
+                self.send_header("Content-Type", "text/csv; charset=utf-8")
+                self.send_header("Content-Disposition", f'attachment; filename="TED-journal-{time.strftime("%Y-%m-%d")}.csv"')
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
             elif path == "/api/desk/export" and desk is not None:
                 from urllib.parse import parse_qs, urlparse
                 name = os.path.basename(parse_qs(urlparse(self.path).query).get("name", [""])[0])

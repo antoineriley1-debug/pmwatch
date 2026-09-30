@@ -169,6 +169,9 @@ class Engine:
         self.positions = {}     # (account, symbol) -> {"qty", "avg_cost"}
         self.fills = {}         # exec id -> fill dict
         self.commissions = {}   # exec id -> commission ($)
+        self.pos_t = {}         # symbol -> when the broker last reported its position
+        self.fill_t = {}        # symbol -> when its last fill arrived
+        self.start_pos = {}     # symbol -> shares held at the start of the day (from a settled position report)
         self.mdt_by_sym = {}    # symbol -> IBKR market data type (1 live, 3 delayed...)
         self.account_seen = False
         self.trader = None      # set by run_twiney when order entry is enabled
@@ -443,6 +446,7 @@ class Engine:
     def on_position(self, account, symbol, qty, avg_cost, t):
         with self.lock:
             self.account_seen = True
+            self.pos_t[symbol] = t
             if qty:
                 self.positions[(account, symbol)] = {"account": account, "symbol": symbol,
                                                      "qty": qty, "avg_cost": avg_cost}
@@ -563,44 +567,69 @@ class Engine:
                 old = next((k for k in self.fills if k.rsplit(".", 1)[0] == base), None)
                 if old is not None:
                     f = self.fills.pop(old)
+                    before = dict(f)
                     f.update(exec_id=exec_id, shares=shares, price=price, side=side)
                     self.fills[exec_id] = f
+                    self.fill_t[symbol] = t
                     self._message("warn", f"{symbol}: IBKR corrected execution {old} -> {shares:g} @ {price}", t, symbol)
+                    if self.desk is not None and hasattr(self.desk, "correct_fill"):
+                        self.desk.correct_fill(before, dict(f), t)
                     return
             self._fill_seq = getattr(self, "_fill_seq", 0) + 1
             key = exec_id or f"_local{self._fill_seq}"
             # every fill of the session is kept: the day P&L and the loss lock are built from all of them
             self.fills[key] = {"exec_id": key, "seq": self._fill_seq, "symbol": symbol, "side": side, "shares": shares,
                                "price": price, "time": when, "t": t}
+            self.fill_t[symbol] = t
             if self.desk is not None:
                 self.desk.on_fill(self.fills[key], t)
 
+    def _start_qty(self, sym, net_fills):
+        """Shares held at the start of the day = what the broker says now minus today's fills. Only worked out from a
+        settled report (the position arrived after the last fill); kept once known (it can't change during the day)."""
+        if sym in self.start_pos:
+            return self.start_pos[sym]
+        if sym not in self.pos_t:
+            return 0.0
+        if self.fill_t.get(sym) is not None and self.pos_t[sym] < self.fill_t[sym]:
+            return 0.0                                # the report hasn't caught up with the last fill yet
+        now_q = sum(p["qty"] for (a, s), p in self.positions.items() if s == sym)
+        self.start_pos[sym] = now_q - net_fills
+        return self.start_pos[sym]
+
     def day_pnl(self):
-        """Realized (average-cost, from today's fills) + open P&L, in dollars."""
+        """Today's P&L: realized (average cost over today's fills) + open, less commissions. A position carried in from
+        yesterday counts from yesterday's close, the way a broker's daily P&L does."""
         with self.lock:
-            realized, pos = 0.0, {}
-            for f in sorted(self.fills.values(), key=lambda f: f["seq"]):   # the order they happened in
-                sym, qty, px_ = f["symbol"], f["shares"] * (1 if f["side"] == "BOT" else -1), f["price"]
-                q, cost = pos.get(sym, (0.0, 0.0))
-                if q == 0 or (q > 0) == (qty > 0):
-                    nq = q + qty
-                    cost = (q * cost + qty * px_) / nq if nq else 0.0
-                    q = nq
-                else:
-                    closed = min(abs(q), abs(qty))
-                    realized += closed * (px_ - cost) * (1 if q > 0 else -1)
-                    q += qty
-                    if q == 0:
-                        cost = 0.0
-                    elif (q > 0) == (qty > 0):
-                        cost = px_
-                pos[sym] = (q, cost)
+            fills = sorted(self.fills.values(), key=lambda f: f["seq"])   # the order they happened in
+            syms = {f["symbol"] for f in fills} | {s for (_a, s) in self.positions}
+            realized = open_pnl = 0.0
+            for sym in syms:
+                mine = [f for f in fills if f["symbol"] == sym]
+                net = sum(f["shares"] * (1 if f["side"] == "BOT" else -1) for f in mine)
+                st = self.syms.get(sym)
+                ref = (st.l1.get("close") if st else None) or next(
+                    (p["avg_cost"] for (a, s), p in self.positions.items() if s == sym), 0.0)
+                q = self._start_qty(sym, net)
+                cost = ref if q else 0.0
+                for f in mine:
+                    qty, px_ = f["shares"] * (1 if f["side"] == "BOT" else -1), f["price"]
+                    if q == 0 or (q > 0) == (qty > 0):
+                        nq = q + qty
+                        cost = (q * cost + qty * px_) / nq if nq else 0.0
+                        q = nq
+                    else:
+                        closed = min(abs(q), abs(qty))
+                        realized += closed * (px_ - cost) * (1 if q > 0 else -1)
+                        q += qty
+                        if q == 0:
+                            cost = 0.0
+                        elif (q > 0) == (qty > 0):
+                            cost = px_
+                last = st.price() if st else None
+                if q and last:
+                    open_pnl += (last - cost) * q
             realized -= sum(c for k, c in self.commissions.items() if k in self.fills)
-            open_pnl = 0.0
-            for (a, sym), p in self.positions.items():
-                last = self.syms[sym].price() if sym in self.syms else None
-                if last:
-                    open_pnl += (last - p["avg_cost"]) * p["qty"]
             return {"realized": round(realized, 2), "open": round(open_pnl, 2), "total": round(realized + open_pnl, 2)}
 
     # ---- levels drawn on the chart -------------------------------------------
@@ -791,9 +820,18 @@ class Engine:
         return s.upper() or "CREATED"
 
     def _pending(self, symbol=None):
-        return [o for o in self.orders.values()
-                if o.get("status") not in self.DONE_STATUSES + ("Done",)
-                and (symbol is None or o.get("symbol") == symbol)]
+        with self.lock:          # a copy, taken under the lock: callers on other threads can iterate it safely
+            return [dict(o) for o in self.orders.values()
+                    if o.get("status") not in self.DONE_STATUSES + ("Done",)
+                    and (symbol is None or o.get("symbol") == symbol)]
+
+    def recently_filled(self, symbol, roles, t, within=10.0):
+        """An order of these roles on this symbol filled and the broker hasn't reported the position since (so the
+        position on screen may still include those shares)."""
+        with self.lock:
+            pt = self.pos_t.get(symbol, -1e18)
+            return any(o.get("symbol") == symbol and o.get("role") in roles and o.get("status") == "Filled"
+                       and t - o.get("t", -1e9) < within and o.get("t", -1e9) > pt for o in self.orders.values())
 
     def _position_view(self, symbol, price):
         qty = sum(p["qty"] for (a, s), p in self.positions.items() if s == symbol)
