@@ -502,6 +502,8 @@ class Engine:
                 opt = ("amber", "CONNECTING", "Quant Data: waiting for the first answer")
             elif ok_age > 3 * poll + 5:
                 opt = ("amber", "LATE", f"Quant Data: no answer for {int(ok_age)}s{last}")
+            elif fs["last_print"] is None and fs.get("detail"):
+                opt = ("amber", "NO PRINTS", f"Quant Data: {fs['detail']}")
             else:
                 opt = ("green", "LIVE", f"Quant Data option flow · polled {int(ok_age)}s ago{last}")
         else:

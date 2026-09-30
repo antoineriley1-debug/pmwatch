@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20260930-1512">
+<meta name="build" content="20260930-1628">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -750,6 +750,7 @@ body.resizing .zbody{pointer-events:none}
 #cmd{height:auto;min-height:34px;flex-wrap:wrap;row-gap:3px;padding:4px 10px;overflow:visible;position:relative;z-index:20}
 #cmd .spacer{flex:1 1 0 !important;min-width:4px}
 @media (max-width:1500px){ #brand .long{display:none} #cmd{gap:4px} #cmd button{padding:2px 6px} }
+.cmenu .x{float:right;cursor:pointer;padding:0 4px;color:var(--dim)} .cmenu .x:hover{color:var(--text)}
 
 </style>
 </head>
@@ -1161,7 +1162,12 @@ function wireChart(p, cv, v, saveView, isFoot){
       }
       drawChart(p);
     };
-    const up = () => { cv.classList.remove("pan"); window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); if (moved) saveView(); };
+    const up = ev => { cv.classList.remove("pan"); window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up);
+      if (moved){ saveView(); return; }
+      // a plain click: the LIVE button jumps to the newest candle, the AUTO SCALE tag hands the price scale back
+      const cx = ev.clientX - r.left, cy = ev.clientY - r.top, hit = b => b && cx >= b[0] && cx <= b[0] + b[2] && cy >= b[1] && cy <= b[1] + b[3];
+      if (hit(v.liveBtn)){ v.offset = restOffset(); v.follow = true; v.rightT = null; saveView(); drawChart(p); }
+      else if (hit(v.autoBtn) || (onAxis && v.yLo != null)){ v.yLo = v.yHi = null; v.autoY = null; saveView(); drawChart(p); } };
     window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
   });
   cv.addEventListener("mousemove", e => { const r = cv.getBoundingClientRect(); v.cross = [e.clientX - r.left, e.clientY - r.top];
@@ -1176,7 +1182,27 @@ function wireChart(p, cv, v, saveView, isFoot){
     const tk = pr >= 1 ? 0.01 : 0.0001, price = +(Math.round(pr / tk) * tk).toFixed(4);
     chartMenu(p, v, e.clientX, e.clientY, price);
   });
-  cv.addEventListener("dblclick", () => { v.cw = isFoot ? 64 : 11; v.offset = restOffset(); v.yLo = v.yHi = null; v.follow = true; v.rightT = null; saveView(); drawChart(p); });
+  cv.addEventListener("dblclick", e => {
+    // double-click the price scale: auto scale back. The time axis: bars back to normal width. The chart: everything back, live
+    const r = cv.getBoundingClientRect(), onAxis = (e.clientX - r.left) > r.width - 86, onTime = !onAxis && (e.clientY - r.top) > r.height - 18;
+    if (onAxis){ v.yLo = v.yHi = null; v.autoY = null; }
+    else if (onTime){ v.cw = isFoot ? 64 : 11; }
+    else { v.cw = isFoot ? 64 : 11; v.offset = restOffset(); v.yLo = v.yHi = null; v.autoY = null; v.follow = true; v.rightT = null; }
+    saveView(); drawChart(p); });
+  // keyboard, while the mouse is over the chart: arrows pan a bar (shift: 10), up / down zoom, Home = live edge, End = oldest
+  cv.addEventListener("mouseenter", () => { p._hot = true; }); cv.addEventListener("mouseleave", () => { p._hot = false; });
+  p.chartKey = (e, force) => {
+    if (!p._hot && !force) return false;
+    const step = e.shiftKey ? 10 : 1;
+    if (e.key === "ArrowLeft"){ v.offset = v.offset + step; v.follow = false; v.rightT = null; }
+    else if (e.key === "ArrowRight"){ v.offset = Math.max(minOff(), v.offset - step); v.follow = v.offset < 0.5; v.rightT = null; }
+    else if (e.key === "ArrowUp"){ v.cw = Math.min(isFoot ? 120 : 60, v.cw * 1.2); }
+    else if (e.key === "ArrowDown"){ v.cw = Math.max(isFoot ? 34 : 2, v.cw / 1.2); }
+    else if (e.key === "Home"){ v.offset = restOffset(); v.follow = true; v.rightT = null; }
+    else if (e.key === "End"){ v.offset = 1e9; v.follow = false; v.rightT = null; }
+    else return false;
+    saveView(); drawChart(p); return true;
+  };
 }
 
 // ---------- chart trading: right-click (or hover + B / S) = limit order at that price
@@ -1193,7 +1219,7 @@ function chartMenu(p, v, x, y, price){
   const old = document.getElementById("cmenu"); if (old) old.remove();
   const d = p.data, t = T(), on = canTrade();
   const m = document.createElement("div"); m.id = "cmenu"; m.className = "pop cmenu";
-  m.innerHTML = `<div class="dim" style="font-size:11px;margin-bottom:4px">${esc(d.symbol)} @ <b style="color:var(--gold)">${px(price)}</b></div>
+  m.innerHTML = `<div class="dim" style="font-size:11px;margin-bottom:4px">${esc(d.symbol)} @ <b style="color:var(--gold)">${px(price)}</b><span class="x" title="close (Esc)">✕</span></div>
     <button class="bbuy" data-do="buy" ${on ? "" : "disabled"}>BUY ${sz(t.default_shares)} limit @ ${px(price)}</button>
     <button class="bsell" data-do="sell" ${on ? "" : "disabled"}>SELL ${sz(t.default_shares)} limit @ ${px(price)}</button>
     ${d.position ? `<button class="bflat" data-do="flat" ${on ? "" : "disabled"}>Flatten ${esc(d.symbol)}</button>` : ""}
@@ -1202,6 +1228,7 @@ function chartMenu(p, v, x, y, price){
   m.style.left = Math.min(x, window.innerWidth - 230) + "px"; m.style.top = Math.min(y, window.innerHeight - 160) + "px";
   document.body.appendChild(m);
   m.addEventListener("click", e => {
+    if (e.target.classList.contains("x")){ m.remove(); return; }
     const b = e.target.closest("button[data-do]"); if (!b) return;
     m.remove();
     if (b.dataset.do === "buy") sendOrder(d.symbol, "BUY", price);
@@ -1209,7 +1236,10 @@ function chartMenu(p, v, x, y, price){
     else if (b.dataset.do === "flat") flatten(d.symbol);
     else if (b.dataset.do === "cxl") cancelAll(d.symbol);
   });
-  setTimeout(() => document.addEventListener("mousedown", ev => { if (!m.contains(ev.target)) m.remove(); }, {once: true}), 0);
+  // any click outside closes it (a click inside on a disabled button must not use that up), so does Escape or 20 s
+  const away = ev => { if (!m.isConnected){ document.removeEventListener("mousedown", away, true); return; } if (!m.contains(ev.target)) m.remove(); };
+  setTimeout(() => document.addEventListener("mousedown", away, true), 0);
+  setTimeout(() => { if (m.isConnected) m.remove(); }, 20000);
 }
 function ps60HTML(d){
   const s = d.ps60; if (!s) return "";
@@ -1361,6 +1391,18 @@ function bucketFn(tf){
   return t => { const eo = eoDay(t), local = t + eo, day = Math.floor(local / 86400) * 86400, open = day + 34200;
     return open + Math.floor((local - open) / span) * span - eo; };
 }
+/* time left on the candle being built right now: "0:42" on a 1-minute chart, "1:12:05" on a daily (to the 4 pm
+   New York close; outside the session: "closed"). Weekly / monthly: days left. Replay counts on the replay's clock. */
+function barCloseIn(tf, isDaily){
+  const now = (typeof state !== "undefined" && state && state.replay && state.now) ? state.now : Date.now() / 1000;
+  const fmt = s => { s = Math.max(0, Math.floor(s)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
+    return h ? `${h}:${String(m).padStart(2, "0")}:${String(x).padStart(2, "0")}` : `${m}:${String(x).padStart(2, "0")}`; };
+  if (!isDaily){ const span = tf * 60, b = bucketFn(tf)(now); return fmt(b + span - now); }
+  const eo = eoDay(now), local = now + eo, day = Math.floor(local / 86400) * 86400, open = day + 34200, close = day + 57600;
+  const m = /^(\d*)([DWM])$/.exec(String(tf)); if (m && m[2] !== "D") return null;
+  if (local < open || local >= close) return "closed";
+  return fmt(close - local);
+}
 function aggBars(bars, tf){
   if (tf === 1) return bars.map(b => b.slice());
   const out = [], bucket = bucketFn(tf);
@@ -1422,12 +1464,15 @@ function drawOne(p, cv, v, isFoot){
   if (!bars.length){
     g.fillStyle = "#7d7f85"; g.fillText("NO BARS YET", 12, 40);
   }
-  // y range: bars plus your pivot / 2nd entry / levels so they are always on screen
+  // y range: the candles on screen (like any charting package). Your pivot / 2nd entry / levels join the scale only
+  // while they are near the price - a level far away (a placeholder play, a target a dollar off) never squashes the
+  // candles flat; it shows as a tag at the edge of the price scale instead, and comes into view as price gets close
   let lo = Infinity, hi = -Infinity;
   for (const b of bars){ lo = Math.min(lo, b[3]); hi = Math.max(hi, b[2]); }
   if (d.last){ lo = Math.min(lo, d.last); hi = Math.max(hi, d.last); }
   const core = isFoot ? [] : d.user_levels.filter(l => ["trigger","second_entry","extra"].includes(l.role));
-  for (const l of core){ lo = Math.min(lo, l.price); hi = Math.max(hi, l.price); }
+  const reach = Math.max(hi - lo, (isFinite(lo) ? lo : 0) * 0.004) * 1.5;
+  for (const l of core){ if (l.price >= lo - reach && l.price <= hi + reach){ lo = Math.min(lo, l.price); hi = Math.max(hi, l.price); } }
   // an open position keeps its whole bracket on screen: entry, stop and target
   if (!isFoot && d.position && d.position.qty){
     for (const pr of [d.position.avg_cost].concat((d.orders || []).filter(o => o.role && o.role !== "entry").map(o => o.price)))
@@ -1500,6 +1545,7 @@ function drawOne(p, cv, v, isFoot){
   }
 
   // your levels: band + line + label
+  v.edgeTags = [];
   const tickOf = v => v >= 1 ? 0.01 : 0.0001;
   const exitOrders = (d.orders || []).filter(o => o.role && o.role !== "entry" && o.role !== "flatten" && o.role !== "close");
   const bracketOn = !!(d.position && d.position.qty && exitOrders.length);
@@ -1507,7 +1553,7 @@ function drawOne(p, cv, v, isFoot){
     if (bracketOn && (l.role === "stop" || l.role === "target")) continue;
     const dl = p.dragLevel && p.dragLevel.role === l.role && Math.abs(p.dragLevel.from - l.price) < 1e-6;
     const lp = dl ? p.dragLevel.price : l.price;
-    if (lp < lo || lp > hi) continue;
+    if (lp < lo || lp > hi){ (v.edgeTags = v.edgeTags || []).push([lp > hi, l.label, lp, (LEVEL_STYLE[l.role] || LEVEL_STYLE.extra)[0]]); continue; }
     let [col, dash, lw] = LEVEL_STYLE[l.role] || LEVEL_STYLE.extra;
     if (dan && (l.role === "trigger" || l.role === "extra")) col = C.pivot;
     const yy = y(lp), band = Math.max(3, Math.abs(y(lp + tickOf(lp)) - yy));
@@ -1785,15 +1831,48 @@ function drawOne(p, cv, v, isFoot){
     g.fillStyle = "#0c0c0d"; g.strokeStyle = col; g.fillRect(plotW, yy - 8, labelW, 16); g.strokeRect(plotW + .5, yy - 7.5, labelW - 1, 15);
     g.fillStyle = col; g.fillText((drag ? px(p.dragOrder.price) + " >" : `${o.role === "entry" ? "YOU " + o.action : o.role.toUpperCase()} ${sz(o.qty)}`).slice(0, 13), plotW + 3, yy + 4);
   }
-  // last price
+  // levels that are off the scale: a tag at the top / bottom edge of the price scale, arrow pointing the way
+  if (v.edgeTags && v.edgeTags.length){
+    g.font = "bold 10px ui-monospace, Menlo, Consolas, monospace";
+    let nUp = 0, nDn = 0;
+    for (const [above, label, lp, col] of v.edgeTags.sort((a, b) => b[2] - a[2])){
+      const yy = above ? 8 + 8 + 15 * nUp++ : plotH - 8 - 15 * nDn++;
+      g.fillStyle = col; g.fillRect(plotW + 1, yy - 7, labelW - 2, 14);
+      const _n = parseInt(col.slice(1, 7), 16), _lum = 0.299 * (_n >> 16) + 0.587 * ((_n >> 8) & 255) + 0.114 * (_n & 255);
+      g.fillStyle = _lum > 140 ? "#0c0c0d" : "#ffffff";
+      const _p = px(lp), _room = Math.max(0, 11 - _p.length);
+      g.fillText(`${above ? "▲" : "▼"}${_room ? label.slice(0, _room - 1) + " " : ""}${_p}`, plotW + 3, yy + 4);
+    }
+    g.font = "11px ui-monospace, Menlo, Consolas, monospace";
+  }
+  // last price, and under it the time left on this candle (mm:ss; the daily candle counts to the 4 pm close)
   if (d.last){
     const yy = y(d.last);
     const lastCol = dan ? "#000000" : "#e3a83a";   // the price line: black on the light screens, gold on the desk
     if (!isFoot){ g.strokeStyle = lastCol; g.lineWidth = dan ? 1.6 : 1.4; g.setLineDash([2, 3]); g.beginPath(); g.moveTo(0, yy); g.lineTo(plotW, yy); g.stroke(); g.setLineDash([]); g.lineWidth = 1; }
     g.fillStyle = lastCol; g.fillRect(plotW, yy - 8, labelW, 16);
     g.fillStyle = dan ? "#ffffff" : "#0c0c0d"; g.font = "bold 11px ui-monospace, Menlo, Consolas, monospace"; g.fillText(`LAST ${px(d.last)}`, plotW + 3, yy + 4);
+    const left = barCloseIn(tf, isDaily);
+    if (left != null && !isFoot){
+      g.fillStyle = dan ? "#333333" : "#2c2e33"; g.fillRect(plotW, yy + 9, labelW, 14);
+      g.fillStyle = "#ffffff"; g.font = "bold 10px ui-monospace, Menlo, Consolas, monospace"; g.fillText(left, plotW + 3, yy + 20);
+    }
     g.font = "11px ui-monospace, Menlo, Consolas, monospace";
   }
+  // scrolled back: a LIVE button jumps to the newest candle. Scale pulled by hand: an AUTO tag puts it back
+  v.liveBtn = null; v.autoBtn = null;
+  if (!isFoot && (!v.follow || v.offset > 0.5)){
+    const bw = 52, bh = 16, bx = plotW - bw - 8, by = plotH - bh - 6;
+    g.fillStyle = "#e3a83a"; g.fillRect(bx, by, bw, bh); g.fillStyle = "#0c0c0d"; g.font = "bold 10px ui-monospace, Menlo, Consolas, monospace"; g.fillText("LIVE ▶", bx + 7, by + 12);
+    v.liveBtn = [bx, by, bw, bh];
+  }
+  if (!isFoot && v.yLo != null){
+    const bw = labelW - 4, bh = 14, bx = plotW + 2, by = plotH - bh - 2;
+    g.fillStyle = "#26282c"; g.fillRect(bx, by, bw, bh); g.strokeStyle = "#7d7f85"; g.strokeRect(bx + .5, by + .5, bw - 1, bh - 1);
+    g.fillStyle = "#d6d6d3"; g.font = "bold 10px ui-monospace, Menlo, Consolas, monospace"; g.fillText("AUTO SCALE", bx + 6, by + 11);
+    v.autoBtn = [bx, by, bw, bh];
+  }
+  g.font = "11px ui-monospace, Menlo, Consolas, monospace";
   // time axis
   g.fillStyle = C.text;
   const every = Math.max(1, Math.ceil(70 / cw));
@@ -3201,6 +3280,10 @@ document.addEventListener("keydown", e => {
   if (!e.target.matches("input, select, textarea") && chartTypeKey(e)) return;
   if (e.target.matches("input, select, textarea")) return;
   if (runHotkey(e)) return;
+  // chart navigation keys: the chart under the mouse; with none hovered, the main chart (not while a replay is on, where
+  // the arrows are the replay speed)
+  const hot = Object.values(charts).find(x => x._hot && x.chartKey) || (!(state && state.replay) && charts.chart && charts.chart.chartKey && charts.chart.el.offsetParent !== null ? charts.chart : null);
+  if (hot && hot.chartKey(e, hot === charts.chart)){ e.preventDefault(); return; }
   const c = charts.chart;
   if (e.key === "/"){ e.preventDefault(); document.getElementById("symIn").focus(); }
   else if (e.key === "j" || e.key === "J"){ e.preventDefault(); showPanel("journal"); const j = document.getElementById("jText"); if (j) j.focus(); }

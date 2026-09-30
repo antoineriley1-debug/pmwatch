@@ -1,4 +1,5 @@
 import io
+import time
 import json
 import os
 import unittest
@@ -85,3 +86,40 @@ class QuantDataRequestTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class QuantDataShapeTests(unittest.TestCase):
+    """The vendor's answer, whatever shape it takes: camelCase fields, nested objects, the list buried deep."""
+
+    def test_camel_case_and_nested_fields_read(self):
+        from twiney.flow import normalize
+        rec = {"underlyingSymbol": "NVDA", "strikePrice": "130", "optionType": "Call", "expirationDate": "2026-10-16",
+               "tradeSize": 250, "tradePrice": 4.2, "totalPremium": 105000, "underlyingPrice": 128.4,
+               "aggressorSide": "ABOVE_ASK", "tradeType": "SWEEP", "executedAt": "2026-09-30T14:31:05Z", "tradeId": "abc"}
+        p = normalize(rec, 1_790_000_000)
+        self.assertEqual((p["symbol"], p["strike"], p["cp"], p["size"], p["premium"], p["side"], p["kind"], p["vid"]),
+                         ("NVDA", 130.0, "C", 250, 105000, "ask", "sweep", "abc"))
+        nested = {"underlying": {"symbol": "AMD", "price": 158.7}, "option": {"strike": 160, "type": "P", "expiry": "2026-10-09"},
+                  "size": 100, "price": 3.0, "side": "bid", "time": 1_790_000_000}
+        q = normalize(nested, 1_790_000_000)
+        self.assertEqual((q["symbol"], q["strike"], q["cp"], q["spot"], q["premium"], q["side"]), ("AMD", 160.0, "P", 158.7, 30000.0, "bid"))
+
+    def test_print_list_found_wherever_it_is(self):
+        recs = [{"ticker": "NVDA", "strike": 130, "type": "C", "size": 1}]
+        for payload in ({"data": recs}, {"result": {"trades": recs}}, {"success": True, "payload": {"page": {"rows": recs}}}, recs):
+            self.assertEqual(QuantDataFeed._records(payload), recs)
+        self.assertEqual(QuantDataFeed._records({"ok": True, "count": 0}), [])
+
+    def test_unreadable_answer_is_said_on_the_light(self):
+        c = cfg(); c["quantdata"].update(api_key="qd_test_key_not_real")
+        ps = load_plays(PLAYS); e = Engine(ps, c, None); f = QuantDataFeed(e, c, [p["symbol"] for p in ps])
+        e.flow_status.update(source="quantdata", state="connecting", detail="")      # as start() sets it, without the thread
+        payload = {"status": "ok", "result": [{"foo": 1, "bar": 2}, {"foo": 3, "bar": 4}]}
+        with mock.patch.object(urllib.request, "urlopen", lambda req, timeout=10: _Resp(json.dumps(payload).encode())):
+            with mock.patch.object(f, "_write_sample"):
+                self.assertEqual(f.poll(), 0)
+        opt = e._feeds(time.time())["options"]
+        self.assertEqual(opt["color"], "amber")
+        self.assertEqual(opt["label"], "NO PRINTS")
+        self.assertIn("foo, bar", opt["detail"])
+        self.assertIn("quantdata_sample.json", opt["detail"])

@@ -37,10 +37,48 @@ _ALIASES = {
 }
 
 
+def _flat(rec):
+    """The record's fields by a loose name: case and underscores ignored (strikePrice = strike_price = STRIKE),
+    one level of nesting opened up (option: {strike: ..}, underlying: {symbol: ..}). Cached on the record."""
+    m = rec.get("__flat__") if isinstance(rec, dict) else None
+    if m is not None:
+        return m
+    m = {}
+    norm = lambda k: str(k).lower().replace("_", "").replace("-", "")
+    for k, v in rec.items():                    # the record's own fields first: they win over a nested object's
+        if not isinstance(v, dict):
+            m.setdefault(norm(k), v)
+    for k, v in rec.items():
+        if isinstance(v, dict):
+            for k2, v2 in v.items():
+                m.setdefault(norm(k2), v2)
+                m.setdefault(norm(k) + "." + norm(k2), v2)
+    try:
+        rec["__flat__"] = m
+    except Exception:
+        pass
+    return m
+
+
+_ALIASES = {k: tuple(a.lower().replace("_", "") for a in v) for k, v in _ALIASES.items()}
+_ALIASES["ticker"] += ("underlyingsymbol", "underlyingticker", "stock", "tickersymbol", "underlying.symbol", "underlying.ticker")
+_ALIASES["strike"] += ("strikeprice", "option.strike", "contract.strike")
+_ALIASES["cp"] += ("optiontype", "putcall", "callput", "contracttype", "option.type", "contract.type", "option.putcall")
+_ALIASES["premium"] += ("totalpremium", "premiumtotal", "dollarvalue", "cost")
+_ALIASES["size"] += ("contracts", "tradesize", "totalsize", "quantity", "vol")
+_ALIASES["price"] += ("optionprice", "tradeprice", "fillprice", "avgprice", "averageprice")
+_ALIASES["spot"] += ("underlyingprice", "stockprice", "spotprice", "underlyinglast", "underlying.price", "underlying.last")
+_ALIASES["side"] += ("aggressorside", "tradeside", "sideofmarket", "bidask", "sentiment", "execution")
+_ALIASES["expiry"] += ("expirationdate", "expirydate", "option.expiry", "option.expiration", "contract.expiry")
+_ALIASES["t"] += ("executedat", "tradetime", "datetime", "createdat", "time", "timestamp", "tradedate", "printtime", "executiontime")
+_ALIASES["id"] += ("tradeid", "printid", "flowid", "uid")
+
+
 def _pick(rec, key):
+    m = _flat(rec)
     for k in _ALIASES[key]:
-        if k in rec and rec[k] not in (None, ""):
-            return rec[k]
+        if k in m and m[k] not in (None, ""):
+            return m[k]
     return None
 
 
@@ -132,8 +170,9 @@ def normalize(rec, now=None):
     ticker = _pick(rec, "ticker")
     strike = _num(_pick(rec, "strike"))
     cp = ""
+    m = _flat(rec)
     for k in _ALIASES["cp"]:              # "type" can mean SWEEP / BLOCK: take the first field that says call or put
-        v = str(rec.get(k) or "").strip().upper()
+        v = str(m.get(k) or "").strip().upper()
         if v in ("C", "P", "CALL", "PUT", "CALLS", "PUTS"):
             cp = v[0]
             break
@@ -323,36 +362,42 @@ class QuantDataFeed:
             raise RuntimeError(f"HTTP {exc.code}{' (' + why + ')' if why else ''}{': ' + said if said else ''}") from None
 
     @staticmethod
-    def _records(payload):
+    def _records(payload, depth=0):
+        """The list of prints inside the answer, wherever the vendor put it: the biggest list of records
+        found within a few levels (data / results / result.trades / ...)."""
         if isinstance(payload, list):
-            return payload
-        if isinstance(payload, dict):
-            for k in ("data", "results", "items", "flow", "trades", "alerts", "records"):
-                v = payload.get(k)
-                if isinstance(v, list):
-                    return v
-                if isinstance(v, dict):
-                    inner = QuantDataFeed._records(v)
-                    if inner:
-                        return inner
-        return []
+            return payload if all(isinstance(x, dict) for x in payload[:5]) else []
+        best = []
+        if isinstance(payload, dict) and depth < 4:
+            for v in payload.values():
+                if isinstance(v, (list, dict)):
+                    inner = QuantDataFeed._records(v, depth + 1)
+                    if len(inner) > len(best):
+                        best = inner
+        return best
+
+    def _write_sample(self, payload):
+        """What Quant Data actually sends, for reading their field names: recordings/quantdata_sample.json
+        (the answer only, never the key). Kept fresh until a print has been read."""
+        try:
+            import os
+            path = os.path.join(self.engine.cfg["recording"]["dir"], "quantdata_sample.json")
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump({"request": self._body(), "response": payload}, fh, indent=1, default=str)
+        except Exception:
+            pass
 
     def poll(self):
         payload = self._request()
         self.engine.flow_status.update(state="ok", detail="", last_ok=time.time())
-        if not self.sample_written:
+        recs = self._records(payload)
+        if not self.sample_written or (self.engine.flow_status.get("last_print") is None):
             self.sample_written = True
-            try:
-                import os
-                path = os.path.join(self.engine.cfg["recording"]["dir"], "quantdata_sample.json")
-                os.makedirs(os.path.dirname(path), exist_ok=True)
-                with open(path, "w", encoding="utf-8") as fh:
-                    json.dump(payload, fh, indent=1)
-            except Exception:
-                pass
+            self._write_sample(payload)
         now = time.time()
         n = 0
-        for rec in reversed(self._records(payload)):          # oldest first
+        for rec in reversed(recs):          # oldest first
             p = normalize(rec, now)
             if p is None:
                 continue
@@ -372,6 +417,18 @@ class QuantDataFeed:
             self.seen.append(key); self.seen_set.add(key)
             self.engine.on_flow(p, now)
             n += 1
+        if n == 0 and self.engine.flow_status.get("last_print") is None:
+            # answered, but nothing readable: say what came back so the field names can be matched
+            if recs:
+                keys = ", ".join(str(k) for k in list(recs[0])[:10] if not str(k).startswith("__"))
+                why = f"{len(recs)} records, none readable as an option print - fields: {keys}"
+            else:
+                keys = ", ".join(str(k) for k in list(payload)[:8]) if isinstance(payload, dict) else type(payload).__name__
+                why = f"no print list in the answer - top-level: {keys}"
+            self.engine.flow_status.update(detail=why + " (see recordings/quantdata_sample.json)")
+            if not getattr(self, "_said_unreadable", False):
+                self._said_unreadable = True
+                self.engine._message("warn", "Quant Data answered but TED could not read any print: " + why, now)
         return n
 
 
