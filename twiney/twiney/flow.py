@@ -316,6 +316,58 @@ class FlowBook:
         return {"calls": round(calls), "puts": round(puts), "bias": bias, "prints": len(prints),
                 "unusual": sorted(flags, key=lambda u: -u["t"])[:2], "minutes": minutes}
 
+    def knows(self, symbol, cp, now, index=False):
+        """SOMEBODY KNOWS: short-dated, out-of-the-money contracts of one side (C or P) getting bought at the ask
+        inside the urgency window. Dan's tell when a pivot triggers: conviction that the move is wanted NOW.
+
+        Returns {"dollars", "prints", "sweeps", "against", "score", "knows", "top"}:
+        - dollars / prints / sweeps: premium bought at the ask on ``cp`` that is <= urgency_max_dte days out and
+          >= urgency_min_otm_pct out of the money, inside urgency_window_minutes
+        - against: the same measure for the other side
+        - score 0..1: dollars against the urgency minimum (1 = twice the minimum), cut in half when the other
+          side has more
+        - knows: the minimum is met and this side outweighs the other
+        - top: the strike carrying the most of it (strike, dte, dollars, prints)
+        """
+        c = self.cfg
+        win = c.get("urgency_window_minutes", 10)
+        max_dte = c.get("urgency_max_dte", 7)
+        min_otm = c.get("urgency_min_otm_pct", 0.5)
+        need = c.get("index_min_premium", 5e6) if index else c.get("urgency_min_dollars", 250000)
+        prints = self._window(symbol, now, win)
+
+        def side_sum(side_cp):
+            dollars = 0.0
+            n = sw = 0
+            by_strike = {}
+            for p in prints:
+                if p["cp"] != side_cp or p["side"] != "ask":
+                    continue
+                if p.get("dte") is None or p["dte"] > max_dte:
+                    continue
+                if p.get("otm_pct") is None or p["otm_pct"] < min_otm:
+                    continue
+                prem = p.get("premium") or 0.0
+                dollars += prem
+                n += 1
+                sw += 1 if p.get("kind") in ("sweep", "block") else 0
+                row = by_strike.setdefault(p["strike"], [0.0, 0, p.get("dte")])
+                row[0] += prem; row[1] += 1
+            return dollars, n, sw, by_strike
+
+        dollars, n, sw, by_strike = side_sum(cp)
+        against, _n2, _s2, _b2 = side_sum("P" if cp == "C" else "C")
+        score = min(1.0, dollars / (2.0 * need)) if need > 0 else 0.0
+        if against > dollars:
+            score *= 0.5
+        top = None
+        if by_strike:
+            k = max(by_strike, key=lambda k: by_strike[k][0])
+            top = {"strike": k, "dte": by_strike[k][2], "dollars": round(by_strike[k][0]), "prints": by_strike[k][1]}
+        return {"dollars": round(dollars), "prints": n, "sweeps": sw, "against": round(against),
+                "score": round(score, 3), "knows": dollars >= need and dollars > against, "top": top,
+                "window_minutes": win, "max_dte": max_dte}
+
     def context_text(self, symbol, now):
         s = self.summary(symbol, now)
         if not s["prints"]:

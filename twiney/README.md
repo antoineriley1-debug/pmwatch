@@ -235,6 +235,45 @@ off the candles you see. Settings live in `config.json → ps60`.
 - **Reloaders:** the nearest confirmed or likely reload buyers below and sellers above the market are listed in the
   story ("Reloaders — below: BUYER 240.13 ×2 …") and marked on the chart's left edge (B×n / S×n).
 
+## Conviction: is he still there? (v3.2)
+A proven reloader used to stay lit until the desk called him cleaned up or pulled. The shape told you someone WAS
+there; it did not tell you whether he still is. Now every proven level carries a **conviction** (0..1) and a word for
+where he stands, in Dan's language, and the ladder row's brightness IS that conviction:
+
+| Word | Meaning | On the ladder |
+|---|---|---|
+| **RELOADING** | size came back after getting hit; little has traded through since | bright, breathing glow |
+| **STILL THERE** | he's still there but hasn't reloaded in a bit | steady, dimmer |
+| **NOT RELOADING** | more has traded through than he was putting back, or untested too long | dim; don't lean on him |
+| **CLEANED UP** | price came back and the level didn't hold | a dashed **C** for `gone_show_seconds` |
+| **PULLED** | the size left without getting hit | a dashed **P** for `gone_show_seconds` |
+
+Volume does the work, not the clock: shares that hit the level since his last reload are measured against the most he
+ever let trade before putting it back (never less than his biggest showing), times `stale_multiple` (1.5). Time is a
+slow second bleed to `stale_seconds` (40 min); while size is still showing it never takes the reading under half on
+its own. A reload snaps conviction back to 1. Price trading through with nothing there is CLEANED UP at once, no decay.
+
+- **The long memory.** A row where a proven reloader absorbed real size earlier today keeps a dashed **A** mark for the
+  rest of the session (Ac = then cleared out, Ap = then pulled), even hours later, even after the tracker is gone.
+- **REAL or FAKE size.** For every price on the ladder: of the size that has LEFT that price, how much traded and how
+  much simply vanished. A thin line under the size: green = REAL (it gets filled), gold = MIXED, red = FAKE (it gets
+  pulled before it trades). Hover for the numbers. Inferred from size changes between settled book reads (once a tick),
+  minus what printed there in between; a drop that comes straight back inside `requote_seconds` is one venue re-quoting,
+  not a pull. IBKR gives displayed size, not order IDs, so read it as a tilt, not a measurement. `config.json → ladder`.
+- **Rotation leans toward a live reloader.** A symbol whose best level is RELOADING or STILL THERE is never rotated out (its
+  conviction only keeps moving while the desk can see its book), and for slot allocation its distance to its pivot is
+  cut by `depth.conviction_weight` × conviction. The watchlist's own ranking stays distance-only so the order you read
+  never jumps.
+- The RELOAD panel shows CONVICTION (bar + the word), SINCE RELOAD (how long, and how much traded through not put
+  back), and SIZE HERE (REAL / MIXED / FAKE) for every proven level.
+- **SOMEBODY KNOWS (⚡).** Dan's tell when a pivot triggers: short-dated, out-of-the-money options getting bought at
+  the ask, in the direction of the level. A reload BUYER is confirmed by calls, a reload SELLER by puts, inside the
+  urgency window (`flow.urgency_window_minutes`, `urgency_max_dte`, `urgency_min_otm_pct`, `urgency_min_dollars`).
+  A gold ⚡ beside the R tag (or beside your pivot's price while it is still building) means the flow agrees; hover
+  it for the strike, days out, dollars, prints and sweeps. The RELOAD panel carries the same line. When the other
+  side has more premium the score is halved and it never reads as KNOWS. Rotation leans toward it too
+  (`depth.flow_weight`).
+
 ## Vocabulary (exact rules, all in `config.json → reload`)
 | Call | Evidence required |
 |---|---|

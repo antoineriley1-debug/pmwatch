@@ -36,6 +36,12 @@ DEFAULTS = {
         "min_hold_seconds": 20.0,
         # after IBKR rejects a depth request (e.g. error 309) skip the symbol this long
         "reject_cooldown_seconds": 30.0,
+        # rotation leans toward symbols with a live reloader: a symbol's distance is cut by this fraction x its best
+        # level's conviction (0 = distance only, 0.5 = a fully ACTIVE reloader reads as half as far away)
+        "conviction_weight": 0.5,
+        # ...and toward a symbol where SOMEBODY KNOWS (short-dated out-of-the-money flow at the ask): distance cut by this
+        # fraction x the flow score
+        "flow_weight": 0.3,
     },
     "reload": {
         # PS60 level matching band, in ticks either side of the level
@@ -68,6 +74,18 @@ DEFAULTS = {
         "max_auto_levels": 6,
         "auto_min_display_shares": 2000,
         "auto_idle_seconds": 90.0,
+        # CONVICTION: how much to trust a proven reloader is still there. Volume does the work: once this many times
+        # what he was putting back per reload has traded through with nothing replacing it, he reads NOT RELOADING
+        "stale_multiple": 1.5,
+        # time is the slow second bleed: untested this long, a proven level reads NOT RELOADING on its own (seconds)
+        "stale_seconds": 2400.0,
+        # conviction at or above this = RELOADING (bright on the ladder)
+        "active_floor": 0.75,
+        # conviction at or above this = STILL THERE; under it = NOT RELOADING (dim)
+        "fading_floor": 0.25,
+        # after a proven level is lost (cleaned up, pulled, or price went through with nothing there) the row keeps
+        # a faint "was here" mark this long (seconds)
+        "gone_show_seconds": 7200.0,
     },
     "tape": {
         "window_seconds": 30.0,
@@ -222,6 +240,13 @@ DEFAULTS = {
         "flow_repeat_prints": 2,
         "flow_repeat_minutes": 30,
         "flow_repeat_cooldown_minutes": 15,
+        # REAL or FAKE size: of the size that left a price, how much traded vs vanished. A drop that comes straight
+        # back inside this many seconds is one venue re-quoting, not a pull
+        "requote_seconds": 1.0,
+        # the ladder only shows REAL / MIXED / FAKE at a price once this many shares have left it
+        "real_min_shares": 2000,
+        # how long a price keeps its REAL / FAKE record after the last change (seconds)
+        "real_memory_seconds": 3600.0,
     },
     "recording": {
         "enabled": True,

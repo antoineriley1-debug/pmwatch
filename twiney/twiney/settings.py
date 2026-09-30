@@ -75,6 +75,11 @@ LABELS = {
     "flow_index_min_premium": "…index products ($)", "flow_window_minutes": "Ladder flow marks stay (min)",
     "flow_short_dte": "Short-dated = days to expiry ≤", "flow_repeat_prints": "Repeat = prints on one strike",
     "flow_repeat_minutes": "…inside (min)", "flow_repeat_cooldown_minutes": "Repeat call cooldown (min)",
+    "stale_seconds": "NOT RELOADING on time alone (s)",
+    "stale_multiple": "NOT RELOADING = traded through × what he puts back per reload",
+    "active_floor": "RELOADING at conviction ≥", "fading_floor": "STILL THERE at conviction ≥ (NOT RELOADING under)", "gone_show_seconds": "CLEANED UP / PULLED mark stays (s)",
+    "requote_seconds": "Re-quote window (s)", "real_min_shares": "REAL / FAKE needs shares left", "real_memory_seconds": "REAL / FAKE memory (s)",
+    "conviction_weight": "Rotation: pull a live reloader closer (0-1)", "flow_weight": "Rotation: pull SOMEBODY KNOWS flow closer (0-1)",
 }
 
 

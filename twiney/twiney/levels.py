@@ -22,6 +22,7 @@ as INCONCLUSIVE. Nothing here attributes liquidity to a single participant.
 from collections import deque
 
 from .book import ASK, BID
+from .conviction import ACTIVE, FADING, GONE, PULLED_STAGE, STALE
 from .prices import price_key, tick_size
 from .tape import BUY, SELL
 
@@ -57,6 +58,11 @@ class LevelTracker:
         # or an inconclusive "gone" call, does not un-prove it.
         self.proven = False
         self.proven_refills = 0
+        # conviction: how much to trust that a proven reloader is still there (see conviction.py)
+        self.last_refill_t = None    # when size last came back after being hit (or when the reload was confirmed)
+        self.refill_basis = 0.0      # the most that traded through before he replaced it: what he absorbs per refill
+        self.vol_since_refill = 0.0  # shares that hit this side at the level since then: what he has NOT replaced
+        self.gone_t = None           # when a proven level was finally lost (through with nothing there, or a verdict)
         self._reset_episode()
 
     def _reset_episode(self):
@@ -130,7 +136,10 @@ class LevelTracker:
                 self.refresh_times.append(now)
                 if self.proven:
                     self.proven_refills += 1
+                self.last_refill_t = now
+                self.refill_basis = max(self.refill_basis, self.exec_since_refresh)
                 self.exec_since_refresh = 0.0
+                self.vol_since_refill = 0.0
             if displayed != prev:
                 self.last_change_t = now
             self.displayed = displayed
@@ -178,6 +187,7 @@ class LevelTracker:
             self.last_through = now
             if self.proven and self.state not in (RELOAD, GONE_PENDING) and self.displayed <= 0:
                 self.proven = False           # price went through a proven level that is no longer defended
+                self.gone_t = now
             return self.evaluate(now, book) if self.state == GONE_PENDING else None
         if not self.matches(price):
             return None
@@ -192,6 +202,7 @@ class LevelTracker:
         self._psum += size
         self.absorbed_total += size
         self.exec_since_refresh += size
+        self.vol_since_refill += size
         return self.evaluate(now, book)
 
     def on_resync(self):
@@ -220,6 +231,10 @@ class LevelTracker:
                 self.state = RELOAD
                 self.confirmed_at = now
                 self.proven = True
+                self.gone_t = None
+                # the print that confirmed him is evidence FOR him, not size he failed to replace: start fresh here
+                self.last_refill_t = now
+                self.vol_since_refill = 0.0
                 self.proven_refills = self.refreshes_window(now)
                 return reload_label(self.side)
             return None
@@ -251,10 +266,50 @@ class LevelTracker:
         self.last_verdict = (label, now)
         if label in (CLEANED_UP, PULLED):
             self.proven = False
+            self.gone_t = now
         self.verdict_info = {"absorbed": self.absorbed_total, "size_before_gone": self.size_before_gone,
                              "refreshes": self.refreshes_window(now)}
         self._reset_episode()
         return label
+
+    # ---- conviction ----------------------------------------------------------
+
+    def conviction(self, now):
+        """0..1: how much to trust that a proven reloader is still there.
+
+        Volume carries the weight: shares that traded through since his last refill, against the most he ever
+        let trade before replacing it (never less than his biggest showing), scaled by ``stale_multiple``.
+        Time is a slow second bleed to ``stale_seconds``; while size is still showing it never takes the
+        reading under half on its own. Not proven = 0.
+        """
+        if not self.proven:
+            return 0.0
+        c = self.cfg
+        ref = self.last_refill_t if self.last_refill_t is not None else self.confirmed_at
+        if ref is None:
+            return 0.0
+        basis = max(self.refill_basis, self.peak_displayed, float(c["min_absorbed_shares"])) * float(c.get("stale_multiple", 1.5))
+        conv_v = max(0.0, 1.0 - self.vol_since_refill / basis) if basis > 0 else 1.0
+        stale = float(c.get("stale_seconds", 2400.0))
+        conv_t = max(0.0, 1.0 - (now - ref) / stale) if stale > 0 else 1.0
+        if self.displayed > 0:
+            conv_t = max(conv_t, 0.5)
+        return round(max(0.0, min(1.0, min(conv_v, conv_t))), 3)
+
+    def stage(self, now):
+        """RELOADING / STILL THERE / NOT RELOADING for a proven level; CLEANED UP or PULLED for a while after it
+        is lost; else None. Dan's words: the desk never says fading, stale or gone."""
+        c = self.cfg
+        if self.proven:
+            cv = self.conviction(now)
+            if cv >= float(c.get("active_floor", 0.75)):
+                return ACTIVE
+            if cv >= float(c.get("fading_floor", 0.25)):
+                return FADING
+            return STALE
+        if self.gone_t is not None and now - self.gone_t <= float(c.get("gone_show_seconds", 7200.0)):
+            return PULLED_STAGE if self.last_verdict and self.last_verdict[0] == PULLED else GONE
+        return None
 
     def _display_state(self, now):
         if self.state == BUILDING and not self.absorbed_window(now):
@@ -276,6 +331,10 @@ class LevelTracker:
             "refreshes": self.refreshes_window(now),
             "out_of_view": self.out_of_view,
             "proven": self.proven,
+            "conviction": self.conviction(now),
+            "stage": self.stage(now),
+            "since_refill": round(self.vol_since_refill) if self.proven else 0,
+            "refill_age": round(now - self.last_refill_t, 1) if self.proven and self.last_refill_t is not None else None,
             # a verdict is history the moment size is sitting at the level again
             "last_verdict": self.last_verdict[0] if self.last_verdict and self.displayed <= 0 else None,
             "last_verdict_age": round(now - self.last_verdict[1], 1) if self.last_verdict and self.displayed <= 0 else None,

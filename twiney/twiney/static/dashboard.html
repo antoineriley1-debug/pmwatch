@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20260930-1803">
+<meta name="build" content="20260930-2015">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -221,14 +221,31 @@ td.bars.l .bar-n{float:right;margin-right:3px} td.bars.r .bar-n{margin-left:3px}
 .who{display:inline-block;font-size:9.5px;font-weight:800;padding:0 4px;border-radius:3px;margin:0 2px}
 .who.buyer{background:var(--buy);color:#04210f} .who.seller{background:var(--sell);color:#2a0409}
 .who.big{font-size:10px;padding:0 3px;box-shadow:0 0 6px currentColor}
-.lad tr.rl-ask td{background:rgba(255,77,94,.16)} .lad tr.rl-bid td{background:rgba(38,208,124,.16)}
+/* a proven row's brightness IS its conviction (--cv 0..1): ACTIVE bright and breathing, FADING steady, STALE dim */
+.lad tr.rl-ask td{background:rgba(255,77,94,calc(.04 + .16 * var(--cv,1)))} .lad tr.rl-bid td{background:rgba(38,208,124,calc(.04 + .16 * var(--cv,1)))}
 .lad tr.rl-ask td.px{color:var(--sell);font-weight:800} .lad tr.rl-bid td.px{color:var(--buy);font-weight:800}
+.lad tr.cv-stale td.px{opacity:.55} .lad tr.cv-fading td.px{opacity:.8}
+.who.fading{opacity:.78;box-shadow:none} .who.stale{opacity:.45;box-shadow:none}
+.who.gone,.who.was{background:none;border:1px dashed var(--dim);color:var(--dim);box-shadow:none;font-weight:600}
+/* REAL / MIXED / FAKE: of the size that has left this price, how much traded vs vanished (a thin line under the size) */
+.lad td.sz.rf-REAL .szn{box-shadow:inset 0 -2px 0 rgba(38,208,124,.85)} .lad td.sz.rf-MIXED .szn{box-shadow:inset 0 -2px 0 rgba(227,168,58,.85)} .lad td.sz.rf-FAKE .szn{box-shadow:inset 0 -2px 0 rgba(255,77,94,.9)}
+.lad td.sz.rf-FAKE .szn{text-decoration:line-through;text-decoration-color:rgba(255,77,94,.7);text-decoration-thickness:1px}
+.cvbar{display:inline-block;width:46px;height:6px;border:1px solid var(--line);border-radius:3px;vertical-align:middle;margin-left:6px;position:relative;overflow:hidden}
+.cvbar i{position:absolute;left:0;top:0;bottom:0;background:var(--gold)} .rl.buyer .cvbar i{background:var(--buy)} .rl.seller .cvbar i{background:var(--sell)}
+.rl .stg{font:700 9.5px var(--sans);letter-spacing:.12em;padding:0 5px;border-radius:3px;margin-left:6px;vertical-align:middle}
+.rl .stg.active{background:var(--gold);color:#0c0c0d} .rl .stg.fading{background:#3a2a10;color:var(--gold);border:1px solid var(--gold)} .rl .stg.stale{background:#26282c;color:var(--dim);border:1px solid var(--line)} .rl .stg.gone{background:none;color:var(--dim);border:1px dashed var(--dim)}
+.knows{display:inline-block;font:800 9px var(--sans);letter-spacing:.08em;padding:0 3px;border-radius:3px;margin-left:2px;background:var(--gold);color:#0c0c0d;vertical-align:middle}
+.knows.some{background:none;color:var(--gold);border:1px solid var(--gold);opacity:.75}
+.lad tr.knows-row td.px{box-shadow:inset 0 0 0 1px var(--gold)}
+.rl .knowsline{grid-column:1/3;font:600 10.5px var(--sans);color:var(--gold);border-top:1px dashed rgba(227,168,58,.35);padding-top:3px;margin-top:2px;white-space:normal;line-height:1.35}
+.rl .knowsline.some{color:var(--dim)}
+.rf{font:700 9px var(--sans);letter-spacing:.1em;padding:0 4px;border-radius:3px} .rf.REAL{color:var(--buy);border:1px solid var(--buy)} .rf.MIXED{color:var(--gold);border:1px solid var(--gold)} .rf.FAKE{color:var(--sell);border:1px solid var(--sell)}
 .who.buyer.cand{color:var(--buy)} .who.seller.cand{color:var(--sell)}
 .who.v{background:var(--violet);color:#150a2a} .who.c{background:var(--gold);color:#1a1300}
 @keyframes glowb{0%,100%{box-shadow:inset 0 0 0 1px rgba(38,208,124,.4)}50%{box-shadow:inset 0 0 12px 2px rgba(38,208,124,.9)}}
 @keyframes glowa{0%,100%{box-shadow:inset 0 0 0 1px rgba(255,77,94,.4)}50%{box-shadow:inset 0 0 12px 2px rgba(255,77,94,.9)}}
-.lad tr.rl-bid td{animation:glowb 1.6s infinite}
-.lad tr.rl-ask td{animation:glowa 1.6s infinite}
+.lad tr.rl-bid.cv-active td{animation:glowb 1.6s infinite}
+.lad tr.rl-ask.cv-active td{animation:glowa 1.6s infinite}
 th{position:relative}
 th .colgrip{position:absolute;right:-3px;top:0;bottom:0;width:7px;cursor:col-resize;z-index:2}
 th .colgrip:hover{background:rgba(227,168,58,.4)}
@@ -487,6 +504,9 @@ td.bars.l .bar-n{margin-right:1px} td.bars.r .bar-n{margin-left:1px}
 .fl.ur .bar{flex:1;height:6px;background:#263043;border-radius:3px;overflow:hidden;margin-left:8px} .fl.ur .bar i{display:block;height:100%;background:var(--gold)}
 .fl.ur.p .bar i{background:#d64541} .fl.ur.hot{box-shadow:inset 3px 0 0 var(--gold)}
 .lad .fm em.urg{font-style:normal;color:var(--gold);margin-right:1px}
+/* the tag column holds R16 and a ghost C / P / A: compact, never clipped; the SOMEBODY KNOWS bolt beside it only when the ladder is wide (the gold price outline says it otherwise) */
+.lad td.whoc .who.big{font-size:9.5px;padding:0 2px;letter-spacing:0} .lad td.whoc .who.gone,.lad td.whoc .who.was{padding:0 3px}
+.lad:not(.flowcol) td.whoc .knows{display:none}
 
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
@@ -1038,12 +1058,16 @@ function makeColsResizable(table){
     }
     const tot = w.reduce((a, x, i) => a + (vis(i) ? x : 0), 0) || 1;
     const floor = MIN.reduce((a, m, i) => a + (vis(i) ? m : 0), 0);
-    if (!floor){ [...cg.children].forEach((c, i) => { c.style.width = vis(i) ? (100 * w[i] / tot).toFixed(3) + "%" : "0px"; }); return; }
+    // a hidden column (display:none) takes no place in the table grid, so the <col>s line up with the VISIBLE columns in
+    // order: the j-th col is the j-th visible column; the cols left over are parked at 0
+    const shown = [...Array(n).keys()].filter(vis), cols = [...cg.children];
+    const set = widths => { shown.forEach((i, j) => { cols[j].style.width = widths(i); }); for (let j = shown.length; j < n; j++) cols[j].style.width = "0px"; };
+    if (!floor){ set(i => (100 * w[i] / tot).toFixed(3) + "%"); return; }
     // floors first, then the spare width by weight; narrower than the floors: the table keeps them and scrolls
     const avail = (table.parentElement && table.parentElement.clientWidth) || table.offsetWidth || floor;
     table.style.minWidth = floor + "px";
     const tw = Math.max(avail, floor), extra = tw - floor;
-    [...cg.children].forEach((c, i) => { c.style.width = vis(i) ? ((MIN[i] + extra * w[i] / tot) / tw * 100).toFixed(3) + "%" : "0px"; });
+    set(i => ((MIN[i] + extra * w[i] / tot) / tw * 100).toFixed(3) + "%");
   };
   apply();
   if (MIN.some(m => m) && window.ResizeObserver && table.parentElement){ const ro = new ResizeObserver(() => { if (!table.isConnected){ ro.disconnect(); return; } apply(); }); ro.observe(table.parentElement); }
@@ -1306,13 +1330,30 @@ function pips(n, cls){
   return `<span class="pips ${cls}" title="size came back ${n}x after being hit">↻${n}</span>`;
 }
 
+function realWords(rf){
+  if (!rf) return "";
+  return `of the ${sz(rf.filled + rf.pulled)} shares that left this price, ${Math.round(rf.pct * 100)}% traded and ${Math.round((1 - rf.pct) * 100)}% just vanished: ${rf.label === "REAL" ? "size here is REAL, it gets filled" : rf.label === "FAKE" ? "size here is FAKE, it gets pulled before it trades" : "MIXED, some of it trades, some of it gets pulled"} (inferred from size changes between book reads, read it as a tilt)`;
+}
 function szTitle(row, side){
-  const n = row[side] || 0; if (!n) return "";
+  const n = row[side] || 0, rf = row[side + "_real"]; if (!n && !rf) return "";
   const bg = row[side + "_big"], f = row[side + "_refills"] || 0;
-  const bits = [Math.round(n).toLocaleString("en-US") + " shares"];
+  const bits = n ? [Math.round(n).toLocaleString("en-US") + " shares"] : [];
   if (f) bits.push("refilled " + f + "x after getting hit");
   if (bg) bits.push((bg.huge ? "huge" : "big") + " size" + (bg.times > 1 ? ", shown up here " + bg.times + " times today" : ""));
-  return ` title="${bits.join(" · ")}"`;
+  if (rf) bits.push(realWords(rf));
+  return ` title="${esc(bits.join(" · "))}"`;
+}
+// Dan's words for where a reloader stands. The desk never says fading, stale or gone.
+const STAGE_SLUG = {"RELOADING": "active", "STILL THERE": "fading", "NOT RELOADING": "stale", "CLEANED UP": "gone", "PULLED": "gone"};
+const STAGE_ORDER = {"RELOADING": 0, "STILL THERE": 1, "NOT RELOADING": 2, "CLEANED UP": 3, "PULLED": 3};
+function stageSlug(st){ return STAGE_SLUG[st] || ""; }
+function stageWords(st, side){
+  const who = side === "bid" ? "buyer" : "seller";
+  return st === "RELOADING" ? `he's reloading: size came back after getting hit, little has traded through since` :
+         st === "STILL THERE" ? `he's still there but hasn't reloaded in a bit` :
+         st === "NOT RELOADING" ? `he's not reloading: more has traded through than he was putting back. Don't lean on him` :
+         st === "CLEANED UP" ? `he got cleaned up: price came back and the level didn't hold` :
+         st === "PULLED" ? `he pulled: the size left without getting hit` : "";
 }
 // option flow marks on a ladder row: the FLOW column when the ladder is wide enough, else a dot in the tag column
 function flowK(v){ return v >= 1e6 ? (v / 1e6).toFixed(1) + "M" : Math.round(v / 1e3) + "K"; }
@@ -1327,11 +1368,26 @@ function flowDot(r){
   const f = r.flow; if (!f) return "";
   return `<span class="fdot ${f.c >= f.p ? "c" : "p"} ${f.hot ? "hot" : ""}" title="${esc(flowTitle(f))}">${f.urgent ? "⚡" : "●"}${f.n > 1 ? `<u>${f.n}</u>` : ""}</span>`;
 }
+// SOMEBODY KNOWS: short-dated out-of-the-money flow at the ask agreeing with the level (calls for a buyer, puts for a seller)
+function knowsTag(kn){
+  if (!kn) return "";
+  if (kn.knows) return `<span class="knows" title="${esc(kn.words)}">⚡</span>`;
+  return kn.score >= 0.25 ? `<span class="knows some" title="${esc(kn.words)}">⚡</span>` : "";
+}
 function whoTag(row, side){
   const st = row[side + "_state"], n = row[side + "_refills"] || 0, v = row[side + "_verdict"];
   const name = side === "bid" ? "buyer" : "seller";
-  // proven reload: stays lit from the moment it is confirmed until it is cleaned up (or pulled)
-  if (st === "RELOAD" || row[side + "_proven"]) return `<span class="who ${name} big" title="proven reload ${name}: refilled ${n}x after getting hit. Stays lit until it is cleaned up or pulled">R${n}</span>`;
+  // proven reload: lit from the moment it is confirmed; how bright is its conviction (ACTIVE / FADING / STALE)
+  if (st === "RELOAD" || row[side + "_proven"]){
+    const stg = row[side + "_stage"] || "RELOADING", cv = row[side + "_conv"] == null ? 1 : row[side + "_conv"];
+    const since = row[side + "_since_refill"] || 0, age = row[side + "_refill_age"];
+    const kn = row[side + "_knows"];
+    const t = `reload ${name}, ${stg} · conviction ${Math.round(cv * 100)}% · reloaded ${n}x` + (age != null ? `, last reload ${ago(age)} ago` : "") + (since ? `, ${sz(since)} traded through since with nothing put back` : "") + ` · ${stageWords(stg, side)}` + (kn ? ` · ${kn.words}` : "");
+    return `<span class="who ${name} big ${stageSlug(stg)}" title="${esc(t)}">R${n}</span>` + knowsTag(kn);
+  }
+  // a reloader that was here and is not any more: a ghost for a while. C = cleaned up, P = pulled
+  const gs = row[side + "_stage"];
+  if (gs === "CLEANED UP" || gs === "PULLED") return `<span class="who gone" title="${esc(`reload ${name} ${stageWords(gs, side)}`)}">${gs === "PULLED" ? "P" : "C"}</span>`;
   if ((row[side] || 0) > 0){             // size is sitting there: whatever happened earlier is history
     // the small column beside the size: times it refilled after getting hit, else times big size showed up here today
     if (n) return pips(n, side === "bid" ? "b" : "a");
@@ -1341,6 +1397,9 @@ function whoTag(row, side){
   }
   if (v === "CLEANED UP") return `<span class="who c" title="the reload ${name} here got eaten and price went through: cleared out">C</span>`;
   if (v === "PULLED") return `<span class="who v" title="the reload ${name} here vanished without getting hit: pulled">P</span>`;
+  // the long memory: a level that absorbed real size here earlier today, however long ago. Faint, dashed, hover for the story
+  const was = row[side + "_was"];
+  if (was) return `<span class="who was" title="${esc(`${sz(was.shares)} shares were absorbed by a ${name} here ${ago(was.age)} ago` + (was.verdict ? `, then ${was.verdict === "CLEANED UP" ? "cleared out" : "pulled"}` : ", no verdict yet"))}">A${was.verdict === "CLEANED UP" ? "c" : was.verdict === "PULLED" ? "p" : ""}</span>`;
   return "";
 }
 
@@ -1357,23 +1416,28 @@ function ladderHTML(L){
   let h = `<table class="lad" data-cols="lad2"><tr>
     <th class="act" data-w="0.5" data-min="26" title="Click a price here to BUY at that price">BUY</th>
     <th class="bars" data-w="1.6" data-min="38" title="Shares sellers hit the bid with at this price (last ${L.memory_minutes} min). Big green = a buyer absorbing them.">HIT</th>
-    <th class="who" data-w="0.2" data-min="20" title="Reload buyer here: R + times refilled (lit until it is cleaned up or pulled) · C = cleared out · P = pulled"></th>
+    <th class="who" data-w="0.2" data-min="22" title="Reload buyer here: R + times refilled (lit until it is cleaned up or pulled) · C = cleared out · P = pulled"></th>
     <th data-w="1" data-min="44">BID</th><th data-w="1" data-min="58">PRICE</th><th data-w="1" data-min="44">ASK</th>
-    <th class="who" data-w="0.2" data-min="20" title="Reload seller here: R + times refilled (lit until it is cleaned up or pulled) · C = cleared out · P = pulled"></th>
+    <th class="who" data-w="0.2" data-min="22" title="Reload seller here: R + times refilled (lit until it is cleaned up or pulled) · C = cleared out · P = pulled"></th>
     <th class="flow" data-w="1.2" data-min="86" data-opt="1" title="Option flow that hit while the stock traded at this price: calls green, puts red, the premium, ×prints. A ring = the same strike bought again and again, expiring within days: the hot one">FLOW</th>
     <th class="bars" data-w="1.6" data-min="44" title="Shares buyers paid up for at this price (last ${L.memory_minutes} min). Big red = a seller absorbing them.">PAID UP</th>
     <th class="act" data-w="0.5" data-min="28" title="Click a price here to SELL at that price">SELL</th></tr>`;
   for (const r of L.rows){
+    const pb = r.bid_state==="RELOAD"||r.bid_proven, pa = r.ask_state==="RELOAD"||r.ask_proven;
+    const stg = pb ? (r.bid_stage || "RELOADING") : pa ? (r.ask_stage || "RELOADING") : "";
+    const cv = pb ? (r.bid_conv == null ? 1 : r.bid_conv) : pa ? (r.ask_conv == null ? 1 : r.ask_conv) : 1;
+    const kb = r.bid_knows && r.bid_knows.knows, ka = r.ask_knows && r.ask_knows.knows;
     const cls = [r.gap?"gap":"", r.best_bid?"best-bid":"", r.best_ask?"best-ask":"", r.tags.length?"lvl":"", r.last?"lastpx":"",
-      (r.bid_state==="RELOAD"||r.bid_proven)?"rl-bid":"", (r.ask_state==="RELOAD"||r.ask_proven)?"rl-ask":""].join(" ");
+      pb?"rl-bid":"", pa?"rl-ask":"", stg ? "cv-" + stageSlug(stg) : "", ((pb && kb) || (pa && ka)) ? "knows-row" : ""].join(" ");
     const sw = r.sold ? Math.max(4, 100 * r.sold / ms) : 0, bw = r.bought ? Math.max(4, 100 * r.bought / ms) : 0;
-    h += `<tr class="${cls}" data-price="${r.price}">
+    const rfb = r.bid_real ? " rf-" + r.bid_real.label : "", rfa = r.ask_real ? " rf-" + r.ask_real.label : "";
+    h += `<tr class="${cls}" data-price="${r.price}" style="--cv:${cv}">
       <td class="act b${dis}" data-act="BUY" data-px="${r.price}" title="${on ? "BUY " + sz(T().default_shares) + " @ " + px(r.price) : whyNot()}">${chips(r, "b") || "BUY"}</td>
       <td class="bars l">${sw?`<span class="bar sold" style="width:${sw}%"></span>`:""}<span class="bar-n">${kfmt(r.sold)}</span></td>
       <td class="whoc l">${whoTag(r,"bid")}</td>
-      <td class="sz bsz ${r.bid_big ? (r.bid_big.huge ? "huge" : "big") : ""}"${szTitle(r, "bid")}><span class="szn">${r.bid?kfmt(r.bid):""}</span></td>
-      <td class="px${r.tags.length ? " tagged" : ""}">${r.tags.length ? `<span class="lt" title="${esc(r.tags.join(" · "))}">${esc(r.tags.map(t => LTAG[t] || t.slice(0, 2)).join(""))}</span>` : ""}${px(r.price)}</td>
-      <td class="sz asz ${r.ask_big ? (r.ask_big.huge ? "huge" : "big") : ""}"${szTitle(r, "ask")}><span class="szn">${r.ask?kfmt(r.ask):""}</span></td>
+      <td class="sz bsz ${r.bid_big ? (r.bid_big.huge ? "huge" : "big") : ""}${rfb}"${szTitle(r, "bid")}><span class="szn">${r.bid?kfmt(r.bid):""}</span></td>
+      <td class="px${r.tags.length ? " tagged" : ""}">${r.tags.length ? `<span class="lt" title="${esc(r.tags.join(" · "))}">${esc(r.tags.map(t => LTAG[t] || t.slice(0, 2)).join(""))}</span>` : ""}${px(r.price)}${(!pb && !pa) ? (knowsTag(r.bid_knows) || knowsTag(r.ask_knows)) : ""}</td>
+      <td class="sz asz ${r.ask_big ? (r.ask_big.huge ? "huge" : "big") : ""}${rfa}"${szTitle(r, "ask")}><span class="szn">${r.ask?kfmt(r.ask):""}</span></td>
       <td class="whoc r">${whoTag(r,"ask") || flowDot(r)}</td>
       <td class="flow">${flowCell(r)}</td>
       <td class="bars r">${bw?`<span class="bar bought" style="width:${bw}%"></span>`:""}<span class="bar-n">${kfmt(r.bought)}</span></td>
@@ -1381,7 +1445,9 @@ function ladderHTML(L){
   }
   h += `</table><div class="legend">Every row remembers the last ${L.memory_minutes} min. <span class="buy">Green bar</span> = shares sold into the bid there,
     <span class="sell">red bar</span> = shares bought from the ask. <span class="pips b">●</span><span class="pips a">●</span> = times the size came back after being hit.
-    A lit row = a PROVEN reload buyer / seller: it stays lit until it is cleaned up or pulled. Gold row = the last price. White price = your level. Click BUY / SELL on a row to place a limit there; click your order chip to cancel it.</div>`;
+    A lit row = a PROVEN reload buyer / seller; how bright it is = how much conviction he is still there (bright and breathing = RELOADING, steady = STILL THERE, dim = NOT RELOADING, dashed C = CLEANED UP, dashed P = PULLED, dashed A = absorbed here earlier today).
+    <span style="color:var(--gold)">⚡</span> = SOMEBODY KNOWS: short-dated out-of-the-money calls (for a buyer) or puts (for a seller) getting bought at the ask right now, agreeing with the level. Hover it for the strike, days out and dollars.
+    The thin line under a size: <span class="buy">green</span> = REAL size here gets filled, <span style="color:var(--gold)">gold</span> = mixed, <span class="sell">red</span> = FAKE, it gets pulled before it trades. Gold row = the last price. White price = your level. Click BUY / SELL on a row to place a limit there; click your order chip to cancel it.</div>`;
   return h;
 }
 
@@ -2646,10 +2712,16 @@ P.setup.el.addEventListener("click", async e => {
 function renderReloads(d){
   if (!d){ panelHTML("reload", `<div class="dim">${NA}</div>`); return; }
   if (training()){ panelHTML("reload", `<div class="dim" style="padding:10px;line-height:1.5"><b style="color:var(--gold)">TRAINING</b> · the desk is not calling reloads for you. Read the tape and the ladder, mark your call with M, then check it.<br><button data-reveal="1" style="margin-top:8px">REVEAL 20s</button></div>`); return; }
-  const lv = (d.levels || []).filter(l => l.state === "RELOAD" || l.last_verdict);
-  const rows = lv.sort((a, b) => (a.state === "RELOAD" ? 0 : 1) - (b.state === "RELOAD" ? 0 : 1) || b.absorbed_total - a.absorbed_total).slice(0, 8).map(l => {
-    const who = l.side === "bid" ? "buyer" : "seller", gone = l.state !== "RELOAD";
-    return `<div class="rl ${who} ${gone ? "gone" : ""}"><span class="t">${gone ? (l.last_verdict === "CLEANED UP" ? "CLEARED OUT" : l.last_verdict || "") : "RELOAD " + who.toUpperCase()}</span>
+  const lv = (d.levels || []).filter(l => l.state === "RELOAD" || l.proven || l.last_verdict || stageSlug(l.stage) === "gone");
+  const rows = lv.sort((a, b) => (STAGE_ORDER[a.stage] == null ? 4 : STAGE_ORDER[a.stage]) - (STAGE_ORDER[b.stage] == null ? 4 : STAGE_ORDER[b.stage]) || b.absorbed_total - a.absorbed_total).slice(0, 8).map(l => {
+    const who = l.side === "bid" ? "buyer" : "seller", live = l.state === "RELOAD" || l.proven, gone = !live;
+    const stg = l.stage || (live ? "RELOADING" : ""), cv = l.conviction == null ? (live ? 1 : 0) : l.conviction;
+    const head = gone ? (l.last_verdict || stg || "") : "RELOAD " + who.toUpperCase();
+    const trust = live ? `<span class="k">CONVICTION</span><span class="v" title="${esc(stageWords(stg, l.side))}">${Math.round(cv * 100)}%<span class="cvbar"><i style="width:${Math.round(cv * 100)}%"></i></span><span class="stg ${stageSlug(stg)}">${stg}</span></span>
+      <span class="k">SINCE RELOAD</span><span class="v">${l.refill_age != null ? ago(l.refill_age) + " ago" : NA}${l.since_refill ? ` · ${sz(l.since_refill)} traded through, not put back` : ""}</span>` : (stageSlug(stg) === "gone" ? `<span class="k">CONVICTION</span><span class="v"><span class="stg gone">${stg}</span> <span class="dim">${esc(stageWords(stg, l.side))}</span></span>` : "");
+    const real = l.real ? `<span class="k">SIZE HERE</span><span class="v"><span class="rf ${l.real.label}">${l.real.label}</span> <span class="dim">${Math.round(l.real.pct * 100)}% of what left traded</span></span>` : "";
+    const kn = l.knows, knows = kn && live ? (kn.knows ? `<span class="knowsline">⚡ ${esc(kn.words)}</span>` : kn.dollars > 0 ? `<span class="knowsline some">${esc(kn.words)}</span>` : "") : "";
+    return `<div class="rl ${who} ${gone ? "gone" : ""} ${stg ? "st-" + stageSlug(stg) : ""} ${kn && kn.knows && live ? "knows" : ""}"><span class="t">${head}${kn && kn.knows && live ? ` <span class="knows" title="${esc(kn.words)}">⚡ SOMEBODY KNOWS</span>` : ""}</span>${trust}${real}${knows}
       <span class="k">PRICE</span><span class="v">$${px(l.price)} <span class="dim">${esc((l.role || "").split("+")[0] === "auto" ? "big level" : "your " + (l.role || "").split("+")[0].replace("trigger", "pivot").replace("_", " "))}</span></span>
       <span class="k">RELOADS</span><span class="v">${l.refreshes != null ? l.refreshes : NA}</span>
       <span class="k">SHARES OBSERVED</span><span class="v">${l.absorbed_total != null ? sz(l.absorbed_total) : NA}</span>

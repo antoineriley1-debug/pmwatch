@@ -11,6 +11,7 @@ from collections import deque
 from . import narrative, ps60
 
 from .book import ASK, BID, Book
+from .conviction import ACTIVE, FADING, GONE, SLUG, STALE, PullBook, stage_words
 from .flow import FLOW_LABELS, FlowBook
 from .levels import BUILDING, GONE_PENDING, RELOAD, LevelTracker, WATCHING
 from .prices import fmt_price, price_key, tick_size
@@ -82,6 +83,8 @@ class SymbolState:
         self.rflow_said = {}             # (strike, cp, expiry) -> when REPEAT FLOW was last called on it
         self.l1_volume = None            # IBKR's cumulative day volume (symbols without a tape)
         self.l1_last_raw = None          # IBKR's quote-stream last, kept even while the tape sets the price
+        self.pulls = PullBook(cfg.get("ladder", {}))   # per price: of the size that left, what traded vs vanished
+        self.absorb_hist = {}            # (side, price_key) -> [price, shares absorbed at a watched level today, last t, verdict, was proven]
 
     def bar_update(self, t, price, size=0.0, side=None):
         m = int(t // BAR_SECONDS) * BAR_SECONDS
@@ -259,6 +262,13 @@ class Engine:
         }
         if final:
             alert["size_before_gone"] = round(final["size_before_gone"])
+            ah = st.absorb_hist.get((alert["side"], tracker.key))
+            if ah is not None:
+                ah[3] = label
+        elif label in ("RELOAD BUYER DETECTED", "RELOAD SELLER DETECTED"):
+            # a proven reloader earns the row its long memory (an auto level that was only "likely" does not)
+            ah = st.absorb_hist.setdefault((alert["side"], tracker.key), [tracker.price, 0.0, t, None, False])
+            ah[4] = True
         alert["text"] = narrative.alert_text(alert, st.play)
         alert["key"] = f"{round(t, 2)}|{st.symbol}|{label}|{alert['price']}"
         self.alerts.appendleft(alert)
@@ -344,6 +354,7 @@ class Engine:
             st.resync_until = t + self.cfg["reload"]["resync_grace_seconds"]
             if st.book is not None:
                 st.book.reset()
+            st.pulls.reset()
             for side in (ASK, BID):          # nothing is "showing" until the book is rebuilt: not a new appearance
                 for rec in st.big[side].values():
                     if rec[2]:
@@ -366,6 +377,7 @@ class Engine:
             rec = st.tape.add(t, price, size, bid, ask, exchange, side=st.aggressor(price, t))
             st.tape_t = t
             st.l1["last"] = price
+            st.pulls.on_print(rec["side"], price, size)
             st.bar_update(t, price, size, rec["side"])
             self._check_price_alerts(symbol, price, t)
             k = price_key(price)
@@ -399,6 +411,12 @@ class Engine:
                     side = "ask" if tr.side == ASK else "bid"
                     mk = (int(t // BAR_SECONDS) * BAR_SECONDS, k, side)
                     st.marks.setdefault(mk, [price, 0.0])[1] += size
+                    # the ladder's long memory: what was absorbed at this price today, however long ago
+                    ah = st.absorb_hist.get((side, tr.key))
+                    if ah is None:
+                        st.absorb_hist[(side, tr.key)] = [tr.price, size, t, None, tr.proven]
+                    else:
+                        ah[1] += size; ah[2] = t; ah[3] = None; ah[4] = ah[4] or tr.proven
                     if len(st.marks) > 3000:          # a day of bubbles at most (MARK_MINUTES)
                         cut = t - MARK_MINUTES * 60
                         for key in [key for key in st.marks if key[0] < cut]:
@@ -1019,12 +1037,68 @@ class Engine:
             self.auto_rotate = bool(on)
             self._rec({"ev": "ui", "t": t or self.last_t, "auto_rotate": self.auto_rotate})
 
-    def _protected(self):
-        """Symbols with a live reload (or a pending verdict) are never rotated out."""
+    def _protected(self, t=None):
+        """Symbols with a live reload (or a pending verdict), or a proven reloader still RELOADING or STILL THERE, are
+        never rotated out: a level's conviction only keeps moving while the desk can see its book."""
+        t = self.last_t if t is None else t
         out = set()
         for sym in self.slots:
-            if any(tr.state in (RELOAD, GONE_PENDING) for tr in self.syms[sym].trackers.values()):
+            trackers = self.syms[sym].trackers.values()
+            if any(tr.state in (RELOAD, GONE_PENDING) or tr.stage(t) in (ACTIVE, FADING) for tr in trackers):
                 out.add(sym)
+        return out
+
+    def best_conviction(self, st, t):
+        """The strongest proven reloader on this symbol right now, 0..1."""
+        return max((tr.conviction(t) for tr in st.trackers.values()), default=0.0)
+
+    def _knows(self, st, side, t):
+        """SOMEBODY KNOWS for a level side: a reload BUYER (bid) is confirmed by short-dated out-of-the-money CALLS
+        bought at the ask; a reload SELLER (ask) by PUTS. Cached for the tick so twenty rows cost one read."""
+        cp = "C" if side == BID else "P"
+        cache = st.__dict__.setdefault("_knows_cache", {})
+        hit = cache.get(cp)
+        if hit is not None and hit[0] == t:
+            return hit[1]
+        index = st.symbol in set(self.cfg.get("flow", {}).get("index_symbols", ()))
+        k = self.flow.knows(st.symbol, cp, t, index=index)
+        k["cp"] = cp
+        k["words"] = self._knows_words(k, side)
+        cache[cp] = (t, k)
+        return k
+
+    @staticmethod
+    def _knows_words(k, side):
+        what = "calls" if k["cp"] == "C" else "puts"
+        who = "buyer" if side == BID else "seller"
+        money = lambda v: f"${v / 1e6:.1f}M" if v >= 1e6 else f"${v / 1e3:.0f}K"
+        if k["knows"]:
+            top = k["top"] or {}
+            strike = f" {narrative.px(top['strike'])} strike" if top.get("strike") is not None else ""
+            dte = f", {round(top['dte'])} day{'s' if round(top['dte']) != 1 else ''} out" if top.get("dte") is not None else ""
+            return (f"SOMEBODY KNOWS: {money(k['dollars'])} of short-dated out-of-the-money {what} bought at the ask in {k['window_minutes']} min"
+                    f" ({k['prints']} prints{', ' + str(k['sweeps']) + ' sweeps' if k['sweeps'] else ''}){strike}{dte}. The flow agrees with the reload {who}.")
+        if k["dollars"] > 0:
+            return (f"some short-dated {what} coming in ({money(k['dollars'])} in {k['prints']} prints), not enough yet" +
+                    (f"; the other side has more ({money(k['against'])})" if k["against"] > k["dollars"] else ""))
+        return f"no short-dated out-of-the-money {what} at the ask in the last {k['window_minutes']} min"
+
+    def best_knows(self, st, t):
+        """The strongest SOMEBODY KNOWS score on this symbol, either side, 0..1."""
+        return max(self._knows(st, BID, t)["score"], self._knows(st, ASK, t)["score"])
+
+    def _rotation_ranking(self, t):
+        """The proximity ranking, with a live reloader pulling a symbol closer: distance x (1 - weight x conviction).
+        The watchlist's own ranking (``ranking``) stays distance-only so the order you read never jumps."""
+        w = float(self.cfg["depth"].get("conviction_weight", 0.0))
+        wf = float(self.cfg["depth"].get("flow_weight", 0.0))
+        out = []
+        for sym, d in self.ranking(t):
+            st = self.syms[sym]
+            cv = self.best_conviction(st, t) if w > 0 else 0.0
+            kf = self.best_knows(st, t) if wf > 0 else 0.0
+            out.append((sym, d * max(0.0, 1.0 - w * cv - wf * kf)))
+        out.sort(key=lambda r: (r[1], r[0]))
         return out
 
     def _auto_levels(self, st, t):
@@ -1061,6 +1135,13 @@ class Engine:
             for st in self.syms.values():
                 if st.book is None:
                     continue
+                # REAL / FAKE size is judged on settled reads of the book, once a tick (about every quarter second,
+                # IBKR's own depth cadence), never in the middle of a burst of row operations: a delete that shifts
+                # every row up looks like size leaving and coming back at every price until the burst is done
+                judge = self._judge(st, t)
+                for side in (ASK, BID):
+                    st.pulls.on_book(st.book, side, t, judge=judge)
+                st.pulls.prune(t, float(self.cfg.get("ladder", {}).get("real_memory_seconds", 3600.0)))
                 if st.voice_pending:
                     self._voice_settle(st, t)
                 # the tape went quiet but the quote stream moved on: the price follows the quote (never stuck)
@@ -1731,9 +1812,9 @@ class Engine:
     def _rotate(self, t):
         dc = self.cfg["depth"]
         blocked = {s for s, st in self.syms.items() if st.rejected_until > t}
-        new = allocate(self.slots, self.ranking(t), dc["slots"], t,
+        new = allocate(self.slots, self._rotation_ranking(t), dc["slots"], t,
                        dc["rotate_hysteresis"], dc["min_hold_seconds"],
-                       pinned=self.pinned - blocked, protected=self._protected(),
+                       pinned=self.pinned - blocked, protected=self._protected(t),
                        rotate=self.auto_rotate)
         cmds = list(self._slot_cmds)
         self._slot_cmds = []
@@ -1966,9 +2047,14 @@ class Engine:
                 "best_bid": k == bb, "best_ask": k == ba, "last": k == lk,
             }
             for side in ("bid", "ask"):
-                rec = st.big[BID if side == "bid" else ASK].get(k)
+                sd = BID if side == "bid" else ASK
+                rec = st.big[sd].get(k)
                 if rec is not None and rec[2]:
                     row[side + "_big"] = {"times": rec[0], "huge": row[side] >= big_bar * huge_x}
+                # REAL / MIXED / FAKE: of the size that has left this price, how much traded vs vanished
+                real = st.pulls.at(sd, k)
+                if real is not None:
+                    row[side + "_real"] = real
                 tr = trk.get((side, k))
                 if tr is not None:
                     # a proven reload keeps the refills that proved it, even after they age out of the window
@@ -1976,9 +2062,27 @@ class Engine:
                     row[side + "_state"] = tr._display_state(t)
                     row[side + "_proven"] = tr.proven
                     row[side + "_absorbed"] = round(tr.absorbed_total)
+                    # conviction drives the brightness of a proven row: RELOADING bright, STILL THERE, NOT RELOADING dim,
+                    # CLEANED UP / PULLED a ghost
+                    row[side + "_conv"] = tr.conviction(t)
+                    row[side + "_stage"] = tr.stage(t)
+                    row[side + "_slug"] = SLUG.get(row[side + "_stage"])
+                    row[side + "_since_refill"] = round(tr.vol_since_refill) if tr.proven else 0
+                    row[side + "_refill_age"] = round(t - tr.last_refill_t) if tr.proven and tr.last_refill_t is not None else None
+                    # SOMEBODY KNOWS: short-dated out-of-the-money flow agreeing with this level (calls for a buyer, puts for a seller)
+                    if tr.proven or tr.role != "auto":
+                        kn = self._knows(st, sd, t)
+                        if kn["dollars"] > 0:
+                            row[side + "_knows"] = {"knows": kn["knows"], "score": kn["score"], "dollars": kn["dollars"],
+                                                    "prints": kn["prints"], "against": kn["against"], "words": kn["words"]}
                     # never call a level cleared while something is sitting there again
                     row[side + "_verdict"] = (tr.last_verdict[0] if tr.last_verdict and t - tr.last_verdict[1] < 60
                                               and tr.displayed <= 0 else None)
+                # the long memory: a level that absorbed real size here earlier today, whether or not anyone is
+                # tracking it now. Only when nothing proven is lit on this row (the live read wins)
+                ah = st.absorb_hist.get((side, k))
+                if ah is not None and ah[4] and ah[1] >= self.cfg["reload"]["min_absorbed_shares"] and not (tr is not None and tr.proven):
+                    row[side + "_was"] = {"shares": round(ah[1]), "age": round(t - ah[2]), "verdict": ah[3]}
             max_size = max(max_size, row["bid"], row["ask"])
             max_traded = max(max_traded, row["sold"], row["bought"])
             rows.append(row)
@@ -2036,7 +2140,8 @@ class Engine:
                 continue
             item = {"price": fmt_price(tr.price), "side": "bid" if tr.side == BID else "ask", "kind": kind,
                     "role": tr.role, "refills": tr.refreshes_window(t), "absorbed": round(tr.absorbed_total),
-                    "showing": round(tr.displayed)}
+                    "showing": round(tr.displayed), "conviction": tr.conviction(t), "stage": tr.stage(t),
+                    "knows": self._knows(st, tr.side, t)["knows"]}
             # at the last price itself: a buyer is holding under price, a seller over it
             at = price and abs(tr.price - price) < 1e-9
             (below if (tr.side == BID if at else (price and tr.price < price)) else above).append(item)
@@ -2055,6 +2160,11 @@ class Engine:
         for lv in levels:
             for k in ("displayed", "peak_displayed", "absorbed_window", "absorbed_total"):
                 lv[k] = round(lv[k])
+            lv["real"] = st.pulls.at(BID if lv["side"] == "bid" else ASK, price_key(lv["price"]))
+            lv["words"] = stage_words(lv["stage"], lv["side"]) if lv.get("stage") else ""
+            kn = self._knows(st, BID if lv["side"] == "bid" else ASK, t)
+            lv["knows"] = {"knows": kn["knows"], "score": kn["score"], "dollars": kn["dollars"], "prints": kn["prints"],
+                           "sweeps": kn["sweeps"], "against": kn["against"], "top": kn["top"], "cp": kn["cp"], "words": kn["words"]}
             lv["price"] = fmt_price(lv["price"])
         bid, ask = st.bbo()
         tape = st.tape.stats(t)
