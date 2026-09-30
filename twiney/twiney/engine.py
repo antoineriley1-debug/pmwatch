@@ -470,19 +470,21 @@ class Engine:
     def on_fill(self, exec_id, symbol, side, shares, price, when, t):
         with self.lock:
             self.account_seen = True
-            self.fills[exec_id] = {"symbol": symbol, "side": side, "shares": shares, "price": price,
-                                   "time": when, "t": t}
+            if exec_id and exec_id in self.fills:
+                return          # IBKR re-sends the day's executions on every refresh: count each one once
+            self._fill_seq = getattr(self, "_fill_seq", 0) + 1
+            key = exec_id or f"_local{self._fill_seq}"
+            # every fill of the session is kept: the day P&L and the loss lock are built from all of them
+            self.fills[key] = {"exec_id": key, "seq": self._fill_seq, "symbol": symbol, "side": side, "shares": shares,
+                               "price": price, "time": when, "t": t}
             if self.desk is not None:
-                self.desk.on_fill(self.fills[exec_id], t)
-            if len(self.fills) > 200:
-                for k in sorted(self.fills, key=lambda k: self.fills[k]["t"])[:len(self.fills) - 200]:
-                    del self.fills[k]
+                self.desk.on_fill(self.fills[key], t)
 
     def day_pnl(self):
         """Realized (average-cost, from today's fills) + open P&L, in dollars."""
         with self.lock:
             realized, pos = 0.0, {}
-            for f in sorted(self.fills.values(), key=lambda f: f["t"]):
+            for f in sorted(self.fills.values(), key=lambda f: f["seq"]):   # the order they happened in
                 sym, qty, px_ = f["symbol"], f["shares"] * (1 if f["side"] == "BOT" else -1), f["price"]
                 q, cost = pos.get(sym, (0.0, 0.0))
                 if q == 0 or (q > 0) == (qty > 0):
@@ -1553,7 +1555,7 @@ class Engine:
                                    key=lambda o: -o["t"])[:15],
                     "positions": [dict(p, last=fmt_price(self.syms[p["symbol"]].price())
                                        if p["symbol"] in self.syms else None) for p in self.positions.values()],
-                    "fills": sorted(self.fills.values(), key=lambda f: -f["t"])[:30],
+                    "fills": sorted(self.fills.values(), key=lambda f: -f["seq"])[:30],
                 },
                 "alerts": [dict(a, grade=self.grades.get(a["key"])) for a in list(self.alerts)[:40]],
                 "voice": [v for v in list(self.voice)[:20] if t - v["t"] < 60],

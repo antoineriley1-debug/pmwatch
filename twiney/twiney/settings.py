@@ -11,6 +11,7 @@ dashboard.host (the desk only listens on this computer).
 
 import copy
 import json
+import math
 import os
 import re
 
@@ -178,9 +179,15 @@ def _coerce(path, raw):
         if kind == "bool":
             return raw if isinstance(raw, bool) else str(raw).strip().lower() in ("1", "true", "on", "yes")
         if kind == "int":
-            return int(float(raw))
+            v = float(raw)
+            if not math.isfinite(v):
+                raise ValueError("must be a finite number")
+            return int(v)
         if kind == "float":
-            return float(raw)
+            v = float(raw)
+            if not math.isfinite(v):
+                raise ValueError("must be a finite number")
+            return v
         if kind == "list":
             items = raw if isinstance(raw, list) else str(raw).split(",")
             return [str(x).strip().upper() for x in items if str(x).strip()]
@@ -195,21 +202,25 @@ def _coerce(path, raw):
                 raise ValueError(f"must be one of {', '.join(str(a) for a in allowed)}")
             return v
         return "" if raw is None else str(raw)
-    except (TypeError, ValueError) as exc:
+    except (TypeError, ValueError, OverflowError) as exc:
         raise ConfigError(f"{path}: {exc}" if str(exc) else f"{path}: not a valid {kind}")
+
+
+LEAVES = {p for p, _v in _leaves(DEFAULTS)}
 
 
 def apply(cfg, config_path, changes):
     """Validate ``changes`` ({path: value}), apply them to ``cfg`` in place and save config.json.
     Returns (applied paths, paths that take effect after a restart)."""
+    if not isinstance(changes, dict):
+        raise ConfigError("changes must be an object of setting: value")
     clean = {}
-    for path, raw in (changes or {}).items():
-        try:
-            _get(DEFAULTS, path)
-        except (KeyError, TypeError):
+    for path, raw in changes.items():
+        # one setting at a time, never a whole section: a section would get around the locks
+        if not isinstance(path, str) or path not in LEAVES:
             raise ConfigError(f"unknown setting {path}")
-        if path in LOCKED:
-            raise ConfigError(LOCKED[path])
+        if path in LOCKED or any(l.startswith(path + ".") for l in LOCKED):
+            raise ConfigError(LOCKED.get(path, "Locked."))
         if path in SECRET and (raw is None or raw == ""):
             continue                       # empty box = keep the key you have
         if path in SECRET and raw == "__clear__":
@@ -226,6 +237,9 @@ def apply(cfg, config_path, changes):
     for path, value in clean.items():
         _set(new_file, path, value)
     build_config(new_file)                 # the same checks as startup: nothing invalid gets saved
+    for path in clean:                     # and nothing that would switch live trading on, however it is sent
+        if path in LOCKED:
+            raise ConfigError(LOCKED[path])
     if config_path:
         tmp = config_path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as fh:

@@ -2,6 +2,7 @@
 
 import copy
 import ipaddress
+import math
 import json
 import os
 
@@ -224,12 +225,56 @@ def _merge(base, override, path=""):
     return out
 
 
+# settings that must be above zero: a 0 here would switch a safety off or make no sense
+POSITIVE = {"trading.default_shares", "trading.max_shares_per_order", "trading.max_dollars_per_order",
+            "trading.max_orders_per_minute", "trading.max_position_shares", "trading.max_daily_loss",
+            "trading.stop_limit_ticks", "depth.slots", "depth.rows_requested", "depth.rows_displayed"}
+
+
+def _check_values(cfg):
+    """Every number is a real, finite number of the right kind and not negative; the caps and the day loss
+    limit are above zero; the scale plan can never exit more shares than the entry or price a leg at <= 0."""
+    def walk(d, base, prefix=""):
+        for k, dv in base.items():
+            path, v = prefix + k, d.get(k)
+            if isinstance(dv, dict):
+                if path != "quantdata.extra_params":
+                    walk(v, dv, path + ".")
+                continue
+            if isinstance(dv, bool):
+                if not isinstance(v, bool):
+                    raise ConfigError(f"{path} must be true or false")
+                continue
+            if isinstance(dv, (int, float)):
+                if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
+                    raise ConfigError(f"{path} must be a number")
+                if v < 0:
+                    raise ConfigError(f"{path} cannot be negative")
+                if path in POSITIVE and v <= 0:
+                    raise ConfigError(f"{path} must be above 0")
+    walk(cfg, DEFAULTS)
+    legs = cfg["trading"]["scale_plan"]["cash_flow"]
+    if not isinstance(legs, list):
+        raise ConfigError("trading.scale_plan.cash_flow must be a list of {fraction, dollars}")
+    total = 0.0
+    for i, leg in enumerate(legs):
+        f, d = (leg or {}).get("fraction"), (leg or {}).get("dollars")
+        if not isinstance(f, (int, float)) or not 0 < f < 1:
+            raise ConfigError(f"trading.scale_plan.cash_flow[{i}].fraction must be between 0 and 1")
+        if not isinstance(d, (int, float)) or not math.isfinite(d) or d <= 0:
+            raise ConfigError(f"trading.scale_plan.cash_flow[{i}].dollars must be above 0")
+        total += f
+    if total > 1 + 1e-9:
+        raise ConfigError("trading.scale_plan.cash_flow fractions add up to more than the whole position")
+
+
 def build_config(raw=None):
     cfg = _merge(DEFAULTS, raw or {})
     if cfg["depth"]["slots"] < 1:
         raise ConfigError("depth.slots must be >= 1")
     if cfg["depth"]["rows_displayed"] > cfg["depth"]["rows_requested"]:
         raise ConfigError("depth.rows_displayed cannot exceed depth.rows_requested")
+    _check_values(cfg)
     host = cfg["dashboard"]["host"]
     try:
         loopback = ipaddress.ip_address(host).is_loopback

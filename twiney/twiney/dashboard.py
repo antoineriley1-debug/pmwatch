@@ -93,6 +93,20 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
         def log_message(self, fmt, *args):  # keep the console for alerts
             pass
 
+        def _local(self):
+            """Only this computer's own page may talk to the desk. The Host header must name this machine
+            (127.0.0.1 / localhost / [::1]) on the desk's port, so a website that re-points its own name at
+            127.0.0.1 (DNS rebinding) is refused; a browser's Origin, when sent, must be one of those too."""
+            port = self.server.server_address[1]
+            ok = {f"{h}:{port}" for h in ("127.0.0.1", "localhost", "[::1]")}
+            host = (self.headers.get("Host") or "").strip().lower()
+            if host and host not in ok:
+                return False
+            origin = (self.headers.get("Origin") or "").strip().lower()
+            if origin and origin not in {f"http://{h}" for h in ok}:
+                return False
+            return True
+
         def _send(self, code, body, ctype):
             data = body if isinstance(body, bytes) else body.encode("utf-8")
             self.send_response(code)
@@ -103,6 +117,9 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
             self.wfile.write(data)
 
         def do_GET(self):
+            if not self._local():
+                self._send(403, "forbidden", "text/plain")
+                return
             path = self.path.split("?", 1)[0]
             if path in ("/", "/index.html"):
                 with open(STATIC, "rb") as fh:
@@ -168,9 +185,7 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
 
         def do_POST(self):
             # only accept requests from this dashboard page (blocks other websites)
-            origin = self.headers.get("Origin")
-            host = self.headers.get("Host", "")
-            if origin and origin not in (f"http://{host}", f"https://{host}"):
+            if not self._local():
                 self._send(403, "forbidden", "text/plain")
                 return
             if (self.headers.get("Content-Type") or "").split(";")[0].strip() != "application/json":
@@ -180,6 +195,9 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                 length = min(int(self.headers.get("Content-Length") or 0), 4096)
                 body = json.loads(self.rfile.read(length) or b"{}")
             except (ValueError, json.JSONDecodeError):
+                self._send(400, "bad json", "text/plain")
+                return
+            if not isinstance(body, dict):
                 self._send(400, "bad json", "text/plain")
                 return
             path = self.path.split("?", 1)[0]
