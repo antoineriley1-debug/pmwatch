@@ -264,3 +264,27 @@ class BreakevenTests(unittest.TestCase):
         self.assertTrue(out["ok"], out); self.assertEqual(out["cancelled"], 2)
         stops = [o for o in pend(e) if o.get("type") in ("STP LMT", "STP") or o["role"] == "stop"]
         self.assertEqual([(o["role"], o["remaining"], o["aux"]) for o in stops], [("stop", 100.0, 10.0)])
+
+
+class LockedCloseTests(unittest.TestCase):
+    """Getting OUT is never blocked: with the day-loss lock on, a ticket SELL that takes the long down goes out as
+    a close; a SELL bigger than the position (a flip) and a fresh BUY stay blocked."""
+
+    def test_ticket_sell_closes_while_locked(self):
+        e, tr, gate, broker = sim_setup()
+        gate.arm(True)
+        tr.submit("AAA", "BUY", 10.00, 100, 1.0, False)      # marketable at the 10.00 offer
+        self.assertEqual(broker.position("AAA"), 100)
+        gate.lock_out("daily loss limit hit (test)")
+        blocked = tr.submit("AAA", "BUY", 10.00, 100, 2.0, False)
+        self.assertFalse(blocked["ok"]); self.assertIn("LOCKED", blocked["reason"])
+        flip = tr.submit("AAA", "SELL", 9.99, 150, 2.1, False)
+        self.assertFalse(flip["ok"]); self.assertIn("LOCKED", flip["reason"])
+        out = tr.submit("AAA", "SELL", 9.99, 60, 2.2, False, "LMT", None, "DAY", "n-close")
+        self.assertTrue(out["ok"], out); self.assertIn("close", out["sent"])
+        self.assertEqual(broker.position("AAA"), 40)          # bid 9.99: filled at once
+        again = tr.submit("AAA", "SELL", 9.99, 60, 2.3, False, "LMT", None, "DAY", "n-close")
+        self.assertTrue(again.get("duplicate"))
+        rest = tr.submit("AAA", "SELL", 9.99, 40, 2.4, False)
+        self.assertTrue(rest["ok"]); self.assertEqual(broker.position("AAA"), 0)
+        self.assertTrue(tr.flatten("AAA", 3.0)["flat"])

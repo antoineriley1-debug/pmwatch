@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20260930-2209">
+<meta name="build" content="20260930-2212">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -1055,7 +1055,8 @@ async function cancelMine(id){
   toast(out.ok ? "Cancel sent" : "Cancel failed: " + (out.reason || ""), out.ok);
 }
 async function flatten(symbol){
-  if (!canTrade()){ toast("Can't trade: " + whyNot(), false); return; }
+  // getting OUT is never blocked: disarmed, locked for the day, over a cap — the server's reducing path takes it
+  if (!canReduce()){ toast("Can't close: " + whyNot(), false); return; }
   confirmBox(`FLATTEN ${symbol}`, "closes the whole position with a limit through the market and cancels its working orders", "s", async () => {
     const out = await post("/api/trade/flatten", {symbol});
     toast(out.ok ? (out.flat ? symbol + " already flat" : "Sent: " + out.sent) : "Failed: " + out.reason, out.ok);
@@ -2885,6 +2886,8 @@ function renderCalls(s){
 /* ---------- partial profit + breakeven: on the position row and in the ticket */
 const PP = {};   // symbol -> {open, shares, px}: the partial-profit form, kept while you type
 // getting out / protecting works disarmed and locked (paper / sim account), like the server allows
+// a ticket order that takes the position down is a close: allowed disarmed and locked, like FLATTEN
+function closesPosition(d, side, qty, type){ const q = d && d.position ? d.position.qty : 0; return !!q && canReduce() && (type || "LMT") === "LMT" && side === (q > 0 ? "SELL" : "BUY") && qty > 0 && qty <= Math.abs(q); }
 function canReduce(){ const t = (state && state.trading) || {}; return t.mode === "SIM" || t.mode === "PAPER" || (t.mode === "LIVE" && t.can_trade); }
 function ppDefaults(sym){
   const d = ((state && state.panes) || []).concat(Object.values((state && state.extra) || {})).find(x => x && x.symbol === sym);
@@ -3008,11 +3011,11 @@ function renderTicket(s, d, force){
     <label>RISK $</label><div class="risk"><input id="tkRisk" type="number" step="10" min="0" value="${riskDollars()}"><span class="out">${(() => { const stop = d && d.play && d.play.stop, ent = TK.px != null ? TK.px : price; if (!stop || !ent) return `<span class="dim">NO STOP</span>`; const r = Math.abs(ent - stop); if (r < tickOfPx(ent) / 2) return `<span class="dim">entry = stop</span>`; const n = capShares(Math.floor(riskDollars() / r), ent); return `${sz(n)} sh <span class="dim">· $${r.toFixed(2)}/sh</span> <button data-q="set:${Math.max(1, n)}" style="padding:1px 6px;font-size:10px">SIZE</button>`; })()}</span></div>
     <label>TIF</label><select id="tkTif"><option ${TK.tif === "DAY" ? "selected" : ""}>DAY</option><option ${TK.tif === "GTC" ? "selected" : ""}>GTC</option><option ${TK.tif === "IOC" ? "selected" : ""}>IOC</option></select>
     <div class="opts"><label><input type="checkbox" id="tkBracket" ${t.bracket ? "checked" : ""}> stop+target</label><label><input type="checkbox" id="tkScale" ${t.scale ? "checked" : ""}> PS60 exits</label></div>
-    <div class="go"><button class="tx ${TK.side === "BUY" ? "b" : "s"}" id="tkGo" ${on && d && !TK.inflight ? "" : "disabled"}>${TK.inflight ? "SENDING…" : "TRANSMIT " + TK.side}</button><button id="tkCxl" ${d && d.orders && d.orders.length ? "" : "disabled"} class="danger">CANCEL ALL</button></div>
+    <div class="go"><button class="tx ${TK.side === "BUY" ? "b" : "s"}" id="tkGo" ${(on || closesPosition(d, TK.side, TK.qty, TK.type)) && d && !TK.inflight ? "" : "disabled"}>${TK.inflight ? "SENDING…" : "TRANSMIT " + TK.side}</button><button id="tkCxl" ${d && d.orders && d.orders.length ? "" : "disabled"} class="danger">CANCEL ALL</button></div>
     ${d && d.position && d.position.qty ? `<div class="posbox"><span>IN <b class="${d.position.qty > 0 ? "b" : "s"}">${d.position.qty > 0 ? "LONG" : "SHORT"} ${sz(Math.abs(d.position.qty))}</b> @ ${px(d.position.avg_cost)}</span>
       <button data-be="${esc(d.symbol)}" ${canReduce() ? "" : "disabled"} title="move the stop to your entry price; any other stop orders on ${esc(d.symbol)} are cancelled">BREAKEVEN</button>
       <button data-partial="${esc(d.symbol)}" ${canReduce() ? "" : "disabled"} title="take part of the profit: you pick the shares and the price">PARTIAL</button></div>${takeoffHTML(d)}${partialHTML(d.symbol)}` : ""}
-    <div class="why">${on ? "" : esc(whyNot())}</div>
+    <div class="why">${on ? "" : esc(whyNot()) + (d && d.position && d.position.qty ? " · closing the position still works: FLATTEN, CLOSE, or a " + (d.position.qty > 0 ? "SELL" : "BUY") + " up to " + sz(Math.abs(d.position.qty)) : "")}</div>
     <div class="st">${TK.log.slice(0, 5).map(l => `<div>${esc(l)}</div>`).join("")}</div></div>`;
   panelHTML("ticket", html);
 }
@@ -3025,7 +3028,7 @@ async function transmit(){
   const price = pxEl ? +pxEl.value : null, aux = auxEl ? +auxEl.value : null;
   if (!d){ tkNote("no symbol"); return; }
   if (d.symbol !== TK.sym){ tkNote("symbol changed — check the price and send again"); return; }
-  if (!(t.can_trade && t.armed)){ tkNote("blocked: " + whyNot()); return; }
+  if (!(t.can_trade && t.armed) && !closesPosition(d, TK.side, qty, type)){ tkNote("blocked: " + whyNot()); return; }
   if (!(qty > 0)){ tkNote("quantity must be positive"); return; }
   if (type !== "MKT" && !(price > 0)){ tkNote("price required"); return; }
   if (type === "STP LMT" && !(aux > 0)){ tkNote("stop price required"); return; }

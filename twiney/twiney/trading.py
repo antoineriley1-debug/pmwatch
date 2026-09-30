@@ -538,7 +538,15 @@ class Trader:
                 return {"ok": False, "reason": "stop price must be positive"}
         else:
             aux = None
-        reason = self.gate.check(action, qty, price if order_type != "MKT" else (self.engine.syms[symbol].price() or 0), now, order_type)
+        # a ticket order that takes the position DOWN (a SELL while long, a BUY while short, no bigger than the
+        # position) is a close, not a trade: it goes through the reducing gate, which the day-loss lock, DISARM
+        # and the caps never block. Getting out is always allowed
+        pos0 = int(self.broker.position(symbol))
+        closing = bool(pos0) and order_type == "LMT" and action == (SELL if pos0 > 0 else BUY) and qty <= abs(pos0)
+        if closing:
+            reason = self.gate.check_reduce(action, qty, price, now)
+        else:
+            reason = self.gate.check(action, qty, price if order_type != "MKT" else (self.engine.syms[symbol].price() or 0), now, order_type)
         if not reason and order_type in ("LMT", "STP LMT"):
             # a limit far through the market is a typo or a stale price (the wrong symbol's), not a trade:
             # a BUY more than 5% over the offer / a SELL more than 5% under the bid is refused
@@ -555,7 +563,7 @@ class Trader:
                 reason = f"SELL limit {money(price)} is {100 * (1 - price / bid):.1f}% under {money(bid)} — check the price"
             if reason:
                 self.gate.blocked.appendleft({"t": now, "action": action, "qty": qty, "price": price, "reason": reason})
-        if not reason:
+        if not reason and not closing:
             pos = int(self.broker.position(symbol))
             # entries still working count too: five resting 500-share bids are a 2,500 share position waiting to happen
             # the worst case on this side: opposite working orders may never fill
@@ -571,6 +579,11 @@ class Trader:
             if nonce:
                 self.nonces.pop(nonce, None)
             return {"ok": False, "reason": reason}
+        if closing:
+            out = self._reduce(symbol, action, price, qty, now, "close")
+            if nonce:
+                self.nonces[nonce] = out
+            return out
         use_bracket = self.bracket if bracket is None else bool(bracket)
         plan = self.cfg["scale_plan"]["cash_flow"] if self.scale else None
         ref = price if order_type in ("LMT", "STP LMT") else (self.engine.syms[symbol].price() or price)
