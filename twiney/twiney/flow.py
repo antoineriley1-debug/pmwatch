@@ -262,9 +262,11 @@ class FlowBook:
         self.max_symbols = 400                   # the whole market flows through; keep the busiest
         self.last_call = {}                      # (symbol, cp) -> t of the last unusual call
         self.unusual = {}                        # (symbol, cp) -> last unusual dict
+        self.seq = {}                # symbol -> prints seen: the knows cache is good until this moves
 
     def add(self, p):
         self.recent.appendleft(p)
+        self.seq[p["symbol"]] = self.seq.get(p["symbol"], 0) + 1      # bumps whenever this name gets a print
         d = self.by_symbol.get(p["symbol"])
         if d is None:
             if len(self.by_symbol) >= self.max_symbols:

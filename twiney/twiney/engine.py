@@ -1057,14 +1057,17 @@ class Engine:
         bought at the ask; a reload SELLER (ask) by PUTS. Cached for the tick so twenty rows cost one read."""
         cp = "C" if side == BID else "P"
         cache = st.__dict__.setdefault("_knows_cache", {})
+        # good until a new print lands on this name or a second passes: twenty rows, the reloaders list, the pane
+        # and the rotation all share one read, and a quiet name costs nothing between prints
+        stamp = (self.flow.seq.get(st.symbol, 0), int(t))
         hit = cache.get(cp)
-        if hit is not None and hit[0] == t:
+        if hit is not None and hit[0] == stamp:
             return hit[1]
         index = st.symbol in set(self.cfg.get("flow", {}).get("index_symbols", ()))
         k = self.flow.knows(st.symbol, cp, t, index=index)
         k["cp"] = cp
         k["words"] = self._knows_words(k, side)
-        cache[cp] = (t, k)
+        cache[cp] = (stamp, k)
         return k
 
     @staticmethod

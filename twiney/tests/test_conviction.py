@@ -438,3 +438,24 @@ class KnowsTests(unittest.TestCase):
         lv = next(l for l in pane["levels"] if l["side"] == "ask" and abs(float(l["price"]) - 10.00) < 1e-9)
         self.assertTrue(lv["knows"]["knows"])
         self.assertEqual(lv["knows"]["cp"], "P")
+
+
+class KnowsCacheTests(unittest.TestCase):
+    def test_one_read_per_symbol_until_a_print_lands_or_a_second_passes(self):
+        e = connected_engine()
+        st = e.syms["AAA"]
+        calls = []
+        real = e.flow.knows
+        e.flow.knows = lambda *a, **k: (calls.append(a), real(*a, **k))[1]
+        for _ in range(25):                      # twenty ladder rows, the reloaders list, the pane: one read
+            e._knows(st, ASK, 10.2)
+            e._knows(st, ASK, 10.4)
+        self.assertEqual(len(calls), 1)
+        e._knows(st, ASK, 11.0)                  # a second later: one more
+        self.assertEqual(len(calls), 2)
+        e.on_flow({"t": 11.1, "symbol": "AAA", "strike": 9.5, "cp": "P", "expiry": "2026-10-03", "dte": 3, "size": 100, "price": 6.0,
+                   "premium": 60000, "spot": 10.0, "side": "ask", "kind": "sweep", "otm_pct": 5.0, "oi": None, "iv": None}, 11.1)
+        e._knows(st, ASK, 11.2)                  # a new print on the name: read again at once
+        self.assertEqual(len(calls), 3)
+        e._knows(st, BID, 11.2)                  # the other side is its own read
+        self.assertEqual(len(calls), 4)
