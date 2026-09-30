@@ -29,6 +29,25 @@ def replay(path, plays=None, cfg=None, speed=0.0, on_alert=None, engine_ready=No
     ticks_recorded = False
     replayed = []           # every replayed alert (the engine itself keeps only the last 300)
 
+    def pace(t):
+        """Real-time pacing, pause, seek and stop: for every event, ticks included. False = stop."""
+        if control is not None:
+            control["position"] = t
+            seek = control.get("seek")
+            if seek is not None and t >= seek:
+                control["seek"] = None
+                seek = None
+            while control.get("paused") and not control.get("stop") and seek is None:
+                time.sleep(0.1)
+            if control.get("stop"):
+                return False
+            spd = control.get("speed") or speed
+            if seek is None and spd and spd > 0 and prev_t is not None and t > prev_t:
+                time.sleep(min((t - prev_t) / spd, 5.0))
+        elif speed and speed > 0 and prev_t is not None and t > prev_t:
+            time.sleep(min((t - prev_t) / speed, 5.0))
+        return True
+
     def new_engine(p, c):
         eng = Engine(p, c)
         eng.listeners.append(replayed.append)
@@ -58,6 +77,8 @@ def replay(path, plays=None, cfg=None, speed=0.0, on_alert=None, engine_ready=No
             continue
         if kind == "tick":
             if ticks_recorded:
+                if not pace(t):
+                    break
                 engine.tick(t, allocate_slots=False)   # exactly when the live session ran it
             prev_t = t if prev_t is None else max(prev_t, t)
             continue
@@ -74,21 +95,8 @@ def replay(path, plays=None, cfg=None, speed=0.0, on_alert=None, engine_ready=No
             while next_tick < t or (kind == "slot" and next_tick <= t):   # a slot change is made by the tick at its own time
                 engine.tick(next_tick, allocate_slots=False)
                 next_tick += TICK_STEP
-        if control is not None:
-            control["position"] = t
-            seek = control.get("seek")
-            if seek is not None and t >= seek:
-                control["seek"] = None
-                seek = None
-            while control.get("paused") and not control.get("stop") and seek is None:
-                time.sleep(0.1)
-            if control.get("stop"):
-                break
-            spd = control.get("speed") or speed
-            if seek is None and spd and spd > 0 and prev_t is not None and t > prev_t:
-                time.sleep(min((t - prev_t) / spd, 5.0))
-        elif speed and speed > 0 and prev_t is not None and t > prev_t:
-            time.sleep(min((t - prev_t) / speed, 5.0))
+        if not pace(t):
+            break
         prev_t = t if prev_t is None else max(prev_t, t)
         engine.ingest(ev)
     if engine is not None and prev_t is not None and not ticks_recorded:

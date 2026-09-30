@@ -193,3 +193,74 @@ class Round2Tests(unittest.TestCase):
         e.on_fill("X1", "AAA", "SLD", 100, 10.00, "", 2.0)
         e.on_position("DU1", "AAA", 0, 0.0, 2.1)
         self.assertAlmostEqual(e.day_pnl()["realized"], 100.0)  # 9.00 -> 10.00 on 100 shares today
+
+
+class PartialProfitTests(unittest.TestCase):
+    def test_partial_trims_target_then_stop_after_fill(self):
+        e, tr, gate, broker = sim_setup()
+        gate.arm(True)
+        e.syms["AAA"].play.update(stop=9.50, target=11.0)
+        tr.submit("AAA", "BUY", 10.00, 100, 2.0)
+        out = tr.partial("AAA", 40, 10.50, 3.0)
+        self.assertTrue(out["ok"], out)
+        roles = {o["role"]: o["remaining"] for o in pend(e)}
+        self.assertEqual(roles, {"stop": 100.0, "target": 60.0, "partial": 40.0})
+        e.on_depth("AAA", 0, UPDATE, BID, 10.50, 500, "", 4.0)      # bid comes up: the partial fills
+        self.assertEqual(broker.position("AAA"), 60)
+        for t in (6.1, 8.2):
+            tr.watchdog(t)
+        self.assertEqual({o["role"]: o["remaining"] for o in pend(e)}, {"stop": 60.0, "target": 60.0})
+
+    def test_partial_limits(self):
+        e, tr, gate, broker = sim_setup()
+        gate.arm(True)
+        self.assertFalse(tr.partial("AAA", 10, 10.5, 2.0)["ok"])          # no position
+        tr.submit("AAA", "BUY", 10.00, 100, 2.0, bracket=False)
+        self.assertIn("whole position", tr.partial("AAA", 100, 10.5, 3.0)["reason"])
+        gate.arm(False)
+        self.assertTrue(tr.partial("AAA", 30, 10.5, 3.1)["ok"])           # works disarmed, like close
+        out = tr.partial("AAA", 80, 10.6, 3.2)                             # only 70 left to take
+        self.assertTrue(out["ok"]); self.assertIn("70", out["sent"])
+
+
+class BreakevenTests(unittest.TestCase):
+    def test_breakeven_moves_every_stop_to_the_entry(self):
+        e, tr, gate, broker = sim_setup()
+        gate.arm(True)
+        e.syms["AAA"].play.update(stop=9.50, target=11.0)
+        tr.scale = True
+        e.syms["AAA"].play.update(target=10.60)
+        tr.submit("AAA", "BUY", 10.00, 100, 2.0)
+        e.on_depth("AAA", 0, UPDATE, BID, 10.20, 500, "", 3.0)
+        e.on_depth("AAA", 0, UPDATE, ASK, 10.21, 500, "", 3.0)
+        e.on_l1("AAA", "last", 10.20, 3.0)
+        gate.arm(False)                                   # protective: works disarmed
+        out = tr.breakeven("AAA", 4.0)
+        self.assertTrue(out["ok"], out)
+        stops = [o for o in pend(e) if o["role"] == "stop"]
+        self.assertTrue(stops and all(o["aux"] == 10.00 for o in stops))
+
+    def test_breakeven_refused_when_price_is_through_the_entry(self):
+        e, tr, gate, broker = sim_setup()
+        gate.arm(True)
+        e.syms["AAA"].play.update(stop=9.50, target=11.0)
+        tr.submit("AAA", "BUY", 10.00, 100, 2.0)
+        e.on_depth("AAA", 0, UPDATE, BID, 9.80, 500, "", 3.0)
+        e.on_l1("AAA", "last", 9.80, 3.0)
+        out = tr.breakeven("AAA", 4.0)
+        self.assertFalse(out["ok"])
+        self.assertIn("below your entry", out["reason"])
+
+
+    def test_breakeven_leaves_one_set_of_stops_covering_the_position(self):
+        e, tr, gate, broker = sim_setup(max_orders_per_minute=100)
+        gate.arm(True)
+        e.syms["AAA"].play.update(stop=9.50, target=11.0)
+        tr.submit("AAA", "BUY", 10.00, 100, 2.0)                                       # bracket stop 100
+        tr.submit("AAA", "SELL", 9.40, 100, 2.1, bracket=False, order_type="STP LMT", aux=9.45)   # a hand-placed stop
+        tr.submit("AAA", "BUY", 10.60, 100, 2.2, bracket=False, order_type="STP LMT", aux=10.55)  # a buy-stop add-on
+        e.on_depth("AAA", 0, UPDATE, BID, 10.20, 500, "", 3.0); e.on_l1("AAA", "last", 10.20, 3.0)
+        out = tr.breakeven("AAA", 4.0)
+        self.assertTrue(out["ok"], out); self.assertEqual(out["cancelled"], 2)
+        stops = [o for o in pend(e) if o.get("type") in ("STP LMT", "STP") or o["role"] == "stop"]
+        self.assertEqual([(o["role"], o["remaining"], o["aux"]) for o in stops], [("stop", 100.0, 10.0)])

@@ -146,8 +146,13 @@ def normalize(rec, now=None):
         premium = price * 100.0 * size
     spot = _num(_pick(rec, "spot"))
     side = str(_pick(rec, "side") or "").strip().upper()
-    side = ("ask" if side.startswith("A") or side in ("BUY", "BOUGHT", "ABOVE", "BULLISH") else
-            "bid" if side.startswith("B") or side in ("SELL", "SOLD", "BELOW", "BEARISH") else "mid")
+    if "BID" in side:                      # "AT BID", "AT_BID", "BELOW BID"
+        side = "bid"
+    elif "ASK" in side or "OFFER" in side:  # "AT ASK", "ABOVE ASK"
+        side = "ask"
+    else:
+        side = ("ask" if side.startswith("A") or side in ("BUY", "BOUGHT", "ABOVE", "BULLISH") else
+                "bid" if side.startswith("B") or side in ("SELL", "SOLD", "BELOW", "BEARISH") else "mid")
     kind = str(_pick(rec, "kind") or "").strip().lower()
     kind = "sweep" if "sweep" in kind else "block" if "block" in kind else "split" if "split" in kind else "trade"
     t0 = _epoch(_pick(rec, "t"), now)

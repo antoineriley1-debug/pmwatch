@@ -411,3 +411,31 @@ class BigSizeTests(unittest.TestCase):
         self.assertEqual((lad["big_shares"], lad["big_default"]), (30000, False))
         e.set_big_shares("AAA", None, 12.0)
         self.assertEqual(row(12.1, 10.03)["ask_big"]["times"], 2)   # changing the bar is not a new appearance
+
+
+class VerifyRound2Tests(unittest.TestCase):
+    def test_locked_quote_reads_against_the_last_clean_one(self):
+        from twiney.engine import SymbolState
+        st = SymbolState(plays()[0], cfg())
+        st.quotes.extend([(90, 10.01, 10.02), (105, 10.00, 10.02), (109.9, 10.02, 10.02)])
+        st.l1["bid"], st.l1["ask"] = 10.02, 10.02
+        self.assertEqual(st.aggressor(10.01, 110), "mid")
+        self.assertEqual(st.aggressor(10.00, 110), "sell")
+
+    def test_price_follows_the_quote_when_the_tape_goes_quiet(self):
+        e = connected_engine()
+        price_all(e, 1.0, {"AAA": 10.00}); e.tick(1.0)
+        seed_book(e, "AAA", 1.5)
+        e.on_print("AAA", 10.00, 100, "X", 2.0)
+        e.on_l1("AAA", "last", 10.05, 5.0)
+        self.assertEqual(e.syms["AAA"].price(), 10.00)      # the tape is live: it sets the price
+        e.tick(13.0)
+        self.assertEqual(e.syms["AAA"].price(), 10.05)      # tape quiet 10 s+: the quote's last takes over
+        self.assertEqual(e.syms["AAA"].bar_list()[-1][4], 10.05)
+
+    def test_flow_side_words(self):
+        from twiney.flow import normalize
+        base = {"ticker": "AAA", "strike": 10, "cp": "C", "size": 1, "price": 1}
+        self.assertEqual(normalize(dict(base, side="At Bid"))["side"], "bid")
+        self.assertEqual(normalize(dict(base, side="AT_ASK"))["side"], "ask")
+        self.assertEqual(normalize(dict(base, side="Above Ask"))["side"], "ask")

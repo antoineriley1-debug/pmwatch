@@ -79,9 +79,12 @@ class SymbolState:
         self.quotes = deque(maxlen=64)   # (t, bid, ask) as the best bid / offer changed: prints are read against it
         self.voice_pending = {}          # (side, price_key) -> size that left, waiting to see if it traded
         self.l1_volume = None            # IBKR's cumulative day volume (symbols without a tape)
+        self.l1_last_raw = None          # IBKR's quote-stream last, kept even while the tape sets the price
 
     def bar_update(self, t, price, size=0.0, side=None):
         m = int(t // BAR_SECONDS) * BAR_SECONDS
+        if self.bars and m < max(self.bars):
+            self._late = getattr(self, "_late", 0) + 1      # a late print into a finished minute: rebuild the cache
         b = self.bars.get(m)
         if b is None:
             b = self.bars[m] = [price, price, price, price, 0.0, 0.0, 0.0]
@@ -104,7 +107,7 @@ class SymbolState:
         keys = sorted(self.bars)
         if not keys:
             return []
-        done_key = (len(keys), keys[-2] if len(keys) > 1 else None, self.hist_ver)
+        done_key = (len(keys), keys[-2] if len(keys) > 1 else None, self.hist_ver, getattr(self, "_late", 0))
         if getattr(self, "_done_key", None) != done_key:
             self._done = [[k] + [round(x, 4) for x in self.bars[k]] for k in keys[:-1]]
             self._done_key = done_key
@@ -135,14 +138,21 @@ class SymbolState:
         gone when the print that took it arrives. So a print that reads 'mid' against the quote now is read against
         the quotes of the last moment; a locked / crossed quote is skipped for the last clean one."""
         bid, ask = self.bbo()
+        locked = lambda b, a: b is not None and a is not None and b >= a
+        if locked(bid, ask):
+            # a locked / crossed quote says nothing: read the print against the last CLEAN quote, whatever it says
+            for qt, b, a in reversed(self.quotes):
+                if not locked(b, a):
+                    return classify(price, b, a)
+            return MID
         side = classify(price, bid, ask)
         if side != MID:
             return side
-        for qt, b, a in reversed(self.quotes):
-            if t - qt > window and not (b is not None and a is not None and b >= a):
-                # older than the window: only used when everything since has been locked / crossed
-                if not (bid is not None and ask is not None and bid >= ask):
-                    break
+        for qt, b, a in reversed(self.quotes):   # the quote may have just moved: the last moment's quotes only
+            if t - qt > window:
+                break
+            if locked(b, a):
+                continue
             s2 = classify(price, b, a)
             if s2 != MID:
                 return s2
@@ -260,6 +270,8 @@ class Engine:
             self._clock(t)
             self._rec({"ev": "l1", "t": t, "sym": symbol, "f": field, "v": value})
             self.data_t = t
+            if field == "last":
+                st.l1_last_raw = value
             if field == "last" and st.depth_active and st.tape_t is not None and t - st.tape_t < 10:
                 # this symbol has a tape: the price IS the last print, the same print the candle is built from.
                 # IBKR's separate quote stream can lag or lead the tape by a moment; it never moves the price here,
@@ -270,8 +282,9 @@ class Engine:
             st.l1_t = t
             if field in ("bid", "ask"):
                 st.note_quote(t)
-            if field == "last" and not st.depth_active and value:
-                st.bar_update(t, value)  # symbols without a tape still get a price chart
+            tape_dead = st.tape_t is None or t - st.tape_t >= 10
+            if field == "last" and value and (not st.depth_active or tape_dead):
+                st.bar_update(t, value)  # no tape (or it went quiet): the quote's last price keeps the chart moving
             if field == "volume" and value is not None:
                 # no tape on this symbol: the day volume's increase is this minute's volume (charts, VWAP, daily)
                 if st.l1_volume is not None and value > st.l1_volume and not st.depth_active and st.l1["last"]:
@@ -342,7 +355,9 @@ class Engine:
             st.bar_update(t, price, size, rec["side"])
             k = price_key(price)
             if rec["side"] in ("buy", "sell"):
-                fm = st.foot.setdefault(int(t // BAR_SECONDS) * BAR_SECONDS, {})
+                fmin = int(t // BAR_SECONDS) * BAR_SECONDS
+                st.__dict__.get("_foot_cache", {}).pop(fmin, None)   # a print into a minute rebuilds its footprint
+                fm = st.foot.setdefault(fmin, {})
                 cell = fm.setdefault(k, [price, 0.0, 0.0])
                 cell[1 if rec["side"] == "buy" else 2] += size
                 if len(st.foot) > 240:
@@ -949,6 +964,8 @@ class Engine:
         st.depth_active = False
         st.book = None
         st.trackers = {}
+        st.voice_pending.clear()          # nothing half-decided survives the slot going away
+        st.sizes = {ASK: {}, BID: {}}
         if record:
             self._rec({"ev": "slot", "t": t, "sym": symbol, "on": False, "reason": reason})
 
@@ -1025,6 +1042,11 @@ class Engine:
                     continue
                 if st.voice_pending:
                     self._voice_settle(st, t)
+                # the tape went quiet but the quote stream moved on: the price follows the quote (never stuck)
+                if (st.l1_last_raw and st.l1_last_raw != st.l1["last"] and st.tape_t is not None
+                        and t - st.tape_t >= 10):
+                    st.l1["last"] = st.l1_last_raw
+                    st.bar_update(t, st.l1_last_raw)
                 for key, tr in list(st.trackers.items()):
                     label = tr.evaluate(t, st.book)
                     if label:
@@ -1066,24 +1088,30 @@ class Engine:
             return
         settling = t < st.resync_until      # book still being rebuilt: nothing counts as coming back
         big = self.big_shares_for(st)
-        showing = {price_key(p): s for p, s, _n in st.book.levels(side)}
+        lv = st.book.levels(side)
+        showing = {price_key(p): s for p, s, _n in lv}
+        prices_by_key = {price_key(p): p for p, s, _n in lv}
         recs = st.big[side]
         for k, s in showing.items():
             rec = recs.get(k)        # [times, peak, showing now, gone since]
             if s >= big:
                 if rec is None:
-                    recs[k] = [1, s, True, None]
+                    recs[k] = [1, s, True, None, prices_by_key[k]]
                 elif not rec[2]:
                     if rec[3] is not None and t - rec[3] >= self.BIG_GONE_SECONDS and not settling:
                         rec[0] += 1
                     rec[2] = True; rec[1] = max(rec[1], s); rec[3] = None
+                    if len(rec) < 5:
+                        rec.append(prices_by_key[k])
                 else:
                     rec[1] = max(rec[1], s)
             elif rec is not None and rec[2]:
                 rec[2] = False; rec[3] = t
         for k, rec in recs.items():
             if k not in showing and rec[2]:
-                rec[2] = False; rec[3] = t
+                rec[2] = False
+                # scrolled out of the book's window is not "gone": coming back into view is not a new appearance
+                rec[3] = t if (len(rec) > 4 and st.book.in_view(side, rec[4])) else None
 
     BIG_GONE_SECONDS = 5.0
 
@@ -1494,6 +1522,17 @@ class Engine:
             else:
                 st.mem_sums[key] = v
         tw = self.cfg["trap"]["window_seconds"]
+        if tw > getattr(st, "trap_w", tw):
+            # the window was raised: rebuild from the level memory (which reaches back MEMORY_SECONDS)
+            st.trap_mem = deque(m for m in st.memory if t - m[0] <= tw)
+            st.trap_sums = {}
+            for _t, k, p, side, size in st.trap_mem:
+                ts = st.trap_sums.get((k, side))
+                if ts is None:
+                    st.trap_sums[(k, side)] = [size, p * size, p]
+                else:
+                    ts[0] += size; ts[1] += p * size
+        st.trap_w = tw
         while st.trap_mem and t - st.trap_mem[0][0] > tw:
             _t, k, p, side, size = st.trap_mem.popleft()
             key = (k, side)

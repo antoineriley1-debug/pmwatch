@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20260930-0439">
+<meta name="build" content="20260930-0445">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -667,6 +667,26 @@ body.resizing{user-select:none}
 body.resizing-v, body.resizing-v *{cursor:col-resize!important}
 body.resizing-h, body.resizing-h *{cursor:row-resize!important}
 body.resizing .zbody{pointer-events:none}
+
+/* partial profit + breakeven */
+.pp{display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin:4px 0;padding:6px 8px;border:1px solid rgba(227,168,58,.45);border-radius:4px;background:rgba(227,168,58,.07);font-size:11px}
+.pp b{color:#e3a83a;letter-spacing:.04em;margin-right:4px}
+.pp input{width:72px}
+.pp .pp-sh{width:58px}
+.pp button{padding:1px 7px;font-size:10.5px}
+.pp .pp-send.s{background:var(--sell,#d9534f);color:#fff;border-color:transparent}
+.pp .pp-send.b{background:var(--buy,#3fb56f);color:#0c0c0d;border-color:transparent}
+.ticket .posbox{grid-column:1/-1;display:flex;align-items:center;gap:6px;margin-top:4px;font-size:11px}
+.ticket .posbox span{flex:1}
+.ticket .pp{grid-column:1/-1}
+
+/* take-off presets: one compact collapsible strip */
+.ticket .takeoff{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;gap:4px;font-size:10.5px}
+.takeoff .tohead{background:none;border:none;color:#e3a83a;font-weight:700;letter-spacing:.04em;padding:1px 2px;cursor:pointer}
+.takeoff .topct,.takeoff .tobtns{display:flex;gap:3px;align-items:center}
+.takeoff .topct button.on{background:rgba(227,168,58,.25);border-color:#e3a83a}
+.takeoff button{padding:1px 6px;font-size:10.5px}
+.takeoff .tobtns button{font-weight:700}
 
 </style>
 </head>
@@ -1626,7 +1646,7 @@ function drawOne(p, cv, v, isFoot){
   if (bracketOn && !isFoot){
     const pos = d.position, ent = pos.avg_cost, long = pos.qty > 0, qa = Math.abs(pos.qty);
     const groups = {};
-    for (const o of exitOrders){ if (!o.price) continue; const kind = o.role === "stop" ? "stop" : "tgt"; const key = kind + "|" + o.price;
+    for (const o of exitOrders){ if (!o.price) continue; const kind = o.role === "stop" ? "stop" : o.role === "partial" ? "part" : "tgt"; const key = kind + "|" + o.price;
       (groups[key] = groups[key] || {kind, price: o.price, qty: 0, ids: []}).qty += +o.qty || 0; groups[key].ids.push(o.id); }
     const yE = y(ent);
     for (const gr of Object.values(groups)){
@@ -1637,7 +1657,7 @@ function drawOne(p, cv, v, isFoot){
       g.strokeStyle = col; g.lineWidth = drag ? 2.5 : 2; g.setLineDash([]);
       g.beginPath(); g.moveTo(0, yy); g.lineTo(plotW, yy); g.stroke();
       const pnl = (gp - ent) * gr.qty * (long ? 1 : -1);
-      const tag = `${stop ? "STOP" : "TGT"} ${sz(gr.qty)}  ${pnl >= 0 ? "+" : "−"}$${Math.abs(pnl).toFixed(0)}`;
+      const tag = `${stop ? "STOP" : gr.kind === "part" ? "PARTIAL" : "TGT"} ${sz(gr.qty)}  ${pnl >= 0 ? "+" : "−"}$${Math.abs(pnl).toFixed(0)}`;
       g.font = "bold 11px ui-monospace, Menlo, Consolas, monospace";
       const tw = g.measureText(tag).width + 26;
       g.fillStyle = col; g.fillRect(plotW - tw - 4, yy - 9, tw, 18);
@@ -2374,17 +2394,92 @@ function renderCalls(s){
   }).join("") : `<div class="say">No calls for ${esc(curSym || "this symbol")} yet.</div>`);
   const fb = document.getElementById("feedBody"); if (fb.dataset.h !== html){ fb.dataset.h = html; fb.innerHTML = html; }
 }
+/* ---------- partial profit + breakeven: on the position row and in the ticket */
+const PP = {};   // symbol -> {open, shares, px}: the partial-profit form, kept while you type
+// getting out / protecting works disarmed and locked (paper / sim account), like the server allows
+function canReduce(){ const t = (state && state.trading) || {}; return t.mode === "SIM" || t.mode === "PAPER" || (t.mode === "LIVE" && t.can_trade); }
+function ppDefaults(sym){
+  const d = ((state && state.panes) || []).concat(Object.values((state && state.extra) || {})).find(x => x && x.symbol === sym);
+  const pos = d && d.position; if (!pos) return null;
+  const long = pos.qty > 0, q = Math.abs(pos.qty), last = d.last || pos.avg_cost, tgt = d.play && d.play.target;
+  // default price: halfway from here to your target when it is on the profit side, else a little into profit
+  let p = tgt && (long ? tgt > last : tgt < last) ? last + (tgt - last) / 2 : last * (long ? 1.005 : 0.995);
+  return {long, q, px: snapPx(p), shares: Math.max(1, Math.floor(q / 2))};
+}
+function partialHTML(sym){
+  const f = PP[sym], dd = ppDefaults(sym); if (!f || !f.open || !dd) return "";
+  const sh = f.shares != null ? f.shares : dd.shares, pr = f.px != null ? f.px : dd.px;
+  return `<div class="pp" data-pp="${esc(sym)}"><b>TAKE PARTIAL</b>
+    <input class="pp-sh" type="number" min="1" max="${dd.q - 1}" step="1" value="${sh}" title="shares to take off"> sh
+    ${[25, 50, 75].map(k => `<button data-pp-pct="${k}">${k}%</button>`).join("")}
+    @ <input class="pp-px" type="number" step="${pr < 1 ? "0.0001" : "0.01"}" value="${pr}" title="the limit price for the partial">
+    <button class="pp-send ${dd.long ? "s" : "b"}" data-pp-send="1">${dd.long ? "SELL" : "BUY"} PARTIAL</button><button data-pp-close="1" title="close this form">✕</button></div>`;
+}
+async function sendPartial(sym, el){
+  const sh = +el.querySelector(".pp-sh").value, pr = +el.querySelector(".pp-px").value;
+  if (!(sh > 0) || !(pr > 0)){ toast("Shares and price, please", false); return; }
+  const out = await post("/api/trade/partial", {symbol: sym, shares: sh, price: pr});
+  toast(out.ok ? "Sent: " + out.sent : "Partial blocked: " + (out.reason || ""), out.ok);
+  if (out.ok){ PP[sym] = {open: false}; P.positions.last = null; P.ticket.last = null; poll(true); }
+}
+// take-off presets: one press = a limit for your chosen share of the position at entry + $X a share (long) / − $X (short)
+const TAKE_OFF = [0.75, 1, 1.5, 2, 2.5, 5];
+function takeoffHTML(d){
+  const pos = d.position, long = pos.qty > 0, q = Math.abs(pos.qty), open = store.get("takeoffOpen", true), pct = +store.get("takeoffPct", 50);
+  const n = Math.max(1, Math.min(q - 1, Math.round(q * pct / 100)));
+  return `<div class="takeoff"><button class="tohead" data-to-toggle="1" title="show / hide the take-off buttons">${open ? "▾" : "▸"} TAKE OFF</button>${open ? `
+    <span class="topct">${[25, 50, 75].map(k => `<button data-to-pct="${k}" class="${pct === k ? "on" : ""}" title="take off ${k}% of the position">${k}%</button>`).join("")}<span class="dim">${sz(n)} sh</span></span>
+    <span class="tobtns">${TAKE_OFF.map(x => { const p = snapPx(pos.avg_cost + (long ? x : -x));
+      return `<button data-to="${x}" ${canReduce() && q > 1 ? "" : "disabled"} title="${long ? "SELL" : "BUY"} ${sz(n)} @ ${px(p)} (entry ${px(pos.avg_cost)} ${long ? "+" : "−"} $${x.toFixed(2)})">+$${x % 1 ? x.toFixed(2) : x}</button>`; }).join("")}</span>` : ""}</div>`;
+}
+document.addEventListener("click", async e => {
+  if (e.target.closest("button[data-to-toggle]")){ store.set("takeoffOpen", !store.get("takeoffOpen", true)); P.ticket.last = null; renderTicket(state, curData(), true); return; }
+  const pc = e.target.closest("button[data-to-pct]"); if (pc){ store.set("takeoffPct", +pc.dataset.toPct); P.ticket.last = null; renderTicket(state, curData(), true); return; }
+  const b = e.target.closest("button[data-to]"); if (!b) return;
+  const d = curData(); if (!d || !d.position || !d.position.qty) return;
+  const pos = d.position, long = pos.qty > 0, q = Math.abs(pos.qty), x = +b.dataset.to;
+  const n = Math.max(1, Math.min(q - 1, Math.round(q * (+store.get("takeoffPct", 50)) / 100)));
+  const price = snapPx(pos.avg_cost + (long ? x : -x));
+  const out = await post("/api/trade/partial", {symbol: d.symbol, shares: n, price});
+  toast(out.ok ? `Take off at +$${x.toFixed(2)}: ${out.sent}` : "Take-off blocked: " + (out.reason || ""), out.ok);
+  poll(true);
+});
+async function moveToBreakeven(sym){
+  const out = await post("/api/trade/breakeven", {symbol: sym});
+  toast(out.ok ? sym + ": " + out.sent : "Breakeven blocked: " + (out.reason || ""), out.ok);
+  poll(true);
+}
+document.addEventListener("click", e => {
+  const be = e.target.closest("button[data-be]"); if (be){ moveToBreakeven(be.dataset.be); return; }
+  const op = e.target.closest("button[data-partial]"); if (op){ const s = op.dataset.partial; PP[s] = {open: !(PP[s] && PP[s].open)}; P.positions.last = null; P.ticket.last = null; renderPositions(state); renderTicket(state, curData(), true); return; }
+  const box = e.target.closest(".pp[data-pp]"); if (!box) return;
+  const sym = box.dataset.pp, dd = ppDefaults(sym);
+  const pct = e.target.closest("button[data-pp-pct]");
+  if (pct && dd){ const n = Math.max(1, Math.min(dd.q - 1, Math.round(dd.q * +pct.dataset.ppPct / 100))); PP[sym].shares = n; box.querySelector(".pp-sh").value = n; return; }
+  if (e.target.closest("button[data-pp-send]")) sendPartial(sym, box);
+  if (e.target.closest("button[data-pp-close]")){ PP[sym] = {open: false}; P.positions.last = null; P.ticket.last = null; renderPositions(state); renderTicket(state, curData(), true); }
+});
+document.addEventListener("input", e => {
+  const box = e.target.closest && e.target.closest(".pp[data-pp]"); if (!box) return;
+  const f = PP[box.dataset.pp] = PP[box.dataset.pp] || {open: true};
+  if (e.target.classList.contains("pp-sh")) f.shares = +e.target.value;
+  if (e.target.classList.contains("pp-px")) f.px = +e.target.value;
+});
+document.addEventListener("keydown", e => { const box = e.target.closest && e.target.closest(".pp[data-pp]"); if (!box) return; e.stopPropagation(); if (e.key === "Enter") sendPartial(box.dataset.pp, box); }, true);
+
 function renderPositions(s){
-  const A = s.account, on = canTrade();
+  const A = s.account, on = canReduce();
+  if (P.positions.pc.contains(document.activeElement) && document.activeElement.tagName === "INPUT") return;   // typing in the partial form
   const rows = (A.positions || []).map(p => {
     const long = p.qty > 0, pct = p.last && p.avg_cost ? ((p.last - p.avg_cost) / p.avg_cost * 100) * (long ? 1 : -1) : null;
     const q = Math.abs(p.qty);
     return `<tr data-sym="${esc(p.symbol)}"><td class="l"><b>${esc(p.symbol)}</b></td><td class="${long ? "b" : "s"}">${long ? "LONG" : "SHORT"}</td><td>${sz(q)}</td><td>${px(p.avg_cost)}</td><td>${px(p.last)}</td>
       <td class="pct ${pct == null ? "" : pct >= 0 ? "up" : "dn"}">${pctFmt(pct)}</td>
       <td class="l"><button data-red="${esc(p.symbol)}" data-n="${Math.max(1, Math.floor(q / 2))}" ${on ? "" : "disabled"} title="reduce by half">½</button><button data-red="${esc(p.symbol)}" data-n="${Math.max(1, Math.floor(q / 4))}" ${on ? "" : "disabled"} title="reduce by a quarter">¼</button><button data-red="${esc(p.symbol)}" data-n="ask" ${on ? "" : "disabled"} title="reduce by a number of shares">…</button>
-        <button class="danger" data-close="${esc(p.symbol)}" ${on ? "" : "disabled"} title="CLOSE the whole position with a limit at the touch">CLOSE</button></td></tr>`;
+        <button data-partial="${esc(p.symbol)}" ${on ? "" : "disabled"} title="take part of the profit: you pick the shares and the price">PARTIAL</button><button data-be="${esc(p.symbol)}" ${on ? "" : "disabled"} title="move the stop to your entry price (breakeven); any other stop orders on ${esc(p.symbol)} are cancelled">BE</button>
+        <button class="danger" data-close="${esc(p.symbol)}" ${on ? "" : "disabled"} title="CLOSE the whole position with a limit at the touch">CLOSE</button></td></tr>${PP[p.symbol] && PP[p.symbol].open ? `<tr><td colspan="7" class="l">${partialHTML(p.symbol)}</td></tr>` : ""}`;
   }).join("");
-  panelHTML("positions", `<table class="grid"><tr><th>SYMBOL</th><th>SIDE</th><th>QTY</th><th>AVG ENTRY</th><th>LAST</th><th>P&amp;L %</th><th style="text-align:left">REDUCE / CLOSE</th></tr>${rows || `<tr><td colspan="7" class="dim l">${A.seen ? "FLAT" : "NO ACCOUNT DATA"}</td></tr>`}</table>`);
+  panelHTML("positions", `<table class="grid"><tr><th>SYMBOL</th><th>SIDE</th><th>QTY</th><th>AVG ENTRY</th><th>LAST</th><th>P&amp;L %</th><th style="text-align:left">REDUCE · PARTIAL · BREAKEVEN · CLOSE</th></tr>${rows || `<tr><td colspan="7" class="dim l">${A.seen ? "FLAT" : "NO ACCOUNT DATA"}</td></tr>`}</table>`);
 }
 let showHistory = false, selOrder = null;
 function renderOrders(s){
@@ -2426,6 +2521,9 @@ function renderTicket(s, d, force){
     <label>TIF</label><select id="tkTif"><option ${TK.tif === "DAY" ? "selected" : ""}>DAY</option><option ${TK.tif === "GTC" ? "selected" : ""}>GTC</option><option ${TK.tif === "IOC" ? "selected" : ""}>IOC</option></select>
     <div class="opts"><label><input type="checkbox" id="tkBracket" ${t.bracket ? "checked" : ""}> stop+target</label><label><input type="checkbox" id="tkScale" ${t.scale ? "checked" : ""}> PS60 exits</label></div>
     <div class="go"><button class="tx ${TK.side === "BUY" ? "b" : "s"}" id="tkGo" ${on && d && !TK.inflight ? "" : "disabled"}>${TK.inflight ? "SENDING…" : "TRANSMIT " + TK.side}</button><button id="tkCxl" ${d && d.orders && d.orders.length ? "" : "disabled"} class="danger">CANCEL ALL</button></div>
+    ${d && d.position && d.position.qty ? `<div class="posbox"><span>IN <b class="${d.position.qty > 0 ? "b" : "s"}">${d.position.qty > 0 ? "LONG" : "SHORT"} ${sz(Math.abs(d.position.qty))}</b> @ ${px(d.position.avg_cost)}</span>
+      <button data-be="${esc(d.symbol)}" ${canReduce() ? "" : "disabled"} title="move the stop to your entry price; any other stop orders on ${esc(d.symbol)} are cancelled">BREAKEVEN</button>
+      <button data-partial="${esc(d.symbol)}" ${canReduce() ? "" : "disabled"} title="take part of the profit: you pick the shares and the price">PARTIAL</button></div>${takeoffHTML(d)}${partialHTML(d.symbol)}` : ""}
     <div class="why">${on ? "" : esc(whyNot())}</div>
     <div class="st">${TK.log.slice(0, 5).map(l => `<div>${esc(l)}</div>`).join("")}</div></div>`;
   panelHTML("ticket", html);
@@ -2478,7 +2576,7 @@ P.ticket.el.addEventListener("change", e => {
 P.ticket.el.addEventListener("keydown", e => { e.stopPropagation(); if (e.key === "Enter" && e.target.tagName === "INPUT") transmit(); });
 P.positions.el.addEventListener("click", async e => {
   const c = e.target.closest("button[data-close]"); if (c){ if (!confirm("CLOSE the whole " + c.dataset.close + " position?")) return; flatten(c.dataset.close); return; }
-  const r = e.target.closest("button[data-red]"); if (r){ let n = r.dataset.n; if (n === "ask"){ n = prompt("Reduce " + r.dataset.red + " by how many shares?"); if (!n) return; } if (!canTrade()) return toast("Can't trade: " + whyNot(), false);
+  const r = e.target.closest("button[data-red]"); if (r){ let n = r.dataset.n; if (n === "ask"){ n = prompt("Reduce " + r.dataset.red + " by how many shares?"); if (!n) return; } if (!canReduce()) return toast("Can't trade: " + whyNot(), false);
     const out = await post("/api/trade/adjust", {symbol: r.dataset.red, shares: +n, mode: "close"}); toast(out.ok ? "Sent: " + out.sent : "Blocked: " + (out.reason || ""), out.ok); return; }
   const tr = e.target.closest("tr[data-sym]"); if (tr) openTab(tr.dataset.sym, false);
 });

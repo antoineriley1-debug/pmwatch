@@ -626,7 +626,7 @@ class Trader:
         self._note(now, f"cancelled {n} working order{'s' if n != 1 else ''}{' in ' + symbol if symbol else ''}", True)
         return {"ok": True, "cancelled": n}
 
-    REDUCING = ("flatten", "close")
+    REDUCING = ("flatten", "close", "partial")
 
     def _can_reduce_by(self, symbol, now):
         """Shares that can still be taken off: the position less the flatten / close orders already working. A close
@@ -671,6 +671,124 @@ class Trader:
         self.broker.cancel_all(now, symbol)
         return self._reduce(symbol, action, price, abs(qty), now, "flatten")
 
+    def partial(self, symbol, shares, price, now=None):
+        with self.lock:
+            return self._partial_unlocked(symbol, shares, price, now)
+
+    def _partial_unlocked(self, symbol, shares, price, now=None):
+        """Take part of the profit: a limit for ``shares`` of the position at ``price``, working next to the bracket.
+        The target is cut by the same shares right away (target + partial = what you hold); when the partial fills,
+        the stop comes down to the shares left. Works like flatten / close: disarmed or locked, it still goes out."""
+        now = now or time.time()
+        try:
+            shares, price = int(shares), float(price)
+        except (TypeError, ValueError):
+            return {"ok": False, "reason": "shares and price must be numbers"}
+        if shares <= 0 or price <= 0:
+            return {"ok": False, "reason": "shares and price must be positive"}
+        pos, free, why = self._can_reduce_by(symbol, now)
+        if not pos:
+            return {"ok": False, "reason": "no position to take profit on"}
+        if not free:
+            return {"ok": False, "reason": why}
+        if shares >= abs(pos):
+            return {"ok": False, "reason": f"that is the whole position ({abs(pos)} shares) — use CLOSE or FLATTEN"}
+        shares = min(shares, free)
+        action = SELL if pos > 0 else BUY
+        price = snap(price, -1 if action == SELL else +1)
+        reason = self.gate.check_reduce(action, shares, price, now)
+        if reason:
+            self._note(now, f"BLOCKED partial {symbol}: {reason}", False)
+            return {"ok": False, "reason": reason}
+        out = self._reduce(symbol, action, price, shares, now, "partial")
+        if out.get("ok"):
+            # the target(s) give up the same shares, biggest first, so exits never add up to more than you hold
+            left = shares
+            tg = sorted((o for o in self.engine._pending(symbol) if o.get("role") in ("target", "runner")
+                         and o.get("order_id") is not None and o.get("action") == action),
+                        key=lambda o: -(o.get("remaining") or o.get("qty") or 0))
+            for o in tg:
+                if left <= 0:
+                    break
+                have = int(o.get("remaining") or o.get("qty") or 0)
+                cut = min(have, left)
+                try:
+                    self.broker.resize(o["order_id"], have - cut, now)
+                except Exception as exc:
+                    self._note(now, f"{symbol}: could not trim the target: {exc}", False)
+                left -= cut
+            out["sent"] = f"PARTIAL {action} {shares} {symbol} @ {money(price)}"
+        return out
+
+    def breakeven(self, symbol, now=None):
+        with self.lock:
+            return self._breakeven_unlocked(symbol, now)
+
+    def _breakeven_unlocked(self, symbol, now=None):
+        """Move every working stop of this position to the entry price (your average cost). Protective, so it works
+        disarmed or locked. Refused when price is already through the entry: the stop would fire at once."""
+        now = now or time.time()
+        pos = self.broker.position(symbol)
+        if not pos:
+            return {"ok": False, "reason": "no position"}
+        view = self.engine._position_view(symbol, None) or {}
+        entry = view.get("avg_cost")
+        if not entry:
+            return {"ok": False, "reason": "no entry price for the position yet"}
+        long_ = pos > 0
+        be = snap(entry, -1 if long_ else +1)            # never a penny on the wrong side of your cost
+        st = self.engine.syms.get(symbol)
+        bid, ask = st.bbo() if st else (None, None)
+        last = st.price() if st else None
+        mkt = bid if long_ else ask
+        mkt = mkt or last
+        if mkt is not None and ((long_ and mkt <= be) or (not long_ and mkt >= be)):
+            where = "below" if long_ else "above"
+            return {"ok": False, "reason": f"price {money(mkt)} is {where} your entry {money(be)} — a breakeven stop would fire now"}
+        if not self.gate.can_reduce():
+            return {"ok": False, "reason": self.gate.why_not() or "no account"}
+        closing = SELL if long_ else BUY
+        left = lambda o: int(o.get("remaining") if o.get("remaining") is not None else o.get("qty") or 0)
+        # every stop-type order working on this symbol: the bracket's stops first, then any placed by hand
+        stop_orders = [o for o in self.engine._pending(symbol) if o.get("order_id") is not None
+                       and (o.get("role") == "stop" or o.get("type") in ("STP", "STP LMT"))]
+        keep_pool = sorted((o for o in stop_orders if o.get("action") == closing),
+                           key=lambda o: (o.get("role") != "stop", -left(o)))
+        if not keep_pool:
+            return {"ok": False, "reason": "no working stop to move — the position has no stop"}
+        # after this: stops at breakeven covering exactly the position, and no other stop on the board
+        need, moved, cancelled = abs(int(pos)), 0, 0
+        for o in keep_pool:
+            have = left(o)
+            try:
+                if need <= 0:
+                    self.broker.cancel(o["order_id"], now); cancelled += 1
+                    continue
+                if have > need:
+                    self.broker.resize(o["order_id"], need, now)
+                    have = need
+                if self.broker.modify(o["order_id"], be, now):
+                    moved += 1
+                need -= have
+            except Exception as exc:
+                self._note(now, f"{symbol}: could not move stop {o['order_id']}: {exc}", False)
+        for o in stop_orders:                      # stop orders on the other side (a stop entry still waiting)
+            if o.get("action") != closing:
+                try:
+                    self.broker.cancel(o["order_id"], now); cancelled += 1
+                except Exception as exc:
+                    self._note(now, f"{symbol}: could not cancel stop {o['order_id']}: {exc}", False)
+        if not moved:
+            return {"ok": False, "reason": "the stop could not be moved"}
+        if need > 0:
+            self._note(now, f"{symbol}: breakeven stops cover {abs(int(pos)) - need} of {abs(int(pos))} shares — "
+                            f"the rest has no stop", False)
+        extra = f" · {cancelled} other stop order{'s' if cancelled != 1 else ''} cancelled" if cancelled else ""
+        self._note(now, f"{symbol}: stop moved to BREAKEVEN {money(be)}{extra}", True)
+        self.engine._rec({"ev": "breakeven", "t": now, "sym": symbol, "px": be})
+        return {"ok": True, "price": be, "moved": moved, "cancelled": cancelled,
+                "sent": f"stop to breakeven {money(be)}{extra}"}
+
     def _reduce(self, symbol, action, price, qty, now, role):
         try:
             oid = self.broker.place(symbol, action, qty, price, now, "LMT", None, role, "DAY", reducing=True)
@@ -712,7 +830,7 @@ class Trader:
     def day_pnl(self):
         return self.engine.day_pnl()
 
-    EXIT_ROLES = ("stop", "target", "runner")
+    EXIT_ROLES = ("stop", "target", "runner", "partial")
 
     def _is_exit(self, o):
         r = o.get("role") or ""
@@ -745,7 +863,7 @@ class Trader:
             left = lambda o: float(o.get("remaining") if o.get("remaining") is not None else o.get("qty") or 0)
             wrong = [o for o in exits if not pos or o.get("action") != closing]
             over = []
-            for kind in (("stop",), ("target", "runner", "cash_flow")):
+            for kind in (("stop",), ("target", "runner", "cash_flow", "partial")):
                 grp = sorted((o for o in exits if o not in wrong and (o.get("role") or "").startswith(kind)),
                              key=left, reverse=True)
                 extra = sum(left(o) for o in grp) - abs(pos)
