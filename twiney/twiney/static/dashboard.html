@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20260930-1654">
+<meta name="build" content="20260930-1803">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -481,6 +481,12 @@ td.bars.l .bar-n{margin-right:1px} td.bars.r .bar-n{margin-left:1px}
 .lad .fm.hot b,.lad .fdot.hot{box-shadow:0 0 0 1px var(--gold),0 0 6px var(--gold);animation:flowring 1.4s infinite}
 @keyframes flowring{0%,100%{box-shadow:0 0 0 1px var(--gold),0 0 4px var(--gold)}50%{box-shadow:0 0 0 1px var(--gold),0 0 10px var(--gold)}}
 .lad .fdot{font-size:10px;line-height:1;border-radius:50%} .lad .fdot.c{color:var(--buy)} .lad .fdot.p{color:var(--sell)} .lad .fdot u{text-decoration:none;font-size:8px;color:var(--gold);vertical-align:top}
+/* urgent flow */
+.fl .urg{font:700 9.5px var(--sans);letter-spacing:.08em;padding:1px 6px;border-radius:3px;background:var(--gold);color:#0c0c0d;margin-left:6px}
+.fl .acc{font:700 9.5px var(--sans);letter-spacing:.06em;color:var(--gold);margin-left:6px}
+.fl.ur .bar{flex:1;height:6px;background:#263043;border-radius:3px;overflow:hidden;margin-left:8px} .fl.ur .bar i{display:block;height:100%;background:var(--gold)}
+.fl.ur.p .bar i{background:#d64541} .fl.ur.hot{box-shadow:inset 3px 0 0 var(--gold)}
+.lad .fm em.urg{font-style:normal;color:var(--gold);margin-right:1px}
 
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
@@ -863,6 +869,8 @@ body.resizing .zbody{pointer-events:none}
       <input id="alVal" type="number" step="any" min="0" placeholder="price or $">
       <label title="off: fires once and is gone · on: keeps firing (with a cooldown)"><input type="checkbox" id="alRepeat"> every time</label>
       <button id="alAdd">ADD ALERT</button><span class="dim" id="alMsg"></span></div><div id="alList"></div></div></div>
+  <div class="pnl fa" data-p="urgency"><div class="fa-top"><div class="fa-tabs"><span class="off" data-go="flow">OPTION FLOW</span><span class="on">URGENT FLOW</span></div>
+    <div class="fa-sub"><span title="short-dated, out-of-the-money contracts being bought at the ask again and again, ranked by dollars per minute, sweeps and whether it is speeding up">Short-dated · out of the money · bought in a hurry</span><label><input type="checkbox" id="urMine"> Watchlist</label><label><input type="checkbox" id="urHot"> Called only</label></div></div><div class="pc"><div id="urList"></div></div></div>
   <div class="pnl fa" data-p="eqflow"><div class="fa-top"><div class="fa-tabs"><span class="off" data-go="flow" title="option flow">OPTION FLOW</span><span class="on">EQUITY FLOW</span></div>
     <div class="fa-sub"><span>Big stock prints · lit and dark</span><label><input type="checkbox" id="eqDark"> Dark pool only</label><label><input type="checkbox" id="eqMine"> Watchlist</label><span class="src" id="eqSrc"></span></div></div><div class="pc"><div id="eqList"></div></div></div>
   <div class="pnl" data-p="calls"><div class="pc" style="padding:6px"><div id="feedBody"></div></div></div>
@@ -1058,11 +1066,11 @@ function makeColsResizable(table){
 const PANELS = {
   chart: "CHART", foot: "FOOTPRINT 5m", book: "LEVEL II", tape: "TIME & SALES", setup: "PLAY SETUP", ps60: "PS60", reload: "RELOADS",
   ticket: "ORDER ENTRY", positions: "POSITIONS", orders: "ORDERS", watch: "WATCHLIST", calls: "CALLS",
-  flow: "OPTION FLOW", eqflow: "EQUITY FLOW", myalerts: "ALERTS", desk: "DESK", journal: "JOURNAL", messages: "MESSAGES"};
+  flow: "OPTION FLOW", eqflow: "EQUITY FLOW", urgency: "URGENT FLOW", myalerts: "ALERTS", desk: "DESK", journal: "JOURNAL", messages: "MESSAGES"};
 const SYMBOL_LINKED = new Set(["chart", "foot", "book", "tape", "ps60", "reload", "ticket", "calls", "setup"]);
 const ZONES = ["TL", "TC", "TR", "TX", "BL", "BC", "BR", "BX"];   // four columns × two rows; a column with one zone runs full height
 const PRESETS = {
-  "PS60 Execution": {zones: {TL: ["watch", "myalerts"], TC: ["chart"], TR: ["book"], TX: ["tape"], BL: ["positions", "orders"], BC: ["setup", "flow", "eqflow", "ps60", "reload", "calls"], BR: ["ticket"]},
+  "PS60 Execution": {zones: {TL: ["watch", "myalerts"], TC: ["chart"], TR: ["book"], TX: ["tape"], BL: ["positions", "orders"], BC: ["setup", "flow", "urgency", "eqflow", "ps60", "reload", "calls"], BR: ["ticket"]},
     active: {BL: "positions", BC: "setup"}, sizes: {c1: 200, c3: 330, c4: 290, r2: {L: 250, C: 330, R: 430, X: 250}}},
   "Scalping": {zones: {TL: ["ticket", "setup"], TC: ["book"], TR: ["tape"], BL: ["positions"], BC: ["chart"], BR: ["orders", "reload"]},
     active: {BR: "reload"}, sizes: {c1: 300, c3: 320, r2: 300}},
@@ -1309,15 +1317,15 @@ function szTitle(row, side){
 // option flow marks on a ladder row: the FLOW column when the ladder is wide enough, else a dot in the tag column
 function flowK(v){ return v >= 1e6 ? (v / 1e6).toFixed(1) + "M" : Math.round(v / 1e3) + "K"; }
 function flowStrike(k){ return Number.isInteger(+k) ? String(k) : (+k).toFixed(2).replace(/\.?0+$/, ""); }
-function flowTitle(f){ return f.items.map(m => `${m.cp === "C" ? "CALL" : "PUT"} ${px(m.strike)} ${m.exp}${m.dte != null ? " (" + m.dte + "d)" : ""} $${flowK(m.prem)} ${m.side === "ask" ? "at the ask" : "at the bid"}${m.kind !== "trade" ? " " + m.kind : ""}${m.hot ? " · REPEAT, short-dated" : ""} · ${ago(m.age)} ago`).join("\n"); }
+function flowTitle(f){ return f.items.map(m => `${m.cp === "C" ? "CALL" : "PUT"} ${px(m.strike)} ${m.exp}${m.dte != null ? " (" + m.dte + "d)" : ""} $${flowK(m.prem)} ${m.side === "ask" ? "at the ask" : "at the bid"}${m.kind !== "trade" ? " " + m.kind : ""}${m.hot ? " · REPEAT, short-dated" : ""}${m.urgent ? " · URGENT" : ""} · ${ago(m.age)} ago`).join("\n"); }
 function flowCell(r){
   const f = r.flow; if (!f) return "";
   const lead = f.c >= f.p ? "c" : "p", top = f.items[0];
-  return `<span class="fm ${lead} ${f.hot ? "hot" : ""}" title="${esc(flowTitle(f))}">${f.c ? `<b class="c">C$${flowK(f.c)}</b>` : ""}${f.p ? `<b class="p">P$${flowK(f.p)}</b>` : ""}${top ? `<i>${flowStrike(top.strike)}${top.dte != null ? "·" + top.dte + "d" : ""}</i>` : ""}${f.n > 1 ? `<u>×${f.n}</u>` : ""}</span>`;
+  return `<span class="fm ${lead} ${f.hot ? "hot" : ""}" title="${esc(flowTitle(f))}">${f.urgent ? `<em class="urg">⚡</em>` : ""}${f.c ? `<b class="c">C$${flowK(f.c)}</b>` : ""}${f.p ? `<b class="p">P$${flowK(f.p)}</b>` : ""}${top ? `<i>${flowStrike(top.strike)}${top.dte != null ? "·" + top.dte + "d" : ""}</i>` : ""}${f.n > 1 ? `<u>×${f.n}</u>` : ""}</span>`;
 }
 function flowDot(r){
   const f = r.flow; if (!f) return "";
-  return `<span class="fdot ${f.c >= f.p ? "c" : "p"} ${f.hot ? "hot" : ""}" title="${esc(flowTitle(f))}">●${f.n > 1 ? `<u>${f.n}</u>` : ""}</span>`;
+  return `<span class="fdot ${f.c >= f.p ? "c" : "p"} ${f.hot ? "hot" : ""}" title="${esc(flowTitle(f))}">${f.urgent ? "⚡" : "●"}${f.n > 1 ? `<u>${f.n}</u>` : ""}</span>`;
 }
 function whoTag(row, side){
   const st = row[side + "_state"], n = row[side + "_refills"] || 0, v = row[side + "_verdict"];
@@ -2084,7 +2092,7 @@ function normalize(l){
   const placed = new Set([].concat(...ZONES.map(z => out.zones[z])).concat(Object.keys(out.floats || {})));
   // a panel new in a build docks itself once (ALERTS beside the watchlist, EQUITY FLOW beside the option flow), so it is
   // not lost behind the PANELS menu; a panel you hid yourself stays hidden
-  const NEW_PANELS = {myalerts: "TL", eqflow: "BC"};
+  const NEW_PANELS = {myalerts: "TL", eqflow: "BC", urgency: "BC"};
   out.seen = Array.isArray(out.seen) ? out.seen : Object.keys(P).filter(id => !(id in NEW_PANELS));
   for (const id of Object.keys(NEW_PANELS)) if (P[id] && !out.seen.includes(id)){ out.seen.push(id); if (!placed.has(id)){ out.zones[NEW_PANELS[id]].push(id); placed.add(id); } }
   out.hidden = Object.keys(P).filter(id => !placed.has(id));
@@ -2911,6 +2919,22 @@ function renderEquity(s){
   if (el.dataset.h !== html){ el.dataset.h = html; el.innerHTML = html; }
 }
 ["eqDark", "eqMine"].forEach(id => document.getElementById(id).addEventListener("input", () => renderEquity(state)));
+/* ---------- urgent flow: short-dated OTM contracts getting pounded */
+function renderUrgency(s){
+  const el = document.getElementById("urList"); if (!el) return;
+  const mine = document.getElementById("urMine").checked, hotOnly = document.getElementById("urHot").checked;
+  const rows = (s.urgency || []).filter(u => (!mine || (s.symbols || []).includes(u.symbol)) && (!hotOnly || u.hot));
+  const strike = k => Number.isInteger(+k) ? String(k) : (+k).toFixed(2).replace(/\.?0+$/, "");
+  const exp = e => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(e || ""); return m ? `${m[2]}/${m[3]}` : (e || NA); };
+  const top = rows.length ? rows[0].score : 1;
+  const html = rows.length ? rows.map(u => `<div class="fl ur ${u.cp === "C" ? "c" : "p"} ${u.hot ? "hot" : ""}" title="${u.prints} prints bought at the ask in the window, ${u.sweeps} sweeps · ${kfmt$(u.pace)} a minute${u.accel ? " · speeding up" : ""}${u.hot ? " · CALLED: urgent" : ""}">
+      <div class="tm">${nyHM(u.last_t)} <span class="dim">· since ${nyHM(u.first_t)}</span>${u.hot ? ` <span class="urg">⚡ URGENT</span>` : ""}${u.accel ? ` <span class="acc">▲ SPEEDING UP</span>` : ""}</div>
+      <div class="top"><span class="tk">${esc(u.symbol)}</span><span class="prem">${kfmt$(u.dollars)}</span><span class="dots a">${u.sweeps ? "<i></i><i></i>" : ""}</span><span class="bar"><i style="width:${Math.max(4, 100 * u.score / top).toFixed(0)}%"></i></span></div>
+      <div class="cols"><span><i>EXP</i>${exp(u.expiry)}${u.dte != null ? ` (${Math.round(u.dte)}d)` : ""}</span><span><i>STRIKE</i>${strike(u.strike)}</span><span><i>C/P</i>${u.cp}</span><span><i>OTM</i>${u.otm_pct != null ? u.otm_pct.toFixed(1) + "%" : NA}</span><span><i>PRINTS</i>${u.prints}${u.sweeps ? ` <b class="dim">${u.sweeps} sw</b>` : ""}</span><span><i>PACE</i>${kfmt$(u.pace)}/m</span>${u.spot != null ? `<span><i>SPOT</i>${(+u.spot).toFixed(2)}</span>` : ""}</div></div>`).join("")
+    : `<div class="dim" style="padding:10px">Nothing short-dated and out of the money is being chased right now.</div>`;
+  if (el.dataset.h !== html){ el.dataset.h = html; el.innerHTML = html; }
+}
+["urMine", "urHot"].forEach(id => document.getElementById(id).addEventListener("input", () => renderUrgency(state)));
 document.querySelectorAll(".fa-tabs [data-go]").forEach(t => t.addEventListener("click", () => showPanel(t.dataset.go)));
 P.calls.el.addEventListener("change", e => { if (e.target.id === "callsAll"){ store.set("callsAll", e.target.checked); poll(true); } });
 P.ps60.el.addEventListener("click", async e => { const b = e.target.closest("button[data-se]"); if (!b || !curSym) return; const out = await post("/api/level", {symbol: curSym, role: "second_entry", price: +b.dataset.se}); toast(out.ok ? "2nd entry set to " + px(+b.dataset.se) : "Could not set", out.ok); poll(true); });
@@ -3027,10 +3051,11 @@ function renderFlow(s){
   const exp = e => { if (!e) return NA; const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(e); return m ? `${m[2]}/${m[3]}/${m[1].slice(2)}` : e; };
   const strike = k => Number.isInteger(k) ? String(k) : (+k).toFixed(2).replace(/\.?0+$/, "");
   const typ = p => p.kind === "sweep" ? `<b class="ic o"></b>S` : p.kind === "block" ? `<b class="ic sq"></b>B` : p.kind === "split" ? `<b class="ic eq">=</b>S` : `<b class="ic dot"></b>T`;
-  const html = rows.length ? rows.map(p => { const d = new Date(p.t * 1000), cp = p.cp === "C" ? "C" : "P";
+  const urgent = new Set((s.urgency || []).filter(u => u.hot).map(u => u.key));
+  const html = rows.length ? rows.map(p => { const d = new Date(p.t * 1000), cp = p.cp === "C" ? "C" : "P"; const urg = urgent.has([p.symbol, p.strike, p.cp, p.expiry].join("|"));
     return `<div class="fl ${cp === "C" ? "c" : "p"} ${p.away ? "away" : ""}" title="${p.side === "ask" ? "bought at the ask" : p.side === "bid" ? "sold at the bid" : "mid"}${p.otm_pct != null ? ` · ${p.otm_pct > 0 ? p.otm_pct.toFixed(1) + "% out of the money" : Math.abs(p.otm_pct).toFixed(1) + "% in the money"}` : ""}">
       <div class="tm">${nyHM(p.t)}</div>
-      <div class="top"><span class="tk">${esc(p.symbol)}</span><span class="prem">${kfmt$(p.premium)}</span><span class="dots ${p.side === "ask" ? "a" : ""}">${p.kind === "sweep" || p.kind === "split" ? "<i></i><i></i>" : p.kind === "block" ? "<i></i>" : ""}</span>${p.away ? `<span class="aw">WAYS AWAY</span>` : ""}</div>
+      <div class="top"><span class="tk">${esc(p.symbol)}</span><span class="prem">${kfmt$(p.premium)}</span><span class="dots ${p.side === "ask" ? "a" : ""}">${p.kind === "sweep" || p.kind === "split" ? "<i></i><i></i>" : p.kind === "block" ? "<i></i>" : ""}</span>${p.away ? `<span class="aw">WAYS AWAY</span>` : ""}${urg ? `<span class="urg" title="this contract is being bought in a hurry: short-dated, out of the money, print after print">⚡ URGENT</span>` : ""}</div>
       <div class="cols"><span><i>EXP</i>${exp(p.expiry)}</span><span><i>STRIKE</i>${strike(p.strike)}</span><span><i>C/P</i>${cp}</span><span><i>SPOT</i>${p.spot != null ? (+p.spot).toFixed(2) : NA}</span><span><i>TYPE</i><span class="ty">${typ(p)}</span></span><span><i>DETAILS</i>${sz(p.size)} @ ${p.price != null ? p.price.toFixed(2) : NA}</span></div></div>`; }).join("")
     : `<div class="dim" style="padding:10px">${(s.flow || []).length ? "Nothing matches the filter." : (s.connection && s.connection.state === "DEMO" ? "Practice flow is warming up." : "No option flow. Add your Quant Data key in SETTINGS, Quant Data, then RESTART NOW.")}</div>`;
   if (el.dataset.h !== html){ el.dataset.h = html; el.innerHTML = html; }
@@ -3192,7 +3217,7 @@ function render(s){
   renderBook(d); renderTape(d); renderSetup(d); renderPS60(d); renderReloads(d);
   renderTicket(s, d);
   renderWatch(s); renderCalls(s); renderPositions(s); renderOrders(s);
-  renderDesk(s); renderTrades(s); renderFlow(s); renderFlowScope(s); renderEquity(s); renderMyAlerts(s);
+  renderDesk(s); renderTrades(s); renderFlow(s); renderFlowScope(s); renderEquity(s); renderMyAlerts(s); renderUrgency(s);
   const msgs = s.messages.map(m => `<div class="msg-${esc(m.level)} mono" style="font-size:11px">${ago(s.now - m.t)} · ${esc(m.text)}</div>`).join("") || `<span class="dim">—</span>`;
   const me = document.getElementById("messages"); if (me.dataset.h !== msgs){ me.dataset.h = msgs; me.innerHTML = msgs; }
   for (const a of s.alerts.slice(0, 10)){ const key = a.t + a.symbol + a.label; if (!seenAlerts.has(key)){ seenAlerts.add(key); if (!firstFeed && store.get("alerts", true) && store.get("sound", true) && a.symbol === TABS.active) beep(sayClass(a)); } }

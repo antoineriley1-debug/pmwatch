@@ -193,6 +193,14 @@ DEFAULTS = {
         # a play whose flow leans hard the other way is held at WATCH instead of READY (0 turns this off)
         "against_bias": 0.6,
         "against_min_premium": 500000,
+        # URGENT FLOW: a short-dated, out-of-the-money contract getting bought at the ask again and again. It makes the
+        # list from one print; it gets CALLED once it has this many prints and dollars inside the window
+        "urgency_window_minutes": 10,
+        "urgency_min_prints": 3,
+        "urgency_min_dollars": 250000,
+        "urgency_max_dte": 7,
+        "urgency_min_otm_pct": 0.5,
+        "urgency_cooldown_minutes": 15,
     },
     "demo": {
         # practice day type: null = a random one each session; or mixed, trend_up, trend_down, chop, capitulation, squeeze

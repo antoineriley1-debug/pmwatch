@@ -203,6 +203,9 @@ class Engine:
         self._alert_seq = 0
         self.remove_listeners = []
         self.equity = deque(maxlen=400)              # big equity prints (lit / dark), newest first
+        self.urg = {}                                # (symbol, strike, cp, expiry) -> prints bought at the ask, recent
+        self.urg_said = {}
+        self.urgent_keys = set()
         self.equity_status = {"last_ok": None, "last_print": None, "detail": ""}
         self.marks_list = []    # markers seen while replaying a recording
         self.notes_list = []    # journal notes seen while replaying
@@ -552,6 +555,7 @@ class Engine:
             self._rec({"ev": "flow", "t": t, "p": p})
             self.flow.add(p)
             self.flow_status["last_print"] = t
+            self._urgency(p, t, st)
             if st is not None:
                 self._flow_mark(st, p, t)
             self._check_flow_alerts(p, t)
@@ -1566,6 +1570,93 @@ class Engine:
                         pass
                 self._say(st, "flow", key, "rflow", t, f"repeat {what.lower()} flow, {narrative.px(p['strike'])} strike, {days} out, {self._spoken(tot)} total")
 
+    # ---- urgent flow: short-dated, out of the money, being pounded ----------------------
+
+    def _urg_stats(self, key, rows, t):
+        fc = self.cfg.get("flow", {})
+        win = fc.get("urgency_window_minutes", 10) * 60.0
+        rows = [r for r in rows if t - r["t"] <= win]
+        if not rows:
+            return None
+        n, tot = len(rows), sum(r["prem"] for r in rows)
+        sweeps = sum(1 for r in rows if r["kind"] in ("sweep", "split"))
+        half = t - win / 2
+        late = sum(r["prem"] for r in rows if r["t"] >= half)
+        accel = late > (tot - late) * 1.5 and n >= 2
+        last = rows[-1]
+        score = tot / max(1.0, win / 60.0) * (1 + sweeps / n) * (2 if accel else 1)
+        return {"symbol": key[0], "strike": key[1], "cp": key[2], "expiry": key[3], "dte": last["dte"], "otm_pct": last["otm"],
+                "spot": last["spot"], "prints": n, "sweeps": sweeps, "dollars": round(tot), "last_t": last["t"], "first_t": rows[0]["t"],
+                "accel": accel, "pace": round(tot / max(1.0, win / 60.0)), "score": score, "key": "|".join(str(k) for k in key)}
+
+    def _urgency(self, p, t, st):
+        """Every print bought at the ask on a short-dated, out-of-the-money contract counts toward that contract's
+        urgency. Enough of them fast enough, with size, and it is called URGENT FLOW (watchlist names; every name
+        when flow alerts are on for all)."""
+        fc = self.cfg.get("flow", {})
+        if p.get("side") != "ask" or p.get("dte") is None or p["dte"] > fc.get("urgency_max_dte", 7):
+            return
+        otm = p.get("otm_pct")
+        if otm is None or otm < fc.get("urgency_min_otm_pct", 0.5):
+            return
+        key = (p["symbol"], p["strike"], p["cp"], p.get("expiry") or "")
+        win = fc.get("urgency_window_minutes", 10) * 60.0
+        rows = self.urg.setdefault(key, deque())
+        while rows and t - rows[0]["t"] > win:
+            rows.popleft()
+        rows.append({"t": t, "prem": p.get("premium") or 0.0, "kind": p.get("kind", "trade"), "otm": otm, "dte": p["dte"], "spot": p.get("spot")})
+        if len(self.urg) > 3000:                   # the whole market all day: keep it bounded
+            for k in [k for k, v in self.urg.items() if not v or t - v[-1]["t"] > win][:500]:
+                self.urg.pop(k, None)
+        u = self._urg_stats(key, rows, t)
+        hot = u["prints"] >= fc.get("urgency_min_prints", 3) and u["dollars"] >= fc.get("urgency_min_dollars", 250000)
+        if hot:
+            self.urgent_keys.add(key)
+        else:
+            self.urgent_keys.discard(key)
+        if not hot or (st is None and self.flow_alerts != "all"):
+            return
+        cool = fc.get("urgency_cooldown_minutes", 15) * 60.0
+        if t - self.urg_said.get(key, -1e9) < cool:
+            return
+        self.urg_said[key] = t
+        what = "CALL" if p["cp"] == "C" else "PUT"
+        k = lambda v: f"${v / 1e6:.1f}M" if v >= 1e6 else f"${v / 1e3:.0f}K"
+        days = f"{round(p['dte'])} day{'s' if round(p['dte']) != 1 else ''}"
+        sw = f", {u['sweeps']} of them sweeps" if u["sweeps"] else ""
+        text = (f"URGENT {what} FLOW: {p['symbol']} {narrative.px(p['strike'])} strike, {days} out, {otm:.1f}% out of the money - bought at the ask "
+                f"{u['prints']} times in {int(win / 60)} min{sw}, {k(u['dollars'])} in all" + (", and picking up speed" if u["accel"] else "") +
+                (f", stock at {narrative.px(p['spot'])}" if p.get("spot") else "") + ". Short-dated, out of the money, in a hurry: somebody wants this move now.")
+        words = (f"urgent {what.lower()} buying, {narrative.px(p['strike'])} strike, {days} out, {round(otm)} percent out of the money, "
+                 f"{self._spoken(u['dollars'])} in {u['prints']} prints" + (", mostly sweeps" if u["sweeps"] * 2 >= u["prints"] else "") + (", speeding up" if u["accel"] else ""))
+        alert = {"t": t, "symbol": p["symbol"], "label": "URGENT FLOW", "price": fmt_price(p.get("spot")) if p.get("spot") else None, "side": "ask", "role": "flow",
+                 "text": text, "words": words, "premium": u["dollars"], "cp": p["cp"], "strike": p["strike"], "dte": p["dte"], "otm_pct": otm,
+                 "prints": u["prints"], "sweeps": u["sweeps"], "accel": u["accel"]}
+        alert["key"] = f"{round(t, 2)}|{p['symbol']}|URGENT FLOW|{p['strike']}{p['cp']}"
+        self.alerts.appendleft(alert)
+        self._rec(dict(alert, ev="alert"))
+        for fn in self.listeners:
+            try:
+                fn(alert)
+            except Exception:
+                pass
+        if st is not None:
+            self._say(st, "flow", key, "urgent", t, words)
+        else:
+            item = {"t": t, "symbol": p["symbol"], "kind": "urgent", "text": f"{p['symbol']}: {words}", "key": alert["key"]}
+            self.voice.appendleft(item)
+            self._rec(dict(item, ev="voice"))
+
+    def _urgency_list(self, t, limit=30):
+        out = []
+        for key, rows in list(self.urg.items()):
+            u = self._urg_stats(key, rows, t)
+            if u:
+                u["hot"] = key in self.urgent_keys
+                out.append(u)
+        out.sort(key=lambda u: -u["score"])
+        return out[:limit]
+
     def _flow_rows(self, st, t, tk):
         """The ladder's flow marks by price row: calls / puts premium at that spot, prints, the hot ones, the top few."""
         lc = self.cfg.get("ladder", {})
@@ -1583,7 +1674,9 @@ class Engine:
         for r in out.values():
             top = sorted(r["items"], key=lambda m: -m["prem"])[:3]
             r["items"] = [{"cp": m["cp"], "strike": m["strike"], "exp": m["exp"][5:] if m["exp"] else "", "dte": None if m["dte"] is None else round(m["dte"]),
-                           "prem": round(m["prem"]), "side": m["side"], "kind": m["kind"], "hot": m["hot"], "age": round(t - m["t"])} for m in top]
+                           "prem": round(m["prem"]), "side": m["side"], "kind": m["kind"], "hot": m["hot"], "age": round(t - m["t"]),
+                           "urgent": (st.symbol, m["strike"], m["cp"], m["exp"]) in self.urgent_keys} for m in top]
+            r["urgent"] = any(i["urgent"] for i in r["items"])
             r["c"] = round(r["c"]); r["p"] = round(r["p"])
         return out
 
@@ -2092,6 +2185,7 @@ class Engine:
                 "auto_rotate": self.auto_rotate,
                 "ranking": ranking,
                 "user_alerts": [dict(a) for a in self.user_alerts],
+                "urgency": self._urgency_list(t),
                 "equity": list(self.equity)[:80],
                 "equity_status": dict(self.equity_status),
                 "panes": panes,

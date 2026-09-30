@@ -160,3 +160,46 @@ class EquityNormalizeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UrgentFlowTests(unittest.TestCase):
+    def _p(self, sym, strike, prem, t, cp="C", dte=2, otm=3.0, kind="sweep", side="ask"):
+        p = _print(sym, strike, prem, cp=cp, dte=dte, spot=100.0, side=side, t=t); p["kind"] = kind; p["otm_pct"] = otm; return p
+
+    def test_short_dated_otm_pounding_is_ranked_and_called_once(self):
+        e = Engine(plays(), cfg(), None); s = plays()[0]["symbol"]
+        got = []; e.listeners.append(got.append)
+        e.on_flow(self._p(s, 103, 90000, 1.0), 1.0)
+        e.on_flow(self._p(s, 103, 90000, 60.0), 60.0)
+        self.assertEqual([g["label"] for g in got if g["label"] == "URGENT FLOW"], [])   # 2 prints, $180K: on the list, not called
+        u = e._urgency_list(61.0)
+        self.assertEqual((u[0]["symbol"], u[0]["strike"], u[0]["prints"], u[0]["hot"]), (s, 103, 2, False))
+        e.on_flow(self._p(s, 103, 120000, 300.0), 300.0)                                  # 3 prints, $300K inside 10 min
+        ug = [g for g in got if g["label"] == "URGENT FLOW"]
+        self.assertEqual(len(ug), 1)
+        self.assertIn("103.00 strike, 2 days out, 3.0% out of the money", ug[0]["text"])
+        self.assertIn("3 times in 10 min, 3 of them sweeps", ug[0]["text"])
+        self.assertIn("urgent call buying", ug[0]["words"])
+        self.assertTrue(any(v["kind"] == "urgent" for v in e.voice))
+        self.assertTrue(e._urgency_list(301.0)[0]["hot"])
+        e.on_flow(self._p(s, 103, 120000, 330.0), 330.0)                                  # more of it inside the cooldown: no repeat call
+        self.assertEqual(len([g for g in got if g["label"] == "URGENT FLOW"]), 1)
+        # it ages out of the window
+        self.assertEqual(e._urgency_list(2000.0), [])
+
+    def test_what_does_not_count(self):
+        e = Engine(plays(), cfg(), None); s = plays()[0]["symbol"]
+        for i, p in enumerate([self._p(s, 103, 200000, 1.0, dte=30), self._p(s, 103, 200000, 2.0, otm=-1.0), self._p(s, 103, 200000, 3.0, side="bid")]):
+            e.on_flow(p, float(i + 1))
+        self.assertEqual(e._urgency_list(4.0), [])                                          # far-dated, in the money, sold: none of it is urgency
+
+    def test_off_watchlist_names_are_listed_but_only_called_when_alerts_are_for_all(self):
+        e = Engine(plays(), cfg(), None)
+        got = []; e.listeners.append(got.append)
+        for i in range(3):
+            e.on_flow(self._p("ZZZZ", 50, 150000, 10.0 * i + 1), 10.0 * i + 1)
+        self.assertEqual(e._urgency_list(40.0)[0]["symbol"], "ZZZZ")
+        self.assertEqual([g for g in got if g["label"] == "URGENT FLOW"], [])
+        e.set_flow_alerts("all", 41.0)
+        e.on_flow(self._p("ZZZZ", 50, 150000, 42.0), 42.0)
+        self.assertEqual(len([g for g in got if g["label"] == "URGENT FLOW"]), 1)
