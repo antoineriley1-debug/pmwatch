@@ -16,6 +16,7 @@ dashboard shows the same thing either way.
 """
 
 import logging
+import math
 import threading
 import time
 from collections import deque
@@ -132,6 +133,30 @@ class TradingGate:
             self.recent.append(now)
             return None
 
+    def can_reduce(self):
+        """Getting OUT is always allowed on a paper / sim account: disarmed, locked for the day or over a cap."""
+        if not self.cfg["enabled"]:
+            return False
+        if self.mode in ("SIM", "PAPER"):
+            return True
+        return self.mode == "LIVE" and bool(self.cfg["allow_live"])
+
+    def check_reduce(self, action, qty, price, now):
+        """The check for a flatten / close: never blocked by ARM, the day loss lock, the size / dollar caps or
+        the rate limit (a stuck position is the danger, not the exit). Still paper only, still a limit, sane numbers."""
+        with self.lock:
+            if not self.can_reduce():
+                return self._block(self.why_not() or "no account", action, qty, price, now)
+            if action not in (BUY, SELL):
+                return self._block(f"bad action {action}", action, qty, price, now)
+            try:
+                qty, price = int(qty), float(price)
+            except (TypeError, ValueError):
+                return self._block("size and price must be numbers", action, qty, price, now)
+            if qty <= 0 or price <= 0:
+                return self._block("size and price must be positive", action, qty, price, now)
+            return None
+
     def _block(self, reason, action, qty, price, now):
         self.blocked.appendleft({"t": now, "action": action, "qty": qty, "price": price, "reason": reason})
         log.warning("order blocked: %s (%s %s @ %s)", reason, action, qty, price)
@@ -158,31 +183,63 @@ class TradingGate:
             }
 
 
+def snap(price, direction=0):
+    """A price on a valid tick: 0.01 at $1 and up, 0.0001 below. direction +1 rounds up, -1 down, 0 nearest."""
+    if not price or price <= 0:
+        return price
+    tk = tick_size(price)
+    n = price / tk
+    n = math.ceil(n - 1e-7) if direction > 0 else math.floor(n + 1e-7) if direction < 0 else round(n)
+    out = round(n * tk, 4)
+    tk2 = tick_size(out)          # crossing $1 changes the tick
+    if tk2 != tk:
+        n = out / tk2
+        out = round((math.ceil(n - 1e-7) if direction > 0 else math.floor(n + 1e-7) if direction < 0 else round(n)) * tk2, 4)
+    return out
+
+
+def stop_ok(play, action, entry_price):
+    stop = play.get("stop")
+    return not stop or (stop < entry_price if action == BUY else stop > entry_price)
+
+
 def bracket_legs(play, action, qty, entry_price, stop_limit_ticks=10, scale_plan=None):
     """Exit legs for an entry, taken from the play. Empty if the play has none.
 
     The stop is a STOP-LIMIT (trigger at the stop, limit ``stop_limit_ticks``
-    through it), never a naked stop. With ``scale_plan`` the target leg becomes
-    PS60 cash-flow legs plus a runner to the target.
+    through it, on a valid tick), never a naked stop. With ``scale_plan`` the target
+    leg becomes PS60 cash-flow legs plus a runner to the target.
+
+    Every exit piece is paired with its own stop for the same shares (``oca``): a target
+    fill takes its stop down with it and leaves the other pieces alone; a stop fill takes
+    only its own target. That way a cash-flow fill can never cancel the runner, and the
+    stops always cover exactly the shares still open.
     """
     stop, target = play.get("stop"), play.get("target")
     if not stop and not target:
         return []
     exit_action = SELL if action == BUY else BUY
-    legs = []
-    if stop:
-        ok = stop < entry_price if action == BUY else stop > entry_price
-        if ok:
-            tk = tick_size(stop)
-            lmt = round(stop - tk * stop_limit_ticks, 4) if action == BUY else round(stop + tk * stop_limit_ticks, 4)
-            legs.append({"action": exit_action, "qty": qty, "type": "STP LMT", "price": lmt, "aux": stop,
-                         "role": "stop"})
+    targets = []
     if scale_plan:
-        legs.extend(ps60.cash_flow_legs(play, action, qty, entry_price, scale_plan))
-    elif target:
-        ok = target > entry_price if action == BUY else target < entry_price
-        if ok:
-            legs.append({"action": exit_action, "qty": qty, "type": "LMT", "price": target, "role": "target"})
+        targets = ps60.cash_flow_legs(play, action, qty, entry_price, scale_plan)
+        targets = [t for t in targets if t["price"] > 0 and
+                   (t["price"] > entry_price if action == BUY else t["price"] < entry_price)]
+    elif target and (target > entry_price if action == BUY else target < entry_price):
+        targets = [{"action": exit_action, "qty": qty, "type": "LMT", "price": target, "role": "target"}]
+    stop_leg = None
+    if stop and stop_ok(play, action, entry_price):
+        tk = tick_size(stop)
+        lmt = snap(stop - tk * stop_limit_ticks, -1) if action == BUY else snap(stop + tk * stop_limit_ticks, +1)
+        stop_leg = {"action": exit_action, "type": "STP LMT", "price": lmt, "aux": stop, "role": "stop"}
+    legs, covered = [], 0
+    for i, t in enumerate(targets):
+        g = f"x{i + 1}"
+        if stop_leg:
+            legs.append(dict(stop_leg, qty=t["qty"], oca=g))
+        legs.append(dict(t, oca=g))
+        covered += t["qty"]
+    if stop_leg and covered < qty:                # shares with no target still get a stop
+        legs.append(dict(stop_leg, qty=qty - covered, oca=f"x{len(targets) + 1}"))
     return legs
 
 
@@ -201,19 +258,27 @@ class SimBroker:
         self.n_fills = 0
 
     def place(self, symbol, action, qty, price, now, order_type="LMT", parent=None, role="entry", tif="DAY",
-              aux=None):
+              aux=None, oca=None, transmit=True, reducing=False):
+        """``transmit=False`` holds the order (and later its legs) until an order of the family is sent with
+        transmit=True, the way TWS holds a bracket: the entry can never fill before its stop exists."""
         with self.lock:
             oid = self.next_id
             self.next_id += 1
             o = {"id": oid, "symbol": symbol, "action": action, "qty": qty, "remaining": qty,
                  "type": order_type, "price": price, "aux": aux, "parent": parent, "role": role,
-                 "status": "Submitted", "tif": tif, "t": now, "children": []}
+                 "status": "Submitted", "tif": tif, "t": now, "children": [], "oca": oca,
+                 "held": not transmit}
             self.orders[oid] = o
             if parent in self.orders:
-                self.orders[parent]["children"].append(oid)
-                o["status"] = "PreSubmitted"  # waits for the parent to fill
+                par = self.orders[parent]
+                par["children"].append(oid)
+                o["held"] = False
+                if par["status"] != "Filled":
+                    o["status"] = "PreSubmitted"  # waits for the parent to fill
+                if transmit:
+                    par["held"] = False
             self._report(o, now)
-            if o["status"] == "Submitted":
+            if transmit:
                 self.on_market(symbol, now)  # marketable at once? fill it now
             return oid
 
@@ -279,12 +344,13 @@ class SimBroker:
             bid, ask = st.bbo()
             last = st.l1.get("last")
             for o in list(self.orders.values()):
-                if o["symbol"] != symbol or o["status"] != "Submitted":
+                if o["symbol"] != symbol or o["status"] != "Submitted" or o.get("held"):
                     continue
                 if o["type"] == "LMT":
                     hit = (o["action"] == BUY and ask is not None and ask <= o["price"]) or \
                           (o["action"] == SELL and bid is not None and bid >= o["price"])
-                    fill_px = o["price"]
+                    # a marketable limit fills at the touch, never worse than the market was
+                    fill_px = (min(o["price"], ask) if o["action"] == BUY else max(o["price"], bid)) if hit else o["price"]
                 elif o["type"] == "STP":
                     hit = last is not None and ((o["action"] == SELL and last <= o["price"]) or
                                                 (o["action"] == BUY and last >= o["price"]))
@@ -330,25 +396,38 @@ class SimBroker:
         self.engine.on_fill(f"sim{o['id']}-{self.n_fills}", o["symbol"], "BOT" if o["action"] == BUY else "SLD",
                             float(qty), price, time.strftime("%H:%M:%S", time.localtime(now)), now)
         self._report(o, now)
-        # activate children, and once one child fills cancel its sibling (OCO)
+        # activate children
         for c in o["children"]:
             child = self.orders.get(c)
             if child and child["status"] == "PreSubmitted":
                 child["status"] = "Submitted"
                 self._report(child, now)
-        if o["parent"] in self.orders:
+        # an exit fill reduces the other order of its pair (OCA, reduce): the target's stop, or the stop's target
+        if o["parent"] in self.orders and o.get("oca"):
             for sib in self.orders[o["parent"]]["children"]:
                 s = self.orders.get(sib)
-                if not (s and s is not o and s["status"] in ("Submitted", "PreSubmitted")):
+                if not (s and s is not o and s.get("oca") == o["oca"] and s["status"] in ("Submitted", "PreSubmitted")):
                     continue
-                if o["role"] == "stop" or s["role"] != "stop":
-                    self._cancel(s, now)      # stop hit: every other exit goes; a target fill cancels other targets
+                s["remaining"] -= qty
+                if s["remaining"] <= 0:
+                    self._cancel(s, now)
                 else:
-                    s["remaining"] -= qty     # a cash-flow / runner fill shrinks the stop
-                    if s["remaining"] <= 0:
-                        self._cancel(s, now)
-                    else:
-                        self._report(s, now)
+                    self._report(s, now)
+        if o["children"]:
+            self.on_market(o["symbol"], now)   # a leg that is marketable right away
+
+    def resize(self, oid, remaining, now):
+        with self.lock:
+            o = self.orders.get(oid)
+            if not o or o["status"] not in ("Submitted", "PreSubmitted"):
+                return False
+            if remaining <= 0:
+                self._cancel(o, now)
+                return True
+            o["qty"] = o["qty"] - o["remaining"] + remaining
+            o["remaining"] = remaining
+            self._report(o, now)
+            return True
 
     def position(self, symbol):
         return self.pos.get(symbol, [0.0, 0.0])[0]
@@ -362,8 +441,9 @@ class IbkrBroker:
         self.session = session
 
     def place(self, symbol, action, qty, price, now, order_type="LMT", parent=None, role="entry", tif="DAY",
-              aux=None):
-        return self.session.send_order(symbol, action, qty, price, order_type, parent, role, tif, now, aux=aux)
+              aux=None, oca=None, transmit=True, reducing=False):
+        return self.session.send_order(symbol, action, qty, price, order_type, parent, role, tif, now, aux=aux,
+                                       oca=oca, transmit=transmit, reducing=reducing)
 
     def cancel(self, oid, now):
         return self.session.cancel_order(oid, now)
@@ -371,17 +451,22 @@ class IbkrBroker:
     def modify(self, oid, price, now):
         return self.session.modify_order(oid, price, now)
 
+    def resize(self, oid, remaining, now):
+        return self.session.modify_order(oid, None, now, remaining=remaining)
+
     def order_info(self, oid):
-        for o in self.engine.orders.values():
-            if o.get("order_id") == oid:
-                return o
+        with self.engine.lock:
+            for o in self.engine.orders.values():
+                if o.get("order_id") == oid:
+                    return dict(o)
         return None
 
     def cancel_all(self, now, symbol=None):
         return self.session.cancel_all(now, symbol)
 
     def position(self, symbol):
-        return sum(p["qty"] for (a, s), p in self.engine.positions.items() if s == symbol)
+        with self.engine.lock:
+            return sum(p["qty"] for (a, s), p in self.engine.positions.items() if s == symbol)
 
 
 # ---------------------------------------------------------------------------
@@ -399,6 +484,7 @@ class Trader:
         self.scale = bool(self.cfg["scale_plan"]["enabled"])
         self.families = {}   # entry order id -> {"symbol", "entry", "stop", "cash": [...], "be_done"}
         self.nonces = {}     # ticket nonce -> result (double-submit protection)
+        self.mismatch = {}   # symbol -> since when its working exits have not matched the position
         self.log = deque(maxlen=200)
 
     def _note(self, now, text, ok):
@@ -422,7 +508,7 @@ class Trader:
             seen = self.nonces.get(nonce)
             if seen is not None:
                 return dict(seen, duplicate=True)
-        price = round(float(price or 0), 4)
+        price = snap(round(float(price or 0), 4))          # a price the exchange takes
         if order_type == "STP LMT":
             try:
                 aux = round(float(aux), 4)
@@ -435,7 +521,11 @@ class Trader:
         reason = self.gate.check(action, qty, price if order_type != "MKT" else (self.engine.syms[symbol].price() or 0), now, order_type)
         if not reason:
             pos = int(self.broker.position(symbol))
-            after = pos + (qty if action == BUY else -qty)
+            # entries still working count too: five resting 500-share bids are a 2,500 share position waiting to happen
+            working = sum((o.get("remaining") if o.get("remaining") is not None else o.get("qty") or 0) *
+                          (1 if o.get("action") == BUY else -1)
+                          for o in self.engine._pending(symbol) if o.get("role") == "entry")
+            after = pos + int(working) + (qty if action == BUY else -qty)
             cap = self.cfg["max_position_shares"]
             if abs(after) > cap and abs(after) > abs(pos):
                 reason = f"that would make the {symbol} position {abs(after):,} shares — your cap is {cap:,}"
@@ -446,18 +536,26 @@ class Trader:
         use_bracket = self.bracket if bracket is None else bool(bracket)
         plan = self.cfg["scale_plan"]["cash_flow"] if self.scale else None
         ref = price if order_type in ("LMT", "STP LMT") else (self.engine.syms[symbol].price() or price)
+        if use_bracket and ref and not stop_ok(play, action, ref):
+            reason = (f"your stop {money(play['stop'])} is on the wrong side of a {action} at {money(ref)} — "
+                      f"the order would go out with no stop. Fix the stop first")
+            self._note(now, f"BLOCKED {action} {qty} {symbol} @ {money(price)}: {reason}", False)
+            return {"ok": False, "reason": reason}
         legs = bracket_legs(play, action, qty, ref, self.cfg["stop_limit_ticks"], plan) if use_bracket and ref else []
         try:
-            parent_id = self.broker.place(symbol, action, qty, price, now, order_type, None, "entry", tif, aux=aux)
-            fam = {"symbol": symbol, "entry": price, "stop": None, "cash": [], "be_done": False}
-            for leg in legs:
+            # the family goes out together: the entry is held until its last leg is sent
+            parent_id = self.broker.place(symbol, action, qty, price, now, order_type, None, "entry", tif, aux=aux,
+                                          transmit=not legs)
+            fam = {"symbol": symbol, "entry": price, "stops": [], "cash": [], "be_done": False}
+            for i, leg in enumerate(legs):
                 lid = self.broker.place(symbol, leg["action"], leg["qty"], leg["price"], now, leg["type"], parent_id,
-                                        leg["role"], aux=leg.get("aux"))
+                                        leg["role"], aux=leg.get("aux"), oca=leg.get("oca"),
+                                        transmit=i == len(legs) - 1)
                 if leg["role"] == "stop":
-                    fam["stop"] = lid
+                    fam["stops"].append(lid)
                 elif leg["role"].startswith("cash_flow"):
                     fam["cash"].append(lid)
-            if fam["stop"] is not None and fam["cash"]:
+            if fam["stops"] and fam["cash"]:
                 self.families[parent_id] = fam
         except Exception as exc:
             self._note(now, f"FAILED {action} {qty} {symbol} @ {money(price)}: {exc}", False)
@@ -491,12 +589,16 @@ class Trader:
         return {"ok": True, "cancelled": n}
 
     def flatten(self, symbol, now=None):
-        """Close the position with a marketable limit (through the spread by a few ticks)."""
+        """Close the position with a marketable limit (through the spread by a few ticks). Works disarmed, locked
+        for the day and over the caps: getting out is never blocked. One flatten at a time per symbol."""
         now = now or time.time()
         qty = int(self.broker.position(symbol))
         if not qty:
             self._note(now, f"{symbol}: already flat", True)
             return {"ok": True, "flat": True}
+        if any(o.get("role") == "flatten" for o in self.engine._pending(symbol)):
+            self._note(now, f"{symbol}: a flatten order is already working", False)
+            return {"ok": False, "reason": "a flatten order is already working"}
         st = self.engine.syms.get(symbol)
         bid, ask = st.bbo() if st else (None, None)
         if bid is None or ask is None:
@@ -505,9 +607,24 @@ class Trader:
         tk = tick_size(ask)
         slip = self.cfg["flatten_slip_ticks"] * tk
         action = SELL if qty > 0 else BUY
-        price = round(bid - slip, 4) if qty > 0 else round(ask + slip, 4)
+        price = snap(bid - slip, -1) if qty > 0 else snap(ask + slip, +1)
+        reason = self.gate.check_reduce(action, abs(qty), price, now)
+        if reason:            # checked BEFORE the stops are cancelled: a refused flatten leaves them in place
+            self._note(now, f"BLOCKED flatten {symbol}: {reason}", False)
+            return {"ok": False, "reason": reason}
         self.broker.cancel_all(now, symbol)
-        return self.submit(symbol, action, price, abs(qty), now, bracket=False)
+        return self._reduce(symbol, action, price, abs(qty), now, "flatten")
+
+    def _reduce(self, symbol, action, price, qty, now, role):
+        try:
+            oid = self.broker.place(symbol, action, qty, price, now, "LMT", None, role, "DAY", reducing=True)
+        except Exception as exc:
+            self._note(now, f"FAILED {role} {action} {qty} {symbol} @ {money(price)}: {exc}", False)
+            return {"ok": False, "reason": str(exc)}
+        self._note(now, f"SENT {role.upper()} {action} {qty} {symbol} @ {money(price)}", True)
+        self.engine._rec({"ev": "order", "t": now, "sym": symbol, "action": action, "qty": qty, "px": price,
+                          "type": "LMT", "aux": None, "tif": "DAY", "legs": [], "id": oid, "role": role})
+        return {"ok": True, "id": oid, "sent": f"{action} {qty} {symbol} @ {money(price)} ({role})"}
 
     def modify(self, oid, price, now=None):
         """Move a working order to a new price (drag on the ladder / chart)."""
@@ -535,9 +652,65 @@ class Trader:
     def day_pnl(self):
         return self.engine.day_pnl()
 
+    EXIT_ROLES = ("stop", "target", "runner")
+
+    def _is_exit(self, o):
+        r = o.get("role") or ""
+        return r in self.EXIT_ROLES or r.startswith("cash_flow")
+
+    def _guard_exits(self, now):
+        """Exits must never outgrow the position: after a manual close (or a fill IBKR booked elsewhere) a stop or
+        target left for more shares than you hold would open a position the other way when it fills. Once the
+        mismatch has held for 2 seconds (fills and position reports settle), exits for shares you no longer hold are
+        trimmed or cancelled. Nothing is touched while an entry of that symbol is still working."""
+        by_sym = {}
+        for o in self.engine._pending():
+            if self._is_exit(o) and o.get("order_id") is not None:
+                by_sym.setdefault(o.get("symbol"), []).append(o)
+        for sym in list(self.mismatch):
+            if sym not in by_sym:
+                del self.mismatch[sym]
+        for sym, exits in by_sym.items():
+            if any(o.get("role") == "entry" for o in self.engine._pending(sym)):
+                self.mismatch.pop(sym, None)
+                continue
+            pos = self.broker.position(sym)
+            closing = SELL if pos > 0 else BUY
+            left = lambda o: float(o.get("remaining") if o.get("remaining") is not None else o.get("qty") or 0)
+            wrong = [o for o in exits if not pos or o.get("action") != closing]
+            over = []
+            for kind in (("stop",), ("target", "runner", "cash_flow")):
+                grp = sorted((o for o in exits if o not in wrong and (o.get("role") or "").startswith(kind)),
+                             key=left, reverse=True)
+                extra = sum(left(o) for o in grp) - abs(pos)
+                for o in grp:
+                    if extra <= 1e-9:
+                        break
+                    cut = min(left(o), extra)
+                    over.append((o, left(o) - cut))
+                    extra -= cut
+            if not wrong and not over:
+                self.mismatch.pop(sym, None)
+                continue
+            since = self.mismatch.setdefault(sym, now)
+            if now - since < 2.0:
+                continue
+            del self.mismatch[sym]
+            for o in wrong:
+                self.broker.cancel(o["order_id"], now)
+            for o, keep in over:
+                self.broker.resize(o["order_id"], int(keep), now)
+            self._note(now, f"{sym}: exits trimmed to the {abs(pos):g} shares you hold" if pos else
+                       f"{sym}: flat — leftover exit orders cancelled", True)
+
     def watchdog(self, now=None):
-        """Called on every dashboard snapshot: breakeven stops after cash flow; daily-loss lock."""
+        """Called on every dashboard snapshot: breakeven stops after cash flow; exits never bigger than the
+        position; daily-loss lock."""
         self._breakeven(now or time.time())
+        try:
+            self._guard_exits(now or time.time())
+        except Exception as exc:
+            log.warning("exit guard: %s", exc)
         limit = self.cfg["max_daily_loss"]
         if not limit or self.gate.locked:
             return
@@ -545,10 +718,14 @@ class Trader:
         if pnl["total"] <= -abs(limit):
             self.gate.lock_out(f"daily loss limit hit ({money(abs(pnl['total']))} against a {money(limit)} limit)")
             self._note(now or time.time(), f"TRADING LOCKED — day P&L {pnl['total']:+,.0f} hit your {limit:,.0f} loss limit", False)
-            try:
-                self.broker.cancel_all(now or time.time())
-            except Exception:
-                pass
+            # entries that have not filled are cancelled (with their legs); the stops and targets protecting
+            # what you hold stay working, and flatten / close still work while locked
+            for o in self.engine._pending():
+                if o.get("role") == "entry" and o.get("order_id") is not None:
+                    try:
+                        self.broker.cancel(o["order_id"], now or time.time())
+                    except Exception:
+                        pass
 
     def _breakeven(self, now):
         """PS60: once the first cash-flow leg fills, the stop goes to breakeven (the entry price)."""
@@ -557,14 +734,16 @@ class Trader:
         for pid, fam in list(self.families.items()):
             if fam["be_done"]:
                 continue
-            stop = self.broker.order_info(fam["stop"])
-            if stop is None or stop.get("status") in ("Filled", "Cancelled", "ApiCancelled", "Inactive", "Done"):
+            live = [sid for sid in fam["stops"] if (self.broker.order_info(sid) or {}).get("status")
+                    not in (None, "Filled", "Cancelled", "ApiCancelled", "Inactive", "Done")]
+            if not live:
                 fam["be_done"] = True
                 continue
             if any((self.broker.order_info(c) or {}).get("status") == "Filled" for c in fam["cash"]):
                 fam["be_done"] = True
                 try:
-                    if self.broker.modify(fam["stop"], fam["entry"], now):
+                    moved = [sid for sid in live if self.broker.modify(sid, fam["entry"], now)]
+                    if moved:
                         self._note(now, f"{fam['symbol']}: cash flow taken — stop moved to breakeven {money(fam['entry'])}", True)
                 except Exception as exc:
                     self._note(now, f"{fam['symbol']}: could not move the stop to breakeven: {exc}", False)
@@ -598,6 +777,12 @@ class Trader:
         else:
             return {"ok": False, "reason": "mode must be close or add"}
         price = bid if action == SELL else ask
+        if mode == "close":           # getting out: the reducing path (works locked / disarmed), exits trimmed after
+            reason = self.gate.check_reduce(action, shares, price, now)
+            if reason:
+                self._note(now, f"BLOCKED close {symbol}: {reason}", False)
+                return {"ok": False, "reason": reason}
+            return self._reduce(symbol, action, price, shares, now, "close")
         return self.submit(symbol, action, price, shares, now, bracket=False)
 
     def set_size(self, shares):
@@ -607,8 +792,11 @@ class Trader:
         self.default_shares = min(shares, self.cfg["max_shares_per_order"])
         return True
 
-    def snapshot(self):
-        self.watchdog()
+    def snapshot(self, run_watchdog=True):
+        # the engine calls this with its lock held: the watchdog (which talks to the broker) is run by the
+        # dashboard before it takes the snapshot, never under the engine lock (TWS thread lock order)
+        if run_watchdog:
+            self.watchdog()
         s = self.gate.snapshot()
         s.update(default_shares=self.default_shares, bracket=self.bracket, scale=self.scale,
                  scale_plan=self.cfg["scale_plan"]["cash_flow"], log=list(self.log)[:12], pnl=self.day_pnl())

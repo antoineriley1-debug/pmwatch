@@ -131,6 +131,11 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                 full = None
                 if "full" in q:   # the page names the symbols it still needs history for; "" = none
                     full = {x.strip().upper() for x in q.get("full", [""])[0].split(",") if x.strip()}
+                if trader is not None:     # breakeven, exit guard, loss lock: outside the engine lock
+                    try:
+                        trader.watchdog(clock())
+                    except Exception:
+                        pass
                 snap = engine.snapshot(clock(), extra, full)
                 snap["build"] = BUILD
                 self._send(200, json.dumps(snap, default=str), "application/json")

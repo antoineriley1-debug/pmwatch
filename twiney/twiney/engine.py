@@ -127,6 +127,8 @@ class Engine:
         self.orders = {}        # key -> order dict (pending + recently finished)
         self.positions = {}     # (account, symbol) -> {"qty", "avg_cost"}
         self.fills = {}         # exec id -> fill dict
+        self.commissions = {}   # exec id -> commission ($)
+        self.mdt_by_sym = {}    # symbol -> IBKR market data type (1 live, 3 delayed...)
         self.account_seen = False
         self.trader = None      # set by run_twiney when order entry is enabled
         self.sim_broker = None  # demo-mode fill simulator, if any
@@ -212,7 +214,7 @@ class Engine:
             self._clock(t)
             self._rec({"ev": "l1", "t": t, "sym": symbol, "f": field, "v": value})
             self.data_t = t
-            st.l1[field] = value
+            st.l1[field] = value      # None = IBKR says there is no bid / offer right now
             st.l1_t = t
             if field == "last" and not st.depth_active and value:
                 st.bar_update(t, value)  # symbols without a tape still get a price chart
@@ -244,14 +246,11 @@ class Engine:
                 self._auto_levels(st, t)
 
     def on_depth_reset(self, symbol, t, reason="317"):
-        st0 = self._st(symbol)
-        if st0 is not None:
-            st0.sizes = {ASK: {}, BID: {}}
-
         with self.lock:
             st = self._st(symbol)
             if st is None:
                 return
+            st.sizes = {ASK: {}, BID: {}}
             self._clock(t)
             self._rec({"ev": "reset", "t": t, "sym": symbol, "reason": reason})
             st.resets += 1
@@ -472,6 +471,16 @@ class Engine:
             self.account_seen = True
             if exec_id and exec_id in self.fills:
                 return          # IBKR re-sends the day's executions on every refresh: count each one once
+            # a correction of an earlier execution (IBKR bumps the last part of the exec id: .01 -> .02) replaces it
+            base = exec_id.rsplit(".", 1)[0] if exec_id and exec_id.count(".") >= 3 else None
+            if base:
+                old = next((k for k in self.fills if k.rsplit(".", 1)[0] == base), None)
+                if old is not None:
+                    f = self.fills.pop(old)
+                    f.update(exec_id=exec_id, shares=shares, price=price, side=side)
+                    self.fills[exec_id] = f
+                    self._message("warn", f"{symbol}: IBKR corrected execution {old} -> {shares:g} @ {price}", t, symbol)
+                    return
             self._fill_seq = getattr(self, "_fill_seq", 0) + 1
             key = exec_id or f"_local{self._fill_seq}"
             # every fill of the session is kept: the day P&L and the loss lock are built from all of them
@@ -500,6 +509,7 @@ class Engine:
                     elif (q > 0) == (qty > 0):
                         cost = px_
                 pos[sym] = (q, cost)
+            realized -= sum(c for k, c in self.commissions.items() if k in self.fills)
             open_pnl = 0.0
             for (a, sym), p in self.positions.items():
                 last = self.syms[sym].price() if sym in self.syms else None
@@ -687,7 +697,7 @@ class Engine:
         if s in ("PendingSubmit", "ApiPending"):
             return "SUBMITTED"
         if s == "Done":
-            return "FILLED"
+            return "CLOSED"       # left IBKR's working list without a final status: never assume it filled
         return s.upper() or "CREATED"
 
     def _pending(self, symbol=None):
@@ -720,9 +730,29 @@ class Engine:
                 level = "info" if state == "CONNECTED" else "warn"
                 self._message(level, f"connection {state}{': ' + detail if detail else ''}", t)
 
-    def on_market_data_type(self, mdt, t):
+    def on_market_data_type(self, mdt, t, symbol=None):
+        """IBKR says per request whether it is live (1) or delayed (3) / frozen. The light shows the worst one:
+        one delayed symbol is enough to say the data is not all live."""
         with self.lock:
-            self.connection["market_data_type"] = mdt
+            if symbol:
+                self.mdt_by_sym[symbol] = mdt
+                worst = max(self.mdt_by_sym.values())
+                self.connection["market_data_type"] = worst
+                if mdt in (3, 4):
+                    self._message("warn", f"{symbol}: IBKR is sending DELAYED data (no live subscription)", t, symbol)
+            else:
+                self.connection["market_data_type"] = mdt
+
+    def on_commission(self, exec_id, amount):
+        """Commissions per execution (IBKR commissionReport): taken off the day P&L and the loss lock."""
+        if amount is None:
+            return
+        with self.lock:
+            self.commissions[exec_id] = float(amount)
+
+    def clear_positions(self):
+        with self.lock:
+            self.positions.clear()
 
     def on_depth_rejected(self, symbol, code, msg, t):
         with self.lock:
@@ -1545,7 +1575,7 @@ class Engine:
                 "focus": self.focus,
                 "symbols": [p["symbol"] for p in self.plays if p["active"]],
                 "depth": [pn for pn in panes if pn],
-                "trading": self.trader.snapshot() if self.trader else {"mode": "NONE", "can_trade": False,
+                "trading": self.trader.snapshot(run_watchdog=False) if self.trader else {"mode": "NONE", "can_trade": False,
                                                                         "why_not": "order entry not loaded"},
                 "replay": dict(self.replay) if self.replay else None,
                 "account": {

@@ -22,7 +22,43 @@ PRICE_TICKS = {1: "bid", 2: "ask", 4: "last", 6: "high", 7: "low", 9: "close", 1
 SIZE_TICKS = {0: "bid_size", 3: "ask_size", 5: "last_size", 8: "volume",
               69: "bid_size", 70: "ask_size", 71: "last_size", 74: "volume"}
 
-INFO_CODES = {2104, 2106, 2107, 2108, 2119, 2158, 2150, 10167, 162, 2174, 2176}
+INFO_CODES = {2104, 2106, 2107, 2108, 2119, 2158, 2150, 2174, 2176}
+# order-level errors: the order is not working (rejected / cancelled by IBKR)
+ORDER_DEAD_CODES = {103, 104, 105, 106, 107, 109, 110, 111, 113, 116, 117, 118, 119, 120, 121, 122, 133, 135, 136,
+                    137, 140, 141, 146, 147, 151, 153, 154, 155, 156, 157, 158, 159, 160, 161, 163, 164, 166, 167,
+                    168, 200, 201, 202, 203, 10147, 10148, 10149, 10006, 10005, 10268, 10318}
+# print conditions that are not a regular last sale (average price, derivatively priced, out of sequence, prior
+# reference, next day, cash, contingent...): they never move the last price, bars, the retire check or the reload read
+IRREGULAR_PRINT = set("BW4789CGHMNPQRUVZ")
+
+
+def cancel_arg():
+    """cancelOrder's second argument: an OrderCancel object on ibapi 10.2x+, an empty string before."""
+    try:
+        from ibapi.order_cancel import OrderCancel
+        return OrderCancel()
+    except ImportError:
+        return ""
+
+
+def ny_midnight(yyyymmdd):
+    """'20260929' -> epoch seconds of that day's midnight in New York (daily bars are New York trading days)."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    d = datetime.strptime(str(yyyymmdd)[:8], "%Y%m%d")
+    return datetime(d.year, d.month, d.day, tzinfo=ZoneInfo("America/New_York")).timestamp()
+
+
+def ny_today(t):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    return datetime.fromtimestamp(t, ZoneInfo("America/New_York")).strftime("%Y%m%d")
+
+
+def stock(contract):
+    """Only the stock itself: an option / future on the same symbol must never land on the stock's position."""
+    sec = getattr(contract, "secType", "STK") or "STK"
+    return sec == "STK"
 FARM_WARN_CODES = {2103, 2105, 2157, 2152}
 DEPTH_REJECT_CODES = {309, 10092}
 SUBSCRIPTION_CODES = {354, 10089, 10090, 10168, 10186, 10197, 322, 10190, 200}
@@ -72,12 +108,22 @@ class TwineyWrapper:
         self.session.handle_closed("connection closed by TWS / Gateway")
 
     def marketDataType(self, reqId, marketDataType):
-        self.engine.on_market_data_type(marketDataType, self.clock())
+        kind, sym = self.req.get(reqId, (None, None))
+        self.engine.on_market_data_type(marketDataType, self.clock(), sym)
 
     def error(self, *args):
         req_id, code, msg = parse_error_args(args)
         t = self.clock()
         kind, sym = self.req.get(req_id, (None, None))
+        if kind is None and req_id in self.session.my_orders and code < 2000:
+            # an order of ours was refused or cancelled by IBKR: say so on the order, never leave it "working"
+            info = self.session.my_orders[req_id]
+            if code in ORDER_DEAD_CODES:
+                self.engine.on_order(self.session.perm_ids.get(req_id) or f"id{req_id}", t,
+                                     status="Cancelled" if code == 202 else "Inactive", order_id=req_id,
+                                     error=f"{code}: {msg}")
+            self.engine.on_error(info["symbol"], code, f"order {req_id}: {msg}", t, level="info" if code == 202 else "error")
+            return
         if code == 317 and kind == "depth":
             self.engine.on_depth_reset(sym, t, "317")
         elif code in DEPTH_REJECT_CODES and kind == "depth":
@@ -109,6 +155,9 @@ class TwineyWrapper:
         if field is None or kind != "l1":
             return
         v = num(price)
+        if v is not None and v == -1 and field in ("bid", "ask"):
+            self.engine.on_l1(sym, field, None, self.clock())   # -1 = no bid / no offer (halt): clear it
+            return
         if v is None or v <= 0:
             return
         self.engine.on_l1(sym, field, v, self.clock())
@@ -135,24 +184,37 @@ class TwineyWrapper:
 
     # account view (read-only) ------------------------------------------------
     def openOrder(self, orderId, contract, order, orderState):
-        key = self.session.order_key(orderId, getattr(order, "permId", 0))
+        if not stock(contract):
+            return
+        client = getattr(order, "clientId", None)
+        mine = self.session.is_mine(orderId, client)
+        key = self.session.order_key(orderId, getattr(order, "permId", 0), mine)
         self.session.order_seen(key)
+        if mine and int(orderId) in self.session.my_orders:
+            info = self.session.my_orders[int(orderId)]
+            info["qty"] = num(getattr(order, "totalQuantity", None)) or info["qty"]   # IBKR's current size (OCA reduce)
         self.engine.on_order(
             key, self.clock(), symbol=getattr(contract, "symbol", "?"), action=getattr(order, "action", None),
             qty=num(getattr(order, "totalQuantity", None)), type=getattr(order, "orderType", None),
             lmt=num(getattr(order, "lmtPrice", None)) or None, aux=num(getattr(order, "auxPrice", None)) or None,
             tif=getattr(order, "tif", None), status=getattr(orderState, "status", None),
-            order_id=int(orderId), role=self.session.order_roles.get(int(orderId)))
+            order_id=int(orderId) if mine else None, mine=mine,
+            role=self.session.order_roles.get(int(orderId)) if mine else "manual")
 
     def orderStatus(self, orderId, status, filled, remaining, avgFillPrice, permId, *rest):
-        key = self.session.order_key(orderId, permId)
+        client = rest[3] if len(rest) > 3 else None     # parentId, lastFillPrice, clientId, ...
+        mine = self.session.is_mine(orderId, client)
+        key = self.session.order_key(orderId, permId, mine)
         self.engine.on_order(key, self.clock(), status=status, filled=num(filled),
-                             remaining=num(remaining), avg_fill=num(avgFillPrice) or None, order_id=int(orderId))
+                             remaining=num(remaining), avg_fill=num(avgFillPrice) or None,
+                             order_id=int(orderId) if mine else None)
 
     def openOrderEnd(self):
         self.session.orders_refreshed()
 
     def position(self, account, contract, position, avgCost):
+        if not stock(contract):
+            return
         self.engine.on_position(account, getattr(contract, "symbol", "?"), num(position) or 0.0,
                                 num(avgCost) or 0.0, self.clock())
 
@@ -160,6 +222,8 @@ class TwineyWrapper:
         pass
 
     def execDetails(self, reqId, contract, execution):
+        if not stock(contract):
+            return
         self.engine.on_fill(getattr(execution, "execId", ""), getattr(contract, "symbol", "?"),
                             getattr(execution, "side", ""), num(getattr(execution, "shares", 0)) or 0.0,
                             num(getattr(execution, "price", 0)) or 0.0, getattr(execution, "time", ""),
@@ -168,17 +232,24 @@ class TwineyWrapper:
     def execDetailsEnd(self, reqId):
         pass
 
+    def commissionReport(self, report):
+        self.engine.on_commission(getattr(report, "execId", ""), num(getattr(report, "commission", None)))
+
+    def commissionAndFeesReport(self, report):   # ibapi 10.3x+ name
+        self.engine.on_commission(getattr(report, "execId", ""), num(getattr(report, "commissionAndFees", None)))
+
     # chart history ----------------------------------------------------------
     def historicalData(self, reqId, bar):
         kind, sym = self.req.get(reqId, (None, None))
         if kind == "daily":
+            d = str(bar.date).strip()
             try:
-                t0 = float(bar.date)
+                # daily bars come back as "yyyymmdd" (a New York trading day) even with formatDate=2
+                t0 = ny_midnight(d) if len(d) >= 8 and d[:8].isdigit() else float(d)
             except (TypeError, ValueError):
-                try:
-                    t0 = time.mktime(time.strptime(str(bar.date)[:8], "%Y%m%d"))
-                except ValueError:
-                    return
+                return
+            if d[:8] == ny_today(self.clock()):
+                return   # today's bar is still forming: the chart builds it live from the minute bars, ATR skips it
             self.engine.on_daily_bar(sym, t0, num(bar.open), num(bar.high), num(bar.low), num(bar.close), num(getattr(bar, "volume", None)))
             return
         if kind != "hist":
@@ -200,7 +271,12 @@ class TwineyWrapper:
         kind, sym = self.req.get(reqId, (None, None))
         if kind != "tape":
             return
-        self.engine.on_print(sym, num(price), num(size), exchange or "", self.clock(), specialConditions or "")
+        if getattr(tickAttribLast, "unreported", False):
+            return
+        conds = specialConditions or ""
+        if IRREGULAR_PRINT.intersection(conds.replace(" ", "")):
+            return        # not a regular last sale: it never traded at the market you see
+        self.engine.on_print(sym, num(price), num(size), exchange or "", self.clock(), conds)
 
 
 def execution_filter():
@@ -238,7 +314,7 @@ def make_order(action, qty, order_type, price, tif="DAY", parent_id=None, transm
         o.lmtPrice = price    # the limit once triggered (never a naked stop)
     if oca:
         o.ocaGroup = oca
-        o.ocaType = 2         # a cash-flow fill reduces the other exits instead of cancelling them
+        o.ocaType = 2         # reduce: a fill of one exit of the pair (target / its stop) reduces the other by the same shares
     o.tif = tif
     o.transmit = transmit
     if parent_id is not None:
@@ -286,7 +362,7 @@ class MarketDataSession:
         self.connecting_since = None
         self.backoff = cfg["ibkr"]["reconnect_initial_seconds"]
         self.next_attempt = 0.0
-        self._next_id = 1000
+        self._next_id = 90000000   # data request ids live far above order ids, so an error is never misread
         self.l1_ids = {}      # symbol -> reqId
         self.depth_ids = {}   # symbol -> (depth reqId, tape reqId)
         self.dead = set()
@@ -382,6 +458,7 @@ class MarketDataSession:
             self.engine.on_connection("CONNECTED", "", self.clock(), market_data_type=mdt)
             self.subscribe_l1()
             if self.cfg["account"]["show"]:
+                self.engine.clear_positions()   # IBKR re-sends every open position right after this
                 self.app.reqPositions()  # streams position updates
             self._next_orders = self._next_fills = 0.0
 
@@ -406,6 +483,9 @@ class MarketDataSession:
             self.connecting_since = None
             self.depth_ids.clear()
             self.l1_ids.clear()
+            if self.gate is not None:     # nothing trades until IBKR says again which account this is
+                self.gate.arm(False)
+                self.gate.set_accounts([])
             now = self.clock()
             self.next_attempt = now + self.backoff
             detail = f"{reason}; retry in {self.backoff:.0f}s"
@@ -418,88 +498,130 @@ class MarketDataSession:
                 pass
 
     # order entry (only reachable through trading.TradingGate) -----------------
-    def order_key(self, order_id, perm_id):
+    def is_mine(self, order_id, client_id=None):
+        """Orders this desk placed: same API client id and a real order id. Orders typed in TWS (order id 0) or
+        placed by another API client are shown, never cancelled or modified from here."""
         order_id = int(order_id)
-        if perm_id and order_id not in self.perm_ids:
-            self.perm_ids[order_id] = perm_id
-            self.engine.rename_order(f"id{order_id}", perm_id)
-        return self.perm_ids.get(order_id) or f"id{order_id}"
+        if order_id <= 0:
+            return False
+        if client_id is not None:
+            try:
+                return int(client_id) == int(self.cfg["ibkr"]["client_id"])
+            except (TypeError, ValueError):
+                return False
+        return order_id in self.my_orders
 
-    def send_order(self, symbol, action, qty, price, order_type, parent, role, tif, now, aux=None):
+    def order_key(self, order_id, perm_id, mine=True):
+        """permId is IBKR's unique id for an order; the order id is only unique per client."""
+        order_id = int(order_id)
+        if perm_id:
+            if mine and order_id > 0 and order_id not in self.perm_ids:
+                self.perm_ids[order_id] = perm_id
+                self.engine.rename_order(f"id{order_id}", perm_id)
+            return perm_id
+        return (self.perm_ids.get(order_id) or f"id{order_id}") if mine else f"x{order_id}"
+
+    def send_order(self, symbol, action, qty, price, order_type, parent, role, tif, now, aux=None, oca=None,
+                   transmit=True, reducing=False):
         with self._lock:
             if self.app is None or not self.ready or self.next_order_id is None:
                 raise RuntimeError("not connected to TWS")
-            if self.gate is None or not self.gate.can_trade():
+            if self.gate is None or not (self.gate.can_trade() or (reducing and self.gate.can_reduce())):
                 raise RuntimeError("trading gate closed")
             oid = self.next_order_id
             self.next_order_id += 1
             play = self.plays[symbol]
-            # bracket legs are sent with transmit=False on the parent so TWS holds
-            # the family until the last leg arrives; a lone entry transmits at once
+            # a bracket goes out as one family: the entry and every leg but the last are sent with transmit=False,
+            # so TWS holds them and releases the whole family when the last leg arrives
             extra = {}
             if order_type == "STP LMT":
                 extra["aux"] = aux
-            if parent is not None:
-                extra["oca"] = f"twiney{parent}"
-            order = self.order_factory(action, qty, order_type, price, tif, parent, transmit=True, **extra) \
-                if extra else self.order_factory(action, qty, order_type, price, tif, parent, transmit=True)
+            if oca:
+                extra["oca"] = f"twiney{parent}-{oca}"
+            order = self.order_factory(action, qty, order_type, price, tif, parent, transmit=transmit, **extra)
             self.order_roles[oid] = role
             self.my_orders[oid] = {"symbol": symbol, "parent": parent, "action": action, "qty": qty,
-                                   "type": order_type, "tif": tif, "aux": aux, "price": price}
+                                   "type": order_type, "tif": tif, "aux": aux, "price": price,
+                                   "oca": extra.get("oca")}
             self.app.placeOrder(oid, self.contract_factory(play), order)
             self.engine.on_order(f"id{oid}", now, symbol=symbol, action=action, qty=float(qty), remaining=float(qty),
                                  type=order_type, lmt=price if order_type in ("LMT", "STP LMT") else None,
                                  aux=price if order_type == "STP" else aux, tif=tif, status="PendingSubmit",
-                                 order_id=oid, role=role)
+                                 order_id=oid, role=role, mine=True)
             self._orders_seen.add(f"id{oid}")
             self._next_orders = now + 1.0  # refresh the open-order list soon
             return oid
 
-    def modify_order(self, oid, price, now):
-        """IBKR modifies an order by re-sending placeOrder with the same id and new price."""
+    def modify_order(self, oid, price, now, remaining=None):
+        """IBKR modifies an order by re-sending placeOrder with the same id. It keeps the order's OCA group and
+        sends its CURRENT size (filled so far + what is left), never the size it was first sent with.
+        ``price`` None keeps the price (a resize); ``remaining`` None keeps the size."""
         with self._lock:
             info = self.my_orders.get(int(oid))
             if self.app is None or not self.ready or info is None:
                 return False
-            if self.gate is None or not self.gate.can_trade():
+            if self.gate is None or not (self.gate.can_trade() or self.gate.can_reduce()):
                 raise RuntimeError("trading gate closed")
+            live = self._live_order(int(oid))
+            filled = float(live.get("filled") or 0) if live else 0.0
+            left = live.get("remaining") if live else None
+            if remaining is not None:
+                left = remaining
+            qty = filled + float(left) if left is not None else float(info["qty"])
+            if qty <= filled:
+                self.app.cancelOrder(int(oid), cancel_arg())
+                return True
+            extra = {"oca": info.get("oca")} if info.get("oca") else {}
             if info["type"] == "STP LMT":
+                if price is None:
+                    price = info["aux"]
                 # moving a stop-limit moves both the trigger and the limit by the same amount
                 shift = price - (info.get("aux") or price)
                 lmt = round(info["price"] + shift, 4)
-                order = self.order_factory(info["action"], info["qty"], info["type"], lmt, info["tif"],
-                                           info["parent"], transmit=True, aux=price)
-                info["aux"] = price
+                order = self.order_factory(info["action"], qty, info["type"], lmt, info["tif"],
+                                           info["parent"], transmit=True, aux=price, **extra)
+                info["aux"], info["price"] = price, lmt
             else:
-                order = self.order_factory(info["action"], info["qty"], info["type"], price, info["tif"],
-                                           info["parent"], transmit=True)
+                if price is None:
+                    price = info["price"]
+                order = self.order_factory(info["action"], qty, info["type"], price, info["tif"],
+                                           info["parent"], transmit=True, **extra)
+                info["price"] = price
+            info["qty"] = qty
             self.app.placeOrder(int(oid), self.contract_factory(self.plays[info["symbol"]]), order)
             key = self.perm_ids.get(int(oid)) or f"id{oid}"
-            self.engine.on_order(key, now, lmt=price if info["type"] == "LMT" else None,
-                                 aux=price if info["type"] in ("STP", "STP LMT") else None)
+            self.engine.on_order(key, now, lmt=info["price"] if info["type"] in ("LMT", "STP LMT") else None,
+                                 aux=info.get("aux") if info["type"] in ("STP", "STP LMT") else None,
+                                 qty=qty, remaining=qty - filled)
             self._next_orders = now + 1.0
             return True
 
+    def _live_order(self, oid):
+        with self.engine.lock:
+            for o in self.engine.orders.values():
+                if o.get("order_id") == oid:
+                    return dict(o)
+        return None
+
     def cancel_order(self, oid, now):
         with self._lock:
-            if self.app is None or not self.ready:
+            if self.app is None or not self.ready or int(oid) not in self.my_orders and int(oid) <= 0:
                 return False
-            self.app.cancelOrder(int(oid), "")
+            self.app.cancelOrder(int(oid), cancel_arg())
             self._next_orders = now + 1.0
             return True
 
     def cancel_all(self, now, symbol=None):
+        """Cancel this desk's working orders (never an order typed in TWS or placed by another program)."""
         with self._lock:
             if self.app is None or not self.ready:
                 return 0
-            n = 0
-            for o in self.engine._pending(symbol):
-                oid = o.get("order_id")
-                if oid is not None:
-                    self.app.cancelOrder(int(oid), "")
-                    n += 1
+            with self.engine.lock:
+                mine = [o.get("order_id") for o in self.engine._pending(symbol) if o.get("mine") and o.get("order_id")]
+            for oid in mine:
+                self.app.cancelOrder(int(oid), cancel_arg())
             self._next_orders = now + 1.0
-            return n
+            return len(mine)
 
     def refresh_account(self, now):
         """Poll open orders and today's fills for the display (read-only requests)."""

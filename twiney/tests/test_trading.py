@@ -146,6 +146,7 @@ class SimTradingTests(unittest.TestCase):
         e.on_depth("AAA", 0, UPDATE, BID, 9.40, 500, "", 3.0)         # market drops: open loss $60
         e.on_depth("AAA", 0, UPDATE, ASK, 9.41, 500, "", 3.0)
         e.on_l1("AAA", "last", 9.40, 3.0)
+        tr.watchdog(4.0)                                               # the dashboard runs it before each snapshot
         snap = e.snapshot(4.0)["trading"]
         self.assertLessEqual(snap["pnl"]["total"], -50)
         self.assertFalse(snap["armed"])
@@ -194,15 +195,19 @@ class PS60ExitTests(unittest.TestCase):
         self.assertIn("cash flow 1 50 @ 10.49", out["sent"])
         self.assertIn("runner 25 @ 10.60", out["sent"])
         e.on_depth("AAA", 0, UPDATE, ASK, 9.99, 300, "", 3.0)   # entry fills
-        roles = {o["role"]: (o["status"], o["qty"]) for o in e.snapshot(3.5)["panes"][0]["orders"]}
-        self.assertEqual(roles["stop"], ("Submitted", 100.0))
-        self.assertEqual(roles["cash_flow_1"], ("Submitted", 50.0))
-        # first cash flow fills: stop shrinks to 50 and moves to breakeven (the entry price)
+        orders = e.snapshot(3.5)["panes"][0]["orders"]
+        # every exit piece has its own stop for the same shares: 50 + 25 + 25 covers the 100
+        self.assertEqual(sorted(o["qty"] for o in orders if o["role"] == "stop"), [25.0, 25.0, 50.0])
+        self.assertEqual({o["role"]: o["qty"] for o in orders if o["role"] != "stop"},
+                         {"cash_flow_1": 50.0, "cash_flow_2": 25.0, "runner": 25.0})
+        # first cash flow fills: its stop goes with it, the other pieces stay, and their stops move to breakeven
         e.on_depth("AAA", 0, UPDATE, BID, 10.49, 300, "", 4.0)
         self.assertEqual(broker.position("AAA"), 50)
         tr.watchdog(4.1)
-        stop = [o for o in e.snapshot(4.5)["panes"][0]["orders"] if o["role"] == "stop"][0]
-        self.assertEqual((stop["qty"], stop["price"]), (50.0, 9.99))
+        orders = e.snapshot(4.5)["panes"][0]["orders"]
+        self.assertEqual(sorted((o["role"], o["qty"]) for o in orders),
+                         [("cash_flow_2", 25.0), ("runner", 25.0), ("stop", 25.0), ("stop", 25.0)])
+        self.assertEqual({o["price"] for o in orders if o["role"] == "stop"}, {9.99})
         self.assertTrue(any("breakeven" in m["text"] for m in e.snapshot(4.5)["messages"]))
         # stop-limit: last trades through 9.99, the stop becomes a limit and fills
         e.on_print("AAA", 9.98, 100, "X", 5.0)

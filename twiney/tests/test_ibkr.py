@@ -273,7 +273,7 @@ class SessionTests(unittest.TestCase):
         self.assertEqual([c[1] for c in placed], [41, 42, 43])
         self.assertEqual(placed[0][3]["type"], "LMT")
         self.assertEqual((placed[1][3]["type"], placed[1][3]["aux"], placed[1][3]["price"], placed[1][3]["parent"],
-                          placed[1][3]["oca"]), ("STP LMT", 9.5, 9.4, 41, "twiney41"))
+                          placed[1][3]["oca"]), ("STP LMT", 9.5, 9.4, 41, "twiney41-x1"))
         self.assertEqual((placed[2][3]["type"], placed[2][3]["price"], placed[2][3]["parent"]), ("LMT", 11.0, 41))
         self.assertEqual(s.next_order_id, 44)
         # TWS acknowledges with a permId: the same order, not a duplicate
@@ -306,3 +306,109 @@ class SessionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AuditFixTests(unittest.TestCase):
+    """Things a live IBKR session gets wrong easily: each pinned by a test."""
+
+    def connect(self):
+        s, engine, clock = make_session()
+        s.step(clock())
+        app = s.app
+        app.nextValidId(1)
+        app.managedAccounts("DU1")
+        return s, engine, clock, app
+
+    def test_moving_a_stop_limit_twice_keeps_the_limit_under_the_stop(self):
+        s, engine, clock, app = self.connect()
+        engine.trader.gate.arm(True)
+        engine.syms["AAA"].play.update(stop=9.5, target=11.0)
+        engine.trader.submit("AAA", "BUY", 10.0, 100, clock())
+        stop_id = [c[1] for c in app.calls if c[0] == "placeOrder" and c[3]["type"] == "STP LMT"][0]
+        s.modify_order(stop_id, 9.0, clock())
+        s.modify_order(stop_id, 9.7, clock())
+        last = [c for c in app.calls if c[0] == "placeOrder" and c[1] == stop_id][-1][3]
+        self.assertEqual((last["aux"], last["price"]), (9.7, 9.6))
+        self.assertEqual(last["oca"], "twiney1-x1")        # still paired with its target
+
+    def test_family_is_held_until_the_last_leg(self):
+        s, engine, clock, app = self.connect()
+        engine.trader.gate.arm(True)
+        engine.syms["AAA"].play.update(stop=9.5, target=11.0)
+        engine.trader.submit("AAA", "BUY", 10.0, 100, clock())
+        self.assertEqual([c[3]["transmit"] for c in app.calls if c[0] == "placeOrder"], [False, False, True])
+
+    def test_option_positions_and_fills_never_touch_the_stock(self):
+        s, engine, clock, app = self.connect()
+        O = lambda **k: type("O", (), k)()
+        app.position("DU1", O(symbol="AAA", secType="STK"), decimal.Decimal("100"), 9.5)
+        app.position("DU1", O(symbol="AAA", secType="OPT"), decimal.Decimal("5"), 120.0)
+        app.execDetails(1, O(symbol="AAA", secType="OPT"), O(execId="x.1.1.01", side="BOT", shares=5, price=1.2, time=""))
+        self.assertEqual(engine.trader.broker.position("AAA"), 100)
+        self.assertEqual(engine.fills, {})
+
+    def test_daily_bars_are_new_york_dates_and_today_is_skipped(self):
+        s, engine, clock, app = self.connect()
+        did = [c[1] for c in app.calls if c[0] == "reqHistoricalData" and c[2] == "AAA"][1]
+        mk = lambda d: type("Bar", (), {"date": d, "open": 10.0, "high": 10.5, "low": 9.5, "close": 10.2, "volume": 1e6})()
+        app.historicalData(did, mk("20260105"))
+        from twiney.ibkr import ny_today
+        app.historicalData(did, mk(ny_today(clock())))
+        days = sorted(engine.syms["AAA"].daily)
+        self.assertEqual(len(days), 1)
+        import datetime
+        self.assertEqual(datetime.datetime.utcfromtimestamp(days[0]).strftime("%Y-%m-%d %H"), "2026-01-05 05")
+
+    def test_irregular_prints_never_reach_the_tape(self):
+        s, engine, clock, app = self.connect()
+        for sym, px in (("AAA", 10.0), ("BBB", 55.0), ("CCC", 21.0)):
+            app.tickPrice(s.l1_ids[sym], 4, px, None)
+        s.step(clock())
+        d_id, t_id = s.depth_ids["AAA"]
+        app.tickByTickAllLast(t_id, 1, 0, 11.50, decimal.Decimal("5000"), None, "FINRA", "B")   # average price
+        app.tickByTickAllLast(t_id, 1, 0, 11.40, decimal.Decimal("100"), type("A", (), {"unreported": True})(), "X", "")
+        app.tickByTickAllLast(t_id, 1, 0, 10.01, decimal.Decimal("100"), None, "ARCA", " I")    # odd lot: real
+        self.assertEqual(engine.syms["AAA"].tape.last()["price"], 10.01)
+        self.assertEqual(engine.syms["AAA"].l1["last"], 10.01)
+        self.assertLess(max(b[2] for b in engine.syms["AAA"].bar_list()), 11.0)
+
+    def test_no_bid_clears_the_quote(self):
+        s, engine, clock, app = self.connect()
+        rid = s.l1_ids["AAA"]
+        app.tickPrice(rid, 1, 9.99, None)
+        app.tickPrice(rid, 1, -1.0, None)
+        self.assertIsNone(engine.syms["AAA"].l1["bid"])
+
+    def test_rejected_order_is_not_left_working(self):
+        s, engine, clock, app = self.connect()
+        engine.trader.gate.arm(True)
+        out = engine.trader.submit("AAA", "BUY", 10.0, 100, clock(), bracket=False)
+        app.error(out["id"], 201, "Order rejected - reason: margin")
+        self.assertEqual(engine.snapshot(clock())["account"]["pending"], [])
+
+    def test_disconnect_disarms(self):
+        s, engine, clock, app = self.connect()
+        engine.trader.gate.arm(True)
+        s.handle_closed("test")
+        self.assertFalse(engine.trader.gate.armed)
+        self.assertEqual(engine.trader.gate.mode, "NONE")
+
+    def test_execution_correction_replaces_the_fill_and_commissions_count(self):
+        s, engine, clock, app = self.connect()
+        O = lambda **k: type("O", (), k)()
+        app.execDetails(1, O(symbol="AAA", secType="STK"), O(execId="a.b.01.01", side="BOT", shares=100, price=10.0, time=""))
+        app.execDetails(1, O(symbol="AAA", secType="STK"), O(execId="c.d.01.01", side="SLD", shares=100, price=10.5, time=""))
+        app.execDetails(1, O(symbol="AAA", secType="STK"), O(execId="c.d.01.02", side="SLD", shares=100, price=10.4, time=""))
+        app.commissionReport(O(execId="a.b.01.01", commission=1.0))
+        app.commissionReport(O(execId="c.d.01.02", commission=1.0))
+        self.assertEqual(len(engine.fills), 2)
+        self.assertAlmostEqual(engine.day_pnl()["realized"], 38.0)
+
+    def test_manual_tws_orders_are_shown_but_never_cancelled(self):
+        s, engine, clock, app = self.connect()
+        O = lambda **k: type("O", (), k)()
+        for perm, sym in ((501, "AAA"), (502, "BBB")):
+            app.openOrder(0, O(symbol=sym, secType="STK"), O(permId=perm, clientId=0, action="BUY", totalQuantity=100,
+                          orderType="LMT", lmtPrice=9.0, auxPrice=0.0, tif="DAY"), O(status="Submitted"))
+        self.assertEqual(len(engine.snapshot(clock())["account"]["pending"]), 2)
+        self.assertEqual(s.cancel_all(clock()), 0)
