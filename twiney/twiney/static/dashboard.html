@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20260930-2357">
+<meta name="build" content="20261001-0030">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -541,6 +541,7 @@ td.bars.l .bar-n{margin-right:1px} td.bars.r .bar-n{margin-left:1px}
 .setup .auto label{display:flex;gap:5px;align-items:center;font-size:10px;letter-spacing:.06em;color:var(--gold);white-space:nowrap;cursor:pointer}
 .setup .auto.off label{color:var(--dim)} .setup .auto .ok{color:var(--buy)} .setup .auto .gold{color:var(--gold)} .setup .auto .dim{color:var(--dim)}
 .setup .go #suClear{padding:6px 10px;font-size:10.5px;letter-spacing:.08em}
+.setup .auto .no{color:var(--sell)}
 
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
@@ -2822,7 +2823,7 @@ function autoEntryHTML(d){
   // the 2nd entry you draw is an automatic entry: what the desk has working for it right now, and why not when it has nothing
   const t = (state && state.trading) || {}, a = (t.auto || {})[d.symbol];
   if (!a) return "";
-  const cls = a.state === "WORKING" ? "ok" : a.state === "DONE" ? "gold" : a.state === "OFF" ? "dim" : "";
+  const cls = a.state === "WORKING" ? "ok" : a.state === "DONE" ? "gold" : a.state === "OFF" ? "dim" : a.state === "TRIGGERED" ? "no" : "";
   return `<div class="auto ${a.on ? "" : "off"}" id="suAuto"><label title="on: when a 2nd entry, a stop and a target are on the chart and the desk is ARMED, a stop-limit entry is placed through the 2nd entry with the stop and target attached, sized from your risk $. One entry per drawn level."><input type="checkbox" id="suAutoOn" ${a.on ? "checked" : ""}> AUTO 2ND ENTRY</label>
     <span class="${cls}"><b>${esc(a.state)}</b> ${esc(a.text || "")}</span>${a.state === "WAITING" && a.qty ? ` <span class="dim">· ${sz(a.qty)} sh when it goes</span>` : ""}</div>`;
 }

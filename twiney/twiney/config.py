@@ -139,7 +139,10 @@ DEFAULTS = {
         # AUTO 2ND ENTRY: the 2nd entry you draw becomes a stop-limit entry (limit this many ticks through it) with
         # the play's stop + target attached, sized from risk_dollars, placed while ARMED, one entry per drawn level
         "auto_second_entry": True,
-        "auto_entry_limit_ticks": 5,
+        "auto_entry_limit_ticks": 10,
+        # ...or this % of the price, whichever is more: the most past the 2nd entry the entry may fill (a cap, not
+        # the fill price). Too tight and a fast print through the level leaves the order unfilled
+        "auto_entry_max_slip_pct": 0.3,
         "risk_dollars": 100,
     },
     "ps60": {

@@ -268,7 +268,7 @@ class AutoSecondEntryTests(unittest.TestCase):
         ent = self._entries(e)
         self.assertEqual(len(ent), 1)
         o = ent[0]
-        self.assertEqual((o["action"], o["type"], o["aux"], o["lmt"], o["qty"]), ("BUY", "STP LMT", 10.10, 10.15, 500.0))
+        self.assertEqual((o["action"], o["type"], o["aux"], o["lmt"], o["qty"]), ("BUY", "STP LMT", 10.10, 10.20, 500.0))
         self.assertEqual({x["role"] for x in e._pending("AAA")}, {"entry", "stop", "target"})
         self.assertEqual(tr.auto_status()["AAA"]["state"], "WORKING")
         # the watchdog running again does not send a second one
@@ -396,3 +396,47 @@ class AutoSecondEntryTests(unittest.TestCase):
         tr.watchdog(2.0)
         self.assertEqual(self._entries(e), [])
         self.assertIn("long 100", tr.auto_status()["AAA"]["text"])
+
+
+class AutoEntryFillTests(unittest.TestCase):
+    """The entry fills when price goes through the 2nd entry, even on a fast print; a cross with no order is said."""
+
+    def test_fast_print_through_the_level_still_fills(self):
+        e, tr, gate, broker = sim_setup(auto_second_entry=True)
+        e.syms["AAA"].play.update(second_entry=10.10, stop=9.90, target=10.50)
+        tr.risk_dollars = 100
+        gate.arm(True)
+        tr.watchdog(2.0)
+        o = [x for x in e._pending("AAA") if x["role"] == "entry"][0]
+        self.assertEqual((o["aux"], o["lmt"]), (10.10, 10.20))        # cap: 10 ticks (0.3% of $10 is 3 cents)
+        e.on_print("AAA", 10.18, 200, "X", 3.0)                       # 8 cents through in one print
+        self.assertEqual(broker.position("AAA"), 500)
+
+    def test_cap_scales_with_the_stock_price(self):
+        e, tr, gate, broker = sim_setup()
+        self.assertAlmostEqual(tr.auto_slip(242.0), 0.726)            # 0.3% of $242
+        self.assertAlmostEqual(tr.auto_slip(10.0), 0.10)              # 10 ticks floor
+
+    def test_ran_past_the_cap_is_reported(self):
+        e, tr, gate, broker = sim_setup(auto_second_entry=True)
+        e.syms["AAA"].play.update(second_entry=10.10, stop=9.90, target=10.50)
+        tr.risk_dollars = 100
+        gate.arm(True)
+        tr.watchdog(2.0)
+        e.on_print("AAA", 10.30, 200, "X", 3.0)                       # 20 cents through: past the cap
+        tr.watchdog(3.5)
+        self.assertEqual(broker.position("AAA"), 0)
+        self.assertEqual(tr.auto_status()["AAA"]["state"], "TRIGGERED")
+        self.assertTrue(any("ran past your cap" in l["text"] for l in tr.log))
+
+    def test_cross_with_no_order_working_says_why(self):
+        e, tr, gate, broker = sim_setup(auto_second_entry=True)
+        e.syms["AAA"].play.update(second_entry=10.10, stop=9.90, target=10.50)
+        tr.watchdog(2.0)                                              # DISARMED: nothing sent
+        e.on_print("AAA", 10.12, 100, "X", 2.5)
+        tr.watchdog(3.0)
+        said = [l["text"] for l in tr.log if "NO ENTRY" in l["text"]]
+        self.assertEqual(len(said), 1)
+        self.assertIn("DISARMED", said[0])
+        tr.watchdog(3.5)
+        self.assertEqual(len([l for l in tr.log if "NO ENTRY" in l["text"]]), 1)   # once per cross

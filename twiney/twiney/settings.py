@@ -63,7 +63,7 @@ LABELS = {
     "min_premium": "Min premium ($)", "index_min_premium": "Index min premium ($)", "otm_pct": "Min % out of the money",
     "max_dte": "Max days to expiry", "api_key": "API key", "base_url": "API address", "flow_path": "Flow endpoint",
     "max_dollars_per_order": "Max $ per order", "max_daily_loss": "Day loss limit ($)", "allow_market": "Allow market / naked stop orders",
-    "stop_limit_ticks": "Stop-limit ticks", "auto_second_entry": "Auto 2nd entry (drawn 2nd entry = stop-limit entry with stop + target)", "auto_entry_limit_ticks": "Auto entry limit ticks through the 2nd entry", "risk_dollars": "Risk $ per trade (auto entry size)", "mp": "MP", "atr_days": "ATR days", "atr_from_bars": "ATR from daily bars",
+    "stop_limit_ticks": "Stop-limit ticks", "auto_second_entry": "Auto 2nd entry (drawn 2nd entry = stop-limit entry with stop + target)", "auto_entry_limit_ticks": "Auto entry: min ticks past the 2nd entry it may fill", "auto_entry_max_slip_pct": "Auto entry: max slip % past the 2nd entry (cap, not the fill)", "risk_dollars": "Risk $ per trade (auto entry size)", "mp": "MP", "atr_days": "ATR days", "atr_from_bars": "ATR from daily bars",
     "big_shares": "Big size (shares)", "huge_multiple": "Huge = big ×", "min_shares": "Min shares",
     "voice_all": "Speak flow for every watchlist symbol", "against_bias": "Hold at WATCH when flow leans against (0-1)",
     "against_min_premium": "…and at least this premium ($)", "smart_depth": "SMART depth", "dir": "Folder",

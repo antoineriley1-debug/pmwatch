@@ -498,6 +498,7 @@ class Trader:
         self.auto_why = {}   # symbol -> why there is no working auto entry right now
         self.auto_fail = {}  # symbol -> (level key, when, reason): a refused order is not retried every half second
         self.auto_sync = {}  # symbol -> the stop / target lines the exits of a filled auto entry were last set to
+        self.auto_side = {}  # symbol -> was price beyond the 2nd entry at the last look (to catch the cross)
         # every order action (clicks on HTTP threads, the watchdog thread) runs one at a time: a check and the order
         # it allows can never be split by another click (two flattens, two closes, the same ticket twice)
         self.lock = threading.RLock()
@@ -1001,6 +1002,15 @@ class Trader:
             qty = min(qty, int(self.cfg["max_dollars_per_order"] // float(se)))
         return max(qty, 0)
 
+    def auto_slip(self, se):
+        """How far past the 2nd entry the entry may fill. A stop-limit whose limit is too tight never fills when
+        price jumps through the level in one print (5 cents on a $240 stock is one tick of a fast tape): it turns
+        into a limit left behind under the market. The limit is a CAP, not the fill: a buy fills at the offer
+        the moment the stop triggers, never above this. The bigger of N ticks and a % of the price."""
+        ticks = int(self.cfg.get("auto_entry_limit_ticks", 10))
+        pct = float(self.cfg.get("auto_entry_max_slip_pct", 0.3))
+        return max(ticks * tick_size(se), se * pct / 100.0)
+
     def _auto_want(self, play):
         """The auto entry this play calls for now: (order or None, why not, may_place).
 
@@ -1048,8 +1058,7 @@ class Trader:
         st = self.engine.syms[sym]
         last = st.price()
         bid, ask = st.bbo()
-        ticks = int(self.cfg.get("auto_entry_limit_ticks", 5))
-        limit = snap(round(se + (ticks * tick_size(se) if long_ else -ticks * tick_size(se)), 4))
+        limit = snap(round(se + (self.auto_slip(se) if long_ else -self.auto_slip(se)), 4), 1 if long_ else -1)
         want = {"type": "STP LMT", "action": action, "aux": aux, "price": limit, "qty": qty,
                 "stop": stop and float(stop), "target": target and float(target)}
         # the entry is ONLY price coming back up through the level (down through it, short): always a stop-limit.
@@ -1061,6 +1070,35 @@ class Trader:
             return want, (f"price {money(ref)} is {'above' if long_ else 'below'} the 2nd entry — the entry goes in when price is "
                           f"back {'under' if long_ else 'over'} {money(se)}, and fills when it comes back through"), False
         return want, "", True
+
+    def _ran_past(self, sym, cur):
+        last = self.engine.syms[sym].price()
+        if last is None:
+            return False
+        return last > cur["price"] if cur["action"] == BUY else last < cur["price"]
+
+    def _auto_cross_watch(self, play, cur, why, now):
+        """Price through the 2nd entry and no entry filled: say why, once, loud (a missed entry is never silent)."""
+        sym, se = play["symbol"], play.get("second_entry")
+        if not se:
+            self.auto_side.pop(sym, None)
+            return
+        last = self.engine.syms[sym].price()
+        if last is None:
+            return
+        long_ = play.get("side", "long") == "long"
+        beyond = last > se if long_ else last < se
+        was = self.auto_side.get(sym)
+        self.auto_side[sym] = beyond
+        if not beyond or was is not False:
+            return                                     # only the moment price crosses the level
+        if self.auto_done.get(sym) == price_key(se) or self.broker.position(sym):
+            return
+        if cur is not None:
+            return                                     # a working entry: its fill (or not) is reported below
+        msg = f"{sym} went through your 2nd entry {money(se)} — NO ENTRY: {why or 'no order was working'}"
+        self._note(now, msg, False)
+        self.engine.log(sym, msg, now, kind="level")
 
     def _auto_protect(self, play, now):
         """After the auto entry fills, the stop and target lines are the position's exits: draw one and it goes in,
@@ -1139,7 +1177,14 @@ class Trader:
                                 f"stop {money(cur['stop'])} and target {money(cur['target'])} are working", True)
                 self.engine.log(sym, f"AUTO 2ND ENTRY filled {cur['action']} {cur['qty']} @ {money(cur['aux'])}", now, kind="level")
                 cur = None
-            elif o is not None and status in self.engine.DONE_STATUSES + ("Done",):
+            elif o is not None and not cur.get("left_said") and self._ran_past(sym, cur):
+                # the stop triggered but price ran past the cap: it is a limit waiting under the market now
+                # (judged by price: IBKR keeps calling a triggered stop-limit "STP LMT")
+                cur["left_said"] = True
+                self._note(now, f"AUTO 2ND ENTRY {sym} TRIGGERED at {money(cur['aux'])} but price ran past your cap "
+                                f"{money(cur['price'])} — not filled; it fills if price comes back to {money(cur['price'])}. "
+                                f"Widen 'auto entry max slip %' in SETTINGS → Trading", False)
+            if cur is not None and o is not None and status in self.engine.DONE_STATUSES + ("Done",) and status != "Filled":
                 # gone without a fill: cancelled by hand (from the ticket, TWS) or rejected. Not re-sent until the
                 # 2nd entry is drawn again or the play's switch is put back on
                 self.auto.pop(sym, None)
@@ -1151,6 +1196,7 @@ class Trader:
                                     f"redraw the 2nd entry (or switch AUTO on in PLAY SETUP) to arm it again", False)
                 cur = None
         want, why, may_place = self._auto_want(play)
+        self._auto_cross_watch(play, cur, why, now)
         if want is None:
             if cur is not None:
                 cur["by_desk"] = True
@@ -1208,8 +1254,12 @@ class Trader:
                 how = "comes back through"
                 legs = " · ".join(x for x in (f"stop {money(cur['stop'])}" if cur.get("stop") else "draw the stop",
                                               f"target {money(cur['target'])}" if cur.get("target") else "draw the target") if x)
-                state, text = "WORKING", (f"{cur['action']} {cur['qty']:,} {cur.get('type', 'STP LMT')} fills when price {how} "
-                                          f"{money(cur['aux'])} · {legs}")
+                state = "TRIGGERED" if self._ran_past(sym, cur) else "WORKING"
+                text0 = (f"price ran past your cap {money(cur['price'])} — not filled; fills if price comes back to it · "
+                         if state == "TRIGGERED" else "")
+                text = (f"{cur['action']} {cur['qty']:,} {cur.get('type', 'STP LMT')} fills when price {how} "
+                                          f"{money(cur['aux'])} (cap {money(cur['price'])}) · {legs}")
+                text = text0 + text
             elif se and self.auto_done.get(sym) == price_key(se):
                 state, text = "DONE", f"entered at {money(se)} — the stop and target are running the trade"
             elif not on:
