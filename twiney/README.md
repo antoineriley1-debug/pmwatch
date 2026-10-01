@@ -56,6 +56,13 @@ with ladder trading that is **locked to paper accounts** until you deliberately 
   flatten) its 2nd entry, stop and target come off the chart (`clear_lines_when_flat`); the pivot stays. It uses the
   ticket size until you draw the
   stop, then it is sized from your RISK $. Draw the target and the stop and they join the entry as its bracket.
+- **LONG or SHORT reads off your levels**: a stop drawn ABOVE the target can only be a short, a stop under it a
+  long — draw both and the play, the entry order, the chip and the conviction board follow, nothing to pick.
+  The small **L / S** button beside ARMED flips the ticker on screen by hand (and so does SIDE in PLAY SETUP,
+  the moment you pick it); your levels stay where they are and the desk tells you which of them now sit on the
+  wrong side. The stop is judged against the entry you take: above the 2nd entry for a short, under it for a
+  long (a short's stop above its 2nd entry can sit under the pivot — that is the PS60 stop); with no 2nd entry,
+  against the pivot.
   Drawn after the fill, they go in as the position's stop and target, and dragging a line moves its order.
   Clearing a line never pulls a stop that is protecting a position. One entry per drawn level; a hand cancel
   switches that play's AUTO off until you redraw the 2nd entry or tick it back on in PLAY SETUP.

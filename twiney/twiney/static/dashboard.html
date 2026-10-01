@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261001-2046">
+<meta name="build" content="20261001-2056">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -327,6 +327,7 @@ html,body{height:100%} body{overflow:hidden;font-size:12px}
 .led.ok{background:var(--buy);box-shadow:0 0 5px var(--buy)} .led.warn{background:var(--warn)} .led.bad{background:var(--sell)}
 #armBtn{font-weight:800;letter-spacing:.06em} #armBtn.armed{background:#173b28;border-color:var(--buy);color:#dff5e8} #armBtn.off{color:var(--dim)}
 #armBtn.locked{background:#5a1218;border-color:var(--sell);color:#fff}
+#sideBtn{font-weight:800;padding:2px 7px;min-width:0;margin-left:2px} #sideBtn.long{background:#173b28;border-color:var(--buy);color:#dff5e8} #sideBtn.short{background:#5a1218;border-color:var(--sell);color:#fff} #sideBtn:disabled{opacity:.4}
 /* workspace tab bar */
 #wsbar{display:flex;align-items:center;gap:2px;padding:0 6px;background:#101113;border-bottom:1px solid var(--line);white-space:nowrap;overflow:hidden}
 .stab{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;font:700 12px var(--mono);letter-spacing:.06em;color:var(--dim);border:1px solid transparent;border-bottom:0;border-radius:3px 3px 0 0;cursor:pointer;height:24px;box-sizing:border-box}
@@ -909,6 +910,7 @@ body.resizing .zbody{pointer-events:none}
   <span id="symbox"><input id="symIn" placeholder="SYMBOL" autocomplete="off" spellcheck="false"><select id="symHist" title="recent symbols"><option value="">RECENT</option></select></span>
   <span class="sep"></span>
   <button id="armBtn" class="off" title="Arm order entry. Disarmed at every launch.">ARM</button>
+  <button id="sideBtn" class="long" title="LONG / SHORT for the ticker on screen. Click to flip; your levels stay. Drawing a stop and a target sets it on its own (stop above target = short).">L</button>
   <label title="Skip the confirmation box on every order"><input type="checkbox" id="oneclick"> one-click</label>
   <label title="Attach the play's stop and target to every entry"><input type="checkbox" id="bracket"> stop+target</label>
   <label title="PS60 exits: cash-flow scale-outs, runner to target, stop to breakeven after the first cash flow"><input type="checkbox" id="scale"> PS60 exits</label>
@@ -3083,10 +3085,12 @@ function suDerive(d, f){
   const shares = risk ? capShares(Math.floor(riskDollars() / risk), entry) : null;
   const bad = [];
   if (pivot && second && sgn * (second - pivot) <= 0) bad.push("second_entry");
-  if (pivot && stop && sgn * (stop - pivot) >= 0) bad.push("stop");
+  // the stop sits on the risk side of the entry you take: your 2nd entry when one is drawn (a short's stop above
+  // its 2nd entry can sit UNDER the pivot — that is the PS60 stop), else the pivot
+  const stopRef = n("second_entry") || pivot, stopRefLbl = n("second_entry") ? "2nd entry" : "pivot";
+  if (stop && stopRef && sgn * (stopRef - stop) <= 0) bad.push("stop");
   if ((pivot && mp && sgn * (mp - pivot) <= 0) || (mp && entry && sgn * (mp - entry) <= 0)) bad.push("target");
-  if (stop && entry && sgn * (entry - stop) <= 0 && !bad.includes("stop")) bad.push("stop");
-  return {side, pivot, second, stop, mp, entry, entryLbl, risk, room, r, shares, bad, seState, fromSecond: !!second};
+  return {side, pivot, second, stop, mp, entry, entryLbl, risk, room, r, shares, bad, seState, fromSecond: !!second, stopRefLbl};
 }
 function autoEntryHTML(d){
   // the 2nd entry you draw is an automatic entry: what the desk has working for it right now, and why not when it has nothing
@@ -3104,7 +3108,7 @@ function suDerivedHTML(d, f){
     <span>RISK / SHARE</span><span>${x.risk ? `${$(x.risk)} <span class="dim">${x.entryLbl} ${$(x.entry)} → stop ${$(x.stop)}</span>` : `<span class="dim">NEEDS A STOP${x.entry ? "" : " AND AN ENTRY"}</span>`}</span>
     <span>REWARD : RISK</span><span>${x.r ? `<span class="${x.r >= 2 ? "ok" : x.r >= 1 ? "" : "no"}">${x.r.toFixed(1)} R</span> <span class="dim">${x.entryLbl} → TARGET ÷ RISK${x.fromSecond ? "" : " · real number comes with the 2nd entry"}</span>` : NA}</span>
     <span>SIZE</span><span>${x.shares != null ? `<span class="gold">${sz(x.shares)} sh</span> <span class="dim">AT $${riskDollars()} RISK</span> <button data-usesize="${x.shares}" style="padding:1px 6px;font-size:10px">TO TICKET</button>` : `<span class="dim">NEEDS A STOP</span>`}</span>
-    ${x.bad.length ? `<span></span><span class="no">${x.bad.map(k => k === "second_entry" ? "2nd entry must be beyond the pivot" : k === "stop" ? (f.side === "short" ? "stop must be above the pivot for a short" : "stop must be below the pivot for a long") : (f.side === "short" ? "target must be below the pivot for a short" : "target must be above the pivot for a long")).join(" · ")}</span>` : ""}`;
+    ${x.bad.length ? `<span></span><span class="no">${x.bad.map(k => k === "second_entry" ? "2nd entry must be beyond the pivot" : k === "stop" ? (f.side === "short" ? `stop must be above the ${x.stopRefLbl} for a short` : `stop must be below the ${x.stopRefLbl} for a long`) : (f.side === "short" ? "target must be below the pivot for a short" : "target must be above the pivot for a long")).join(" · ")}</span>` : ""}`;
 }
 function suRefresh(){ const el = document.getElementById("suDerived"); if (!el) return; const f = suFields(); el.innerHTML = suDerivedHTML(curData(), f); const x = suDerive(curData(), f); for (const k of ["second_entry", "stop", "target"]){ const i = document.getElementById("su_" + k); if (i) i.classList.toggle("bad", x.bad.includes(k)); } const b = document.getElementById("suSave"); if (b) b.disabled = SU.saving || x.bad.length > 0; }
 function renderSetup(d){
@@ -3162,6 +3166,22 @@ document.getElementById("app").addEventListener("click", async e => {
   const out = await post("/api/level", {symbol: curSym, role: k, price: null});
   toast(out.ok ? `${curSym} ${names[k]} removed` : "Could not remove the " + names[k], out.ok);
   SU.dirty = false; P.setup.last = null; poll(true);
+});
+document.getElementById("sideBtn").addEventListener("click", async () => {
+  const d = curData(); if (!d || !d.play || !curSym) return;
+  const side = d.play.side === "short" ? "long" : "short", out = await post("/api/play", {symbol: curSym, action: "side", side});
+  const warn = (out.warnings || []).join(" · ");
+  toast(out.ok ? `${curSym} is a ${side.toUpperCase()}${warn ? " — redraw: " + warn : ""}` : "Side not changed: " + (out.reason || ""), out.ok && !warn);
+  SU.dirty = false; P.setup.last = null; poll(true);
+});
+P.setup.el.addEventListener("change", async e => {
+  // SIDE applies the moment you pick it: the levels on the chart stay, the desk re-reads them for the new side
+  if (e.target.id !== "su_side" || !curSym) return;
+  const side = e.target.value, out = await post("/api/play", {symbol: curSym, action: "side", side});
+  const warn = (out.warnings || []).join(" · ");
+  SU.dirty = false; SU.msg = out.ok ? (warn ? `${side.toUpperCase()} · redraw: ${warn}` : `${side.toUpperCase()} · levels read for a ${side}`) : "REJECTED · " + (out.reason || "not saved");
+  toast(out.ok ? `${curSym} is a ${side.toUpperCase()}${warn ? " — " + warn : ""}` : "Side not changed: " + (out.reason || ""), out.ok && !warn);
+  P.setup.last = null; poll(true);
 });
 P.setup.el.addEventListener("input", e => { if (e.target.id === "su_risk"){ store.set("riskDollars", +e.target.value || 0); syncRisk(); P.ticket.last = null; renderTicket(state, curData()); } else SU.dirty = true; SU.msg = ""; const m = document.getElementById("suMsg"); if (m) m.textContent = ""; suRefresh(); });
 P.setup.el.addEventListener("click", async e => {
@@ -3761,6 +3781,8 @@ function renderStatus(s){
   document.getElementById("stClock").textContent = nyT(Date.now() / 1000) + " ET";
   const arm = document.getElementById("armBtn");
   arm.textContent = t.locked ? "LOCKED" : t.armed ? "ARMED" : "ARM"; arm.className = t.locked ? "locked" : t.armed ? "armed" : "off"; arm.disabled = !t.can_trade; arm.title = t.can_trade ? "" : (t.why_not || "");
+  const sd = curData(), sb = document.getElementById("sideBtn"), side = sd && sd.play && sd.play.side;
+  sb.textContent = side === "short" ? "S" : "L"; sb.className = side === "short" ? "short" : "long"; sb.disabled = !side; sb.title = side ? `${curSym} is a ${side.toUpperCase()} — click for ${side === "short" ? "LONG" : "SHORT"} (your levels stay)` : "no ticker on screen";
   document.getElementById("oneclick").checked = !!t.one_click; document.getElementById("bracket").checked = !!t.bracket; document.getElementById("scale").checked = !!t.scale;
   document.getElementById("voiceBtn").textContent = store.get("voice", true) ? "VOICE ON" : "VOICE OFF";
   document.getElementById("soundBtn").textContent = store.get("sound", true) ? "BEEP ON" : "BEEP OFF";

@@ -388,6 +388,62 @@ class PlaySetupTests(unittest.TestCase):
         ok, why = e.set_play_setup("ZZZ", {"stop": 49.0, "mp": 52.0}, 4.0)
         self.assertTrue(ok, why)
 
+    def test_short_stop_sits_above_the_second_entry_under_the_pivot(self):
+        """AAPL short: pivot 120.50, 2nd entry 120.01, stop 120.18, target 117.24 — the stop is above the 2nd entry
+        (the PS60 stop) even though it is under the pivot. That is a valid short and must save as one."""
+        e = connected_engine()
+        e.add_play("AAPL", 1.0); e.on_l1("AAPL", "last", 120.3, 1.0); e.tick(1.0)
+        ok, why = e.set_play_setup("AAPL", {"side": "short", "trigger": 120.5, "second_entry": 120.01, "stop": 120.18, "target": 117.24}, 2.0)
+        self.assertTrue(ok, why)
+        p = e.syms["AAPL"].play
+        self.assertEqual((p["side"], p["stop"], p["second_entry"]), ("short", 120.18, 120.01))
+        # a stop UNDER a short's 2nd entry is still wrong, and the reason names the 2nd entry
+        ok, why = e.set_play_setup("AAPL", {"stop": 119.9}, 3.0)
+        self.assertFalse(ok); self.assertIn("above the 2nd entry 120.01 for a short", why)
+        # same for a long: the stop goes under the 2nd entry, not just under the pivot
+        ok, why = e.set_play_setup("AAPL", {"side": "long", "trigger": 119.0, "second_entry": 119.4, "stop": 119.6, "target": 121.0}, 4.0)
+        self.assertFalse(ok); self.assertIn("below the 2nd entry 119.4 for a long", why)
+
+    def test_side_applies_at_once_and_keeps_the_drawn_levels(self):
+        """Picking SHORT in PLAY SETUP flips the play right away; the levels drawn on the chart stay put and the
+        desk says which of them now sit on the wrong side (nothing is wiped, nothing waits for SAVE)."""
+        e = connected_engine()
+        e.add_play("AAPL", 1.0); e.on_l1("AAPL", "last", 120.3, 1.0); e.tick(1.0)
+        for role, px in (("trigger", 120.5), ("second_entry", 120.01), ("stop", 120.18), ("target", 117.24)):
+            e.set_play_level("AAPL", role, px, 1.5)
+        self.assertEqual(e.syms["AAPL"].play["side"], "short")   # the stop above the target already said so
+        e.syms["AAPL"].play["side"] = "long"                      # pretend the pick is what flips it
+        ok, warn = e.set_side("AAPL", "short", 2.0)
+        self.assertTrue(ok); self.assertEqual(warn, [])
+        p = e.syms["AAPL"].play
+        self.assertEqual((p["side"], p["trigger"], p["second_entry"], p["stop"], p["target"]), ("short", 120.5, 120.01, 120.18, 117.24))
+        self.assertTrue(any("SIDE → SHORT" in n["text"] for n in e.symbol_log("AAPL")))
+        # back to long: the same levels are now on the wrong side, and the desk says so instead of wiping them
+        ok, warn = e.set_side("AAPL", "long", 3.0)
+        self.assertTrue(ok); self.assertEqual(len(warn), 3)
+        self.assertIn("2nd entry 120.01 must be above the pivot 120.5 for a long", warn[0])
+        self.assertEqual(e.syms["AAPL"].play["second_entry"], 120.01)
+        self.assertEqual(e.set_side("AAPL", "sideways", 3.5), (False, ["side must be long or short"]))
+
+    def test_side_reads_off_the_stop_and_target(self):
+        """Draw a stop above a target and the play is a short; stop under the target, a long. No SIDE pick needed."""
+        e = connected_engine()
+        e.add_play("AAPL", 1.0); e.on_l1("AAPL", "last", 120.3, 1.0); e.tick(1.0)
+        e.set_play_level("AAPL", "trigger", 120.5, 1.5)
+        e.set_play_level("AAPL", "stop", 120.18, 2.0)            # one level alone says nothing
+        self.assertEqual(e.syms["AAPL"].play["side"], "long")
+        e.set_play_level("AAPL", "target", 117.24, 2.5)
+        self.assertEqual(e.syms["AAPL"].play["side"], "short")
+        self.assertTrue(any("SIDE → SHORT (stop 120.18 above target 117.24)" in n["text"] for n in e.symbol_log("AAPL")))
+        e.set_play_level("AAPL", "target", 123.0, 3.0); e.set_play_level("AAPL", "stop", 119.0, 3.0)
+        self.assertEqual(e.syms["AAPL"].play["side"], "long")
+        # the board and the auto entry read the side the trader picked
+        e.set_side("AAPL", "short", 4.0)
+        e.apply_slot("AAPL", True, 4.0)
+        pane = next(x for x in e.snapshot(4.0)["panes"] if x and x["symbol"] == "AAPL")
+        self.assertEqual(pane["play"]["side"], "short")
+        self.assertTrue(pane["conviction"]["label"].startswith("SHORT"), pane["conviction"]["label"])
+
 
 class BigSizeTests(unittest.TestCase):
     def test_big_size_is_highlighted_and_counted_each_time_it_shows(self):

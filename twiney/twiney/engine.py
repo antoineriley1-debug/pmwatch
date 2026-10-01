@@ -753,11 +753,11 @@ class Engine:
                     return False, f"2nd entry {second} must be ABOVE the pivot {trigger} for a long"
                 if side == "short" and second >= trigger:
                     return False, f"2nd entry {second} must be BELOW the pivot {trigger} for a short"
-            if trigger and stop:
-                if side == "long" and stop >= trigger:
-                    return False, f"stop {stop} must be below the pivot {trigger} for a long"
-                if side == "short" and stop <= trigger:
-                    return False, f"stop {stop} must be above the pivot {trigger} for a short"
+            # the stop sits on the risk side of the entry you actually take: the 2nd entry when one is drawn
+            # (a short's stop above its 2nd entry can sit UNDER the pivot — that is the PS60 stop), else the pivot
+            why = self._stop_conflict(side, trigger, second, stop)
+            if why:
+                return False, why
             if trigger and target:
                 if side == "long" and target <= trigger:
                     return False, f"MP {target} must be above the pivot {trigger} for a long"
@@ -826,6 +826,8 @@ class Engine:
                               t or self.last_t, symbol)
             if role == "target":
                 st.play["mp"] = price
+            if role in ("target", "stop") and price is not None:
+                self._side_from_levels(st, t)
             if role in ("trigger", "second_entry"):
                 # drop the old trackers for this role (unless another role shares that price)
                 if old is not None:
@@ -1512,6 +1514,68 @@ class Engine:
                 pass
         return play
 
+    def _side_from_levels(self, st, t=None):
+        """The side reads off the levels: a stop ABOVE the target can only be a short, a stop BELOW it a long.
+        Draw both on the chart and the play follows, no SIDE pick needed (a tie changes nothing)."""
+        stop, target = st.play.get("stop"), st.play.get("target")
+        if not stop or not target or stop == target:
+            return
+        side = "short" if stop > target else "long"
+        if st.play.get("side") == side:
+            return
+        st.play["side"] = side
+        st.invalidation_armed = False
+        self.log(st.symbol, f"SIDE → {side.upper()} (stop {narrative.px(stop)} {'above' if side == 'short' else 'under'} target {narrative.px(target)})", t, kind="level")
+        self._rec({"ev": "flip", "t": t or self.last_t, "sym": st.symbol, "side": side, "keep": True})
+
+    @staticmethod
+    def _stop_conflict(side, trigger, second, stop):
+        """Why a stop is on the wrong side of the entry (None when it is fine). The entry is the 2nd entry when
+        there is one, else the pivot: a long's stop goes under it, a short's over it."""
+        if not stop:
+            return None
+        entry, name = (second, "2nd entry") if second else (trigger, "pivot")
+        if not entry:
+            return None
+        if side == "long" and stop >= entry:
+            return f"stop {stop} must be below the {name} {entry} for a long"
+        if side == "short" and stop <= entry:
+            return f"stop {stop} must be above the {name} {entry} for a short"
+        return None
+
+    def side_conflicts(self, play):
+        """The levels on a play that sit on the wrong side for its side (so a side change can say what to redraw)."""
+        side, trigger, second = play.get("side", "long"), play.get("trigger"), play.get("second_entry")
+        out = []
+        if trigger and second and ((side == "long" and second <= trigger) or (side == "short" and second >= trigger)):
+            out.append(f"2nd entry {second} must be {'above' if side == 'long' else 'below'} the pivot {trigger} for a {side}")
+        why = self._stop_conflict(side, trigger, second, play.get("stop"))
+        if why:
+            out.append(why)
+        target = play.get("target")
+        if trigger and target and ((side == "long" and target <= trigger) or (side == "short" and target >= trigger)):
+            out.append(f"target {target} must be {'above' if side == 'long' else 'below'} the pivot {trigger} for a {side}")
+        return out
+
+    def set_side(self, symbol, side, t=None):
+        """LONG / SHORT, applied the moment it is picked. Every level drawn on the chart stays where it is: the
+        desk re-reads them for the new side (and tells you which ones now sit on the wrong side of it).
+        Returns (ok, warnings)."""
+        with self.lock:
+            st = self._st(symbol)
+            if st is None:
+                return False, ["unknown symbol"]
+            side = str(side or "").lower()
+            if side not in ("long", "short"):
+                return False, ["side must be long or short"]
+            if st.play.get("side") != side:
+                st.play["side"] = side
+                st.invalidation_armed = False
+                self.log(symbol, f"SIDE → {side.upper()}", t, kind="level")
+                self._rec({"ev": "flip", "t": t or self.last_t, "sym": symbol, "side": side, "keep": True})
+                self._save_plays()
+            return True, self.side_conflicts(st.play)
+
     def flip_side(self, symbol, t=None):
         """Long <-> short on a play (the second entry must sit beyond the pivot, so it is cleared)."""
         with self.lock:
@@ -2051,7 +2115,8 @@ class Engine:
                 st = self._st(ev["sym"])
                 if st is not None:
                     st.play["side"] = ev["side"]
-                    st.play["second_entry"] = None
+                    if not ev.get("keep"):           # a SIDE pick keeps the drawn levels; the old flip cleared the 2nd entry
+                        st.play["second_entry"] = None
         elif kind == "level":
             (self.add_level if ev.get("on", True) else self.remove_level)(ev["sym"], ev.get("px"), t)
         elif kind == "play_level":
