@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261001-0934">
+<meta name="build" content="20261001-0945">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -594,6 +594,7 @@ body.colresizing,body.colresizing *{cursor:col-resize!important;user-select:none
 .ur-sec{padding:4px 8px 2px;font-size:9.5px;letter-spacing:.14em;color:var(--gold)}
 .ur-h{display:grid;grid-template-columns:44px 1fr 30px 56px 44px 44px 14px;gap:4px;padding:2px 8px;font:11px var(--mono);border-bottom:1px solid #161c27;align-items:center}
 .ur-h.c .ct{color:#3ee08f} .ur-h.p .ct{color:#ff6b78} .ur-h .tm,.ur-h .k,.ur-h .dte{color:var(--dim)} .ur-h .pr{color:var(--gold);text-align:right} .ur-h .otm{text-align:right;color:#c9ced6}
+.setup .derived .gold,.kv .gold{color:var(--gold)} .kv .ok{color:var(--buy)} .kv .no{color:var(--sell)}
 
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
@@ -3009,10 +3010,18 @@ function renderPS60(d){
       <span>PIVOT</span><span>${px(d.play.trigger)} · 2nd ${px(d.play.second_entry)} · stop ${px(d.play.stop)}</span>
       <span>MP</span><span>${mp.level != null ? px(mp.level) + " · $" + (mp.dollars || 0).toFixed(2) + " of room" : NA}${mp.verdict === "CLEAR" || mp.verdict === "THIN" ? " · " + mp.verdict + " vs ATR" : ""}</span>
       <span>2ND ENTRY</span><span>${esc(se.text || NA)}</span>
+      <span>FLOW</span><span>${doughHTML(g.dough)}</span>
       <span>TAPE</span><span>${esc((d.tape && d.tape.state) || "QUIET")}${d.tape && d.tape.buy_pct != null ? " · " + d.tape.buy_pct.toFixed(0) + "% buys" : ""}</span></div>
     <ul>${(d.lines || []).map(l => `<li>${esc(l)}</li>`).join("")}</ul>
     ${(g.sneaky || []).map(x => `<div class="dim">${esc(x.label)} ${px(x.price)} ×${x.touches} · room $${x.room.toFixed(2)}</div>`).join("")}
     ${se.extreme && ["BROKE", "RETRACE"].includes(se.state) ? `<button data-se="${se.extreme}" style="margin-top:4px">use ${px(se.extreme)} as 2nd entry</button>` : ""}`);
+}
+/* NO FLOW, NO DOUGH: the flow confirmation line, one look */
+function doughHTML(dg){
+  if (!dg) return NA;
+  const cls = dg.state === "FLOW CONFIRMED" ? "ok" : dg.state === "FLOW AGAINST" ? "no" : dg.state === "FLOW STARTING" ? "gold" : "dim";
+  const ic = dg.state === "FLOW CONFIRMED" ? "💰 " : dg.state === "FLOW AGAINST" ? "⛔ " : dg.state === "FLOW STARTING" ? "… " : "";
+  return `<b class="${cls}" title="${esc(dg.text)}">${ic}${esc(dg.state === "NO FLOW" ? "NO FLOW, NO DOUGH" : dg.state)}</b> <span class="dim">${esc(dg.text)}</span>`;
 }
 /* ---------- PLAY SETUP: pivot, stop, MP level (the target), optional 2nd entry — everything derives from it */
 const SU = {dirty: false, msg: "", saving: false};
@@ -3067,6 +3076,7 @@ function autoEntryHTML(d){
 function suDerivedHTML(d, f){
   const x = suDerive(d, f), $ = v => v == null ? NA : "$" + v.toFixed(2);
   return `<span>2ND ENTRY</span><span>${x.seState ? `<span class="${x.fromSecond ? "ok" : "dim"}">${esc(x.seState)}</span>` : NA}</span>
+    <span>FLOW</span><span>${doughHTML(d && d.ps60 && d.ps60.dough)}</span>
     <span>MP ROOM</span><span>${x.room != null ? `<span class="gold">${$(x.room)}</span> <span class="dim">PIVOT ${$(x.pivot)} → TARGET ${$(x.mp)}</span>` : `<span class="dim">NEEDS A PIVOT AND A TARGET</span>`}</span>
     <span>RISK / SHARE</span><span>${x.risk ? `${$(x.risk)} <span class="dim">${x.entryLbl} ${$(x.entry)} → stop ${$(x.stop)}</span>` : `<span class="dim">NEEDS A STOP${x.entry ? "" : " AND AN ENTRY"}</span>`}</span>
     <span>REWARD : RISK</span><span>${x.r ? `<span class="${x.r >= 2 ? "ok" : x.r >= 1 ? "" : "no"}">${x.r.toFixed(1)} R</span> <span class="dim">${x.entryLbl} → TARGET ÷ RISK${x.fromSecond ? "" : " · real number comes with the 2nd entry"}</span>` : NA}</span>

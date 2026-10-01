@@ -226,6 +226,17 @@ DEFAULTS = {
         "alerts": "watchlist",
         # speak unusual flow for every watchlist symbol, not only the active tab
         "voice_all": True,
+        # NO FLOW, NO DOUGH: a READY setup is held at WATCH until short-dated out-of-the-money money keeps coming in
+        # on the play's side (calls for a long, puts for a short): dough_min_dollars bought at the ask across at
+        # least dough_min_minutes separate minutes inside dough_window_minutes, the last of it inside
+        # dough_fresh_minutes. Off = flow is shown but never holds the grade
+        "no_flow_no_dough": True,
+        "dough_window_minutes": 30,
+        "dough_min_dollars": 300000,
+        "dough_min_minutes": 3,
+        "dough_fresh_minutes": 10,
+        "dough_max_dte": 7,
+        "dough_min_otm_pct": 0.5,
         # a play whose flow leans hard the other way is held at WATCH instead of READY (0 turns this off)
         "against_bias": 0.6,
         "against_min_premium": 500000,

@@ -257,3 +257,65 @@ class UrgencySearchTests(unittest.TestCase):
         self.assertTrue(all(h["symbol"] == "AAA" for h in out["history"]))
         self.assertEqual([u["strike"] for u in out["live"]], [12.0])
         self.assertTrue(out["history"][-1]["called"])               # 4 x $120K in 30 s: that contract was called urgent
+
+
+class NoFlowNoDoughTests(unittest.TestCase):
+    def _engine(self):
+        from helpers import cfg, plays
+        from twiney.engine import Engine
+        return Engine(plays(), cfg())
+
+    def _call(self, t, prem=120000.0, strike=11.0, side="ask", cp="C"):
+        return {"t": t, "symbol": "AAA", "strike": strike, "cp": cp, "expiry": "2026-10-03", "dte": 2.0, "size": 300,
+                "price": 4.0, "premium": prem, "spot": 10.0, "side": side, "kind": "sweep", "otm_pct": 10.0}
+
+    def test_states(self):
+        e = self._engine()
+        self.assertEqual(e.flow.dough("AAA", "C", 1000.0)["state"], "NO FLOW")
+        e.on_flow(self._call(1000.0), 1000.0)
+        d = e.flow.dough("AAA", "C", 1001.0)
+        self.assertEqual(d["state"], "FLOW STARTING")
+        for i in range(1, 4):                                   # it keeps coming: four separate minutes, $480K
+            e.on_flow(self._call(1000.0 + i * 61), 1000.0 + i * 61)
+        d = e.flow.dough("AAA", "C", 1190.0)
+        self.assertEqual(d["state"], "FLOW CONFIRMED")
+        self.assertEqual((d["prints"], d["minutes"], d["dollars"]), (4, 4, 480000))
+        self.assertIn("keeps coming", d["text"])
+        self.assertEqual(e.flow.dough("AAA", "C", 1190.0 + 11 * 60)["state"], "FLOW FADED")
+        for i in range(6):                                      # puts pile in: against a long
+            e.on_flow(self._call(1900.0 + i * 61, prem=200000.0, cp="P", strike=9.0), 1900.0 + i * 61)
+        self.assertEqual(e.flow.dough("AAA", "C", 2300.0)["state"], "FLOW AGAINST")
+
+    def test_ready_is_held_until_the_flow_confirms_and_said_once(self):
+        from helpers import ASK, BID, INSERT
+        e = self._engine()
+        e.on_connection("DEMO", "", 0.0)
+        e.apply_slot("AAA", True, 0.0)
+        st = e.syms["AAA"]
+        st.play.update(stop=9.90, target=10.60)
+        for i in range(3):
+            e.on_depth("AAA", i, INSERT, BID, round(9.99 - i * 0.01, 2), 500, "", 1.0)
+            e.on_depth("AAA", i, INSERT, ASK, round(10.00 + i * 0.01, 2), 500, "", 1.0)
+        # a READY-shaped second entry: force the state machine's answer
+        import twiney.ps60 as ps60
+        real = ps60.second_entry
+        ps60.second_entry = lambda bars, play, t, pc: {"state": ps60.SECOND_ENTRY, "second_entry": 10.10, "build": "building", "extreme": 10.10, "retrace": 10.02, "text": "x"}
+        try:
+            e.on_print("AAA", 10.11, 100, "X", 5.0)
+            g = e._ps60_view(st, 5.0) if hasattr(e, "_ps60_view") else None
+            p = e.snapshot(5.5)
+            pane = next(x for x in p["panes"] if x and x["symbol"] == "AAA")
+            self.assertEqual(pane["ps60"]["grade"], "WATCH")
+            self.assertIn("no flow, no dough", pane["ps60"]["why"])
+            for i in range(4):
+                e.on_flow(self._call(6.0 + i * 61), 6.0 + i * 61)
+            p = e.snapshot(200.0)
+            pane = next(x for x in p["panes"] if x and x["symbol"] == "AAA")
+            self.assertEqual(pane["ps60"]["grade"], "READY")
+            self.assertEqual(pane["ps60"]["dough"]["state"], "FLOW CONFIRMED")
+            said = [a for a in e.alerts if a["label"] == "FLOW CONFIRMED"]
+            self.assertEqual(len(said), 1)
+            e.snapshot(201.0)
+            self.assertEqual(len([a for a in e.alerts if a["label"] == "FLOW CONFIRMED"]), 1)
+        finally:
+            ps60.second_entry = real

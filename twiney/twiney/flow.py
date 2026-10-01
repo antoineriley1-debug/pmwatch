@@ -318,6 +318,76 @@ class FlowBook:
         return {"calls": round(calls), "puts": round(puts), "bias": bias, "prints": len(prints),
                 "unusual": sorted(flags, key=lambda u: -u["t"])[:2], "minutes": minutes}
 
+    def dough(self, symbol, cp, now, index=False):
+        """NO FLOW, NO DOUGH — Dan's confirmation. With the setup in hand, is short-dated, out-of-the-money money
+        coming in on the play's side (calls for a long, puts for a short), bought at the ask, and does it KEEP
+        coming with size? One print is a guess; the same side hit minute after minute is somebody who knows.
+
+        Looks back dough_window_minutes (30). Returns {"state", "text", "dollars", "prints", "minutes", "sweeps",
+        "against", "last_age", "top"}:
+          NO FLOW        nothing on the play's side
+          FLOW STARTING  some, but not yet continuous / big enough
+          FLOW CONFIRMED at least dough_min_minutes separate minutes with prints, dough_min_dollars in all, and
+                         the last print inside dough_fresh_minutes — it keeps coming
+          FLOW AGAINST   the other side has more than the play's side
+          FLOW FADED     it was there, but nothing for dough_fresh_minutes
+        """
+        c = self.cfg
+        win = c.get("dough_window_minutes", 30)
+        max_dte = c.get("dough_max_dte", c.get("urgency_max_dte", 7))
+        min_otm = c.get("dough_min_otm_pct", c.get("urgency_min_otm_pct", 0.5))
+        need = c.get("index_min_premium", 5e6) if index else c.get("dough_min_dollars", 300000)
+        need_min = int(c.get("dough_min_minutes", 3))
+        fresh = c.get("dough_fresh_minutes", 10) * 60.0
+        prints = self._window(symbol, now, win)
+
+        def side(side_cp):
+            dollars, n, sw, mins, by_strike, last = 0.0, 0, 0, set(), {}, None
+            for p in prints:
+                if p["cp"] != side_cp or p["side"] != "ask":
+                    continue
+                if p.get("dte") is None or p["dte"] > max_dte or p.get("otm_pct") is None or p["otm_pct"] < min_otm:
+                    continue
+                prem = p.get("premium") or 0.0
+                dollars += prem; n += 1
+                sw += 1 if p.get("kind") in ("sweep", "block") else 0
+                mins.add(int(p["t"] // 60))
+                last = p["t"] if last is None else max(last, p["t"])
+                row = by_strike.setdefault(p["strike"], [0.0, 0, p.get("dte")])
+                row[0] += prem; row[1] += 1
+            return dollars, n, sw, len(mins), by_strike, last
+
+        dollars, n, sw, mins, by_strike, last = side(cp)
+        against, an, _s, _m, _b, _l = side("P" if cp == "C" else "C")
+        kind = "calls" if cp == "C" else "puts"
+        k = lambda v: f"${v / 1e6:.1f}M" if v >= 1e6 else f"${v / 1e3:.0f}K"
+        top = None
+        if by_strike:
+            sk, (sd, sn, sdte) = max(by_strike.items(), key=lambda kv: kv[1][0])
+            top = {"strike": sk, "dte": sdte, "dollars": round(sd), "prints": sn}
+        age = None if last is None else now - last
+        out = {"dollars": round(dollars), "prints": n, "minutes": mins, "sweeps": sw, "against": round(against),
+               "last_age": None if age is None else round(age), "top": top, "need": need, "need_minutes": need_min}
+        if n == 0:
+            out.update(state="NO FLOW", text=f"no short-dated out-of-the-money {kind} being bought — no flow, no dough" +
+                       (f" (the other side has {k(against)})" if against else ""))
+        elif against > dollars * 1.5 and against >= need:
+            out.update(state="FLOW AGAINST", text=f"{k(against)} of {'puts' if cp == 'C' else 'calls'} vs {k(dollars)} of {kind}: the flow is against this play")
+        elif age is not None and age > fresh and dollars >= need and mins >= need_min:
+            out.update(state="FLOW FADED", text=f"{k(dollars)} of {kind} came in but nothing for {int(age // 60)} min — it stopped coming")
+        elif dollars >= need and mins >= need_min and (age is None or age <= fresh):
+            tops = f" · most on the {top['strike']:g} strike {top['dte']:.0f}d out" if top and top.get("dte") is not None else ""
+            out.update(state="FLOW CONFIRMED", text=f"{k(dollars)} of short-dated OTM {kind} bought at the ask in {n} prints over {mins} separate minutes"
+                       f"{' · ' + str(sw) + ' sweeps' if sw else ''} — it keeps coming{tops}")
+        else:
+            miss = []
+            if dollars < need:
+                miss.append(f"{k(dollars)} of {k(need)}")
+            if mins < need_min:
+                miss.append(f"{mins} of {need_min} minutes")
+            out.update(state="FLOW STARTING", text=f"{k(dollars)} of {kind} in {n} print{'s' if n != 1 else ''} — not continuous yet ({', '.join(miss)})")
+        return out
+
     def knows(self, symbol, cp, now, index=False):
         """SOMEBODY KNOWS: short-dated, out-of-the-money contracts of one side (C or P) getting bought at the ask
         inside the urgency window. Dan's tell when a pivot triggers: conviction that the move is wanted NOW.
@@ -688,12 +758,14 @@ class SimFlow:
             sym = rng.choice(pool) if rng.random() < 0.6 else rng.choice(self.symbols or pool)
             if sym not in self.cluster:
                 cp = rng.choice(("C", "P"))
-                self.cluster[sym] = {"cp": cp, "until": t + rng.uniform(120, 420), "next": t,
+                # how committed the buyer is: a weak cluster is a few prints and done; a strong one keeps coming
+                # with size for many minutes. That is the thing Dan reads — and in this market it is the thing that
+                # is actually informative: the move follows a strong, sustained cluster far more often than a weak one
+                strength = rng.random()
+                self.cluster[sym] = {"cp": cp, "until": t + 90 + strength * 900, "next": t, "strength": strength,
                                      "otm": rng.uniform(3.5, 9.0), "dte": rng.choice((2, 5, 9, 16, 23))}
-                # now and then the flow was early: the stock moves their way some minutes later. Kept to about a third:
-                # most real out-of-the-money buying is hedges, spreads and guesses, not foreknowledge
                 pushes = getattr(self.market, "pushes", None)
-                if pushes is not None and sym in getattr(self.market, "state", {}) and rng.random() < 0.3:
+                if pushes is not None and sym in getattr(self.market, "state", {}) and rng.random() < 0.12 + 0.6 * strength:
                     pushes[sym] = (t + rng.uniform(300, 1200), 1 if cp == "C" else -1)
         self._reactive(t)
         whole = getattr(self.engine, "flow_scope", "all") != "watchlist"
@@ -723,8 +795,9 @@ class SimFlow:
                 if t > cl["until"]:
                     del self.cluster[sym]
                     continue
-                cl["next"] = t + rng.uniform(15, 60)
+                sg = cl.get("strength", 0.5)
+                cl["next"] = t + rng.uniform(15, 60) * (1.4 - 0.8 * sg)          # strong: prints every 10-30 s
                 step = 5.0 if spot > 1000 else 1.0 if spot > 50 else 0.5 if spot > 10 else 0.25
                 strike = round(round(spot * (1 + cl["otm"] / 100.0 * (1 if cl["cp"] == "C" else -1)) / step) * step, 2)
-                size = int(rng.choice((300, 500, 800, 1200, 2000)))
+                size = int(rng.choice((300, 500, 800, 1200, 2000)) * (0.5 + sg))
                 self.engine.on_flow(self._print(sym, spot, cl["cp"], strike, cl["dte"], size, True, rng.choice(("sweep", "sweep", "block")), t), t)

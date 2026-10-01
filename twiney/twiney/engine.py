@@ -1422,8 +1422,43 @@ class Engine:
                           + f"option flow leans against this {st.play['side']}: {self.flow.context_text(st.symbol, t)}")
         gr["gates"].append({"q": "Flow with you?", "ok": fs["bias"] is None or (fs["bias"] >= 0) == (st.play["side"] == "long") or abs(fs["bias"]) < 0.3,
                             "why": self.flow.context_text(st.symbol, t)})
+        # NO FLOW, NO DOUGH: Dan's confirmation. The setup comes first; then short-dated out-of-the-money money on
+        # the play's side has to START and KEEP COMING. Until it does, a READY setup is held at WATCH (switchable)
+        index = st.symbol in set(fc.get("index_symbols", ()))
+        dough = self.flow.dough(st.symbol, "C" if st.play["side"] == "long" else "P", t, index)
+        gr["gates"].append({"q": "Flow confirming?", "ok": dough["state"] == "FLOW CONFIRMED", "why": dough["text"]})
+        if gr["grade"] == "READY" and fc.get("no_flow_no_dough", True) and dough["state"] != "FLOW CONFIRMED":
+            gr = dict(gr, grade="WATCH", why=(gr["why"] + "; " if gr["why"] else "") + dough["text"])
+        self._dough_watch(st, dough, t)
         return {"se": se, "mp": mp, "grade": gr["grade"], "why": gr["why"], "gates": gr["gates"], "flow": fs,
-                "sneaky": ps60.sneaky_pivots(bars, atr_value, pc), "atr": atr_value}
+                "dough": dough, "sneaky": ps60.sneaky_pivots(bars, atr_value, pc), "atr": atr_value}
+
+    def _dough_watch(self, st, dough, t):
+        """Say it once when the flow confirms the play's side (and once when it turns against it)."""
+        prev = getattr(st, "dough_state", None)
+        st.dough_state = dough["state"]
+        if prev == dough["state"] or dough["state"] not in ("FLOW CONFIRMED", "FLOW AGAINST"):
+            return
+        if t - getattr(st, "dough_said_t", -1e9) < 600:
+            return
+        st.dough_said_t = t
+        side = "calls" if st.play["side"] == "long" else "puts"
+        if dough["state"] == "FLOW CONFIRMED":
+            text = f"FLOW CONFIRMED on {st.symbol} {st.play['side']}: {dough['text']}. The dough is here."
+        else:
+            text = f"FLOW AGAINST {st.symbol} {st.play['side']}: {dough['text']}."
+        alert = {"t": t, "symbol": st.symbol, "label": dough["state"], "price": fmt_price(st.price()), "side": "ask", "role": "flow",
+                 "text": text, "premium": dough["dollars"], "cp": "C" if side == "calls" else "P", "prints": dough["prints"],
+                 "words": (f"flow confirmed, {narrative.dollars(dough['dollars'])} of short dated {side}, it keeps coming" if dough["state"] == "FLOW CONFIRMED"
+                           else f"flow against you, {narrative.dollars(dough['against'])} the other way")}
+        alert["key"] = f"{round(t, 2)}|{st.symbol}|{dough['state']}"
+        self.alerts.appendleft(alert)
+        self._rec(dict(alert, ev="alert"))
+        for fn in self.listeners:
+            try:
+                fn(alert)
+            except Exception:
+                pass
 
     def _check_plays(self, t):
         """Retire a play once its stop or target trades: it stops taking a ladder."""

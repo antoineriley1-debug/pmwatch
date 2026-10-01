@@ -371,3 +371,15 @@ contrarian dip buyers. Separate quiet clusters of out-of-the-money buying come b
 the time. URGENT FLOW has a ticker search: that name's contracts being chased now and everything urgent-type that came
 in on it this session. The daily chart counts down to the close in session and to the next open outside it.
 
+## NO FLOW, NO DOUGH
+
+Dan's confirmation, on the real feed and in practice. The setup comes first (pivot, 2nd entry, reloaders). Then the
+desk watches for short-dated, out-of-the-money money on the play's side (calls for a long, puts for a short) bought
+at the ask, and asks whether it KEEPS coming: `flow.dough_min_dollars` ($300K) across at least
+`flow.dough_min_minutes` (3) separate minutes inside `flow.dough_window_minutes` (30), the last of it inside
+`flow.dough_fresh_minutes` (10). The FLOW line in PS60 and PLAY SETUP reads NO FLOW, NO DOUGH / FLOW STARTING /
+FLOW CONFIRMED / FLOW FADED / FLOW AGAINST. A READY setup is held at WATCH until FLOW CONFIRMED
+(`flow.no_flow_no_dough`; off = shown, never holds the grade). FLOW CONFIRMED and FLOW AGAINST are said once.
+In practice, the option clusters that come before a move are the sustained ones with size; a few prints and done
+rarely lead anywhere, as in the market.
+
