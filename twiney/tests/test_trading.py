@@ -536,3 +536,19 @@ class TradeOverTests(unittest.TestCase):
         self.assertEqual(st["state"], "DONE")
         self.assertEqual(st["filled_t"], 3.5)
         self.assertEqual(tr.snapshot(run_watchdog=False)["filled_chip_seconds"], 90.0)
+
+
+class DollarCapSizingTests(unittest.TestCase):
+    def test_tight_stop_on_a_pricey_stock_is_capped_at_the_limit_price(self):
+        """AAPL-like: 2nd entry 120.95, stop 120.86 — risk sizes to the share cap, the $ cap trims it, and the trimmed
+        order must pass the gate at its LIMIT (2nd entry + fill cap), not come out a few dollars over."""
+        e, tr, gate, broker = sim_setup(auto_second_entry=True, max_shares_per_order=5000, max_position_shares=5000)
+        e.syms["AAA"].play.update(second_entry=10.10, stop=10.09, target=10.50)
+        tr.risk_dollars = 100
+        tr.cfg["max_dollars_per_order"] = 25000
+        gate.arm(True)
+        tr.watchdog(2.0)
+        ent = [o for o in e._pending("AAA") if o["role"] == "entry"]
+        self.assertEqual(len(ent), 1, [l["text"] for l in tr.log][:3])
+        self.assertLessEqual(ent[0]["qty"] * ent[0]["lmt"], 25000)
+        self.assertEqual(ent[0]["qty"], int(25000 // 10.20))

@@ -123,7 +123,7 @@ class TradingGate:
                 return self._block(f"{qty} shares is over your cap of {self.cfg['max_shares_per_order']}",
                                    action, qty, price, now)
             if qty * price > self.cfg["max_dollars_per_order"]:
-                return self._block(f"${qty * price:,.0f} is over your cap of ${self.cfg['max_dollars_per_order']:,.0f}",
+                return self._block(f"{qty:,} sh × {money(price)} = ${qty * price:,.2f} is over your ${self.cfg['max_dollars_per_order']:,.0f} per-order cap",
                                    action, qty, price, now)
             while self.recent and now - self.recent[0] > 60:
                 self.recent.popleft()
@@ -1002,9 +1002,18 @@ class Trader:
             return 0
         qty = int(self.risk_dollars // risk)
         qty = min(qty, int(self.cfg["max_shares_per_order"]))
-        if self.cfg.get("max_dollars_per_order"):
-            qty = min(qty, int(self.cfg["max_dollars_per_order"] // float(se)))
-        return max(qty, 0)
+        return max(min(qty, self._dollar_cap_qty(play)), 0)
+
+    def _dollar_cap_qty(self, play):
+        """Most shares the $ cap allows, judged at the price the gate judges: the order's LIMIT (the 2nd entry plus
+        the fill cap on a long), never the 2nd entry itself — or a capped order comes out a few dollars over."""
+        cap = self.cfg.get("max_dollars_per_order")
+        se = play.get("second_entry")
+        if not cap or not se:
+            return 10 ** 9
+        long_ = play.get("side", "long") == "long"
+        limit = snap(round(se + (self.auto_slip(se) if long_ else -self.auto_slip(se)), 4), 1 if long_ else -1)
+        return int(float(cap) // max(float(limit), float(se)))
 
     def auto_slip(self, se):
         """How far past the 2nd entry the entry may fill. A stop-limit whose limit is too tight never fills when
@@ -1047,9 +1056,7 @@ class Trader:
             if qty < 1:
                 return None, f"${self.risk_dollars:,.0f} risk does not buy one share with the stop {money(abs(se - stop))} away", False
         else:
-            qty = min(int(self.default_shares), int(self.cfg["max_shares_per_order"]))
-            if self.cfg.get("max_dollars_per_order"):
-                qty = min(qty, int(self.cfg["max_dollars_per_order"] // float(se)))
+            qty = min(int(self.default_shares), int(self.cfg["max_shares_per_order"]), self._dollar_cap_qty(play))
         pos = int(self.broker.position(sym))
         if pos:
             return None, f"already {'long' if pos > 0 else 'short'} {abs(pos):,} — the auto entry waits until you are flat", False

@@ -34,6 +34,16 @@ def shares(n):
     return f"{int(round(n or 0)):,}"
 
 
+def dollars(v):
+    """$134,900 · $1.2M — money traded at a level, said the way a trader says it."""
+    v = float(v or 0)
+    if v >= 1e6:
+        return f"${v / 1e6:.1f}M"
+    if v >= 1e4:
+        return f"${round(v / 1e3):,.0f}K"
+    return f"${v:,.0f}"
+
+
 def px(p):
     v = fmt_price(p)
     if v is None:
@@ -78,11 +88,19 @@ def alert_text(alert, play):
     where = f"{px(alert['price'])} ({role_name(role)})"
     label = alert["label"]
     if label.startswith("RELOAD"):
-        return (f"RELOAD {who(side)} at {where}. {shares(alert['absorbed'])} shares hit it and it keeps coming back "
-                f"({alert.get('refreshes', 0)} refills). {aggressors(side).capitalize()} are getting absorbed — "
-                f"{wall(side)} is holding. " + play_context(play, side, role)).strip()
+        # the way a prop desk teaches it: who, where, how much traded (shares AND dollars), how much you could see
+        n, usd = alert["absorbed"], dollars(alert.get("dollars", alert["absorbed"] * float(alert["price"])))
+        shown = alert.get("peak_shown") or alert.get("showing") or 0
+        did = "sold into him" if side == "bid" else "bought from him"
+        hidden = (f" The {'bid' if side == 'bid' else 'ask'} never showed more than {shares(shown)} — the rest was hidden: "
+                  f"he keeps putting it back ({alert.get('refreshes', 0)} refills).") if shown and n > shown else \
+                 f" It keeps coming back ({alert.get('refreshes', 0)} refills)."
+        return (f"RELOAD {who(side)} at {where}. {shares(n)} shares {did} here = {usd}.{hidden} "
+                f"{'Price is having trouble going lower' if side == 'bid' else 'Price is having trouble going higher'} "
+                f"while he's there. " + play_context(play, side, role)).strip()
     if label == "CLEANED UP":
-        return (f"CLEANED UP — the {who(side)} at {where} is gone. {shares(alert['absorbed'])} shares ate through it "
+        return (f"CLEANED UP — the {who(side)} at {where} is gone. {shares(alert['absorbed'])} shares "
+                f"({dollars(alert.get('dollars', alert['absorbed'] * float(alert['price'])))}) ate through it "
                 f"and price went through the level. That {wall(side).split(' / ')[0]} is done.")
     if label == "PULLED":
         return (f"PULLED — the {who(side)} at {where} vanished without getting hit. "

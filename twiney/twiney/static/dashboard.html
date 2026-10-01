@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261001-0859">
+<meta name="build" content="20261001-0913">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -555,6 +555,29 @@ td.bars.l .bar-n{margin-right:1px} td.bars.r .bar-n{margin-left:1px}
 .cs-pop{background:#0e1117;border:1px solid #2c2e33;border-radius:4px;box-shadow:0 10px 30px rgba(0,0,0,.6);color:#d6d6d3}
 .cs-pop .cs-row span:first-child{color:#c9ced6}
 
+/* Level II, traditional and compact: buyers left, sellers right; columns shrink to a few px and the text clips */
+.lad.lad3{font-size:calc(11px * var(--ladz,1));border-collapse:collapse}
+.lad.lad3 td{height:calc(15px * var(--ladz,1));padding:0 2px;white-space:nowrap;overflow:hidden;text-overflow:clip;line-height:1}
+.lad.lad3 th{font-size:calc(9px * var(--ladz,1));padding:1px 2px;white-space:nowrap;overflow:hidden;letter-spacing:.04em;position:relative}
+.lad.lad3 th.flow,.lad.lad3 td.flow{display:table-cell} .lad.lad3.noflow th.flow,.lad.lad3.noflow td.flow{display:none}
+.lad.lad3 td.flow{font:600 calc(9.5px * var(--ladz,1)) var(--mono);text-align:center}
+.lad.lad3 td.fc{background:rgba(38,208,124,.04)} .lad.lad3 td.fp{background:rgba(255,77,94,.04)}
+.lad.lad3 .fs.c{color:#3ee08f} .lad.lad3 .fs.p{color:#ff6b78} .lad.lad3 .fs u{text-decoration:none;opacity:.7;font-size:.85em;margin-left:1px}
+.lad.lad3 .fs.hot{outline:1px solid currentColor;outline-offset:-1px;border-radius:2px;padding:0 1px}
+.lad.lad3 td.sz.click{cursor:pointer} .lad.lad3 td.sz.click:hover{outline:1px solid rgba(255,255,255,.35);outline-offset:-1px}
+.lad.lad3 td.sz .mine{margin-left:2px} .lad.lad3 td.sz .mine .chip{font-size:.85em;padding:0 2px}
+.lad.lad3 td.bars.rlw{font:700 calc(10px * var(--ladz,1)) var(--mono);letter-spacing:0;text-align:center}
+.lad.lad3 td.bars .bar-n{font-size:calc(9.5px * var(--ladz,1))}
+.lad.lad3 td.act{font-size:calc(9px * var(--ladz,1))}
+.lad.lad3 .colgrip{width:7px;right:-3px}
+body.colresizing,body.colresizing *{cursor:col-resize!important;user-select:none}
+.legend.lg3{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center;font-size:10px;padding:3px 4px}
+.legend.lg3 .howto{padding:0 6px;font-size:9.5px;margin-left:auto}
+.howto-pop{display:block;position:fixed;z-index:75;width:400px;max-width:calc(100vw - 16px);background:#0e1117;border:1px solid #2c2e33;border-radius:4px;box-shadow:0 10px 30px rgba(0,0,0,.6);padding:8px 12px;font-size:12px;line-height:1.45;color:#d6d6d3}
+.howto-pop p{margin:6px 0} .howto-pop .cs-hd{display:flex;justify-content:space-between;align-items:center}
+/* the header (and its column grips) stays pinned to the top of the ladder while the rows scroll */
+.lad.lad3 tr:first-child th{position:sticky;top:0;z-index:5;background:#0d1016;box-shadow:inset 0 -1px 0 #2c2e33}
+
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
   --buy:#3fb56f;--sell:#d9534f;--gold:#e3a83a;--cyan:#5aa9d6;--violet:#a48bd6;--warn:#d9a441;
@@ -1082,7 +1105,54 @@ async function cancelAll(symbol){
 
 /* ---------- resizable columns: drag the right edge of any header cell ---------- */
 function colKey(table){ return "cols." + (table.dataset.cols || "t"); }
+function makeLadResizable(table){
+  /* Level II columns in pixels: drag a grip and the boundary moves under the mouse (the column on its right gives
+     or takes the width). Every column can go down to a few pixels, so the whole ladder shrinks as small as you
+     want; the text clips instead of pushing the columns. Columns are scaled together to fill the pane. Double-click
+     a grip: back to the default. Saved in this browser. */
+  if (!table || table.dataset.gripped) return;
+  table.dataset.gripped = "1";
+  const ths = [...table.querySelectorAll("tr:first-child th")], n = ths.length, key = "ladw3";
+  const DEF = ths.map(th => +th.dataset.w || 30), MINS = ths.map(th => +th.dataset.min || 12);
+  let w = store.get(key, null); if (!Array.isArray(w) || w.length !== n || w.some(x => !(x > 0))) w = DEF.slice();
+  table.style.tableLayout = "fixed";
+  let cg = table.querySelector("colgroup");
+  if (!cg){ cg = document.createElement("colgroup"); for (let i = 0; i < n; i++) cg.appendChild(document.createElement("col")); table.prepend(cg); }
+  const vis = i => getComputedStyle(ths[i]).display !== "none";
+  let sc = 1;
+  const apply = () => {
+    const z = parseFloat(getComputedStyle(table).getPropertyValue("--ladz")) || 1;
+    const shown = [...Array(n).keys()].filter(vis), cols = [...cg.children];
+    const sum = shown.reduce((a, i) => a + w[i] * z, 0) || 1;
+    const avail = (table.parentElement && table.parentElement.clientWidth) || sum;
+    sc = avail / sum;
+    let tot = 0;
+    shown.forEach((i, j) => { const px_ = Math.max(MINS[i], w[i] * z * sc); cols[j].style.width = px_.toFixed(1) + "px"; tot += px_; });
+    for (let j = shown.length; j < n; j++) cols[j].style.width = "0px";
+    table.style.width = tot.toFixed(1) + "px"; table.style.minWidth = "0";
+  };
+  apply();
+  if (window.ResizeObserver && table.parentElement){ const ro = new ResizeObserver(() => { if (!table.isConnected){ ro.disconnect(); return; } apply(); }); ro.observe(table.parentElement); }
+  ths.forEach((th, k) => {
+    const g = document.createElement("span"); g.className = "colgrip"; g.title = "drag: resize · double-click: reset"; th.appendChild(g);
+    g.addEventListener("mousedown", e => {
+      e.preventDefault(); e.stopPropagation();
+      let j = k + 1; while (j < n && !vis(j)) j++; if (j >= n) return;
+      const x0 = e.clientX, z = parseFloat(getComputedStyle(table).getPropertyValue("--ladz")) || 1, s0 = sc, wk = w[k], wj = w[j], pair = wk + wj;
+      const lo = i => MINS[i] / (z * s0);
+      document.body.classList.add("colresizing");
+      if (typeof bookDragging !== "undefined") bookDragging = true;     // the ladder holds still while you drag a column
+      const move = ev => { let a = wk + (ev.clientX - x0) / (z * s0); a = Math.max(lo(k), Math.min(pair - lo(j), a)); w[k] = a; w[j] = pair - a; apply(); };
+      const up = () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); document.body.classList.remove("colresizing"); store.set(key, w);
+        if (typeof bookDragging !== "undefined") bookDragging = false; if (typeof P !== "undefined" && P.book) P.book.last = null; };
+      window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
+    });
+    g.addEventListener("dblclick", e => { e.stopPropagation(); w = DEF.slice(); store.set(key, null); apply(); });
+  });
+  table._applyCols = apply;
+}
 function makeColsResizable(table){
+  if (table && table.dataset.cols === "lad3") return makeLadResizable(table);
   /* fluid columns: weights that always add up to the table width. Dragging a grip trades width between the
      two columns beside it, so nothing ever overflows; double-click a grip to reset. Saved per table. */
   if (!table || table.dataset.gripped) return;
@@ -1473,23 +1543,44 @@ function whoTag(row, side){
 
 // your levels on the ladder: a 2-letter badge beside the price (hover it for the full name), so the price is never pushed out
 const LTAG = {"PIVOT": "PV", "2ND ENTRY": "2E", "LEVEL": "LV", "TARGET": "TG", "STOP": "SL"};
+function usdK(v){ v = +v || 0; return v >= 1e6 ? "$" + (v / 1e6).toFixed(1) + "M" : v >= 1e4 ? "$" + Math.round(v / 1e3) + "K" : v >= 1e3 ? "$" + (v / 1e3).toFixed(1) + "K" : "$" + Math.round(v); }
+// what traded at a reloader's price, and how much of it you could ever see: the line a prop desk teaches first
+function reloadMoney(r, side){
+  const who = side === "bid" ? "BUYER" : "SELLER", n = r[side + "_absorbed"] || (side === "bid" ? r.sold : r.bought) || 0;
+  const peak = r[side + "_peak"] || r[side] || 0, usd = n * r.price;
+  return {n, usd, peak, text: `RELOAD ${who} at ${px(r.price)}: ${Math.round(n).toLocaleString("en-US")} shares ${side === "bid" ? "sold into him" : "bought from him"} here = ${usdK(usd)}` +
+    (peak && n > peak ? `. The ${side} never showed more than ${Math.round(peak).toLocaleString("en-US")} — the rest was hidden: he keeps putting it back (${r[side + "_refills"] || 0} refills)` : "") +
+    `. ${side === "bid" ? "Price has trouble going lower" : "Price has trouble going higher"} while he is there.`};
+}
+function flowSide(r, cp){
+  // option flow that hit while the stock traded at this price, on its own side: CALLS by the buyers, PUTS by the sellers
+  const f = r.flow; if (!f) return "";
+  const items = f.items.filter(m => m.cp === cp), sum = cp === "C" ? f.c : f.p; if (!sum) return "";
+  const hot = items.some(m => m.hot), urg = f.urgent && items.some(m => m.urgent !== false);
+  const t = flowTitle(Object.assign({}, f, {items}));
+  return `<span class="fs ${cp === "C" ? "c" : "p"} ${hot ? "hot" : ""}" title="${esc(t)}">${urg ? "⚡" : ""}${flowK(sum)}${items.length > 1 ? `<u>×${items.length}</u>` : ""}</span>`;
+}
 function ladderHTML(L){
   if (!L || !L.rows.length) return `<div class="empty">Waiting for the book…</div>`;
   const ms = Math.max(L.max_traded, 1);
   const on = canTrade(), dis = on ? "" : " disabled";
   const chips = (r, side) => (r.mine || []).filter(o => o.id != null && (o.action === "BUY") === (side === "b")).map(o =>
     `<span class="chip ${side} ${o.status === "PreSubmitted" ? "wait" : ""}" data-id="${o.id}" draggable="true" title="${esc(o.role)} order — click to cancel, drag to move">${sz(o.qty)}</span>`).join(" ");
-  // every column has a floor that fits what it shows (data-min, px); only the room left over is shared out by the
-  // drag weights (data-w), so nothing is ever cut off however narrow the window is
-  let h = `<table class="lad" data-cols="lad2"><tr>
-    <th class="act" data-w="0.5" data-min="26" title="Click a price here to BUY at that price">BUY</th>
-    <th class="bars" data-w="1.6" data-min="38" title="Shares sellers hit the bid with at this price (last ${L.memory_minutes} min). Big green = a buyer absorbing them.">HIT</th>
-    <th class="who" data-w="0.2" data-min="22" title="Reload buyer here: R + times refilled (lit until it is cleaned up or pulled) · C = cleared out · P = pulled"></th>
-    <th data-w="1" data-min="44">BID</th><th data-w="1" data-min="58">PRICE</th><th data-w="1" data-min="44">ASK</th>
-    <th class="who" data-w="0.2" data-min="22" title="Reload seller here: R + times refilled (lit until it is cleaned up or pulled) · C = cleared out · P = pulled"></th>
-    <th class="flow" data-w="1.2" data-min="86" data-opt="1" title="Option flow that hit while the stock traded at this price: calls green, puts red, the premium, ×prints. A ring = the same strike bought again and again, expiring within days: the hot one">FLOW</th>
-    <th class="bars" data-w="1.6" data-min="44" title="Shares buyers paid up for at this price (last ${L.memory_minutes} min). Big red = a seller absorbing them.">PAID UP</th>
-    <th class="act" data-w="0.5" data-min="28" title="Click a price here to SELL at that price">SELL</th></tr>`;
+  // a traditional ladder: buyers' side on the left, sellers' on the right. data-w = the column's width in px at
+  // normal text, data-min = the narrowest it may go. Click a BID size to buy there, an ASK size to sell there
+  const tt = on ? "" : ` · ${whyNot()}`;
+  let h = `<table class="lad lad3" data-cols="lad3"><tr>
+    <th class="act" data-w="24" data-min="14" title="click: BUY at that price">B</th>
+    <th class="flow fc" data-w="44" data-min="14" title="CALLS: call option flow that hit while the stock traded at this price ($ premium, ×prints, ⚡ = short-dated out-of-the-money being pounded). Calls are bets it goes UP">CALLS</th>
+    <th class="bars" data-w="40" data-min="14" title="HIT: shares sellers dumped into the bid at this price (last ${L.memory_minutes} min). A reload BUYER row shows the $ he took instead">HIT</th>
+    <th class="who" data-w="18" data-min="12" title="R3 = reload buyer, refilled 3 times · C = cleaned up · P = pulled"></th>
+    <th class="szh" data-w="40" data-min="18" title="BID: shares showing to BUY at this price now. Click one to place your BUY limit there">BID</th>
+    <th class="pxh" data-w="52" data-min="24">PRICE</th>
+    <th class="szh" data-w="40" data-min="18" title="ASK: shares showing to SELL at this price now. Click one to place your SELL limit there">ASK</th>
+    <th class="who" data-w="18" data-min="12" title="R3 = reload seller, refilled 3 times · C = cleaned up · P = pulled"></th>
+    <th class="bars" data-w="40" data-min="14" title="PAID: shares buyers paid up for at the ask at this price (last ${L.memory_minutes} min). A reload SELLER row shows the $ he sold instead">PAID</th>
+    <th class="flow fp" data-w="44" data-min="14" title="PUTS: put option flow that hit while the stock traded at this price. Puts are bets it goes DOWN">PUTS</th>
+    <th class="act" data-w="24" data-min="14" title="click: SELL at that price">S</th></tr>`;
   for (const r of L.rows){
     const pb = r.bid_state==="RELOAD"||r.bid_proven, pa = r.ask_state==="RELOAD"||r.ask_proven;
     const stg = pb ? (r.bid_stage || "RELOADING") : pa ? (r.ask_stage || "RELOADING") : "";
@@ -1499,23 +1590,21 @@ function ladderHTML(L){
       pb?"rl-bid":"", pa?"rl-ask":"", stg ? "cv-" + stageSlug(stg) : "", ((pb && kb) || (pa && ka)) ? "knows-row" : ""].join(" ");
     const sw = r.sold ? Math.max(4, 100 * r.sold / ms) : 0, bw = r.bought ? Math.max(4, 100 * r.bought / ms) : 0;
     const rfb = r.bid_real ? " rf-" + r.bid_real.label : "", rfa = r.ask_real ? " rf-" + r.ask_real.label : "";
+    const rb = pb ? reloadMoney(r, "bid") : null, ra = pa ? reloadMoney(r, "ask") : null;
     h += `<tr class="${cls}" data-price="${r.price}" style="--cv:${cv}">
-      <td class="act b${dis}" data-act="BUY" data-px="${r.price}" title="${on ? "BUY " + sz(T().default_shares) + " @ " + px(r.price) : whyNot()}">${chips(r, "b") || "BUY"}</td>
-      ${pb ? `<td class="bars l rlw b" title="RELOAD BUYER here: ${kfmt(r.sold)} shares have been sold into him at this price">BUYER</td>` : `<td class="bars l">${sw?`<span class="bar sold" style="width:${sw}%"></span>`:""}<span class="bar-n">${kfmt(r.sold)}</span></td>`}
+      <td class="act b${dis}" data-act="BUY" data-px="${r.price}" title="${on ? "BUY " + sz(T().default_shares) + " @ " + px(r.price) : whyNot()}">${chips(r, "b") || "B"}</td>
+      <td class="flow fc">${flowSide(r, "C")}</td>
+      ${rb ? `<td class="bars l rlw b" title="${esc(rb.text)}">${usdK(rb.usd)}</td>` : `<td class="bars l"${r.sold ? ` title="${sz(r.sold)} shares sold into the bid here = ${usdK(r.sold * r.price)}"` : ""}>${sw?`<span class="bar sold" style="width:${sw}%"></span>`:""}<span class="bar-n">${kfmt(r.sold)}</span></td>`}
       <td class="whoc l">${whoTag(r,"bid")}</td>
-      <td class="sz bsz ${r.bid_big ? (r.bid_big.huge ? "huge" : "big") : ""}${rfb}"${szTitle(r, "bid")}><span class="szn">${r.bid?kfmt(r.bid):""}</span></td>
+      <td class="sz bsz click ${r.bid_big ? (r.bid_big.huge ? "huge" : "big") : ""}${rfb}" data-act="BUY" data-px="${r.price}"${szTitle(r, "bid")}><span class="szn">${r.bid?kfmt(r.bid):""}</span>${chips(r, "b") ? `<span class="mine">${chips(r, "b")}</span>` : ""}</td>
       <td class="px${r.tags.length ? " tagged" : ""}">${r.tags.length ? `<span class="lt" title="${esc(r.tags.join(" · "))}">${esc(r.tags.map(t => LTAG[t] || t.slice(0, 2)).join(""))}</span>` : ""}${px(r.price)}${(!pb && !pa) ? (knowsTag(r.bid_knows) || knowsTag(r.ask_knows)) : ""}</td>
-      <td class="sz asz ${r.ask_big ? (r.ask_big.huge ? "huge" : "big") : ""}${rfa}"${szTitle(r, "ask")}><span class="szn">${r.ask?kfmt(r.ask):""}</span></td>
-      <td class="whoc r">${whoTag(r,"ask") || flowDot(r)}</td>
-      <td class="flow">${flowCell(r)}</td>
-      ${pa ? `<td class="bars r rlw s" title="RELOAD SELLER here: ${kfmt(r.bought)} shares have been bought from him at this price">SELLER</td>` : `<td class="bars r">${bw?`<span class="bar bought" style="width:${bw}%"></span>`:""}<span class="bar-n">${kfmt(r.bought)}</span></td>`}
-      <td class="act s${dis}" data-act="SELL" data-px="${r.price}" title="${on ? "SELL " + sz(T().default_shares) + " @ " + px(r.price) : whyNot()}">${chips(r, "s") || "SELL"}</td></tr>`;
+      <td class="sz asz click ${r.ask_big ? (r.ask_big.huge ? "huge" : "big") : ""}${rfa}" data-act="SELL" data-px="${r.price}"${szTitle(r, "ask")}><span class="szn">${r.ask?kfmt(r.ask):""}</span>${chips(r, "s") ? `<span class="mine">${chips(r, "s")}</span>` : ""}</td>
+      <td class="whoc r">${whoTag(r,"ask")}</td>
+      ${ra ? `<td class="bars r rlw s" title="${esc(ra.text)}">${usdK(ra.usd)}</td>` : `<td class="bars r"${r.bought ? ` title="${sz(r.bought)} shares bought at the ask here = ${usdK(r.bought * r.price)}"` : ""}>${bw?`<span class="bar bought" style="width:${bw}%"></span>`:""}<span class="bar-n">${kfmt(r.bought)}</span></td>`}
+      <td class="flow fp">${flowSide(r, "P")}</td>
+      <td class="act s${dis}" data-act="SELL" data-px="${r.price}" title="${on ? "SELL " + sz(T().default_shares) + " @ " + px(r.price) : whyNot()}">${chips(r, "s") || "S"}</td></tr>`;
   }
-  h += `</table><div class="legend">Every row remembers the last ${L.memory_minutes} min. <span class="buy">Green bar</span> = shares sold into the bid there,
-    <span class="sell">red bar</span> = shares bought from the ask. <span class="pips b">●</span><span class="pips a">●</span> = times the size came back after being hit.
-    A lit row = a PROVEN reload buyer / seller; how bright it is = how much conviction he is still there (bright and breathing = RELOADING, steady = STILL THERE, dim = NOT RELOADING, dashed C = CLEANED UP, dashed P = PULLED, dashed A = absorbed here earlier today).
-    <span style="color:var(--gold)">⚡</span> = SOMEBODY KNOWS: short-dated out-of-the-money calls (for a buyer) or puts (for a seller) getting bought at the ask right now, agreeing with the level. Hover it for the strike, days out and dollars.
-    The thin line under a size: <span class="buy">green</span> = REAL size here gets filled, <span style="color:var(--gold)">gold</span> = mixed, <span class="sell">red</span> = FAKE, it gets pulled before it trades. Gold row = the last price. White price = your level. Click BUY / SELL on a row to place a limit there; click your order chip to cancel it.</div>`;
+  h += `</table><div class="legend lg3"><span><b class="buy">LEFT = BUYERS</b> · <b class="sell">RIGHT = SELLERS</b></span><span class="dim">click a BID size to buy there, an ASK size to sell there</span><button class="howto" data-howto="1">HOW TO READ IT</button></div>`;
   return h;
 }
 
@@ -2825,10 +2914,11 @@ function rlBanner(wrap, d){
       const y = el ? el.offsetTop : null, top = wrap.scrollTop, bot = top + wrap.clientHeight;
       const where = y == null ? "" : y < top ? "up" : y > bot - 20 ? "down" : "on";
       const rowsAway = el ? Math.round(Math.abs((y < top ? top - y : y - bot) / (el.offsetHeight || 18))) : 0;
-      items.push({side, price: r.price, n: r[side + "_refills"] || 0, stage: r[side + "_stage"] || "RELOADING", where, rowsAway, knows: r[side + "_knows"] && r[side + "_knows"].knows});
+      const rw = reloadMoney(r, side);
+      items.push({side, price: r.price, n: r[side + "_refills"] || 0, stage: r[side + "_stage"] || "RELOADING", where, rowsAway, knows: r[side + "_knows"] && r[side + "_knows"].knows, rw});
     }
   }
-  const html = items.map(i => `<span class="rlb ${i.side === "bid" ? "b" : "s"} ${i.where}" data-jump="${i.price}" title="${i.stage} · reloaded ${i.n}x · click to jump to it">${i.where === "up" ? "▲" : i.where === "down" ? "▼" : "●"} RELOAD ${i.side === "bid" ? "BUYER" : "SELLER"} ${px(i.price)}${i.where !== "on" ? ` · ${i.rowsAway} rows ${i.where}` : ""}${i.knows ? " ⚡" : ""}</span>`).join("");
+  const html = items.map(i => `<span class="rlb ${i.side === "bid" ? "b" : "s"} ${i.where}" data-jump="${i.price}" title="${esc(i.rw.text)} · ${i.stage} · click to jump to it">${i.where === "up" ? "▲" : i.where === "down" ? "▼" : "●"} RELOAD ${i.side === "bid" ? "BUYER" : "SELLER"} ${px(i.price)} · ${kfmt(i.rw.n)} sh ${i.side === "bid" ? "sold into him" : "bought from him"} · ${usdK(i.rw.usd)}${i.rw.peak && i.rw.n > i.rw.peak ? " · showed " + kfmt(i.rw.peak) : ""}${i.where !== "on" ? ` · ${i.rowsAway} rows ${i.where}` : ""}${i.knows ? " ⚡" : ""}</span>`).join("");
   if (ban.dataset.h !== html){ ban.dataset.h = html; ban.innerHTML = html; ban.classList.toggle("on", !!items.length); }
 }
 P.book.el.addEventListener("click", e => {
@@ -2864,8 +2954,8 @@ function tapeSpeedHTML(sp){
     <span class="tst">${sp.trend}${ratio != null && sp.trend !== "QUIET" ? ` <em>${ratio.toFixed(1)}x</em>` : ""}</span>
     <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${bars}</svg></div>`;
 }
-function applyLadCols(tbl){ if (!tbl) return; const c = store.get("ladcols", {}); const wrap = tbl.closest(".ladder-wrap"); if (wrap) wrap.style.setProperty("--ladz", String(store.get("ladz", 1))); tbl.classList.toggle("notrade", c.trade === false); tbl.classList.toggle("nobars", c.bars === false); tbl.classList.toggle("nowho", c.who === false); tbl.classList.toggle("noflow", c.flow === false); if (tbl._applyCols) tbl._applyCols(); }
-document.getElementById("colsMenu").querySelector("button").addEventListener("click", e => { e.stopPropagation(); const m = document.getElementById("colsMenu"), open = !m.classList.contains("open"); document.querySelectorAll(".menu.open").forEach(x => x.classList.remove("open")); m.classList.toggle("open", open); const c = store.get("ladcols", {}); m.querySelectorAll("input[data-col]").forEach(i => { i.checked = c[i.dataset.col] !== false; }); const z = m.querySelector("select[data-ladz]"); if (z) z.value = String(store.get("ladz", 1)); });
+function applyLadCols(tbl){ if (!tbl) return; const c = store.get("ladcols", {}); const wrap = tbl.closest(".ladder-wrap"); if (wrap) wrap.style.setProperty("--ladz", String(store.get("ladz", 1))); tbl.classList.toggle("notrade", c.trade !== true); tbl.classList.toggle("nobars", c.bars === false); tbl.classList.toggle("nowho", c.who === false); tbl.classList.toggle("noflow", c.flow === false); if (tbl._applyCols) tbl._applyCols(); }
+document.getElementById("colsMenu").querySelector("button").addEventListener("click", e => { e.stopPropagation(); const m = document.getElementById("colsMenu"), open = !m.classList.contains("open"); document.querySelectorAll(".menu.open").forEach(x => x.classList.remove("open")); m.classList.toggle("open", open); const c = store.get("ladcols", {}); m.querySelectorAll("input[data-col]").forEach(i => { i.checked = i.dataset.col === "trade" ? c.trade === true : c[i.dataset.col] !== false; }); const z = m.querySelector("select[data-ladz]"); if (z) z.value = String(store.get("ladz", 1)); });
 document.getElementById("colsPop").addEventListener("change", e => { if (e.target.dataset.ladz != null){ store.set("ladz", +e.target.value || 1); applyLadCols(P.book.pc.querySelector("table.lad")); P.book.last = null; poll(true); return; } const k = e.target.dataset.col; if (!k) return; const c = store.get("ladcols", {}); c[k] = e.target.checked; store.set("ladcols", c); applyLadCols(P.book.pc.querySelector("table.lad")); });
 P.book.el.addEventListener("change", async e => { if (e.target.id !== "bigIn" || !curSym) return; const v = Math.max(100, +e.target.value || 0); const out = await post("/api/ladder", {symbol: curSym, big_shares: v}); toast(out.ok ? curSym + ": big size is now " + sz(v) + " shares" : "Could not set", out.ok); poll(true); });
 P.book.el.addEventListener("click", async e => { if (e.target.id !== "bigReset" || !curSym) return; const out = await post("/api/ladder", {symbol: curSym, big_shares: null}); toast(out.ok ? curSym + ": big size back to the config default" : "Could not reset", out.ok); poll(true); });
@@ -3327,15 +3417,15 @@ P.ps60.el.addEventListener("click", async e => { const b = e.target.closest("but
   wrap.addEventListener("dragend", () => { bookDragging = false; bookHold = null; P.book.last = null; });
   window.addEventListener("blur", () => { bookHold = null; bookDragging = false; });
   wrap.addEventListener("dragover", e => { const row = e.target.closest("tr"); if (row && row.querySelector("td.px")) e.preventDefault(); });
-  wrap.addEventListener("drop", async e => { const row = e.target.closest("tr"); const data = e.dataTransfer.getData("text/plain"); if (!row || !data.startsWith("order:")) return; e.preventDefault(); const cell = row.querySelector("td.act"); if (!cell) return; const out = await post("/api/trade/modify", {id: +data.slice(6), price: +cell.dataset.px}); toast(out.ok ? "Moved to " + px(out.price) : "Move blocked: " + (out.reason || ""), out.ok); });
+  wrap.addEventListener("drop", async e => { const row = e.target.closest("tr"); const data = e.dataTransfer.getData("text/plain"); if (!row || !data.startsWith("order:")) return; e.preventDefault(); const cell = row.querySelector("td[data-act]"); if (!cell) return; const out = await post("/api/trade/modify", {id: +data.slice(6), price: +cell.dataset.px}); toast(out.ok ? "Moved to " + px(out.price) : "Move blocked: " + (out.reason || ""), out.ok); });
   // the price is taken when you PRESS the button, and the ladder holds still until you let go: a ladder that
   // re-centres under the mouse can never turn your click into a different price
-  wrap.addEventListener("mousedown", e => { if (e.button !== 0) return; const cell = e.target.closest("td.act"); const d = curData();
+  wrap.addEventListener("mousedown", e => { if (e.button !== 0) return; const cell = e.target.closest("td[data-act]"); const d = curData();
     bookHold = cell && d ? {side: cell.dataset.act, px: +cell.dataset.px, sym: d.symbol, cell} : {cell: null}; });
   window.addEventListener("mouseup", () => setTimeout(() => { bookHold = null; }, 0));
   wrap.addEventListener("mouseleave", () => { if (bookHold && !bookHold.cell) bookHold = null; });
   wrap.addEventListener("click", e => { if (bookDragging) return; const h = bookHold; const chip = e.target.closest(".chip[data-id]"); if (chip){ if (chip.dataset.id && chip.dataset.id !== "null") cancelMine(+chip.dataset.id); return; }
-    const cell = e.target.closest("td.act"); const d = curData();
+    const cell = e.target.closest("td[data-act]"); const d = curData();
     if (!cell || !d || !h || h.cell !== cell || h.sym !== d.symbol) return;   // pressed one row, released on another: nothing
     sendOrder(h.sym, h.side, h.px); });
 }
@@ -3775,6 +3865,26 @@ async function micStop(){
   micUI(); poll(true);
 }
 document.getElementById("micBtn").addEventListener("click", () => MIC.on ? micStop() : micStart());
+
+/* HOW TO READ IT: the ladder in plain words, the way a prop desk teaches a new trader */
+document.addEventListener("click", e => {
+  if (!e.target.dataset || !e.target.dataset.howto) return;
+  let m = document.getElementById("howtoPop"); if (m){ m.remove(); return; }
+  m = document.createElement("div"); m.id = "howtoPop"; m.className = "pop howto-pop";
+  m.innerHTML = `<div class="cs-hd"><b>READING LEVEL II</b><button data-howclose="1">✕</button></div>
+  <p><b>Left is buyers, right is sellers.</b> Each row is one price. The middle column is the price.</p>
+  <p><b>BID</b> = shares waiting to BUY at that price right now. <b>ASK</b> = shares waiting to SELL. That is only what they CHOOSE to show you.</p>
+  <p><b>HIT</b> = shares that actually traded into the bid there (sellers dumping on buyers). <b>PAID</b> = shares that traded at the ask (buyers paying up). These are real trades, not promises.</p>
+  <p><b>The one thing to learn:</b> compare what traded with what was showing. If 12,000 shares traded at 10.88 but the ask never showed more than 300, somebody is hiding a big order there and keeps putting 300 back. That is a <b class="sell">RELOAD SELLER</b>. Mirror image on the bid: a <b class="buy">RELOAD BUYER</b>.</p>
+  <p>A reloader's row lights up. The HIT / PAID cell switches to the <b>money</b> that traded into him ($135K). <b>R3</b> = he refilled 3 times. Hover any cell for the full sentence.</p>
+  <p><b>What it means for you:</b> a reload seller above you is a wall; price has trouble going higher until he is <b>CLEANED UP</b> (C: price trades through and he is gone). A reload buyer under you is a floor. <b>PULLED</b> (P) = the size left without trading: it was never real.</p>
+  <p><b>CALLS</b> (left) and <b>PUTS</b> (right) = option money that hit while the stock was at that price. ⚡ = short-dated out-of-the-money contracts being hammered: somebody may know something.</p>
+  <p>The rows stay still while price moves; the gold row is the last price. Click a BID size to buy there, an ASK size to sell there.</p>`;
+  document.body.appendChild(m);
+  const r = e.target.getBoundingClientRect();
+  m.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 420)) + "px"; m.style.top = Math.max(8, Math.min(r.top - m.offsetHeight - 6, window.innerHeight - m.offsetHeight - 8)) + "px";
+  m.addEventListener("click", ev => { if (ev.target.dataset.howclose) m.remove(); });
+});
 
 
 /* ---------- command bar wiring */

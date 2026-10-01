@@ -259,7 +259,10 @@ class Engine:
             "refreshes": final["refreshes"] if final else tracker.refreshes_window(t),
             # exactly what the ladder row shows at that price right now
             "showing": round(st.book.size_at(tracker.side, tracker.price)) if st.book is not None else round(tracker.displayed),
+            # the most the screen ever showed at that price: what you could see, against what really traded there
+            "peak_shown": round(tracker.peak_displayed),
         }
+        alert["dollars"] = round(alert["absorbed"] * float(tracker.price))
         if final:
             alert["size_before_gone"] = round(final["size_before_gone"])
             ah = st.absorb_hist.get((alert["side"], tracker.key))
@@ -2129,6 +2132,7 @@ class Engine:
                     row[side + "_state"] = tr._display_state(t)
                     row[side + "_proven"] = tr.proven
                     row[side + "_absorbed"] = round(tr.absorbed_total)
+                    row[side + "_peak"] = round(tr.peak_displayed)
                     # conviction drives the brightness of a proven row: RELOADING bright, STILL THERE, NOT RELOADING dim,
                     # CLEANED UP / PULLED a ghost
                     row[side + "_conv"] = tr.conviction(t)
