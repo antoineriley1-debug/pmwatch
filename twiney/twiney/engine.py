@@ -164,6 +164,14 @@ class SymbolState:
         return MID
 
 
+def _short(text):
+    """The first clause of a factor's text, for the voice."""
+    for sep in (" — ", " · ", ";"):
+        if sep in text:
+            text = text.split(sep)[0]
+    return text.strip()
+
+
 class Engine:
     def __init__(self, plays, cfg, recorder=None):
         self.cfg = cfg
@@ -2274,6 +2282,134 @@ class Engine:
                "window_minutes": tc["window_seconds"] // 60}
         return out if out["longs"] or out["shorts"] else None
 
+    # ---- CONVICTION: everything Dan watches at once, scored for the play's side ----------------------------
+    def _conviction(self, st, t, ps, reloaders, tape):
+        """One readout from the chart (PS60 structure), the Level II (reloaders), the tape (who is paying up and how
+        fast), the option flow (short-dated out-of-the-money money that keeps coming, urgent contracts) and the big
+        money of the last 30 days. Score -100..+100 for the play's side; +60 = THIS THING IS READY TO GO, -60 = IT IS
+        GOING THE OTHER WAY. Every point is explained, so you can see what carries it and what is missing."""
+        play = st.play
+        long_ = play.get("side", "long") == "long"
+        price = st.price()
+        f = []
+
+        def add(name, pts, text, ok=None):
+            f.append({"name": name, "pts": int(round(pts)), "text": text, "ok": (pts > 0) if ok is None else ok})
+
+        # 1. structure
+        se = (ps or {}).get("se") or {}
+        stt = se.get("state")
+        if not play.get("trigger"):
+            add("CHART", 0, "no pivot on this play", False)
+        elif stt == ps60.SECOND_ENTRY and se.get("build") not in (None, "not building"):
+            add("CHART", 25, f"2nd entry through {narrative.px(se.get('second_entry'))} and building")
+        elif stt == ps60.SECOND_ENTRY:
+            add("CHART", 8, "2nd entry triggered but not building")
+        elif stt == ps60.BROKE:
+            add("CHART", 12, f"pivot {narrative.px(play['trigger'])} broke — waiting for the retrace")
+        elif stt == ps60.RETRACE:
+            add("CHART", 6, f"retracing — 2nd entry is back through {narrative.px(se.get('extreme'))}")
+        else:
+            add("CHART", 0, f"pivot {narrative.px(play['trigger'])} has not broken", False)
+        stop = play.get("stop")
+        if stop and price and ((long_ and price <= stop) or (not long_ and price >= stop)):
+            add("STOP", -30, f"price {narrative.px(price)} is through your stop {narrative.px(stop)}")
+
+        # 2. Level II
+        rl = reloaders or {"below": [], "above": []}
+        with_ = [r for r in (rl["below"] if long_ else rl["above"]) if r["kind"] == "confirmed" and r["side"] == ("bid" if long_ else "ask")]
+        against = [r for r in (rl["above"] if long_ else rl["below"]) if r["kind"] == "confirmed" and r["side"] == ("ask" if long_ else "bid")]
+        stg_pts = {"RELOADING": 1.0, "STILL THERE": 0.6, "NOT RELOADING": 0.2}
+        stage = lambda r: (r.get("stage") or "RELOADING")
+        if with_:
+            r = with_[0]; w = stg_pts.get(stage(r), 0.2)
+            add("LEVEL II", 20 * w, f"reload {'buyer' if long_ else 'seller'} at {narrative.px(r['price'])} {stage(r).lower()} — {narrative.shares(r['absorbed'])} sh took him, he keeps putting it back" + (" · ⚡ somebody knows" if r.get("knows") else ""))
+        if against:
+            r = against[0]; w = stg_pts.get(stage(r), 0.2)
+            add("LEVEL II", -20 * w, f"reload {'seller' if long_ else 'buyer'} at {narrative.px(r['price'])} {stage(r).lower()} is in the way — {narrative.shares(r['absorbed'])} sh and he is still there")
+        if not with_ and not against:
+            add("LEVEL II", 0, "no reloader proven on either side yet", False)
+
+        # 3. tape
+        tp = tape or {}
+        bp = tp.get("buy_pct")
+        sp = st.tape.speed(t) if hasattr(st.tape, "speed") else {}
+        fast = sp.get("trend") == "SPEEDING UP"
+        if bp is not None and tp.get("prints", 0) >= 5:
+            lean = (bp - 50) / 50.0 * (1 if long_ else -1)        # +1 = all prints paying up your way
+            pts = 15 * max(-1.0, min(1.0, lean * 1.6)) * (1.3 if fast else 1.0)
+            who = ("buyers paying up" if bp >= 50 else "sellers hitting the bid")
+            add("TAPE", pts, f"{bp:.0f}% of prints are {who}" + (" · SPEEDING UP" if fast else "") + f" · {tp.get('state', '').lower()}")
+        else:
+            add("TAPE", 0, "tape is quiet", False)
+
+        # 4. option flow
+        dg = (ps or {}).get("dough") or {}
+        dpts = {"FLOW CONFIRMED": 25, "FLOW STARTING": 10, "FLOW FADED": 4, "NO FLOW": 0, "FLOW AGAINST": -25}.get(dg.get("state"), 0)
+        add("OPTION FLOW", dpts, dg.get("text", "no flow read yet"), dpts > 0)
+        mine_cp = "C" if long_ else "P"
+        urg_with = [k for k in self.urgent_keys if k[0] == st.symbol and k[2] == mine_cp]
+        urg_against = [k for k in self.urgent_keys if k[0] == st.symbol and k[2] != mine_cp]
+        if urg_with:
+            add("URGENT", 10, f"{len(urg_with)} short-dated OTM {'call' if long_ else 'put'} contract{'s' if len(urg_with) > 1 else ''} being pounded right now")
+        if urg_against:
+            add("URGENT", -10, f"{len(urg_against)} short-dated OTM {'put' if long_ else 'call'} contract{'s' if len(urg_against) > 1 else ''} being pounded the other way")
+
+        # 5. big money (30 days): the biggest open print, which side it is on
+        if self.bigmoney is not None:
+            bm = [x for x in self.bigmoney.for_symbol(st.symbol, price, t, lambda d: self._close_on(st, d), limit=6) if not x["expired"] and x.get("good") is not None]
+            if bm:
+                top = bm[0]
+                buyers_bull = (top["cp"] == "C") == (top["who"] == "BUYERS")
+                same = buyers_bull == long_
+                when = "today" if top["age_days"] < 1 else f"{round(top['age_days'])} days ago"
+                add("BIG MONEY", 6 if same else -6, f"{narrative.dollars(top['premium'])} of {top['strike']:g} {'calls' if top['cp'] == 'C' else 'puts'} {'bought' if top['who'] == 'BUYERS' else 'sold'} {when} {'is on your side' if same else 'leans the other way'} · {top['status'].lower()}")
+
+        score = max(-100, min(100, sum(x["pts"] for x in f)))
+        pos = self._position_view(st.symbol, price)
+        in_pos = bool(pos and pos.get("qty"))
+        if score >= 60:
+            verdict, tone = ("THIS THING IS READY TO GO" if not in_pos else "IT'S TAKING OFF — STAY WITH IT"), "go"
+        elif score >= 30:
+            verdict, tone = "LEANING YOUR WAY", "lean"
+        elif score > -30:
+            verdict, tone = "MIXED — WAIT FOR MORE", "wait"
+        elif score > -60:
+            verdict, tone = ("TURNING AGAINST YOU" if in_pos else "NOT YET — IT'S LEANING THE OTHER WAY"), "against"
+        else:
+            verdict, tone = ("IT'S GOING THE OTHER WAY — PROTECT YOURSELF" if in_pos else "STAND ASIDE — IT'S GOING THE OTHER WAY"), "out"
+        self._conviction_watch(st, score, tone, verdict, f, t, in_pos)
+        return {"score": score, "verdict": verdict, "tone": tone, "side": play.get("side", "long"), "in_position": in_pos,
+                "factors": f, "missing": [x["name"] for x in f if x["pts"] <= 0 and x["name"] in ("CHART", "LEVEL II", "TAPE", "OPTION FLOW")]}
+
+    def _conviction_watch(self, st, score, tone, verdict, factors, t, in_pos):
+        """Said once when it reaches GO, and once when it turns against you (then quiet for a few minutes)."""
+        prev = getattr(st, "conv_tone", None)
+        st.conv_tone = tone
+        if tone not in ("go", "against", "out") or prev == tone:
+            return
+        if prev in ("against", "out") and tone in ("against", "out"):
+            return
+        if t - getattr(st, "conv_said_t", -1e9) < 240:
+            return
+        st.conv_said_t = t
+        top = sorted((x for x in factors if (x["pts"] > 0) == (tone == "go") and x["pts"] != 0), key=lambda x: -abs(x["pts"]))[:3]
+        why = "; ".join(x["text"] for x in top)
+        label = "READY TO GO" if tone == "go" else "AGAINST YOU"
+        alert = {"t": t, "symbol": st.symbol, "label": label, "price": fmt_price(st.price()), "side": "ask" if st.play.get("side", "long") == "long" else "bid",
+                 "role": "conviction", "text": f"{st.symbol} {verdict} ({score:+d}): {why}", "score": score,
+                 "words": (f"{st.symbol} is taking off. " if tone == "go" else f"{st.symbol} is turning against you. ") +
+                          ", ".join(_short(x["text"]) for x in top)}
+        alert["key"] = f"{round(t, 2)}|{st.symbol}|{label}"
+        self.alerts.appendleft(alert)
+        self._rec(dict(alert, ev="alert"))
+        self.log(st.symbol, f"{label} ({score:+d}): {why}", t, kind="level")
+        for fn in self.listeners:
+            try:
+                fn(alert)
+            except Exception:
+                pass
+
     def _reloaders(self, st, t, price):
         """Nearest confirmed / likely reloaders on each side of the market."""
         below, above = [], []
@@ -2369,6 +2505,7 @@ class Engine:
                         "status": o.get("status")}
                        for o in self._pending(sym)],
             "position": self._position_view(sym, st.price()),
+            "conviction": self._conviction(st, t, ps, reloaders, tape),
             # the page keeps its own bar history: full history on request, otherwise just the live tail
             "bars": bars if full else bars[-6:],
             "bars_full": full,

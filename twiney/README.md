@@ -383,3 +383,13 @@ FLOW CONFIRMED / FLOW FADED / FLOW AGAINST. A READY setup is held at WATCH until
 In practice, the option clusters that come before a move are the sustained ones with size; a few prints and done
 rarely lead anywhere, as in the market.
 
+## CONVICTION
+
+Everything Dan watches at once, scored for the play's side and read in one look: the chart (PS60 structure, 25),
+the Level II (a proven reload buyer under a long / seller over a short, 20; one in the way, −20), the tape (who is
+paying up and whether it is speeding up, 15), the option flow (NO FLOW, NO DOUGH, 25; urgent contracts, 10) and
+the big money of the last 30 days (6). Through your stop is −30. The strip over the chart shows the verdict
+(THIS THING IS READY TO GO at +60 · LEANING YOUR WAY · MIXED, WAIT FOR MORE · TURNING AGAINST YOU · IT'S GOING THE
+OTHER WAY at −60), the score, the three biggest factors and what is still missing; the CONVICTION panel shows every
+line. READY TO GO and AGAINST YOU are said out loud once each, with the three reasons, and logged.
+

@@ -319,3 +319,61 @@ class NoFlowNoDoughTests(unittest.TestCase):
             self.assertEqual(len([a for a in e.alerts if a["label"] == "FLOW CONFIRMED"]), 1)
         finally:
             ps60.second_entry = real
+
+
+class ConvictionTests(unittest.TestCase):
+    def _desk(self):
+        from helpers import ASK, BID, INSERT, UPDATE, cfg, plays
+        from twiney.engine import Engine
+        e = Engine(plays(), cfg())
+        e.on_connection("DEMO", "", 0.0)
+        e.apply_slot("AAA", True, 0.0)
+        for i in range(3):
+            e.on_depth("AAA", i, INSERT, BID, round(9.99 - i * 0.01, 2), 500, "", 1.0)
+            e.on_depth("AAA", i, INSERT, ASK, round(10.00 + i * 0.01, 2), 500, "", 1.0)
+        e.syms["AAA"].play.update(stop=9.80, target=10.60)
+        return e
+
+    def _pane(self, e, t):
+        return next(x for x in e.snapshot(t)["panes"] if x and x["symbol"] == "AAA")
+
+    def test_nothing_going_on_is_mixed_and_says_what_is_missing(self):
+        e = self._desk()
+        c = self._pane(e, 2.0)["conviction"]
+        self.assertEqual(c["tone"], "wait")
+        self.assertIn("OPTION FLOW", c["missing"]); self.assertIn("LEVEL II", c["missing"])
+        self.assertEqual({f["name"] for f in c["factors"]} >= {"CHART", "LEVEL II", "TAPE", "OPTION FLOW"}, True)
+
+    def test_everything_lining_up_is_ready_to_go_and_said_once(self):
+        import twiney.ps60 as ps60
+        e = self._desk()
+        real = ps60.second_entry
+        ps60.second_entry = lambda bars, play, t, pc: {"state": ps60.SECOND_ENTRY, "second_entry": 10.10, "build": "building", "extreme": 10.10, "retrace": 10.02, "text": "x"}
+        try:
+            for i in range(4):                                             # calls keep coming
+                e.on_flow({"t": 5.0 + i * 61, "symbol": "AAA", "strike": 11.0, "cp": "C", "expiry": "2026-10-03", "dte": 2.0, "size": 300,
+                           "price": 4.0, "premium": 120000.0, "spot": 10.0, "side": "ask", "kind": "sweep", "otm_pct": 10.0}, 5.0 + i * 61)
+            for i in range(12):                                            # buyers paying up on the tape
+                e.on_print("AAA", 10.00 + (i % 3) * 0.01, 300, "X", 200.0 + i)
+            c = self._pane(e, 215.0)["conviction"]
+            self.assertGreaterEqual(c["score"], 60, c)
+            self.assertEqual(c["tone"], "go")
+            self.assertIn("READY TO GO", c["verdict"])
+            said = [a for a in e.alerts if a["label"] == "READY TO GO"]
+            self.assertEqual(len(said), 1)
+            self.assertIn("taking off", said[0]["words"])
+            self._pane(e, 216.0)
+            self.assertEqual(len([a for a in e.alerts if a["label"] == "READY TO GO"]), 1)
+        finally:
+            ps60.second_entry = real
+
+    def test_puts_pounding_and_sellers_hitting_turns_it_against_a_long(self):
+        e = self._desk()
+        for i in range(6):
+            e.on_flow({"t": 5.0 + i * 61, "symbol": "AAA", "strike": 9.0, "cp": "P", "expiry": "2026-10-03", "dte": 2.0, "size": 500,
+                       "price": 4.0, "premium": 200000.0, "spot": 10.0, "side": "ask", "kind": "sweep", "otm_pct": 10.0}, 5.0 + i * 61)
+        for i in range(12):
+            e.on_print("AAA", 9.99 - (i % 3) * 0.01, 300, "X", 400.0 + i)
+        c = self._pane(e, 415.0)["conviction"]
+        self.assertLessEqual(c["score"], -30, c)
+        self.assertIn(c["tone"], ("against", "out"))
