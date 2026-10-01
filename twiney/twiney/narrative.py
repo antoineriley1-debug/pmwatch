@@ -34,6 +34,16 @@ def shares(n):
     return f"{int(round(n or 0)):,}"
 
 
+def say_dollars(v):
+    """Money the way it is SAID: '300 thousand dollars', '1.2 million dollars', '850 dollars'."""
+    v = float(v or 0)
+    if v >= 1e6:
+        return f"{v / 1e6:.1f}".rstrip("0").rstrip(".") + " million dollars"
+    if v >= 1e3:
+        return f"{round(v / 1e3):,.0f} thousand dollars"
+    return f"{v:,.0f} dollars"
+
+
 def dollars(v):
     """$134,900 · $1.2M — money traded at a level, said the way a trader says it."""
     v = float(v or 0)

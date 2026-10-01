@@ -150,3 +150,43 @@ class MarketScanTests(unittest.TestCase):
     def test_a_stray_print_never_makes_a_watch(self):
         fg = board.flow_gate([pr(1000, prem=4000, dte=45)], "long", 10.0, [], 1100, FC)
         self.assertFalse(board.watch_worthy(fg))
+
+
+class NoSidePickedTests(unittest.TestCase):
+    """Until the trader picks a side (L / S, SIDE) or draws levels that only fit one, the desk never says
+    'with you' or 'against you': it reports which way the money leans."""
+    def _prints(self, cp, n=3, usd=120000):
+        now = 1000.0
+        return [{"t": now - 60 * i, "cp": cp, "side": "ask", "premium": usd, "strike": 100 + (5 if cp == "C" else -5), "spot": 100.0,
+                 "dte": 3, "otm_pct": 5.0, "expiry": "2026-10-03", "sweep": False} for i in range(n)]
+
+    def test_board_reports_the_lean_not_a_side(self):
+        play = {"symbol": "AAA", "side": "long", "trigger": 100.0}
+        b = board.build(play, 100.0, None, None, None, None, self._prints("P"), [], [], 1000.0, {})
+        self.assertFalse(b["side_picked"])
+        self.assertNotIn(b["board_state"], ("ARMED", "READY_TO_GO", "INVALIDATED"))
+        self.assertTrue(b["label"].startswith("NO SIDE YET"), b["label"])
+        self.assertIn("PUTS", b["label"])
+        lanes = {l["id"]: l["text"] for l in b["lanes"]}
+        self.assertNotIn("against", lanes["L5_FLOW_SIDE"]); self.assertIn("no side picked", lanes["L5_FLOW_SIDE"])
+        self.assertIsNone(board.words(b))
+        # a stop and a target pick the side; now the same put flow IS against a long
+        play.update(stop=99.0, target=104.0)
+        b = board.build(play, 100.0, None, None, None, None, self._prints("P"), [], [], 1000.0, {})
+        self.assertTrue(b["side_picked"]); self.assertEqual(b["side_bias"], "LONG")
+        self.assertIn("against this long", {l["id"]: l["text"] for l in b["lanes"]}["L5_FLOW_SIDE"])
+
+    def test_side_picked_rules(self):
+        self.assertFalse(board.side_picked({"side": "long"}))
+        self.assertFalse(board.side_picked({"side": "long", "trigger": 10.0, "stop": 9.5}))
+        self.assertTrue(board.side_picked({"side": "long", "stop": 9.5, "target": 11.0}))
+        self.assertTrue(board.side_picked({"side": "short", "trigger": 10.0, "second_entry": 9.8}))
+        self.assertTrue(board.side_picked({"side": "short", "side_set": True}))
+
+    def test_words_are_plain_english(self):
+        self.assertEqual(board.say_money(308000), "308 thousand dollars")
+        self.assertEqual(board.say_money(1200000), "1.2 million dollars")
+        self.assertEqual(board.say_money(2000000), "2 million dollars")
+        b = {"symbol": "TSLA", "board_state": "READY_TO_GO", "side_bias": "LONG", "side_picked": True, "chart_gate": {"ok": True},
+             "flow_gate": {"cluster": {"dollars": 308000, "repeats": 4}}, "reasons": []}
+        self.assertEqual(board.words(b), "TSLA long, ready to go. The chart is confirmed and the flow is confirmed: 308 thousand dollars went into short term calls, 4 times. They keep coming.")

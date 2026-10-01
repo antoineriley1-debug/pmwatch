@@ -34,6 +34,18 @@ with ladder trading that is **locked to paper accounts** until you deliberately 
   lock, the clock. When order routing is down the ticket's TRANSMIT is disabled and the reason is shown.
 - **Data**: a value that is not there shows as —. Nothing is invented.
 
+## Level II: TIGHT and WIDE
+
+TIGHT (default, the button in the ladder bar) is the classic ladder read at a glance: HIT · BID · PRICE · ASK ·
+PAID · FLOW. A reload buyer colours the bid cell green, a reload seller the ask cell red, with his tag (R3 =
+refilled three times) and the $ that traded into him in the HIT / PAID cell. The FLOW column is the option flow
+that hit while the stock traded at that price: $ premium, ⚡ when it is short-dated out-of-the-money being pounded,
+days out and % out of the money (green calls, red puts; hover for every print). WIDE spells every column out
+(CALLS / PUTS money on their own sides, who tags). TIME & SALES shows price and size only: green paid the ask,
+red hit the bid, bold is big (hover a print for the exchange and age). ORDER ENTRY is three short rows; POSITIONS
+carries the controls on the row: 25 / 50 / 75 off at the touch, … your own number, @ a partial at your price,
+BE stop to breakeven, X close.
+
 ## Trading from the ladder (paper only)
 - **ARM** in the header. TWINEY starts DISARMED every launch; nothing can be sent until you arm it.
 - Click **BUY** on any ladder row to place a limit buy at that price; **SELL** likewise. Or use the
@@ -56,6 +68,11 @@ with ladder trading that is **locked to paper accounts** until you deliberately 
   flatten) its 2nd entry, stop and target come off the chart (`clear_lines_when_flat`); the pivot stays. It uses the
   ticket size until you draw the
   stop, then it is sized from your RISK $. Draw the target and the stop and they join the entry as its bracket.
+- **No side, no side-talk**: until you pick a side (L / S, SIDE) or draw levels that only fit one (a stop and a
+  target, or a pivot with a 2nd entry) the desk never says "with you" / "against you" — the FLOW line, the
+  conviction strip and the voice report which way the money leans ("NO SIDE YET — FLOW LEANS PUTS"). Draw the
+  levels on any ticker on the desk, ladder or not, and from then on the flow is judged for that side, out loud,
+  in plain English ("300 thousand dollars just went into short term calls, with your long, and it keeps coming").
 - **LONG or SHORT reads off your levels**: a stop drawn ABOVE the target can only be a short, a stop under it a
   long — draw both and the play, the entry order, the chip and the conviction board follow, nothing to pick.
   The small **L / S** button beside ARMED flips the ticker on screen by hand (and so does SIDE in PLAY SETUP,

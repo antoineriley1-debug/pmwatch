@@ -764,6 +764,8 @@ class Engine:
                 if side == "short" and target >= trigger:
                     return False, f"MP {target} must be below the pivot {trigger} for a short"
             p["side"] = side
+            if "side" in fields:
+                p["side_set"] = True
             if "notes" in fields:
                 p["notes"] = str(fields.get("notes") or "")[:200]
             if "setup" in fields:
@@ -826,7 +828,7 @@ class Engine:
                               t or self.last_t, symbol)
             if role == "target":
                 st.play["mp"] = price
-            if role in ("target", "stop") and price is not None:
+            if role in ("target", "stop", "second_entry") and price is not None:
                 self._side_from_levels(st, t)
             if role in ("trigger", "second_entry"):
                 # drop the old trackers for this role (unless another role shares that price)
@@ -863,6 +865,7 @@ class Engine:
                     self.set_play_level(symbol, role, None, t, source="CLEAR PLAY")
             for px_ in list(st.play.get("extra_levels") or []):
                 self.remove_level(symbol, px_, t)
+            st.play["side_set"] = False          # a blank chart has no side until you pick one or draw it
             old = st.play.get("trigger")
             if old is not None:
                 st.play["trigger"] = None
@@ -915,7 +918,7 @@ class Engine:
         if not self.plays_path:
             return
         import json
-        keep = ("symbol", "side", "trigger", "second_entry", "target", "stop", "mp", "atr", "extra_levels", "notes", "setup", "active", "watch",
+        keep = ("symbol", "side", "side_set", "trigger", "second_entry", "target", "stop", "mp", "atr", "extra_levels", "notes", "setup", "active", "watch",
                 "auto", "exchange", "primary_exchange", "currency")
         def row(p):
             r = {("pivot" if k == "trigger" else k): p[k] for k in keep if k in p}
@@ -1397,6 +1400,13 @@ class Engine:
             return cache[1]
         bars = st.bar_list(MAX_BARS)
         ps = self._ps60(st, t, bars, st.price())
+        if st.symbol not in self.slots:
+            # no ladder on it, still on the desk: the conviction board (and its with-you / against-you calls) run
+            # on the levels you drew; the ladder lanes just have nothing to add
+            try:
+                self._board(st, t, ps, self._reloaders(st, t, st.price()), None, bars)
+            except Exception:
+                pass
         out = {"grade": ps["grade"], "why": ps["why"], "mp": ps["mp"], "state": ps["se"]["state"], "flow": ps.get("flow")}
         st._ps60_cache = (t, out)
         return out
@@ -1419,18 +1429,30 @@ class Engine:
         shares = self.trader.default_shares if self.trader else tc["default_shares"]
         gr = ps60.grade(st.play, price, se, mp, shares, bool(st.play.get("stop")), tc)
         fc = self.cfg.get("flow", {})
+        picked = board.side_picked(st.play)
         fs = self.flow.summary(st.symbol, t)
         if gr["grade"] == "READY" and fc.get("against_bias") and fs["bias"] is not None:
             against = fs["bias"] <= -fc["against_bias"] if st.play["side"] == "long" else fs["bias"] >= fc["against_bias"]
-            if against and (fs["calls"] + fs["puts"]) >= fc.get("against_min_premium", 0):
+            if against and picked and (fs["calls"] + fs["puts"]) >= fc.get("against_min_premium", 0):
                 gr = dict(gr, grade="WATCH", why=(gr["why"] + "; " if gr["why"] else "")
                           + f"option flow leans against this {st.play['side']}: {self.flow.context_text(st.symbol, t)}")
-        gr["gates"].append({"q": "Flow with you?", "ok": fs["bias"] is None or (fs["bias"] >= 0) == (st.play["side"] == "long") or abs(fs["bias"]) < 0.3,
-                            "why": self.flow.context_text(st.symbol, t)})
+        gr["gates"].append({"q": "Flow with you?" if picked else "Flow?",
+                            "ok": not picked or fs["bias"] is None or (fs["bias"] >= 0) == (st.play["side"] == "long") or abs(fs["bias"]) < 0.3,
+                            "why": self.flow.context_text(st.symbol, t) if picked else "no side picked yet — " + self.flow.context_text(st.symbol, t)})
         # NO FLOW, NO DOUGH: Dan's confirmation. The setup comes first; then short-dated out-of-the-money money on
         # the play's side has to START and KEEP COMING. Until it does, a READY setup is held at WATCH (switchable)
         index = st.symbol in set(fc.get("index_symbols", ()))
-        dough = self.flow.dough(st.symbol, "C" if st.play["side"] == "long" else "P", t, index)
+        if picked:
+            dough = self.flow.dough(st.symbol, "C" if st.play["side"] == "long" else "P", t, index)
+        else:
+            # no side picked: report the side the money is on, never 'against' a side nobody took
+            dc, dp = self.flow.dough(st.symbol, "C", t, index), self.flow.dough(st.symbol, "P", t, index)
+            dough = dict(dp if dp["dollars"] > dc["dollars"] else dc)
+            dough["cp"] = "P" if dp["dollars"] > dc["dollars"] else "C"
+            if dough["state"] == "FLOW AGAINST":
+                dough["state"] = "NO FLOW"
+            dough["text"] = "no side picked · " + dough["text"]
+        dough["picked"] = picked
         gr["gates"].append({"q": "Flow confirming?", "ok": dough["state"] == "FLOW CONFIRMED", "why": dough["text"]})
         if gr["grade"] == "READY" and fc.get("no_flow_no_dough", True):
             prints = [p for p in self.flow.by_symbol.get(st.symbol, ()) if p.get("t", 0) >= t - float(fc.get("of_session_minutes", 390)) * 60.0]
@@ -1451,15 +1473,21 @@ class Engine:
         if t - getattr(st, "dough_said_t", -1e9) < 600:
             return
         st.dough_said_t = t
-        side = "calls" if st.play["side"] == "long" else "puts"
-        if dough["state"] == "FLOW CONFIRMED":
+        picked = dough.get("picked", True)
+        cp = dough.get("cp") or ("C" if st.play["side"] == "long" else "P")
+        side, other = ("calls", "puts") if cp == "C" else ("puts", "calls")
+        money = narrative.say_dollars(dough["dollars"])
+        if dough["state"] == "FLOW CONFIRMED" and not picked:
+            text = f"FLOW on {st.symbol}: {dough['text']}. No side picked — this is what the money is doing."
+            words = f"{money} just went into short term {side}, and it keeps coming. They're pounding the {side}."
+        elif dough["state"] == "FLOW CONFIRMED":
             text = f"FLOW CONFIRMED on {st.symbol} {st.play['side']}: {dough['text']}. The dough is here."
+            words = f"{money} just went into short term {side}, with your {st.play['side']}, and it keeps coming. They're pounding the {side}."
         else:
             text = f"FLOW AGAINST {st.symbol} {st.play['side']}: {dough['text']}."
-        alert = {"t": t, "symbol": st.symbol, "label": dough["state"], "price": fmt_price(st.price()), "side": "ask", "role": "flow",
-                 "text": text, "premium": dough["dollars"], "cp": "C" if side == "calls" else "P", "prints": dough["prints"],
-                 "words": (f"flow confirmed, {narrative.dollars(dough['dollars'])} of short dated {side}, it keeps coming" if dough["state"] == "FLOW CONFIRMED"
-                           else f"flow against you, {narrative.dollars(dough['against'])} the other way")}
+            words = f"The flow is against your {st.play['side']}: {narrative.say_dollars(dough['against'])} went into short term {other}."
+        alert = {"t": t, "symbol": st.symbol, "label": dough["state"] if picked else "FLOW", "price": fmt_price(st.price()), "side": "ask", "role": "flow",
+                 "text": text, "premium": dough["dollars"], "cp": cp, "prints": dough["prints"], "words": words}
         alert["key"] = f"{round(t, 2)}|{st.symbol}|{dough['state']}"
         self.alerts.appendleft(alert)
         self._rec(dict(alert, ev="alert"))
@@ -1514,18 +1542,28 @@ class Engine:
                 pass
         return play
 
+    @staticmethod
+    def side_picked(play):
+        """Has the trader taken a side on this ticker (a pick, or levels that only fit one side)? See board.side_picked."""
+        return board.side_picked(play)
+
     def _side_from_levels(self, st, t=None):
-        """The side reads off the levels: a stop ABOVE the target can only be a short, a stop BELOW it a long.
-        Draw both on the chart and the play follows, no SIDE pick needed (a tie changes nothing)."""
+        """The side reads off the levels: a stop ABOVE the target can only be a short, a stop BELOW it a long
+        (and a 2nd entry under the pivot a short, over it a long). Draw them and the play follows, no SIDE pick
+        needed (a tie changes nothing)."""
         stop, target = st.play.get("stop"), st.play.get("target")
-        if not stop or not target or stop == target:
+        trigger, second = st.play.get("trigger"), st.play.get("second_entry")
+        if stop and target and stop != target:
+            side, why = "short" if stop > target else "long", f"stop {narrative.px(stop)} {'above' if stop > target else 'under'} target {narrative.px(target)}"
+        elif trigger and second and trigger != second:
+            side, why = "short" if second < trigger else "long", f"2nd entry {narrative.px(second)} {'under' if second < trigger else 'over'} pivot {narrative.px(trigger)}"
+        else:
             return
-        side = "short" if stop > target else "long"
         if st.play.get("side") == side:
             return
         st.play["side"] = side
         st.invalidation_armed = False
-        self.log(st.symbol, f"SIDE → {side.upper()} (stop {narrative.px(stop)} {'above' if side == 'short' else 'under'} target {narrative.px(target)})", t, kind="level")
+        self.log(st.symbol, f"SIDE → {side.upper()} ({why})", t, kind="level")
         self._rec({"ev": "flip", "t": t or self.last_t, "sym": st.symbol, "side": side, "keep": True})
 
     @staticmethod
@@ -1568,6 +1606,7 @@ class Engine:
             side = str(side or "").lower()
             if side not in ("long", "short"):
                 return False, ["side must be long or short"]
+            st.play["side_set"] = True
             if st.play.get("side") != side:
                 st.play["side"] = side
                 st.invalidation_armed = False
@@ -1583,6 +1622,7 @@ class Engine:
             if st is None:
                 return False
             st.play["side"] = "short" if st.play["side"] == "long" else "long"
+            st.play["side_set"] = True
             self.log(symbol, f"SIDE → {st.play['side'].upper()}", t, kind="level")
             st.play["second_entry"] = None
             self._rec({"ev": "flip", "t": t or self.last_t, "sym": symbol, "side": st.play["side"]})
@@ -1875,7 +1915,7 @@ class Engine:
         text = board.market_watch_text(sym, side, fg, p.get("spot"))
         alert = {"t": t, "symbol": sym, "label": "FLOW WATCH", "price": fmt_price(p.get("spot")), "side": "ask", "role": "conviction",
                  "text": text, "cp": p.get("cp"), "premium": fg["cluster"]["dollars"], "rules": fg["rules"],
-                 "words": f"{sym}, flow watch, {narrative.dollars(fg['cluster']['dollars'])} of short dated {'calls' if side == 'long' else 'puts'} {fg['cluster']['repeats']} times. Not a play yet."}
+                 "words": f"flow watch. {narrative.say_dollars(fg['cluster']['dollars'])} went into short term {'calls' if side == 'long' else 'puts'}, {fg['cluster']['repeats']} times. Not a play yet, no chart work done."}
         alert["key"] = f"{round(t, 2)}|{sym}|FLOW WATCH|{side}"
         self.alerts.appendleft(alert)
         self._rec(dict(alert, ev="alert"))

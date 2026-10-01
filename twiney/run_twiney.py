@@ -175,7 +175,9 @@ def run_demo(cfg, plays, args):
     engine.load_user_alerts(os.path.join(os.path.dirname(os.path.abspath(args.plays)), "alerts.json"))
     engine.listeners.append(console_alert)
     note_stripped(engine, args)
-    engine.bigmoney = BigMoney(cfg["flow"], os.path.join(cfg["recording"]["dir"], "big_money.jsonl"))
+    # practice flow is made up and the demo price starts fresh every launch: its big prints live in memory
+    # only, so the real 30-day memory (recordings/big_money.jsonl) never carries practice prints
+    engine.bigmoney = BigMoney(cfg["flow"], None)
     feed = DemoFeed(engine, plays, seed=None, scenario=cfg.get("demo", {}).get("scenario"))
     feed.start(time.time())
     print(f"Practice session · day type: {feed.scenario}  (not shown on the desk; set demo.scenario in config.json to pick one)", flush=True)

@@ -224,12 +224,49 @@ def score(cg, fg):
     return max(0, min(100, s))
 
 
+def side_picked(play):
+    """Has the trader taken a side on this ticker? A pick (L / S, SIDE, flip) or levels that only fit one side:
+    a stop and a target, or a pivot with a 2nd entry. Until then the desk has no idea which way you lean, so it
+    talks about the flow itself — never 'with you' or 'against you'."""
+    if play.get("side_set"):
+        return True
+    stop, target = play.get("stop"), play.get("target")
+    if stop and target and stop != target:
+        return True
+    trigger, second = play.get("trigger"), play.get("second_entry")
+    return bool(trigger and second and trigger != second)
+
+
+def flow_leans(prints):
+    """Which way the money leans on this name: ('long'|'short'|None, call $, put $) from prints bought at the ask."""
+    c = sum(p.get("premium") or 0 for p in prints if p.get("cp") == "C" and p.get("side") == "ask")
+    pt = sum(p.get("premium") or 0 for p in prints if p.get("cp") == "P" and p.get("side") == "ask")
+    return (None if not c and not pt else "short" if pt > c else "long"), round(c), round(pt)
+
+
+def say_money(v):
+    """Money the way it is said out loud: '300 thousand dollars', '1.2 million dollars'."""
+    v = float(v or 0)
+    if v >= 1e6:
+        return f"{v / 1e6:.1f}".rstrip("0").rstrip(".") + " million dollars"
+    if v >= 1e3:
+        return f"{round(v / 1e3):,.0f} thousand dollars"
+    return f"{v:,.0f} dollars"
+
+
 def build(play, price, se, mp, reloaders, tape, prints, daily_closes, bars, now, cfg, prev_state=None):
-    side = play.get("side", "long")
+    picked = side_picked(play)
+    lean, call_usd, put_usd = flow_leans(prints)
+    # no side yet: judge the flow on the side the money is on, and say so — never 'against you'
+    side = play.get("side", "long") if picked else (lean or play.get("side", "long"))
     cg = chart_gate(play, price, se, mp, reloaders, tape, now, cfg)
     fg = flow_gate(prints, side, price, daily_closes, now, cfg)
     lanes = dict(cg["lanes"])
     lanes.update(fg["lanes"])
+    if not picked:
+        what = "calls" if side == "long" else "puts"
+        lanes["L5_FLOW_SIDE"] = (lanes["L5_FLOW_SIDE"][0], f"no side picked — the money here is in {what}: {_k(call_usd)} calls / {_k(put_usd)} puts"
+                                 if (call_usd or put_usd) else "no side picked — no option flow bought at the ask on this name yet")
     # L7: same side as the chart, and the chart has confirmed (§4.2: the bet AFTER the stock confirms)
     if fg["state"] in ("FLOW_OPPOSITE", "FLOW_HEDGE"):
         lanes["L7_CORRELATION"] = (R, "flow is against the chart" if fg["state"] == "FLOW_OPPOSITE" else "a hedge does not correlate with anything")
@@ -268,8 +305,14 @@ def build(play, price, se, mp, reloaders, tape, prints, daily_closes, bars, now,
             state, light, reasons = "INVALIDATED", R, why
     label = {"READY_TO_GO": f"{side.upper()} READY TO GO", "ARMED": f"{side.upper()} ARMED — WAITING {'FLOW' if chart_ok else 'CHART'} GATE",
              "WATCH": f"{side.upper()} WATCH", "PASS": "PASS", "INVALIDATED": f"{side.upper()} INVALIDATED"}[state]
+    if not picked:
+        # nothing is armed, ready or invalidated for a side nobody picked: the board only reports the flow
+        if state in ("ARMED", "READY_TO_GO", "INVALIDATED"):
+            state, light, reasons = "WATCH", Y, []
+        lanes["L7_CORRELATION"] = (Y, "no side picked: draw a stop and a target (or hit L / S) and the desk judges the flow with you or against you")
+        label = ("NO SIDE YET — FLOW LEANS " + ("CALLS" if side == "long" else "PUTS")) if lean else "NO SIDE YET — NO FLOW"
     long_ = side == "long"
-    return {"symbol": play.get("symbol"), "side_bias": side.upper(), "board_state": state, "label": label, "traffic_light": light,
+    return {"symbol": play.get("symbol"), "side_bias": side.upper(), "side_picked": picked, "board_state": state, "label": label, "traffic_light": light,
             "score": score(cg, fg), "chart_gate": {"ok": chart_ok},
             "flow_gate": {"ok": flow_ok, "state": fg["state"], "cluster": fg.get("cluster"), "hedge": fg["hedge"],
                           "premium_ok": fg.get("premium_ok", False), "dte_lane": fg.get("dte_lane"), "repeats_ok": fg.get("repeats_ok", False)},
@@ -323,13 +366,18 @@ def market_watch_text(sym, side, fg, price):
 
 
 def words(b):
-    """What the desk says out loud: short, the state and the one thing that carries or blocks it."""
+    """What the desk says out loud, in plain English: the state and the one thing that carries or blocks it."""
     sym, st, side = b["symbol"], b["board_state"], b["side_bias"].lower()
     cl = b["flow_gate"].get("cluster") or {}
+    what = "calls" if side == "long" else "puts"
+    if not b.get("side_picked", True):
+        return None                                   # nothing to say for a side nobody picked
     if st == "READY_TO_GO":
-        return f"{sym} {side}, ready to go. Chart gate green, flow gate green, {_k(cl.get('dollars'))} of short dated {'calls' if side == 'long' else 'puts'} {cl.get('repeats')} times."
+        return (f"{sym} {side}, ready to go. The chart is confirmed and the flow is confirmed: {say_money(cl.get('dollars'))} "
+                f"went into short term {what}, {cl.get('repeats')} times. They keep coming.")
     if st == "ARMED":
-        return f"{sym} {side} armed, waiting on the {'flow' if b['chart_gate']['ok'] else 'chart'} gate."
+        return (f"{sym} {side} is armed. The chart is there, waiting on the option flow." if b["chart_gate"]["ok"]
+                else f"{sym} {side} is armed. The option flow is there, waiting on the chart.")
     if st == "INVALIDATED":
-        return f"{sym} {side} invalidated: {', '.join(b['reasons'])}."
+        return f"{sym} {side} is off: {', '.join(b['reasons'])}."
     return None

@@ -478,6 +478,7 @@ def validate_plays(raw):
             "active": bool(item.get("active", True)),
             "watch": watch,
             "auto": bool(item.get("auto", True)),
+            "side_set": bool(item.get("side_set", False)),
             "exchange": str(item.get("exchange", "SMART")).upper(),
             "primary_exchange": str(item.get("primary_exchange", "")).upper(),
             "currency": str(item.get("currency", "USD")).upper(),
