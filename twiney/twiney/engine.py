@@ -2059,6 +2059,14 @@ class Engine:
             return {"rows": [], "max_size": 0, "max_traded": 0}
         tk = tick_size(center)
         ck = price_key(center, tk)
+        # a STILL ladder: the rows stay where they are while price moves inside them, so a size at a price stays
+        # at the same spot on screen (re-centring on every tick made every row jump). Re-centres only when price
+        # comes within a few rows of the top or bottom edge
+        edge = max(2, int(self.cfg.get("ladder", {}).get("recenter_rows", 4)))
+        lc = getattr(st, "lad_center", None)
+        if lc is None or lc[1] != tk or abs(ck - lc[0]) > half_rows - edge:
+            st.lad_center = (ck, tk)
+        ck = st.lad_center[0]
         keys = list(range(ck + half_rows, ck - half_rows - 1, -1))
         tags = {}
         for lv in user_levels:

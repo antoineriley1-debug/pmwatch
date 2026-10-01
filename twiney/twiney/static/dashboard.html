@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261001-0856">
+<meta name="build" content="20261001-0859">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -543,6 +543,17 @@ td.bars.l .bar-n{margin-right:1px} td.bars.r .bar-n{margin-left:1px}
 .setup .auto.off label{color:var(--dim)} .setup .auto .ok{color:var(--buy)} .setup .auto .gold{color:var(--gold)} .setup .auto .dim{color:var(--dim)}
 .setup .go #suClear{padding:6px 10px;font-size:10.5px;letter-spacing:.08em}
 .setup .auto .no{color:var(--sell)}
+.qs .qgear{padding:0 7px;font-size:14px;line-height:18px;margin-left:4px}
+.cs-pop{display:block;position:fixed;z-index:70;width:330px;max-height:78vh;overflow:auto;padding:8px 10px;font-size:11.5px}
+.cs-pop .cs-hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+.cs-pop .cs-hd button{margin-left:4px;padding:1px 7px}
+.cs-pop h5{margin:9px 0 3px;font-size:10px;letter-spacing:.12em;color:var(--gold)}
+.cs-pop .cs-row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:2px 0}
+.cs-pop .cs-row input[type=color]{width:34px;height:20px;padding:0;border:1px solid var(--line);background:none}
+.cs-pop .cs-row input[type=range]{width:110px}
+.cs-pop .cs-row button{padding:0 5px;font-size:10px}
+.cs-pop{background:#0e1117;border:1px solid #2c2e33;border-radius:4px;box-shadow:0 10px 30px rgba(0,0,0,.6);color:#d6d6d3}
+.cs-pop .cs-row span:first-child{color:#c9ced6}
 
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
@@ -1635,6 +1646,11 @@ function drawOne(p, cv, v, isFoot){
   const dan = screen !== "desk";
   const C = dan ? {bg: SCREENS[screen] || SCREENS.white, grid: "#5d6b7a", axis: "#111111", text: "#111111", up: "#00f900", dn: "#ff2600", wick: "#000000", border: "#000000", label: "#ffffff", pivot: "#111111", dots: true}
                 : {bg: null, grid: "#1f2023", axis: "#2c2e33", text: "#7d7f85", up: "#3fb56f", dn: "#d9534f", wick: null, border: null, label: "#0c0c0d", pivot: "#d6d6d3", dots: false};
+  // the cogwheel's settings (chart settings, TradingView style): colours and what is drawn
+  const CS = (k, dflt = true) => store.get("cs." + k, dflt);
+  if (CS("upCol", "")) C.up = CS("upCol", ""); if (CS("dnCol", "")) C.dn = CS("dnCol", "");
+  if (!CS("borders")) C.border = null;
+  if (CS("bgCol", "") && dan) C.bg = CS("bgCol", "");
   if (C.bg){ g.fillStyle = C.bg; g.fillRect(0, 0, W, H); }
   const labelW = 86, plotW = W - labelW, volH = Math.max(28, H * 0.16), plotH = H - volH - 18;
   const cw = v.cw;
@@ -1722,12 +1738,12 @@ function drawOne(p, cv, v, isFoot){
     if (C.dots){ g.setLineDash([1, 7]); g.font = "bold 11px ui-monospace, Menlo, Consolas, monospace"; }
     for (let pr = Math.ceil(lo / step) * step; pr <= hi; pr += step){
       const yy = y(pr);
-      g.beginPath(); g.moveTo(0, yy); g.lineTo(plotW, yy); g.stroke();
+      if (CS("gridH")){ g.beginPath(); g.moveTo(0, yy); g.lineTo(plotW, yy); g.stroke(); }
       g.fillText(px(pr), plotW + 4, yy + 4);
     }
     g.setLineDash([]); g.font = "11px ui-monospace, Menlo, Consolas, monospace";
     // eSignal-style session separators: a dotted line where each New York session opens
-    if (!isDaily && bars.length){
+    if (!isDaily && bars.length && CS("sessions")){
       g.strokeStyle = C.dots ? "#333333" : C.axis; g.setLineDash([2, 4]);
       for (let k = 1; k < bars.length; k++){
         const eo = etOffset(bars[k][0]), a = Math.floor((bars[k - 1][0] + eo) / 86400), b = Math.floor((bars[k][0] + eo) / 86400);
@@ -1743,7 +1759,7 @@ function drawOne(p, cv, v, isFoot){
   const tickOf = v => v >= 1 ? 0.01 : 0.0001;
   const exitOrders = (d.orders || []).filter(o => o.role && o.role !== "entry" && o.role !== "flatten" && o.role !== "close");
   const bracketOn = !!(d.position && d.position.qty && exitOrders.length);
-  for (const l of (isFoot ? [] : d.user_levels)){   // the footprint window shows the footprint, nothing else
+  for (const l of (isFoot || !CS("levels") ? [] : d.user_levels)){   // the footprint window shows the footprint, nothing else
     if (bracketOn && (l.role === "stop" || l.role === "target")) continue;
     const dl = p.dragLevel && p.dragLevel.role === l.role && Math.abs(p.dragLevel.from - l.price) < 1e-6;
     const lp = dl ? p.dragLevel.price : l.price;
@@ -1844,17 +1860,17 @@ function drawOne(p, cv, v, isFoot){
     const top = y(Math.max(b[1], b[4])), bh = Math.max(1, Math.abs(y(b[1]) - y(b[4])));
     if (dan){
       // Dan candles (eSignal look): fat bodies, thick black wicks, black body border. Wick / body width are yours to set.
-      g.strokeStyle = C.wick; g.lineWidth = Math.min(cw * 0.9, Math.max(1, +store.get("wick", 3)));
-      g.beginPath(); g.moveTo(x, y(b[2])); g.lineTo(x, y(b[3])); g.stroke();
+      g.strokeStyle = CS("wickCol", "") || C.wick; g.lineWidth = Math.min(cw * 0.9, Math.max(1, +store.get("wick", 3)));
+      if (CS("wicks")){ g.beginPath(); g.moveTo(x, y(b[2])); g.lineTo(x, y(b[3])); g.stroke(); }
       const bw = cw * Math.min(0.95, Math.max(0.2, +store.get("body", 76) / 100));
       g.fillStyle = up ? C.up : C.dn; g.fillRect(x - bw / 2, top, bw, bh);
-      g.strokeStyle = C.border; g.lineWidth = Math.min(2, Math.max(1, cw * 0.12)); g.strokeRect(x - bw / 2, top, bw, bh);
+      if (C.border){ g.strokeStyle = C.border; g.lineWidth = Math.min(2, Math.max(1, cw * 0.12)); g.strokeRect(x - bw / 2, top, bw, bh); }
       g.lineWidth = 1;
       continue;
     }
     g.strokeStyle = g.fillStyle = up ? C.up : C.dn;
     g.lineWidth = Math.min(cw * 0.9, Math.max(1, +store.get("wick", 1)));
-    g.beginPath(); g.moveTo(x, y(b[2])); g.lineTo(x, y(b[3])); g.stroke();
+    if (CS("wicks")){ g.beginPath(); g.moveTo(x, y(b[2])); g.lineTo(x, y(b[3])); g.stroke(); }
     g.lineWidth = 1;
     const bwn = cw * Math.min(0.95, Math.max(0.2, +store.get("body", 70) / 100));
     if (foot){ g.strokeRect(x - cw * 0.45, top, cw * 0.9, bh); }
@@ -2016,7 +2032,7 @@ function drawOne(p, cv, v, isFoot){
     g.font = "11px ui-monospace, Menlo, Consolas, monospace";
   }
   // your working orders (a grabbed one follows the mouse); with a bracket on, its exits are drawn above
-  for (const o of (isFoot ? [] : d.orders)){
+  for (const o of (isFoot || !CS("orders") ? [] : d.orders)){
     if (bracketOn && exitOrders.includes(o)) continue;
     if (!o.price || o.price < lo || o.price > hi) continue;
     const drag = p.dragOrder && p.dragOrder.id === o.id;
@@ -2027,7 +2043,7 @@ function drawOne(p, cv, v, isFoot){
     g.fillStyle = col; g.fillText((drag ? px(p.dragOrder.price) + " >" : `${o.role === "entry" ? "YOU " + o.action : o.role.toUpperCase()} ${sz(o.qty)}`).slice(0, 13), plotW + 3, yy + 4);
   }
   // the 2nd entry IS your entry order: on the line, on top of everything, whether the order is live and if not why
-  if (!isFoot && v.seChipY != null && d.play && d.play.second_entry){
+  if (!isFoot && CS("chip") && v.seChipY != null && d.play && d.play.second_entry){
     let a = ((state && state.trading && state.trading.auto) || {})[d.symbol];
     // filled: the chip says so for a minute and a half, then gets out of the way of your chart
     if (a && a.state === "DONE" && a.filled_t != null && state.now - a.filled_t > (state.trading.filled_chip_seconds || 90)) a = null;
@@ -2065,11 +2081,14 @@ function drawOne(p, cv, v, isFoot){
   if (d.last){
     const yy = y(d.last);
     const lastCol = dan ? "#000000" : "#e3a83a";   // the price line: black on the light screens, gold on the desk
-    if (!isFoot){ g.strokeStyle = lastCol; g.lineWidth = dan ? 1.6 : 1.4; g.setLineDash([2, 3]); g.beginPath(); g.moveTo(0, yy); g.lineTo(plotW, yy); g.stroke(); g.setLineDash([]); g.lineWidth = 1; }
-    g.fillStyle = lastCol; g.fillRect(plotW, yy - 8, labelW, 16);
-    g.fillStyle = dan ? "#ffffff" : "#0c0c0d"; g.font = "bold 11px ui-monospace, Menlo, Consolas, monospace"; g.fillText(`LAST ${px(d.last)}`, plotW + 3, yy + 4);
+    const lstyle = CS("lastStyle", "dotted");
+    if (!isFoot && CS("lastLine")){ g.strokeStyle = lastCol; g.lineWidth = dan ? 1.6 : 1.4; g.setLineDash(lstyle === "solid" ? [] : lstyle === "dashed" ? [7, 4] : [2, 3]); g.beginPath(); g.moveTo(0, yy); g.lineTo(plotW, yy); g.stroke(); g.setLineDash([]); g.lineWidth = 1; }
+    if (CS("lastLabel")){
+      g.fillStyle = lastCol; g.fillRect(plotW, yy - 8, labelW, 16);
+      g.fillStyle = dan ? "#ffffff" : "#0c0c0d"; g.font = "bold 11px ui-monospace, Menlo, Consolas, monospace"; g.fillText(`LAST ${px(d.last)}`, plotW + 3, yy + 4);
+    }
     const left = barCloseIn(tf, isDaily);
-    if (left != null && !isFoot){
+    if (left != null && !isFoot && CS("countdown")){
       g.fillStyle = dan ? "#333333" : "#2c2e33"; g.fillRect(plotW, yy + 9, labelW, 14);
       g.fillStyle = "#ffffff"; g.font = "bold 10px ui-monospace, Menlo, Consolas, monospace"; g.fillText(left, plotW + 3, yy + 20);
     }
@@ -2151,8 +2170,10 @@ function drawOne(p, cv, v, isFoot){
   if (v.cross){
     const [cx, cy] = v.cross;
     if (cx < plotW && cy < plotH){
-      g.strokeStyle = dan ? "#ff0000" : "#7d7f85"; g.setLineDash(dan ? [] : [3, 3]); g.lineWidth = 1;
-      g.beginPath(); g.moveTo(cx, 0); g.lineTo(cx, plotH); g.moveTo(0, cy); g.lineTo(plotW, cy); g.stroke(); g.setLineDash([]);
+      const xs = CS("cross", "auto");
+      g.strokeStyle = CS("crossCol", "") || (dan ? "#ff0000" : "#7d7f85"); g.setLineDash(xs === "solid" ? [] : xs === "dashed" ? [5, 4] : xs === "dotted" ? [1, 3] : (dan ? [] : [3, 3])); g.lineWidth = 1;
+      if (xs !== "off"){ g.beginPath(); g.moveTo(cx, 0); g.lineTo(cx, plotH); g.moveTo(0, cy); g.lineTo(plotW, cy); g.stroke(); }
+      g.setLineDash([]);
       const pr = hi - (cy - 8) / (plotH - 8) * (hi - lo);
       if (!isFoot && typeof ladderHighlight === "function") ladderHighlight(pr);
       g.fillStyle = dan ? "#ff0000" : "#26282c"; g.fillRect(plotW, cy - 8, labelW, 16);
@@ -2645,8 +2666,62 @@ function renderQuote(d){
     <span class="dim">${esc(d.health.status)}${d.pinned ? " · PINNED" : ""}${(d.book && (d.book.bids.length || d.book.asks.length)) ? "" : " · no depth"}</span>`;
   const scr = store.get("screen", "blue");
   const html2 = html + `<span class="spacer"></span><select class="qscreen" data-qscreen="1" title="chart screen">${[["blue", "BLUE"], ["white", "WHITE"], ["pink", "PINK"], ["custom", "CUSTOM"], ["desk", "DESK"]].map(([v, l]) => `<option value="${v}" ${scr === v ? "selected" : ""}>${l}</option>`).join("")}</select><button class="qtools ${store.get("tools", false) ? "on" : ""}" data-tools="1" title="show / hide the chart toolbar">TOOLS</button>`;
-  if (el.dataset.h !== html2){ el.dataset.h = html2; el.innerHTML = html2; }
+  const html3 = html2 + `<button class="qgear" data-gear="1" title="chart settings">⚙</button>`;
+  if (el.dataset.h !== html3){ el.dataset.h = html3; el.innerHTML = html3; }
 }
+/* ⚙ chart settings, TradingView style: colours, lines and what the chart draws. Saved per browser, applied at once */
+const CS_DEF = [
+  ["SYMBOL", [
+    ["color", "upCol", "Up candle", ""], ["color", "dnCol", "Down candle", ""], ["color", "wickCol", "Wick (light screens)", ""],
+    ["check", "wicks", "Wicks", true], ["check", "borders", "Body borders", true],
+    ["range", "body", "Body width %", 76, 20, 95, true], ["range", "wick", "Wick width px", 3, 1, 8, true]]],
+  ["STATUS LINE", [["check", "datawin", "Data window (OHLC + indicators)", true, true]]],
+  ["SCALES & LINES", [
+    ["check", "lastLine", "Last price line", true], ["select", "lastStyle", "Last price line style", "dotted", ["dotted", "dashed", "solid"]],
+    ["check", "lastLabel", "Last price label", true], ["check", "countdown", "Bar close countdown", true]]],
+  ["CANVAS", [
+    ["color", "bgCol", "Background (light screens)", ""], ["check", "gridH", "Horizontal grid lines", true], ["check", "sessions", "Session separators", true],
+    ["select", "cross", "Crosshair", "auto", ["auto", "solid", "dashed", "dotted", "off"]], ["color", "crossCol", "Crosshair colour", ""]]],
+  ["TRADING", [["check", "levels", "Your levels (pivot, 2nd entry, stop, target)", true], ["check", "orders", "Working order lines", true],
+    ["check", "chip", "2nd entry order chip", true]]],
+  ["INDICATORS", [["check", "vwap", "VWAP", true, true], ["check", "mas", "Moving averages", true, true], ["check", "matags", "MA price tags", true, true],
+    ["check", "bb", "Bollinger bands", true, true]]],
+];
+function csKey(f){ return f[0] === "range" ? f[1] : f[4] === true || (f[0] === "check" && f.length > 4 && f[4]) ? f[1] : "cs." + f[1]; }
+function csHTML(){
+  return `<div class="cs-hd"><b>CHART SETTINGS</b><span><button data-cs-reset="1" title="every chart setting back to its default">RESET</button><button data-cs-close="1">✕</button></span></div>` +
+    CS_DEF.map(([sec, rows]) => `<h5>${sec}</h5>` + rows.map(f => {
+      const key = csKey(f), v = store.get(key, f[3]);
+      const inp = f[0] === "check" ? `<input type="checkbox" data-csk="${key}" ${v ? "checked" : ""}>`
+        : f[0] === "color" ? `<input type="color" data-csk="${key}" value="${v || "#888888"}"> <button data-cs-clear="${key}" title="back to the screen's colour" ${v ? "" : "disabled"}>auto</button>`
+        : f[0] === "range" ? `<input type="range" data-csk="${key}" min="${f[4]}" max="${f[5]}" value="${v}"> <span class="dim">${v}</span>`
+        : `<select data-csk="${key}">${f[4].map(o => `<option ${o === v ? "selected" : ""}>${o}</option>`).join("")}</select>`;
+      return `<label class="cs-row"><span>${f[2]}</span><span>${inp}</span></label>`; }).join("")).join("");
+}
+function csRedraw(){ Object.values(charts).forEach(c => { try { drawChart(c); } catch (e) {} }); }
+function csOpen(btn){
+  let pop = document.getElementById("csPop");
+  if (pop){ pop.remove(); return; }
+  pop = document.createElement("div"); pop.id = "csPop"; pop.className = "pop cs-pop"; pop.innerHTML = csHTML();
+  document.body.appendChild(pop);
+  const r = btn.getBoundingClientRect();
+  pop.style.top = Math.min(r.bottom + 4, window.innerHeight - 40) + "px";
+  pop.style.left = Math.max(8, Math.min(r.right - pop.offsetWidth, window.innerWidth - pop.offsetWidth - 8)) + "px";
+  const set = el => { const k = el.dataset.csk, v = el.type === "checkbox" ? el.checked : el.type === "range" ? +el.value : el.value;
+    store.set(k, v); if (el.type === "range") el.nextElementSibling.textContent = v;
+    if (el.type === "color"){ const b = el.parentElement.querySelector("[data-cs-clear]"); if (b) b.disabled = false; }
+    csRedraw(); };
+  pop.addEventListener("input", e => { if (e.target.dataset.csk) set(e.target); });
+  pop.addEventListener("change", e => { if (e.target.dataset.csk) set(e.target); });
+  pop.addEventListener("click", e => {
+    if (e.target.dataset.csClose){ pop.remove(); return; }
+    if (e.target.dataset.csClear){ store.set(e.target.dataset.csClear, ""); pop.innerHTML = csHTML(); csRedraw(); return; }
+    if (e.target.dataset.csReset){ CS_DEF.forEach(([, rows]) => rows.forEach(f => store.set(csKey(f), f[3]))); pop.innerHTML = csHTML(); csRedraw(); }
+  });
+  const away = ev => { if (!pop.isConnected){ document.removeEventListener("mousedown", away, true); return; } if (!pop.contains(ev.target) && !ev.target.dataset.gear) pop.remove(); };
+  setTimeout(() => document.addEventListener("mousedown", away, true), 0);
+}
+P.chart.el.querySelector(".qs").addEventListener("click", e => { if (e.target.dataset.gear) csOpen(e.target); });
 let bookUserScroll = 0, bookDragging = false, bookHold = null;   // bookHold: the row you pressed {side, px, sym}
 P.chart.el.querySelector(".qs").addEventListener("change", e => { if (!e.target.dataset.qscreen) return; store.set("screen", e.target.value); P.chart.last = null; drawChart(charts.chart); renderTools(charts.chart); });
 function setChartTf(tf){ store.set("tf.chart", tf); const c = charts.chart; c.view.offset = restOffset(); c.view.follow = true; c.view.autoY = null; c.view.yLo = c.view.yHi = null; if (typeof tf === "string" && c.view.cw < 6) c.view.cw = 8; drawChart(c); renderTools(c); P.chart.last = null; renderQuote(curData()); }

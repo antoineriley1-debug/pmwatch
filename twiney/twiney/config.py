@@ -240,6 +240,9 @@ DEFAULTS = {
         "scenario": None,
     },
     "ladder": {
+        # the rows stay still while price moves inside them; they re-centre only when price comes within this many
+        # rows of the top or bottom edge (bigger = re-centres sooner)
+        "recenter_rows": 4,
         # a displayed size at or above this is "big": highlighted on the ladder, and counted every time it shows up
         # at that price. Adjustable per symbol from the LEVEL II window; that override wins over this default.
         "big_shares": 5000,

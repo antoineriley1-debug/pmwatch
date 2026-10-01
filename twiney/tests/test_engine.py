@@ -460,3 +460,23 @@ class TapeSpeedTests(unittest.TestCase):
         self.assertEqual(sum(r[0] for r in sp["series"]), 40 * 200 + 60 * 100)   # every buy inside the 90 s
         self.assertEqual(tp.speed(1095.0)["trend"], "SLOWING")                  # then nothing for 25 s
         self.assertEqual(Tape(cfg()["tape"]).speed(5.0)["trend"], "QUIET")
+
+
+class StillLadderTests(unittest.TestCase):
+    def test_rows_stay_put_while_price_moves_inside_them(self):
+        from helpers import cfg, plays, INSERT, UPDATE, BID, ASK
+        from twiney.engine import Engine
+        e = Engine(plays(), cfg())
+        e.on_connection("DEMO", "", 0.0)
+        e.apply_slot("AAA", True, 0.0)
+        def quote(bid, t):
+            for i in range(3):
+                e.on_depth("AAA", i, INSERT if t == 1.0 else UPDATE, BID, round(bid - i * 0.01, 2), 500, "", t)
+                e.on_depth("AAA", i, INSERT if t == 1.0 else UPDATE, ASK, round(bid + 0.01 + i * 0.01, 2), 500, "", t)
+        quote(10.00, 1.0)
+        top = lambda t: e._memory_ladder(e.syms["AAA"], t, [])["rows"][0]["price"]
+        first = top(1.1)
+        quote(10.03, 2.0)                                    # a few ticks: the same rows
+        self.assertEqual(top(2.1), first)
+        quote(10.10, 3.0)                                    # near the top edge: re-centred
+        self.assertNotEqual(top(3.1), first)
