@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261001-0956">
+<meta name="build" content="20261001-1034">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -596,22 +596,21 @@ body.colresizing,body.colresizing *{cursor:col-resize!important;user-select:none
 .ur-h.c .ct{color:#3ee08f} .ur-h.p .ct{color:#ff6b78} .ur-h .tm,.ur-h .k,.ur-h .dte{color:var(--dim)} .ur-h .pr{color:var(--gold);text-align:right} .ur-h .otm{text-align:right;color:#c9ced6}
 .setup .derived .gold,.kv .gold{color:var(--gold)} .kv .ok{color:var(--buy)} .kv .no{color:var(--sell)}
 
-/* CONVICTION strip over the chart and panel */
-.cvstrip{display:none;align-items:center;gap:8px;padding:2px 8px;font:11.5px var(--mono);height:20px;border-bottom:1px solid var(--line);background:#121315;white-space:nowrap;overflow:hidden}
-.cvstrip.go,.cvstrip.lean,.cvstrip.wait,.cvstrip.against,.cvstrip.out{display:flex}
-.cvstrip .cvv{font-weight:800;letter-spacing:.06em} .cvstrip .cvs{font-weight:700}
-.cvstrip.go .cvv{color:#dff5e8;background:#173b28;padding:0 6px;border-radius:2px;animation:cvpulse 1.2s ease-in-out infinite}
-.cvstrip.lean .cvv{color:var(--buy)} .cvstrip.wait .cvv{color:var(--dim)} .cvstrip.against .cvv{color:var(--sell)}
-.cvstrip.out .cvv{color:#f5dede;background:#3d1c1c;padding:0 6px;border-radius:2px;animation:cvpulse 1.2s ease-in-out infinite}
+/* CONVICTION BOARD strip over the chart and panel */
+.cvstrip{display:none;align-items:center;gap:10px;padding:2px 8px;font:11.5px var(--mono);height:20px;border-bottom:1px solid var(--line);background:#121315;white-space:nowrap;overflow:hidden}
+.cvstrip.pass,.cvstrip.watch,.cvstrip.armed,.cvstrip.ready_to_go,.cvstrip.invalidated{display:flex}
+.cvstrip .cvv{font-weight:800;letter-spacing:.06em} .cvstrip .cvs{font-weight:700;color:var(--gold)}
+.cvstrip.ready_to_go .cvv{color:#dff5e8;background:#173b28;padding:0 6px;border-radius:2px;animation:cvpulse 1.2s ease-in-out infinite}
+.cvstrip.armed .cvv{color:var(--gold)} .cvstrip.watch .cvv{color:#c9ced6} .cvstrip.pass .cvv{color:var(--dim)}
+.cvstrip.invalidated .cvv{color:#f5dede;background:#3d1c1c;padding:0 6px;border-radius:2px;animation:cvpulse 1.2s ease-in-out infinite}
 @keyframes cvpulse{0%,100%{box-shadow:0 0 0 0 rgba(255,255,255,0)}50%{box-shadow:0 0 0 3px rgba(255,255,255,.18)}}
-.cvm{position:relative;display:inline-block;width:110px;height:8px;background:linear-gradient(90deg,#3d1c1c,#2c2e33 50%,#173b28);border-radius:4px;vertical-align:middle}
-.cvm i{position:absolute;top:-3px;width:3px;height:14px;background:#fff;border-radius:1px;transform:translateX(-50%)}
-.cvm.big{width:100%;height:12px;margin-top:6px} .cvm.big i{height:18px;width:4px}
-.cvstrip .cvf b{font-weight:700;margin-right:6px} .cvstrip .cvf b.up{color:var(--buy)} .cvstrip .cvf b.dn{color:var(--sell)}
+.gates b{font-weight:700;color:var(--dim);margin-right:8px;letter-spacing:.04em} .gates b.on{color:var(--buy)} .gates.big{margin-top:5px;font:12px var(--mono)}
+i.tl{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:3px;vertical-align:middle;background:#3a4558} i.tl.green{background:var(--buy)} i.tl.yellow{background:var(--gold)} i.tl.red{background:var(--sell)}
+.cvstrip .lanes{display:inline-flex;gap:2px} .cvstrip .lanes i.tl{margin:0}
 .cvhead{padding:8px 10px;border-bottom:1px solid var(--line)} .cvhead .v{font:800 15px var(--sans);letter-spacing:.06em} .cvhead .s{font:12px var(--mono);margin-top:2px}
-.cvhead.go .v{color:var(--buy)} .cvhead.lean .v{color:#9fe0bd} .cvhead.wait .v{color:#c9ced6} .cvhead.against .v{color:#e8a3a3} .cvhead.out .v{color:var(--sell)}
-.cvrows{padding:4px 0} .cvr{display:grid;grid-template-columns:84px 36px 1fr;gap:6px;padding:3px 10px;font:11.5px var(--mono);border-left:3px solid #2c2e33;border-bottom:1px solid #161c27}
-.cvr.up{border-left-color:var(--buy)} .cvr.dn{border-left-color:var(--sell)} .cvr .n{font-weight:700;letter-spacing:.04em} .cvr .p{text-align:right;font-weight:700} .cvr.up .p{color:var(--buy)} .cvr.dn .p{color:var(--sell)} .cvr.zero .p{color:var(--dim)} .cvr .t{color:#c9ced6;font-family:var(--sans);white-space:normal}
+.cvhead.ready_to_go .v{color:var(--buy)} .cvhead.armed .v{color:var(--gold)} .cvhead.watch .v{color:#c9ced6} .cvhead.pass .v{color:var(--dim)} .cvhead.invalidated .v{color:var(--sell)}
+.cvrows{padding:4px 0} .cvr{display:grid;grid-template-columns:116px 1fr;gap:6px;padding:3px 10px;font:11.5px var(--mono);border-left:3px solid #2c2e33;border-bottom:1px solid #161c27}
+.cvr.green{border-left-color:var(--buy)} .cvr.yellow{border-left-color:var(--gold)} .cvr.red{border-left-color:var(--sell)} .cvr .n{font-weight:700;letter-spacing:.04em} .cvr .t{color:#c9ced6;font-family:var(--sans);white-space:normal}
 
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
@@ -3998,22 +3997,27 @@ function renderBigMoney(d){
   if (list.dataset.h !== html){ list.dataset.h = html; list.innerHTML = html; }
 }
 
-/* CONVICTION: the chart, the Level II, the tape, the option flow and the big money, scored for the play's side.
-   The strip over the chart is the one look; the panel shows what carries it and what is missing. */
-function cvTone(c){ return c ? c.tone : "none"; }
+/* CONVICTION BOARD: Dan's option-flow timing (the source-of-truth spec). Two gates, eight lanes, 0-100, a traffic light.
+   READY TO GO only when the chart gate AND the flow gate are green; one alone is ARMED — WAITING OTHER GATE. */
+const LANE_NAMES = {L0_DAILY_MP: "DAILY MP", L1_PIVOT: "PIVOT", L2_CONFIRM: "CONFIRM", L3_SECOND_ENTRY: "2ND ENTRY", L4_BUILD: "BUILD", L5_FLOW_SIDE: "FLOW SIDE", L6_FLOW_QUALITY: "FLOW QUALITY", L7_CORRELATION: "CORRELATION"};
 function renderConviction(d){
   const strip = document.getElementById("cvStrip"), panel = document.getElementById("cvPanel");
   const c = d && d.conviction;
+  const tone = c ? c.board_state.toLowerCase() : "none";
   if (strip){
-    const h = !c ? "" : `<span class="cvv ${c.tone}">${esc(c.verdict)}</span><span class="cvs">${c.score > 0 ? "+" : ""}${c.score}</span><span class="cvm"><i style="left:${50 + c.score / 2}%"></i></span><span class="cvf">${c.factors.filter(f => f.pts !== 0).sort((a, b) => Math.abs(b.pts) - Math.abs(a.pts)).slice(0, 3).map(f => `<b class="${f.pts > 0 ? "up" : "dn"}">${f.pts > 0 ? "▲" : "▼"} ${esc(f.name)}</b>`).join(" ")}${c.missing.length ? ` <span class="dim">missing: ${esc(c.missing.join(", "))}</span>` : ""}</span>`;
-    if (strip.dataset.h !== h){ strip.dataset.h = h; strip.innerHTML = h; strip.className = "cvstrip " + (c ? c.tone : "none"); }
+    const dot = l => `<i class="tl ${l.toLowerCase()}"></i>`;
+    const h = !c ? "" : `<span class="cvv">${esc(c.label)}</span><span class="cvs">${c.score}</span><span class="gates"><b class="${c.chart_gate.ok ? "on" : ""}">CHART ${c.chart_gate.ok ? "✓" : "✗"}</b><b class="${c.flow_gate.ok ? "on" : ""}">FLOW ${c.flow_gate.ok ? "✓" : "✗"}</b></span><span class="lanes">${c.lanes.map(l => `<span title="${esc(LANE_NAMES[l.id] + ": " + l.text)}">${dot(l.light)}</span>`).join("")}</span>${c.max_pain && c.max_pain.options ? `<span class="dim">5m stop ${px(c.max_pain.options)}</span>` : ""}`;
+    if (strip.dataset.h !== h){ strip.dataset.h = h; strip.innerHTML = h; strip.className = "cvstrip " + tone; }
   }
   if (!panel) return;
   if (!c){ panelHTML("conviction", `<div class="dim" style="padding:8px">${NA}</div>`); return; }
-  const rows = c.factors.map(f => `<div class="cvr ${f.pts > 0 ? "up" : f.pts < 0 ? "dn" : "zero"}"><span class="n">${esc(f.name)}</span><span class="p">${f.pts > 0 ? "+" : ""}${f.pts}</span><span class="t">${esc(f.text)}</span></div>`).join("");
-  const html = `<div class="cvhead ${c.tone}"><div class="v">${esc(c.verdict)}</div><div class="s">${c.score > 0 ? "+" : ""}${c.score} <span class="dim">for the ${esc(c.side)}${c.in_position ? " · you are in it" : ""}</span></div><div class="cvm big"><i style="left:${50 + c.score / 2}%"></i></div></div>
+  const rows = c.lanes.map(l => `<div class="cvr ${l.light.toLowerCase()}"><span class="n"><i class="tl ${l.light.toLowerCase()}"></i>${esc(LANE_NAMES[l.id])}</span><span class="t">${esc(l.text)}</span></div>`).join("");
+  const html = `<div class="cvhead ${tone}"><div class="v">${esc(c.label)}</div>
+    <div class="s">${c.score} <span class="dim">/ 100 · ${esc(c.side_bias.toLowerCase())}${c.reasons && c.reasons.length ? " · " + esc(c.reasons.join(", ")) : ""}</span></div>
+    <div class="gates big"><b class="${c.chart_gate.ok ? "on" : ""}">CHART GATE ${c.chart_gate.ok ? "GREEN" : "not yet"}</b><b class="${c.flow_gate.ok ? "on" : ""}">FLOW GATE ${c.flow_gate.ok ? "GREEN" : "not yet"}</b></div>
+    ${c.max_pain ? `<div class="dim" style="font-size:10.5px;margin-top:3px">Max pain: prior 5m ${c.side_bias === "LONG" ? "low" : "high"} ${px(c.max_pain.options)} (options) · process stop ${px(c.max_pain.equity)} (equity)</div>` : ""}</div>
     <div class="cvrows">${rows}</div>
-    <div class="dim" style="padding:4px 8px;font-size:10.5px">+60 = ready to go · −60 = going the other way. Chart 25 · Level II 20 · tape 15 · option flow 25 · urgent 10 · big money 6. Hover any line for the full read.</div>`;
+    <div class="dim" style="padding:4px 8px;font-size:10.5px">Daily MP 20 · pivot + confirm 20 · 2nd entry 20 · premium ≥ $100K 10 · weeklies 10 · out of the money 10 · repeats 10 · sweeps +5. Flow supports the pivot; it never replaces the second entry.</div>`;
   panelHTML("conviction", html);
 }
 

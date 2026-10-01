@@ -231,6 +231,16 @@ DEFAULTS = {
         # least dough_min_minutes separate minutes inside dough_window_minutes, the last of it inside
         # dough_fresh_minutes. Off = flow is shown but never holds the grade
         "no_flow_no_dough": True,
+        # CONVICTION BOARD (Dan's option-flow timing, from the source-of-truth spec): the flow gate
+        "of_premium_min": 100000,      # R2: premium meaningful, at least ~$100K (one print, or the cluster stacked)
+        "of_dte_green": 10,            # R3: weeklies / next week = green
+        "of_dte_max": 21,              # R3: still short-term; past this, months out is not the same trade
+        "of_otm_min_pct": 1.0,         # R4: clearly out of the money; nearer the spot is not a directional bet
+        "of_repeat_min": 2,            # R5: multiple repeat buyers on the same expiry series
+        "of_fresh_minutes": 30,        # a cluster with nothing new for this long is FADING
+        "of_hedge_updays": 3,          # R9: near-spot puts after this many up days = a hedge
+        "of_session_minutes": 390,     # the prints the board looks back over (the session)
+        "of_scan_cooldown_minutes": 30,  # market-wide FLOW WATCH (flow alerts on ALL): one call per ticker and side
         "dough_window_minutes": 30,
         "dough_min_dollars": 300000,
         "dough_min_minutes": 3,

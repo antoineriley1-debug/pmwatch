@@ -129,7 +129,7 @@ class FlowTests(unittest.TestCase):
     def test_reload_then_cleaned_up_through_engine(self):
         e = self._slotted()
         got = []
-        e.listeners.append(got.append)
+        e.listeners.append(lambda a: got.append(a) if a.get("role") != "conviction" else None)   # the board's calls are not reload calls
         t = 3.0  # after resync grace
         for refill in range(3):
             e.on_print("AAA", 10.00, 700, "NSDQ", t)

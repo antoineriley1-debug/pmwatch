@@ -383,13 +383,27 @@ FLOW CONFIRMED / FLOW FADED / FLOW AGAINST. A READY setup is held at WATCH until
 In practice, the option clusters that come before a move are the sustained ones with size; a few prints and done
 rarely lead anywhere, as in the market.
 
-## CONVICTION
+## CONVICTION BOARD
 
-Everything Dan watches at once, scored for the play's side and read in one look: the chart (PS60 structure, 25),
-the Level II (a proven reload buyer under a long / seller over a short, 20; one in the way, −20), the tape (who is
-paying up and whether it is speeding up, 15), the option flow (NO FLOW, NO DOUGH, 25; urgent contracts, 10) and
-the big money of the last 30 days (6). Through your stop is −30. The strip over the chart shows the verdict
-(THIS THING IS READY TO GO at +60 · LEANING YOUR WAY · MIXED, WAIT FOR MORE · TURNING AGAINST YOU · IT'S GOING THE
-OTHER WAY at −60), the score, the three biggest factors and what is still missing; the CONVICTION panel shows every
-line. READY TO GO and AGAINST YOU are said out loud once each, with the three reasons, and logged.
+Dan Shapiro's option-flow timing, encoded from the source-of-truth spec in `docs/PS60_OPTION_FLOW_CONVICTION_BOARD.md`
+(twelve Access A Trader videos plus the locked notes; every rule carries its code R1–R17 from that document's §8).
+The law (R8): flow SUPPORTS the pivot thesis; it never replaces Daily room → pivot → confirm → second entry → build → MP.
 
+- **Two gates.** The chart gate: Daily MP present and CLEAR, pivot valid, confirm, second entry, build (or inside the
+  two-minute grace) with no reload trap on the Level II (R12). The flow gate: a cluster on the play's side bought at the
+  ask with premium ≥ $100K (R2, one print or stacked), weeklies / near-term expiry (R3, ≤10 days green, ≤21 yellow,
+  further out is not the same trade), clearly out of the money and not a hedge (R4, R9: near-spot puts after a multi-day
+  run up), repeat buyers on one expiry series (R5), still fresh. Sweeps add urgency (V3).
+- **READY TO GO only when both gates are green.** One alone is **ARMED — WAITING OTHER GATE**; flow with the chart not
+  yet confirmed is WATCH (preparation, R14, never an entry, R13). Opposing flow or a hedge-only cluster is PASS.
+  ARMED / READY that loses the confirm, meets a reload seller (long) / buyer (short), gets opposing flow or loses its
+  MP is **INVALIDATED**.
+- **Eight lanes** with traffic lights (Daily MP, pivot, confirm, 2nd entry, build, flow side, flow quality,
+  correlation), a **0–100 score** (Daily MP 20 · pivot + confirm 20 · 2nd entry 20 · premium 10 · weeklies 10 · OTM 10
+  · repeats 10 · sweeps +5) and the options stop: the prior 5-minute low (long) / high (short), never breakeven (R11).
+- **Where.** The strip over the chart (state, score, both gates, the eight lights, the 5m stop) and the CONVICTION
+  panel with every lane's words. Alerts in the spec's copy on WATCH / ARMED / READY TO GO / INVALIDATED (§5.4),
+  READY and INVALIDATED spoken; ARMED, READY and INVALIDATED in the trade log. The PS60 grade's READY is held at WATCH
+  until the flow gate is green (`flow.no_flow_no_dough`).
+- **The whole market.** With flow alerts on ALL, any ticker whose flow passes the flow gate gets a FLOW WATCH (the
+  scanner Dan runs): the flow found it, the chart work is still to do. Thresholds live in SETTINGS → Flow (`of_*`).
