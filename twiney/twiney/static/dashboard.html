@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261001-2041">
+<meta name="build" content="20261001-2046">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -1455,6 +1455,7 @@ function chartMenu(p, v, x, y, price){
     <button class="bsell" data-do="sell" ${on ? "" : "disabled"}>SELL ${sz(t.default_shares)} limit @ ${px(price)}</button>
     ${d.position ? `<button class="bflat" data-do="flat" ${on ? "" : "disabled"}>Flatten ${esc(d.symbol)}</button>` : ""}
     ${d.orders.length ? `<button data-do="cxl">Cancel all (${d.orders.length})</button>` : ""}
+    <button data-do="lvl" data-role="trigger" class="blvl">PIVOT here ${px(price)}${d.play && d.play.trigger ? ` (now ${px(d.play.trigger)})` : ""}</button>
     <button data-do="lvl" data-role="second_entry" class="blvl se">2ND ENTRY here ${px(price)} · the entry order</button>
     <button data-do="lvl" data-role="target" class="blvl">TARGET here ${px(price)}</button>
     <button data-do="lvl" data-role="stop" class="blvl">STOP here ${px(price)}</button>
@@ -1472,8 +1473,10 @@ function chartMenu(p, v, x, y, price){
     else if (b.dataset.do === "sell") sendOrder(d.symbol, "SELL", price);
     else if (b.dataset.do === "flat") flatten(d.symbol);
     else if (b.dataset.do === "cxl") cancelAll(d.symbol);
-    else if (b.dataset.do === "lvl"){ const role = b.dataset.role, names = {second_entry: "2nd entry", target: "target", stop: "stop"};
-      post("/api/level", {symbol: d.symbol, role, price}).then(out => { toast(out.ok ? `${d.symbol} ${names[role]} ${px(price)}` + (role === "second_entry" ? " — entry order going in" : "") : "Could not set the " + names[role], out.ok); if (out.ok) poll(true); }); }
+    else if (b.dataset.do === "lvl"){ const role = b.dataset.role, names = {trigger: "pivot", second_entry: "2nd entry", target: "target", stop: "stop"};
+      const cur = d.play && d.play.trigger;
+      if (role === "trigger" && cur && Math.abs(cur - price) > 1e-9 && !confirm(`Move the ${d.symbol} pivot from ${px(cur)} to ${px(price)}?`)) return;
+      post("/api/level", {symbol: d.symbol, role, price, confirm: role === "trigger"}).then(out => { toast(out.ok ? `${d.symbol} ${names[role]} ${px(price)}` + (role === "second_entry" ? " — entry order going in" : "") : "Could not set the " + names[role], out.ok); if (out.ok) poll(true); }); }
     else if (b.dataset.do === "alert") addAlert({symbol: d.symbol, kind: "price", price, when: "hit", repeat: false});
     else if (b.dataset.do === "rmlevel"){ const role = b.dataset.role, lp = +b.dataset.lp;
       (role === "extra" ? post("/api/level", {symbol: d.symbol, price: lp, on: false, role: "extra"}) : post("/api/level", {symbol: d.symbol, role, price: null}))

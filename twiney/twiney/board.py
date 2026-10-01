@@ -150,10 +150,14 @@ def chart_gate(play, price, se, mp, reloaders, tape, now, cfg):
         lanes["L0_DAILY_MP"] = (G, f"Daily room ${mp['dollars']:.2f} to your target (no ATR to judge it against)")
     elif v == "THIN":
         lanes["L0_DAILY_MP"] = (Y, f"Daily room ${mp['dollars']:.2f} is THIN against a ${mp['atr']:.2f} ATR — PASS by the MP law")
+    elif not play.get("trigger") and (play.get("target") or play.get("mp")):
+        lanes["L0_DAILY_MP"] = (R, f"target {_px(play.get('target') or play.get('mp'))} is on the chart but the room is measured from the pivot — mark the pivot")
+    elif play.get("trigger"):
+        lanes["L0_DAILY_MP"] = (R, "no target on the chart — right-click the chart: TARGET here (the room runs pivot → target)")
     else:
-        lanes["L0_DAILY_MP"] = (R, "no measured potential on the board — set the target in PLAY SETUP")
+        lanes["L0_DAILY_MP"] = (R, "no pivot and no target yet — right-click the chart to put them on")
     pivot = play.get("trigger")
-    lanes["L1_PIVOT"] = (G, f"pivot {_px(pivot)}") if pivot else (R, "no pivot marked")
+    lanes["L1_PIVOT"] = (G, f"pivot {_px(pivot)}") if pivot else (R, "no pivot marked — right-click the chart: PIVOT here (or press L, then click)")
     stt = (se or {}).get("state")
     fails = (se or {}).get("fails") or 0
     through = pivot and price and (price > pivot if long_ else price < pivot)
