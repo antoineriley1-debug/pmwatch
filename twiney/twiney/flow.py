@@ -608,6 +608,7 @@ class SimFlow:
         self.next_t = {}
         self.cluster = {}      # symbol -> {"cp", "until", "next", "strike", "dte"}
         self.next_cluster = 0.0
+        self.hist = {}         # symbol -> deque of (t, spot): its own recent move drives reactive flow
 
     def _spot(self, sym):
         st = self.engine.syms.get(sym)
@@ -625,6 +626,49 @@ class SimFlow:
                 "dte": float(dte), "size": int(size), "price": price, "premium": round(price * 100 * size, 2), "spot": round(spot, 2),
                 "side": "ask" if at_ask else self.rng.choice(("bid", "mid")), "kind": kind,
                 "otm_pct": round(((strike - spot) if cp == "C" else (spot - strike)) / spot * 100.0, 2), "oi": None, "iv": None}
+
+    REACT_WINDOW = 90.0       # seconds of the stock's own move the reactive flow looks at
+    REACT_MOVE = 0.0025       # a 0.25% move in that window starts it; it grows with the move
+
+    def _reactive(self, t):
+        """Flow that FOLLOWS the stock, the bigger share of real option flow: a stock dropping hard on its own gets
+        put buying at the ask (and calls sold at the bid), a rally gets calls bought and puts sold. Near the money
+        and short-dated, more and bigger the harder it moves; a sharp move brings out-of-the-money sweeps too."""
+        rng = self.rng
+        for sym in self.symbols:
+            spot = self._spot(sym)
+            if not spot:
+                continue
+            h = self.hist.setdefault(sym, deque())
+            h.append((t, spot))
+            while h and t - h[0][0] > self.REACT_WINDOW * 2:
+                h.popleft()
+            old = next((p for (tt, p) in h if t - tt <= self.REACT_WINDOW), None)
+            if not old:
+                continue
+            r = math.log(spot / old)
+            k = abs(r) / self.REACT_MOVE
+            if k < 1.0 or rng.random() > min(0.5, 0.04 * k):
+                continue
+            down = r < 0
+            step = 5.0 if spot > 1000 else 1.0 if spot > 50 else 0.5 if spot > 10 else 0.25
+            sharp = k >= 2.4 and rng.random() < 0.45
+            if sharp:          # chasing it: short-dated, out of the money, swept at the ask
+                cp, at_ask, otm, dte, kind = ("P" if down else "C"), True, rng.uniform(2.5, 7.0), rng.choice((1, 2, 5)), "sweep"
+            else:
+                roll = rng.random()
+                if roll < 0.65:           # buying the move's side (puts on a dump, calls on a rip): most of it
+                    cp, at_ask, otm, dte, kind = ("P" if down else "C"), True, rng.uniform(-0.5, 2.5), rng.choice((1, 2, 5, 9, 16)), rng.choice(("trade", "sweep"))
+                elif roll < 0.85:         # selling the other side (calls hit at the bid on a dump)
+                    cp, at_ask, otm, dte, kind = ("C" if down else "P"), False, rng.uniform(0.0, 3.0), rng.choice((2, 5, 9, 16)), "trade"
+                else:                     # the contrarians: dip buyers taking calls into a dump, fading a rip with puts
+                    cp, at_ask, otm, dte, kind = ("C" if down else "P"), True, rng.uniform(0.5, 4.0), rng.choice((2, 5, 9, 16, 30)), "trade"
+            strike = round(round(spot * (1 + otm / 100.0 * (1 if cp == "C" else -1)) / step) * step, 2)
+            size = int(rng.choice((25, 50, 100, 200, 400, 800, 1500)) * min(4.0, 0.6 + 0.4 * k))
+            pr = self._print(sym, spot, cp, strike, dte, size, at_ask, kind, t)
+            if not at_ask:
+                pr["side"] = "bid"
+            self.engine.on_flow(pr, t)
 
     def step(self, t):
         rng = self.rng
@@ -646,10 +690,12 @@ class SimFlow:
                 cp = rng.choice(("C", "P"))
                 self.cluster[sym] = {"cp": cp, "until": t + rng.uniform(120, 420), "next": t,
                                      "otm": rng.uniform(3.5, 9.0), "dte": rng.choice((2, 5, 9, 16, 23))}
-                # about half the time the flow was early: the stock moves their way some minutes later
+                # now and then the flow was early: the stock moves their way some minutes later. Kept to about a third:
+                # most real out-of-the-money buying is hedges, spreads and guesses, not foreknowledge
                 pushes = getattr(self.market, "pushes", None)
-                if pushes is not None and sym in getattr(self.market, "state", {}) and rng.random() < 0.5:
+                if pushes is not None and sym in getattr(self.market, "state", {}) and rng.random() < 0.3:
                     pushes[sym] = (t + rng.uniform(300, 1200), 1 if cp == "C" else -1)
+        self._reactive(t)
         whole = getattr(self.engine, "flow_scope", "all") != "watchlist"
         for sym in self.symbols + (list(self.others) if whole else []):
             spot = self._spot(sym)

@@ -210,6 +210,7 @@ class Engine:
         self.urg = {}                                # (symbol, strike, cp, expiry) -> prints bought at the ask, recent
         self.urg_said = {}
         self.urgent_keys = set()
+        self.urg_hist = deque(maxlen=6000)          # every urgent-type print of the session (the ticker search)
         self.equity_status = {"last_ok": None, "last_print": None, "detail": ""}
         self.marks_list = []    # markers seen while replaying a recording
         self.notes_list = []    # journal notes seen while replaying
@@ -1761,6 +1762,10 @@ class Engine:
         while rows and t - rows[0]["t"] > win:
             rows.popleft()
         rows.append({"t": t, "prem": p.get("premium") or 0.0, "kind": p.get("kind", "trade"), "otm": otm, "dte": p["dte"], "spot": p.get("spot")})
+        # every urgent-type print of the session, for the ticker search (what came in earlier, not just the last 10 min)
+        self.urg_hist.append({"t": t, "symbol": p["symbol"], "strike": p["strike"], "cp": p["cp"], "expiry": p.get("expiry") or "",
+                              "dte": p["dte"], "otm_pct": round(otm, 2), "premium": round(p.get("premium") or 0.0),
+                              "size": p.get("size"), "price": p.get("price"), "kind": p.get("kind", "trade"), "spot": p.get("spot")})
         if len(self.urg) > 3000:                   # the whole market all day: keep it bounded
             for k in [k for k, v in self.urg.items() if not v or t - v[-1]["t"] > win][:500]:
                 self.urg.pop(k, None)
@@ -1802,6 +1807,28 @@ class Engine:
             item = {"t": t, "symbol": p["symbol"], "kind": "urgent", "text": f"{p['symbol']}: {words}", "key": alert["key"]}
             self.voice.appendleft(item)
             self._rec(dict(item, ev="voice"))
+
+    def urgency_for(self, symbol, t=None, limit=400):
+        """The URGENT FLOW search: one ticker's contracts being chased right now (all of them) and every urgent-type
+        print of the session, newest first, each marked if its contract was CALLED urgent."""
+        symbol = str(symbol or "").strip().upper()
+        with self.lock:
+            t = t if t is not None else self.last_t
+            live = []
+            for key, rows in list(self.urg.items()):
+                if key[0] != symbol:
+                    continue
+                u = self._urg_stats(key, rows, t)
+                if u:
+                    u["hot"] = key in self.urgent_keys
+                    live.append(u)
+            live.sort(key=lambda u: -u["score"])
+            called = {k for k in self.urg_said if k[0] == symbol}
+            hist = [dict(h, called=(h["symbol"], h["strike"], h["cp"], h["expiry"]) in called)
+                    for h in reversed(self.urg_hist) if h["symbol"] == symbol][:limit]
+            return {"symbol": symbol, "live": live, "history": hist,
+                    "calls": round(sum(h["premium"] for h in hist if h["cp"] == "C")),
+                    "puts": round(sum(h["premium"] for h in hist if h["cp"] == "P"))}
 
     def _urgency_list(self, t, limit=30):
         out = []

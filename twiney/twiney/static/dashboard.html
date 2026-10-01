@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261001-0919">
+<meta name="build" content="20261001-0927">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -587,6 +587,14 @@ body.colresizing,body.colresizing *{cursor:col-resize!important;user-select:none
 .bm .tx{grid-column:1/-1;color:#c9ced6;font-family:var(--sans);font-size:11.5px}
 .bm .st{background:none!important;border:0!important;padding:0!important;margin:0!important;box-shadow:none!important}
 
+.fa-sub .ur-search{display:inline-flex;gap:3px;align-items:center;margin-left:auto}
+.fa-sub .ur-search input{width:64px;text-transform:uppercase;font:600 11px var(--mono);padding:1px 4px}
+.fa-sub .ur-search button{padding:0 5px;font-size:10px}
+.ur-head{padding:5px 8px;font-size:11.5px;border-bottom:1px solid var(--line)} .ur-head .c{color:#3ee08f} .ur-head .p{color:#ff6b78}
+.ur-sec{padding:4px 8px 2px;font-size:9.5px;letter-spacing:.14em;color:var(--gold)}
+.ur-h{display:grid;grid-template-columns:44px 1fr 30px 56px 44px 44px 14px;gap:4px;padding:2px 8px;font:11px var(--mono);border-bottom:1px solid #161c27;align-items:center}
+.ur-h.c .ct{color:#3ee08f} .ur-h.p .ct{color:#ff6b78} .ur-h .tm,.ur-h .k,.ur-h .dte{color:var(--dim)} .ur-h .pr{color:var(--gold);text-align:right} .ur-h .otm{text-align:right;color:#c9ced6}
+
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
   --buy:#3fb56f;--sell:#d9534f;--gold:#e3a83a;--cyan:#5aa9d6;--violet:#a48bd6;--warn:#d9a441;
@@ -970,7 +978,7 @@ body.resizing .zbody{pointer-events:none}
       <button id="alAdd">ADD ALERT</button><span class="dim" id="alMsg"></span></div><div id="alList"></div></div></div>
   <div class="pnl" data-p="bigmoney"><div class="pc"><div class="bm-hd"><span><b id="bmSym"></b> BIG OPTION MONEY · last 30 days</span><span class="dim">how the people who paid are doing now · hover for the numbers</span></div><div class="bm-list" id="bmList"></div></div></div>
   <div class="pnl fa" data-p="urgency"><div class="fa-top"><div class="fa-tabs"><span class="off" data-go="flow">OPTION FLOW</span><span class="on">URGENT FLOW</span></div>
-    <div class="fa-sub"><span title="short-dated, out-of-the-money contracts being bought at the ask again and again, ranked by dollars per minute, sweeps and whether it is speeding up">Short-dated · out of the money · bought in a hurry</span><label><input type="checkbox" id="urMine"> Watchlist</label><label><input type="checkbox" id="urHot"> Called only</label></div></div><div class="pc"><div id="urList"></div></div></div>
+    <div class="fa-sub"><span title="short-dated, out-of-the-money contracts being bought at the ask again and again, ranked by dollars per minute, sweeps and whether it is speeding up">Short-dated · out of the money · bought in a hurry</span><label><input type="checkbox" id="urMine"> Watchlist</label><label><input type="checkbox" id="urHot"> Called only</label><span class="ur-search"><input id="urQ" placeholder="TICKER" maxlength="8" spellcheck="false" title="one ticker: everything chased on it right now, and everything that came in earlier this session"><button id="urThis" title="the ticker on your chart">CHART</button><button id="urClr" title="back to the whole market">✕</button></span></div></div><div class="pc"><div id="urList"></div></div></div>
   <div class="pnl fa" data-p="eqflow"><div class="fa-top"><div class="fa-tabs"><span class="off" data-go="flow" title="option flow">OPTION FLOW</span><span class="on">EQUITY FLOW</span></div>
     <div class="fa-sub"><span>Big stock prints · lit and dark</span><label><input type="checkbox" id="eqDark"> Dark pool only</label><label><input type="checkbox" id="eqMine"> Watchlist</label><span class="src" id="eqSrc"></span></div></div><div class="pc"><div id="eqList"></div></div></div>
   <div class="pnl" data-p="calls"><div class="pc" style="padding:6px"><div id="feedBody"></div></div></div>
@@ -1704,8 +1712,12 @@ function barCloseIn(tf, isDaily){
   if (!isDaily){ const span = tf * 60, b = bucketFn(tf)(now); return fmt(b + span - now); }
   const eo = eoDay(now), local = now + eo, day = Math.floor(local / 86400) * 86400, open = day + 34200, close = day + 57600;
   const m = /^(\d*)([DWM])$/.exec(String(tf)); if (m && m[2] !== "D") return null;
-  if (local < open || local >= close) return "closed";
-  return fmt(close - local);
+  const dow = new Date(day * 1000).getUTCDay();                       // 0 Sun … 6 Sat (New York day)
+  if (dow >= 1 && dow <= 5 && local >= open && local < close) return fmt(close - local);
+  // outside the session: how long until the next weekday open (9:30 New York)
+  let next = local < open && dow >= 1 && dow <= 5 ? open : open + 86400;
+  for (let i = 0; i < 7; i++){ const d = new Date((next - 34200) * 1000).getUTCDay(); if (d >= 1 && d <= 5) break; next += 86400; }
+  return "opens " + fmt(next - local);
 }
 function aggBars(bars, tf){
   if (tf === 1) return bars.map(b => b.slice());
@@ -3422,10 +3434,22 @@ function renderEquity(s){
 }
 ["eqDark", "eqMine"].forEach(id => document.getElementById(id).addEventListener("input", () => renderEquity(state)));
 /* ---------- urgent flow: short-dated OTM contracts getting pounded */
+/* URGENT FLOW search: one ticker's chased contracts live, plus everything that came in on it earlier this session */
+const UR = {q: "", data: null, at: 0, busy: false};
+async function urFetch(force){
+  if (!UR.q || UR.busy || (!force && Date.now() - UR.at < 2000)) return;
+  UR.busy = true;
+  try { const r = await fetch("/api/urgency?symbol=" + encodeURIComponent(UR.q)); UR.data = await r.json(); UR.at = Date.now(); }
+  catch (e) {} finally { UR.busy = false; }
+  renderUrgency(state);
+}
+function urSet(q){ UR.q = (q || "").trim().toUpperCase(); UR.data = null; const i = document.getElementById("urQ"); if (i && i.value.toUpperCase() !== UR.q) i.value = UR.q; urFetch(true); renderUrgency(state); }
 function renderUrgency(s){
   const el = document.getElementById("urList"); if (!el) return;
   const mine = document.getElementById("urMine").checked, hotOnly = document.getElementById("urHot").checked;
-  const rows = (s.urgency || []).filter(u => (!mine || (s.symbols || []).includes(u.symbol)) && (!hotOnly || u.hot));
+  if (UR.q) urFetch(false);
+  const rows = UR.q ? ((UR.data && UR.data.symbol === UR.q && UR.data.live) || []).filter(u => !hotOnly || u.hot)
+                    : (s.urgency || []).filter(u => (!mine || (s.symbols || []).includes(u.symbol)) && (!hotOnly || u.hot));
   const strike = k => Number.isInteger(+k) ? String(k) : (+k).toFixed(2).replace(/\.?0+$/, "");
   const exp = e => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(e || ""); return m ? `${m[2]}/${m[3]}` : (e || NA); };
   const top = rows.length ? rows[0].score : 1;
@@ -3433,9 +3457,22 @@ function renderUrgency(s){
       <div class="tm">${nyHM(u.last_t)} <span class="dim">· since ${nyHM(u.first_t)}</span>${u.hot ? ` <span class="urg">⚡ URGENT</span>` : ""}${u.accel ? ` <span class="acc">▲ SPEEDING UP</span>` : ""}</div>
       <div class="top"><span class="tk">${esc(u.symbol)}</span><span class="prem">${kfmt$(u.dollars)}</span><span class="dots a">${u.sweeps ? "<i></i><i></i>" : ""}</span><span class="bar"><i style="width:${Math.max(4, 100 * u.score / top).toFixed(0)}%"></i></span></div>
       <div class="cols"><span><i>EXP</i>${exp(u.expiry)}${u.dte != null ? ` (${Math.round(u.dte)}d)` : ""}</span><span><i>STRIKE</i>${strike(u.strike)}</span><span><i>C/P</i>${u.cp}</span><span><i>OTM</i>${u.otm_pct != null ? u.otm_pct.toFixed(1) + "%" : NA}</span><span><i>PRINTS</i>${u.prints}${u.sweeps ? ` <b class="dim">${u.sweeps} sw</b>` : ""}</span><span><i>PACE</i>${kfmt$(u.pace)}/m</span>${u.spot != null ? `<span><i>SPOT</i>${(+u.spot).toFixed(2)}</span>` : ""}</div></div>`).join("")
-    : `<div class="dim" style="padding:10px">Nothing short-dated and out of the money is being chased right now.</div>`;
-  if (el.dataset.h !== html){ el.dataset.h = html; el.innerHTML = html; }
+    : `<div class="dim" style="padding:10px">${UR.q ? `Nothing on ${esc(UR.q)} being chased right now.` : "Nothing short-dated and out of the money is being chased right now."}</div>`;
+  let full = html;
+  if (UR.q){
+    const D = UR.data && UR.data.symbol === UR.q ? UR.data : null, hist = D ? D.history : [];
+    const head = `<div class="ur-head"><b>${esc(UR.q)}</b> <span class="dim">urgent-type flow this session:</span> <span class="c">calls ${kfmt$(D ? D.calls : 0)}</span> · <span class="p">puts ${kfmt$(D ? D.puts : 0)}</span> · ${hist.length} prints${D ? "" : ' <span class="dim">loading…</span>'}</div><div class="ur-sec">RIGHT NOW</div>`;
+    const earlier = hist.length ? hist.map(h => `<div class="ur-h ${h.cp === "C" ? "c" : "p"}" title="${esc(`${h.size || "?"} contracts @ ${h.price != null ? (+h.price).toFixed(2) : "?"} · stock ${h.spot != null ? (+h.spot).toFixed(2) : "?"} · ${h.otm_pct}% out of the money · ${h.kind}${h.called ? " · this contract was CALLED urgent" : ""}`)}">
+        <span class="tm">${nyHM(h.t)}</span><span class="ct">${flowStrike(h.strike)}${h.cp} ${esc((h.expiry || "").slice(5))}</span><span class="dte">${Math.round(h.dte)}d</span><span class="pr">${kfmt$(h.premium)}</span><span class="k">${esc(h.kind)}</span><span class="otm">${h.otm_pct}%</span>${h.called ? `<span class="urg">⚡</span>` : "<span></span>"}</div>`).join("")
+      : `<div class="dim" style="padding:6px 10px">Nothing urgent-type on ${esc(UR.q)} yet this session.</div>`;
+    full = head + html + `<div class="ur-sec">EARLIER · newest first</div>` + earlier;
+  }
+  if (el.dataset.h !== full){ el.dataset.h = full; el.innerHTML = full; }
 }
+document.getElementById("urQ").addEventListener("keydown", e => { e.stopPropagation(); if (e.key === "Enter") urSet(e.target.value); if (e.key === "Escape"){ urSet(""); e.target.blur(); } });
+document.getElementById("urQ").addEventListener("input", e => { const v = e.target.value.trim(); if (!v) urSet(""); else if (v.length >= 1){ clearTimeout(UR.tm); UR.tm = setTimeout(() => urSet(v), 350); } });
+document.getElementById("urThis").addEventListener("click", () => urSet(curSym || ""));
+document.getElementById("urClr").addEventListener("click", () => urSet(""));
 ["urMine", "urHot"].forEach(id => document.getElementById(id).addEventListener("input", () => renderUrgency(state)));
 document.querySelectorAll(".fa-tabs [data-go]").forEach(t => t.addEventListener("click", () => showPanel(t.dataset.go)));
 P.calls.el.addEventListener("change", e => { if (e.target.id === "callsAll"){ store.set("callsAll", e.target.checked); poll(true); } });

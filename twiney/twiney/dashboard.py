@@ -135,6 +135,12 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                 snap = engine.snapshot(clock(), extra, full)
                 snap["build"] = BUILD
                 self._send(200, json.dumps(snap, default=str), "application/json")
+            elif path == "/api/urgency":
+                from urllib.parse import parse_qs, urlparse
+                q = parse_qs(urlparse(self.path).query)
+                sym = (q.get("symbol", [""])[0] or "").strip().upper()[:10]
+                out = engine.urgency_for(sym, clock()) if sym else {"symbol": "", "live": [], "history": []}
+                self._send(200, json.dumps(out, default=str), "application/json")
             elif path.startswith("/recordings/shots/") and rec_dir:
                 name = os.path.basename(path)
                 fp = os.path.join(rec_dir, "shots", name)

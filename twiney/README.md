@@ -361,3 +361,13 @@ price paid), and the stock now — or its close on expiry day once the contract 
 BUYERS UNDERWATER / EXPIRED WORTHLESS (and the sellers' side for prints sold at the bid). Open contracts are counted
 at their intrinsic value only ("worth at least"): time value needs live option quotes. The BIG MONEY 30D panel lists
 them for the symbol on screen; the chart marks the biggest open strikes (cogwheel → TRADING to hide them).
+
+## Practice option flow (demo)
+
+Modelled on how real flow behaves: most of it FOLLOWS price. A watchlist stock moving hard on its own (0.25%+ in
+90 s) draws put buying and call selling on a drop (calls bought, puts sold on a rally), near the money and
+short-dated, more and bigger the harder it moves, with out-of-the-money sweeps on sharp moves and a minority of
+contrarian dip buyers. Separate quiet clusters of out-of-the-money buying come before a move only about a third of
+the time. URGENT FLOW has a ticker search: that name's contracts being chased now and everything urgent-type that came
+in on it this session. The daily chart counts down to the close in session and to the next open outside it.
+

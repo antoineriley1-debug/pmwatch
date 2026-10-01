@@ -203,3 +203,57 @@ class UrgentFlowTests(unittest.TestCase):
         e.set_flow_alerts("all", 41.0)
         e.on_flow(self._p("ZZZZ", 50, 150000, 42.0), 42.0)
         self.assertEqual(len([g for g in got if g["label"] == "URGENT FLOW"]), 1)
+
+
+class ReactiveSimFlowTests(unittest.TestCase):
+    """Practice flow follows the stock: a hard drop brings put buying, a flat tape does not."""
+
+    def _run(self, move):
+        from helpers import cfg, plays
+        from twiney.engine import Engine
+        from twiney.flow import SimFlow
+        e = Engine(plays(), cfg())
+        sf = SimFlow(e, ["AAA"], seed=7)
+        sf.next_cluster = 1e18                              # no random clusters: only what the move causes
+        sf.next_t["AAA"] = 1e18                             # and no ordinary trickle
+        sf.others = {"ZZZ": [1.0, 0.0]}                     # nothing else in the market
+        e.flow_scope = "watchlist"
+        t, px = 1000.0, 10.0
+        for i in range(480):                                # two minutes, four steps a second
+            px = 10.0 * (1 + move * i / 480)
+            e.on_l1("AAA", "last", round(px, 2), t)
+            sf.step(t)
+            t += 0.25
+        return [p for p in e.flow.recent if p["symbol"] == "AAA"]
+
+    def test_a_drop_brings_put_buying(self):
+        prints = self._run(-0.012)                          # -1.2% in two minutes
+        puts_bought = [p for p in prints if p["cp"] == "P" and p["side"] == "ask"]
+        calls_bought = [p for p in prints if p["cp"] == "C" and p["side"] == "ask"]
+        self.assertGreater(len(puts_bought), 5)
+        self.assertGreater(len(puts_bought), 2 * len(calls_bought))     # mostly puts; a few dip buyers take calls
+        self.assertTrue(any(p["cp"] == "C" and p["side"] == "bid" for p in prints))   # calls sold too
+
+    def test_a_flat_tape_brings_none(self):
+        self.assertEqual(self._run(0.0), [])
+
+
+class UrgencySearchTests(unittest.TestCase):
+    def test_one_ticker_live_and_earlier(self):
+        from helpers import cfg, plays
+        from twiney.engine import Engine
+        e = Engine(plays(), cfg())
+        def pr(sym, t, prem=120000.0, strike=11.0):
+            return {"t": t, "symbol": sym, "strike": strike, "cp": "C", "expiry": "2026-10-03", "dte": 2.0, "size": 300,
+                    "price": 4.0, "premium": prem, "spot": 10.0, "side": "ask", "kind": "sweep", "otm_pct": 10.0}
+        for i in range(4):
+            e.on_flow(pr("AAA", 100.0 + i * 10), 100.0 + i * 10)
+        e.on_flow(pr("BBB", 150.0), 150.0)
+        e.on_flow(pr("AAA", 2000.0, strike=12.0), 2000.0)          # much later: the first contract left the 10-min window
+        out = e.urgency_for("aaa", 2005.0)
+        self.assertEqual(out["symbol"], "AAA")
+        self.assertEqual(len(out["history"]), 5)                    # everything that came in, newest first
+        self.assertEqual(out["history"][0]["strike"], 12.0)
+        self.assertTrue(all(h["symbol"] == "AAA" for h in out["history"]))
+        self.assertEqual([u["strike"] for u in out["live"]], [12.0])
+        self.assertTrue(out["history"][-1]["called"])               # 4 x $120K in 30 s: that contract was called urgent
