@@ -92,10 +92,10 @@ def alert_text(alert, play):
         n, usd = alert["absorbed"], dollars(alert.get("dollars", alert["absorbed"] * float(alert["price"])))
         shown = alert.get("peak_shown") or alert.get("showing") or 0
         did = "sold into him" if side == "bid" else "bought from him"
-        hidden = (f" The {'bid' if side == 'bid' else 'ask'} never showed more than {shares(shown)} — the rest was hidden: "
-                  f"he keeps putting it back ({alert.get('refreshes', 0)} refills).") if shown and n > shown else \
-                 f" It keeps coming back ({alert.get('refreshes', 0)} refills)."
-        return (f"RELOAD {who(side)} at {where}. {shares(n)} shares {did} here = {usd}.{hidden} "
+        hidden = (f" He only ever showed {shares(shown)} on the {'bid' if side == 'bid' else 'ask'} — {shares(n)} traded, so he put it "
+                  f"back {alert.get('refreshes', 0)} times. The rest was hidden size (an iceberg).") if shown and n > shown else \
+                 f" He put it back {alert.get('refreshes', 0)} times."
+        return (f"RELOAD {who(side)} at {where}. {shares(n)} shares {did} at {px(alert['price'])} = {usd}.{hidden} "
                 f"{'Price is having trouble going lower' if side == 'bid' else 'Price is having trouble going higher'} "
                 f"while he's there. " + play_context(play, side, role)).strip()
     if label == "CLEANED UP":

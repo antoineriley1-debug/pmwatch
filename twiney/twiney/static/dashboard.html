@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261001-0927">
+<meta name="build" content="20261001-0934">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -1566,9 +1566,10 @@ function usdK(v){ v = +v || 0; return v >= 1e6 ? "$" + (v / 1e6).toFixed(1) + "M
 function reloadMoney(r, side){
   const who = side === "bid" ? "BUYER" : "SELLER", n = r[side + "_absorbed"] || (side === "bid" ? r.sold : r.bought) || 0;
   const peak = r[side + "_peak"] || r[side] || 0, usd = n * r.price;
-  return {n, usd, peak, text: `RELOAD ${who} at ${px(r.price)}: ${Math.round(n).toLocaleString("en-US")} shares ${side === "bid" ? "sold into him" : "bought from him"} here = ${usdK(usd)}` +
-    (peak && n > peak ? `. The ${side} never showed more than ${Math.round(peak).toLocaleString("en-US")} — the rest was hidden: he keeps putting it back (${r[side + "_refills"] || 0} refills)` : "") +
-    `. ${side === "bid" ? "Price has trouble going lower" : "Price has trouble going higher"} while he is there.`};
+  const nS = Math.round(n).toLocaleString("en-US"), pS = Math.round(peak).toLocaleString("en-US"), rf = r[side + "_refills"] || 0;
+  return {n, usd, peak, text: `RELOAD ${who} at ${px(r.price)}: ${nS} shares ${side === "bid" ? "sold into him" : "bought from him"} at ${px(r.price)} = ${usdK(usd)}.` +
+    (peak && n > peak ? ` He only ever showed ${pS} on the ${side} — ${nS} traded, so he put it back ${rf} times. The rest was hidden size (an iceberg).` : ` He put it back ${rf} times.`) +
+    ` ${side === "bid" ? "Price has trouble going lower" : "Price has trouble going higher"} while he is there.`};
 }
 function flowSide(r, cp){
   // option flow that hit while the stock traded at this price, on its own side: CALLS by the buyers, PUTS by the sellers
