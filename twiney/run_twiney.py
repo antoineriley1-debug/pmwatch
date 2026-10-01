@@ -17,7 +17,7 @@ import time
 import webbrowser
 
 from twiney import __version__
-from twiney.config import PLACEHOLDERS_STRIPPED, ConfigError, build_config, load_config, load_plays
+from twiney.config import LOAD_WARNINGS, PLACEHOLDERS_STRIPPED, ConfigError, build_config, load_config, load_plays
 from twiney.dashboard import Dashboard, EngineRef
 from twiney.desk import Desk
 from twiney.engine import Engine
@@ -134,6 +134,8 @@ def run_live(cfg, plays, args):
 
 def note_stripped(engine, args):
     """plays.json still carried the example's made-up prices for these tickers: they start blank, and the desk says so."""
+    for w in LOAD_WARNINGS:
+        engine._message("warn", w, time.time())
     if PLACEHOLDERS_STRIPPED:
         syms = ", ".join(PLACEHOLDERS_STRIPPED)
         engine._message("warn", f"{syms}: the example placeholder levels in {os.path.basename(args.plays)} were dropped — "

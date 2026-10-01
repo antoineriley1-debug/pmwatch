@@ -111,3 +111,20 @@ class BlankStartTests(unittest.TestCase):
         self.assertTrue(p["watch"])
         self.assertEqual(e.syms["AAA"].trackers, {})
         self.assertIn("PLAY cleared", [n["text"] for n in e.symbol_log("AAA")][-1])
+
+
+class DrawnLevelsLoadTests(unittest.TestCase):
+    def test_second_entry_behind_the_pivot_loads_with_a_warning(self):
+        """The desk saves levels as drawn: a long's 2nd entry under its pivot must not stop the desk starting."""
+        import json, os, tempfile
+        from twiney.config import LOAD_WARNINGS, load_plays
+        raw = {"plays": [{"symbol": "TSLA", "side": "long", "pivot": 142.7, "second_entry": 142.27, "stop": 141.5,
+                          "target": 142.5}]}
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "plays.json")
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(raw, fh)
+            plays = load_plays(path)
+        self.assertEqual((plays[0]["trigger"], plays[0]["second_entry"], plays[0]["target"]), (142.7, 142.27, 142.5))
+        self.assertEqual(len(LOAD_WARNINGS), 2)
+        self.assertIn("2nd entry 142.27 is under the pivot 142.7", LOAD_WARNINGS[0])

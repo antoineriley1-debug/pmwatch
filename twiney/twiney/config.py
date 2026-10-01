@@ -360,11 +360,15 @@ def load_config(path):
         return build_config(json.load(fh))
 
 
+LOAD_WARNINGS = []   # level problems found in plays.json on the last load: said on the desk, never a refusal to start
+
+
 def validate_plays(raw):
     items = raw.get("plays") if isinstance(raw, dict) else raw
     if not isinstance(items, list) or not items:
         raise ConfigError("plays file must contain a non-empty list of plays")
     plays, seen = [], set()
+    LOAD_WARNINGS.clear()
     for i, item in enumerate(items):
         where = f"play #{i + 1}"
         if not isinstance(item, dict):
@@ -411,20 +415,19 @@ def validate_plays(raw):
         if trigger is None and not watch:
             raise ConfigError(f"{where}: pivot is required")
         if second is not None and trigger is not None:
-            # PS60: the 2nd entry is the new high (long) / new low (short) made after the pivot broke,
-            # so it sits beyond the trigger, never behind it
-            if side == "long" and second <= trigger:
-                raise ConfigError(f"{where}: second_entry {second} must be ABOVE the pivot {trigger} for a long "
-                                  f"(it is the new high after the break, not a pullback level)")
-            if side == "short" and second >= trigger:
-                raise ConfigError(f"{where}: second_entry {second} must be BELOW the pivot {trigger} for a short "
-                                  f"(it is the new low after the break, not a bounce level)")
+            # PS60: the 2nd entry is normally beyond the pivot (the new high / low after the break). Levels drawn on
+            # the desk are saved as drawn, so a 2nd entry behind the pivot is said on the desk, never a reason the
+            # desk will not start
+            if (side == "long" and second <= trigger) or (side == "short" and second >= trigger):
+                LOAD_WARNINGS.append(f"{sym}: 2nd entry {second:g} is {'under' if side == 'long' else 'over'} the pivot "
+                                     f"{trigger:g} for a {side} — kept as you drew it; check the side or the pivot")
         mp_level = num("mp", False) or num("target", False)
         if mp_level and trigger and mp_level < 0.5 * trigger:
             # an old file with mp in dollars: turn it into the level it meant
             mp_level = round(trigger + mp_level if side == "long" else trigger - mp_level, 4)
         if mp_level and trigger and ((side == "long" and mp_level <= trigger) or (side == "short" and mp_level >= trigger)):
-            raise ConfigError(f"{where}: mp {mp_level} must be {'above' if side == 'long' else 'below'} the pivot {trigger} for a {side}")
+            LOAD_WARNINGS.append(f"{sym}: target {mp_level:g} is {'under' if side == 'long' else 'over'} the pivot "
+                                 f"{trigger:g} for a {side} — kept as you drew it; check the side or the pivot")
         plays.append({
             "symbol": sym,
             "side": side,
@@ -461,11 +464,14 @@ def strip_placeholders(plays, example_path="plays.example.json"):
     stripped = []
     if not os.path.exists(example_path):
         return plays, stripped
+    keep = list(LOAD_WARNINGS)                # checking the example file must not wipe what YOUR file said
     try:
         with open(example_path, encoding="utf-8") as fh:
             ex = {p["symbol"]: p for p in validate_plays(json.load(fh))}
     except (ConfigError, ValueError, OSError):
         return plays, stripped
+    finally:
+        LOAD_WARNINGS[:] = keep
     for p in plays:
         e = ex.get(p["symbol"])
         if e is None or p["trigger"] is None:
