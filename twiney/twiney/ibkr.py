@@ -140,10 +140,10 @@ class TwineyWrapper:
         elif code in DEPTH_REJECT_CODES and kind == "depth":
             self.session.mark_dead(req_id)
             self.engine.on_depth_rejected(sym, code, msg, t)
-        elif code == 1100:
-            self.engine.on_connection("FEED_DOWN", f"[1100] {msg}", t)
-        elif code == 2110:
-            self.engine.on_connection("FEED_DOWN", f"[2110] {msg}", t)
+        elif code in (1100, 2110):
+            # TWS itself lost its link to IBKR (every data farm drops with it): nothing on this side can fix it
+            self.engine.on_connection("FEED_DOWN", f"[{code}] TWS lost its link to IBKR's servers — in TWS click the DATA box top right, "
+                                                   f"then Reconnect All Farms; if it keeps dropping, your internet is dropping. {msg}", t)
         elif code == 1101:
             self.session.handle_data_lost(msg)
         elif code == 1102:
