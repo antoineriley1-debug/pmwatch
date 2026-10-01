@@ -207,13 +207,23 @@ class SessionTests(unittest.TestCase):
         s.step(clock())
         self.assertIn("AAA", s.depth_ids)
 
-    def test_1100_pauses_rotation(self):
+    def test_1100_pauses_rotation_until_data_is_back(self):
         s, engine, clock, app = self.connect()
         app.error(-1, 1100, "Connectivity between IB and TWS has been lost")
         self.assertEqual(engine.connection["state"], "FEED_DOWN")
-        app.tickPrice(s.l1_ids["AAA"], 4, 10.0, None)
         s.step(clock())
-        self.assertEqual(s.depth_ids, {})
+        self.assertEqual(s.depth_ids, {})                       # nothing is requested while the feed is down
+        app.tickPrice(s.l1_ids["AAA"], 4, 10.0, None)           # a real tick: the feed is back, rotation resumes
+        self.assertEqual(engine.connection["state"], "CONNECTED")
+        s.step(clock())
+        self.assertNotEqual(s.depth_ids, {})
+
+    def test_reconnect_all_farms_clears_feed_down_without_a_1102(self):
+        s, engine, clock, app = self.connect()
+        app.error(-1, 2110, "Connectivity between Trader Workstation and server is broken.")
+        self.assertEqual(engine.connection["state"], "FEED_DOWN")
+        app.error(-1, 2104, "Market data farm connection is OK:usfarm")
+        self.assertEqual(engine.connection["state"], "CONNECTED")
 
     def test_connection_closed_backs_off_and_reconnects(self):
         s, engine, clock, app = self.connect()
@@ -412,3 +422,4 @@ class AuditFixTests(unittest.TestCase):
                           orderType="LMT", lmtPrice=9.0, auxPrice=0.0, tif="DAY"), O(status="Submitted"))
         self.assertEqual(len(engine.snapshot(clock())["account"]["pending"]), 2)
         self.assertEqual(s.cancel_all(clock()), 0)
+

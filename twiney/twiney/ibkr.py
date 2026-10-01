@@ -152,6 +152,10 @@ class TwineyWrapper:
             self.session.handle_closed(f"[{code}] {msg}")
         elif code in INFO_CODES:
             self.engine.on_error(sym, code, msg, t, level="info")
+            if code in (2104, 2106, 2158) and self.engine.connection["state"] == "FEED_DOWN":
+                # a data farm is back: TWS has its link again. Reconnect All Farms sends these, not a 1102, so
+                # the light would otherwise stay FEED DOWN with data flowing
+                self.engine.on_connection("CONNECTED", f"[{code}] a data farm is back: {msg}", t)
         elif code in FARM_WARN_CODES:
             self.engine.on_error(sym, code, msg, t, level="warn")
         elif code in SUBSCRIPTION_CODES:
@@ -165,6 +169,8 @@ class TwineyWrapper:
         kind, sym = self.req.get(reqId, (None, None))
         if field is None or kind != "l1":
             return
+        if self.engine.connection["state"] in ("FEED_DOWN", "DATA_LOST") and num(price) not in (None, -1):
+            self.engine.on_connection("CONNECTED", "a live tick arrived: the feed is back", self.clock())   # data speaks louder than any message
         v = num(price)
         if v is not None and v == -1 and field in ("bid", "ask"):
             self.engine.on_l1(sym, field, None, self.clock())   # -1 = no bid / no offer (halt): clear it
