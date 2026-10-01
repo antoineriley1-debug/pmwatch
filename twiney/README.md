@@ -352,3 +352,12 @@ These could not be checked in the build environment because IBKR's download site
 - [ ] With PS60 exits on, check on paper that a cash-flow fill REDUCES the stop (OCA type 2) instead of cancelling it,
       and that the stop moves to breakeven. If TWS cancels the stop instead, turn PS60 exits off and tell Claude.
 - [ ] Replay the first real recording (`--replay`) and check that `replay N / recorded N` matches.
+
+## BIG MONEY 30D
+
+Every option print of `flow.big_money_min_premium` ($500K) or more is remembered for `flow.big_money_days` (30), in
+`recordings/big_money.jsonl`, and judged on facts each time you look: the premium paid, the breakeven (strike ± the
+price paid), and the stock now — or its close on expiry day once the contract has expired. BUYERS IN PROFIT /
+BUYERS UNDERWATER / EXPIRED WORTHLESS (and the sellers' side for prints sold at the bid). Open contracts are counted
+at their intrinsic value only ("worth at least"): time value needs live option quotes. The BIG MONEY 30D panel lists
+them for the symbol on screen; the chart marks the biggest open strikes (cogwheel → TRADING to hide them).

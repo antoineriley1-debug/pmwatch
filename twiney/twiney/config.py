@@ -207,6 +207,9 @@ DEFAULTS = {
         "extra_params": {},
     },
     "flow": {
+        # BIG MONEY: option prints at least this big are remembered for big_money_days, with how their buyers are doing
+        "big_money_min_premium": 500000,
+        "big_money_days": 30,
         # UNUSUAL CALLS / PUTS: this much premium, in this many prints, bought at the ask, this far out of the money,
         # this close to expiry, inside this window, on a watchlist symbol. One call per symbol and side per repeat_minutes.
         "min_premium": 250000,

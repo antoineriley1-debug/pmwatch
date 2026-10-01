@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261001-0913">
+<meta name="build" content="20261001-0919">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -578,6 +578,15 @@ body.colresizing,body.colresizing *{cursor:col-resize!important;user-select:none
 /* the header (and its column grips) stays pinned to the top of the ladder while the rows scroll */
 .lad.lad3 tr:first-child th{position:sticky;top:0;z-index:5;background:#0d1016;box-shadow:inset 0 -1px 0 #2c2e33}
 
+.bm-hd{display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 10px;padding:4px 6px;font-size:10.5px;letter-spacing:.06em;border-bottom:1px solid var(--line)}
+.bm-list{overflow:auto;max-height:100%}
+.bm{display:grid;grid-template-columns:auto auto auto 1fr;gap:1px 8px;padding:4px 6px;border-bottom:1px solid #1a2130;font:11px var(--mono);border-left:3px solid #3a4558}
+.bm.good{border-left-color:var(--buy)} .bm.bad{border-left-color:var(--sell)}
+.bm .amt{font-weight:700;color:var(--gold)} .bm .ct.c{color:#3ee08f} .bm .ct.p{color:#ff6b78} .bm .ag{color:var(--dim)}
+.bm .st{font-weight:700;letter-spacing:.04em} .bm.good .st{color:var(--buy)} .bm.bad .st{color:var(--sell)}
+.bm .tx{grid-column:1/-1;color:#c9ced6;font-family:var(--sans);font-size:11.5px}
+.bm .st{background:none!important;border:0!important;padding:0!important;margin:0!important;box-shadow:none!important}
+
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
   --buy:#3fb56f;--sell:#d9534f;--gold:#e3a83a;--cyan:#5aa9d6;--violet:#a48bd6;--warn:#d9a441;
@@ -959,6 +968,7 @@ body.resizing .zbody{pointer-events:none}
       <input id="alVal" type="number" step="any" min="0" placeholder="price or $">
       <label title="off: fires once and is gone · on: keeps firing (with a cooldown)"><input type="checkbox" id="alRepeat"> every time</label>
       <button id="alAdd">ADD ALERT</button><span class="dim" id="alMsg"></span></div><div id="alList"></div></div></div>
+  <div class="pnl" data-p="bigmoney"><div class="pc"><div class="bm-hd"><span><b id="bmSym"></b> BIG OPTION MONEY · last 30 days</span><span class="dim">how the people who paid are doing now · hover for the numbers</span></div><div class="bm-list" id="bmList"></div></div></div>
   <div class="pnl fa" data-p="urgency"><div class="fa-top"><div class="fa-tabs"><span class="off" data-go="flow">OPTION FLOW</span><span class="on">URGENT FLOW</span></div>
     <div class="fa-sub"><span title="short-dated, out-of-the-money contracts being bought at the ask again and again, ranked by dollars per minute, sweeps and whether it is speeding up">Short-dated · out of the money · bought in a hurry</span><label><input type="checkbox" id="urMine"> Watchlist</label><label><input type="checkbox" id="urHot"> Called only</label></div></div><div class="pc"><div id="urList"></div></div></div>
   <div class="pnl fa" data-p="eqflow"><div class="fa-top"><div class="fa-tabs"><span class="off" data-go="flow" title="option flow">OPTION FLOW</span><span class="on">EQUITY FLOW</span></div>
@@ -1218,11 +1228,11 @@ function makeColsResizable(table){
 const PANELS = {
   chart: "CHART", foot: "FOOTPRINT 5m", book: "LEVEL II", tape: "TIME & SALES", setup: "PLAY SETUP", ps60: "PS60", reload: "RELOADS",
   ticket: "ORDER ENTRY", positions: "POSITIONS", orders: "ORDERS", watch: "WATCHLIST", calls: "CALLS",
-  flow: "OPTION FLOW", eqflow: "EQUITY FLOW", urgency: "URGENT FLOW", myalerts: "ALERTS", desk: "DESK", journal: "JOURNAL", messages: "MESSAGES"};
-const SYMBOL_LINKED = new Set(["chart", "foot", "book", "tape", "ps60", "reload", "ticket", "calls", "setup"]);
+  flow: "OPTION FLOW", eqflow: "EQUITY FLOW", urgency: "URGENT FLOW", bigmoney: "BIG MONEY 30D", myalerts: "ALERTS", desk: "DESK", journal: "JOURNAL", messages: "MESSAGES"};
+const SYMBOL_LINKED = new Set(["chart", "foot", "book", "tape", "ps60", "reload", "ticket", "calls", "setup", "bigmoney"]);
 const ZONES = ["TL", "TC", "TR", "TX", "BL", "BC", "BR", "BX"];   // four columns × two rows; a column with one zone runs full height
 const PRESETS = {
-  "PS60 Execution": {zones: {TL: ["watch", "myalerts"], TC: ["chart"], TR: ["book"], TX: ["tape"], BL: ["positions", "orders"], BC: ["setup", "flow", "urgency", "eqflow", "ps60", "reload", "calls"], BR: ["ticket"]},
+  "PS60 Execution": {zones: {TL: ["watch", "myalerts"], TC: ["chart"], TR: ["book"], TX: ["tape"], BL: ["positions", "orders"], BC: ["setup", "flow", "urgency", "bigmoney", "eqflow", "ps60", "reload", "calls"], BR: ["ticket"]},
     active: {BL: "positions", BC: "setup"}, sizes: {c1: 200, c3: 330, c4: 290, r2: {L: 250, C: 330, R: 430, X: 250}}},
   "Scalping": {zones: {TL: ["ticket", "setup"], TC: ["book"], TR: ["tape"], BL: ["positions"], BC: ["chart"], BR: ["orders", "reload"]},
     active: {BR: "reload"}, sizes: {c1: 300, c3: 320, r2: 300}},
@@ -2152,6 +2162,25 @@ function drawOne(p, cv, v, isFoot){
     }
   }
   v.seChipY = null;
+  // BIG MONEY at its strikes: the biggest open (not expired) prints of the last 30 days, a thin line at the strike
+  // with what was paid and how those buyers are doing now
+  if (!isFoot && CS("bigmoney") && d.bigmoney && d.bigmoney.length){
+    const openAll = d.bigmoney.filter(x => !x.expired).slice(0, 4);
+    for (const x of openAll) if (x.strike < lo || x.strike > hi)       // off the scale: a tag on the edge pointing at it
+      (v.edgeTags = v.edgeTags || []).push([x.strike > hi, `${usdK(x.premium)} ${flowStrike(x.strike)}${x.cp}`, x.strike, x.cp === "C" ? "#0b8f55" : "#c4283a"]);
+    const open = openAll.filter(x => x.strike >= lo && x.strike <= hi);
+    g.font = "bold 10px ui-monospace, Menlo, Consolas, monospace";
+    for (const x of open){
+      const yy = y(x.strike), col = x.cp === "C" ? "#0b8f55" : "#c4283a";
+      g.strokeStyle = col; g.globalAlpha = 0.55; g.setLineDash([1, 4]); g.beginPath(); g.moveTo(0, yy); g.lineTo(plotW, yy); g.stroke(); g.setLineDash([]); g.globalAlpha = 1;
+      const st = x.status.replace("BUYERS ", "").replace("SELLERS ", "SELLERS ");
+      const t = `${usdK(x.premium)} ${flowStrike(x.strike)}${x.cp} ${x.age_days < 1 ? "today" : Math.round(x.age_days) + "d"} · ${st}`;
+      const tw = g.measureText(t).width + 10;
+      g.fillStyle = x.good ? "rgba(11,122,75,.92)" : "rgba(179,18,58,.92)"; g.fillRect(4, yy - 7, tw, 14);
+      g.fillStyle = "#ffffff"; g.fillText(t, 9, yy + 4);
+    }
+    g.font = "11px ui-monospace, Menlo, Consolas, monospace";
+  }
   // levels that are off the scale: a tag at the top / bottom edge of the price scale, arrow pointing the way
   if (v.edgeTags && v.edgeTags.length){
     g.font = "bold 10px ui-monospace, Menlo, Consolas, monospace";
@@ -2412,7 +2441,7 @@ function normalize(l){
   const placed = new Set([].concat(...ZONES.map(z => out.zones[z])).concat(Object.keys(out.floats || {})));
   // a panel new in a build docks itself once (ALERTS beside the watchlist, EQUITY FLOW beside the option flow), so it is
   // not lost behind the PANELS menu; a panel you hid yourself stays hidden
-  const NEW_PANELS = {myalerts: "TL", eqflow: "BC", urgency: "BC"};
+  const NEW_PANELS = {myalerts: "TL", eqflow: "BC", urgency: "BC", bigmoney: "BC"};
   out.seen = Array.isArray(out.seen) ? out.seen : Object.keys(P).filter(id => !(id in NEW_PANELS));
   for (const id of Object.keys(NEW_PANELS)) if (P[id] && !out.seen.includes(id)){ out.seen.push(id); if (!placed.has(id)){ out.zones[NEW_PANELS[id]].push(id); placed.add(id); } }
   out.hidden = Object.keys(P).filter(id => !placed.has(id));
@@ -2772,7 +2801,7 @@ const CS_DEF = [
     ["color", "bgCol", "Background (light screens)", ""], ["check", "gridH", "Horizontal grid lines", true], ["check", "sessions", "Session separators", true],
     ["select", "cross", "Crosshair", "auto", ["auto", "solid", "dashed", "dotted", "off"]], ["color", "crossCol", "Crosshair colour", ""]]],
   ["TRADING", [["check", "levels", "Your levels (pivot, 2nd entry, stop, target)", true], ["check", "orders", "Working order lines", true],
-    ["check", "chip", "2nd entry order chip", true]]],
+    ["check", "chip", "2nd entry order chip", true], ["check", "bigmoney", "Big option money (30 days) at its strikes", true]]],
   ["INDICATORS", [["check", "vwap", "VWAP", true, true], ["check", "mas", "Moving averages", true, true], ["check", "matags", "MA price tags", true, true],
     ["check", "bb", "Bollinger bands", true, true]]],
 ];
@@ -3690,7 +3719,7 @@ function render(s){
   renderBook(d); renderTape(d); renderSetup(d); renderPS60(d); renderReloads(d);
   renderTicket(s, d);
   renderWatch(s); renderCalls(s); renderPositions(s); renderOrders(s);
-  renderDesk(s); renderTrades(s); renderFlow(s); renderFlowScope(s); renderEquity(s); renderMyAlerts(s); renderUrgency(s);
+  renderDesk(s); renderTrades(s); renderFlow(s); renderFlowScope(s); renderEquity(s); renderMyAlerts(s); renderUrgency(s); renderBigMoney(curData());
   const msgs = s.messages.map(m => `<div class="msg-${esc(m.level)} mono" style="font-size:11px">${ago(s.now - m.t)} · ${esc(m.text)}</div>`).join("") || `<span class="dim">—</span>`;
   const me = document.getElementById("messages"); if (me.dataset.h !== msgs){ me.dataset.h = msgs; me.innerHTML = msgs; }
   for (const a of s.alerts.slice(0, 10)){ const key = a.t + a.symbol + a.label; if (!seenAlerts.has(key)){ seenAlerts.add(key); if (!firstFeed && store.get("alerts", true) && store.get("sound", true) && a.symbol === TABS.active) beep(sayClass(a)); } }
@@ -3885,6 +3914,22 @@ document.addEventListener("click", e => {
   m.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 420)) + "px"; m.style.top = Math.max(8, Math.min(r.top - m.offsetHeight - 6, window.innerHeight - m.offsetHeight - 8)) + "px";
   m.addEventListener("click", ev => { if (ev.target.dataset.howclose) m.remove(); });
 });
+
+/* BIG MONEY 30D: every big option print on this symbol for 30 days, judged on facts: premium paid, breakeven,
+   where the stock is now (or closed on expiry day). Green = the side that paid is winning, red = losing */
+function renderBigMoney(d){
+  const list = document.getElementById("bmList"), hd = document.getElementById("bmSym"); if (!list) return;
+  if (hd && hd.textContent !== ((d && d.symbol) || "")) hd.textContent = (d && d.symbol) || "";
+  const items = (d && d.bigmoney) || [];
+  const ago_ = a => a < 1 ? "today" : Math.round(a) + "d ago";
+  const html = items.length ? items.map(x => {
+    const cls = x.status === "EXPIRED WORTHLESS" ? (x.who === "BUYERS" ? "bad" : "good") : x.good == null ? "" : x.good ? "good" : "bad";
+    const t = `${x.size.toLocaleString("en-US")} contracts ${x.symbol} ${flowStrike(x.strike)}${x.cp} ${x.expiry} @ ${(+x.price).toFixed(2)} = ${usdK(x.premium)} ${x.side === "bid" ? "SOLD at the bid" : "BOUGHT at the ask"} ${ago_(x.age_days)}` +
+      (x.spot_then ? `, stock was ${(+x.spot_then).toFixed(2)}` : "") + `. Breakeven ${x.breakeven}. ` + (x.value != null ? `Worth at least ${usdK(x.value)} on the stock now (intrinsic; time value not counted).` : "");
+    return `<div class="bm ${cls}" title="${esc(t)}"><span class="amt">${usdK(x.premium)}</span><span class="ct ${x.cp === "C" ? "c" : "p"}">${flowStrike(x.strike)}${x.cp} ${esc((x.expiry || "").slice(5))}</span><span class="ag">${ago_(x.age_days)}</span><span class="st">${esc(x.status)}</span><span class="tx">${esc(x.text)}</span></div>`;
+  }).join("") : `<div class="dim" style="padding:8px">No option print of ${usdK((state && state.flow_big_min) || 500000)} or more on this symbol in the last 30 days.</div>`;
+  if (list.dataset.h !== html){ list.dataset.h = html; list.innerHTML = html; }
+}
 
 
 /* ---------- command bar wiring */

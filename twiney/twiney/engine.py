@@ -190,6 +190,7 @@ class Engine:
         self.mdt_by_sym = {}    # symbol -> IBKR market data type (1 live, 3 delayed...)
         self.account_seen = False
         self.trader = None      # set by run_twiney when order entry is enabled
+        self.bigmoney = None    # 30-day memory of big option prints (run_twiney gives it a file)
         self.sim_broker = None  # demo-mode fill simulator, if any
         self.plays_path = None  # where to save levels added from the chart
         self.replay = None      # replay control block when replaying a recording
@@ -575,6 +576,8 @@ class Engine:
             self._clock(t)
             self._rec({"ev": "flow", "t": t, "p": p})
             self.flow.add(p)
+            if self.bigmoney is not None:
+                self.bigmoney.add(p, t)
             self.flow_status["last_print"] = t
             self._urgency(p, t, st)
             if st is not None:
@@ -890,6 +893,16 @@ class Engine:
             self._rec({"ev": "level", "t": t or self.last_t, "sym": symbol, "px": price, "on": False})
             self._save_plays()
             return True
+
+    @staticmethod
+    def _close_on(st, date_str):
+        """The stock's close on a given day (YYYY-MM-DD) from its daily bars, or None."""
+        import datetime as _dt
+        for t0, bar in st.daily.items():
+            day = _dt.datetime.fromtimestamp(t0 + 43200, _dt.timezone.utc).date().isoformat()   # noon: either day-start convention
+            if day == str(date_str)[:10]:
+                return float(bar[3])
+        return None
 
     def _save_plays(self):
         """Write plays.json back so drawn levels survive a restart."""
@@ -2286,6 +2299,7 @@ class Engine:
             "reloaders": reloaders,
             "user_levels": user_levels,
             "log": self.symbol_log(sym),
+            "bigmoney": self.bigmoney.for_symbol(sym, st.price(), t, lambda d: self._close_on(st, d)) if self.bigmoney is not None else [],
             "orders": [{"id": o.get("order_id"), "action": o.get("action"), "qty": o.get("remaining") or o.get("qty"),
                         "type": o.get("type"),
                         "price": o.get("aux") if o.get("type") in ("STP", "STP LMT") and o.get("aux") else o.get("lmt") or o.get("aux"),
