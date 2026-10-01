@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261001-2115">
+<meta name="build" content="20261001-2143">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -645,6 +645,11 @@ i.tl{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:3p
 .grid.pos2{font-size:11px} .grid.pos2 td{padding:1px 5px} .grid.pos2 th{padding:2px 5px;font-size:9px}
 .grid.pos2 td.ctl button{padding:0 5px;font-size:10px;margin-right:2px;height:18px;line-height:16px}
 .ticket.compact select{width:auto;max-width:110px} .grid.pos2 th{white-space:nowrap}
+
+/* pin box: what you clicked, held still under the panel */
+.pinbox{display:none;position:sticky;bottom:0;background:#0b0f16;border-top:1px solid var(--line);padding:3px 6px;font:10.5px var(--sans);color:var(--text);line-height:1.3}
+.pinbox.on{display:flex;gap:6px;align-items:flex-start} .pinbox .txt{flex:1;white-space:normal} .pinbox .x{padding:0 4px;font-size:10px;line-height:14px}
+.grid.pos2 td.ctl .sep{display:inline-block;width:6px} .grid.pos2 tr.opt td:first-child b{color:var(--gold)}
 
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
@@ -3117,6 +3122,19 @@ document.getElementById("colsMenu").querySelector("button").addEventListener("cl
 document.getElementById("colsPop").addEventListener("change", e => { if (e.target.dataset.ladz != null){ store.set("ladz", +e.target.value || 1); applyLadCols(P.book.pc.querySelector("table.lad")); P.book.last = null; poll(true); return; } const k = e.target.dataset.col; if (!k) return; const c = store.get("ladcols", {}); c[k] = e.target.checked; store.set("ladcols", c); applyLadCols(P.book.pc.querySelector("table.lad")); });
 (function(){ const b = document.getElementById("ladMode"); if (!b) return; const paint = () => { b.textContent = store.get("ladMode", "tight") === "tight" ? "TIGHT" : "WIDE"; }; paint();
   b.addEventListener("click", () => { store.set("ladMode", store.get("ladMode", "tight") === "tight" ? "wide" : "tight"); paint(); P.book.last = null; poll(true); }); })();
+/* PIN BOX: the tape and the ladder move too fast to hover. Click a print, a reload $ cell, a FLOW tag or a price
+   and what you would have read on hover stays in a small box at the bottom of that panel until the next click. */
+function pinBox(panel){ let b = panel.pc.querySelector(".pinbox"); if (!b){ b = document.createElement("div"); b.className = "pinbox"; b.innerHTML = `<span class="txt"></span><button class="x" title="clear">✕</button>`; panel.pc.appendChild(b); b.querySelector(".x").addEventListener("click", () => { b.classList.remove("on"); b.querySelector(".txt").textContent = ""; }); } return b; }
+function pinInfo(panel, el){ const t = el && (el.getAttribute("title") || (el.closest("[title]") || {}).getAttribute && el.closest("[title]").getAttribute("title")); if (!t) return false; const b = pinBox(panel); b.querySelector(".txt").textContent = t; b.classList.add("on"); return true; }
+P.tape.el.addEventListener("click", e => { const tr = e.target.closest("tr[title]"); if (tr) pinInfo(P.tape, tr); });
+P.book.el.addEventListener("click", e => { if (e.target.closest("td[data-act], .chip, button, input, select, th")) return; const cell = e.target.closest("td.flow, td.bars, td.px, td.whoc"); if (!cell) return;
+  const t = cell.matches("td.px") ? null : (cell.querySelector("[title]") || (cell.hasAttribute("title") ? cell : null));
+  if (t && pinInfo(P.book, t)) return;
+  // a price with nothing of its own: the whole row, everything the hover would have told you, in one line
+  const row = cell.closest("tr"), r = row && row.dataset.price, b = pinBox(P.book);
+  const bits = [...row.querySelectorAll("[title]")].filter(x => !x.closest("td[data-act]") && !x.matches("button")).map(x => x.getAttribute("title")).filter(Boolean);
+  const bid = row.querySelector("td.bsz .szn"), ask = row.querySelector("td.asz .szn");
+  b.querySelector(".txt").textContent = `${px(+r)}: bid ${bid && bid.textContent || "—"} · ask ${ask && ask.textContent || "—"}` + (bits.length ? " · " + bits.join(" · ") : " · nothing traded or reloaded here yet"); b.classList.add("on"); });
 P.book.el.addEventListener("change", async e => { if (e.target.id !== "bigIn" || !curSym) return; const v = Math.max(100, +e.target.value || 0); const out = await post("/api/ladder", {symbol: curSym, big_shares: v}); toast(out.ok ? curSym + ": big size is now " + sz(v) + " shares" : "Could not set", out.ok); poll(true); });
 P.book.el.addEventListener("click", async e => { if (e.target.id !== "bigReset" || !curSym) return; const out = await post("/api/ladder", {symbol: curSym, big_shares: null}); toast(out.ok ? curSym + ": big size back to the config default" : "Could not reset", out.ok); poll(true); });
 function renderPS60(d){
@@ -3417,10 +3435,23 @@ function renderPositions(s){
     return `<tr data-sym="${esc(p.symbol)}" class="posrow"><td class="l"><b>${esc(p.symbol)}</b> <span class="${long ? "b" : "s"}">${long ? "L" : "S"} ${sz(q)}</span></td><td>${px(p.avg_cost)}</td><td>${px(p.last)}</td>
       <td class="pct ${pct == null ? "" : pct >= 0 ? "up" : "dn"}">${usd == null ? NA : (usd >= 0 ? "+" : "−") + "$" + sz(Math.abs(usd).toFixed(0))} <span class="dim">${pctFmt(pct)}</span></td>
       <td class="l ctl">${red(0.25, "25", "take off a quarter")}${red(0.5, "50", "take off half")}${red(0.75, "75", "take off three quarters")}<button data-red="${esc(p.symbol)}" data-n="ask" ${on ? "" : "disabled"} title="reduce by a number of shares you type">…</button>
+        <span class="sep"></span><button data-add="${esc(p.symbol)}" data-n="${Math.max(1, Math.floor(q / 2))}" ${canTrade() ? "" : "disabled"} title="scale in: add half again (${sz(Math.max(1, Math.floor(q / 2)))} sh) at the touch">+½</button><button data-add="${esc(p.symbol)}" data-n="${q}" ${canTrade() ? "" : "disabled"} title="scale in: double it (${sz(q)} sh) at the touch">+1×</button><button data-add="${esc(p.symbol)}" data-n="ask" ${canTrade() ? "" : "disabled"} title="scale in by a number of shares you type">+…</button>
         <button data-partial="${esc(p.symbol)}" ${on ? "" : "disabled"} title="take part of the profit at a price you pick">@</button><button data-be="${esc(p.symbol)}" ${on ? "" : "disabled"} title="move the stop to your entry price (breakeven); any other stop orders on ${esc(p.symbol)} are cancelled">BE</button>
         <button class="danger" data-close="${esc(p.symbol)}" ${on ? "" : "disabled"} title="CLOSE the whole position with a limit at the touch">X</button></td></tr>${PP[p.symbol] && PP[p.symbol].open ? `<tr><td colspan="5" class="l">${partialHTML(p.symbol)}</td></tr>` : ""}`;
   }).join("");
-  panelHTML("positions", `<table class="grid pos2"><tr><th>POSITION</th><th>ENTRY</th><th>LAST</th><th>P&amp;L</th><th style="text-align:left" title="25 / 50 / 75 = take that much off at the touch · … = your own number · @ = partial at your price · BE = stop to breakeven · X = close">25 · 50 · 75 · … · @ · BE · X</th></tr>${rows || `<tr><td colspan="5" class="dim l">${A.seen ? "FLAT" : "NO ACCOUNT DATA"}</td></tr>`}</table>`);
+  // option positions (from TWS): contracts, with their own quotes; scaled with the same buttons in contracts
+  const orows = (A.opt_positions || []).map(p => {
+    const long = p.qty > 0, q = Math.abs(p.qty), ct = n => n + " ct";
+    const off = (n, lbl, tip) => `<button data-oclose="${esc(p.key)}" data-n="${n}" ${on && n > 0 ? "" : "disabled"} title="${tip}: ${long ? "sell" : "buy back"} ${ct(n)} at the ${long ? "bid" : "ask"}">${lbl}</button>`;
+    const add = (n, lbl) => `<button data-oadd="${esc(p.key)}" data-n="${n}" ${canTrade() ? "" : "disabled"} title="scale in: ${long ? "buy" : "sell"} ${ct(n)} more at the ${long ? "ask" : "bid"}">${lbl}</button>`;
+    const quote = p.bid != null || p.ask != null ? `${p.bid != null ? p.bid.toFixed(2) : NA} / ${p.ask != null ? p.ask.toFixed(2) : NA}` : `<span class="dim">no quote</span>`;
+    return `<tr class="posrow opt"><td class="l"><b>${esc(p.label)}</b> <span class="${long ? "b" : "s"}">${long ? "L" : "S"} ${ct(q)}</span></td><td>${p.per_contract.toFixed(2)}</td><td>${quote}</td>
+      <td class="pct ${p.pnl == null ? "" : p.pnl >= 0 ? "up" : "dn"}">${p.pnl == null ? NA : (p.pnl >= 0 ? "+" : "−") + "$" + sz(Math.abs(p.pnl).toFixed(0))}</td>
+      <td class="l ctl">${off(Math.max(1, Math.floor(q / 4)), "25", "take off a quarter")}${off(Math.max(1, Math.floor(q / 2)), "50", "take off half")}${off(Math.max(1, Math.floor(q * 3 / 4)), "75", "take off three quarters")}<button data-oclose="${esc(p.key)}" data-n="ask" ${on ? "" : "disabled"} title="take off a number of contracts you type, at a price you type">…</button>
+        <span class="sep"></span>${add(1, "+1")}${add(Math.max(1, Math.floor(q / 2)), "+½")}${add(q, "+1×")}<button data-oadd="${esc(p.key)}" data-n="ask" ${canTrade() ? "" : "disabled"} title="scale in by a number of contracts you type, at a price you type">+…</button>
+        <button class="danger" data-oclose="${esc(p.key)}" data-n="0" ${on ? "" : "disabled"} title="CLOSE every contract with a limit at the touch">X</button></td></tr>`;
+  }).join("");
+  panelHTML("positions", `<table class="grid pos2"><tr><th>POSITION</th><th>ENTRY</th><th>LAST</th><th>P&amp;L</th><th style="text-align:left" title="25 / 50 / 75 = take that much off at the touch · … = your own number · @ = partial at your price · BE = stop to breakeven · X = close · +½ +1× +… = scale in at the touch">OUT 25 · 50 · 75 · … · @ · BE · X &nbsp; IN +½ · +1× · +…</th></tr>${rows + orows || `<tr><td colspan="5" class="dim l">${A.seen ? "FLAT" : "NO ACCOUNT DATA"}</td></tr>`}</table>`);
 }
 let showHistory = false, selOrder = null;
 function renderOrders(s){
@@ -3454,6 +3485,7 @@ function renderTicket(s, d, force){
   // compact: three short rows (side · size · price · send / sizing · type · tif · exits / the position and its
   // take-offs), so the ticket takes a few lines and the screen stays with the chart, ladder and tape
   const sizing = (() => { const stop = d && d.play && d.play.stop, ent = TK.px != null ? TK.px : price; if (!stop || !ent) return `<span class="dim">NO STOP</span>`; const r = Math.abs(ent - stop); if (r < tickOfPx(ent) / 2) return `<span class="dim">entry = stop</span>`; const n = capShares(Math.floor(riskDollars() / r), ent); return `<button data-q="set:${Math.max(1, n)}" class="szb" title="size the ticket from your risk $: $${riskDollars()} ÷ $${r.toFixed(2)} a share">${sz(n)} sh</button><span class="dim">$${r.toFixed(2)}/sh</span>`; })();
+  TK.type = "LMT"; TK.tif = "DAY";                 // limit, day: the only order you send by hand
   const html = `<div class="ticket compact">
     <div class="trow">
       <b class="sym">${esc(curSym || NA)}</b><span class="dim q" id="tkQuote">${d ? `${px(d.bid)} / ${px(d.ask)}` : ""}</span>
@@ -3465,8 +3497,6 @@ function renderTicket(s, d, force){
     </div>
     <div class="trow sub">
       <span class="risk"><label>RISK $</label><input id="tkRisk" type="number" step="10" min="0" value="${riskDollars()}"><span class="out">${sizing}</span></span>
-      <select id="tkType" title="order type"><option value="LMT" ${TK.type === "LMT" ? "selected" : ""}>LIMIT</option><option value="STP LMT" ${TK.type === "STP LMT" ? "selected" : ""}>STOP LIMIT</option><option value="MKT" ${TK.type === "MKT" ? "selected" : ""} ${allowMkt ? "" : "disabled"}>MARKET${allowMkt ? "" : " · OFF"}</option><option value="STP" ${TK.type === "STP" ? "selected" : ""} ${allowMkt ? "" : "disabled"}>STOP${allowMkt ? "" : " · OFF"}</option></select>
-      <select id="tkTif" title="time in force"><option ${TK.tif === "DAY" ? "selected" : ""}>DAY</option><option ${TK.tif === "GTC" ? "selected" : ""}>GTC</option><option ${TK.tif === "IOC" ? "selected" : ""}>IOC</option></select>
       <span class="opts"><label><input type="checkbox" id="tkBracket" ${t.bracket ? "checked" : ""}> stop+target</label><label><input type="checkbox" id="tkScale" ${t.scale ? "checked" : ""}> PS60 exits</label></span>
       <button id="tkCxl" ${d && d.orders && d.orders.length ? "" : "disabled"} class="danger" title="cancel every working order on this symbol">CXL ALL</button>
     </div>
@@ -3526,6 +3556,12 @@ P.ticket.el.addEventListener("change", e => {
 P.ticket.el.addEventListener("keydown", e => { e.stopPropagation(); if (e.key === "Enter" && e.target.tagName === "INPUT") transmit(); });
 P.positions.el.addEventListener("click", async e => {
   const c = e.target.closest("button[data-close]"); if (c){ if (!confirm("CLOSE the whole " + c.dataset.close + " position?")) return; flatten(c.dataset.close); return; }
+  const ad = e.target.closest("button[data-add]"); if (ad){ let n = ad.dataset.n; if (n === "ask"){ n = prompt("Add how many shares to " + ad.dataset.add + "?"); if (!n) return; } if (!canTrade()) return toast("Can't trade: " + whyNot(), false);
+    const out = await post("/api/trade/adjust", {symbol: ad.dataset.add, shares: +n, mode: "add"}); toast(out.ok ? "Sent: " + out.sent : "Blocked: " + (out.reason || ""), out.ok); return; }
+  const oc = e.target.closest("button[data-oclose], button[data-oadd]"); if (oc){ const key = oc.dataset.oclose || oc.dataset.oadd, mode = oc.dataset.oclose != null ? "close" : "add"; let n = oc.dataset.n, price = null;
+    if (n === "ask"){ n = prompt((mode === "close" ? "Take off" : "Add") + " how many contracts of " + key + "?"); if (!n) return; price = prompt("Limit price per contract (blank = at the touch)"); if (price === null) return; price = price.trim() === "" ? null : +price; }
+    if (mode === "close" && +n === 0 && !confirm("CLOSE every contract of " + key + "?")) return;
+    const out = await post("/api/trade/opt_adjust", {key, contracts: +n, mode, price}); toast(out.ok ? "Sent: " + out.sent : "Blocked: " + (out.reason || ""), out.ok); return; }
   const r = e.target.closest("button[data-red]"); if (r){ let n = r.dataset.n; if (n === "ask"){ n = prompt("Reduce " + r.dataset.red + " by how many shares?"); if (!n) return; } if (!canReduce()) return toast("Can't trade: " + whyNot(), false);
     const out = await post("/api/trade/adjust", {symbol: r.dataset.red, shares: +n, mode: "close"}); toast(out.ok ? "Sent: " + out.sent : "Blocked: " + (out.reason || ""), out.ok); return; }
   const tr = e.target.closest("tr[data-sym]"); if (tr) openTab(tr.dataset.sym, false);

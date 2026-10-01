@@ -59,6 +59,24 @@ def stock(contract):
     """Only the stock itself: an option / future on the same symbol must never land on the stock's position."""
     sec = getattr(contract, "secType", "STK") or "STK"
     return sec == "STK"
+
+
+def option(contract):
+    return (getattr(contract, "secType", "") or "") == "OPT"
+
+
+def opt_key(contract):
+    """One name for an option contract: 'TSLA 20261003 240C' (symbol, expiry, strike, right)."""
+    strike = num(getattr(contract, "strike", 0)) or 0
+    return f"{getattr(contract, 'symbol', '?')} {getattr(contract, 'lastTradeDateOrContractMonth', '')} {strike:g}{(getattr(contract, 'right', '') or '')[:1]}"
+
+
+def opt_fields(contract):
+    strike = num(getattr(contract, "strike", 0)) or 0
+    mult = num(getattr(contract, "multiplier", 100)) or 100
+    return {"symbol": getattr(contract, "symbol", "?"), "expiry": getattr(contract, "lastTradeDateOrContractMonth", ""),
+            "strike": strike, "right": (getattr(contract, "right", "") or "")[:1], "mult": mult,
+            "local": getattr(contract, "localSymbol", "") or ""}
 FARM_WARN_CODES = {2103, 2105, 2157, 2152}
 DEPTH_REJECT_CODES = {309, 10092}
 SUBSCRIPTION_CODES = {354, 10089, 10090, 10168, 10186, 10197, 322, 10190, 200}
@@ -167,6 +185,10 @@ class TwineyWrapper:
     def tickPrice(self, reqId, tickType, price, attrib):
         field = PRICE_TICKS.get(tickType)
         kind, sym = self.req.get(reqId, (None, None))
+        if field is not None and kind == "opt":
+            v = num(price)
+            self.engine.on_opt_quote(sym, field, None if v is None or v <= 0 else v, self.clock())
+            return
         if field is None or kind != "l1":
             return
         if self.engine.connection["state"] in ("FEED_DOWN", "DATA_LOST") and num(price) not in (None, -1):
@@ -201,7 +223,7 @@ class TwineyWrapper:
 
     # account view (read-only) ------------------------------------------------
     def openOrder(self, orderId, contract, order, orderState):
-        if not stock(contract):
+        if not stock(contract) and not option(contract):
             return
         client = getattr(order, "clientId", None)
         mine = self.session.is_mine(orderId, client)
@@ -211,7 +233,7 @@ class TwineyWrapper:
             info = self.session.my_orders[int(orderId)]
             info["qty"] = num(getattr(order, "totalQuantity", None)) or info["qty"]   # IBKR's current size (OCA reduce)
         self.engine.on_order(
-            key, self.clock(), symbol=getattr(contract, "symbol", "?"), action=getattr(order, "action", None),
+            key, self.clock(), symbol=opt_key(contract) if option(contract) else getattr(contract, "symbol", "?"), action=getattr(order, "action", None),
             qty=num(getattr(order, "totalQuantity", None)), type=getattr(order, "orderType", None),
             lmt=num(getattr(order, "lmtPrice", None)) or None, aux=num(getattr(order, "auxPrice", None)) or None,
             tif=getattr(order, "tif", None), status=getattr(orderState, "status", None),
@@ -230,6 +252,14 @@ class TwineyWrapper:
         self.session.orders_refreshed()
 
     def position(self, account, contract, position, avgCost):
+        if option(contract):
+            key = opt_key(contract)
+            self.session.opt_contract(key, contract)
+            self.engine.on_opt_position(account, key, opt_fields(contract), num(position) or 0.0,
+                                        num(avgCost) or 0.0, self.clock())
+            if num(position):
+                self.session.subscribe_opt(key)
+            return
         if not stock(contract):
             return
         self.engine.on_position(account, getattr(contract, "symbol", "?"), num(position) or 0.0,
@@ -239,6 +269,11 @@ class TwineyWrapper:
         pass
 
     def execDetails(self, reqId, contract, execution):
+        if option(contract):
+            self.engine.on_opt_fill(getattr(execution, "execId", ""), opt_key(contract), getattr(execution, "side", ""),
+                                    num(getattr(execution, "shares", 0)) or 0.0, num(getattr(execution, "price", 0)) or 0.0,
+                                    self.clock())
+            return
         if not stock(contract):
             return
         self.engine.on_fill(getattr(execution, "execId", ""), getattr(contract, "symbol", "?"),
@@ -381,6 +416,8 @@ class MarketDataSession:
         self.next_attempt = 0.0
         self._next_id = 90000000   # data request ids live far above order ids, so an error is never misread
         self.l1_ids = {}      # symbol -> reqId
+        self.opt_contracts = {}   # option key -> the IBKR contract it came in as (positions): orders go out on it
+        self.opt_ids = {}         # option key -> quote reqId
         self.depth_ids = {}   # symbol -> (depth reqId, tape reqId)
         self.dead = set()
         self._orders_seen = set()
@@ -606,7 +643,8 @@ class MarketDataSession:
                                            info["parent"], transmit=True, **extra)
                 info["price"] = price
             info["qty"] = qty
-            self.app.placeOrder(int(oid), self.contract_factory(self.plays[info["symbol"]]), order)
+            contract = self.opt_contracts.get(info["symbol"]) if info.get("opt") else self.contract_factory(self.plays[info["symbol"]])
+            self.app.placeOrder(int(oid), contract, order)
             key = self.perm_ids.get(int(oid)) or f"id{oid}"
             self.engine.on_order(key, now, lmt=info["price"] if info["type"] in ("LMT", "STP LMT") else None,
                                  aux=info.get("aux") if info["type"] in ("STP", "STP LMT") else None,
@@ -684,6 +722,48 @@ class MarketDataSession:
                 except Exception:
                     pass
                 self.app.req.pop(rid, None)
+
+    def opt_contract(self, key, contract):
+        with self._lock:
+            self.opt_contracts[key] = contract
+
+    def subscribe_opt(self, key):
+        """Quotes for an option contract you hold (bid / ask / last), so it can be scaled at the touch."""
+        with self._lock:
+            if self.app is None or not self.ready or key in self.opt_ids or key not in self.opt_contracts:
+                return
+            rid = self._rid()
+            self.app.req[rid] = ("opt", key)
+            self.opt_ids[key] = rid
+            try:
+                self.app.reqMktData(rid, self.opt_contracts[key], "", False, False, [])
+            except Exception as exc:
+                log.warning("option quote request failed for %s: %s", key, exc)
+
+    def send_option_order(self, key, action, qty, price, now, reducing=False, role="option"):
+        """A LIMIT DAY order on an option contract you hold (scale in / out, close). Same gate as a stock order:
+        reducing (taking the position down) is never blocked; adding goes through the caps, in real dollars."""
+        with self._lock:
+            if self.app is None or not self.ready or self.next_order_id is None:
+                raise RuntimeError("not connected to TWS")
+            contract = self.opt_contracts.get(key)
+            if contract is None:
+                raise RuntimeError(f"no contract on file for {key}")
+            if self.gate is None or not (self.gate.can_trade() or (reducing and self.gate.can_reduce())):
+                raise RuntimeError("trading gate closed")
+            oid = self.next_order_id
+            self.next_order_id += 1
+            order = self.order_factory(action, qty, "LMT", price, "DAY", None, transmit=True)
+            self.order_roles[oid] = role
+            self.my_orders[oid] = {"symbol": key, "parent": None, "action": action, "qty": qty, "type": "LMT",
+                                   "tif": "DAY", "aux": None, "price": price, "oca": None, "opt": True}
+            self.app.placeOrder(oid, contract, order)
+            self.engine.on_order(f"id{oid}", now, symbol=key, action=action, qty=float(qty), remaining=float(qty),
+                                 type="LMT", lmt=price, aux=None, tif="DAY", status="PendingSubmit",
+                                 order_id=oid, role=role, mine=True, parent=None, opt=True)
+            self._orders_seen.add(f"id{oid}")
+            self._next_orders = now + 1.0
+            return oid
 
     def subscribe_l1(self):
         for sym, play in self.plays.items():

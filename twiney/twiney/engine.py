@@ -182,7 +182,9 @@ class Engine:
         self._slot_cmds = []
         # read-only view of the account (orders are placed in TWS, never here)
         self.orders = {}        # key -> order dict (pending + recently finished)
-        self.positions = {}     # (account, symbol) -> {"qty", "avg_cost"}
+        self.positions = {}
+        self.opt_fills = []
+        self.opt_positions = {}   # option key -> {symbol, expiry, strike, right, mult, qty, avg_cost, bid, ask, last}     # (account, symbol) -> {"qty", "avg_cost"}
         self.fills = {}         # exec id -> fill dict
         self.commissions = {}   # exec id -> commission ($)
         self.pos_t = {}         # symbol -> when the broker last reported its position
@@ -497,6 +499,51 @@ class Engine:
             for key, o in list(self.orders.items()):
                 if o.get("status") in self.DONE_STATUSES + ("Done",) and t - o["t"] > 600:
                     del self.orders[key]
+
+    @staticmethod
+    def _opt_view(p):
+        """An option position for the page: contract, side, size, cost, quotes and the open P&L in dollars
+        (IBKR's avg cost is per contract: multiplier already in)."""
+        mark = p.get("last") if p.get("last") else ((p["bid"] + p["ask"]) / 2 if p.get("bid") and p.get("ask") else None)
+        mult = p.get("mult") or 100
+        pnl = None if mark is None else (mark * mult - p["avg_cost"]) * p["qty"]
+        exp = p.get("expiry") or ""
+        label = f"{p.get('symbol')} {exp[4:6]}/{exp[6:8]} {p.get('strike'):g}{p.get('right')}" if len(exp) >= 8 else p["key"]
+        return {"key": p["key"], "label": label, "symbol": p.get("symbol"), "expiry": exp, "strike": p.get("strike"),
+                "right": p.get("right"), "mult": mult, "qty": p["qty"], "avg_cost": p["avg_cost"],
+                "per_contract": p["avg_cost"] / mult if mult else p["avg_cost"],
+                "bid": p.get("bid"), "ask": p.get("ask"), "last": p.get("last"), "mark": mark, "pnl": None if pnl is None else round(pnl, 2)}
+
+    def on_opt_position(self, account, key, fields, qty, avg_cost, t):
+        """An option position from IBKR (contracts; avg_cost is per contract, IBKR style). Shown in POSITIONS with
+        its own quotes so it can be scaled in and out of from the desk."""
+        with self.lock:
+            self.account_seen = True
+            if qty:
+                cur = self.opt_positions.get(key) or {"bid": None, "ask": None, "last": None}
+                cur.update(fields, key=key, account=account, qty=qty, avg_cost=avg_cost, t=t)
+                self.opt_positions[key] = cur
+            else:
+                self.opt_positions.pop(key, None)
+
+    def on_opt_quote(self, key, field, price, t):
+        with self.lock:
+            p = self.opt_positions.get(key)
+            if p is not None and field in ("bid", "ask", "last"):
+                p[field] = price
+                p["quote_t"] = t
+
+    def on_opt_fill(self, exec_id, key, side, qty, price, t):
+        """An option execution: journaled and listed with the fills, kept OUT of the stock fills so the stock's
+        day P&L (average cost over its own fills) is never touched by a contract."""
+        with self.lock:
+            self.account_seen = True
+            if exec_id and any(f.get("exec_id") == exec_id for f in self.opt_fills):
+                return
+            self.opt_fills.append({"exec_id": exec_id, "symbol": key, "side": side, "shares": qty, "price": price,
+                                   "t": t, "seq": 10**6 + len(self.opt_fills), "opt": True})
+            self.opt_fills = self.opt_fills[-60:]
+        self.log(key.split(" ")[0], f"OPTION FILL {side} {qty:g} {key} @ {price:.2f}", t, kind="fill")
 
     def on_position(self, account, symbol, qty, avg_cost, t):
         with self.lock:
@@ -2652,7 +2699,8 @@ class Engine:
                                    key=lambda o: -o["t"])[:15],
                     "positions": [dict(p, last=fmt_price(self.syms[p["symbol"]].price())
                                        if p["symbol"] in self.syms else None) for p in self.positions.values()],
-                    "fills": sorted(self.fills.values(), key=lambda f: -f["seq"])[:30],
+                    "opt_positions": [self._opt_view(p) for p in self.opt_positions.values()],
+                    "fills": sorted(list(self.fills.values()) + self.opt_fills, key=lambda f: -f["t"])[:30],
                 },
                 "alerts": [dict(a, grade=self.grades.get(a["key"])) for a in list(self.alerts)[:40]],
                 "voice": [v for v in list(self.voice)[:20] if t - v["t"] < 60],

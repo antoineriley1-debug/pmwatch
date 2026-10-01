@@ -503,6 +503,8 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                     out = tr.breakeven(sym, now)
                 elif action == "partial":
                     out = tr.partial(sym, body.get("shares"), body.get("price"), now)
+                elif action == "opt_adjust":
+                    out = tr.opt_adjust(str(body.get("key", "")), body.get("contracts"), str(body.get("mode", "")), body.get("price"), now)
                 elif action == "modify":
                     out = tr.modify(body.get("id"), body.get("price"), now)
                 else:

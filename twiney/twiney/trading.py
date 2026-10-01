@@ -472,6 +472,9 @@ class IbkrBroker:
         with self.engine.lock:
             return sum(p["qty"] for (a, s), p in self.engine.positions.items() if s == symbol)
 
+    def place_option(self, key, action, qty, price, now, reducing=False):
+        return self.session.send_option_order(key, action, qty, price, now, reducing=reducing)
+
 
 # ---------------------------------------------------------------------------
 
@@ -1358,6 +1361,54 @@ class Trader:
                         self._note(now, f"{fam['symbol']}: cash flow taken — stop moved to breakeven {money(fam['entry'])}", True)
                 except Exception as exc:
                     self._note(now, f"{fam['symbol']}: could not move the stop to breakeven: {exc}", False)
+
+    def opt_adjust(self, key, contracts, mode, price=None, now=None):
+        """Scale an OPTION position you hold: mode "close" takes contracts off (all of them with contracts 0 /
+        None), "add" puts more on in the same direction. A LIMIT DAY order on the contract at the touch (bid when
+        selling, ask when buying) unless you give a price. Closing is never blocked; adding goes through the caps
+        in real dollars (price × multiplier × contracts)."""
+        with self.lock:
+            now = now or time.time()
+            p = self.engine.opt_positions.get(key)
+            if p is None:
+                return {"ok": False, "reason": f"no option position {key}"}
+            if not hasattr(self.broker, "place_option"):
+                return {"ok": False, "reason": "the practice desk trades stock only: option positions come from TWS"}
+            held = int(abs(p["qty"])) ; long_ = p["qty"] > 0
+            n = int(contracts or 0)
+            if mode == "close":
+                n = held if n <= 0 else min(n, held)
+                action = SELL if long_ else BUY
+            elif mode == "add":
+                if n <= 0:
+                    return {"ok": False, "reason": "how many contracts?"}
+                action = BUY if long_ else SELL
+            else:
+                return {"ok": False, "reason": f"bad mode {mode}"}
+            if price is None or price == "":
+                price = p.get("bid") if action == SELL else p.get("ask")
+                if not price:
+                    return {"ok": False, "reason": f"no quote on {key} yet — type a price"}
+            price = round(float(price), 2)
+            if price <= 0:
+                return {"ok": False, "reason": "price must be positive"}
+            mult = p.get("mult") or 100
+            reducing = mode == "close"
+            reason = (self.gate.check_reduce(action, n, price * mult, now) if reducing
+                      else self.gate.check(action, n, price * mult, now, "LMT"))
+            if reason:
+                self._note(now, f"BLOCKED {action} {n} {key} @ {money(price)}: {reason}", False)
+                return {"ok": False, "reason": reason}
+            try:
+                oid = self.broker.place_option(key, action, n, price, now, reducing=reducing)
+            except Exception as exc:
+                self._note(now, f"FAILED {action} {n} {key} @ {money(price)}: {exc}", False)
+                return {"ok": False, "reason": str(exc)}
+            what = "CLOSE" if reducing and n >= held else "SCALE OUT" if reducing else "SCALE IN"
+            self._note(now, f"SENT {what} {action} {n} {key} @ {money(price)} (${n * price * mult:,.0f})", True)
+            self.engine._rec({"ev": "order", "t": now, "sym": key, "action": action, "qty": n, "px": price,
+                              "type": "LMT", "aux": None, "tif": "DAY", "legs": [], "id": oid, "role": "option"})
+            return {"ok": True, "id": oid, "sent": f"{action} {n} {key} @ {money(price)} ({what.lower()})"}
 
     def adjust(self, symbol, shares, mode, now=None):
         with self.lock:

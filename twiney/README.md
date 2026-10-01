@@ -46,6 +46,24 @@ red hit the bid, bold is big (hover a print for the exchange and age). ORDER ENT
 carries the controls on the row: 25 / 50 / 75 off at the touch, … your own number, @ a partial at your price,
 BE stop to breakeven, X close.
 
+## Pin box, limit-only ticket, scaling, options
+
+- **Pin box**: the tape and the ladder move too fast to hover. Click a print, a reload $ cell, a FLOW tag or a
+  price and what the hover would have said stays in a small box at the bottom of that panel until the next click
+  (✕ clears it). A price with nothing of its own pins the whole row: bid, ask, and everything that traded or
+  reloaded there.
+- **The ticket sends LIMIT DAY orders only**: no type, no time-in-force to pick. (The desk's own stop and the
+  auto 2nd entry still go out as stop-limits.)
+- **Scale in / out from POSITIONS**: OUT 25 / 50 / 75 at the touch, … your own number, @ a partial at your
+  price, BE stop to breakeven, X close. IN +½ / +1× / +… adds at the touch (ask for a long, bid for a short).
+- **Options (TWS accounts)**: every option position in the account shows in POSITIONS as its contract
+  ("TSLA 10/03 240C"), in contracts, with its own bid / ask requested from TWS and the open P&L in dollars.
+  The same buttons scale it: OUT 25 / 50 / 75 / … / X and IN +1 / +½ / +1× / +…, LIMIT DAY orders on the
+  contract at the touch or at a price you type. Closing is never blocked (disarmed, locked, over the caps);
+  adding goes through the caps in real dollars (price × 100 × contracts). Option fills land in the journal.
+  Opening a NEW option position (an option chain, picking a strike) is not on the desk yet: open it in TWS and
+  scale it from here. The practice desk is stock only.
+
 ## Trading from the ladder (paper only)
 - **ARM** in the header. TWINEY starts DISARMED every launch; nothing can be sent until you arm it.
 - Click **BUY** on any ladder row to place a limit buy at that price; **SELL** likewise. Or use the

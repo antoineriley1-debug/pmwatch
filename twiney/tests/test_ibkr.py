@@ -355,7 +355,8 @@ class AuditFixTests(unittest.TestCase):
         app.position("DU1", O(symbol="AAA", secType="OPT"), decimal.Decimal("5"), 120.0)
         app.execDetails(1, O(symbol="AAA", secType="OPT"), O(execId="x.1.1.01", side="BOT", shares=5, price=1.2, time=""))
         self.assertEqual(engine.trader.broker.position("AAA"), 100)
-        self.assertEqual(engine.fills, {})
+        self.assertEqual(engine.fills, {})                       # the stock's fills (and its P&L) untouched
+        self.assertEqual(len(engine.opt_fills), 1)               # the contract's fill is journaled on its own
 
     def test_daily_bars_are_new_york_dates_and_today_is_skipped(self):
         s, engine, clock, app = self.connect()
@@ -423,3 +424,68 @@ class AuditFixTests(unittest.TestCase):
         self.assertEqual(len(engine.snapshot(clock())["account"]["pending"]), 2)
         self.assertEqual(s.cancel_all(clock()), 0)
 
+
+
+class _Opt:
+    """An option contract the way ibapi hands it to position()."""
+    def __init__(self, symbol="TSLA", expiry="20261003", strike=240.0, right="C"):
+        self.secType, self.symbol, self.lastTradeDateOrContractMonth, self.strike, self.right = "OPT", symbol, expiry, strike, right
+        self.multiplier, self.localSymbol = "100", f"{symbol}  261003C00240000"
+
+
+class OptionPositionTests(unittest.TestCase):
+    """Option positions from TWS show in POSITIONS with their own quotes and can be scaled in / out of from the
+    desk: LIMIT DAY orders on the contract they came in as. Closing is never blocked; adding goes through the
+    caps in real dollars."""
+    def test_position_quote_and_orders(self):
+        s, engine, clock = make_session(max_dollars_per_order=20000)
+        s.step(clock()); app = s.app; app.nextValidId(50)
+        app.position("DU1", _Opt(), 5, 312.0)          # 5 calls, $3.12 a contract (IBKR: 312 with the multiplier in)
+        p = engine.opt_positions["TSLA 20261003 240C"]
+        self.assertEqual((p["qty"], p["avg_cost"], p["mult"], p["right"], p["strike"]), (5, 312.0, 100.0, "C", 240.0))
+        rid = s.opt_ids["TSLA 20261003 240C"]
+        self.assertIn("reqMktData", names(app))
+        app.tickPrice(rid, 1, 3.40, None); app.tickPrice(rid, 2, 3.50, None); app.tickPrice(rid, 4, 3.45, None)
+        v = next(x for x in engine.snapshot(clock())["account"]["opt_positions"])
+        self.assertEqual((v["label"], v["bid"], v["ask"], v["per_contract"]), ("TSLA 10/03 240C", 3.40, 3.50, 3.12))
+        self.assertAlmostEqual(v["pnl"], (3.45 * 100 - 312.0) * 5, places=2)
+        tr = engine.trader; tr.gate.set_accounts(["DU1"]); tr.gate.arm(True)
+        # scale out half at the bid
+        out = tr.opt_adjust("TSLA 20261003 240C", 2, "close", None, clock())
+        self.assertTrue(out["ok"], out)
+        placed = [c for c in app.calls if c[0] == "placeOrder"][-1]
+        oid, contract, order = placed[1], placed[2], placed[3]
+        self.assertIsInstance(contract, _Opt)
+        self.assertEqual((order["action"], order["qty"], order["price"], order["type"], order["tif"]), ("SELL", 2, 3.40, "LMT", "DAY"))
+        pend = [o for o in engine._pending() if o.get("symbol") == "TSLA 20261003 240C"]
+        self.assertEqual(len(pend), 1); self.assertTrue(pend[0]["opt"])
+        # scale in one at the ask, at a typed price
+        out = tr.opt_adjust("TSLA 20261003 240C", 1, "add", 3.55, clock())
+        self.assertTrue(out["ok"], out)
+        order = [c for c in app.calls if c[0] == "placeOrder"][-1][3]
+        self.assertEqual((order["action"], order["qty"], order["price"]), ("BUY", 1, 3.55))
+        # adding over the dollar cap is blocked in real dollars (60 contracts × $3.55 × 100 = $21,300)
+        out = tr.opt_adjust("TSLA 20261003 240C", 60, "add", 3.55, clock())
+        self.assertFalse(out["ok"]); self.assertIn("cap", out["reason"])
+        # closing works locked / disarmed
+        tr.gate.arm(False); tr.gate.lock_out("day loss")
+        out = tr.opt_adjust("TSLA 20261003 240C", 0, "close", None, clock())
+        self.assertTrue(out["ok"], out)
+        order = [c for c in app.calls if c[0] == "placeOrder"][-1][3]
+        self.assertEqual((order["action"], order["qty"]), ("SELL", 5))
+        # the fill lands in the journal, the position leaving clears the row
+        class Ex: execId, side, shares, price, time = "e1", "SLD", 5, 3.40, ""
+        app.execDetails(1, _Opt(), Ex())
+        self.assertEqual(engine.fills, {}); self.assertEqual(len(engine.opt_fills), 1)
+        self.assertTrue(engine.snapshot(clock())["account"]["fills"][0]["opt"])
+        app.position("DU1", _Opt(), 0, 0.0)
+        self.assertNotIn("TSLA 20261003 240C", engine.opt_positions)
+
+    def test_no_quote_needs_a_price_and_sim_has_no_options(self):
+        s, engine, clock = make_session()
+        s.step(clock()); app = s.app; app.nextValidId(50)
+        app.position("DU1", _Opt(), 2, 100.0)
+        tr = engine.trader; tr.gate.set_accounts(["DU1"]); tr.gate.arm(True)
+        out = tr.opt_adjust("TSLA 20261003 240C", 1, "close", None, clock())
+        self.assertFalse(out["ok"]); self.assertIn("type a price", out["reason"])
+        self.assertFalse(tr.opt_adjust("NOPE", 1, "close", None, clock())["ok"])
