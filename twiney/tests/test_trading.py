@@ -311,17 +311,24 @@ class AutoSecondEntryTests(unittest.TestCase):
         self.assertEqual(e._pending("AAA"), [])
         self.assertIn("2nd entry", tr.auto_status()["AAA"]["text"])
 
-    def test_price_above_the_level_is_a_limit_on_the_pullback(self):
+    def test_price_above_the_level_waits_then_goes_in_as_a_stop_limit(self):
         e, tr, gate, broker = self._ready()
         gate.arm(True)
-        for i in range(3):                                   # the market is above the 2nd entry
-            e.on_depth("AAA", i, UPDATE, BID, round(10.29 - i * 0.01, 2), 500, "", 1.4)
-            e.on_depth("AAA", i, UPDATE, ASK, round(10.30 + i * 0.01, 2), 500, "", 1.4)
-        e.on_l1("AAA", "last", 10.30, 1.5)
+        def quote(bid, t):
+            for i in range(3):
+                e.on_depth("AAA", i, UPDATE, BID, round(bid - i * 0.01, 2), 500, "", t)
+                e.on_depth("AAA", i, UPDATE, ASK, round(bid + 0.01 + i * 0.01, 2), 500, "", t)
+            e.on_l1("AAA", "last", bid + 0.01, t)
+        quote(10.29, 1.5)                                    # the market is above the 2nd entry
         tr.watchdog(2.0)
-        ent = self._entries(e)
-        self.assertEqual([(o["type"], o["lmt"]) for o in ent], [("LMT", 10.10)])
-        self.assertIn("pulls back", tr.auto_status()["AAA"]["text"])
+        self.assertEqual(self._entries(e), [])               # no limit on the pullback: nothing yet
+        self.assertIn("back under", tr.auto_status()["AAA"]["text"])
+        quote(10.04, 2.5)                                    # back under the level
+        tr.watchdog(3.0)
+        self.assertEqual([(o["type"], o["aux"]) for o in self._entries(e)], [("STP LMT", 10.10)])
+        self.assertEqual(broker.position("AAA"), 0)          # not filled on the way down
+        e.on_print("AAA", 10.11, 200, "X", 3.5)              # comes back up through it: filled
+        self.assertEqual(broker.position("AAA"), 500)
 
     def test_lines_become_orders_as_they_are_drawn(self):
         """2nd entry first (ticket size, no legs yet), then the target joins, then the stop joins and sizes it."""

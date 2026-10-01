@@ -41,8 +41,9 @@ with ladder trading that is **locked to paper accounts** until you deliberately 
 - A confirmation box shows size, price, dollar value and the stop/target legs (Enter sends, Esc cancels).
   Tick **one-click** to skip it.
 - **AUTO 2ND ENTRY** (on by default, `trading.auto_second_entry`): the lines you draw ARE the orders, while ARMED.
-  Draw the 2nd entry and the entry order goes in at once: a STOP-LIMIT through it when price is under it (long),
-  a LIMIT at it when price is above it (the pullback); shorts mirror. It uses the ticket size until you draw the
+  Draw the 2nd entry and the entry order goes in at once as a STOP-LIMIT: a long fills only when price comes back
+  up through it, a short only when it comes back down through it. With price already past the level the order
+  waits until price is back on the other side, so it never chases. It uses the ticket size until you draw the
   stop, then it is sized from your RISK $. Draw the target and the stop and they join the entry as its bracket.
   Drawn after the fill, they go in as the position's stop and target, and dragging a line moves its order.
   Clearing a line never pulls a stop that is protecting a position. One entry per drawn level; a hand cancel

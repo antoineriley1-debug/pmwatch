@@ -1006,8 +1006,8 @@ class Trader:
 
         Drawing the 2nd entry puts the entry in at once. The target and the stop join it as you draw them (the entry
         is re-sent with them attached), and it is sized from your risk $ once the stop is there (the ticket size
-        until then). Price under the 2nd entry (long): a BUY STOP-LIMIT that fills when price comes up through it.
-        Price above it: a BUY LIMIT that fills on the pullback into it. Short: the mirror."""
+        until then). Always a STOP-LIMIT: a long fills only when price comes back up through the 2nd entry, a short
+        only when it comes back down through it. With price already past the level it waits for price to return."""
         sym = play["symbol"]
         if not self.auto_on:
             return None, "AUTO 2ND ENTRY is off on the desk", False
@@ -1048,23 +1048,18 @@ class Trader:
         st = self.engine.syms[sym]
         last = st.price()
         bid, ask = st.bbo()
-        # which side of the level the market is on, judged by the quote you would trade against (the offer for a
-        # buy, the bid for a sell): above it, a limit AT the level waits for the pullback; at or under it, a limit
-        # there would fill at once, so it is a stop-limit that fills when price comes up through it
+        ticks = int(self.cfg.get("auto_entry_limit_ticks", 5))
+        limit = snap(round(se + (ticks * tick_size(se) if long_ else -ticks * tick_size(se)), 4))
+        want = {"type": "STP LMT", "action": action, "aux": aux, "price": limit, "qty": qty,
+                "stop": stop and float(stop), "target": target and float(target)}
+        # the entry is ONLY price coming back up through the level (down through it, short): always a stop-limit.
+        # With the market already past the level a stop-limit would fire at once (a chase), so a new one waits
+        # until price is back under it (over it, short); one already working stays and does its job
         ref = (ask if long_ else bid) or last
         through = ref is not None and (ref > se if long_ else ref < se)
-        if mine and mine.get("type") in ("LMT", "STP LMT") and last is not None and abs(last - se) < tick_size(se) / 2:
-            otype = mine["type"]                      # price sitting on the level: keep what is working, no flip-flop
-        else:
-            otype = "LMT" if through else "STP LMT"
-        if otype == "LMT":
-            want = {"type": "LMT", "action": action, "aux": aux, "price": aux, "qty": qty,
-                    "stop": stop and float(stop), "target": target and float(target)}
-        else:
-            ticks = int(self.cfg.get("auto_entry_limit_ticks", 5))
-            limit = snap(round(se + (ticks * tick_size(se) if long_ else -ticks * tick_size(se)), 4))
-            want = {"type": "STP LMT", "action": action, "aux": aux, "price": limit, "qty": qty,
-                    "stop": stop and float(stop), "target": target and float(target)}
+        if through and not mine:
+            return want, (f"price {money(ref)} is {'above' if long_ else 'below'} the 2nd entry — the entry goes in when price is "
+                          f"back {'under' if long_ else 'over'} {money(se)}, and fills when it comes back through"), False
         return want, "", True
 
     def _auto_protect(self, play, now):
@@ -1210,7 +1205,7 @@ class Trader:
             cur = self.auto.get(sym)
             se = play.get("second_entry")
             if cur is not None:
-                how = "comes through" if cur.get("type") == "STP LMT" else "pulls back to"
+                how = "comes back through"
                 legs = " · ".join(x for x in (f"stop {money(cur['stop'])}" if cur.get("stop") else "draw the stop",
                                               f"target {money(cur['target'])}" if cur.get("target") else "draw the target") if x)
                 state, text = "WORKING", (f"{cur['action']} {cur['qty']:,} {cur.get('type', 'STP LMT')} fills when price {how} "
