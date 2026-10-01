@@ -47,7 +47,12 @@ with ladder trading that is **locked to paper accounts** until you deliberately 
   the bigger of `auto_entry_limit_ticks` (10) and `auto_entry_max_slip_pct` (0.3% of the price) past the level, so
   a fast print through the level still fills at the market. If price ever runs past even that, PLAY SETUP shows
   TRIGGERED and the desk says so; if price crosses the level with no order working (disarmed, locked), the desk
-  says why at that moment. It uses the ticket size until you draw the
+  says why at that moment. Drawing a 2nd entry while the desk is DISARMED arms it (paper / practice accounts
+  only, never when locked for the day; `auto_arm_on_second_entry`). Levels already on the chart when the desk
+  starts never arm it. A chip on the 2nd entry line says ENTRY LIVE (side, shares), PART FILLED, FILLED,
+  TRIGGERED or NO ORDER with the reason. Draw with **2** then a click, the **＋ mark** menu, or right-click the
+  chart: 2ND ENTRY here / TARGET here / STOP here. A part fill keeps the rest of the entry working. It uses the
+  ticket size until you draw the
   stop, then it is sized from your RISK $. Draw the target and the stop and they join the entry as its bracket.
   Drawn after the fill, they go in as the position's stop and target, and dragging a line moves its order.
   Clearing a line never pulls a stop that is protecting a position. One entry per drawn level; a hand cancel

@@ -143,6 +143,8 @@ DEFAULTS = {
         # ...or this % of the price, whichever is more: the most past the 2nd entry the entry may fill (a cap, not
         # the fill price). Too tight and a fast print through the level leaves the order unfilled
         "auto_entry_max_slip_pct": 0.3,
+        # drawing a 2nd entry while DISARMED arms the desk (paper / practice accounts only; never when locked)
+        "auto_arm_on_second_entry": True,
         "risk_dollars": 100,
     },
     "ps60": {

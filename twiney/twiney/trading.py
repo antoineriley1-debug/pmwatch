@@ -499,6 +499,7 @@ class Trader:
         self.auto_fail = {}  # symbol -> (level key, when, reason): a refused order is not retried every half second
         self.auto_sync = {}  # symbol -> the stop / target lines the exits of a filled auto entry were last set to
         self.auto_side = {}  # symbol -> was price beyond the 2nd entry at the last look (to catch the cross)
+        self.auto_seen = {}  # symbol -> the 2nd entry last seen (a change is a line drawn or moved)
         # every order action (clicks on HTTP threads, the watchdog thread) runs one at a time: a check and the order
         # it allows can never be split by another click (two flattens, two closes, the same ticket twice)
         self.lock = threading.RLock()
@@ -588,7 +589,9 @@ class Trader:
             return out
         use_bracket = self.bracket if bracket is None else bool(bracket)
         plan = self.cfg["scale_plan"]["cash_flow"] if self.scale else None
-        ref = price if order_type in ("LMT", "STP LMT") else (self.engine.syms[symbol].price() or price)
+        # the price the exits are measured from: a stop entry's TRIGGER (where you get in), never its limit (a cap
+        # that can sit well past it — measured from there, a near target was dropped and the stop judged wrongly)
+        ref = aux if order_type == "STP LMT" else price if order_type == "LMT" else (self.engine.syms[symbol].price() or price)
         if use_bracket and ref and not stop_ok(play, action, ref):
             reason = (f"your stop {money(play['stop'])} is on the wrong side of a {action} at {money(ref)} — "
                       f"the order would go out with no stop. Fix the stop first")
@@ -1071,6 +1074,25 @@ class Trader:
                           f"back {'under' if long_ else 'over'} {money(se)}, and fills when it comes back through"), False
         return want, "", True
 
+    def _auto_arm_on_draw(self, play, now):
+        """The lines are the orders: a 2nd entry DRAWN (or moved) while the desk is disarmed arms it, on a paper or
+        practice account only, never when locked for the day. Levels already on the chart at start don't arm it."""
+        sym, se = play["symbol"], play.get("second_entry")
+        key = price_key(se) if se else None
+        if sym not in self.auto_seen:
+            self.auto_seen[sym] = key
+            return
+        if key == self.auto_seen[sym]:
+            return
+        self.auto_seen[sym] = key
+        if key is None or self.gate.armed or not self.auto_on or play.get("auto") is False:
+            return
+        if not self.cfg.get("auto_arm_on_second_entry", True) or self.gate.mode not in ("SIM", "PAPER"):
+            return
+        if self.gate.arm(True):
+            self._note(now, f"ARMED by your 2nd entry on {sym} — the entry order is going in", True)
+            self.engine.log(sym, "desk ARMED by the 2nd entry you drew", now, kind="level")
+
     def _ran_past(self, sym, cur):
         last = self.engine.syms[sym].price()
         if last is None:
@@ -1165,6 +1187,7 @@ class Trader:
     def _auto_one(self, play, now):
         sym = play["symbol"]
         cur = self.auto.get(sym)
+        o = None
         if cur is not None:
             o = self._order_by_id(cur["id"])
             status = (o or {}).get("status")
@@ -1195,6 +1218,14 @@ class Trader:
                     self._note(now, f"AUTO 2ND ENTRY {sym} off: its order was {status.lower()} outside the desk — "
                                     f"redraw the 2nd entry (or switch AUTO on in PLAY SETUP) to arm it again", False)
                 cur = None
+        if cur is not None and o is not None and (o.get("filled") or 0) > 0 and \
+                o.get("status") not in self.engine.DONE_STATUSES + ("Done",):
+            # part-filled (IBKR fills in pieces): the rest stays working for the full size. Never cancelled
+            # because "you already hold shares" — those shares ARE this entry
+            self.auto_why[sym] = ""
+            cur["partial"] = int(o.get("filled") or 0)
+            return
+        self._auto_arm_on_draw(play, now)
         want, why, may_place = self._auto_want(play)
         self._auto_cross_watch(play, cur, why, now)
         if want is None:
@@ -1254,9 +1285,10 @@ class Trader:
                 how = "comes back through"
                 legs = " · ".join(x for x in (f"stop {money(cur['stop'])}" if cur.get("stop") else "draw the stop",
                                               f"target {money(cur['target'])}" if cur.get("target") else "draw the target") if x)
-                state = "TRIGGERED" if self._ran_past(sym, cur) else "WORKING"
+                state = "PARTIAL" if cur.get("partial") else "TRIGGERED" if self._ran_past(sym, cur) else "WORKING"
                 text0 = (f"price ran past your cap {money(cur['price'])} — not filled; fills if price comes back to it · "
-                         if state == "TRIGGERED" else "")
+                         if state == "TRIGGERED" else
+                         f"{cur['partial']:,} of {cur['qty']:,} filled, the rest is working · " if state == "PARTIAL" else "")
                 text = (f"{cur['action']} {cur['qty']:,} {cur.get('type', 'STP LMT')} fills when price {how} "
                                           f"{money(cur['aux'])} (cap {money(cur['price'])}) · {legs}")
                 text = text0 + text

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261001-0030">
+<meta name="build" content="20261001-0058">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -151,6 +151,7 @@ tr.retired td{opacity:.55} tr.retired td.status{opacity:1;color:var(--gold)}
 .pane.clean .chart-hint{display:none}
 .cmenu{display:block;position:fixed;z-index:60;min-width:200px}
 .cmenu button{display:block;width:100%;margin:3px 0;text-align:left;padding:5px 8px}
+.cmenu .blvl{border-color:#5a4a1a;color:#ffe9a8} .cmenu .blvl.se{font-weight:700;border-color:#e6c15a}
 .cmenu .bbuy{background:#173b28;border-color:var(--buy);color:#dff5e8;font-weight:700} .cmenu .bsell{background:#3d1c1c;border-color:var(--sell);color:#f5dede;font-weight:700}
 .say.remount{border-color:var(--buy)} .say.rejection{border-color:var(--sell)}
 td.grade{font-weight:700} td.grade.READY{color:var(--buy)} td.grade.WATCH{color:var(--gold)} td.grade.PASS{color:var(--sell)}
@@ -1337,6 +1338,9 @@ function chartMenu(p, v, x, y, price){
     <button class="bsell" data-do="sell" ${on ? "" : "disabled"}>SELL ${sz(t.default_shares)} limit @ ${px(price)}</button>
     ${d.position ? `<button class="bflat" data-do="flat" ${on ? "" : "disabled"}>Flatten ${esc(d.symbol)}</button>` : ""}
     ${d.orders.length ? `<button data-do="cxl">Cancel all (${d.orders.length})</button>` : ""}
+    <button data-do="lvl" data-role="second_entry" class="blvl se">2ND ENTRY here ${px(price)} · the entry order</button>
+    <button data-do="lvl" data-role="target" class="blvl">TARGET here ${px(price)}</button>
+    <button data-do="lvl" data-role="stop" class="blvl">STOP here ${px(price)}</button>
     <button data-do="alert" class="balert">🔔 Alert me when ${esc(d.symbol)} hits ${px(price)}</button>
     ${(() => { const per = v.chartY ? (v.chartY[1] - v.chartY[0]) / ((v.chartH || 1) - 8) : 0; const lv = (d.user_levels || []).find(l => l.role !== "trigger" && Math.abs(l.price - price) <= per * 6);
       return lv ? `<button data-do="rmlevel" data-role="${esc(lv.role)}" data-lp="${lv.price}">✕ Remove ${esc(lv.label)} ${px(lv.price)}</button>` : ""; })()}
@@ -1351,6 +1355,8 @@ function chartMenu(p, v, x, y, price){
     else if (b.dataset.do === "sell") sendOrder(d.symbol, "SELL", price);
     else if (b.dataset.do === "flat") flatten(d.symbol);
     else if (b.dataset.do === "cxl") cancelAll(d.symbol);
+    else if (b.dataset.do === "lvl"){ const role = b.dataset.role, names = {second_entry: "2nd entry", target: "target", stop: "stop"};
+      post("/api/level", {symbol: d.symbol, role, price}).then(out => { toast(out.ok ? `${d.symbol} ${names[role]} ${px(price)}` + (role === "second_entry" ? " — entry order going in" : "") : "Could not set the " + names[role], out.ok); if (out.ok) poll(true); }); }
     else if (b.dataset.do === "alert") addAlert({symbol: d.symbol, kind: "price", price, when: "hit", repeat: false});
     else if (b.dataset.do === "rmlevel"){ const role = b.dataset.role, lp = +b.dataset.lp;
       (role === "extra" ? post("/api/level", {symbol: d.symbol, price: lp, on: false, role: "extra"}) : post("/api/level", {symbol: d.symbol, role, price: null}))
@@ -1754,6 +1760,7 @@ function drawOne(p, cv, v, isFoot){
     g.fillStyle = _lum > 140 ? "#0c0c0d" : "#ffffff"; g.font = "bold 11px ui-monospace, Menlo, Consolas, monospace";
     const _p = px(lp), _room = Math.max(0, 11 - _p.length);   // 12 characters fit the tag: label + space + price
     g.fillText(`${_room ? l.label.slice(0, _room) + " " : ""}${_p}`, plotW + 3, yy + 4); g.font = "11px ui-monospace, Menlo, Consolas, monospace";
+    if (l.role === "second_entry" && !isFoot) v.seChipY = yy;     // its order-status chip is drawn on top, after the candles
   }
 
   const clean = isFoot || store.get("clean", true);
@@ -2019,6 +2026,25 @@ function drawOne(p, cv, v, isFoot){
     g.fillStyle = "#0c0c0d"; g.strokeStyle = col; g.fillRect(plotW, yy - 8, labelW, 16); g.strokeRect(plotW + .5, yy - 7.5, labelW - 1, 15);
     g.fillStyle = col; g.fillText((drag ? px(p.dragOrder.price) + " >" : `${o.role === "entry" ? "YOU " + o.action : o.role.toUpperCase()} ${sz(o.qty)}`).slice(0, 13), plotW + 3, yy + 4);
   }
+  // the 2nd entry IS your entry order: on the line, on top of everything, whether the order is live and if not why
+  if (!isFoot && v.seChipY != null && d.play && d.play.second_entry){
+    const a = ((state && state.trading && state.trading.auto) || {})[d.symbol];
+    if (a){
+      const yy = v.seChipY, side = d.play.side === "short" ? "SELL" : "BUY";
+      const live = a.state === "WORKING" || a.state === "PARTIAL", done = a.state === "DONE", hot = a.state === "TRIGGERED";
+      const txt = live ? `● ENTRY LIVE · ${side} ${sz(a.qty)} STP ${px(d.play.second_entry)}${a.state === "PARTIAL" ? " · PART FILLED" : ""}`
+        : done ? "✓ FILLED · stop + target working"
+        : hot ? "▲ TRIGGERED, NOT FILLED · price ran past the cap"
+        : "✕ NO ORDER · " + (a.text || "").toUpperCase();
+      g.font = "bold 11px ui-monospace, Menlo, Consolas, monospace";
+      const t = txt.length > 90 ? txt.slice(0, 89) + "…" : txt, tw = g.measureText(t).width + 12;
+      const bg = live ? "#0b7a4b" : done ? "#8a6d12" : "#b3123a", tx = Math.max(4, plotW - tw - 8), ty = yy - 21 < 2 ? yy + 5 : yy - 21;
+      g.fillStyle = bg; g.fillRect(tx, ty, tw, 16); g.strokeStyle = "#ffffff"; g.lineWidth = 1; g.strokeRect(tx + .5, ty + .5, tw - 1, 15);
+      g.fillStyle = "#ffffff"; g.fillText(t, tx + 6, ty + 12);
+      g.font = "11px ui-monospace, Menlo, Consolas, monospace";
+    }
+  }
+  v.seChipY = null;
   // levels that are off the scale: a tag at the top / bottom edge of the price scale, arrow pointing the way
   if (v.edgeTags && v.edgeTags.length){
     g.font = "bold 10px ui-monospace, Menlo, Consolas, monospace";
@@ -2681,6 +2707,8 @@ function chartTypeKey(e){
   // the mouse is over the chart and a plain letter or digit was pressed: that is typing, not a hotkey
   if (e.ctrlKey || e.metaKey || e.altKey || e.key.length !== 1 || !/[a-zA-Z0-9]/.test(e.key)) return false;
   const c = charts.chart; if (!c || c.el.offsetParent === null) return false;
+  // 2 is the 2nd-entry mark: it is never eaten as the first key of a typed timeframe (type 2 again inside the box)
+  if (e.key === "2" && !c.el.classList.contains("typing")) return false;
   if (!(c.el.matches(":hover") || c.view.cross || c.el.classList.contains("typing"))) return false;
   e.preventDefault(); openTyper(e.key); return true;
 }
@@ -2823,7 +2851,7 @@ function autoEntryHTML(d){
   // the 2nd entry you draw is an automatic entry: what the desk has working for it right now, and why not when it has nothing
   const t = (state && state.trading) || {}, a = (t.auto || {})[d.symbol];
   if (!a) return "";
-  const cls = a.state === "WORKING" ? "ok" : a.state === "DONE" ? "gold" : a.state === "OFF" ? "dim" : a.state === "TRIGGERED" ? "no" : "";
+  const cls = a.state === "WORKING" || a.state === "PARTIAL" ? "ok" : a.state === "DONE" ? "gold" : a.state === "OFF" ? "dim" : a.state === "TRIGGERED" ? "no" : "";
   return `<div class="auto ${a.on ? "" : "off"}" id="suAuto"><label title="on: when a 2nd entry, a stop and a target are on the chart and the desk is ARMED, a stop-limit entry is placed through the 2nd entry with the stop and target attached, sized from your risk $. One entry per drawn level."><input type="checkbox" id="suAutoOn" ${a.on ? "checked" : ""}> AUTO 2ND ENTRY</label>
     <span class="${cls}"><b>${esc(a.state)}</b> ${esc(a.text || "")}</span>${a.state === "WAITING" && a.qty ? ` <span class="dim">· ${sz(a.qty)} sh when it goes</span>` : ""}</div>`;
 }

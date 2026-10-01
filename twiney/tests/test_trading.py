@@ -440,3 +440,60 @@ class AutoEntryFillTests(unittest.TestCase):
         self.assertIn("DISARMED", said[0])
         tr.watchdog(3.5)
         self.assertEqual(len([l for l in tr.log if "NO ENTRY" in l["text"]]), 1)   # once per cross
+
+
+class AutoEntryLiveTests(unittest.TestCase):
+    def test_part_fill_keeps_the_rest_working(self):
+        """IBKR fills in pieces: the first piece is a position, but the rest of the entry must not be cancelled."""
+        e, tr, gate, broker = sim_setup(auto_second_entry=True)
+        e.syms["AAA"].play.update(second_entry=10.10, stop=9.90, target=10.50)
+        tr.risk_dollars = 100
+        gate.arm(True)
+        tr.watchdog(2.0)
+        oid = [o for o in e._pending("AAA") if o["role"] == "entry"][0]["order_id"]
+        e.on_order(f"sim{oid}", 2.5, filled=200.0, remaining=300.0)      # 200 of 500 filled so far
+        broker.pos["AAA"] = [200.0, 10.11]
+        tr.watchdog(3.0)
+        ent = [o for o in e._pending("AAA") if o["role"] == "entry"]
+        self.assertEqual([o["order_id"] for o in ent], [oid])            # still working, not cancelled
+        st = tr.auto_status()["AAA"]
+        self.assertEqual(st["state"], "PARTIAL")
+        self.assertIn("200 of 500 filled", st["text"])
+
+    def test_drawing_a_second_entry_arms_the_practice_desk(self):
+        e, tr, gate, broker = sim_setup(auto_second_entry=True)
+        e.syms["AAA"].play.update(second_entry=None, stop=9.90, target=10.50)
+        tr.watchdog(1.0)                                                  # what is on the chart at start: seen
+        self.assertFalse(gate.armed)
+        e.set_play_level("AAA", "second_entry", 10.10, 1.5)               # you draw it
+        tr.watchdog(2.0)
+        self.assertTrue(gate.armed)
+        self.assertEqual(len([o for o in e._pending("AAA") if o["role"] == "entry"]), 1)
+
+    def test_levels_already_on_the_chart_at_start_do_not_arm(self):
+        e, tr, gate, broker = sim_setup(auto_second_entry=True)
+        e.syms["AAA"].play.update(second_entry=10.10, stop=9.90, target=10.50)
+        tr.watchdog(1.0); tr.watchdog(1.5)
+        self.assertFalse(gate.armed)
+        self.assertEqual(e._pending("AAA"), [])
+
+    def test_locked_desk_is_never_armed_by_a_drawing(self):
+        e, tr, gate, broker = sim_setup(auto_second_entry=True)
+        tr.watchdog(1.0)
+        gate.lock_out("daily loss limit hit (test)")
+        e.set_play_level("AAA", "second_entry", 10.20, 1.5)
+        tr.watchdog(2.0)
+        self.assertFalse(gate.armed)
+        self.assertEqual(e._pending("AAA"), [])
+
+
+class StopEntryBracketTests(unittest.TestCase):
+    def test_target_inside_the_cap_still_joins_the_entry(self):
+        e, tr, gate, broker = sim_setup(auto_second_entry=True)
+        e.syms["AAA"].play.update(second_entry=10.10, stop=9.95, target=10.15)   # target 5c past the level, cap 10c
+        tr.risk_dollars = 100
+        gate.arm(True)
+        tr.watchdog(2.0)
+        roles = sorted(o["role"] for o in e._pending("AAA"))
+        self.assertEqual(roles, ["entry", "stop", "target"])
+        self.assertEqual([o["lmt"] for o in e._pending("AAA") if o["role"] == "target"], [10.15])
