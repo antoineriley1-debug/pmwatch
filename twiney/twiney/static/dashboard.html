@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261001-1037">
+<meta name="build" content="20261001-2041">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -2172,24 +2172,22 @@ function drawOne(p, cv, v, isFoot){
     g.fillStyle = "#0c0c0d"; g.strokeStyle = col; g.fillRect(plotW, yy - 8, labelW, 16); g.strokeRect(plotW + .5, yy - 7.5, labelW - 1, 15);
     g.fillStyle = col; g.fillText((drag ? px(p.dragOrder.price) + " >" : `${o.role === "entry" ? "YOU " + o.action : o.role.toUpperCase()} ${sz(o.qty)}`).slice(0, 13), plotW + 3, yy + 4);
   }
-  // the 2nd entry IS your entry order: on the line, on top of everything, whether the order is live and if not why
+  // the 2nd entry IS your entry order: a small tag at the right end of its line (never a banner across the chart).
+  // Live / filled / triggered / no order, with the full reason on hover (the data window carries it too)
+  v.seChip = null;
   if (!isFoot && CS("chip") && v.seChipY != null && d.play && d.play.second_entry){
     let a = ((state && state.trading && state.trading.auto) || {})[d.symbol];
-    // filled: the chip says so for a minute and a half, then gets out of the way of your chart
     if (a && a.state === "DONE" && a.filled_t != null && state.now - a.filled_t > (state.trading.filled_chip_seconds || 90)) a = null;
     if (a){
       const yy = v.seChipY, side = d.play.side === "short" ? "SELL" : "BUY";
       const live = a.state === "WORKING" || a.state === "PARTIAL", done = a.state === "DONE", hot = a.state === "TRIGGERED";
-      const txt = live ? `● ENTRY LIVE · ${side} ${sz(a.qty)} STP ${px(d.play.second_entry)}${a.state === "PARTIAL" ? " · PART FILLED" : ""}`
-        : done ? "✓ FILLED · stop + target working"
-        : hot ? "▲ TRIGGERED, NOT FILLED · price ran past the cap"
-        : "✕ NO ORDER · " + (a.text || "").toUpperCase();
-      g.font = "bold 11px ui-monospace, Menlo, Consolas, monospace";
-      const t = txt.length > 90 ? txt.slice(0, 89) + "…" : txt, tw = g.measureText(t).width + 12;
-      const bg = live ? "#0b7a4b" : done ? "#8a6d12" : "#b3123a", tx = Math.max(4, plotW - tw - 8), ty = yy - 21 < 2 ? yy + 5 : yy - 21;
-      g.fillStyle = bg; g.fillRect(tx, ty, tw, 16); g.strokeStyle = "#ffffff"; g.lineWidth = 1; g.strokeRect(tx + .5, ty + .5, tw - 1, 15);
-      g.fillStyle = "#ffffff"; g.fillText(t, tx + 6, ty + 12);
+      const t = live ? `● ${side} ${sz(a.qty)}${a.state === "PARTIAL" ? " PART" : ""}` : done ? "✓ FILLED" : hot ? "▲ NOT FILLED" : "✕ NO ORDER";
+      g.font = "bold 10px ui-monospace, Menlo, Consolas, monospace";
+      const tw = g.measureText(t).width + 10, tx = plotW - tw - 4, ty = yy - 7;
+      g.fillStyle = live ? "#0b7a4b" : done ? "#8a6d12" : "#b3123a"; g.fillRect(tx, ty, tw, 14);
+      g.fillStyle = "#ffffff"; g.fillText(t, tx + 5, ty + 10);
       g.font = "11px ui-monospace, Menlo, Consolas, monospace";
+      v.seChip = {x: tx, y: ty, w: tw, h: 14, text: live ? `${side} ${sz(a.qty)} ${a.state === "PARTIAL" ? "part filled, the rest working" : "fills when price comes back through " + px(d.play.second_entry)}` : done ? "filled — stop and target working" : hot ? "triggered, not filled — price ran past the cap" : "NO ORDER — " + (a.text || "")};
     }
   }
   v.seChipY = null;
@@ -2313,6 +2311,11 @@ function drawOne(p, cv, v, isFoot){
   if (!clean){ g.fillStyle = "#7d7f85";
     g.fillText("GREEN BUYER ABSORBING · RED SELLER ABSORBING · R/C/P RELOAD / CLEANED / PULLED", 60, H - volH - 4); }
   if (off > 0){ g.fillStyle = "#e3a83a"; g.fillText(`${off} BARS BACK · DOUBLE-CLICK FOR LIVE`, plotW - 230, 14); }
+  // the 2nd entry tag's reason, when the mouse is on it
+  if (v.seChip && v.cross && v.cross[0] >= v.seChip.x && v.cross[0] <= v.seChip.x + v.seChip.w && Math.abs(v.cross[1] - (v.seChip.y + 7)) <= 9){
+    const t = v.seChip.text, tw = g.measureText(t).width + 12, tx = Math.max(4, Math.min(plotW - tw - 4, v.seChip.x - tw)), ty = v.seChip.y - 20 < 2 ? v.seChip.y + 18 : v.seChip.y - 20;
+    g.fillStyle = "rgba(17,22,31,.95)"; g.fillRect(tx, ty, tw, 16); g.fillStyle = "#d6d6d3"; g.fillText(t, tx + 6, ty + 12);
+  }
   // crosshair with price / time readout
   p.dataPrice = (v.cross && v.cross[1] < plotH && v.cross[0] < plotW) ? hi - (v.cross[1] - 8) / (plotH - 8) * (hi - lo) : null;
   if (!isFoot && typeof renderDataWin === "function") renderDataWin(p);
