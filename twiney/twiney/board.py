@@ -244,6 +244,18 @@ def flow_leans(prints):
     return (None if not c and not pt else "short" if pt > c else "long"), round(c), round(pt)
 
 
+def say_expiry(dte):
+    """When the contracts die, the way it is said: 'expiring today', 'expiring tomorrow', 'expiring in 3 days'."""
+    if dte is None:
+        return ""
+    d = float(dte)
+    if d < 1:
+        return "expiring today"
+    if d < 2:
+        return "expiring tomorrow"
+    return f"expiring in {int(round(d))} days"
+
+
 def say_money(v):
     """Money the way it is said out loud: '300 thousand dollars', '1.2 million dollars'."""
     v = float(v or 0)
@@ -373,8 +385,9 @@ def words(b):
     if not b.get("side_picked", True):
         return None                                   # nothing to say for a side nobody picked
     if st == "READY_TO_GO":
+        exp = say_expiry(cl.get("dte"))
         return (f"{sym} {side}, ready to go. The chart is confirmed and the flow is confirmed: {say_money(cl.get('dollars'))} "
-                f"went into short term {what}, {cl.get('repeats')} times. They keep coming.")
+                f"went into short term {what}{', ' + exp if exp else ''}, {cl.get('repeats')} times. They keep coming.")
     if st == "ARMED":
         return (f"{sym} {side} is armed. The chart is there, waiting on the option flow." if b["chart_gate"]["ok"]
                 else f"{sym} {side} is armed. The option flow is there, waiting on the chart.")

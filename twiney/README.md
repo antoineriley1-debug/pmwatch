@@ -72,7 +72,7 @@ BE stop to breakeven, X close.
   target, or a pivot with a 2nd entry) the desk never says "with you" / "against you" — the FLOW line, the
   conviction strip and the voice report which way the money leans ("NO SIDE YET — FLOW LEANS PUTS"). Draw the
   levels on any ticker on the desk, ladder or not, and from then on the flow is judged for that side, out loud,
-  in plain English ("300 thousand dollars just went into short term calls, with your long, and it keeps coming").
+  in plain English ("300 thousand dollars just went into short term calls, expiring tomorrow, 240 strike, with your long, and it keeps coming").
 - **LONG or SHORT reads off your levels**: a stop drawn ABOVE the target can only be a short, a stop under it a
   long — draw both and the play, the entry order, the chip and the conviction board follow, nothing to pick.
   The small **L / S** button beside ARMED flips the ticker on screen by hand (and so does SIDE in PLAY SETUP,

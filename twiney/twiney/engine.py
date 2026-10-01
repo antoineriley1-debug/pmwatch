@@ -1477,12 +1477,15 @@ class Engine:
         cp = dough.get("cp") or ("C" if st.play["side"] == "long" else "P")
         side, other = ("calls", "puts") if cp == "C" else ("puts", "calls")
         money = narrative.say_dollars(dough["dollars"])
+        top = dough.get("top") or {}
+        exp = board.say_expiry(top.get("dte"))
+        where = (f", {exp}" if exp else "") + (f", {top['strike']:g} strike" if top.get("strike") else "")
         if dough["state"] == "FLOW CONFIRMED" and not picked:
             text = f"FLOW on {st.symbol}: {dough['text']}. No side picked — this is what the money is doing."
-            words = f"{money} just went into short term {side}, and it keeps coming. They're pounding the {side}."
+            words = f"{money} just went into short term {side}{where}, and it keeps coming. They're pounding the {side}."
         elif dough["state"] == "FLOW CONFIRMED":
             text = f"FLOW CONFIRMED on {st.symbol} {st.play['side']}: {dough['text']}. The dough is here."
-            words = f"{money} just went into short term {side}, with your {st.play['side']}, and it keeps coming. They're pounding the {side}."
+            words = f"{money} just went into short term {side}{where}, with your {st.play['side']}, and it keeps coming. They're pounding the {side}."
         else:
             text = f"FLOW AGAINST {st.symbol} {st.play['side']}: {dough['text']}."
             words = f"The flow is against your {st.play['side']}: {narrative.say_dollars(dough['against'])} went into short term {other}."
@@ -1915,7 +1918,8 @@ class Engine:
         text = board.market_watch_text(sym, side, fg, p.get("spot"))
         alert = {"t": t, "symbol": sym, "label": "FLOW WATCH", "price": fmt_price(p.get("spot")), "side": "ask", "role": "conviction",
                  "text": text, "cp": p.get("cp"), "premium": fg["cluster"]["dollars"], "rules": fg["rules"],
-                 "words": f"flow watch. {narrative.say_dollars(fg['cluster']['dollars'])} went into short term {'calls' if side == 'long' else 'puts'}, {fg['cluster']['repeats']} times. Not a play yet, no chart work done."}
+                 "words": f"flow watch. {narrative.say_dollars(fg['cluster']['dollars'])} went into short term {'calls' if side == 'long' else 'puts'}"
+                          f"{', ' + board.say_expiry(fg['cluster'].get('dte')) if board.say_expiry(fg['cluster'].get('dte')) else ''}, {fg['cluster']['repeats']} times. Not a play yet, no chart work done."}
         alert["key"] = f"{round(t, 2)}|{sym}|FLOW WATCH|{side}"
         self.alerts.appendleft(alert)
         self._rec(dict(alert, ev="alert"))
