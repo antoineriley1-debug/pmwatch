@@ -145,6 +145,10 @@ DEFAULTS = {
         "auto_entry_max_slip_pct": 0.3,
         # drawing a 2nd entry while DISARMED arms the desk (paper / practice accounts only; never when locked)
         "auto_arm_on_second_entry": True,
+        # when an auto-entry trade goes flat (stopped out, target, flatten) its 2nd entry, stop and target lines go
+        "clear_lines_when_flat": True,
+        # the FILLED chip on the 2nd entry line goes this many seconds after the fill
+        "filled_chip_seconds": 90,
         "risk_dollars": 100,
     },
     "ps60": {

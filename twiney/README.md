@@ -51,7 +51,9 @@ with ladder trading that is **locked to paper accounts** until you deliberately 
   only, never when locked for the day; `auto_arm_on_second_entry`). Levels already on the chart when the desk
   starts never arm it. A chip on the 2nd entry line says ENTRY LIVE (side, shares), PART FILLED, FILLED,
   TRIGGERED or NO ORDER with the reason. Draw with **2** then a click, the **＋ mark** menu, or right-click the
-  chart: 2ND ENTRY here / TARGET here / STOP here. A part fill keeps the rest of the entry working. It uses the
+  chart: 2ND ENTRY here / TARGET here / STOP here. A part fill keeps the rest of the entry working. The FILLED
+  chip goes 90 s after the fill (`filled_chip_seconds`), and when the trade goes flat (stopped out, target,
+  flatten) its 2nd entry, stop and target come off the chart (`clear_lines_when_flat`); the pivot stays. It uses the
   ticket size until you draw the
   stop, then it is sized from your RISK $. Draw the target and the stop and they join the entry as its bracket.
   Drawn after the fill, they go in as the position's stop and target, and dragging a line moves its order.

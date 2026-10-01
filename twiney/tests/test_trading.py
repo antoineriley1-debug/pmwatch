@@ -497,3 +497,42 @@ class StopEntryBracketTests(unittest.TestCase):
         roles = sorted(o["role"] for o in e._pending("AAA"))
         self.assertEqual(roles, ["entry", "stop", "target"])
         self.assertEqual([o["lmt"] for o in e._pending("AAA") if o["role"] == "target"], [10.15])
+
+
+class TradeOverTests(unittest.TestCase):
+    def _filled(self):
+        e, tr, gate, broker = sim_setup(auto_second_entry=True)
+        e.syms["AAA"].play.update(second_entry=10.10, stop=9.95, target=10.50)
+        tr.risk_dollars = 100
+        gate.arm(True)
+        tr.watchdog(2.0)
+        e.on_print("AAA", 10.11, 200, "X", 3.0)
+        tr.watchdog(3.5)
+        self.assertEqual(broker.position("AAA"), 500)
+        return e, tr, gate, broker
+
+    def test_stopped_out_clears_the_second_entry_stop_and_target(self):
+        e, tr, gate, broker = self._filled()
+        tr.watchdog(4.0)
+        e.on_print("AAA", 9.94, 500, "X", 5.0)                  # through the stop: out
+        self.assertEqual(broker.position("AAA"), 0)
+        tr.watchdog(9.0)                                         # position settled past the 5 s guard
+        p = e.syms["AAA"].play
+        self.assertEqual([p.get(k) for k in ("second_entry", "stop", "target")], [None, None, None])
+        self.assertEqual(p["trigger"], 10.00)                   # the pivot stays
+        self.assertTrue(any("stopped out" in l["text"] for l in tr.log))
+        tr.watchdog(10.0)
+        self.assertEqual(e._pending("AAA"), [])                  # and nothing re-enters
+
+    def test_still_in_the_trade_keeps_the_lines(self):
+        e, tr, gate, broker = self._filled()
+        tr.watchdog(20.0)
+        p = e.syms["AAA"].play
+        self.assertEqual((p["second_entry"], p["stop"], p["target"]), (10.10, 9.95, 10.50))
+
+    def test_filled_chip_carries_the_fill_time(self):
+        e, tr, gate, broker = self._filled()
+        st = tr.auto_status()["AAA"]
+        self.assertEqual(st["state"], "DONE")
+        self.assertEqual(st["filled_t"], 3.5)
+        self.assertEqual(tr.snapshot(run_watchdog=False)["filled_chip_seconds"], 90.0)

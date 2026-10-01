@@ -500,6 +500,7 @@ class Trader:
         self.auto_sync = {}  # symbol -> the stop / target lines the exits of a filled auto entry were last set to
         self.auto_side = {}  # symbol -> was price beyond the 2nd entry at the last look (to catch the cross)
         self.auto_seen = {}  # symbol -> the 2nd entry last seen (a change is a line drawn or moved)
+        self.auto_done_t = {}  # symbol -> when the auto entry filled (the FILLED chip goes after a minute and a half)
         # every order action (clicks on HTTP threads, the watchdog thread) runs one at a time: a check and the order
         # it allows can never be split by another click (two flattens, two closes, the same ticket twice)
         self.lock = threading.RLock()
@@ -1122,6 +1123,21 @@ class Trader:
         self._note(now, msg, False)
         self.engine.log(sym, msg, now, kind="level")
 
+    def _clear_trade_lines(self, play, now):
+        """The trade is over (stopped out, target hit, flattened): its 2nd entry, stop and target come off the
+        chart, so the board is clean for the next one. The pivot stays."""
+        sym = play["symbol"]
+        last = self.engine.syms[sym].price()
+        stop, target = play.get("stop"), play.get("target")
+        how = ("stopped out" if stop and last is not None and abs(last - stop) <= abs(last - (target or 0)) else
+               "target hit" if target and last is not None else "flat")
+        for role in ("second_entry", "stop", "target"):
+            if play.get(role) is not None:
+                self.engine.set_play_level(sym, role, None, now, source="trade over")
+        self.auto_seen[sym] = None                     # clearing is not a new drawing
+        self._note(now, f"{sym}: {how} — the 2nd entry, stop and target are off the chart", True)
+        self.engine.log(sym, f"trade over ({how}) — 2nd entry, stop and target cleared", now, kind="level")
+
     def _auto_protect(self, play, now):
         """After the auto entry fills, the stop and target lines are the position's exits: draw one and it goes in,
         move it and the working order moves with it. Clearing a line leaves its order working (said once) —
@@ -1132,9 +1148,13 @@ class Trader:
             return
         pos = int(self.broker.position(sym))
         long_ = s["action"] == BUY
+        if pos and (pos > 0) == long_:
+            s["held"] = True
         if not pos or (pos > 0) != long_:
             if now - s["t"] > 5.0:                    # the position report can trail the fill; flat for real: done
                 self.auto_sync.pop(sym, None)
+                if s.get("held") and self.cfg.get("clear_lines_when_flat", True):
+                    self._clear_trade_lines(play, now)
             return
         exit_action = SELL if long_ else BUY
         last = self.engine.syms[sym].price()
@@ -1196,6 +1216,7 @@ class Trader:
                 self.auto.pop(sym, None)
                 # from here the lines ARE the exits: a stop or target drawn (or moved) later goes to the broker
                 self.auto_sync[sym] = {"stop": cur["stop"], "target": cur["target"], "action": cur["action"], "t": now}
+                self.auto_done_t[sym] = now
                 self._note(now, f"AUTO 2ND ENTRY FILLED {sym}: {cur['action']} {cur['qty']} through {money(cur['aux'])} — "
                                 f"stop {money(cur['stop'])} and target {money(cur['target'])} are working", True)
                 self.engine.log(sym, f"AUTO 2ND ENTRY filled {cur['action']} {cur['qty']} @ {money(cur['aux'])}", now, kind="level")
@@ -1299,7 +1320,7 @@ class Trader:
             else:
                 state, text = "WAITING", self.auto_why.get(sym) or "waiting"
             out[sym] = {"on": on, "state": state, "text": text, "qty": cur["qty"] if cur else self.auto_size(play),
-                        "id": cur["id"] if cur else None}
+                        "id": cur["id"] if cur else None, "filled_t": self.auto_done_t.get(sym) if state == "DONE" else None}
         return out
 
     def _cancel_entries(self, now):
@@ -1391,5 +1412,6 @@ class Trader:
         s = self.gate.snapshot()
         s.update(default_shares=self.default_shares, bracket=self.bracket, scale=self.scale,
                  scale_plan=self.cfg["scale_plan"]["cash_flow"], log=list(self.log)[:12], pnl=self.day_pnl(),
-                 auto_on=self.auto_on, risk_dollars=self.risk_dollars, auto=self.auto_status())
+                 auto_on=self.auto_on, risk_dollars=self.risk_dollars, auto=self.auto_status(),
+                 filled_chip_seconds=float(self.cfg.get("filled_chip_seconds", 90)))
         return s
