@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261002-0025">
+<meta name="build" content="20261002-0039">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -651,6 +651,34 @@ i.tl{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:3p
 .pinbox.on{display:flex;gap:6px;align-items:flex-start} .pinbox .txt{flex:1;white-space:normal} .pinbox .x{padding:0 4px;font-size:10px;line-height:14px}
 .grid.pos2 td.ctl .sep{display:inline-block;width:6px} .grid.pos2 tr.opt td:first-child b{color:var(--gold)}
 
+/* the orders being taken: size as a bar against its 90 s peak, a flash and a floating −n when prints eat it */
+.lad td.sz{position:relative;--fill:100%}
+.lad td.sz.eat::before{content:"";position:absolute;top:1px;bottom:1px;width:var(--fill);pointer-events:none;opacity:.35}
+.lad td.bsz.eat::before{right:0;background:linear-gradient(to left,rgba(63,181,111,.55),rgba(63,181,111,.15))}
+.lad td.asz.eat::before{left:0;background:linear-gradient(to right,rgba(217,83,79,.55),rgba(217,83,79,.15))}
+.lad td.sz > *{position:relative}
+.lad td.sz.hit{animation:eathit .6s 1} .lad td.sz.refill{animation:eatrefill .8s 1}
+@keyframes eathit{0%{background:rgba(255,255,255,.35)}100%{background:transparent}}
+@keyframes eatrefill{0%{background:rgba(227,168,58,.6)}100%{background:transparent}}
+.lad td.sz .ghost{position:absolute;right:2px;top:-9px;font:700 9px var(--mono);font-style:normal;pointer-events:none;animation:ghost 1.4s 1 forwards;padding:0 2px;border-radius:2px;background:#0b0f16}
+.lad td.bsz .ghost{right:auto;left:2px} .lad td.sz .ghost.dn{color:#fff} .lad td.sz .ghost.up{color:var(--gold)}
+@keyframes ghost{0%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(-10px)}}
+.eatbar{display:flex;justify-content:space-between;gap:8px;position:sticky;bottom:0;background:#0b0f16;border-top:1px solid var(--line);padding:2px 6px;font:10.5px var(--mono);white-space:nowrap;overflow:hidden}
+.eatbar .b{color:var(--buy)} .eatbar .s{color:var(--sell)} .eatbar b{font-weight:800}
+
+/* the two tapes: regular on top, BIG TAPE under it (drag the BIG TAPE header to resize) */
+.pc.tapesplit{display:flex;flex-direction:column;overflow:hidden}
+.pc.tapesplit .p-tape{flex:1 1 0;min-height:40px;overflow:auto}
+.pc.tapesplit .p-bigtape{flex:0 0 42%;min-height:60px;display:flex;flex-direction:column;border-top:2px solid var(--gold);background:#0a0d13}
+.p-bigtape .bt-hd{display:flex;gap:6px;align-items:baseline;padding:2px 6px;cursor:ns-resize;font:10px var(--sans);letter-spacing:.08em;background:#121315;white-space:nowrap;overflow:hidden}
+.p-bigtape .bt-hd b{color:var(--gold)} .p-bigtape .bt-hd .dim{font-size:9.5px;letter-spacing:0;overflow:hidden;text-overflow:ellipsis}
+.p-bigtape .bt-body{flex:1 1 0;overflow:auto}
+.p-bigtape .t.bt{width:100%;table-layout:fixed} .p-bigtape .t.bt td{padding:0 5px;height:14px;line-height:14px;font-size:11px;white-space:nowrap;overflow:hidden}
+.p-bigtape .t.bt th.sec{text-align:left;font-size:9px;letter-spacing:.1em;padding:2px 5px;background:#121315;color:var(--gold)}
+.p-bigtape .t.bt tr.buy td{background:rgba(63,181,111,.08)} .p-bigtape .t.bt tr.sell td{background:rgba(217,83,79,.08)}
+.p-bigtape .t.bt tr.bld.live td{font-weight:700} .p-bigtape .t.bt tr.bld.live td:first-child{box-shadow:inset 3px 0 0 var(--gold)}
+.p-bigtape .t.bt td.buy{color:var(--buy)} .p-bigtape .t.bt td.sell{color:var(--sell)}
+
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
   --buy:#3fb56f;--sell:#d9534f;--gold:#e3a83a;--cyan:#5aa9d6;--violet:#a48bd6;--warn:#d9a441;
@@ -1019,7 +1047,7 @@ body.resizing .zbody{pointer-events:none}
   <div class="pnl" data-p="chart"><div class="qs"></div><div class="cvstrip" id="cvStrip"></div><div class="pc nos"><div class="chart-wrap"><div class="chart-tools"></div><canvas></canvas></div></div></div>
   <div class="pnl" data-p="foot"><div class="pc nos"><div class="chart-wrap"><div class="chart-tools"><span class="dim" style="font-size:10.5px;background:rgba(17,22,31,.85);padding:1px 6px">5m FOOTPRINT · SELLERS HIT BID × BUYERS PAID UP</span></div><canvas></canvas></div></div></div>
   <div class="pnl" data-p="book"><div class="ladbar"><span>BIG ≥</span><input id="bigIn" type="number" min="100" step="500" title="shares that count as big on this symbol's ladder. Highlighted when showing; ×N = how many separate times it has shown up at that price today"><span class="dim">sh</span><button id="bigReset" title="back to the config default">DEFAULT</button><span class="dim" id="bigHint"></span><span class="spacer"></span><button id="ladMode" title="TIGHT: bid · price · ask with HIT / PAID beside them, reloaders as colour and a tag, one FLOW column. WIDE: every column (CALLS / PUTS money, who tags) spelled out">TIGHT</button><span class="menu" id="colsMenu"><button title="columns">COLS</button><div class="pop" id="colsPop"><h5>LEVEL II COLUMNS</h5><label><input type="checkbox" data-col="trade" checked> BUY / SELL buttons</label><label><input type="checkbox" data-col="bars" checked> flow bars (sold into bid / bought at ask)</label><label><input type="checkbox" data-col="who" checked> reload tags</label><label><input type="checkbox" data-col="flow" checked> option flow marks (where the stock was when big flow hit)</label><label style="margin-top:6px">Text size <select data-ladz><option value="1">normal</option><option value="1.2">bigger</option><option value="1.4">biggest (widen the LEVEL II pane)</option></select></label><div class="dim" style="font-size:10.5px;margin-top:6px">Drag the grip at the right edge of any header to resize. Double-click a grip to reset.</div></div></span></div><div class="rlban" id="rlBan"></div><div class="pc"><div class="ladder-wrap"></div></div></div>
-  <div class="pnl" data-p="tape"><div class="pc"><div class="p-tape"></div></div></div>
+  <div class="pnl" data-p="tape"><div class="pc tapesplit"><div class="p-tape"></div><div class="p-bigtape"><div class="bt-hd"><b>BIG TAPE</b><span class="dim" id="btRule"></span></div><div class="bt-body"></div></div></div></div>
   <div class="pnl" data-p="setup"><div class="pc"></div></div>
   <div class="pnl" data-p="ps60"><div class="pc ps60p"></div></div>
   <div class="pnl" data-p="reload"><div class="pc reloads"></div></div>
@@ -3055,6 +3083,7 @@ function renderBook(d){
   P.book.last = html;
   const keep = wrap.scrollTop;
   wrap.innerHTML = html; applyLadCols(wrap.querySelector("table")); makeColsResizable(wrap.querySelector("table")); if (hoverPx != null) ladderHighlight(hoverPx);
+  eatMarks(wrap, d);
   const cur = wrap.querySelector("tr.lastpx") || wrap.querySelector("tr.best-ask");
   // a proven reloader within a screen of the price stays in view with it: the ladder centres between the two
   const rl = [...wrap.querySelectorAll("tr.rl-bid, tr.rl-ask")];
@@ -3066,6 +3095,43 @@ function renderBook(d){
   const fresh = (state.alerts || []).filter(a => a.symbol === d.symbol && /^RELOAD/.test(a.label) && state.now - a.t < 6);
   for (const a of fresh){ const row = wrap.querySelector(`tr[data-price="${a.price}"]`); if (row && !row.classList.contains("flash")) row.classList.add("flash"); }
   rlBanner(wrap, d);
+}
+/* SEE THE ORDERS BEING TAKEN. Every size cell remembers the most it showed at that price in the last 90 s (its
+   peak) and draws itself as a bar: full when the size is all there, shrinking as prints eat it. 10.2K showing,
+   price trades up into it, 5.5K gets bought: the bar is half gone and the number reads 4.7K. A drop flashes the
+   cell and floats the shares taken (−1.4K); size coming back after a drop floats +2.0K ↻ (the reload). The strip
+   under the ladder spells out the touch on both sides: "ASK 242.75 · 4.7K of 10.2K left · 5.5K bought (54%)". */
+const EAT = new Map();
+function eatMarks(wrap, d){
+  const rows = (d.ladder && d.ladder.rows) || [], now = Date.now(), sym = d.symbol;
+  const touch = {bid: null, ask: null};
+  for (const r of rows){
+    for (const side of ["bid", "ask"]){
+      const size = +r[side] || 0, key = `${sym}|${side}|${r.price}`;
+      let m = EAT.get(key);
+      if (!m || now - m.t > 90000 || size > m.peak){ m = {peak: size, t: now, last: m ? m.last : size, pt: now}; EAT.set(key, m); }
+      const cell = wrap.querySelector(`tr[data-price="${r.price}"] td.${side === "bid" ? "bsz" : "asz"}`);
+      if (cell && size > 0 && m.peak > 0){
+        const left = Math.max(0, Math.min(1, size / m.peak));
+        cell.style.setProperty("--fill", (left * 100).toFixed(0) + "%");
+        if (left < 0.98) cell.classList.add("eat");
+      }
+      if (cell && m.last != null && size !== m.last && now - m.pt < 4000){
+        const dlt = size - m.last;
+        if (dlt < 0 && size > 0){ cell.classList.add("hit"); cell.insertAdjacentHTML("beforeend", `<i class="ghost dn">−${kfmt(-dlt)}</i>`); }
+        else if (dlt > 0 && m.last > 0 && m.last < m.peak * 0.7){ cell.classList.add("refill"); cell.insertAdjacentHTML("beforeend", `<i class="ghost up">+${kfmt(dlt)} ↻</i>`); }
+      }
+      m.last = size; m.pt = now;
+      if ((side === "bid" && r.best_bid) || (side === "ask" && r.best_ask)) touch[side] = {price: r.price, size, peak: m.peak};
+    }
+  }
+  if (EAT.size > 4000) for (const k of [...EAT.keys()].slice(0, 2000)) EAT.delete(k);
+  let bar = P.book.pc.querySelector(".eatbar"); if (!bar){ bar = document.createElement("div"); bar.className = "eatbar"; P.book.pc.appendChild(bar); }
+  const line = (side, t) => { if (!t) return `<span class="${side === "bid" ? "b" : "s"} dim">${side.toUpperCase()} —</span>`;
+    const gone = Math.max(0, t.peak - t.size), pct = t.peak ? Math.round(100 * gone / t.peak) : 0;
+    return `<span class="${side === "bid" ? "b" : "s"}" title="${side === "bid" ? "the bid" : "the offer"} at ${px(t.price)}: it showed ${sz(t.peak)} at most in the last 90 s; ${sz(t.size)} is left. ${sz(gone)} ${side === "bid" ? "sold into it" : "bought from it"} since (${pct}%)${pct >= 60 ? " — nearly eaten: if it refills, that is a reload" : ""}"><b>${side.toUpperCase()} ${px(t.price)}</b> ${kfmt(t.size)} of ${kfmt(t.peak)}${gone ? ` · ${kfmt(gone)} ${side === "bid" ? "sold into it" : "bought"} (${pct}%)` : " · untouched"}</span>`; };
+  const h = line("bid", touch.bid) + line("ask", touch.ask);
+  if (bar.dataset.h !== h){ bar.dataset.h = h; bar.innerHTML = h; }
 }
 /* the banner over the ladder: every proven reload buyer / seller on this symbol, where he is, and a click to jump there */
 function rlBanner(wrap, d){
@@ -3094,9 +3160,30 @@ P.book.el.addEventListener("click", e => {
 P.book.el.addEventListener("scroll", () => { const wrap = P.book.pc.querySelector(".ladder-wrap"); const d = curData(); if (wrap && d) rlBanner(wrap, d); }, true);
 function renderTape(d){
   const el = P.tape.pc.querySelector(".p-tape");
-  if (!d){ el.innerHTML = `<div class="dim" style="padding:8px">${NA}</div>`; P.tape.last = null; return; }
-  const html = tapeSpeedHTML(d.tape.speed) + tapeHTML(d.tape); if (P.tape.last === html) return; P.tape.last = html;
-  const keep = el.scrollTop; el.innerHTML = html; el.scrollTop = keep; makeColsResizable(el.querySelector("table"));
+  if (!d){ el.innerHTML = `<div class="dim" style="padding:8px">${NA}</div>`; P.tape.last = null; renderBigTape(null); return; }
+  const html = tapeSpeedHTML(d.tape.speed) + tapeHTML(d.tape); if (P.tape.last !== html){ P.tape.last = html;
+    const keep = el.scrollTop; el.innerHTML = html; el.scrollTop = keep; makeColsResizable(el.querySelector("table")); }
+  renderBigTape(d);
+}
+/* BIG TAPE: the second time & sales, under the first, filtered the way a trader filters for large orders and for
+   anyone building a position. Top: BUILDERS — the same side hitting the same price over and over (3+ prints inside
+   90 s adding up to big size): PAID UP at one price again and again is a buyer working an order there, HIT a
+   seller unloading. Then the BLOCKS: every single print of big size (shares) or big money (dollars). */
+function renderBigTape(d){
+  const box = P.tape.pc.querySelector(".p-bigtape"); if (!box) return;
+  const body = box.querySelector(".bt-body"), rule = box.querySelector("#btRule");
+  const bt = d && d.bigtape;
+  if (!bt){ body.innerHTML = `<div class="dim" style="padding:4px 6px">${NA}</div>`; return; }
+  rule.textContent = `≥ ${kfmt(bt.shares)} sh or ${usdK(bt.dollars)} · builders: ${bt.need}+ prints at one price inside ${bt.window}s · last ${bt.minutes} min`;
+  const who = s => s === "buy" ? "PAID UP" : "HIT";
+  const bl = bt.builders.map(g => `<tr class="${g.side} bld ${g.still ? "live" : ""}" title="${g.side === "buy" ? "a BUYER building: paid the ask" : "a SELLER unloading: hit the bid"} at ${g.price} ${g.prints} times in ${g.first_age - g.last_age}s — ${sz(g.shares)} shares, ${usdK(g.dollars)}, biggest print ${sz(g.biggest)}. ${g.still ? "Still going (last print " + g.last_age + "s ago)." : "Went quiet " + g.last_age + "s ago."}">
+      <td class="${g.side}">${g.still ? "●" : "○"} ${who(g.side)} ${g.price}</td><td class="${g.side}">${g.prints}× <b>${kfmt(g.shares)}</b></td><td class="${g.side}">${usdK(g.dollars)}</td><td class="dim">${g.still ? "LIVE" : ago(g.last_age)}</td></tr>`).join("");
+  const pr = bt.prints.map(p => `<tr class="${p.side}" title="${who(p.side).toLowerCase()} ${sz(p.size)} shares at ${p.price} = ${usdK(p.dollars)}${p.exchange ? " · " + esc(p.exchange) : ""} · ${ago(p.age)} ago">
+      <td class="${p.side}">${who(p.side)} ${p.price}</td><td class="${p.side}"><b>${sz(p.size)}</b></td><td class="${p.side}">${usdK(p.dollars)}</td><td class="dim">${ago(p.age)}</td></tr>`).join("");
+  const html = `<table class="t bt"><tr><th colspan="4" class="sec">BUILDERS <span class="dim">same side · same price · again and again</span></th></tr>${bl || `<tr><td colspan="4" class="dim">nobody building yet</td></tr>`}
+    <tr><th colspan="4" class="sec">BLOCKS <span class="dim">one big print</span></th></tr>${pr || `<tr><td colspan="4" class="dim">no big prints in the last ${bt.minutes} min</td></tr>`}</table>`;
+  if (body.dataset.h === html) return; body.dataset.h = html;
+  const keep = body.scrollTop; body.innerHTML = html; body.scrollTop = keep;
 }
 /* tape speed: how fast prints are coming right now against this stock's own last minute, plus the last 90 s as
    stacked bars (green = paid up, red = hit, grey = in between). Speeding into a move, drying up into a level. */
@@ -3129,6 +3216,13 @@ document.getElementById("colsPop").addEventListener("change", e => { if (e.targe
 function pinBox(panel){ let b = panel.pc.querySelector(".pinbox"); if (!b){ b = document.createElement("div"); b.className = "pinbox"; b.innerHTML = `<span class="txt"></span><button class="x" title="clear">✕</button>`; panel.pc.appendChild(b); b.querySelector(".x").addEventListener("click", () => { b.classList.remove("on"); b.querySelector(".txt").textContent = ""; }); } return b; }
 function pinInfo(panel, el){ const t = el && (el.getAttribute("title") || (el.closest("[title]") || {}).getAttribute && el.closest("[title]").getAttribute("title")); if (!t) return false; const b = pinBox(panel); b.querySelector(".txt").textContent = t; b.classList.add("on"); return true; }
 P.tape.el.addEventListener("click", e => { const tr = e.target.closest("tr[title]"); if (tr) pinInfo(P.tape, tr); });
+// the split between the two tapes: drag the BIG TAPE header up / down (saved)
+(function(){ const pc = P.tape.pc, hd = pc.querySelector(".bt-hd"), big = pc.querySelector(".p-bigtape"); if (!hd) return;
+  const apply = () => { big.style.flex = "0 0 " + store.get("bigTapePct", 42) + "%"; }; apply();
+  hd.addEventListener("mousedown", e => { e.preventDefault(); const h0 = pc.clientHeight, y0 = e.clientY, p0 = +store.get("bigTapePct", 42);
+    const mv = ev => { const pct = Math.max(12, Math.min(85, p0 - (ev.clientY - y0) / h0 * 100)); store.set("bigTapePct", Math.round(pct)); apply(); };
+    const up = () => { window.removeEventListener("mousemove", mv); window.removeEventListener("mouseup", up); };
+    window.addEventListener("mousemove", mv); window.addEventListener("mouseup", up); }); })();
 P.book.el.addEventListener("click", e => { if (e.target.closest("td[data-act], .chip, button, input, select, th")) return; const cell = e.target.closest("td.flow, td.bars, td.px, td.whoc"); if (!cell) return;
   const t = cell.matches("td.px") ? null : (cell.querySelector("[title]") || (cell.hasAttribute("title") ? cell : null));
   if (t && pinInfo(P.book, t)) return;
@@ -3495,7 +3589,7 @@ function renderTicket(s, d, force){
       <span class="row qty"><button class="qbtn" data-q="-100">−</button><input id="tkQty" type="number" min="1" step="100" value="${TK.qty}" title="shares"><button class="qbtn" data-q="100">+</button><button class="qbtn" data-q="set:100">100</button><button class="qbtn" data-q="set:500">500</button></span>
       ${TK.type !== "MKT" ? `<span class="row pxr"><input id="tkPx" type="number" step="${price != null && price < 1 ? "0.0001" : "0.01"}" value="${TK.px != null ? TK.px : (price != null ? price : "")}" title="${TK.type === "STP" ? "stop" : "limit"} price"><button data-px="bid">bid</button><button data-px="ask">ask</button><button data-px="mid">mid</button><button data-px="last">last</button></span>` : ""}
       ${TK.type === "STP LMT" ? `<span class="row"><input id="tkAux" type="number" step="0.01" value="${TK.aux != null ? TK.aux : ""}" placeholder="stop" title="stop trigger"></span>` : ""}
-      <button class="tx ${TK.side === "BUY" ? "b" : "s"}" id="tkGo" ${(on || closesPosition(d, TK.side, TK.qty, TK.type)) && d && !TK.inflight ? "" : "disabled"}>${TK.inflight ? "SENDING…" : TK.side}</button>
+      <button class="tx ${TK.side === "BUY" ? "b" : "s"}" id="tkGo" ${(on || closesPosition(d, TK.side, TK.qty, TK.type)) && d && !TK.inflight ? "" : "disabled"}>${TK.inflight ? "SENDING…" : "SEND"}</button>
     </div>
     <div class="trow sub">
       <span class="risk"><label>RISK $</label><input id="tkRisk" type="number" step="10" min="0" value="${riskDollars()}"><span class="out">${sizing}</span></span>

@@ -2511,6 +2511,14 @@ class Engine:
             except Exception:
                 pass
 
+    def _big_tape(self, st, t):
+        """The BIG TAPE for the pane: large prints and position builders, prices formatted, ages in seconds."""
+        b = st.tape.big(t)
+        return {"prints": [{"age": round(t - p["t"], 1), "price": fmt_price(p["price"]), "size": round(p["size"]),
+                            "dollars": round(p["size"] * p["price"]), "side": p["side"], "exchange": p["exchange"]} for p in b["prints"]],
+                "builders": [dict(g, price=fmt_price(g["price"]), biggest=round(g["biggest"])) for g in b["builders"]],
+                "shares": b["shares"], "dollars": b["dollars"], "minutes": b["minutes"], "window": b["window"], "need": b["need"]}
+
     def _reloaders(self, st, t, price):
         """Nearest confirmed / likely reloaders on each side of the market."""
         below, above = [], []
@@ -2589,6 +2597,7 @@ class Engine:
             "keep_lines": [l for l in [headline] + lines if l.startswith(("Maybe a ", "RELOAD "))][:2],
             "book": {"bids": bids, "asks": asks},
             "ladder": self._memory_ladder(st, t, user_levels),
+            "bigtape": self._big_tape(st, t),
             "tape": dict(tape, recent=[
                 {"age": round(t - p["t"], 1), "price": fmt_price(p["price"]), "size": round(p["size"]),
                  "side": p["side"], "large": p["large"], "exchange": p["exchange"], "at": at_level(p["price"])}

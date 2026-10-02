@@ -536,3 +536,40 @@ class StillLadderTests(unittest.TestCase):
         self.assertEqual(top(2.1), first)
         quote(10.10, 3.0)                                    # near the top edge: re-centred
         self.assertNotEqual(top(3.1), first)
+
+
+class BigTapeTests(unittest.TestCase):
+    """The BIG TAPE: large prints, and the same side hitting the same price again and again (a builder)."""
+    def test_blocks_and_builders(self):
+        from twiney.tape import Tape
+        tp = Tape({"window_seconds": 30.0, "min_prints_for_read": 5, "control_ratio": 0.65, "large_print_shares": 5000, "keep_prints": 200,
+                   "big_tape_shares": 5000, "big_tape_dollars": 250000, "big_tape_minutes": 30, "build_window_seconds": 90, "build_prints": 3, "build_dollars": 500000})
+        # a buyer working 10.05: six prints of 1,200 at the ask inside a minute
+        for i in range(6):
+            tp.add(100.0 + i * 10, 10.05, 1200, 10.04, 10.05)
+        tp.add(170.0, 10.04, 300, 10.04, 10.05)           # a small sale, not a builder
+        tp.add(180.0, 10.06, 9000, 10.05, 10.06)          # one block at the ask
+        tp.add(190.0, 300.0, 1000, 299.9, 300.0)          # $300K in one print: a block by money
+        b = tp.big(200.0)
+        self.assertEqual([(p["size"], p["price"]) for p in b["prints"]], [(1000, 300.0), (9000, 10.06)])
+        self.assertEqual(len(b["builders"]), 1)
+        g = b["builders"][0]
+        self.assertEqual((g["side"], g["price"], g["prints"], g["shares"], g["biggest"]), ("buy", 10.05, 6, 7200, 1200))
+        self.assertTrue(g["still"]); self.assertEqual(g["last_age"], 50)
+        # three minutes of silence: the builder went quiet; a new run at the same price is a new builder
+        self.assertFalse(tp.big(400.0)["builders"][0]["still"])
+        for i in range(3):
+            tp.add(500.0 + i * 5, 10.05, 2000, 10.04, 10.05)
+        bs = tp.big(520.0)["builders"]
+        self.assertEqual([(x["prints"], x["still"]) for x in bs], [(3, True), (6, False)])
+
+    def test_pane_carries_the_big_tape(self):
+        e = connected_engine()
+        e.apply_slot("AAA", True, 0.0)
+        e.on_l1("AAA", "bid", 9.99, 1.0); e.on_l1("AAA", "ask", 10.0, 1.0)
+        for i in range(4):
+            e.on_print("AAA", 10.0, 2000, "X", 2.0 + i)
+        pane = next(x for x in e.snapshot(7.0)["panes"] if x and x["symbol"] == "AAA")
+        bt = pane["bigtape"]
+        self.assertEqual(bt["builders"][0]["side"], "buy"); self.assertEqual(bt["builders"][0]["shares"], 8000)
+        self.assertEqual(bt["builders"][0]["price"], 10.0)

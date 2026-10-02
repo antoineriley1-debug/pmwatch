@@ -106,3 +106,43 @@ class Tape:
 
     def recent(self, limit=12):
         return list(islice(reversed(self.prints), limit))
+
+    def big(self, now, last_price=None):
+        """The BIG TAPE: what a trader filters the tape for to catch large orders and see who is building a
+        position. Two lists, newest first, over the last big_tape_minutes:
+          prints:   every print of big_tape_shares or more, or big_tape_dollars or more (a block)
+          builders: the same side hitting the same price again and again inside build_window_seconds — at least
+                    build_prints prints adding up to big_tape_shares or build_dollars — someone working an order there:
+                    PAID UP at one price over and over = a buyer building; HIT = a seller unloading
+        Each builder: side, price, prints, shares, dollars, first / last age, still (last print inside the window)."""
+        c = self.cfg
+        mins = float(c.get("big_tape_minutes", 30))
+        sh = float(c.get("big_tape_shares", c.get("large_print_shares", 5000)))
+        usd = float(c.get("big_tape_dollars", 250000))
+        win = float(c.get("build_window_seconds", 90))
+        need = int(c.get("build_prints", 3))
+        busd = float(c.get("build_dollars", 500000))
+        cut = now - mins * 60
+        rows = [p for p in self.prints if p["t"] >= cut and p["side"] in ("buy", "sell")]
+        prints = [p for p in rows if p["size"] >= sh or p["size"] * p["price"] >= usd]
+        # builders: runs of the same side at the same price with no gap longer than the window
+        groups, runs = {}, []
+        for p in rows:
+            k = (p["side"], round(p["price"], 4))
+            g = groups.get(k)
+            if g is None or p["t"] - g["last_t"] > win:
+                g = {"side": p["side"], "price": p["price"], "prints": 0, "shares": 0.0, "dollars": 0.0,
+                     "first_t": p["t"], "last_t": p["t"], "biggest": 0.0}
+                groups[k] = g
+                runs.append(g)
+            g["prints"] += 1
+            g["shares"] += p["size"]
+            g["dollars"] += p["size"] * p["price"]
+            g["last_t"] = p["t"]
+            g["biggest"] = max(g["biggest"], p["size"])
+        builders = [dict(g, still=now - g["last_t"] <= win, first_age=round(now - g["first_t"]), last_age=round(now - g["last_t"]),
+                         shares=round(g["shares"]), dollars=round(g["dollars"]))
+                    for g in runs if g["prints"] >= need and (g["shares"] >= sh or g["dollars"] >= busd)]
+        builders.sort(key=lambda g: (-g["still"], g["last_age"]))
+        return {"prints": list(reversed(prints))[:60], "builders": builders[:20],
+                "shares": sh, "dollars": usd, "minutes": mins, "window": win, "need": need}

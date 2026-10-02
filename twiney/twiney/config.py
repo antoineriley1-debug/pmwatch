@@ -94,6 +94,13 @@ DEFAULTS = {
         "control_ratio": 0.65,
         "large_print_shares": 5000,
         "keep_prints": 200,
+        # the BIG TAPE: a second time & sales filtered to large orders and position builders
+        "big_tape_shares": 5000,        # a print this big (shares) makes the big tape
+        "big_tape_dollars": 250000,     # ... or this much money in one print (a block)
+        "big_tape_minutes": 30,         # how far back it looks
+        "build_window_seconds": 90,     # same side, same price, prints no further apart than this = one builder
+        "build_prints": 3,              # a builder needs at least this many prints
+        "build_dollars": 500000,        # ... adding up to big_tape_shares, or this much money
     },
     "trap": {
         # aggressive prints (paid the offer / hit the bid) this far back that are now

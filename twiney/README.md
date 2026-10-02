@@ -46,6 +46,21 @@ red hit the bid, bold is big (hover a print for the exchange and age). ORDER ENT
 carries the controls on the row: 25 / 50 / 75 off at the touch, … your own number, @ a partial at your price,
 BE stop to breakeven, X close.
 
+## See the orders being taken · BIG TAPE
+
+- **Size as a bar.** Every BID / ASK size on the ladder remembers the most it showed at that price in the last
+  90 s and draws itself as a bar against it: full when it is all there, shrinking as prints eat it. 10.2K showing,
+  price trades into it, 5.5K gets bought: the bar is half gone and the number reads 4.7K. A drop flashes the cell
+  and floats the shares taken (−1.4K); size coming back after a drop floats +2.0K ↻ — the reload. The strip under
+  the ladder spells out the touch on both sides: "ASK 242.75 · 4.7K of 10.2K · 5.5K bought (54%)".
+- **BIG TAPE** (under TIME & SALES; drag its header to resize): the second tape, filtered the way a trader
+  filters for large orders and for anyone building a position. BUILDERS: the same side hitting the same price
+  again and again (`build_prints` 3+ prints no further apart than `build_window_seconds` 90, adding up to
+  `big_tape_shares` or `build_dollars` $500K): PAID UP at one price over and over is a buyer working an order there, HIT a seller
+  unloading; ● LIVE while it keeps coming, ○ with the age once it stops. BLOCKS: every single print of
+  `big_tape_shares` (5,000) or `big_tape_dollars` ($250K). Looks back `big_tape_minutes` (30). Click a row and
+  the pin box holds it. All in SETTINGS → Time & Sales.
+
 ## Pin box, limit-only ticket, scaling, options
 
 - **Pin box**: the tape and the ladder move too fast to hover. Click a print, a reload $ cell, a FLOW tag or a
