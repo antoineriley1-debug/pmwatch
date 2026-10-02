@@ -18,7 +18,8 @@ class SettingsTests(unittest.TestCase):
         self.assertTrue(f["reload.min_refreshes"]["help"])
         self.assertFalse(f["flow.min_premium"]["restart"])
         self.assertTrue(f["ibkr.port"]["restart"])
-        self.assertTrue(f["trading.allow_live"]["locked"])
+        self.assertFalse(f["trading.allow_live"]["locked"]); self.assertTrue(f["trading.allow_live"]["restart"])
+        self.assertIn("REAL MONEY", f["trading.allow_live"]["help"])
 
     def test_save_writes_config_applies_live_and_protects_the_key(self):
         with tempfile.TemporaryDirectory() as d:
@@ -44,7 +45,7 @@ class SettingsTests(unittest.TestCase):
             self.assertEqual(cfg["quantdata"]["api_key"], "SECRET-1234")
             # locked and invalid changes are refused and nothing is written
             with self.assertRaises(ConfigError):
-                settings.apply(cfg, path, {"trading.allow_live": True})
+                settings.apply(cfg, path, {"dashboard.host": "0.0.0.0"})
             with self.assertRaises(ConfigError):
                 settings.apply(cfg, path, {"depth.rows_displayed": 50})
             with self.assertRaises(ConfigError):

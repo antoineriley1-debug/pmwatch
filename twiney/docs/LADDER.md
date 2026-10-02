@@ -43,7 +43,7 @@ The desk opens at `http://127.0.0.1:8787` (demo: 8799). `python3 run_twiney.py -
 |---|---|---|
 | **SIM** (PRACTICE) | `start_demo` or `--demo` | synthetic market, in-memory broker, nothing reaches IBKR |
 | **IBKR PAPER** | TWS paper login (account `DU…`) | real quotes, paper orders through TWS |
-| **IBKR LIVE** | a live account (`U…`) AND `trading.allow_live: true` in `config.json` | real money. The ladder's status strip pulses **LIVE TRADING** in red |
+| **IBKR LIVE** | a live account (`U…`) AND **Allow live** switched on in SETTINGS → Trading (confirmed, then RESTART NOW) | real money. The ladder's status strip pulses **LIVE TRADING** in red |
 
 The desk starts DISARMED every launch. ARM (top bar) enables order entry; the day-loss lock disarms it for
 the day. Closing a position is never blocked (FLATTEN, CLOSE, X, a reducing order).

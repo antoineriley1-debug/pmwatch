@@ -135,6 +135,8 @@ DEFAULTS = {
     "trading": {
         # Order entry from the ladder. PAPER ONLY unless allow_live is true.
         "enabled": True,
+        # OFF: orders go only to a PAPER account (DU…), a live account is refused. ON: with TWS logged into your
+        # live account (port 7496) orders are REAL MONEY and the status strip pulses LIVE TRADING. After RESTART NOW.
         "allow_live": False,
         "default_shares": 100,
         "max_shares_per_order": 500,

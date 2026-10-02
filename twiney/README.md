@@ -176,8 +176,8 @@ pulled last time, so trust it less". Gone longer than the window, whoever shows 
   when the entry fills the exits go live; when one exit fills the other is cancelled.
 - Your working orders show as chips on the ladder rows (click a chip to cancel), as lines on the chart,
   and in the orders panel below.
-- **Locks (config.json → trading):** `allow_live` is false, so a live account (id not starting with `DU`)
-  can never receive an order; `max_shares_per_order` (500), `max_dollars_per_order` ($25,000) and
+- **Locks (SETTINGS → Trading):** `Allow live` is off, so a live account (id not starting with `DU`)
+  can never receive an order until you switch it on there (it asks you to confirm, then RESTART NOW); `max_shares_per_order` (500), `max_dollars_per_order` ($25,000) and
   `max_orders_per_minute` (10) reject anything bigger; only LIMIT entries are possible.
 - **Practice without IBKR:** `start_demo` runs a built-in simulator that fills your orders against the
   demo book, so you can learn the ladder today.

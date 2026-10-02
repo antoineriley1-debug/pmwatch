@@ -5,7 +5,7 @@
 parts of the desk that read settings at use time pick them up at once) and writes config.json for you.
 
 The help text is read from the comments in ``config.py`` so it can never drift from the defaults.
-A few things are deliberately not editable here: trading.allow_live (TED is paper-only) and
+One thing is deliberately not editable here:
 dashboard.host (the desk only listens on this computer).
 """
 
@@ -40,10 +40,9 @@ SECTIONS = [
 
 # settings that are read once at startup: saved at once, used after RESTART
 RESTART = ("ibkr.", "dashboard.", "depth.slots", "depth.rows_requested", "depth.smart_depth", "recording.",
-           "chart.", "account.", "quantdata.", "demo.", "trading.enabled")
+           "chart.", "account.", "quantdata.", "demo.", "trading.enabled", "trading.allow_live")
 
 LOCKED = {
-    "trading.allow_live": "Locked: TED is paper-only. Live trading is never switched on from the desk.",
     "dashboard.host": "Locked: the desk only listens on this computer.",
 }
 

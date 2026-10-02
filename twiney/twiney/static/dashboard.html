@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261002-1847">
+<meta name="build" content="20261002-1900">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -4249,6 +4249,7 @@ function renderSettings(){
 function readInput(el){
   const path = el.dataset.path, f = SET.sections.flatMap(s => s.fields).find(x => x.path === path); if (!f) return;
   let v = f.type === "bool" ? el.checked : f.type === "select" ? JSON.parse(el.value) : el.value;
+  if (path === "trading.allow_live" && v === true && !confirm("LIVE TRADING: with TWS logged into your LIVE account, orders from this desk are REAL MONEY.\n\nPaper (DU) accounts still work as before. Turn live trading ON?")) { el.checked = false; v = false; }
   if (f.type === "secret" && !v) { delete SET.dirty[path]; return; }
   const orig = f.type === "bool" ? !!f.value : f.value;
   if (String(v) === String(orig) && f.type !== "secret") delete SET.dirty[path]; else SET.dirty[path] = v;
