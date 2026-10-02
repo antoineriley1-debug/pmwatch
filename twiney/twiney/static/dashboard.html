@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261002-0023">
+<meta name="build" content="20261002-0025">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -3083,7 +3083,7 @@ function rlBanner(wrap, d){
       items.push({side, price: r.price, n: r[side + "_refills"] || 0, stage: r[side + "_stage"] || "RELOADING", where, rowsAway, knows: r[side + "_knows"] && r[side + "_knows"].knows, rw});
     }
   }
-  const html = items.map(i => `<span class="rlb ${i.side === "bid" ? "b" : "s"} ${i.where}" data-jump="${i.price}" title="${esc(i.rw.text)} · ${i.stage} · click to jump to it">${i.where === "up" ? "▲" : i.where === "down" ? "▼" : "●"} RELOAD ${i.side === "bid" ? "BUYER" : "SELLER"} ${px(i.price)} · ${kfmt(i.rw.n)} sh ${i.side === "bid" ? "sold into him" : "bought from him"} · ${usdK(i.rw.usd)}${i.rw.peak && i.rw.n > i.rw.peak ? " · showed " + kfmt(i.rw.peak) : ""}${i.where !== "on" ? ` · ${i.rowsAway} rows ${i.where}` : ""}${i.knows ? " ⚡" : ""}</span>`).join("");
+  const html = items.map(i => `<span class="rlb ${i.side === "bid" ? "b" : "s"} ${i.where}" data-jump="${i.price}" title="${esc(i.rw.text)} · ${i.stage} · click to jump to it">${i.where === "up" ? "▲" : i.where === "down" ? "▼" : "●"} RELOAD ${i.side === "bid" ? "BUYER" : "SELLER"} ${px(i.price)} · ${kfmt(i.rw.n)} sh ${i.side === "bid" ? "sold into him" : "bought from him"} · ${usdK(i.rw.usd)}${i.rw.peak && i.rw.n > i.rw.peak ? ` · never showed more than ${kfmt(i.rw.peak)} at once (iceberg, refilled ${i.n}×)` : ""}${i.where !== "on" ? ` · ${i.rowsAway} rows ${i.where}` : ""}${i.knows ? " ⚡" : ""}</span>`).join("");
   if (ban.dataset.h !== html){ ban.dataset.h = html; ban.innerHTML = html; ban.classList.toggle("on", !!items.length); }
 }
 P.book.el.addEventListener("click", e => {
