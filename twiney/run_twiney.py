@@ -33,6 +33,14 @@ def console_alert(alert):
           f"({alert['side']} · {alert['role']} · absorbed {alert['absorbed']:,})", flush=True)
 
 
+def _rec_dir(cfg):
+    """Recordings live in the data folder (unless config.json gives an absolute path)."""
+    from twiney import paths as _paths
+    d = _paths.recordings_dir(cfg["recording"]["dir"])
+    cfg["recording"]["dir"] = d          # everything downstream (clips, replay lists, exports) reads the same place
+    return d
+
+
 def layout_file(args):
     """layout.json lives next to config.json (the TWINEY folder)."""
     return os.path.join(os.path.dirname(os.path.abspath(args.config)), "layout.json")
@@ -86,13 +94,13 @@ def run_live(cfg, plays, args):
         return 2
     recorder = None
     if cfg["recording"]["enabled"]:
-        recorder = Recorder(cfg["recording"]["dir"])
+        recorder = Recorder(_rec_dir(cfg))
         recorder.write(session_header(plays, cfg, __version__))
         print(f"Recording raw events to {recorder.path}", flush=True)
     engine = Engine(plays, cfg, recorder)
     engine.plays_path = args.plays
-    engine.grades_path = os.path.join(cfg["recording"]["dir"], "grades.jsonl")
-    engine.jlog_path = os.path.join(cfg["recording"]["dir"], "desk.log")   # structured JSON lines: connections, orders, fills, errors
+    engine.grades_path = os.path.join(_rec_dir(cfg), "grades.jsonl")
+    engine.jlog_path = os.path.join(_rec_dir(cfg), "desk.log")   # structured JSON lines: connections, orders, fills, errors
     engine.load_user_alerts(os.path.join(os.path.dirname(os.path.abspath(args.plays)), "alerts.json"))
     engine.listeners.append(console_alert)
     note_stripped(engine, args)
@@ -109,7 +117,7 @@ def run_live(cfg, plays, args):
     if recorder:
         desk.started = time.time()
     dash = Dashboard(engine, cfg["dashboard"]["host"], cfg["dashboard"]["port"], trader=trader, desk=desk,
-                     rec_dir=cfg["recording"]["dir"], layout_path=layout_file(args), config_path=args.config).start()
+                     rec_dir=_rec_dir(cfg), layout_path=layout_file(args), config_path=args.config).start()
     ib = cfg["ibkr"]
     mode = "order entry PAPER-ONLY" if trader and not cfg["trading"]["allow_live"] else \
         "order entry LIVE ALLOWED" if trader else "view only"
@@ -177,13 +185,13 @@ def run_demo(cfg, plays, args):
     from twiney.sim import DemoFeed
     recorder = None
     if cfg["recording"]["enabled"]:
-        recorder = Recorder(cfg["recording"]["dir"], time.strftime("demo-%Y%m%d-%H%M%S.jsonl"))
+        recorder = Recorder(_rec_dir(cfg), time.strftime("demo-%Y%m%d-%H%M%S.jsonl"))
         recorder.write(session_header(plays, cfg, __version__))
         print(f"Recording the demo to {recorder.path} (replay it or grade its calls for tune.py)", flush=True)
     engine = Engine(plays, cfg, recorder)
     engine.plays_path = args.plays if os.path.exists(args.plays) and not args.plays.endswith("plays.example.json") else None
-    engine.grades_path = os.path.join(cfg["recording"]["dir"], "grades.jsonl")
-    engine.jlog_path = os.path.join(cfg["recording"]["dir"], "desk.log")   # structured JSON lines: connections, orders, fills, errors
+    engine.grades_path = os.path.join(_rec_dir(cfg), "grades.jsonl")
+    engine.jlog_path = os.path.join(_rec_dir(cfg), "desk.log")   # structured JSON lines: connections, orders, fills, errors
     engine.load_user_alerts(os.path.join(os.path.dirname(os.path.abspath(args.plays)), "alerts.json"))
     engine.listeners.append(console_alert)
     note_stripped(engine, args)
@@ -203,7 +211,7 @@ def run_demo(cfg, plays, args):
     if recorder:
         desk.started = time.time()
     dash = Dashboard(engine, cfg["dashboard"]["host"], cfg["dashboard"]["port"], trader=trader, desk=desk,
-                     rec_dir=cfg["recording"]["dir"], layout_path=layout_file(args), config_path=args.config).start()
+                     rec_dir=_rec_dir(cfg), layout_path=layout_file(args), config_path=args.config).start()
     print(f"TWINEY {__version__} · DEMO FEED (synthetic, not market data) · practice orders fill in the simulator",
           flush=True)
     open_dashboard(dash, cfg, args)
@@ -260,7 +268,7 @@ def run_replay(cfg, plays, args):
             engine.trader = Trader(engine, cfg, sim, gate)
             if dash is None:
                 dash = Dashboard(ref, cfg["dashboard"]["host"], cfg["dashboard"]["port"],
-                                 clock=lambda: box["engine"].last_t, trader=None, rec_dir=cfg["recording"]["dir"],
+                                 clock=lambda: box["engine"].last_t, trader=None, rec_dir=_rec_dir(cfg),
                                  layout_path=layout_file(args)).start()
                 open_dashboard(dash, cfg, args)
             dash.trader = engine.trader
@@ -303,8 +311,8 @@ def run_replay(cfg, plays, args):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description="TWINEY — read-only IBKR order-flow workstation (PS60)")
-    ap.add_argument("--config", default="config.json")
-    ap.add_argument("--plays", default="plays.json")
+    ap.add_argument("--config", default=None, help="settings file (default: config.json in your TWINEY data folder)")
+    ap.add_argument("--plays", default=None, help="plays file (default: plays.json in your TWINEY data folder)")
     ap.add_argument("--demo", action="store_true", help="synthetic feed; no IBKR connection")
     ap.add_argument("--replay", metavar="FILE", help="replay a JSONL recording")
     ap.add_argument("--speed", type=float, default=0.0, help="replay pacing multiple (0 = as fast as possible)")
@@ -316,6 +324,14 @@ def main(argv=None):
     ap.add_argument("--port", type=int, help="dashboard port (overrides config.json)")
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args(argv)
+    # your files live in the data folder (C:\Users\you\TWINEY), never in the program folder a new zip replaces
+    from twiney import paths as _paths
+    program_dir = os.path.dirname(os.path.abspath(__file__))
+    if args.config is None:
+        args.config = _paths.ensure_config(program_dir)
+    if args.plays is None:
+        args.plays = _paths.ensure_plays(program_dir)
+    print(f"Your settings, key, plays and layout: {os.path.dirname(os.path.abspath(args.config))}", flush=True)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.WARNING,
                         format="%(asctime)s %(name)s %(levelname)s %(message)s")
     try:

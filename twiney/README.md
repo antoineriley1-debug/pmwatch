@@ -188,7 +188,7 @@ pulled last time, so trust it less". Gone longer than the window, whoever shows 
 - **Windows:** `start_demo.bat` to try the demo, `start_twiney.bat` to connect to TWS.
 - **Mac:** `start_demo.command` / `start_twiney.command` (first time: right-click → Open).
 
-The launchers create `config.json` and `plays.json` from the examples if they are missing. You still need Python and IBKR's `ibapi` package (steps 3–4 below).
+Your files (`config.json` with the port and your Quant Data key, `plays.json`, the layout, alerts and recordings) live in a folder of their own, `C:\Users\<you>\TWINEY` on Windows and `~/TWINEY` on a Mac, so unzipping a new build never loses them. The first start creates them there (copying a `config.json` / `plays.json` found in the program folder, if any). `TWINEY_HOME` points them elsewhere. You still need Python and IBKR's `ibapi` package (steps 3–4 below).
 
 ## Workflow
 All commands run from this `twiney/` folder.
