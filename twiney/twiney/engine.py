@@ -240,6 +240,7 @@ class Engine:
         self.connection = {"state": "DISCONNECTED", "since": None, "detail": "",
                            "market_data_type": None}
         self.data_t = None      # last market data tick of any kind (the MKT light)
+        self.data_problem = ""  # IBKR's reason for no data (subscriptions), shown on the MKT light
         self.flow_status = {"source": "off", "state": "off", "detail": "", "last_ok": None, "last_print": None}   # the OPT light
         self.started = None
         self.last_t = 0.0
@@ -679,7 +680,10 @@ class Engine:
         mdt = c.get("market_data_type")
         if c["state"] == "CONNECTED":
             if mdt in (3, 4):
-                mkt = ("amber", "DELAYED", "IBKR connected, but market data is delayed (your data subscriptions)")
+                mkt = ("amber", "DELAYED", "IBKR connected, but market data is DELAYED 15 minutes and there is no Level II: order flow reads are not valid. "
+                       + (self.data_problem or "your data subscriptions"))
+            elif (age is None or age > stale) and self.data_problem:
+                mkt = ("red", "NO DATA", self.data_problem)
             elif age is None or age > stale:
                 mkt = ("amber", "QUIET", f"IBKR connected, no ticks for {int(age)}s (market closed, or no subscription)" if age is not None
                        else "IBKR connected, waiting for the first tick")
@@ -1158,6 +1162,13 @@ class Engine:
             if state != prev:
                 level = "info" if state == "CONNECTED" else "warn"
                 self._message(level, f"connection {state}{': ' + detail if detail else ''}", t)
+
+    def set_data_problem(self, text, t):
+        """IBKR said why there is no data (subscriptions): the MKT light carries it until ticks flow."""
+        with self.lock:
+            if text != self.data_problem:
+                self.data_problem = text
+                self._message("error", text, t)
 
     def on_market_data_type(self, mdt, t, symbol=None):
         """IBKR says per request whether it is live (1) or delayed (3) / frozen. The light shows the worst one:

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261002-1548">
+<meta name="build" content="20261002-1847">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -725,6 +725,8 @@ i.tl{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:3p
 .lad tr.rl-bid.cv-active td.bsz{box-shadow:inset 0 0 0 1px #7dffb8,0 0 7px 1px rgba(63,181,111,.8) !important} .lad tr.rl-ask.cv-active td.asz{box-shadow:inset 0 0 0 1px #ffa0a8,0 0 7px 1px rgba(217,83,79,.8) !important}
 .p-tape .t.tape2 tr.rlhit td{box-shadow:inset 0 0 0 1px rgba(255,255,255,.25)} .p-tape .t.tape2 tr.rlhit.b td{background:rgba(63,181,111,.28);box-shadow:inset 0 0 0 1px #7dffb8} .p-tape .t.tape2 tr.rlhit.s td{background:rgba(217,83,79,.28);box-shadow:inset 0 0 0 1px #ffa0a8}
 .p-tape .t.tape2 tr.rlhit td:first-child{border-left:3px solid currentColor}
+
+.keyst{font:bold 11px ui-monospace,Menlo,Consolas,monospace;margin:0 0 4px;padding:3px 6px;border-radius:3px}.keyst.ok{color:#0b8f55;background:rgba(11,143,85,.12)}.keyst.no{color:#c4283a;background:rgba(196,40,58,.12)}
 
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
@@ -4227,7 +4229,7 @@ function setField(f){
   let inp;
   if (f.type === "bool") inp = `<label class="sw"><input type="checkbox" id="${id}" data-path="${f.path}" ${v ? "checked" : ""} ${dis}><span></span></label>`;
   else if (f.type === "select") inp = `<select id="${id}" data-path="${f.path}" ${dis}>${f.choices.map(c => `<option value="${esc(JSON.stringify(c.value))}" ${JSON.stringify(c.value) === JSON.stringify(v) ? "selected" : ""}>${esc(c.label)}</option>`).join("")}</select>`;
-  else if (f.type === "secret") inp = `<input type="password" id="${id}" data-path="${f.path}" placeholder="${f.set ? "saved (" + esc(f.hint) + ") · type a new one to replace" : "paste your key"}" autocomplete="off">${f.set ? `<button data-clear="${f.path}">REMOVE</button>` : ""}`;
+  else if (f.type === "secret") inp = `<div class="keyst ${f.set ? "ok" : "no"}">${f.set ? "KEY SAVED " + esc(f.hint) + " · in use now (the box below stays empty on purpose; the key is never shown again)" : "NO KEY SAVED"}</div><input type="password" id="${id}" data-path="${f.path}" placeholder="${f.set ? "type a new key here only to replace it" : "paste your key, then SAVE"}" autocomplete="off">${f.set ? `<button data-clear="${f.path}">REMOVE</button>` : ""}`;
   else if (f.type === "json") inp = `<textarea id="${id}" data-path="${f.path}" rows="2" spellcheck="false" ${dis}>${esc(v)}</textarea>`;
   else inp = `<input type="${f.type === "int" || f.type === "float" ? "number" : "text"}" ${f.type === "float" ? 'step="any"' : ""} id="${id}" data-path="${f.path}" value="${esc(v == null ? "" : v)}" ${dis}>`;
   return `<div class="sf ${SET.dirty.hasOwnProperty(f.path) ? "dirty" : ""} ${f.locked ? "locked" : ""}"><div class="sl"><b>${esc(f.label)}</b>${f.restart ? `<i class="rs" title="saved at once, used after RESTART NOW">RESTART</i>` : `<i class="lv" title="takes effect the moment you save">LIVE</i>`}<div class="sh">${esc(f.locked || f.help || "")}</div><code>${esc(f.path)}</code></div><div class="si">${inp}</div></div>`;

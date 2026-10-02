@@ -203,6 +203,8 @@ class TwineyWrapper:
             self.engine.on_error(sym, code, msg, t, level="warn", category="CONNECTION")
         elif code in SUBSCRIPTION_CODES:
             self.engine.on_error(sym, code, msg, t, level="error", category=categorize(code, kind))
+            if kind == "l1" and code in (354, 10089, 10090, 10168, 10197):
+                self.session.handle_no_subscription(code, msg, sym)
         else:
             self.engine.on_error(sym, code, msg, t, level="warn" if code >= 2000 else "error", category=categorize(code, kind))
 
@@ -599,6 +601,34 @@ class MarketDataSession:
                 self.engine.clear_positions()   # IBKR re-sends every open position right after this
                 self.app.reqPositions()  # streams position updates
             self._next_orders = self._next_fills = 0.0
+
+    NO_DATA_FIX = ("IBKR is not sending this desk live quotes: the paper account has no API market data. Fix in Client Portal: "
+                   "Settings > User Settings > Market Data Subscriptions (add US Securities Snapshot and Futures Value Bundle, plus "
+                   "NASDAQ TotalView or NYSE OpenBook for depth), then Settings > Paper Trading Account > Share real-time market data "
+                   "subscriptions with paper = YES. It takes effect the next trading day.")
+
+    def handle_no_subscription(self, code, msg, sym):
+        """IBKR refused live quotes (354 / 10089 / 10168 / 10197). Say in plain words what to fix, and fall back to
+        DELAYED data (15 minutes, no depth) once so the desk at least moves and paper orders can be tested."""
+        with self._lock:
+            t = self.clock()
+            why = "another session is logged in with this user and is taking the live data (10197)" if code == 10197 else "no live market data subscription for the API"
+            self.engine.set_data_problem(f"NO LIVE DATA from IBKR for {sym}: {why}. {self.NO_DATA_FIX}", t)
+            if self.app is None or self.cfg["ibkr"]["market_data_type"] != 1 or getattr(self, "_delayed_fallback", False):
+                return
+            self._delayed_fallback = True
+            self.app.reqMarketDataType(3)
+            for s, rid in list(self.l1_ids.items()):     # live requests were refused: ask again, now as delayed
+                try:
+                    self.app.cancelMktData(rid)
+                except Exception:
+                    pass
+                self.app.req.pop(rid, None)
+            self.l1_ids.clear()
+            self.engine.on_connection("CONNECTED", "no live subscription: switched to DELAYED data (15 min, no depth)", t, market_data_type=3)
+            self.engine._message("error", "SWITCHED TO DELAYED DATA (15 minutes behind, no Level II): IBKR refused live quotes for the API. "
+                                          "Order flow reads are not valid on delayed data. " + self.NO_DATA_FIX, t)
+            self.subscribe_l1()
 
     def handle_data_lost(self, msg):
         with self._lock:

@@ -489,3 +489,20 @@ class OptionPositionTests(unittest.TestCase):
         out = tr.opt_adjust("TSLA 20261003 240C", 1, "close", None, clock())
         self.assertFalse(out["ok"]); self.assertIn("type a price", out["reason"])
         self.assertFalse(tr.opt_adjust("NOPE", 1, "close", None, clock())["ok"])
+
+
+class NoSubscriptionTests(SessionTests):
+    """IBKR refuses live quotes (354 / 10168): the desk says what to fix on the MKT light and falls back to DELAYED once."""
+    def test_354_falls_back_to_delayed_and_explains(self):
+        sess, engine, clock, app = self.connect()
+        rid = sess.l1_ids["AAA"]
+        app.error(rid, 354, "Requested market data is not subscribed. Delayed market data is available.", "")
+        self.assertIn("NO LIVE DATA", sess.engine.data_problem); self.assertIn("Client Portal", sess.engine.data_problem)
+        self.assertIn(("reqMarketDataType", 3), app.calls)
+        self.assertEqual(sess.engine.connection["market_data_type"], 3)
+        self.assertNotEqual(sess.l1_ids["AAA"], rid)                      # quotes asked for again, as delayed
+        n = app.calls.count(("reqMarketDataType", 3))
+        app.error(sess.l1_ids["AAA"], 10168, "Requested market data is not subscribed. Delayed market data is not enabled.", "")
+        self.assertEqual(app.calls.count(("reqMarketDataType", 3)), n)    # only once
+        light = sess.engine._feeds(sess.clock())["market"]
+        self.assertEqual(light["label"], "DELAYED"); self.assertIn("not valid", light["detail"])

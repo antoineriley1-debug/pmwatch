@@ -116,18 +116,27 @@ def run_live(cfg, plays, args):
     print(f"TWINEY {__version__} · {mode} · connecting to {ib['host']}:{ib['port']} "
           f"(client id {ib['client_id']}) · {len(plays)} plays · {cfg['depth']['slots']} depth slots", flush=True)
     session.start()
-    flow = None
-    if cfg.get("quantdata", {}).get("api_key"):
-        from twiney.flow import QuantDataFeed
-        flow = QuantDataFeed(engine, cfg, [p["symbol"] for p in plays]).start()
-        print("Option flow: Quant Data (key from config.json)" + (" · equity prints on" if cfg["quantdata"].get("equity_enabled") else ""), flush=True)
-    else:
-        print("Option flow: off (add your Quant Data key in SETTINGS on the desk)", flush=True)
+    flow = [None]
+
+    def start_flow():
+        """The Quant Data feed runs whenever a key is in config.json: at start, and again the moment one is saved in SETTINGS."""
+        if flow[0]:
+            flow[0].stop()
+            flow[0] = None
+        if cfg.get("quantdata", {}).get("api_key"):
+            from twiney.flow import QuantDataFeed
+            flow[0] = QuantDataFeed(engine, cfg, [p["symbol"] for p in plays]).start()
+            print("Option flow: Quant Data (key from config.json)" + (" · equity prints on" if cfg["quantdata"].get("equity_enabled") else ""), flush=True)
+        else:
+            engine.flow_status.update(source="off", state="off", detail="no Quant Data key: paste it in SETTINGS > Quant Data")
+            print("Option flow: off (add your Quant Data key in SETTINGS on the desk)", flush=True)
+    start_flow()
+    dash.hooks["flow_restart"] = start_flow
     open_dashboard(dash, cfg, args)
 
     def stop():
-        if flow:
-            flow.stop()
+        if flow[0]:
+            flow[0].stop()
         session.stop()
         dash.stop()
         desk.stop()
