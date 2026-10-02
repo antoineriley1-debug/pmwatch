@@ -36,12 +36,12 @@ with ladder trading that is **locked to paper accounts** until you deliberately 
 
 ## Level II: TIGHT and WIDE
 
-TIGHT (default, the button in the ladder bar) is the classic ladder read at a glance: HIT · BID · PRICE · ASK ·
-PAID · FLOW. A reload buyer colours the bid cell green, a reload seller the ask cell red, with his tag (R3 =
-refilled three times) and the $ that traded into him in the HIT / PAID cell. The FLOW column is the option flow
-that hit while the stock traded at that price: $ premium, ⚡ when it is short-dated out-of-the-money being pounded,
-days out and % out of the money (green calls, red puts; hover for every print). WIDE spells every column out
-(CALLS / PUTS money on their own sides, who tags). TIME & SALES shows price and size only: green paid the ask,
+TIGHT (default, the button in the ladder bar) is the classic ladder read at a glance: CALLS · HIT · BID ·
+PRICE · ASK · PAID · PUTS. A reload buyer colours the bid cell green, a reload seller the ask cell red, with his
+tag (R3 = refilled three times) and the $ that traded into him in the HIT / PAID cell. The option flow that hit
+while the stock traded at a price sits on its own side: CALLS with the buyers, PUTS with the sellers — $ premium,
+⚡ when it is short-dated out-of-the-money being pounded, days out and % out of the money (hover or click for
+every print). WIDE adds the who tags as columns of their own. TIME & SALES shows price and size only: green paid the ask,
 red hit the bid, bold is big (hover a print for the exchange and age). ORDER ENTRY is three short rows; POSITIONS
 carries the controls on the row: 25 / 50 / 75 off at the touch, … your own number, @ a partial at your price,
 BE stop to breakeven, X close.
