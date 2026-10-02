@@ -34,9 +34,18 @@ with ladder trading that is **locked to paper accounts** until you deliberately 
   lock, the clock. When order routing is down the ticket's TRANSMIT is disabled and the reason is shown.
 - **Data**: a value that is not there shows as —. Nothing is invented.
 
-## Level II: TIGHT and WIDE
+## Level II: SIMPLE, TIGHT and WIDE
 
-TIGHT (default, the button in the ladder bar) is the classic ladder read at a glance: CALLS · HIT · BID ·
+SIMPLE (default; the button in the ladder bar cycles the three) is order flow and nothing else: BID · PRICE ·
+ASK. The size you see is the resting order. Its cell drains as prints attack it (the bar behind the number is
+what is left of the most it showed in the last 90 s, a drop flashes and floats −n). A reload buyer or seller is a
+solid green or red cell with ↻N (refilled N times) and the $ that traded into him. The thin line under a number
+is absorption: how much traded at that price (only where something real did). Fake size prints dim, big size
+bold, huge size gold. Option money is a short mark on the row's outer edge (green calls left, red puts right,
+thicker from $1M, glowing when it is short-dated out-of-the-money being pounded). Your orders are chips. Click a
+price and the pin box reads both sides out in words.
+
+TIGHT is the same ladder with the detail spelled out as columns: CALLS · HIT · BID ·
 PRICE · ASK · PAID · PUTS. A reload buyer colours the bid cell green, a reload seller the ask cell red, with his
 tag (R3 = refilled three times) and the $ that traded into him in the HIT / PAID cell. The option flow that hit
 while the stock traded at a price sits on its own side: CALLS with the buyers, PUTS with the sellers — $ premium,

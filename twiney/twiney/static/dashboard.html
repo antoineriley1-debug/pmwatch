@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261002-0056">
+<meta name="build" content="20261002-0108">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -678,6 +678,20 @@ i.tl{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:3p
 .p-bigtape .t.bt tr.bld.live td{font-weight:700} .p-bigtape .t.bt tr.bld.live td:first-child{box-shadow:inset 3px 0 0 var(--gold)}
 .p-bigtape .t.bt td.buy{color:var(--buy)} .p-bigtape .t.bt td.sell{color:var(--sell)}
 
+/* SIMPLE ladder: bid · price · ask, order flow only */
+.lad.lad3.simple td{height:calc(15px * var(--ladz,1));padding:0 3px}
+.lad.lad3.simple td.px{text-align:center;font-weight:600}
+.lad.lad3.simple td.sz{font-size:calc(11.5px * var(--ladz,1))} .lad.lad3.simple td.bsz{text-align:right} .lad.lad3.simple td.asz{text-align:left}
+.lad.lad3.simple td.sz.fake .szn{opacity:.4;font-weight:400} .lad.lad3.simple td.sz.big .szn{font-weight:800} .lad.lad3.simple td.sz.huge .szn{font-weight:800;color:var(--gold)}
+.lad.lad3.simple td.sz.big,.lad.lad3.simple td.sz.huge{background:none;box-shadow:none;color:inherit}
+.lad.lad3.simple td.sz.rf-REAL .szn,.lad.lad3.simple td.sz.rf-MIXED .szn,.lad.lad3.simple td.sz.rf-FAKE .szn{box-shadow:none;text-decoration:none}
+.lad.lad3.simple td.sz .abs{position:absolute;bottom:0;height:2px;background:currentColor;opacity:.55;pointer-events:none} .lad.lad3.simple td.bsz .abs{right:0;color:var(--buy)} .lad.lad3.simple td.asz .abs{left:0;color:var(--sell)}
+.lad.lad3.simple td.sz .rl{font:700 9px var(--sans);letter-spacing:.02em;margin:0 3px;color:#fff;opacity:.95}
+.lad.lad3.simple tr.rl-bid td.bsz,.lad.lad3.simple tr.rl-ask td.asz{color:#fff}
+.lad.lad3.simple td.sz .fmk{position:absolute;top:2px;bottom:2px;width:3px;pointer-events:auto} .lad.lad3.simple td.bsz .fmk{left:0;background:#3ee08f} .lad.lad3.simple td.asz .fmk{right:0;background:#ff6b78}
+.lad.lad3.simple td.sz .fmk.big{width:5px} .lad.lad3.simple td.sz .fmk.hot{box-shadow:0 0 4px 1px currentColor;color:inherit}
+.lad.lad3.simple tr.rl-bid td:first-child,.lad.lad3.simple tr.rl-ask td:last-child{box-shadow:none}
+
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
   --buy:#3fb56f;--sell:#d9534f;--gold:#e3a83a;--cyan:#5aa9d6;--violet:#a48bd6;--warn:#d9a441;
@@ -1045,7 +1059,7 @@ body.resizing .zbody{pointer-events:none}
 <template id="tplPanels">
   <div class="pnl" data-p="chart"><div class="qs"></div><div class="cvstrip" id="cvStrip"></div><div class="pc nos"><div class="chart-wrap"><div class="chart-tools"></div><canvas></canvas></div></div></div>
   <div class="pnl" data-p="foot"><div class="pc nos"><div class="chart-wrap"><div class="chart-tools"><span class="dim" style="font-size:10.5px;background:rgba(17,22,31,.85);padding:1px 6px">5m FOOTPRINT · SELLERS HIT BID × BUYERS PAID UP</span></div><canvas></canvas></div></div></div>
-  <div class="pnl" data-p="book"><div class="ladbar"><span>BIG ≥</span><input id="bigIn" type="number" min="100" step="500" title="shares that count as big on this symbol's ladder. Highlighted when showing; ×N = how many separate times it has shown up at that price today"><span class="dim">sh</span><button id="bigReset" title="back to the config default">DEFAULT</button><span class="dim" id="bigHint"></span><span class="spacer"></span><button id="ladMode" title="TIGHT: bid · price · ask with HIT / PAID beside them, reloaders as colour and a tag, one FLOW column. WIDE: every column (CALLS / PUTS money, who tags) spelled out">TIGHT</button><span class="menu" id="colsMenu"><button title="columns">COLS</button><div class="pop" id="colsPop"><h5>LEVEL II COLUMNS</h5><button class="howto" data-howto="1" style="margin-bottom:4px">HOW TO READ IT</button><label><input type="checkbox" data-col="trade" checked> BUY / SELL buttons</label><label><input type="checkbox" data-col="bars" checked> flow bars (sold into bid / bought at ask)</label><label><input type="checkbox" data-col="who" checked> reload tags</label><label><input type="checkbox" data-col="flow" checked> option flow marks (where the stock was when big flow hit)</label><label style="margin-top:6px">Text size <select data-ladz><option value="1">normal</option><option value="1.2">bigger</option><option value="1.4">biggest (widen the LEVEL II pane)</option></select></label><div class="dim" style="font-size:10.5px;margin-top:6px">Drag the grip at the right edge of any header to resize. Double-click a grip to reset.</div></div></span></div><div class="rlban" id="rlBan"></div><div class="pc"><div class="ladder-wrap"></div></div></div>
+  <div class="pnl" data-p="book"><div class="ladbar"><span>BIG ≥</span><input id="bigIn" type="number" min="100" step="500" title="shares that count as big on this symbol's ladder. Highlighted when showing; ×N = how many separate times it has shown up at that price today"><span class="dim">sh</span><button id="bigReset" title="back to the config default">DEFAULT</button><span class="dim" id="bigHint"></span><span class="spacer"></span><button id="ladMode" title="SIMPLE: bid · price · ask — size drains as it gets attacked, reloaders solid with ↻N, option money as an edge mark. TIGHT: adds HIT / PAID and CALLS / PUTS columns. WIDE: everything spelled out">SIMPLE</button><span class="menu" id="colsMenu"><button title="columns">COLS</button><div class="pop" id="colsPop"><h5>LEVEL II COLUMNS</h5><button class="howto" data-howto="1" style="margin-bottom:4px">HOW TO READ IT</button><label><input type="checkbox" data-col="trade" checked> BUY / SELL buttons</label><label><input type="checkbox" data-col="bars" checked> flow bars (sold into bid / bought at ask)</label><label><input type="checkbox" data-col="who" checked> reload tags</label><label><input type="checkbox" data-col="flow" checked> option flow marks (where the stock was when big flow hit)</label><label style="margin-top:6px">Text size <select data-ladz><option value="1">normal</option><option value="1.2">bigger</option><option value="1.4">biggest (widen the LEVEL II pane)</option></select></label><div class="dim" style="font-size:10.5px;margin-top:6px">Drag the grip at the right edge of any header to resize. Double-click a grip to reset.</div></div></span></div><div class="rlban" id="rlBan"></div><div class="pc"><div class="ladder-wrap"></div></div></div>
   <div class="pnl" data-p="tape"><div class="pc"><div class="p-tape"></div></div></div>
   <div class="pnl" data-p="bigtape"><div class="pc"><div class="p-bigtape"><div class="bt-hd"><span class="menu" id="btMenu"><button title="columns">COLS</button><div class="pop" id="btPop"><h5>BIG TAPE COLUMNS</h5><label><input type="checkbox" data-btc="who"> who (PAID UP / HIT)</label><label><input type="checkbox" data-btc="times" checked> how many times</label><label><input type="checkbox" data-btc="shares" checked> shares</label><label><input type="checkbox" data-btc="usd"> dollars</label><label><input type="checkbox" data-btc="age" checked> LIVE / seconds</label><label><input type="checkbox" data-btc="blocks" checked> BLOCKS (single big prints)</label></div></span></div><div class="bt-body"></div></div></div></div>
   <div class="pnl" data-p="setup"><div class="pc"></div></div>
@@ -1216,7 +1230,7 @@ function makeLadResizable(table){
      a grip: back to the default. Saved in this browser. */
   if (!table || table.dataset.gripped) return;
   table.dataset.gripped = "1";
-  const ths = [...table.querySelectorAll("tr:first-child th")], n = ths.length, key = table.classList.contains("tight") ? "ladw5" : "ladw3";
+  const ths = [...table.querySelectorAll("tr:first-child th")], n = ths.length, key = table.classList.contains("simple") ? "ladw1" : table.classList.contains("tight") ? "ladw5" : "ladw3";
   const DEF = ths.map(th => +th.dataset.w || 30), MINS = ths.map(th => +th.dataset.min || 12);
   let w = store.get(key, null); if (!Array.isArray(w) || w.length !== n || w.some(x => !(x > 0))) w = DEF.slice();
   table.style.tableLayout = "fixed";
@@ -1679,6 +1693,46 @@ function flowTag(r, cp){
   const dte = top.dte != null ? Math.round(top.dte) + "d" : "", otm = top.otm_pct != null ? Math.round(top.otm_pct) + "%" : "";
   return `<span class="fs ${cp === "C" ? "c" : "p"} ${hot ? "hot" : ""}" title="${esc(flowTitle(f))}">${urg ? "⚡" : ""}${flowK(sum)}${items.length > 1 ? `<u>×${items.length}</u>` : ""}${dte || otm ? ` <u>${dte}${dte && otm ? " " : ""}${otm}</u>` : ""}</span>`;
 }
+function ladderSimpleHTML(L){
+  /* SIMPLE: order flow and nothing else. BID · PRICE · ASK. The size you see is the resting order; its cell drains
+     as prints attack it (the bar behind the number = what is left of the most it showed); a reload buyer / seller
+     is a solid green / red cell with ↻N (refilled N times) and the $ that traded into him; what traded at a price
+     is the thin line under the number (absorption); fake size just prints dim; option money is a short mark on
+     the row's outer edge (green calls left, red puts right); your orders are chips. Click any cell: the pin box. */
+  const ms = Math.max(L.max_traded, 1);
+  const on = canTrade(), dis = on ? "" : " disabled";
+  const chips = (r, side) => (r.mine || []).filter(o => o.id != null && (o.action === "BUY") === (side === "b")).map(o =>
+    `<span class="chip ${side} ${o.status === "PreSubmitted" ? "wait" : ""}" data-id="${o.id}" draggable="true" title="${esc(o.role)} order — click to cancel, drag to move">${sz(o.qty)}</span>`).join(" ");
+  const mark = (r, cp) => { const f = r.flow; if (!f) return ""; const sum = cp === "C" ? f.c : f.p; if (!sum) return ""; const items = f.items.filter(m => m.cp === cp); const urg = f.urgent && items.some(m => m.urgent !== false);
+    return `<i class="fmk ${cp === "C" ? "c" : "p"} ${urg ? "hot" : ""} ${sum >= 1e6 ? "big" : ""}" title="${esc(flowTitle(Object.assign({}, f, {items})))}"></i>`; };
+  let h = `<table class="lad lad3 simple" data-cols="lad3"><tr>
+    <th class="act" data-w="18" data-min="12" title="click: BUY at that price">B</th>
+    <th class="szh" data-w="56" data-min="20" title="BID: the resting buy orders at each price. The cell drains as sellers hit it; solid green = a reload buyer refilling (↻N); the thin line under the number = shares sold into it. Click to BUY there">BID</th>
+    <th class="pxh" data-w="50" data-min="24">PRICE</th>
+    <th class="szh" data-w="56" data-min="20" title="ASK: the resting sell orders at each price. The cell drains as buyers take it; solid red = a reload seller refilling (↻N); the thin line under the number = shares bought from it. Click to SELL there">ASK</th>
+    <th class="act" data-w="18" data-min="12" title="click: SELL at that price">S</th></tr>`;
+  for (const r of L.rows){
+    const pb = r.bid_state==="RELOAD"||r.bid_proven, pa = r.ask_state==="RELOAD"||r.ask_proven;
+    const stg = pb ? (r.bid_stage || "RELOADING") : pa ? (r.ask_stage || "RELOADING") : "";
+    const cv = pb ? (r.bid_conv == null ? 1 : r.bid_conv) : pa ? (r.ask_conv == null ? 1 : r.ask_conv) : 1;
+    const cls = [r.gap?"gap":"", r.best_bid?"best-bid":"", r.best_ask?"best-ask":"", r.tags.length?"lvl":"", r.last?"lastpx":"",
+      pb?"rl-bid":"", pa?"rl-ask":"", stg ? "cv-" + stageSlug(stg) : ""].join(" ");
+    const rb = pb ? reloadMoney(r, "bid") : null, ra = pa ? reloadMoney(r, "ask") : null;
+    const fakeB = r.bid_real && r.bid_real.label === "FAKE" ? " fake" : "", fakeA = r.ask_real && r.ask_real.label === "FAKE" ? " fake" : "";
+    const bigB = r.bid_big ? (r.bid_big.huge ? " huge" : " big") : "", bigA = r.ask_big ? (r.ask_big.huge ? " huge" : " big") : "";
+    // the absorption line only where something real traded: a sixth of the busiest price or more
+    const absB = r.sold && r.sold / ms >= 0.15 ? Math.round(100 * r.sold / ms) : 0, absA = r.bought && r.bought / ms >= 0.15 ? Math.round(100 * r.bought / ms) : 0;
+    const tB = rb ? rb.text : [r.bid ? sz(r.bid) + " showing" : "", r.sold ? sz(r.sold) + " sold into this price = " + usdK(r.sold * r.price) : "", r.bid_real ? realWords(r.bid_real) : ""].filter(Boolean).join(" · ");
+    const tA = ra ? ra.text : [r.ask ? sz(r.ask) + " showing" : "", r.bought ? sz(r.bought) + " bought from this price = " + usdK(r.bought * r.price) : "", r.ask_real ? realWords(r.ask_real) : ""].filter(Boolean).join(" · ");
+    h += `<tr class="${cls}" data-price="${r.price}" style="--cv:${cv}">
+      <td class="act b${dis}" data-act="BUY" data-px="${r.price}" title="${on ? "BUY " + sz(T().default_shares) + " @ " + px(r.price) : whyNot()}">${chips(r, "b") || "B"}</td>
+      <td class="sz bsz click${fakeB}${bigB}" data-act="BUY" data-px="${r.price}" title="${esc(tB)}">${mark(r, "C")}${absB ? `<span class="abs" style="width:${absB}%"></span>` : ""}${pb ? `<span class="rl">↻${r.bid_refills || ""}${rb && rb.usd ? " " + usdK(rb.usd) : ""}</span>` : ""}<span class="szn">${r.bid?kfmt(r.bid):""}</span>${chips(r, "b") ? `<span class="mine">${chips(r, "b")}</span>` : ""}</td>
+      <td class="px${r.tags.length ? " tagged" : ""}">${r.tags.length ? `<span class="lt" title="${esc(r.tags.join(" · "))}">${esc(r.tags.map(t => LTAG[t] || t.slice(0, 2)).join(""))}</span>` : ""}${px(r.price)}</td>
+      <td class="sz asz click${fakeA}${bigA}" data-act="SELL" data-px="${r.price}" title="${esc(tA)}"><span class="szn">${r.ask?kfmt(r.ask):""}</span>${chips(r, "s") ? `<span class="mine">${chips(r, "s")}</span>` : ""}${pa ? `<span class="rl">${ra && ra.usd ? usdK(ra.usd) + " " : ""}↻${r.ask_refills || ""}</span>` : ""}${absA ? `<span class="abs" style="width:${absA}%"></span>` : ""}${mark(r, "P")}</td>
+      <td class="act s${dis}" data-act="SELL" data-px="${r.price}" title="${on ? "SELL " + sz(T().default_shares) + " @ " + px(r.price) : whyNot()}">${chips(r, "s") || "S"}</td></tr>`;
+  }
+  return h + `</table>`;
+}
 function ladderTightHTML(L){
   /* the classic ladder, read at a glance: BID size · PRICE · ASK size, flanked by HIT (sold into the bid) and PAID
      (bought at the ask). A reload buyer colours the bid cell green, a reload seller the ask cell red, with his tag
@@ -1725,7 +1779,9 @@ function ladderTightHTML(L){
 }
 function ladderHTML(L){
   if (!L || !L.rows.length) return `<div class="empty">Waiting for the book…</div>`;
-  if (store.get("ladMode", "tight") === "tight") return ladderTightHTML(L);
+  const mode = store.get("ladMode", "simple");
+  if (mode === "simple") return ladderSimpleHTML(L);
+  if (mode === "tight") return ladderTightHTML(L);
   const ms = Math.max(L.max_traded, 1);
   const on = canTrade(), dis = on ? "" : " disabled";
   const chips = (r, side) => (r.mine || []).filter(o => o.id != null && (o.action === "BUY") === (side === "b")).map(o =>
@@ -3215,8 +3271,8 @@ function tapeSpeedHTML(sp){
 function applyLadCols(tbl){ if (!tbl) return; const c = store.get("ladcols", {}); const wrap = tbl.closest(".ladder-wrap"); if (wrap) wrap.style.setProperty("--ladz", String(store.get("ladz", 1))); tbl.classList.toggle("notrade", c.trade !== true); tbl.classList.toggle("nobars", c.bars === false); tbl.classList.toggle("nowho", c.who === false); tbl.classList.toggle("noflow", c.flow === false); if (tbl._applyCols) tbl._applyCols(); }
 document.getElementById("colsMenu").querySelector("button").addEventListener("click", e => { e.stopPropagation(); const m = document.getElementById("colsMenu"), open = !m.classList.contains("open"); document.querySelectorAll(".menu.open").forEach(x => x.classList.remove("open")); m.classList.toggle("open", open); const c = store.get("ladcols", {}); m.querySelectorAll("input[data-col]").forEach(i => { i.checked = i.dataset.col === "trade" ? c.trade === true : c[i.dataset.col] !== false; }); const z = m.querySelector("select[data-ladz]"); if (z) z.value = String(store.get("ladz", 1)); });
 document.getElementById("colsPop").addEventListener("change", e => { if (e.target.dataset.ladz != null){ store.set("ladz", +e.target.value || 1); applyLadCols(P.book.pc.querySelector("table.lad")); P.book.last = null; poll(true); return; } const k = e.target.dataset.col; if (!k) return; const c = store.get("ladcols", {}); c[k] = e.target.checked; store.set("ladcols", c); applyLadCols(P.book.pc.querySelector("table.lad")); });
-(function(){ const b = document.getElementById("ladMode"); if (!b) return; const paint = () => { b.textContent = store.get("ladMode", "tight") === "tight" ? "TIGHT" : "WIDE"; }; paint();
-  b.addEventListener("click", () => { store.set("ladMode", store.get("ladMode", "tight") === "tight" ? "wide" : "tight"); paint(); P.book.last = null; poll(true); }); })();
+(function(){ const b = document.getElementById("ladMode"); if (!b) return; const MODES = ["simple", "tight", "wide"]; const paint = () => { b.textContent = store.get("ladMode", "simple").toUpperCase(); }; paint();
+  b.addEventListener("click", () => { const m = store.get("ladMode", "simple"); store.set("ladMode", MODES[(MODES.indexOf(m) + 1) % MODES.length]); paint(); P.book.last = null; poll(true); }); })();
 /* PIN BOX: the tape and the ladder move too fast to hover. Click a print, a reload $ cell, a FLOW tag or a price
    and what you would have read on hover stays in a small box at the bottom of that panel until the next click. */
 function pinBox(panel){ let b = panel.pc.querySelector(".pinbox"); if (!b){ b = document.createElement("div"); b.className = "pinbox"; b.innerHTML = `<span class="txt"></span><button class="x" title="clear">✕</button>`; panel.pc.appendChild(b); b.querySelector(".x").addEventListener("click", () => { b.classList.remove("on"); b.querySelector(".txt").textContent = ""; }); } return b; }
@@ -3225,6 +3281,8 @@ P.tape.el.addEventListener("click", e => { const tr = e.target.closest("tr[title
 if (P.bigtape) P.bigtape.el.addEventListener("click", e => { const tr = e.target.closest("tr[title]"); if (tr) pinInfo(P.bigtape, tr); });
 P.book.el.addEventListener("click", e => { if (e.target.closest("td[data-act], .chip, button, input, select, th")) return; const cell = e.target.closest("td.flow, td.bars, td.px, td.whoc"); if (!cell) return;
   const t = cell.matches("td.px") ? null : (cell.querySelector("[title]") || (cell.hasAttribute("title") ? cell : null));
+  if (cell.matches("td.px") && cell.closest("table.simple")){ const row = cell.closest("tr"), bb = row.querySelector("td.bsz"), aa = row.querySelector("td.asz"), b = pinBox(P.book);
+    b.querySelector(".txt").textContent = `${px(+row.dataset.price)} — BID: ${bb && bb.getAttribute("title") || "nothing"} · ASK: ${aa && aa.getAttribute("title") || "nothing"}`; b.classList.add("on"); return; }
   if (t && pinInfo(P.book, t)) return;
   // a price with nothing of its own: the whole row, everything the hover would have told you, in one line
   const row = cell.closest("tr"), r = row && row.dataset.price, b = pinBox(P.book);
