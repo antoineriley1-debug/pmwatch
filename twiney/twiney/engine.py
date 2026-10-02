@@ -1233,6 +1233,13 @@ class Engine:
             self._message(level, f"{symbol + ': ' if symbol else ''}[{code}] {msg}", t, symbol, category=category)
 
     def _message(self, level, text, t, symbol=None, category=None):
+        # IBKR repeats the same refusal for every request on a symbol (history, daily, quotes): one line per
+        # symbol and text within five minutes, with a count, so the panel says each thing once
+        for m in self.messages:
+            if m["text"] == text and m.get("symbol") == symbol and t - m["t"] <= 300:
+                m["n"] = m.get("n", 1) + 1
+                m["t"] = t
+                return
         self.messages.appendleft({"t": t, "level": level, "text": text, "symbol": symbol, "category": category})
 
     # ---- depth slots ---------------------------------------------------------

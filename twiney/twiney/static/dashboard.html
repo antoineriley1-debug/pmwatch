@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261002-1900">
+<meta name="build" content="20261002-1914">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -4338,7 +4338,7 @@ function render(s){
   renderTicket(s, d);
   renderWatch(s); renderCalls(s); renderPositions(s); renderOrders(s);
   renderDesk(s); renderTrades(s); renderFlow(s); renderFlowScope(s); renderEquity(s); renderMyAlerts(s); renderUrgency(s); renderBigMoney(curData());
-  const msgs = s.messages.map(m => `<div class="msg-${esc(m.level)} mono" style="font-size:11px">${ago(s.now - m.t)} · ${m.category ? `<span class="cat cat-${esc(m.category.replace(/\s+/g, "-").toLowerCase())}">${esc(m.category)}</span> ` : ""}${esc(m.text)}</div>`).join("") || `<span class="dim">—</span>`;
+  const msgs = s.messages.map(m => `<div class="msg-${esc(m.level)} mono" style="font-size:11px">${ago(s.now - m.t)} · ${m.category ? `<span class="cat cat-${esc(m.category.replace(/\s+/g, "-").toLowerCase())}">${esc(m.category)}</span> ` : ""}${esc(m.text)}${m.n > 1 ? ` <span class="dim">×${m.n}</span>` : ""}</div>`).join("") || `<span class="dim">—</span>`;
   const me = document.getElementById("messages"); if (me.dataset.h !== msgs){ me.dataset.h = msgs; me.innerHTML = msgs; }
   for (const a of s.alerts.slice(0, 10)){ const key = a.t + a.symbol + a.label; if (!seenAlerts.has(key)){ seenAlerts.add(key); if (!firstFeed && store.get("alerts", true) && store.get("sound", true) && a.symbol === TABS.active) beep(sayClass(a)); } }
   firstFeed = false;
