@@ -1546,8 +1546,9 @@ class Trader:
                 self._note(now, f"BLOCKED {action} {n} {key} @ {money(price)}: {reason}", False)
                 return {"ok": False, "reason": reason}
             broker = self.broker
-            if isinstance(broker, IbkrBroker):
-                broker.session.opt_contract(key, broker.session.opt_contracts.get(key) or __import__("twiney.ibkr", fromlist=["make_option_contract"]).make_option_contract(symbol, expiry, strike, right, mult))
+            if isinstance(broker, IbkrBroker) and key not in broker.session.opt_contracts:
+                from .ibkr import make_option_contract
+                broker.session.opt_contract(key, make_option_contract(symbol, expiry, strike, right, mult))
             try:
                 oid = broker.place_option(key, action, n, price, now, reducing=False)
             except Exception as exc:

@@ -194,3 +194,18 @@ class OptionChainTests(unittest.TestCase):
         self.assertEqual(options.bs_price(100, 90, 0, "C"), 10.0)
         g = options.bs_greeks(100, 100, 30, "C")
         self.assertTrue(0.45 < g["delta"] < 0.6); self.assertTrue(g["theta"] < 0); self.assertTrue(g["gamma"] > 0)
+
+
+class LadderOrderAlignmentTests(unittest.TestCase):
+    def test_stop_limit_chip_sits_at_its_trigger(self):
+        e, tr = sim()
+        e.on_l1("AAA", "bid", 9.99, 1.0); e.on_l1("AAA", "ask", 10.0, 1.0); e.tick(1.0)
+        e.on_depth("AAA", 0, INSERT, BID, 9.99, 500, "", 1.0); e.on_depth("AAA", 0, INSERT, ASK, 10.0, 500, "", 1.0)
+        out = tr.submit("AAA", "BUY", 10.15, 100, 2.0, bracket=False, order_type="STP LMT", aux=10.05)
+        self.assertTrue(out["ok"], out)
+        rows = e._memory_ladder(e.syms["AAA"], 3.0, {})["rows"]
+        at = {r["price"]: [m["action"] for m in r["mine"]] for r in rows if r["mine"]}
+        self.assertEqual(at, {10.05: ["BUY"]})                  # the trigger row, not the 10.15 limit
+        out = tr.submit("AAA", "SELL", 10.08, 100, 2.5, bracket=False)
+        rows = e._memory_ladder(e.syms["AAA"], 3.0, {})["rows"]
+        self.assertIn(10.08, {r["price"] for r in rows if r["mine"]})     # a limit sits at its limit

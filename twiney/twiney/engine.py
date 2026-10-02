@@ -2465,7 +2465,9 @@ class Engine:
         bought = {k: sums.get((k, "buy"), 0.0) for k in keys}
         mine = {}
         for o in self._pending(st.symbol):
-            for p_ in (o.get("lmt"), o.get("aux")):
+            # a stop / stop-limit sits on the ladder at its TRIGGER (where it fires), a limit at its limit
+            stopish = str(o.get("type") or "") in ("STP", "STP LMT")
+            for p_ in ((o.get("aux"), o.get("lmt")) if stopish else (o.get("lmt"), o.get("aux"))):
                 if p_:
                     mine.setdefault(price_key(p_, tk), []).append({
                         "id": o.get("order_id"), "action": o.get("action", "?"),
