@@ -119,6 +119,12 @@ DEFAULTS = {
         "session_lean_fraction": 0.20,
         "session_heavy_fraction": 0.35,
         "session_min_move_pct": 1.0,
+        # ... and the crowd's average at least this far underwater, with the session extreme set at least this
+        # many minutes ago (a move that reversed, not chop inside a range)
+        "session_min_under_pct": 1.0,
+        "session_min_minutes_since_extreme": 15,
+        # the trapped crowd's average (their exit) stays a level on the chart this long after the call
+        "session_exit_memory_seconds": 3600,
     },
     "health": {
         "l1_stale_seconds": 15.0,

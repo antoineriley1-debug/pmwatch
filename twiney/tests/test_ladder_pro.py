@@ -219,17 +219,18 @@ class DayTrapTests(unittest.TestCase):
         e.on_connection("DEMO", "", 0.0); e.apply_slot("AAA", True, 0.0)
         t0 = 1_800_000_000.0 + 13.5 * 3600            # a weekday morning, New York
         e.on_l1("AAA", "bid", 99.99, t0); e.on_l1("AAA", "ask", 100.0, t0)
-        # the drive: buyers pay up from 100 to 104 (8,000 shares)
+        # the drive: buyers pay up from 100 to 103.5 over eight minutes (8,000 shares)
         for i in range(8):
             px_ = 100.0 + i * 0.5
-            e.on_l1("AAA", "bid", px_ - 0.01, t0 + i); e.on_l1("AAA", "ask", px_, t0 + i)
-            e.on_print("AAA", px_, 1000, "X", t0 + i)
-        # the reversal: sellers hit bids back down to 101 (3,000 shares)
+            e.on_l1("AAA", "bid", px_ - 0.01, t0 + i * 60); e.on_l1("AAA", "ask", px_, t0 + i * 60)
+            e.on_print("AAA", px_, 1000, "X", t0 + i * 60)
+        # the reversal, twenty minutes after the high: sellers hit bids back down to 101 (3,000 shares)
         for i in range(3):
             px_ = 103.0 - i
-            e.on_l1("AAA", "bid", px_, t0 + 20 + i); e.on_l1("AAA", "ask", px_ + 0.01, t0 + 20 + i)
-            e.on_print("AAA", px_, 1000, "X", t0 + 20 + i)
-        pane = next(x for x in e.snapshot(t0 + 30)["panes"] if x and x["symbol"] == "AAA")
+            tt = t0 + 8 * 60 + 20 * 60 + i * 60
+            e.on_l1("AAA", "bid", px_, tt); e.on_l1("AAA", "ask", px_ + 0.01, tt)
+            e.on_print("AAA", px_, 1000, "X", tt)
+        pane = next(x for x in e.snapshot(t0 + 31 * 60)["panes"] if x and x["symbol"] == "AAA")
         dt = pane["daytrap"]
         self.assertEqual(dt["state"], "LONGS TRAPPED HEAVY")
         self.assertEqual(dt["high"]["price"], 103.5)
@@ -242,3 +243,42 @@ class DayTrapTests(unittest.TestCase):
         # a new session starts the story over
         e.on_print("AAA", 101.0, 100, "X", t0 + 86400)
         self.assertEqual(len(e.syms["AAA"].day_sums), 1)
+
+
+class DayTrapScenarioTests(unittest.TestCase):
+    """Session shapes: a drive that reverses traps longs and their exit gets called when price returns; a gap-down
+    flush that reverses traps shorts; chop inside a range and a clean trend stay quiet."""
+    def _run(self, path, step=8.0):
+        import random
+        e = Engine(plays(), cfg()); e.on_connection("DEMO", "", 0.0); e.apply_slot("AAA", True, 0.0)
+        t0 = 1_800_000_000.0 + 13.5 * 3600; t = t0; labels = []
+        e.listeners.append(lambda a: labels.append(a["label"]) if a.get("role") == "trap" else None)
+        for i, (px, sz, side) in enumerate(path):
+            bid, ask = (px - 0.01, px) if side == "buy" else (px, px + 0.01)
+            e.on_l1("AAA", "bid", bid, t); e.on_l1("AAA", "ask", ask, t); e.on_print("AAA", px, sz, "X", t); t += step
+            if i % 4 == 0:
+                e._day_trap_pane(e.syms["AAA"], t)
+        return labels, e._day_trap_pane(e.syms["AAA"], t)
+
+    @staticmethod
+    def _drive(p0, p1, n, side):
+        return [(round(p0 + (p1 - p0) * i / n, 2), 600, side) for i in range(n)]
+
+    def test_shapes(self):
+        d = self._drive
+        labels, dt = self._run(d(185, 187.4, 60, "buy") + d(187.4, 186.8, 20, "sell") + d(186.8, 187.0, 10, "buy") + d(187.0, 183.0, 300, "sell") + d(183.0, 186.3, 120, "buy") + d(186.3, 184, 60, "sell"))
+        self.assertEqual(labels, ["LONGS TRAPPED", "AT TRAPPED EXIT"]); self.assertEqual(dt["exit_level"]["side"], "long")
+        gap = d(184, 180, 60, "sell") + d(180, 181, 10, "buy") + d(181, 180.5, 10, "sell") + d(180.5, 187, 400, "buy")
+        # bad-news flush, reverse, climb, shallow pullback, close strong: the shorts stay trapped (fuel for the close),
+        # the pullback does not flip the call to longs and their exit level is kept on the chart
+        labels, dt = self._run(gap + d(187, 184.5, 100, "sell") + d(184.5, 186, 100, "buy"))
+        self.assertEqual(labels, ["SHORTS TRAPPED"]); self.assertEqual(dt["exit_level"]["side"], "short")
+        self.assertAlmostEqual(dt["exit_level"]["price"], 181.58, places=1)
+        # a full retrace to the shorts' average calls their exit, and the longs from the run are trapped in turn
+        labels, dt = self._run(gap + d(187, 181.5, 100, "sell") + d(181.5, 186, 100, "buy"))
+        self.assertEqual(labels[:3], ["SHORTS TRAPPED", "AT TRAPPED EXIT", "LONGS TRAPPED HEAVY"])
+        chop = []
+        for _ in range(12):
+            chop += d(100, 101.5, 15, "buy") + d(101.5, 100, 15, "sell")
+        self.assertEqual(self._run(chop)[0], [])
+        self.assertEqual(self._run(d(100, 108, 400, "buy"))[0], [])

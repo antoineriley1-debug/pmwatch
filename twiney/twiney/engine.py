@@ -2578,6 +2578,9 @@ class Engine:
     def _day_trap_pane(self, st, t):
         dt = self._day_trap(st, t, st.price())
         self._day_trap_watch(st, dt, t)
+        memo = getattr(st, "day_trap_memo", None)
+        if dt is not None:
+            dt["exit_level"] = {"price": memo["exit"], "side": memo["side"], "state": memo["state"], "age": round(t - memo["t"])} if memo else None
         return dt
 
     def _day_trap(self, st, t, price):
@@ -2605,13 +2608,25 @@ class Engine:
         drop = (hi[0] - price) / hi[0] * 100 if hi and hi[0] else 0.0
         rise = (price - lo[0]) / lo[0] * 100 if lo and lo[0] else 0.0
         heavy, lean, min_move = float(tc.get("session_heavy_fraction", 0.35)), float(tc.get("session_lean_fraction", 0.20)), float(tc.get("session_min_move_pct", 1.0))
+        min_under, min_age = float(tc.get("session_min_under_pct", 1.0)), float(tc.get("session_min_minutes_since_extreme", 15)) * 60.0
         lf, sf = longs / total, shorts / total
         l_avg = l_w / longs if longs else None
         s_avg = s_w / shorts if shorts else None
+        l_under = (l_avg - price) / l_avg * 100 if l_avg else 0.0
+        s_under = (price - s_avg) / s_avg * 100 if s_avg else 0.0
         state, side = "", None
-        if lf >= lean and drop >= min_move and lf >= sf:
+        # a trap needs a MOVE that reversed: the extreme set a while ago, price well off it, and the crowd's
+        # average really underwater — chop inside a range is not a trap, whatever the fractions say. Once called,
+        # it holds until the crowd is less than half as deep (no flicker at the threshold)
+        prev = getattr(st, "day_trap_state", "") or ""
+        hold_l, hold_s = "LONGS" in prev, "SHORTS" in prev
+        # the share of the day's volume gates the CALL only: once trapped, the crowd does not shrink because more
+        # volume trades later — it holds on how deep underwater they still are
+        l_ok = (hold_l or lf >= lean) and l_under >= (min_under / 2 if hold_l else min_under) and drop >= (min_move / 2 if hold_l else min_move) and hi and t - hi[1] >= min_age
+        s_ok = (hold_s or sf >= lean) and s_under >= (min_under / 2 if hold_s else min_under) and rise >= (min_move / 2 if hold_s else min_move) and lo and t - lo[1] >= min_age
+        if l_ok and (lf >= sf or hold_l) and not (s_ok and hold_s):
             state, side = ("LONGS TRAPPED HEAVY" if lf >= heavy else "LONGS TRAPPED"), "long"
-        elif sf >= lean and rise >= min_move:
+        elif s_ok:
             state, side = ("SHORTS TRAPPED HEAVY" if sf >= heavy else "SHORTS TRAPPED"), "short"
         out = {"state": state, "side": side, "session_shares": round(total),
                "longs": {"shares": round(longs), "avg": fmt_price(l_avg), "under_pct": round((l_avg - price) / l_avg * 100, 2) if l_avg else None,
@@ -2621,15 +2636,53 @@ class Engine:
                "high": {"price": fmt_price(hi[0]), "t": hi[1], "drop_pct": round(drop, 2)} if hi else None,
                "low": {"price": fmt_price(lo[0]), "t": lo[1], "rise_pct": round(rise, 2)} if lo else None}
         out["text"] = narrative.day_trap_text(st.symbol, out, price)
+        # the actionable level: the trapped crowd's average is where the next push meets their exit
+        out["exit"] = (fmt_price(l_avg) if side == "long" else fmt_price(s_avg)) if side else None
         return out
 
     def _day_trap_watch(self, st, dt, t):
-        """Say it once when the day's trap state changes (and not again for 5 minutes)."""
+        """Say it once when the day's trap state changes (and not again for 5 minutes); and once when price comes
+        back to the trapped crowd's average — their exit — where the push meets their selling / covering."""
         if dt is None:
             return
-        prev = getattr(st, "day_trap_state", "")
+        prev = getattr(st, "day_trap_state", "") or ""
         state = dt["state"]
         st.day_trap_state = state
+        # one call per trap: when it starts, when the side flips, and once when it goes HEAVY — not on every wobble
+        same_side = state and prev and state.split(" ")[0] == prev.split(" ")[0]
+        if same_side and not ("HEAVY" in state and "HEAVY" not in prev):
+            return
+        price = st.price()
+        # the crowd's exit stays a level for an hour after the trap was called: by the time price gets back there
+        # they are no longer "underwater", but that is exactly where their selling / covering meets the push
+        if state and dt.get("exit"):
+            st.day_trap_memo = {"side": dt["side"], "exit": dt["exit"], "t": t, "state": state}
+        memo = getattr(st, "day_trap_memo", None)
+        if memo and t - memo["t"] > float(self.cfg["trap"].get("session_exit_memory_seconds", 3600)):
+            st.day_trap_memo = memo = None
+        if memo and price:
+            band = 4 * tick_size(price, st.symbol) + 1e-9
+            prev = getattr(st, "day_trap_prev_price", None)
+            crossed = prev is not None and ((prev < memo["exit"] <= price) or (prev > memo["exit"] >= price))
+            at = abs(price - memo["exit"]) <= band or crossed
+            was = getattr(st, "day_trap_at_exit", False)
+            if at and not was and t - getattr(st, "day_trap_exit_said_t", -1e9) >= 600:
+                st.day_trap_exit_said_t = t
+                who = "trapped longs" if memo["side"] == "long" else "trapped shorts"
+                text = (f"AT THE {who.upper()}' EXIT {narrative.px(memo['exit'])}: price is back at the price {who} paid on average — "
+                        f"expect them to {'sell into this push: look for a reload seller or a rejection here' if memo['side'] == 'long' else 'cover into this dip: look for a reload buyer or a remount here'}.")
+                alert = {"t": t, "symbol": st.symbol, "label": "AT TRAPPED EXIT", "price": fmt_price(price), "side": "ask" if memo["side"] == "long" else "bid",
+                         "role": "trap", "text": text, "words": f"back at the {who}' exit, {narrative.px(memo['exit'])}. Expect them to {'sell' if memo['side'] == 'long' else 'cover'} here.",
+                         "key": f"{round(t, 2)}|{st.symbol}|AT TRAPPED EXIT"}
+                self.alerts.appendleft(alert); self._rec(dict(alert, ev="alert")); self.log(st.symbol, text, t, kind="level")
+                for fn in self.listeners:
+                    try:
+                        fn(alert)
+                    except Exception:
+                        pass
+            st.day_trap_at_exit = at and not crossed
+        if price:
+            st.day_trap_prev_price = price
         if state == prev or not state or t - getattr(st, "day_trap_said_t", -1e9) < 300:
             return
         st.day_trap_said_t = t

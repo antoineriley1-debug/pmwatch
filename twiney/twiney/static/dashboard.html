@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261002-1449">
+<meta name="build" content="20261002-1539">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -2428,6 +2428,18 @@ function drawOne(p, cv, v, isFoot){
   v.seChipY = null;
   // BIG MONEY at its strikes: the biggest open (not expired) prints of the last 30 days, a thin line at the strike
   // with what was paid and how those buyers are doing now
+  // the trapped crowd's exit: the average price the underwater longs (shorts) paid — a dotted line with the words
+  if (!isFoot && CS("trapped") && d.daytrap && d.daytrap.exit_level && d.daytrap.exit_level.price){
+    const x = d.daytrap.exit_level, lp = x.price, col = x.side === "long" ? "#c4283a" : "#0b8f55";
+    const label = `${x.side === "long" ? "TRAPPED LONGS' EXIT" : "TRAPPED SHORTS' EXIT"} ${px(lp)} · ${x.side === "long" ? "they sell here" : "they cover here"}`;
+    if (lp < lo || lp > hi) (v.edgeTags = v.edgeTags || []).push([lp > hi, `TRAP ${px(lp)}`, lp, col, true]);
+    else {
+      const yy = y(lp); g.strokeStyle = col; g.globalAlpha = 0.8; g.setLineDash([2, 3]); g.lineWidth = 1.5; g.beginPath(); g.moveTo(0, yy); g.lineTo(plotW, yy); g.stroke(); g.setLineDash([]); g.lineWidth = 1; g.globalAlpha = 1;
+      g.font = "bold 10px ui-monospace, Menlo, Consolas, monospace"; const tw = g.measureText(label).width + 10;
+      g.fillStyle = x.side === "long" ? "rgba(179,18,58,.9)" : "rgba(11,122,75,.9)"; g.fillRect(plotW - tw - 4, yy - 14, tw, 13); g.fillStyle = "#fff"; g.fillText(label, plotW - tw + 1, yy - 4);
+      g.font = "11px ui-monospace, Menlo, Consolas, monospace";
+    }
+  }
   if (!isFoot && CS("bigmoney") && d.bigmoney && d.bigmoney.length){
     const openAll = d.bigmoney.filter(x => !x.expired).slice(0, 4);
     for (const x of openAll) if (x.strike < lo || x.strike > hi)       // off the scale: a tag on the edge pointing at it
@@ -3071,7 +3083,8 @@ const CS_DEF = [
     ["color", "bgCol", "Background (light screens)", ""], ["check", "gridH", "Horizontal grid lines", true], ["check", "sessions", "Session separators", true],
     ["select", "cross", "Crosshair", "auto", ["auto", "solid", "dashed", "dotted", "off"]], ["color", "crossCol", "Crosshair colour", ""]]],
   ["TRADING", [["check", "levels", "Your levels (pivot, 2nd entry, stop, target)", true], ["check", "orders", "Working order lines", true],
-    ["check", "chip", "2nd entry order chip", true], ["check", "bigmoney", "Big option money (30 days) at its strikes", true]]],
+    ["check", "chip", "2nd entry order chip", true], ["check", "bigmoney", "Big option money (30 days) at its strikes", true],
+    ["check", "trapped", "Trapped crowd's exit (their average price)", true]]],
   ["INDICATORS", [["check", "vwap", "VWAP", true, true], ["check", "mas", "Moving averages", true, true], ["check", "matags", "MA price tags", true, true],
     ["check", "bb", "Bollinger bands", true, true]]],
 ];

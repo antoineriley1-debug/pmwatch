@@ -73,7 +73,16 @@ back to 185.60: expect supply there. Their max pain is the session low 182.90.")
 per state change. LONGS / SHORTS TRAPPED from `trap.session_lean_fraction` (20% of the day's volume) with
 price at least `trap.session_min_move_pct` (1%) off the session high / low; HEAVY from
 `trap.session_heavy_fraction` (35%). Gross figures: nobody can see who already got out, so read it as pressure,
-and their average as the level where the next push meets supply or demand. A new session starts the story over.
+and their average as the level where the next push meets supply or demand. That average is drawn on the chart
+as a dotted line (TRAPPED LONGS' EXIT 186.28 · they sell here; cogwheel → Trapped crowd's exit) for an hour
+after the call, and when price gets back to it the desk says AT TRAPPED EXIT: "price is back at the price trapped
+longs paid on average — expect them to sell into this push: look for a reload seller or a rejection here" (the
+mirror for trapped shorts: a reload buyer or a remount). The gates are honest: LONGS / SHORTS TRAPPED needs the
+crowd at least `trap.session_min_under_pct` (1%) underwater and the session extreme set at least
+`trap.session_min_minutes_since_extreme` (15) minutes ago, so chop inside a range never counts. Checked on four
+scripted session shapes (a PLTR-style drive that reverses, a bad-news gap-down that reverses and closes strong,
+a clean trend, a chop day): the two reversals call the trap and then the exit, the other two stay quiet. A new
+session starts the story over.
 
 ## The same reloader, back again
 
