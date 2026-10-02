@@ -141,6 +141,17 @@ DEFAULTS = {
         },
         # stops go out as STOP-LIMIT (never a naked stop): limit this many ticks through the stop
         "stop_limit_ticks": 10,
+        # quick size buttons on the ticket and the ladder bar
+        "qty_presets": [25, 50, 100, 200, 500, 1000],
+        # bracket templates: PLAY = the play's own stop + target (and PS60 exits when on); a template brackets from
+        # the entry price instead: stop = entry -$0.25, targets at +$0.25 / +$0.50 / +$0.75 with these share shares.
+        # Pick one on the ticket; add your own here. "trail" is not sent to IBKR yet (noted in docs).
+        "bracket_template": "PLAY",
+        "bracket_templates": {
+            "QUARTERS": {"stop": 0.25, "targets": [{"offset": 0.25, "pct": 34}, {"offset": 0.50, "pct": 33}, {"offset": 0.75, "pct": 33}]},
+            "HALF/ONE": {"stop": 0.50, "targets": [{"offset": 0.50, "pct": 50}, {"offset": 1.00, "pct": 50}]},
+            "ONE/TWO": {"stop": 1.00, "targets": [{"offset": 1.00, "pct": 50}, {"offset": 2.00, "pct": 50}]},
+        },
         # market and naked stop entries stay off unless you turn this on (Dan: limit ~99%)
         "allow_market": False,
         # AUTO 2ND ENTRY: the 2nd entry you draw becomes a stop-limit entry (limit this many ticks through it) with
@@ -270,10 +281,20 @@ DEFAULTS = {
         # practice day type: null = a random one each session; or mixed, trend_up, trend_down, chop, capitulation, squeeze
         "scenario": None,
     },
+    "orderflow": {
+        # rolling delta windows and the pressure labels (see twiney/orderflow.py for the exact rules)
+        "short_seconds": 5,
+        "long_seconds": 15,
+        "lean": 0.25,        # |delta| / (buy + sell) over the long window: BUYING / SELLING PRESSURE from here
+        "strong": 0.60,      # ... STRONG from here
+        "min_prints": 8,     # fewer prints than this in the long window: QUIET, no label
+    },
     "ladder": {
         # the rows stay still while price moves inside them; they re-centre only when price comes within this many
         # rows of the top or bottom edge (bigger = re-centres sooner)
         "recenter_rows": 4,
+        # rows above and below the market on the ladder (the COLS menu changes it live)
+        "half_rows": 12,
         # a displayed size at or above this is "big": highlighted on the ladder, and counted every time it shows up
         # at that price. Adjustable per symbol from the LEVEL II window; that override wins over this default.
         "big_shares": 5000,

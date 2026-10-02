@@ -26,6 +26,7 @@ SECTIONS = [
     ("voice", "Voice", "Spoken call-outs."),
     ("ps60", "PS60", "Second entry, measured potential, sneaky pivots, remount and rejection calls."),
     ("tape", "Time & Sales", "How the tape is read."),
+    ("orderflow", "Order flow", "5 / 15 second delta windows and the pressure labels (estimated from the tape)."),
     ("trap", "Trapped traders", "Aggressive prints now underwater."),
     ("depth", "Market depth", "IBKR depth subscriptions and rotation."),
     ("chart", "Chart history", "History loaded at startup."),

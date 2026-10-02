@@ -135,6 +135,12 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                 snap = engine.snapshot(clock(), extra, full)
                 snap["build"] = BUILD
                 self._send(200, json.dumps(snap, default=str), "application/json")
+            elif path == "/api/ps60/signals":
+                from . import ps60 as _ps60
+                q = parse_qs(urlparse(self.path).query, keep_blank_values=True)
+                sym = str(q.get("symbol", [""])[0]).upper()
+                self._send(200, json.dumps(_ps60.SignalProvider(engine).signals(sym), default=str), "application/json")
+                return
             elif path == "/api/urgency":
                 from urllib.parse import parse_qs, urlparse
                 q = parse_qs(urlparse(self.path).query)
@@ -281,7 +287,14 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                     out["alerts"] = engine.set_flow_alerts(str(body.get("alerts", "watchlist")), clock())
                 self._send(200, json.dumps(out), "application/json")
             elif path == "/api/ladder":
-                ok = engine.set_big_shares(str(body.get("symbol", "")).upper(), body.get("big_shares"), clock())
+                if "half_rows" in body:                      # rows above / below the market
+                    try:
+                        engine.ladder_half_rows = max(4, min(60, int(body["half_rows"])))
+                        ok = True
+                    except (TypeError, ValueError):
+                        ok = False
+                else:
+                    ok = engine.set_big_shares(str(body.get("symbol", "")).upper(), body.get("big_shares"), clock())
                 self._send(200 if ok else 400, json.dumps({"ok": ok}), "application/json")
             elif path == "/api/grade":
                 ok = engine.grade(str(body.get("key", "")), body.get("verdict"), clock())
@@ -388,6 +401,12 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                         pass
                 if "paused" in body:
                     r["paused"] = bool(body["paused"])
+                if body.get("step"):                # one event forward (stays paused)
+                    r["paused"] = True
+                    r["step"] = True
+                if body.get("restart") and r.get("start") is not None:
+                    r["restart_at"] = float(r["start"])
+                    r["stop"] = True
                 if "pause_at" in body:              # watching a clip: stop at its end
                     try:
                         r["pause_at"] = float(body["pause_at"]) if body["pause_at"] is not None else None
@@ -497,6 +516,12 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                     out = tr.cancel_all(sym or None, now)
                 elif action == "flatten":
                     out = tr.flatten(sym, now)
+                elif action == "reverse":
+                    out = tr.reverse(sym, now)
+                elif action == "cancel_side":
+                    out = tr.cancel_side(sym, str(body.get("side", "")), now)
+                elif action == "bracket_template":
+                    out = tr.set_bracket_template(body.get("name"))
                 elif action == "adjust":
                     out = tr.adjust(sym, body.get("shares"), str(body.get("mode", "")), now)
                 elif action == "breakeven":

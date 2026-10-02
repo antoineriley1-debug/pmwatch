@@ -1,8 +1,30 @@
 """Tick-size helpers so price comparisons never depend on float equality."""
 
 
-def tick_size(price):
-    """US-equity minimum increment: $0.01 at/above $1, $0.0001 below."""
+# the instrument's own minimum increment, when IBKR has told us (contract details): symbol -> tick
+MIN_TICKS = {}
+
+
+def set_min_tick(symbol, tick):
+    """Remember the minimum price increment IBKR reports for a symbol (contractDetails.minTick)."""
+    try:
+        tick = float(tick)
+    except (TypeError, ValueError):
+        return
+    if tick > 0:
+        MIN_TICKS[str(symbol).upper()] = tick
+
+
+def min_tick(symbol):
+    return MIN_TICKS.get(str(symbol).upper()) if symbol else None
+
+
+def tick_size(price, symbol=None):
+    """Minimum increment at this price: the instrument's own (from IBKR contract details) when known, else the
+    US-equity rule — $0.01 at / above $1, $0.0001 below. Never a hard-coded penny."""
+    t = min_tick(symbol)
+    if t:
+        return t
     return 0.01 if price >= 1.0 else 0.0001
 
 

@@ -72,6 +72,9 @@ def replay(path, plays=None, cfg=None, speed=0.0, on_alert=None, engine_ready=No
                 control["seek"] = None
                 seek = None
             while control.get("paused") and not control.get("stop") and seek is None:
+                if control.get("step"):
+                    control["step"] = False      # one event through, then paused again
+                    break
                 time.sleep(0.1)
             if control.get("stop"):
                 return False

@@ -183,15 +183,16 @@ class TradingGate:
             }
 
 
-def snap(price, direction=0):
-    """A price on a valid tick: 0.01 at $1 and up, 0.0001 below. direction +1 rounds up, -1 down, 0 nearest."""
+def snap(price, direction=0, symbol=None):
+    """A price on a valid tick: the instrument's own increment when IBKR has reported it, else 0.01 at $1 and up,
+    0.0001 below. direction +1 rounds up, -1 down, 0 nearest."""
     if not price or price <= 0:
         return price
-    tk = tick_size(price)
+    tk = tick_size(price, symbol)
     n = price / tk
     n = math.ceil(n - 1e-7) if direction > 0 else math.floor(n + 1e-7) if direction < 0 else round(n)
     out = round(n * tk, 4)
-    tk2 = tick_size(out)          # crossing $1 changes the tick
+    tk2 = tick_size(out, symbol)          # crossing $1 changes the tick
     if tk2 != tk:
         n = out / tk2
         out = round((math.ceil(n - 1e-7) if direction > 0 else math.floor(n + 1e-7) if direction < 0 else round(n)) * tk2, 4)
@@ -201,6 +202,42 @@ def snap(price, direction=0):
 def stop_ok(play, action, entry_price):
     stop = play.get("stop")
     return not stop or (stop < entry_price if action == BUY else stop > entry_price)
+
+
+def template_legs(template, action, qty, entry_price, stop_limit_ticks=10, symbol=None):
+    """Exit legs from a bracket template measured off the ENTRY price: stop at entry -/+ stop, targets at
+    entry +/- offset with pct of the shares each (the last target takes whatever rounding left over). Every
+    target is paired with its own stop for the same shares (OCA), like the play bracket."""
+    if not template or qty <= 0 or not entry_price:
+        return []
+    exit_action = SELL if action == BUY else BUY
+    sign = 1 if action == BUY else -1
+    stop_off = float(template.get("stop") or 0)
+    stop = snap(entry_price - sign * stop_off, -sign, symbol) if stop_off > 0 else None
+    tlist = [t for t in (template.get("targets") or []) if float(t.get("offset") or 0) > 0]
+    targets, used = [], 0
+    for i, t in enumerate(tlist):
+        n = qty - used if i == len(tlist) - 1 else int(round(qty * float(t.get("pct") or 0) / 100.0))
+        if n <= 0:
+            continue
+        used += n
+        targets.append({"action": exit_action, "qty": n, "type": "LMT", "price": snap(entry_price + sign * float(t["offset"]), sign, symbol),
+                        "role": f"target_{i + 1}"})
+    stop_leg = None
+    if stop:
+        tk = tick_size(stop, symbol)
+        lmt = snap(stop - tk * stop_limit_ticks, -1, symbol) if action == BUY else snap(stop + tk * stop_limit_ticks, +1, symbol)
+        stop_leg = {"action": exit_action, "type": "STP LMT", "price": lmt, "aux": stop, "role": "stop"}
+    legs, covered = [], 0
+    for i, t in enumerate(targets):
+        g = f"t{i + 1}"
+        if stop_leg:
+            legs.append(dict(stop_leg, qty=t["qty"], oca=g))
+        legs.append(dict(t, oca=g))
+        covered += t["qty"]
+    if stop_leg and covered < qty:
+        legs.append(dict(stop_leg, qty=qty - covered, oca=f"t{len(targets) + 1}"))
+    return legs
 
 
 def bracket_legs(play, action, qty, entry_price, stop_limit_ticks=10, scale_plan=None):
@@ -486,6 +523,7 @@ class Trader:
         self.cfg = cfg["trading"]
         self.broker = broker
         self.gate = gate
+        self.bracket_template = str(self.cfg.get("bracket_template") or "PLAY").upper()
         self.default_shares = self.cfg["default_shares"]
         self.bracket = bool(self.cfg["bracket"])
         self.scale = bool(self.cfg["scale_plan"]["enabled"])
@@ -535,10 +573,10 @@ class Trader:
             if seen is not None:
                 return dict(seen, duplicate=True)
             self.nonces[nonce] = {"ok": False, "reason": "this ticket is already being sent"}   # reserved
-        price = snap(round(float(price or 0), 4))          # a price the exchange takes
+        price = snap(round(float(price or 0), 4), symbol=symbol)          # a price the exchange takes
         if order_type == "STP LMT":
             try:
-                aux = snap(round(float(aux), 4))
+                aux = snap(round(float(aux), 4), symbol=symbol)
             except (TypeError, ValueError):
                 return {"ok": False, "reason": "a stop-limit needs a stop price"}
             if aux <= 0:
@@ -596,12 +634,14 @@ class Trader:
         # the price the exits are measured from: a stop entry's TRIGGER (where you get in), never its limit (a cap
         # that can sit well past it — measured from there, a near target was dropped and the stop judged wrongly)
         ref = aux if order_type == "STP LMT" else price if order_type == "LMT" else (self.engine.syms[symbol].price() or price)
-        if use_bracket and ref and not stop_ok(play, action, ref):
+        if use_bracket and ref and self.bracket_template == "PLAY" and not stop_ok(play, action, ref):
             reason = (f"your stop {money(play['stop'])} is on the wrong side of a {action} at {money(ref)} — "
                       f"the order would go out with no stop. Fix the stop first")
             self._note(now, f"BLOCKED {action} {qty} {symbol} @ {money(price)}: {reason}", False)
             return {"ok": False, "reason": reason}
-        legs = bracket_legs(play, action, qty, ref, self.cfg["stop_limit_ticks"], plan) if use_bracket and ref else []
+        tpl = self.bracket_templates().get(self.bracket_template) if self.bracket_template != "PLAY" else None
+        legs = (template_legs(tpl, action, qty, ref, self.cfg["stop_limit_ticks"], symbol) if tpl
+                else bracket_legs(play, action, qty, ref, self.cfg["stop_limit_ticks"], plan)) if use_bracket and ref else []
         try:
             # the family goes out together: the entry is held until its last leg is sent
             parent_id = self.broker.place(symbol, action, qty, price, now, order_type, None, "entry", tif, aux=aux,
@@ -702,7 +742,7 @@ class Trader:
         tk = tick_size(ask)
         slip = self.cfg["flatten_slip_ticks"] * tk
         action = SELL if qty > 0 else BUY
-        price = snap(bid - slip, -1) if qty > 0 else snap(ask + slip, +1)
+        price = snap(bid - slip, -1, symbol) if qty > 0 else snap(ask + slip, +1, symbol)
         reason = self.gate.check_reduce(action, abs(qty), price, now)
         if reason:            # checked BEFORE the stops are cancelled: a refused flatten leaves them in place
             self._note(now, f"BLOCKED flatten {symbol}: {reason}", False)
@@ -734,7 +774,7 @@ class Trader:
             return {"ok": False, "reason": f"that is the whole position ({abs(pos)} shares) — use CLOSE or FLATTEN"}
         shares = min(shares, free)
         action = SELL if pos > 0 else BUY
-        price = snap(price, -1 if action == SELL else +1)
+        price = snap(price, -1 if action == SELL else +1, symbol)
         reason = self.gate.check_reduce(action, shares, price, now)
         if reason:
             self._note(now, f"BLOCKED partial {symbol}: {reason}", False)
@@ -775,7 +815,7 @@ class Trader:
         if not entry:
             return {"ok": False, "reason": "no entry price for the position yet"}
         long_ = pos > 0
-        be = snap(entry, -1 if long_ else +1)            # never a penny on the wrong side of your cost
+        be = snap(entry, -1 if long_ else +1, symbol)            # never a tick on the wrong side of your cost
         st = self.engine.syms.get(symbol)
         bid, ask = st.bbo() if st else (None, None)
         last = st.price() if st else None
@@ -850,7 +890,7 @@ class Trader:
         info = self.broker.order_info(oid)
         if not info:
             return {"ok": False, "reason": "no such order"}
-        price = snap(round(float(price), 4))
+        price = snap(round(float(price), 4), symbol=info.get("symbol"))
         qty = int(info.get("remaining") or info.get("qty") or 0)
         reason = self.gate.check(info.get("action"), qty, price, now, order_type=info.get("type", "LMT"))
         if reason:
@@ -1362,6 +1402,69 @@ class Trader:
                 except Exception as exc:
                     self._note(now, f"{fam['symbol']}: could not move the stop to breakeven: {exc}", False)
 
+    def bracket_templates(self):
+        return dict(self.cfg.get("bracket_templates") or {})
+
+    def set_bracket_template(self, name):
+        name = str(name or "PLAY").upper()
+        if name != "PLAY" and name not in self.bracket_templates():
+            return {"ok": False, "reason": f"no bracket template {name}"}
+        with self.lock:
+            self.bracket_template = name
+        return {"ok": True, "template": name}
+
+    def cancel_side(self, symbol, side, now=None):
+        """Cancel this desk's working BUY (side 'bid') or SELL (side 'ask') orders on a symbol."""
+        now = now or time.time()
+        want = BUY if side in ("bid", "buy", BUY) else SELL
+        n = 0
+        for o in self.engine._pending(symbol):
+            if o.get("mine") and o.get("order_id") is not None and o.get("action") == want and o.get("status") != "PendingCancel":
+                try:
+                    if self.broker.cancel(o["order_id"], now):
+                        n += 1
+                except Exception as exc:
+                    log.warning("cancel %s: %s", o.get("order_id"), exc)
+        self._note(now, f"{symbol}: cancelled {n} {want} order{'s' if n != 1 else ''}", True)
+        return {"ok": True, "cancelled": n}
+
+    def reverse(self, symbol, now=None):
+        """LONG 500 -> SHORT 500 (or the other way): close the position (the flatten path: never blocked) and send
+        the opposite entry for the same size as a marketable limit. Two orders, both reported; the resulting
+        position is whatever the broker then says it is (the POSITIONS pane shows the truth, not this call)."""
+        with self.lock:
+            now = now or time.time()
+            pos = int(self.broker.position(symbol))
+            if not pos:
+                self._note(now, f"{symbol}: flat, nothing to reverse", False)
+                return {"ok": False, "reason": "flat — nothing to reverse"}
+            if not (self.gate.can_trade() and self.gate.armed):
+                return {"ok": False, "reason": self.gate.why_not() or "disarmed: a reverse opens a new position"}
+            st = self.engine.syms.get(symbol)
+            bid, ask = st.bbo() if st else (None, None)
+            if bid is None or ask is None:
+                return {"ok": False, "reason": "no quote"}
+            qty = abs(pos)
+            tk = tick_size(ask, symbol)
+            slip = self.cfg["flatten_slip_ticks"] * tk
+            action = SELL if pos > 0 else BUY
+            price = snap(ask + slip, +1, symbol) if action == BUY else snap(bid - slip, -1, symbol)
+            reason = self.gate.check(action, qty, price, now, "LMT")
+            if reason:
+                self._note(now, f"BLOCKED reverse {symbol}: {reason}", False)
+                return {"ok": False, "reason": reason}
+            flat = self._flatten_unlocked(symbol, now)
+            if not flat.get("ok"):
+                return {"ok": False, "reason": "flatten failed: " + str(flat.get("reason"))}
+            try:
+                oid = self.broker.place(symbol, action, qty, price, now, "LMT", None, "reverse", "DAY")
+            except Exception as exc:
+                self._note(now, f"FAILED reverse entry {action} {qty} {symbol}: {exc} — the flatten is still working", False)
+                return {"ok": False, "reason": str(exc), "flatten": flat}
+            self._note(now, f"SENT REVERSE {action} {qty} {symbol} @ {money(price)} (after the flatten)", True)
+            self.engine._rec({"ev": "reverse", "t": now, "sym": symbol, "from": pos, "action": action, "qty": qty, "px": price, "id": oid})
+            return {"ok": True, "id": oid, "flatten": flat, "sent": f"{action} {qty} {symbol} @ {money(price)} (reverse)"}
+
     def opt_adjust(self, key, contracts, mode, price=None, now=None):
         """Scale an OPTION position you hold: mode "close" takes contracts off (all of them with contracts 0 /
         None), "add" puts more on in the same direction. A LIMIT DAY order on the contract at the touch (bid when
@@ -1471,5 +1574,7 @@ class Trader:
         s.update(default_shares=self.default_shares, bracket=self.bracket, scale=self.scale,
                  scale_plan=self.cfg["scale_plan"]["cash_flow"], log=list(self.log)[:12], pnl=self.day_pnl(),
                  auto_on=self.auto_on, risk_dollars=self.risk_dollars, auto=self.auto_status(),
-                 filled_chip_seconds=float(self.cfg.get("filled_chip_seconds", 90)))
+                 filled_chip_seconds=float(self.cfg.get("filled_chip_seconds", 90)),
+                 bracket_template=self.bracket_template, bracket_templates=list(self.bracket_templates().keys()),
+                 qty_presets=list(self.cfg.get("qty_presets") or [25, 50, 100, 200, 500, 1000]))
         return s

@@ -417,3 +417,49 @@ def _px(p):
     if v is None:
         return "—"
     return f"{v:.2f}" if v >= 1 else f"{v:.4f}"
+
+
+
+class SignalProvider:
+    """The PS60 -> ladder interface. The ladder and the setup panel ask this, never the engine internals, so the
+    PS60 logic behind it can change without touching them. Everything comes from the real play and the live
+    PS60 read: no made-up signals. Fields are None until the trader (or PS60) has them. supply / demand are the
+    [from, to] price spans of the play (pivot to target for a short, stop to pivot for a long)."""
+
+    def __init__(self, engine):
+        self.engine = engine
+
+    def signals(self, symbol):
+        e = self.engine
+        with e.lock:
+            st = e.syms.get(str(symbol).upper()) if symbol else None
+            if st is None:
+                return {"symbol": symbol, "available": False}
+            play = st.play
+            cache = getattr(st, "_ps60_cache", None)
+            ps = cache[1] if cache else {}
+            picked = play.get("side_set") or (play.get("stop") and play.get("target")) or (play.get("trigger") and play.get("second_entry"))
+            se = (ps.get("state") if ps else None)
+            mp = ps.get("mp") if ps else None
+            atr_v = play.get("atr")
+            try:
+                atr_v = atr_v or _atr_of(e, st)
+            except Exception:
+                atr_v = None
+            return {
+                "symbol": st.symbol, "available": True, "source": "PS60",
+                "direction": (play.get("side") or "long").upper() if picked else None,
+                "entry": play.get("second_entry") or play.get("trigger"),
+                "pivot": play.get("trigger"), "second_entry": play.get("second_entry"),
+                "target_1": play.get("target"), "target_2": (mp or {}).get("level") if isinstance(mp, dict) and (mp or {}).get("level") != play.get("target") else None,
+                "stop": play.get("stop"), "atr": atr_v,
+                "supply": [play.get("trigger"), play.get("target")] if play.get("side") == "short" and play.get("trigger") else None,
+                "demand": [play.get("stop"), play.get("trigger")] if play.get("side") == "long" and play.get("trigger") else None,
+                "setup_state": se, "grade": ps.get("grade") if ps else None, "why": ps.get("why") if ps else None,
+                "extra_levels": list(play.get("extra_levels") or []),
+            }
+
+
+def _atr_of(engine, st):
+    bars = st.bar_list(400)
+    return engine._atr(st, bars) if bars else None

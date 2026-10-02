@@ -80,6 +80,31 @@ def opt_fields(contract):
 FARM_WARN_CODES = {2103, 2105, 2157, 2152}
 DEPTH_REJECT_CODES = {309, 10092}
 SUBSCRIPTION_CODES = {354, 10089, 10090, 10168, 10186, 10197, 322, 10190, 200}
+PERMISSION_CODES = {10197, 10168, 354, 10089, 10090, 10186, 2152, 10189}
+CONNECTION_CODES = {502, 504, 326, 1100, 1101, 1102, 2110, 2103, 2105, 2157, 2104, 2106, 2158, 2107, 2108, 2119}
+FATAL_CODES = {501, 503, 320, 321}
+
+
+def categorize(code, req_kind=None, order=False):
+    """Every IBKR error lands in one bucket for the MESSAGES panel and the log:
+    INFORMATION · WARNING · MARKET DATA · ORDER REJECTION · CONNECTION · PERMISSION · FATAL."""
+    try:
+        code = int(code)
+    except (TypeError, ValueError):
+        return "WARNING"
+    if code in FATAL_CODES:
+        return "FATAL"
+    if code in (2104, 2106, 2158, 2107, 2108, 2119, 1102) or code in INFO_CODES:
+        return "INFORMATION"
+    if code in CONNECTION_CODES:
+        return "CONNECTION"
+    if code in PERMISSION_CODES:
+        return "PERMISSION"
+    if order or code in ORDER_DEAD_CODES or (100 <= code < 200) or 10000 <= code < 10100 and req_kind is None:
+        return "ORDER REJECTION"
+    if req_kind in ("l1", "depth", "hist", "daily", "opt", "cd") or code in DEPTH_REJECT_CODES or code == 317:
+        return "MARKET DATA"
+    return "WARNING" if code >= 2000 else "ORDER REJECTION" if code < 1000 else "WARNING"
 
 
 def num(x):
@@ -145,13 +170,13 @@ class TwineyWrapper:
                     self.engine.on_order(self.session.perm_ids.get(req_id) or f"id{req_id}", t, order_id=req_id,
                                          lmt=prev[1] if info["type"] in ("LMT", "STP LMT") else None,
                                          aux=prev[0] if info["type"] in ("STP", "STP LMT") else None)
-                self.engine.on_error(info["symbol"], code, f"move of order {req_id} refused, it is still working at its old price: {msg}", t, level="error")
+                self.engine.on_error(info["symbol"], code, f"move of order {req_id} refused, it is still working at its old price: {msg}", t, level="error", category="ORDER REJECTION")
                 return
             if code in ORDER_DEAD_CODES:
                 self.engine.on_order(self.session.perm_ids.get(req_id) or f"id{req_id}", t,
                                      status="Cancelled" if code == 202 else "Inactive", order_id=req_id,
                                      error=f"{code}: {msg}")
-            self.engine.on_error(info["symbol"], code, f"order {req_id}: {msg}", t, level="info" if code == 202 else "error")
+            self.engine.on_error(info["symbol"], code, f"order {req_id}: {msg}", t, level="info" if code == 202 else "error", category="INFORMATION" if code == 202 else "ORDER REJECTION")
             return
         if code == 317 and kind == "depth":
             self.engine.on_depth_reset(sym, t, "317")
@@ -169,17 +194,30 @@ class TwineyWrapper:
         elif code in (502, 504, 326):
             self.session.handle_closed(f"[{code}] {msg}")
         elif code in INFO_CODES:
-            self.engine.on_error(sym, code, msg, t, level="info")
+            self.engine.on_error(sym, code, msg, t, level="info", category=categorize(code, kind))
             if code in (2104, 2106, 2158) and self.engine.connection["state"] == "FEED_DOWN":
                 # a data farm is back: TWS has its link again. Reconnect All Farms sends these, not a 1102, so
                 # the light would otherwise stay FEED DOWN with data flowing
                 self.engine.on_connection("CONNECTED", f"[{code}] a data farm is back: {msg}", t)
         elif code in FARM_WARN_CODES:
-            self.engine.on_error(sym, code, msg, t, level="warn")
+            self.engine.on_error(sym, code, msg, t, level="warn", category="CONNECTION")
         elif code in SUBSCRIPTION_CODES:
-            self.engine.on_error(sym, code, msg, t, level="error")
+            self.engine.on_error(sym, code, msg, t, level="error", category=categorize(code, kind))
         else:
-            self.engine.on_error(sym, code, msg, t, level="warn" if code >= 2000 else "error")
+            self.engine.on_error(sym, code, msg, t, level="warn" if code >= 2000 else "error", category=categorize(code, kind))
+
+    # contract details: the instrument is valid, and this is its minimum tick -------------------
+    def contractDetails(self, reqId, details):
+        kind, sym = self.req.get(reqId, (None, None))
+        if kind != "cd":
+            return
+        c = getattr(details, "contract", None)
+        self.engine.on_contract(sym, {"min_tick": num(getattr(details, "minTick", None)), "con_id": getattr(c, "conId", None) if c else None,
+                                      "long_name": getattr(details, "longName", "") or "", "exchange": getattr(c, "primaryExchange", "") if c else "",
+                                      "currency": getattr(c, "currency", "") if c else ""}, self.clock())
+
+    def contractDetailsEnd(self, reqId):
+        self.req.pop(reqId, None)
 
     # L1 -------------------------------------------------------------------
     def tickPrice(self, reqId, tickType, price, attrib):
@@ -471,7 +509,8 @@ class MarketDataSession:
 
     def _connect(self, now):
         ib = self.cfg["ibkr"]
-        self.engine.on_connection("CONNECTING", f"{ib['host']}:{ib['port']} client {ib['client_id']}", now)
+        self.engine.on_connection("RECONNECTING" if self.engine.connection.get("ever_connected") else "CONNECTING",
+                                  f"{ib['host']}:{ib['port']} client {ib['client_id']}", now)
         app = self.app_factory(self.engine, self)
         self.app = app
         self.connecting_since = now
@@ -773,6 +812,10 @@ class MarketDataSession:
             self.app.req[rid] = ("l1", sym)
             self.l1_ids[sym] = rid
             self.app.reqMktData(rid, self.contract_factory(play), "", False, False, [])
+            if not getattr(self.engine.syms.get(sym), "contract", None):
+                cid = self._rid()                       # resolve the instrument: valid? and its real tick size
+                self.app.req[cid] = ("cd", sym)
+                self.app.reqContractDetails(cid, self.contract_factory(play))
             if self.cfg["chart"]["history"]:
                 hid = self._rid()
                 self.app.req[hid] = ("hist", sym)

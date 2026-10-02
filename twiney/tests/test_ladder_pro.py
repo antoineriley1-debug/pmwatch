@@ -1,0 +1,149 @@
+"""The professional ladder: instrument ticks, order-flow engine, bracket templates, reverse, cancel a side,
+error categories, the PS60 signal interface, replay step."""
+import unittest
+
+from helpers import ASK, BID, INSERT, cfg, plays
+from twiney import orderflow, prices
+from twiney.engine import Engine
+from twiney.ibkr import categorize
+from twiney.ps60 import SignalProvider
+from twiney.trading import SimBroker, Trader, TradingGate, template_legs
+
+
+def sim(**trading):
+    trading.setdefault("auto_second_entry", False)
+    c = cfg(trading=trading)
+    e = Engine(plays(), c)
+    e.on_connection("DEMO", "", 0.0)
+    gate = TradingGate(c); gate.set_sim(); gate.arm(True)
+    broker = SimBroker(e); e.sim_broker = broker
+    e.trader = Trader(e, c, broker, gate)
+    e.apply_slot("AAA", True, 0.0)
+    return e, e.trader
+
+
+class TickSizeTests(unittest.TestCase):
+    def tearDown(self):
+        prices.MIN_TICKS.clear()
+
+    def test_instrument_tick_from_contract_details(self):
+        self.assertEqual(prices.tick_size(10.0), 0.01); self.assertEqual(prices.tick_size(0.5), 0.0001)
+        e = Engine(plays(), cfg())
+        e.on_contract("AAA", {"min_tick": 0.05, "con_id": 123, "long_name": "AAA CORP"}, 1.0)
+        self.assertEqual(prices.tick_size(10.0, "AAA"), 0.05)
+        self.assertEqual(e.syms["AAA"].contract["con_id"], 123)
+        self.assertIn("tick 0.05", e.messages[0]["text"])
+        # the ladder grids on the instrument's increment, not a penny
+        e.on_connection("DEMO", "", 0.0); e.apply_slot("AAA", True, 0.0)
+        e.on_depth("AAA", 0, INSERT, BID, 9.95, 500, "", 1.0); e.on_depth("AAA", 0, INSERT, ASK, 10.05, 500, "", 1.0)
+        rows = e._memory_ladder(e.syms["AAA"], 2.0, {})["rows"]
+        steps = sorted({round(rows[i]["price"] - rows[i + 1]["price"], 4) for i in range(len(rows) - 1)})
+        self.assertEqual(steps, [0.05])
+        from twiney.trading import snap
+        self.assertEqual(snap(10.02, 0, "AAA"), 10.0); self.assertEqual(snap(10.02, 1, "AAA"), 10.05)
+
+
+class OrderFlowTests(unittest.TestCase):
+    def test_delta_windows_and_pressure_labels(self):
+        now = 100.0
+        prints = [{"t": now - 14 + i, "size": 1000, "side": "buy"} for i in range(10)] + [{"t": now - 3, "size": 500, "side": "sell"}]
+        p = orderflow.pressure(prints, now, {})
+        self.assertEqual((p["long_delta"], p["basis"]), (9500, "ESTIMATED"))
+        self.assertEqual(p["state"], "BUYING PRESSURE STRONG"); self.assertEqual(p["arrow"], "↑")
+        self.assertEqual(p["short_delta"], 1000 - 500)        # only the last buy print is inside 5 s
+        # too few prints: QUIET, never a label from noise
+        self.assertEqual(orderflow.pressure(prints[:3], now, {})["state"], "QUIET")
+        # balanced
+        bal = [{"t": now - i, "size": 100, "side": "buy" if i % 2 else "sell"} for i in range(12)]
+        self.assertEqual(orderflow.pressure(bal, now, {})["state"], "BALANCED")
+        sell = [{"t": now - i, "size": 100, "side": "sell"} for i in range(12)] + [{"t": now - 1, "size": 150, "side": "buy"}]
+        self.assertEqual(orderflow.pressure(sell, now, {})["state"], "SELLING PRESSURE STRONG")
+
+    def test_pane_carries_order_flow(self):
+        e = Engine(plays(), cfg()); e.on_connection("DEMO", "", 0.0); e.apply_slot("AAA", True, 0.0)
+        e.on_l1("AAA", "bid", 9.99, 1.0); e.on_l1("AAA", "ask", 10.0, 1.0)
+        for i in range(10):
+            e.on_print("AAA", 10.0, 1000, "X", 1.0 + i)
+        pane = next(x for x in e.snapshot(11.0)["panes"] if x and x["symbol"] == "AAA")
+        self.assertEqual(pane["orderflow"]["state"], "BUYING PRESSURE STRONG")
+        self.assertEqual(pane["orderflow"]["basis"], "ESTIMATED")
+
+
+class BracketTemplateTests(unittest.TestCase):
+    def test_template_legs_from_the_entry(self):
+        tpl = {"stop": 0.25, "targets": [{"offset": 0.25, "pct": 34}, {"offset": 0.50, "pct": 33}, {"offset": 0.75, "pct": 33}]}
+        legs = template_legs(tpl, "BUY", 100, 10.00, 10)
+        tg = [l for l in legs if l["role"].startswith("target")]
+        self.assertEqual([(l["role"], l["qty"], l["price"]) for l in tg], [("target_1", 34, 10.25), ("target_2", 33, 10.5), ("target_3", 33, 10.75)])
+        stops = [l for l in legs if l["role"] == "stop"]
+        self.assertEqual(sum(l["qty"] for l in stops), 100); self.assertTrue(all(l["aux"] == 9.75 and l["price"] == 9.65 for l in stops))
+        self.assertEqual({l["oca"] for l in stops}, {l["oca"] for l in tg})     # every target paired with its own stop
+        short = template_legs(tpl, "SELL", 50, 10.00, 10)
+        self.assertEqual([l["price"] for l in short if l["role"].startswith("target")], [9.75, 9.5, 9.25])
+        self.assertEqual(short[0]["aux"], 10.25)
+
+    def test_trader_uses_the_picked_template(self):
+        e, tr = sim(bracket=True)
+        self.assertEqual(tr.set_bracket_template("QUARTERS"), {"ok": True, "template": "QUARTERS"})
+        self.assertFalse(tr.set_bracket_template("NOPE")["ok"])
+        e.on_l1("AAA", "bid", 9.99, 1.0); e.on_l1("AAA", "ask", 10.0, 1.0); e.tick(1.0)
+        out = tr.submit("AAA", "BUY", 10.0, 100, 2.0)
+        self.assertTrue(out["ok"], out)
+        roles = sorted(o["role"] for o in e._pending("AAA")) + sorted(o["role"] for o in e.orders.values() if o.get("status") == "Filled")
+        self.assertIn("target_1", roles); self.assertIn("target_3", roles); self.assertIn("stop", roles)
+        self.assertIn("QUARTERS", e.trader.snapshot()["bracket_templates"]); self.assertEqual(e.trader.snapshot()["bracket_template"], "QUARTERS")
+
+
+class ReverseAndCancelSideTests(unittest.TestCase):
+    def test_reverse_closes_then_opens_the_other_way(self):
+        e, tr = sim()
+        e.on_l1("AAA", "bid", 9.99, 1.0); e.on_l1("AAA", "ask", 10.0, 1.0); e.tick(1.0)
+        self.assertFalse(tr.reverse("AAA", 1.5)["ok"])                       # flat: nothing to reverse
+        self.assertTrue(tr.submit("AAA", "BUY", 10.0, 100, 2.0)["ok"])
+        self.assertEqual(tr.broker.position("AAA"), 100)
+        out = tr.reverse("AAA", 3.0)
+        self.assertTrue(out["ok"], out)
+        self.assertEqual(tr.broker.position("AAA"), -100)                     # the sim fills both marketable limits
+        self.assertTrue(any(o.get("role") == "reverse" for o in e.orders.values()))
+
+    def test_cancel_one_side(self):
+        e, tr = sim()
+        e.on_l1("AAA", "bid", 9.99, 1.0); e.on_l1("AAA", "ask", 10.0, 1.0); e.tick(1.0)
+        tr.submit("AAA", "BUY", 9.90, 100, 2.0); tr.submit("AAA", "BUY", 9.80, 100, 2.1); tr.submit("AAA", "SELL", 10.20, 100, 2.2)
+        self.assertEqual(len(e._pending("AAA")), 3)
+        self.assertEqual(tr.cancel_side("AAA", "bid", 3.0)["cancelled"], 2)
+        left = [o for o in e._pending("AAA") if o.get("status") not in ("Cancelled", "PendingCancel")]
+        self.assertEqual([o["action"] for o in left], ["SELL"])
+
+
+class ErrorCategoryTests(unittest.TestCase):
+    def test_every_code_lands_in_a_bucket(self):
+        self.assertEqual(categorize(2104), "INFORMATION")
+        self.assertEqual(categorize(1100), "CONNECTION"); self.assertEqual(categorize(504), "CONNECTION")
+        self.assertEqual(categorize(10168), "PERMISSION"); self.assertEqual(categorize(354), "PERMISSION")
+        self.assertEqual(categorize(201, order=True), "ORDER REJECTION"); self.assertEqual(categorize(110), "ORDER REJECTION")
+        self.assertEqual(categorize(309, "depth"), "MARKET DATA"); self.assertEqual(categorize(317, "depth"), "MARKET DATA")
+        self.assertEqual(categorize(501), "FATAL")
+        self.assertEqual(categorize("x"), "WARNING")
+        e = Engine(plays(), cfg())
+        e.on_error("AAA", 10168, "no subscription", 1.0, level="error", category="PERMISSION")
+        self.assertEqual(e.messages[0]["category"], "PERMISSION")
+
+
+class SignalProviderTests(unittest.TestCase):
+    def test_signals_come_from_the_real_play(self):
+        e = Engine(plays(), cfg()); e.on_connection("DEMO", "", 0.0)
+        sp = SignalProvider(e)
+        self.assertFalse(sp.signals("ZZZZ")["available"])
+        s = sp.signals("AAA")
+        self.assertTrue(s["available"]); self.assertEqual(s["source"], "PS60")
+        self.assertEqual(s["pivot"], e.syms["AAA"].play["trigger"])
+        from twiney import board
+        if board.side_picked(e.syms["AAA"].play):
+            self.assertIn(s["direction"], ("LONG", "SHORT"))
+        else:
+            self.assertIsNone(s["direction"])
+
+
+if __name__ == "__main__":
+    unittest.main()

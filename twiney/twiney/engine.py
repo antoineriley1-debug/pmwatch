@@ -5,7 +5,7 @@ JSONL replay and tests identically. The engine never talks to IBKR; it returns
 slot commands ("depth_on"/"depth_off") which the market-data adapter executes.
 """
 
-from . import board
+from . import board, orderflow
 import threading
 from collections import deque
 
@@ -51,6 +51,7 @@ class SymbolState:
         self.l1 = {k: None for k in L1_FIELDS}
         self.l1_t = None
         self.depth_active = False
+        self.contract = None     # IBKR contract details once resolved: min_tick, con_id, long_name
         self.depth_since = None
         self.depth_t = None
         self.tape_t = None
@@ -184,6 +185,8 @@ class Engine:
         self.orders = {}        # key -> order dict (pending + recently finished)
         self.positions = {}
         self.opt_fills = []
+        self.jlog_path = None     # recordings/desk.log: one JSON line per connection / order / fill / error event
+        self._jlog = None
         self.opt_positions = {}   # option key -> {symbol, expiry, strike, right, mult, qty, avg_cost, bid, ask, last}     # (account, symbol) -> {"qty", "avg_cost"}
         self.fills = {}         # exec id -> fill dict
         self.commissions = {}   # exec id -> commission ($)
@@ -238,9 +241,21 @@ class Engine:
         from .desk import dump_state
         dump_state(self, rec, t)
 
+    LOGGED_EVENTS = ("conn", "order", "order_modify", "order_cancel", "fill", "error", "contract", "flip", "setup", "reverse")
+
     def _rec(self, event):
         if self.recorder is not None:
             self.recorder.write(event)
+        if self.jlog_path and event.get("ev") in self.LOGGED_EVENTS:
+            # a structured log line per operational event (never credentials: none pass through here)
+            try:
+                import json as _json
+                if self._jlog is None:
+                    self._jlog = open(self.jlog_path, "a", encoding="utf-8")
+                self._jlog.write(_json.dumps(event, default=str) + "\n")
+                self._jlog.flush()
+            except Exception:
+                pass
 
     def _clock(self, t):
         if self.started is None:
@@ -1023,12 +1038,15 @@ class Engine:
         return {"qty": qty, "avg_cost": round(cost, 4), "pnl": None if pnl is None else round(pnl, 2)}
 
     def on_connection(self, state, detail, t, market_data_type=None):
-        """state: CONNECTED | DISCONNECTED | CONNECTING | DATA_LOST | FEED_DOWN."""
+        """state: CONNECTED | CONNECTING | RECONNECTING | DISCONNECTED | DATA_LOST | FEED_DOWN (DEMO / REPLAY for the
+        practice feeds). DATA DELAYED is CONNECTED with market_data_type 3 / 4 (the status line says so)."""
         with self.lock:
             self._clock(t)
             self._rec({"ev": "conn", "t": t, "state": state, "detail": detail})
             prev = self.connection["state"]
             self.connection.update(state=state, since=t, detail=detail)
+            if state == "CONNECTED":
+                self.connection["ever_connected"] = True
             if market_data_type is not None:
                 self.connection["market_data_type"] = market_data_type
             if state in ("DISCONNECTED", "DATA_LOST"):
@@ -1076,17 +1094,33 @@ class Engine:
                 self._deactivate(symbol, t, record=True, reason=f"rejected {code}")
             self._message("error", f"{symbol}: depth rejected ({code}) {msg}", t, symbol)
 
-    def on_error(self, symbol, code, msg, t, level="warn"):
+    def on_contract(self, symbol, details, t):
+        """Contract details from IBKR: the instrument is valid, and this is its minimum tick (never assume a penny)."""
+        from .prices import set_min_tick
         with self.lock:
             self._clock(t)
-            self._rec({"ev": "error", "t": t, "sym": symbol, "code": code, "msg": msg})
+            st = self._st(symbol)
+            if st is None:
+                return
+            st.contract = dict(details)
+            tick = details.get("min_tick")
+            if tick:
+                set_min_tick(symbol, tick)
+                st.lad_center = None      # the ladder re-grids on the real increment
+            self._rec({"ev": "contract", "t": t, "sym": symbol, "details": dict(details)})
+            self._message("info", f"{symbol}: {details.get('long_name') or 'contract'} resolved · tick {tick} · conId {details.get('con_id')}", t, symbol)
+
+    def on_error(self, symbol, code, msg, t, level="warn", category=None):
+        with self.lock:
+            self._clock(t)
+            self._rec({"ev": "error", "t": t, "sym": symbol, "code": code, "msg": msg, "category": category})
             st = self._st(symbol) if symbol else None
             if st is not None:
                 st.last_error = f"{code}: {msg}"
-            self._message(level, f"{symbol + ': ' if symbol else ''}[{code}] {msg}", t, symbol)
+            self._message(level, f"{symbol + ': ' if symbol else ''}[{code}] {msg}", t, symbol, category=category)
 
-    def _message(self, level, text, t, symbol=None):
-        self.messages.appendleft({"t": t, "level": level, "text": text, "symbol": symbol})
+    def _message(self, level, text, t, symbol=None, category=None):
+        self.messages.appendleft({"t": t, "level": level, "text": text, "symbol": symbol, "category": category})
 
     # ---- depth slots ---------------------------------------------------------
 
@@ -2320,7 +2354,7 @@ class Engine:
                 if ts[0] <= 1e-9:
                     del st.trap_sums[key]
 
-    def _memory_ladder(self, st, t, user_levels, half_rows=12):
+    def _memory_ladder(self, st, t, user_levels, half_rows=None):
         """Price rows around the market, each carrying what happened there.
 
         Unlike a normal ladder (current size only), every row remembers: shares
@@ -2331,7 +2365,8 @@ class Engine:
         center = (bid + ask) / 2 if bid and ask else st.price()
         if not center:
             return {"rows": [], "max_size": 0, "max_traded": 0}
-        tk = tick_size(center)
+        half_rows = int(half_rows or getattr(self, "ladder_half_rows", None) or self.cfg.get("ladder", {}).get("half_rows", 12))
+        tk = tick_size(center, st.symbol)      # the instrument's own increment when IBKR has told us
         ck = price_key(center, tk)
         # a STILL ladder: the rows stay where they are while price moves inside them, so a size at a price stays
         # at the same spot on screen (re-centring on every tick made every row jump). Re-centres only when price
@@ -2598,6 +2633,7 @@ class Engine:
             "book": {"bids": bids, "asks": asks},
             "ladder": self._memory_ladder(st, t, user_levels),
             "bigtape": self._big_tape(st, t),
+            "orderflow": orderflow.pressure(st.tape.prints, t, self.cfg.get("orderflow", {})),
             "tape": dict(tape, recent=[
                 {"age": round(t - p["t"], 1), "price": fmt_price(p["price"]), "size": round(p["size"]),
                  "side": p["side"], "large": p["large"], "exchange": p["exchange"], "at": at_level(p["price"])}

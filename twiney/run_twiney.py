@@ -92,6 +92,7 @@ def run_live(cfg, plays, args):
     engine = Engine(plays, cfg, recorder)
     engine.plays_path = args.plays
     engine.grades_path = os.path.join(cfg["recording"]["dir"], "grades.jsonl")
+    engine.jlog_path = os.path.join(cfg["recording"]["dir"], "desk.log")   # structured JSON lines: connections, orders, fills, errors
     engine.load_user_alerts(os.path.join(os.path.dirname(os.path.abspath(args.plays)), "alerts.json"))
     engine.listeners.append(console_alert)
     note_stripped(engine, args)
@@ -172,6 +173,7 @@ def run_demo(cfg, plays, args):
     engine = Engine(plays, cfg, recorder)
     engine.plays_path = args.plays if os.path.exists(args.plays) and not args.plays.endswith("plays.example.json") else None
     engine.grades_path = os.path.join(cfg["recording"]["dir"], "grades.jsonl")
+    engine.jlog_path = os.path.join(cfg["recording"]["dir"], "desk.log")   # structured JSON lines: connections, orders, fills, errors
     engine.load_user_alerts(os.path.join(os.path.dirname(os.path.abspath(args.plays)), "alerts.json"))
     engine.listeners.append(console_alert)
     note_stripped(engine, args)
