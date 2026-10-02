@@ -113,6 +113,12 @@ DEFAULTS = {
         "min_shares": 2000,
         # "heavy" when trapped shares reach this
         "heavy_shares": 10000,
+        # TRAPPED on the day: the strong move that reversed. Shares bought above the current price since the open
+        # (longs) or sold below it (shorts) as a share of the session's volume, and how far price has come off the
+        # session high / low before it counts
+        "session_lean_fraction": 0.20,
+        "session_heavy_fraction": 0.35,
+        "session_min_move_pct": 1.0,
     },
     "health": {
         "l1_stale_seconds": 15.0,

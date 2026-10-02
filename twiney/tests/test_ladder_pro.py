@@ -209,3 +209,36 @@ class LadderOrderAlignmentTests(unittest.TestCase):
         out = tr.submit("AAA", "SELL", 10.08, 100, 2.5, bracket=False)
         rows = e._memory_ladder(e.syms["AAA"], 3.0, {})["rows"]
         self.assertIn(10.08, {r["price"] for r in rows if r["mine"]})     # a limit sits at its limit
+
+
+class DayTrapTests(unittest.TestCase):
+    """The strong morning move that reversed: everyone who paid up above here since the open is underwater."""
+    def test_longs_trapped_after_a_failed_opening_drive(self):
+        from twiney.ps60 import ny_day
+        e = Engine(plays(), cfg(trap={"session_lean_fraction": 0.2, "session_heavy_fraction": 0.35, "session_min_move_pct": 1.0}))
+        e.on_connection("DEMO", "", 0.0); e.apply_slot("AAA", True, 0.0)
+        t0 = 1_800_000_000.0 + 13.5 * 3600            # a weekday morning, New York
+        e.on_l1("AAA", "bid", 99.99, t0); e.on_l1("AAA", "ask", 100.0, t0)
+        # the drive: buyers pay up from 100 to 104 (8,000 shares)
+        for i in range(8):
+            px_ = 100.0 + i * 0.5
+            e.on_l1("AAA", "bid", px_ - 0.01, t0 + i); e.on_l1("AAA", "ask", px_, t0 + i)
+            e.on_print("AAA", px_, 1000, "X", t0 + i)
+        # the reversal: sellers hit bids back down to 101 (3,000 shares)
+        for i in range(3):
+            px_ = 103.0 - i
+            e.on_l1("AAA", "bid", px_, t0 + 20 + i); e.on_l1("AAA", "ask", px_ + 0.01, t0 + 20 + i)
+            e.on_print("AAA", px_, 1000, "X", t0 + 20 + i)
+        pane = next(x for x in e.snapshot(t0 + 30)["panes"] if x and x["symbol"] == "AAA")
+        dt = pane["daytrap"]
+        self.assertEqual(dt["state"], "LONGS TRAPPED HEAVY")
+        self.assertEqual(dt["high"]["price"], 103.5)
+        self.assertEqual(dt["longs"]["shares"], 5000)                 # bought at 101.5 .. 103.5, above 101
+        self.assertAlmostEqual(dt["longs"]["avg"], 102.5, places=2)
+        self.assertTrue(dt["longs"]["under_pct"] > 1.0)
+        self.assertIn("were bought above here since the open", dt["text"]); self.assertIn("push back to 102.50", dt["text"])
+        self.assertTrue(any(a["label"] == "LONGS TRAPPED HEAVY" and a["role"] == "trap" and "longs are trapped heavy" in a["words"] for a in e.alerts))
+        self.assertEqual(e.syms["AAA"].day_key, ny_day(t0))
+        # a new session starts the story over
+        e.on_print("AAA", 101.0, 100, "X", t0 + 86400)
+        self.assertEqual(len(e.syms["AAA"].day_sums), 1)

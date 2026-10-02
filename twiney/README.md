@@ -45,7 +45,8 @@ and the known limitations.
 SIMPLE (default; the button in the ladder bar cycles the three) is order flow and nothing else: BID · PRICE ·
 ASK. The size you see is the resting order. Its cell drains as prints attack it (the bar behind the number is
 what is left of the most it showed in the last 90 s, a drop flashes and floats −n). A reload buyer or seller is a
-solid green or red cell with ↻N (refilled N times) and the $ that traded into him. The thin line under a number
+solid green or red cell with ↻N (refilled N times) and the $ he has bought (a buyer) or sold (a seller), with a
+glowing border while he is active — the same glow marks every print on TIME & SALES that hits him. The thin line under a number
 is absorption: how much traded at that price (only where something real did). Fake size prints dim, big size
 bold, huge size gold. Option money is a short mark on the row's outer edge (green calls left, red puts right,
 thicker from $1M, glowing when it is short-dated out-of-the-money being pounded). Your orders are chips. Click a
@@ -53,7 +54,7 @@ price and the pin box reads both sides out in words.
 
 TIGHT is the same ladder with the detail spelled out as columns: CALLS · HIT · BID ·
 PRICE · ASK · PAID · PUTS. A reload buyer colours the bid cell green, a reload seller the ask cell red, with his
-tag (R3 = refilled three times) and the $ that traded into him in the HIT / PAID cell. The option flow that hit
+tag (R3 = refilled three times) and the $ he has bought / sold in the HIT / PAID cell. The option flow that hit
 while the stock traded at a price sits on its own side: CALLS with the buyers, PUTS with the sellers — $ premium,
 ⚡ when it is short-dated out-of-the-money being pounded, days out and % out of the money (hover or click for
 every print). WIDE adds the who tags as columns of their own. TIME & SALES shows price and size only: green paid the ask,
@@ -61,14 +62,27 @@ red hit the bid, bold is big (hover a print for the exchange and age). ORDER ENT
 carries the controls on the row: 25 / 50 / 75 off at the touch, … your own number, @ a partial at your price,
 BE stop to breakeven, X close.
 
+## TRAPPED on the day: the strong move that reversed
+
+The desk keeps every print of the session by price and side. Everything bought at the ask ABOVE the current
+price since the open is a long underwater; everything sold at the bid below it, a short underwater. PLAY
+SETUP → TRAPPED reads "LONGS TRAPPED HEAVY · 4.2M sh bought above here · avg 185.60 · 1.3% under · their exit
+185.60", the alert spells out the move ("High 187.40 at 9:52, now 183.10, 2.3% under it. 4.2M shares ($780M)
+were bought above here since the open, 41% of the day: average 185.60, 1.3% underwater. Their way out is a push
+back to 185.60: expect supply there. Their max pain is the session low 182.90."), and the voice says it once
+per state change. LONGS / SHORTS TRAPPED from `trap.session_lean_fraction` (20% of the day's volume) with
+price at least `trap.session_min_move_pct` (1%) off the session high / low; HEAVY from
+`trap.session_heavy_fraction` (35%). Gross figures: nobody can see who already got out, so read it as pressure,
+and their average as the level where the next push meets supply or demand. A new session starts the story over.
+
 ## The same reloader, back again
 
 A reload buyer or seller who returns to the SAME price within `reload.return_window_seconds` (20 minutes) of
 being cleaned up or pulled is the same participant, never a new one: who else sells size at the same penny
 minutes later? The desk says so. The ladder cell reads ↩×2 ↻3 $410K (second visit, refilled three times this
-visit, the dollars that traded into him), the banner reads RELOAD SELLER BACK ×2 (gone 6m) with his shares
+visit, the dollars he has sold), the banner reads RELOAD SELLER BACK ×2 (gone 6m) with his shares
 across every visit, the alert and the voice say "the reload seller at 232.15 is back, second visit, cleaned up
-6 minutes ago and refilling again, 23,000 traded into him across every visit", and a CLEANED UP on a repeat
+6 minutes ago and refilling again, he has sold 23,000 across every visit", and a CLEANED UP on a repeat
 visitor says it is his 2nd / 3rd visit. A seller who PULLED and comes back is said to be back too, with "he
 pulled last time, so trust it less". Gone longer than the window, whoever shows up there starts a new story.
 

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261002-1347">
+<meta name="build" content="20261002-1449">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -721,6 +721,10 @@ i.tl{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:3p
 .oc .wks{border-top:1px solid var(--line);padding:2px 6px;font:10.5px var(--mono)} .oc .wk{display:flex;gap:6px;align-items:center} .oc .wk button{padding:0 4px;font-size:9px}
 .rlb.ord{border-style:dashed} .rlb.ord.b{color:var(--buy)} .rlb.ord.s{color:var(--sell)}
 .lad.lad3.simple td.sz .rl.back,.lad.lad3 .rtag.back{background:var(--gold);color:#0c0c0d}
+/* the same reloader on both screens: a glowing border on his ladder row while he is active, and on every print that hits him */
+.lad tr.rl-bid.cv-active td.bsz{box-shadow:inset 0 0 0 1px #7dffb8,0 0 7px 1px rgba(63,181,111,.8) !important} .lad tr.rl-ask.cv-active td.asz{box-shadow:inset 0 0 0 1px #ffa0a8,0 0 7px 1px rgba(217,83,79,.8) !important}
+.p-tape .t.tape2 tr.rlhit td{box-shadow:inset 0 0 0 1px rgba(255,255,255,.25)} .p-tape .t.tape2 tr.rlhit.b td{background:rgba(63,181,111,.28);box-shadow:inset 0 0 0 1px #7dffb8} .p-tape .t.tape2 tr.rlhit.s td{background:rgba(217,83,79,.28);box-shadow:inset 0 0 0 1px #ffa0a8}
+.p-tape .t.tape2 tr.rlhit td:first-child{border-left:3px solid currentColor}
 
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
@@ -1708,8 +1712,8 @@ function reloadMoney(r, side){
   const peak = r[side + "_peak"] || r[side] || 0, usd = n * r.price;
   const nS = Math.round(n).toLocaleString("en-US"), pS = Math.round(peak).toLocaleString("en-US"), rf = r[side + "_refills"] || 0;
   const bk = r[side + "_back"], all = r[side + "_absorbed_all"] || 0;
-  const backTxt = bk ? ` BACK — the same ${who.toLowerCase()}, visit ${bk.n}: ${bk.prior === "PULLED" ? "pulled" : "cleaned up"} ${Math.max(1, Math.round((bk.away || 0) / 60))} min ago, refilling again now; ${Math.round(all).toLocaleString("en-US")} shares across every visit.` : "";
-  return {n, usd, peak, back: bk, all, text: `RELOAD ${who} at ${px(r.price)}: ${nS} shares ${side === "bid" ? "sold into him" : "bought from him"} at ${px(r.price)} = ${usdK(usd)}.` +
+  const backTxt = bk ? ` BACK — the same ${who.toLowerCase()}, visit ${bk.n}: ${bk.prior === "PULLED" ? "pulled" : "cleaned up"} ${Math.max(1, Math.round((bk.away || 0) / 60))} min ago, refilling again now; ${side === "bid" ? "bought" : "sold"} ${Math.round(all).toLocaleString("en-US")} shares across every visit.` : "";
+  return {n, usd, peak, back: bk, all, text: `RELOAD ${who} at ${px(r.price)}: he has ${side === "bid" ? "bought" : "sold"} ${nS} shares at ${px(r.price)} = ${usdK(usd)}.` +
     (peak && n > peak ? ` He only ever showed ${pS} on the ${side} — ${nS} traded, so he put it back ${rf} times. The rest was hidden size (an iceberg).` : ` He put it back ${rf} times.`) + backTxt +
     ` ${side === "bid" ? "Price has trouble going lower" : "Price has trouble going higher"} while he is there.`};
 }
@@ -1764,7 +1768,7 @@ function ladderSimpleHTML(L){
     const bigB = r.bid_big ? (r.bid_big.huge ? " huge" : " big") : "", bigA = r.ask_big ? (r.ask_big.huge ? " huge" : " big") : "";
     // the absorption line only where something real traded: a sixth of the busiest price or more
     const absB = r.sold && r.sold / ms >= 0.15 ? Math.round(100 * r.sold / ms) : 0, absA = r.bought && r.bought / ms >= 0.15 ? Math.round(100 * r.bought / ms) : 0;
-    const tB = rb ? rb.text : [r.bid ? sz(r.bid) + " showing" : "", r.sold ? sz(r.sold) + " sold into this price = " + usdK(r.sold * r.price) : "", r.bid_real ? realWords(r.bid_real) : ""].filter(Boolean).join(" · ");
+    const tB = rb ? rb.text : [r.bid ? sz(r.bid) + " showing" : "", r.sold ? sz(r.sold) + " shares sold into this price = " + usdK(r.sold * r.price) : "", r.bid_real ? realWords(r.bid_real) : ""].filter(Boolean).join(" · ");
     const tA = ra ? ra.text : [r.ask ? sz(r.ask) + " showing" : "", r.bought ? sz(r.bought) + " bought from this price = " + usdK(r.bought * r.price) : "", r.ask_real ? realWords(r.ask_real) : ""].filter(Boolean).join(" · ");
     h += `<tr class="${cls}" data-price="${r.price}" style="--cv:${cv}">
       <td class="act b${dis}" data-act="BUY" data-px="${r.price}" title="${on ? "BUY " + sz(T().default_shares) + " @ " + px(r.price) : whyNot()}">${chips(r, "b") || "B"}</td>
@@ -1870,12 +1874,16 @@ function ladderHTML(L){
   return h;
 }
 
-function tapeHTML(t){
-  // price and size, nothing else: the colour is who did it (green = paid the ask, red = hit the bid), bold = big
+function tapeHTML(t, lad){
+  // price and size, nothing else: the colour is who did it (green = paid the ask, red = hit the bid), bold = big.
+  // A print that hits an ACTIVE reloader (a sell into a reload buyer's bid, a buy from a reload seller's ask) glows
+  // like his row on the ladder: the same guy, on both screens
   const who = r => r.side === "buy" ? "paid up: traded at the ask" : r.side === "sell" ? "hit: traded at the bid" : "between the quotes";
-  const rows = t.recent.map(r => `<tr class="${r.at?"atlvl":""} ${r.side}" title="${who(r)}${r.exchange ? " · " + esc(r.exchange) : ""} · ${ago(r.age)} ago">
+  const rl = {};
+  for (const x of ((lad && lad.rows) || [])){ if (x.bid_state === "RELOAD" || x.bid_proven) rl[x.price + "|sell"] = "b"; if (x.ask_state === "RELOAD" || x.ask_proven) rl[x.price + "|buy"] = "s"; }
+  const rows = t.recent.map(r => { const g = rl[(+r.price) + "|" + r.side]; return `<tr class="${r.at?"atlvl":""} ${r.side}${g ? " rlhit " + g : ""}" title="${who(r)}${g ? (g === "b" ? " · sold into the RELOAD BUYER at this price" : " · bought from the RELOAD SELLER at this price") : ""}${r.exchange ? " · " + esc(r.exchange) : ""} · ${ago(r.age)} ago">
     <td class="${r.side}">${px(r.price)}${r.at?` <span class="tag">${esc(r.at)}</span>`:""}</td>
-    <td class="${r.side} ${r.large?"large":""}">${sz(r.size)}</td></tr>`).join("")
+    <td class="${r.side} ${r.large?"large":""}">${sz(r.size)}</td></tr>`; }).join("")
     || `<tr><td colspan="2" class="dim">no prints yet</td></tr>`;
   return `<table class="t tape2" data-cols="tape2"><tr><th data-w="1.1">PRICE</th><th data-w="0.9" title="green = paid the ask (buyer in a rush) · red = hit the bid (seller getting out) · bold = big">SIZE</th></tr>${rows}</table>`;
 }
@@ -3382,7 +3390,7 @@ function rlBanner(wrap, d){
   // never invisible — a tag says where they are, with the chip's cancel on it
   const prices = new Set(rows.map(r => +r.price)), lo = rows.length ? Math.min(...prices) : null, hi = rows.length ? Math.max(...prices) : null;
   const off = (d.orders || []).filter(o => o.price && !prices.has(+o.price) && lo != null).map(o => `<span class="rlb ord ${o.action === "BUY" ? "b" : "s"} ${o.price > hi ? "up" : "down"}" data-oid="${o.id}" title="${esc(o.type || "")} ${esc(o.role || "")} order, ${o.price > hi ? "above" : "below"} the rows on screen · click to cancel it">${o.price > hi ? "▲" : "▼"} ${esc(o.action)} ${sz(o.qty)} @ ${px(o.price)}${o.type && o.type !== "LMT" ? " " + esc(o.type) : ""} ✕</span>`).join("");
-  const html = off + items.map(i => `<span class="rlb ${i.side === "bid" ? "b" : "s"} ${i.where}" data-jump="${i.price}" title="${esc(i.rw.text)} · ${i.stage} · click to jump to it">${i.where === "up" ? "▲" : i.where === "down" ? "▼" : "●"} RELOAD ${i.side === "bid" ? "BUYER" : "SELLER"}${i.rw.back ? ` BACK ×${i.rw.back.n} (gone ${Math.max(1, Math.round((i.rw.back.away || 0) / 60))}m)` : ""} ${px(i.price)} · ${kfmt(i.rw.n)} sh ${i.side === "bid" ? "sold into him" : "bought from him"} · ${usdK(i.rw.usd)}${i.rw.back && i.rw.all > i.rw.n ? ` · ${kfmt(i.rw.all)} all visits` : ""}${i.rw.peak && i.rw.n > i.rw.peak ? ` · never showed more than ${kfmt(i.rw.peak)} at once (iceberg, refilled ${i.n}×)` : ""}${i.where !== "on" ? ` · ${i.rowsAway} rows ${i.where}` : ""}${i.knows ? " ⚡" : ""}</span>`).join("");
+  const html = off + items.map(i => `<span class="rlb ${i.side === "bid" ? "b" : "s"} ${i.where}" data-jump="${i.price}" title="${esc(i.rw.text)} · ${i.stage} · click to jump to it">${i.where === "up" ? "▲" : i.where === "down" ? "▼" : "●"} RELOAD ${i.side === "bid" ? "BUYER" : "SELLER"}${i.rw.back ? ` BACK ×${i.rw.back.n} (gone ${Math.max(1, Math.round((i.rw.back.away || 0) / 60))}m)` : ""} ${px(i.price)} · ${i.side === "bid" ? "bought" : "sold"} ${kfmt(i.rw.n)} sh · ${usdK(i.rw.usd)}${i.rw.back && i.rw.all > i.rw.n ? ` · ${kfmt(i.rw.all)} all visits` : ""}${i.rw.peak && i.rw.n > i.rw.peak ? ` · never showed more than ${kfmt(i.rw.peak)} at once (iceberg, refilled ${i.n}×)` : ""}${i.where !== "on" ? ` · ${i.rowsAway} rows ${i.where}` : ""}${i.knows ? " ⚡" : ""}</span>`).join("");
   if (ban.dataset.h !== html){ ban.dataset.h = html; ban.innerHTML = html; ban.classList.toggle("on", !!(items.length || off)); }
 }
 P.book.el.addEventListener("click", e => {
@@ -3395,7 +3403,7 @@ P.book.el.addEventListener("scroll", () => { const wrap = P.book.pc.querySelecto
 function renderTape(d){
   const el = P.tape.pc.querySelector(".p-tape");
   if (!d){ el.innerHTML = `<div class="dim" style="padding:8px">${NA}</div>`; P.tape.last = null; renderBigTape(null); return; }
-  const html = tapeSpeedHTML(d.tape.speed) + tapeHTML(d.tape); if (P.tape.last !== html){ P.tape.last = html;
+  const html = tapeSpeedHTML(d.tape.speed) + tapeHTML(d.tape, d.ladder); if (P.tape.last !== html){ P.tape.last = html;
     const keep = el.scrollTop; el.innerHTML = html; el.scrollTop = keep; makeColsResizable(el.querySelector("table")); }
   renderBigTape(d);
 }
@@ -3560,6 +3568,7 @@ function suDerivedHTML(d, f){
   const x = suDerive(d, f), $ = v => v == null ? NA : "$" + v.toFixed(2);
   return `<span>2ND ENTRY</span><span>${x.seState ? `<span class="${x.fromSecond ? "ok" : "dim"}">${esc(x.seState)}</span>` : NA}</span>
     <span>FLOW</span><span>${doughHTML(d && d.ps60 && d.ps60.dough)}</span>
+    <span>TRAPPED</span><span>${(() => { const x = d && d.daytrap; if (!x) return NA; const cls = /HEAVY/.test(x.state) ? "no" : x.state ? "gold" : "dim"; return `<span class="${cls}" title="${esc(x.text || "")}">${esc(x.state || "nobody underwater on the day")}</span>${x.side === "long" && x.longs ? ` <span class="dim">${kfmt(x.longs.shares)} sh bought above here · avg ${px(x.longs.avg)} · ${x.longs.under_pct}% under · their exit ${px(x.longs.avg)}</span>` : x.side === "short" && x.shorts ? ` <span class="dim">${kfmt(x.shorts.shares)} sh sold below here · avg ${px(x.shorts.avg)} · ${x.shorts.under_pct}% under · their exit ${px(x.shorts.avg)}</span>` : ""}`; })()}</span>
     <span>ORDER FLOW</span><span>${(() => { const o = d && d.orderflow; if (!o) return NA; const cls = /BUYING/.test(o.state) ? "ok" : /SELLING/.test(o.state) ? "no" : "dim"; return `<span class="${cls}">${esc(o.state)} ${esc(o.arrow || "")}</span>${o.momentum ? ` <span class="gold">${esc(o.momentum)}</span>` : ""} <span class="dim" title="${esc(o.basis_note || "")}">${esc(o.basis)}</span>`; })()}</span>
     <span>5 SEC / 15 SEC</span><span>${(() => { const o = d && d.orderflow; if (!o) return NA; const f = v => (v >= 0 ? "+" : "−") + sz(Math.abs(v)); return `<span class="mono ${o.short_delta >= 0 ? "up" : "dn"}">${f(o.short_delta)}</span> <span class="dim">/</span> <span class="mono ${o.long_delta >= 0 ? "up" : "dn"}">${f(o.long_delta)}</span> <span class="dim">shares, buyers paid up minus sellers hit</span>`; })()}</span>
     <span>MP ROOM</span><span>${x.room != null ? `<span class="gold">${$(x.room)}</span> <span class="dim">PIVOT ${$(x.pivot)} → TARGET ${$(x.mp)}</span>` : `<span class="dim">NEEDS A PIVOT AND A TARGET</span>`}</span>
@@ -4100,11 +4109,11 @@ function reloadWords(a){
   const who = a.side === "bid" ? "buyer" : "seller", num = n => Math.round(n).toLocaleString("en-US");
   const n = a.refreshes != null ? a.refreshes : null;
   const showing = a.showing != null ? `${num(a.showing)} showing.` : "";
-  const traded = a.absorbed ? ` ${num(a.absorbed)} traded into it.` : "";
+  const traded = a.absorbed ? ` He's ${a.side === "bid" ? "bought" : "sold"} ${num(a.absorbed)}${a.dollars ? ", " + (a.dollars >= 1e6 ? (a.dollars / 1e6).toFixed(1) + " million dollars" : Math.round(a.dollars / 1e3) + " thousand dollars") : ""}.` : "";
   if (a.label.startsWith("RELOAD") && a.back){ const nth = {2: "second", 3: "third", 4: "fourth"}[a.back.n] || (a.back.n + "th"), mins = Math.max(1, Math.round((a.back.away || 0) / 60));
-    return `The reload ${who} at ${px(a.price)} is back. ${nth} visit. He was ${a.back.prior === "PULLED" ? "pulled" : "cleaned up"} ${mins} minute${mins === 1 ? "" : "s"} ago and he's refilling again.${a.absorbed_all ? ` ${num(a.absorbed_all)} traded into him across every visit.` : ""}`; }
+    return `The reload ${who} at ${px(a.price)} is back. ${nth} visit. He was ${a.back.prior === "PULLED" ? "pulled" : "cleaned up"} ${mins} minute${mins === 1 ? "" : "s"} ago and he's refilling again.${a.absorbed_all ? ` He's ${a.side === "bid" ? "bought" : "sold"} ${num(a.absorbed_all)} across every visit.` : ""}`; }
   if (a.label.startsWith("RELOAD")) return `Reload ${who} at ${px(a.price)}. ${showing}${n != null ? ` Refilled ${n} time${n === 1 ? "" : "s"}.` : ""}${traded}`;
-  if (a.label === "CLEANED UP") return `Reload ${who} at ${px(a.price)} cleared out.${traded}`;
+  if (a.label === "CLEANED UP") return `Reload ${who} at ${px(a.price)} cleared out.${a.absorbed ? ` He had ${a.side === "bid" ? "bought" : "sold"} ${num(a.absorbed)}.` : ""}`;
   if (a.label === "PULLED") return `Reload ${who} at ${px(a.price)} pulled.`;
   return null;
 }

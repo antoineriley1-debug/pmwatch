@@ -101,7 +101,7 @@ def alert_text(alert, play):
         # the way a prop desk teaches it: who, where, how much traded (shares AND dollars), how much you could see
         n, usd = alert["absorbed"], dollars(alert.get("dollars", alert["absorbed"] * float(alert["price"])))
         shown = alert.get("peak_shown") or alert.get("showing") or 0
-        did = "sold into him" if side == "bid" else "bought from him"
+        did = "bought" if side == "bid" else "sold"            # a reload buyer has BOUGHT that much, a seller has SOLD it
         hidden = (f" He only ever showed {shares(shown)} on the {'bid' if side == 'bid' else 'ask'} — {shares(n)} traded, so he put it "
                   f"back {alert.get('refreshes', 0)} times. The rest was hidden size (an iceberg).") if shown and n > shown else \
                  f" He put it back {alert.get('refreshes', 0)} times."
@@ -112,19 +112,19 @@ def alert_text(alert, play):
             nth = {2: "2nd", 3: "3rd"}.get(back.get("n"), f"{back.get('n')}th")
             tot = alert.get("absorbed_all") or n
             return (f"RELOAD {who(side)} BACK at {where} — the same {who(side).lower()}, {nth} visit: {prior} {mins} min ago, "
-                    f"refilling again now. {shares(n)} {did} this visit; {shares(tot)} across every visit. "
+                    f"refilling again now. He has {did} {shares(n)} this visit, {shares(tot)} across every visit. "
                     f"{'He keeps defending this price: a stronger floor than a first-time buyer' if side == 'bid' else 'He keeps defending this price: a stronger ceiling than a first-time seller'}"
                     f"{' — but he pulled last time, so trust it less' if prior == 'pulled' else ''}. " + play_context(play, side, role)).strip()
-        return (f"RELOAD {who(side)} at {where}. {shares(n)} shares {did} at {px(alert['price'])} = {usd}.{hidden} "
+        return (f"RELOAD {who(side)} at {where}. He has {did} {shares(n)} shares at {px(alert['price'])} = {usd}.{hidden} "
                 f"{'Price is having trouble going lower' if side == 'bid' else 'Price is having trouble going higher'} "
                 f"while he's there. " + play_context(play, side, role)).strip()
     if label == "CLEANED UP":
         vis = alert.get("episodes") or 0
         nth = {2: "2nd", 3: "3rd"}.get(vis, f"{vis}th")
         again = f" for now — his {nth} visit; if he is back at this price within 20 minutes the desk says so" if vis >= 2 else ""
-        return (f"CLEANED UP — the {who(side)} at {where} is gone. {shares(alert['absorbed'])} shares "
-                f"({dollars(alert.get('dollars', alert['absorbed'] * float(alert['price'])))}) ate through it "
-                f"and price went through the level. That {wall(side).split(' / ')[0]} is done{again}.")
+        return (f"CLEANED UP — the {who(side)} at {where} is gone. He had {'bought' if side == 'bid' else 'sold'} "
+                f"{shares(alert['absorbed'])} shares ({dollars(alert.get('dollars', alert['absorbed'] * float(alert['price'])))}) "
+                f"before price went through him. That {wall(side).split(' / ')[0]} is done{again}.")
 
     if label == "PULLED":
         return (f"PULLED — the {who(side)} at {where} vanished without getting hit. "
@@ -307,3 +307,50 @@ def short_status(play, price):
     if text is None:
         return "no price yet" if price is None else "no pivot yet — mark one on the chart"
     return text.replace("Price is ", "").rstrip(".")
+
+
+def _ny_hm(t):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    try:
+        return datetime.fromtimestamp(t, ZoneInfo("America/New_York")).strftime("%-I:%M")
+    except Exception:
+        return ""
+
+
+def day_trap_text(symbol, dt, price):
+    """TRAPPED on the day, in words: the move, who is underwater, by how much, and where their exit is."""
+    hi, lo, L, S = dt.get("high"), dt.get("low"), dt.get("longs"), dt.get("shorts")
+    bits = []
+    if dt.get("side") == "long" and L and hi:
+        bits.append(f"High {px(hi['price'])} at {_ny_hm(hi['t'])}, now {px(price)} ({hi['drop_pct']:+.1f}% from it)." if False else
+                    f"High {px(hi['price'])} at {_ny_hm(hi['t'])}, now {px(price)}, {hi['drop_pct']:.1f}% under it.")
+        bits.append(f"{shares(L['shares'])} shares ({dollars(L['dollars'])}) were bought above here since the open, {int(L['fraction'] * 100)}% of the day: "
+                    f"average {px(L['avg'])}, {L['under_pct']:.1f}% underwater.")
+        bits.append(f"Their way out is a push back to {px(L['avg'])}: expect supply there. Their max pain is the session low {px(lo['price'])}." if lo else
+                    f"Their way out is a push back to {px(L['avg'])}: expect supply there.")
+    elif dt.get("side") == "short" and S and lo:
+        bits.append(f"Low {px(lo['price'])} at {_ny_hm(lo['t'])}, now {px(price)}, {lo['rise_pct']:.1f}% over it.")
+        bits.append(f"{shares(S['shares'])} shares ({dollars(S['dollars'])}) were sold below here since the open, {int(S['fraction'] * 100)}% of the day: "
+                    f"average {px(S['avg'])}, {S['under_pct']:.1f}% underwater.")
+        bits.append(f"Their way out is a dip back to {px(S['avg'])}: expect demand there. Their max pain is the session high {px(hi['price'])}." if hi else
+                    f"Their way out is a dip back to {px(S['avg'])}: expect demand there.")
+    else:
+        if L and L["shares"]:
+            bits.append(f"{shares(L['shares'])} bought above here today ({int(L['fraction'] * 100)}% of the day), average {px(L['avg'])}.")
+        if S and S["shares"]:
+            bits.append(f"{shares(S['shares'])} sold below here today ({int(S['fraction'] * 100)}% of the day), average {px(S['avg'])}.")
+        if not bits:
+            return "nobody underwater on the day yet"
+    return " ".join(bits)
+
+
+def day_trap_words(dt):
+    L, S, hi, lo = dt.get("longs"), dt.get("shorts"), dt.get("high"), dt.get("low")
+    if dt.get("side") == "long" and L:
+        return (f"longs are trapped{' heavy' if 'HEAVY' in dt['state'] else ''}. {int(L['fraction'] * 100)} percent of today's volume was bought above here, "
+                f"average {px(L['avg'])}, {L['under_pct']:.1f} percent underwater. A push back to {px(L['avg'])} is where they sell.")
+    if dt.get("side") == "short" and S:
+        return (f"shorts are trapped{' heavy' if 'HEAVY' in dt['state'] else ''}. {int(S['fraction'] * 100)} percent of today's volume was sold below here, "
+                f"average {px(S['avg'])}, {S['under_pct']:.1f} percent underwater. A dip back to {px(S['avg'])} is where they cover.")
+    return ""

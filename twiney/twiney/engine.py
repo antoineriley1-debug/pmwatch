@@ -78,6 +78,12 @@ class SymbolState:
         self.mem_sums = {}      # (price_key, side) -> shares in the memory window, kept as prints come and go
         self.trap_mem = deque() # the same prints for the trapped-traders window
         self.trap_sums = {}     # (price_key, side) -> [shares, price x shares, price]
+        # the whole session: who paid up / hit at every price since the open (for TRAPPED LONGS / SHORTS on the day),
+        # and the session's high / low with the time they printed
+        self.day_sums = {}      # (price_key, side) -> [shares, price x shares, price]
+        self.day_key = None
+        self.day_hi = None      # (price, t)
+        self.day_lo = None
         self.marks = {}         # (minute, price_key, side) -> [price, absorbed shares]
         self.quotes = deque(maxlen=64)   # (t, bid, ask) as the best bid / offer changed: prints are read against it
         self.voice_pending = {}          # (side, price_key) -> size that left, waiting to see if it traded
@@ -427,6 +433,19 @@ class Engine:
             key = (k, rec["side"])
             st.mem_sums[key] = st.mem_sums.get(key, 0.0) + size
             st.trap_mem.append(item)
+            dk = ps60.ny_day(t)
+            if st.day_key != dk:                      # a new session: the day's story starts over
+                st.day_key, st.day_sums, st.day_hi, st.day_lo = dk, {}, None, None
+            if rec["side"] in ("buy", "sell"):
+                ds = st.day_sums.get(key)
+                if ds is None:
+                    st.day_sums[key] = [size, price * size, price]
+                else:
+                    ds[0] += size; ds[1] += price * size
+            if st.day_hi is None or price > st.day_hi[0]:
+                st.day_hi = (price, t)
+            if st.day_lo is None or price < st.day_lo[0]:
+                st.day_lo = (price, t)
             ts = st.trap_sums.get(key)
             if ts is None:
                 st.trap_sums[key] = [size, price * size, price]
@@ -1563,6 +1582,7 @@ class Engine:
         bars = st.bar_list(MAX_BARS)
         ps = self._ps60(st, t, bars, st.price())
         if st.symbol not in self.slots:
+            self._day_trap_watch(st, self._day_trap(st, t, st.price()), t)
             # no ladder on it, still on the desk: the conviction board (and its with-you / against-you calls) run
             # on the levels you drew; the ladder lanes just have nothing to add
             try:
@@ -2555,6 +2575,75 @@ class Engine:
                 "memory_minutes": MEMORY_SECONDS // 60, "big_shares": big_bar, "big_default": st.big_shares is None,
                 "huge_shares": big_bar * huge_x}
 
+    def _day_trap_pane(self, st, t):
+        dt = self._day_trap(st, t, st.price())
+        self._day_trap_watch(st, dt, t)
+        return dt
+
+    def _day_trap(self, st, t, price):
+        """TRAPPED on the day: the strong move that reversed. Everything bought at the ask ABOVE the current price
+        since the open is a long underwater (sold at the bid below it, a short underwater): how many shares, their
+        average price, how far under they sit, and what share of the session they are. The session high / low
+        with its time says what the move was ("opening high 187.40 at 9:52, now −2.3%"). Gross figures: we cannot
+        see who got out, so read it as pressure — their average is where the next push meets supply / demand."""
+        tc = self.cfg["trap"]
+        if not price or not st.day_sums:
+            return None
+        tk = tick_size(price, st.symbol)
+        pk = price_key(price, tk)
+        longs = shorts = total = 0.0
+        l_w = s_w = 0.0
+        for (k, side), (size, w, p) in st.day_sums.items():
+            total += size
+            if side == "buy" and k > pk:
+                longs += size; l_w += w
+            elif side == "sell" and k < pk:
+                shorts += size; s_w += w
+        if total <= 0:
+            return None
+        hi, lo = st.day_hi, st.day_lo
+        drop = (hi[0] - price) / hi[0] * 100 if hi and hi[0] else 0.0
+        rise = (price - lo[0]) / lo[0] * 100 if lo and lo[0] else 0.0
+        heavy, lean, min_move = float(tc.get("session_heavy_fraction", 0.35)), float(tc.get("session_lean_fraction", 0.20)), float(tc.get("session_min_move_pct", 1.0))
+        lf, sf = longs / total, shorts / total
+        l_avg = l_w / longs if longs else None
+        s_avg = s_w / shorts if shorts else None
+        state, side = "", None
+        if lf >= lean and drop >= min_move and lf >= sf:
+            state, side = ("LONGS TRAPPED HEAVY" if lf >= heavy else "LONGS TRAPPED"), "long"
+        elif sf >= lean and rise >= min_move:
+            state, side = ("SHORTS TRAPPED HEAVY" if sf >= heavy else "SHORTS TRAPPED"), "short"
+        out = {"state": state, "side": side, "session_shares": round(total),
+               "longs": {"shares": round(longs), "avg": fmt_price(l_avg), "under_pct": round((l_avg - price) / l_avg * 100, 2) if l_avg else None,
+                         "fraction": round(lf, 2), "dollars": round(l_w)} if longs else None,
+               "shorts": {"shares": round(shorts), "avg": fmt_price(s_avg), "under_pct": round((price - s_avg) / s_avg * 100, 2) if s_avg else None,
+                          "fraction": round(sf, 2), "dollars": round(s_w)} if shorts else None,
+               "high": {"price": fmt_price(hi[0]), "t": hi[1], "drop_pct": round(drop, 2)} if hi else None,
+               "low": {"price": fmt_price(lo[0]), "t": lo[1], "rise_pct": round(rise, 2)} if lo else None}
+        out["text"] = narrative.day_trap_text(st.symbol, out, price)
+        return out
+
+    def _day_trap_watch(self, st, dt, t):
+        """Say it once when the day's trap state changes (and not again for 5 minutes)."""
+        if dt is None:
+            return
+        prev = getattr(st, "day_trap_state", "")
+        state = dt["state"]
+        st.day_trap_state = state
+        if state == prev or not state or t - getattr(st, "day_trap_said_t", -1e9) < 300:
+            return
+        st.day_trap_said_t = t
+        alert = {"t": t, "symbol": st.symbol, "label": state, "price": fmt_price(st.price()), "side": "bid" if dt["side"] == "long" else "ask",
+                 "role": "trap", "text": dt["text"], "words": narrative.day_trap_words(dt), "key": f"{round(t, 2)}|{st.symbol}|{state}"}
+        self.alerts.appendleft(alert)
+        self._rec(dict(alert, ev="alert"))
+        self.log(st.symbol, f"{state}: {dt['text']}", t, kind="level")
+        for fn in self.listeners:
+            try:
+                fn(alert)
+            except Exception:
+                pass
+
     def _trap(self, st, t, price):
         """Aggressive prints that are now underwater.
 
@@ -2722,6 +2811,7 @@ class Engine:
             "ladder": self._memory_ladder(st, t, user_levels),
             "bigtape": self._big_tape(st, t),
             "orderflow": orderflow.pressure(st.tape.prints, t, self.cfg.get("orderflow", {})),
+            "daytrap": self._day_trap_pane(st, t),
             "tape": dict(tape, recent=[
                 {"age": round(t - p["t"], 1), "price": fmt_price(p["price"]), "size": round(p["size"]),
                  "side": p["side"], "large": p["large"], "exchange": p["exchange"], "at": at_level(p["price"])}
