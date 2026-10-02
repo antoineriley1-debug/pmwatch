@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261002-0039">
+<meta name="build" content="20261002-0056">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -666,15 +666,14 @@ i.tl{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:3p
 .eatbar{display:flex;justify-content:space-between;gap:8px;position:sticky;bottom:0;background:#0b0f16;border-top:1px solid var(--line);padding:2px 6px;font:10.5px var(--mono);white-space:nowrap;overflow:hidden}
 .eatbar .b{color:var(--buy)} .eatbar .s{color:var(--sell)} .eatbar b{font-weight:800}
 
-/* the two tapes: regular on top, BIG TAPE under it (drag the BIG TAPE header to resize) */
-.pc.tapesplit{display:flex;flex-direction:column;overflow:hidden}
-.pc.tapesplit .p-tape{flex:1 1 0;min-height:40px;overflow:auto}
-.pc.tapesplit .p-bigtape{flex:0 0 42%;min-height:60px;display:flex;flex-direction:column;border-top:2px solid var(--gold);background:#0a0d13}
-.p-bigtape .bt-hd{display:flex;gap:6px;align-items:baseline;padding:2px 6px;cursor:ns-resize;font:10px var(--sans);letter-spacing:.08em;background:#121315;white-space:nowrap;overflow:hidden}
-.p-bigtape .bt-hd b{color:var(--gold)} .p-bigtape .bt-hd .dim{font-size:9.5px;letter-spacing:0;overflow:hidden;text-overflow:ellipsis}
+/* BIG TAPE: its own panel */
+.p-bigtape{display:flex;flex-direction:column;height:100%}
+.p-bigtape .bt-hd{display:flex;justify-content:flex-end;padding:1px 4px;background:#121315} .p-bigtape .bt-hd button{font-size:9.5px;padding:0 6px}
+.p-bigtape .t.bt{table-layout:auto}
 .p-bigtape .bt-body{flex:1 1 0;overflow:auto}
-.p-bigtape .t.bt{width:100%;table-layout:fixed} .p-bigtape .t.bt td{padding:0 5px;height:14px;line-height:14px;font-size:11px;white-space:nowrap;overflow:hidden}
-.p-bigtape .t.bt th.sec{text-align:left;font-size:9px;letter-spacing:.1em;padding:2px 5px;background:#121315;color:var(--gold)}
+.p-bigtape .t.bt{width:100%;table-layout:fixed} .p-bigtape .t.bt td{padding:0 4px;height:14px;line-height:14px;font-size:11px;white-space:nowrap;overflow:hidden}
+.p-bigtape .t.bt td.px{font-weight:800} .p-bigtape .t.bt tr.cols th{font-size:9px;padding:0 4px;color:var(--dim);text-align:left}
+.p-bigtape .t.bt th.sec{text-align:left;font-size:9px;letter-spacing:.1em;padding:2px 4px;background:#121315;color:var(--gold)}
 .p-bigtape .t.bt tr.buy td{background:rgba(63,181,111,.08)} .p-bigtape .t.bt tr.sell td{background:rgba(217,83,79,.08)}
 .p-bigtape .t.bt tr.bld.live td{font-weight:700} .p-bigtape .t.bt tr.bld.live td:first-child{box-shadow:inset 3px 0 0 var(--gold)}
 .p-bigtape .t.bt td.buy{color:var(--buy)} .p-bigtape .t.bt td.sell{color:var(--sell)}
@@ -1046,8 +1045,9 @@ body.resizing .zbody{pointer-events:none}
 <template id="tplPanels">
   <div class="pnl" data-p="chart"><div class="qs"></div><div class="cvstrip" id="cvStrip"></div><div class="pc nos"><div class="chart-wrap"><div class="chart-tools"></div><canvas></canvas></div></div></div>
   <div class="pnl" data-p="foot"><div class="pc nos"><div class="chart-wrap"><div class="chart-tools"><span class="dim" style="font-size:10.5px;background:rgba(17,22,31,.85);padding:1px 6px">5m FOOTPRINT · SELLERS HIT BID × BUYERS PAID UP</span></div><canvas></canvas></div></div></div>
-  <div class="pnl" data-p="book"><div class="ladbar"><span>BIG ≥</span><input id="bigIn" type="number" min="100" step="500" title="shares that count as big on this symbol's ladder. Highlighted when showing; ×N = how many separate times it has shown up at that price today"><span class="dim">sh</span><button id="bigReset" title="back to the config default">DEFAULT</button><span class="dim" id="bigHint"></span><span class="spacer"></span><button id="ladMode" title="TIGHT: bid · price · ask with HIT / PAID beside them, reloaders as colour and a tag, one FLOW column. WIDE: every column (CALLS / PUTS money, who tags) spelled out">TIGHT</button><span class="menu" id="colsMenu"><button title="columns">COLS</button><div class="pop" id="colsPop"><h5>LEVEL II COLUMNS</h5><label><input type="checkbox" data-col="trade" checked> BUY / SELL buttons</label><label><input type="checkbox" data-col="bars" checked> flow bars (sold into bid / bought at ask)</label><label><input type="checkbox" data-col="who" checked> reload tags</label><label><input type="checkbox" data-col="flow" checked> option flow marks (where the stock was when big flow hit)</label><label style="margin-top:6px">Text size <select data-ladz><option value="1">normal</option><option value="1.2">bigger</option><option value="1.4">biggest (widen the LEVEL II pane)</option></select></label><div class="dim" style="font-size:10.5px;margin-top:6px">Drag the grip at the right edge of any header to resize. Double-click a grip to reset.</div></div></span></div><div class="rlban" id="rlBan"></div><div class="pc"><div class="ladder-wrap"></div></div></div>
-  <div class="pnl" data-p="tape"><div class="pc tapesplit"><div class="p-tape"></div><div class="p-bigtape"><div class="bt-hd"><b>BIG TAPE</b><span class="dim" id="btRule"></span></div><div class="bt-body"></div></div></div></div>
+  <div class="pnl" data-p="book"><div class="ladbar"><span>BIG ≥</span><input id="bigIn" type="number" min="100" step="500" title="shares that count as big on this symbol's ladder. Highlighted when showing; ×N = how many separate times it has shown up at that price today"><span class="dim">sh</span><button id="bigReset" title="back to the config default">DEFAULT</button><span class="dim" id="bigHint"></span><span class="spacer"></span><button id="ladMode" title="TIGHT: bid · price · ask with HIT / PAID beside them, reloaders as colour and a tag, one FLOW column. WIDE: every column (CALLS / PUTS money, who tags) spelled out">TIGHT</button><span class="menu" id="colsMenu"><button title="columns">COLS</button><div class="pop" id="colsPop"><h5>LEVEL II COLUMNS</h5><button class="howto" data-howto="1" style="margin-bottom:4px">HOW TO READ IT</button><label><input type="checkbox" data-col="trade" checked> BUY / SELL buttons</label><label><input type="checkbox" data-col="bars" checked> flow bars (sold into bid / bought at ask)</label><label><input type="checkbox" data-col="who" checked> reload tags</label><label><input type="checkbox" data-col="flow" checked> option flow marks (where the stock was when big flow hit)</label><label style="margin-top:6px">Text size <select data-ladz><option value="1">normal</option><option value="1.2">bigger</option><option value="1.4">biggest (widen the LEVEL II pane)</option></select></label><div class="dim" style="font-size:10.5px;margin-top:6px">Drag the grip at the right edge of any header to resize. Double-click a grip to reset.</div></div></span></div><div class="rlban" id="rlBan"></div><div class="pc"><div class="ladder-wrap"></div></div></div>
+  <div class="pnl" data-p="tape"><div class="pc"><div class="p-tape"></div></div></div>
+  <div class="pnl" data-p="bigtape"><div class="pc"><div class="p-bigtape"><div class="bt-hd"><span class="menu" id="btMenu"><button title="columns">COLS</button><div class="pop" id="btPop"><h5>BIG TAPE COLUMNS</h5><label><input type="checkbox" data-btc="who"> who (PAID UP / HIT)</label><label><input type="checkbox" data-btc="times" checked> how many times</label><label><input type="checkbox" data-btc="shares" checked> shares</label><label><input type="checkbox" data-btc="usd"> dollars</label><label><input type="checkbox" data-btc="age" checked> LIVE / seconds</label><label><input type="checkbox" data-btc="blocks" checked> BLOCKS (single big prints)</label></div></span></div><div class="bt-body"></div></div></div></div>
   <div class="pnl" data-p="setup"><div class="pc"></div></div>
   <div class="pnl" data-p="ps60"><div class="pc ps60p"></div></div>
   <div class="pnl" data-p="reload"><div class="pc reloads"></div></div>
@@ -1320,10 +1320,10 @@ function makeColsResizable(table){
 
 /* ===================== TED — TWINEY EXECUTION DESK: panel pool ===================== */
 const PANELS = {
-  chart: "CHART", foot: "FOOTPRINT 5m", book: "LEVEL II", tape: "TIME & SALES", setup: "PLAY SETUP", ps60: "PS60", conviction: "CONVICTION", reload: "RELOADS",
+  chart: "CHART", foot: "FOOTPRINT 5m", book: "LEVEL II", tape: "TIME & SALES", bigtape: "BIG TAPE", setup: "PLAY SETUP", ps60: "PS60", conviction: "CONVICTION", reload: "RELOADS",
   ticket: "ORDER ENTRY", positions: "POSITIONS", orders: "ORDERS", watch: "WATCHLIST", calls: "CALLS",
   flow: "OPTION FLOW", eqflow: "EQUITY FLOW", urgency: "URGENT FLOW", bigmoney: "BIG MONEY 30D", myalerts: "ALERTS", desk: "DESK", journal: "JOURNAL", messages: "MESSAGES"};
-const SYMBOL_LINKED = new Set(["chart", "foot", "book", "tape", "ps60", "reload", "ticket", "calls", "setup", "bigmoney", "conviction"]);
+const SYMBOL_LINKED = new Set(["chart", "foot", "book", "tape", "bigtape", "ps60", "reload", "ticket", "calls", "setup", "bigmoney", "conviction"]);
 const ZONES = ["TL", "TC", "TR", "TX", "BL", "BC", "BR", "BX"];   // four columns × two rows; a column with one zone runs full height
 const PRESETS = {
   "PS60 Execution": {zones: {TL: ["watch", "myalerts"], TC: ["chart"], TR: ["book"], TX: ["tape"], BL: ["positions", "orders"], BC: ["conviction", "setup", "flow", "urgency", "bigmoney", "eqflow", "ps60", "reload", "calls"], BR: ["ticket"]},
@@ -1720,7 +1720,7 @@ function ladderTightHTML(L){
       <td class="flow fp">${flowTag(r, "P")}</td>
       <td class="act s${dis}" data-act="SELL" data-px="${r.price}" title="${on ? "SELL " + sz(T().default_shares) + " @ " + px(r.price) : whyNot()}">${chips(r, "s") || "S"}</td></tr>`;
   }
-  h += `</table><div class="legend lg3"><span><b class="buy">CALLS · GREEN BID = RELOAD BUYER</b> · <b class="sell">RED ASK = RELOAD SELLER · PUTS</b> · ⚡ money days-out %OTM</span><button class="howto" data-howto="1">HOW TO READ IT</button></div>`;
+  h += `</table>`;
   return h;
 }
 function ladderHTML(L){
@@ -2605,7 +2605,7 @@ function normalize(l){
   const placed = new Set([].concat(...ZONES.map(z => out.zones[z])).concat(Object.keys(out.floats || {})));
   // a panel new in a build docks itself once (ALERTS beside the watchlist, EQUITY FLOW beside the option flow), so it is
   // not lost behind the PANELS menu; a panel you hid yourself stays hidden
-  const NEW_PANELS = {myalerts: "TL", eqflow: "BC", urgency: "BC", bigmoney: "BC", conviction: "BC"};
+  const NEW_PANELS = {myalerts: "TL", eqflow: "BC", urgency: "BC", bigmoney: "BC", conviction: "BC", bigtape: "BX"};
   out.seen = Array.isArray(out.seen) ? out.seen : Object.keys(P).filter(id => !(id in NEW_PANELS));
   for (const id of Object.keys(NEW_PANELS)) if (P[id] && !out.seen.includes(id)){ out.seen.push(id); if (!placed.has(id)){ out.zones[NEW_PANELS[id]].push(id); placed.add(id); } }
   out.hidden = Object.keys(P).filter(id => !placed.has(id));
@@ -3169,22 +3169,28 @@ function renderTape(d){
    anyone building a position. Top: BUILDERS — the same side hitting the same price over and over (3+ prints inside
    90 s adding up to big size): PAID UP at one price again and again is a buyer working an order there, HIT a
    seller unloading. Then the BLOCKS: every single print of big size (shares) or big money (dollars). */
+function btCols(){ return Object.assign({who: false, times: true, shares: true, usd: false, age: true, blocks: true}, store.get("btcols", {})); }
 function renderBigTape(d){
-  const box = P.tape.pc.querySelector(".p-bigtape"); if (!box) return;
-  const body = box.querySelector(".bt-body"), rule = box.querySelector("#btRule");
+  const box = P.bigtape && P.bigtape.pc.querySelector(".p-bigtape"); if (!box) return;
+  const body = box.querySelector(".bt-body");
   const bt = d && d.bigtape;
   if (!bt){ body.innerHTML = `<div class="dim" style="padding:4px 6px">${NA}</div>`; return; }
-  rule.textContent = `≥ ${kfmt(bt.shares)} sh or ${usdK(bt.dollars)} · builders: ${bt.need}+ prints at one price inside ${bt.window}s · last ${bt.minutes} min`;
-  const who = s => s === "buy" ? "PAID UP" : "HIT";
-  const bl = bt.builders.map(g => `<tr class="${g.side} bld ${g.still ? "live" : ""}" title="${g.side === "buy" ? "a BUYER building: paid the ask" : "a SELLER unloading: hit the bid"} at ${g.price} ${g.prints} times in ${g.first_age - g.last_age}s — ${sz(g.shares)} shares, ${usdK(g.dollars)}, biggest print ${sz(g.biggest)}. ${g.still ? "Still going (last print " + g.last_age + "s ago)." : "Went quiet " + g.last_age + "s ago."}">
-      <td class="${g.side}">${g.still ? "●" : "○"} ${who(g.side)} ${g.price}</td><td class="${g.side}">${g.prints}× <b>${kfmt(g.shares)}</b></td><td class="${g.side}">${usdK(g.dollars)}</td><td class="dim">${g.still ? "LIVE" : ago(g.last_age)}</td></tr>`).join("");
-  const pr = bt.prints.map(p => `<tr class="${p.side}" title="${who(p.side).toLowerCase()} ${sz(p.size)} shares at ${p.price} = ${usdK(p.dollars)}${p.exchange ? " · " + esc(p.exchange) : ""} · ${ago(p.age)} ago">
-      <td class="${p.side}">${who(p.side)} ${p.price}</td><td class="${p.side}"><b>${sz(p.size)}</b></td><td class="${p.side}">${usdK(p.dollars)}</td><td class="dim">${ago(p.age)}</td></tr>`).join("");
-  const html = `<table class="t bt"><tr><th colspan="4" class="sec">BUILDERS <span class="dim">same side · same price · again and again</span></th></tr>${bl || `<tr><td colspan="4" class="dim">nobody building yet</td></tr>`}
-    <tr><th colspan="4" class="sec">BLOCKS <span class="dim">one big print</span></th></tr>${pr || `<tr><td colspan="4" class="dim">no big prints in the last ${bt.minutes} min</td></tr>`}</table>`;
+  const c = btCols(), who = s => s === "buy" ? "PAID UP" : "HIT";
+  // price · how many times · shares · (dollars) · LIVE / seconds — the colour says who: green paid up, red hit
+  const cells = (side, price, times, shares, usd, age) => `<td class="px ${side}">${price}</td>${c.who ? `<td class="${side}">${who(side)}</td>` : ""}${c.times ? `<td class="${side}">${times}</td>` : ""}${c.shares ? `<td class="${side}"><b>${shares}</b></td>` : ""}${c.usd ? `<td class="${side}">${usd}</td>` : ""}${c.age ? `<td class="dim">${age}</td>` : ""}`;
+  const n = 1 + (c.who ? 1 : 0) + (c.times ? 1 : 0) + (c.shares ? 1 : 0) + (c.usd ? 1 : 0) + (c.age ? 1 : 0);
+  const bl = bt.builders.map(g => `<tr class="${g.side} bld ${g.still ? "live" : ""}" title="${g.side === "buy" ? "paid the ask" : "hit the bid"} at ${g.price} ${g.prints} times in ${g.first_age - g.last_age}s — ${sz(g.shares)} shares, ${usdK(g.dollars)}, biggest print ${sz(g.biggest)}. ${g.still ? "Still going (last print " + g.last_age + "s ago)." : "Went quiet " + g.last_age + "s ago."}">
+      ${cells(g.side, g.price, "×" + g.prints, kfmt(g.shares), usdK(g.dollars), g.still ? "LIVE" : ago(g.last_age))}</tr>`).join("");
+  const pr = c.blocks ? bt.prints.map(p => `<tr class="${p.side}" title="${who(p.side).toLowerCase()} ${sz(p.size)} shares at ${p.price} = ${usdK(p.dollars)}${p.exchange ? " · " + esc(p.exchange) : ""} · ${ago(p.age)} ago">
+      ${cells(p.side, p.price, "", sz(p.size), usdK(p.dollars), ago(p.age))}</tr>`).join("") : "";
+  const html = `<table class="t bt"><tr><th class="sec" colspan="${n}">BUILDERS</th></tr>${bl || `<tr><td colspan="${n}" class="dim">—</td></tr>`}
+    ${c.blocks ? `<tr><th class="sec" colspan="${n}">BLOCKS</th></tr>${pr || `<tr><td colspan="${n}" class="dim">—</td></tr>`}` : ""}</table>`;
   if (body.dataset.h === html) return; body.dataset.h = html;
   const keep = body.scrollTop; body.innerHTML = html; body.scrollTop = keep;
 }
+(function(){ const m = document.getElementById("btMenu"); if (!m) return; const btn = m.querySelector("button"), pop = document.getElementById("btPop");
+  btn.addEventListener("click", e => { e.stopPropagation(); const open = !m.classList.contains("open"); document.querySelectorAll(".menu.open").forEach(x => x.classList.remove("open")); m.classList.toggle("open", open); const c = btCols(); pop.querySelectorAll("input[data-btc]").forEach(i => { i.checked = !!c[i.dataset.btc]; }); });
+  pop.addEventListener("change", e => { const k = e.target.dataset.btc; if (!k) return; const c = store.get("btcols", {}); c[k] = e.target.checked; store.set("btcols", c); const b = P.bigtape.pc.querySelector(".bt-body"); if (b) b.dataset.h = ""; renderBigTape(curData()); }); })();
 /* tape speed: how fast prints are coming right now against this stock's own last minute, plus the last 90 s as
    stacked bars (green = paid up, red = hit, grey = in between). Speeding into a move, drying up into a level. */
 function tapeSpeedHTML(sp){
@@ -3216,13 +3222,7 @@ document.getElementById("colsPop").addEventListener("change", e => { if (e.targe
 function pinBox(panel){ let b = panel.pc.querySelector(".pinbox"); if (!b){ b = document.createElement("div"); b.className = "pinbox"; b.innerHTML = `<span class="txt"></span><button class="x" title="clear">✕</button>`; panel.pc.appendChild(b); b.querySelector(".x").addEventListener("click", () => { b.classList.remove("on"); b.querySelector(".txt").textContent = ""; }); } return b; }
 function pinInfo(panel, el){ const t = el && (el.getAttribute("title") || (el.closest("[title]") || {}).getAttribute && el.closest("[title]").getAttribute("title")); if (!t) return false; const b = pinBox(panel); b.querySelector(".txt").textContent = t; b.classList.add("on"); return true; }
 P.tape.el.addEventListener("click", e => { const tr = e.target.closest("tr[title]"); if (tr) pinInfo(P.tape, tr); });
-// the split between the two tapes: drag the BIG TAPE header up / down (saved)
-(function(){ const pc = P.tape.pc, hd = pc.querySelector(".bt-hd"), big = pc.querySelector(".p-bigtape"); if (!hd) return;
-  const apply = () => { big.style.flex = "0 0 " + store.get("bigTapePct", 42) + "%"; }; apply();
-  hd.addEventListener("mousedown", e => { e.preventDefault(); const h0 = pc.clientHeight, y0 = e.clientY, p0 = +store.get("bigTapePct", 42);
-    const mv = ev => { const pct = Math.max(12, Math.min(85, p0 - (ev.clientY - y0) / h0 * 100)); store.set("bigTapePct", Math.round(pct)); apply(); };
-    const up = () => { window.removeEventListener("mousemove", mv); window.removeEventListener("mouseup", up); };
-    window.addEventListener("mousemove", mv); window.addEventListener("mouseup", up); }); })();
+if (P.bigtape) P.bigtape.el.addEventListener("click", e => { const tr = e.target.closest("tr[title]"); if (tr) pinInfo(P.bigtape, tr); });
 P.book.el.addEventListener("click", e => { if (e.target.closest("td[data-act], .chip, button, input, select, th")) return; const cell = e.target.closest("td.flow, td.bars, td.px, td.whoc"); if (!cell) return;
   const t = cell.matches("td.px") ? null : (cell.querySelector("[title]") || (cell.hasAttribute("title") ? cell : null));
   if (t && pinInfo(P.book, t)) return;

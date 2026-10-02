@@ -53,13 +53,14 @@ BE stop to breakeven, X close.
   price trades into it, 5.5K gets bought: the bar is half gone and the number reads 4.7K. A drop flashes the cell
   and floats the shares taken (−1.4K); size coming back after a drop floats +2.0K ↻ — the reload. The strip under
   the ladder spells out the touch on both sides: "ASK 242.75 · 4.7K of 10.2K · 5.5K bought (54%)".
-- **BIG TAPE** (under TIME & SALES; drag its header to resize): the second tape, filtered the way a trader
-  filters for large orders and for anyone building a position. BUILDERS: the same side hitting the same price
-  again and again (`build_prints` 3+ prints no further apart than `build_window_seconds` 90, adding up to
-  `big_tape_shares` or `build_dollars` $500K): PAID UP at one price over and over is a buyer working an order there, HIT a seller
-  unloading; ● LIVE while it keeps coming, ○ with the age once it stops. BLOCKS: every single print of
-  `big_tape_shares` (5,000) or `big_tape_dollars` ($250K). Looks back `big_tape_minutes` (30). Click a row and
-  the pin box holds it. All in SETTINGS → Time & Sales.
+- **BIG TAPE** (its own panel; it docks under TIME & SALES the first time and you can tab, drag, size or close
+  it): the second tape, filtered for large orders and anyone building a position. Each row is the price, how many
+  times (×12), the shares, and LIVE or how long ago; green = paid the ask, red = hit the bid. BUILDERS: one side
+  hitting one price again and again (`build_prints` 3+ prints no further apart than `build_window_seconds` 90,
+  adding up to `big_tape_shares` or `build_dollars` $500K): green building a long, red unloading. BLOCKS: every
+  single print of `big_tape_shares` (5,000) or `big_tape_dollars` ($250K). Looks back `big_tape_minutes` (30).
+  COLS in the panel switches who / times / shares / dollars / age / BLOCKS on and off. Click a row and the pin
+  box holds it. Thresholds in SETTINGS → Time & Sales.
 
 ## Pin box, limit-only ticket, scaling, options
 
