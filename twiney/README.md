@@ -61,6 +61,17 @@ red hit the bid, bold is big (hover a print for the exchange and age). ORDER ENT
 carries the controls on the row: 25 / 50 / 75 off at the touch, … your own number, @ a partial at your price,
 BE stop to breakeven, X close.
 
+## The same reloader, back again
+
+A reload buyer or seller who returns to the SAME price within `reload.return_window_seconds` (20 minutes) of
+being cleaned up or pulled is the same participant, never a new one: who else sells size at the same penny
+minutes later? The desk says so. The ladder cell reads ↩×2 ↻3 $410K (second visit, refilled three times this
+visit, the dollars that traded into him), the banner reads RELOAD SELLER BACK ×2 (gone 6m) with his shares
+across every visit, the alert and the voice say "the reload seller at 232.15 is back, second visit, cleaned up
+6 minutes ago and refilling again, 23,000 traded into him across every visit", and a CLEANED UP on a repeat
+visitor says it is his 2nd / 3rd visit. A seller who PULLED and comes back is said to be back too, with "he
+pulled last time, so trust it less". Gone longer than the window, whoever shows up there starts a new story.
+
 ## See the orders being taken · BIG TAPE
 
 - **Size as a bar.** Every BID / ASK size on the ladder remembers the most it showed at that price in the last

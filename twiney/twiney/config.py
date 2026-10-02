@@ -87,6 +87,9 @@ DEFAULTS = {
         # after a proven level is lost (cleaned up, pulled, or price went through with nothing there) the row keeps
         # a faint "was here" mark this long (seconds)
         "gone_show_seconds": 7200.0,
+        # a reload buyer / seller who comes back to the SAME price within this long of being cleaned up or pulled
+        # is the same participant (BACK ×2, ×3 …), never a new one: his visits and absorbed shares add up
+        "return_window_seconds": 1200.0,
     },
     "tape": {
         "window_seconds": 30.0,

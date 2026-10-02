@@ -22,7 +22,7 @@ from .tape import MID, Tape, classify
 L1_FIELDS = ("bid", "ask", "last", "bid_size", "ask_size", "last_size", "volume",
              "high", "low", "close", "open")
 
-ALERT_LABELS = ("RELOAD BUYER DETECTED", "RELOAD SELLER DETECTED", "CLEANED UP", "PULLED")
+ALERT_LABELS = ("RELOAD BUYER DETECTED", "RELOAD SELLER DETECTED", "RELOAD BUYER BACK", "RELOAD SELLER BACK", "CLEANED UP", "PULLED")
 PS60_LABELS = ("REMOUNT", "REJECTION")
 
 BAR_SECONDS = 60
@@ -271,6 +271,8 @@ class Engine:
 
     def _emit(self, st, tracker, label, t):
         final = label in ("CLEANED UP", "PULLED") and tracker.verdict_info
+        if label.startswith("RELOAD") and tracker.back:
+            label = "RELOAD BUYER BACK" if tracker.side == BID else "RELOAD SELLER BACK"
         alert = {
             "t": t,
             "symbol": st.symbol,
@@ -287,12 +289,16 @@ class Engine:
             "peak_shown": round(tracker.peak_displayed),
         }
         alert["dollars"] = round(alert["absorbed"] * float(tracker.price))
+        alert["episodes"] = len(tracker.episodes)
+        alert["absorbed_all"] = round(tracker.absorbed_all + tracker.absorbed_total)
+        if tracker.back and label.startswith("RELOAD"):
+            alert["back"] = dict(tracker.back)
         if final:
             alert["size_before_gone"] = round(final["size_before_gone"])
             ah = st.absorb_hist.get((alert["side"], tracker.key))
             if ah is not None:
                 ah[3] = label
-        elif label in ("RELOAD BUYER DETECTED", "RELOAD SELLER DETECTED"):
+        elif label.startswith("RELOAD"):
             # a proven reloader earns the row its long memory (an auto level that was only "likely" does not)
             ah = st.absorb_hist.setdefault((alert["side"], tracker.key), [tracker.price, 0.0, t, None, False])
             ah[4] = True
@@ -2516,6 +2522,10 @@ class Engine:
                     row[side + "_proven"] = tr.proven
                     row[side + "_absorbed"] = round(tr.absorbed_total)
                     row[side + "_peak"] = round(tr.peak_displayed)
+                    # the same participant across visits: BACK ×n, how long he was gone, what he absorbed in all
+                    row[side + "_back"] = dict(tr.back) if tr.back and tr.proven else None
+                    row[side + "_episodes"] = len(tr.episodes)
+                    row[side + "_absorbed_all"] = round(tr.absorbed_all + tr.absorbed_total)
                     # conviction drives the brightness of a proven row: RELOADING bright, STILL THERE, NOT RELOADING dim,
                     # CLEANED UP / PULLED a ghost
                     row[side + "_conv"] = tr.conviction(t)

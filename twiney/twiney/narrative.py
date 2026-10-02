@@ -105,13 +105,27 @@ def alert_text(alert, play):
         hidden = (f" He only ever showed {shares(shown)} on the {'bid' if side == 'bid' else 'ask'} — {shares(n)} traded, so he put it "
                   f"back {alert.get('refreshes', 0)} times. The rest was hidden size (an iceberg).") if shown and n > shown else \
                  f" He put it back {alert.get('refreshes', 0)} times."
+        back = alert.get("back")
+        if back:
+            mins = max(1, int(round(back.get("away", 0) / 60)))
+            prior = "cleaned up" if back.get("prior") == "CLEANED UP" else "pulled" if back.get("prior") == "PULLED" else "gone"
+            nth = {2: "2nd", 3: "3rd"}.get(back.get("n"), f"{back.get('n')}th")
+            tot = alert.get("absorbed_all") or n
+            return (f"RELOAD {who(side)} BACK at {where} — the same {who(side).lower()}, {nth} visit: {prior} {mins} min ago, "
+                    f"refilling again now. {shares(n)} {did} this visit; {shares(tot)} across every visit. "
+                    f"{'He keeps defending this price: a stronger floor than a first-time buyer' if side == 'bid' else 'He keeps defending this price: a stronger ceiling than a first-time seller'}"
+                    f"{' — but he pulled last time, so trust it less' if prior == 'pulled' else ''}. " + play_context(play, side, role)).strip()
         return (f"RELOAD {who(side)} at {where}. {shares(n)} shares {did} at {px(alert['price'])} = {usd}.{hidden} "
                 f"{'Price is having trouble going lower' if side == 'bid' else 'Price is having trouble going higher'} "
                 f"while he's there. " + play_context(play, side, role)).strip()
     if label == "CLEANED UP":
+        vis = alert.get("episodes") or 0
+        nth = {2: "2nd", 3: "3rd"}.get(vis, f"{vis}th")
+        again = f" for now — his {nth} visit; if he is back at this price within 20 minutes the desk says so" if vis >= 2 else ""
         return (f"CLEANED UP — the {who(side)} at {where} is gone. {shares(alert['absorbed'])} shares "
                 f"({dollars(alert.get('dollars', alert['absorbed'] * float(alert['price'])))}) ate through it "
-                f"and price went through the level. That {wall(side).split(' / ')[0]} is done.")
+                f"and price went through the level. That {wall(side).split(' / ')[0]} is done{again}.")
+
     if label == "PULLED":
         return (f"PULLED — the {who(side)} at {where} vanished without getting hit. "
                 f"That size was never real. Don't lean on that level.")

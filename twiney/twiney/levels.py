@@ -63,6 +63,11 @@ class LevelTracker:
         self.refill_basis = 0.0      # the most that traded through before he replaced it: what he absorbs per refill
         self.vol_since_refill = 0.0  # shares that hit this side at the level since then: what he has NOT replaced
         self.gone_t = None           # when a proven level was finally lost (through with nothing there, or a verdict)
+        # the same participant, not a new one: every visit he made at this price (a visit ends with a verdict),
+        # and what the current visit is when he is BACK inside return_window_seconds of leaving
+        self.episodes = []           # [{start, end, verdict, absorbed, refills}]
+        self.absorbed_all = 0.0      # shares absorbed over every finished visit (the live one adds absorbed_total)
+        self.back = None             # {"n": visit number, "away": seconds gone, "prior": last verdict} while BACK
         self._reset_episode()
 
     def _reset_episode(self):
@@ -231,6 +236,14 @@ class LevelTracker:
                 self.state = RELOAD
                 self.confirmed_at = now
                 self.proven = True
+                if self.gone_t is not None and now - self.gone_t <= float(c.get("return_window_seconds", 1200.0)):
+                    # the same buyer / seller is BACK at his price (who else sells size at the same penny minutes later?)
+                    self.back = {"n": len(self.episodes) + 1, "away": round(now - self.gone_t),
+                                 "prior": self.last_verdict[0] if self.last_verdict else None}
+                else:
+                    if self.gone_t is not None:            # gone too long: whoever this is, he starts a new story
+                        self.episodes, self.absorbed_all = [], 0.0
+                    self.back = None
                 self.gone_t = None
                 # the print that confirmed him is evidence FOR him, not size he failed to replace: start fresh here
                 self.last_refill_t = now
@@ -267,6 +280,10 @@ class LevelTracker:
         if label in (CLEANED_UP, PULLED):
             self.proven = False
             self.gone_t = now
+            self.episodes.append({"start": self.confirmed_at or self.episode_start, "end": now, "verdict": label,
+                                  "absorbed": round(self.absorbed_total), "refills": self.refreshes_window(now)})
+            self.absorbed_all += self.absorbed_total
+            self.back = None
         self.verdict_info = {"absorbed": self.absorbed_total, "size_before_gone": self.size_before_gone,
                              "refreshes": self.refreshes_window(now)}
         self._reset_episode()
@@ -337,5 +354,7 @@ class LevelTracker:
             "refill_age": round(now - self.last_refill_t, 1) if self.proven and self.last_refill_t is not None else None,
             # a verdict is history the moment size is sitting at the level again
             "last_verdict": self.last_verdict[0] if self.last_verdict and self.displayed <= 0 else None,
+            "episodes": len(self.episodes), "absorbed_all": round(self.absorbed_all + self.absorbed_total),
+            "back": dict(self.back) if self.back and self.proven else None,
             "last_verdict_age": round(now - self.last_verdict[1], 1) if self.last_verdict and self.displayed <= 0 else None,
         }

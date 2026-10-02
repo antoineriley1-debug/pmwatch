@@ -573,3 +573,52 @@ class BigTapeTests(unittest.TestCase):
         bt = pane["bigtape"]
         self.assertEqual(bt["builders"][0]["side"], "buy"); self.assertEqual(bt["builders"][0]["shares"], 8000)
         self.assertEqual(bt["builders"][0]["price"], 10.0)
+
+
+class ReloaderReturnTests(unittest.TestCase):
+    """The same seller back at the same price inside the return window is the SAME seller: the desk says BACK,
+    counts his visits and adds his absorbed shares across them. Gone longer than the window: a fresh story."""
+    def _reload(self, e, got, t, price=10.00):
+        for _ in range(3):
+            e.on_print("AAA", price, 700, "NSDQ", t)
+            e.on_depth("AAA", 0, UPDATE, ASK, price, 300, "", t + 0.1)
+            e.on_depth("AAA", 0, UPDATE, ASK, price, 1000, "", t + 1.0)
+            t += 2.0
+        return t
+
+    def _clean(self, e, t):
+        e.on_print("AAA", 10.00, 1000, "NSDQ", t)
+        e.on_depth("AAA", 0, DELETE, ASK, 10.00, 0, "", t + 0.05)
+        e.on_print("AAA", 10.01, 300, "ARCA", t + 0.1)
+        e.tick(t + 3.2)
+        return t + 3.2
+
+    def test_back_within_the_window_is_the_same_seller(self):
+        e = connected_engine(reload={"return_window_seconds": 1200.0}); e.apply_slot("AAA", True, 0.0); seed_book(e, "AAA", 0.0)
+        got = []; e.listeners.append(lambda a: got.append(a) if a.get("role") != "conviction" else None)
+        t = self._reload(e, got, 3.0)
+        self.assertEqual(got[-1]["label"], "RELOAD SELLER DETECTED")
+        t = self._clean(e, t)
+        self.assertEqual(got[-1]["label"], "CLEANED UP"); first = got[-1]["absorbed"]
+        # six minutes later he is sitting on 10.00 again and refilling: BACK, 2nd visit
+        t += 360.0
+        e.on_depth("AAA", 0, INSERT, ASK, 10.00, 1000, "", t); e.on_depth("AAA", 1, UPDATE, ASK, 10.01, 400, "", t)
+        t = self._reload(e, got, t + 1.0)
+        self.assertEqual(got[-1]["label"], "RELOAD SELLER BACK", [g["label"] for g in got])
+        a = got[-1]
+        self.assertEqual(a["back"]["n"], 2); self.assertEqual(a["back"]["prior"], "CLEANED UP"); self.assertTrue(355 <= a["back"]["away"] <= 375)
+        self.assertEqual(a["episodes"], 1); self.assertGreaterEqual(a["absorbed_all"], first + a["absorbed"])
+        self.assertIn("RELOAD SELLER BACK at 10.00", a["text"]); self.assertIn("2nd visit", a["text"]); self.assertIn("6 min ago", a["text"])
+        row = next(r for r in e._memory_ladder(e.syms["AAA"], t, {})["rows"] if r["price"] == 10.0)
+        self.assertEqual(row["ask_back"]["n"], 2); self.assertEqual(row["ask_episodes"], 1)
+        self.assertGreaterEqual(row["ask_absorbed_all"], first)
+
+    def test_gone_too_long_is_a_fresh_reloader(self):
+        e = connected_engine(reload={"return_window_seconds": 60.0}); e.apply_slot("AAA", True, 0.0); seed_book(e, "AAA", 0.0)
+        got = []; e.listeners.append(lambda a: got.append(a) if a.get("role") != "conviction" else None)
+        t = self._clean(e, self._reload(e, got, 3.0))
+        t += 600.0
+        e.on_depth("AAA", 0, INSERT, ASK, 10.00, 1000, "", t); e.on_depth("AAA", 1, UPDATE, ASK, 10.01, 400, "", t)
+        self._reload(e, got, t + 1.0)
+        self.assertEqual(got[-1]["label"], "RELOAD SELLER DETECTED"); self.assertEqual(got[-1]["episodes"], 0)
+        self.assertNotIn("back", got[-1])
