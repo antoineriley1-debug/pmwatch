@@ -84,6 +84,8 @@ scripted session shapes (a PLTR-style drive that reverses, a bad-news gap-down t
 a clean trend, a chop day): the two reversals call the trap and then the exit, the other two stay quiet. A new
 session starts the story over.
 
+Option flow is read against the trap. Puts bought at the ask while longs are trapped (calls while shorts are) are money leaning the way the trapped crowd will be forced to go: the pane says FLOW PRESSES THEM with the dollars since the extreme, the voice adds it to the call, and once that money passes `trap.session_flow_min_dollars` (100 thousand) the desk says FLOW PRESSES TRAPPED LONGS / SHORTS, again each time it doubles. Flow the other way reads FLOW FADES THE TRAP: somebody is paying for the trapped side to get out.
+
 ## The same reloader, back again
 
 A reload buyer or seller who returns to the SAME price within `reload.return_window_seconds` (20 minutes) of

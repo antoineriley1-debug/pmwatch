@@ -5,6 +5,7 @@ import unittest
 from helpers import ASK, BID, INSERT, cfg, plays
 from twiney import orderflow, prices
 from twiney.engine import Engine
+from twiney import narrative
 from twiney.ibkr import categorize
 from twiney.ps60 import SignalProvider
 from twiney.trading import SimBroker, Trader, TradingGate, template_legs
@@ -282,3 +283,34 @@ class DayTrapScenarioTests(unittest.TestCase):
             chop += d(100, 101.5, 15, "buy") + d(101.5, 100, 15, "sell")
         self.assertEqual(self._run(chop)[0], [])
         self.assertEqual(self._run(d(100, 108, 400, "buy"))[0], [])
+
+    def test_option_flow_on_the_trap(self):
+        """Puts bought while longs are trapped PRESS them (confirmation, said once past the bar); calls bought
+        FADE the trap; the flow reads on the pane and in the words."""
+        d = self._drive
+        path = d(185, 187.4, 60, "buy") + d(187.4, 186.8, 20, "sell") + d(186.8, 187.0, 10, "buy") + d(187.0, 183.0, 300, "sell")
+        e = Engine(plays(), cfg()); e.on_connection("DEMO", "", 0.0); e.apply_slot("AAA", True, 0.0)
+        t0 = 1_800_000_000.0 + 13.5 * 3600; t = t0; alerts = []
+        e.listeners.append(lambda a: alerts.append((round((a["t"] - t0) / 60), a["label"])) if a.get("role") == "trap" else None)
+        def flow(cp, prem, when):
+            e.on_flow({"t": when, "symbol": "AAA", "cp": cp, "premium": prem, "dte": 4.0, "otm_pct": 3.0, "strike": 180.0 if cp == "P" else 190.0,
+                       "expiry": "2026-10-09", "kind": "sweep", "side": "ask", "spot": 185.0, "size": 300, "price": 2.0}, when)
+        for i, (px, sz, side) in enumerate(path):
+            bid, ask = (px - 0.01, px) if side == "buy" else (px, px + 0.01)
+            e.on_l1("AAA", "bid", bid, t); e.on_l1("AAA", "ask", ask, t); e.on_print("AAA", px, sz, "X", t); t += 8.0
+            if i == 120:
+                flow("P", 60000, t)                       # puts after the high, before the call: counted since the high
+            if i % 4 == 0:
+                e._day_trap_pane(e.syms["AAA"], t)
+        dt = e._day_trap_pane(e.syms["AAA"], t)
+        self.assertEqual(dt["state"], "LONGS TRAPPED"); self.assertEqual(dt["flow"]["verdict"], "PRESSES"); self.assertEqual(dt["flow"]["puts"], 60000)
+        self.assertIn("Option flow PRESSES them", dt["text"]); self.assertEqual([a[1] for a in alerts], ["LONGS TRAPPED"])
+        flow("P", 30000, t + 10); self.assertEqual(len(alerts), 1)               # 90k: under the 100k bar, nothing said yet
+        flow("P", 30000, t + 20); self.assertEqual(alerts[-1][1], "FLOW PRESSES TRAPPED LONGS")   # 120k of puts since the high: said
+        n = len(alerts)
+        flow("P", 20000, t + 30); self.assertEqual(len(alerts), n)              # said once; again only when it doubles
+        flow("C", 500000, t + 40)                                                 # calls on trapped longs: fading, never "presses"
+        self.assertEqual(len(alerts), n)
+        dt = e._day_trap_pane(e.syms["AAA"], t + 50)
+        self.assertEqual(dt["flow"]["verdict"], "FADES"); self.assertIn("FADES the trap", dt["text"])
+        self.assertIn("fading the trap", narrative.day_trap_words(dt))

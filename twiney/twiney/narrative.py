@@ -335,6 +335,8 @@ def day_trap_text(symbol, dt, price):
                     f"average {px(S['avg'])}, {S['under_pct']:.1f}% underwater.")
         bits.append(f"Their way out is a dip back to {px(S['avg'])}: expect demand there. Their max pain is the session high {px(hi['price'])}." if hi else
                     f"Their way out is a dip back to {px(S['avg'])}: expect demand there.")
+    if dt.get("side") in ("long", "short"):
+        bits.append(day_trap_flow_text(dt))
     else:
         if L and L["shares"]:
             bits.append(f"{shares(L['shares'])} bought above here today ({int(L['fraction'] * 100)}% of the day), average {px(L['avg'])}.")
@@ -342,15 +344,47 @@ def day_trap_text(symbol, dt, price):
             bits.append(f"{shares(S['shares'])} sold below here today ({int(S['fraction'] * 100)}% of the day), average {px(S['avg'])}.")
         if not bits:
             return "nobody underwater on the day yet"
-    return " ".join(bits)
+    return " ".join(b for b in bits if b)
+
+
+def day_trap_flow_text(dt):
+    """The option money on the trap, in words: flow pressing the trapped crowd is the confirmation; flow the other
+    way says somebody is paying for the trapped side's recovery."""
+    f, side = dt.get("flow"), dt.get("side")
+    if not f or not side:
+        return ""
+    what, other = ("puts", "calls") if side == "long" else ("calls", "puts")
+    who = "trapped longs" if side == "long" else "trapped shorts"
+    if f["verdict"] == "PRESSES":
+        return (f"Option flow PRESSES them: {dollars(f['presses'])} of {what} bought at the ask since the "
+                f"{'high' if side == 'long' else 'low'}{' vs ' + dollars(f['fades']) + ' of ' + other if f['fades'] else ''}.")
+    if f["verdict"] == "FADES":
+        return (f"Option flow FADES the trap: {dollars(f['fades'])} of {other} bought since the {'high' if side == 'long' else 'low'}"
+                f"{' vs ' + dollars(f['presses']) + ' of ' + what if f['presses'] else ''} — somebody is paying for the {who} to get out.")
+    if f["verdict"] == "MIXED":
+        return f"Option flow is mixed: {dollars(f['calls'])} calls vs {dollars(f['puts'])} puts since the move."
+    return "No option flow on it yet."
+
+
+def day_trap_flow_words(dt):
+    f, side = dt.get("flow"), dt.get("side")
+    if not f or not side or not f["verdict"]:
+        return ""
+    from .board import say_money
+    what, other = ("puts", "calls") if side == "long" else ("calls", "puts")
+    if f["verdict"] == "PRESSES":
+        return f" The option flow is pressing them, {say_money(f['presses'])} in {what}."
+    if f["verdict"] == "FADES":
+        return f" Careful, the option flow is fading the trap, {say_money(f['fades'])} in {other}."
+    return " The option flow is mixed."
 
 
 def day_trap_words(dt):
     L, S, hi, lo = dt.get("longs"), dt.get("shorts"), dt.get("high"), dt.get("low")
     if dt.get("side") == "long" and L:
         return (f"longs are trapped{' heavy' if 'HEAVY' in dt['state'] else ''}. {int(L['fraction'] * 100)} percent of today's volume was bought above here, "
-                f"average {px(L['avg'])}, {L['under_pct']:.1f} percent underwater. A push back to {px(L['avg'])} is where they sell.")
+                f"average {px(L['avg'])}, {L['under_pct']:.1f} percent underwater. A push back to {px(L['avg'])} is where they sell." + day_trap_flow_words(dt))
     if dt.get("side") == "short" and S:
         return (f"shorts are trapped{' heavy' if 'HEAVY' in dt['state'] else ''}. {int(S['fraction'] * 100)} percent of today's volume was sold below here, "
-                f"average {px(S['avg'])}, {S['under_pct']:.1f} percent underwater. A dip back to {px(S['avg'])} is where they cover.")
+                f"average {px(S['avg'])}, {S['under_pct']:.1f} percent underwater. A dip back to {px(S['avg'])} is where they cover." + day_trap_flow_words(dt))
     return ""

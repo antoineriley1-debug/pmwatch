@@ -125,6 +125,7 @@ DEFAULTS = {
         "session_min_minutes_since_extreme": 15,
         # the trapped crowd's average (their exit) stays a level on the chart this long after the call
         "session_exit_memory_seconds": 3600,
+        "session_flow_min_dollars": 100000,
     },
     "health": {
         "l1_stale_seconds": 15.0,

@@ -744,6 +744,8 @@ class Engine:
             if self.bigmoney is not None:
                 self.bigmoney.add(p, t)
             self.flow_status["last_print"] = t
+            if st is not None:
+                self._trap_flow_watch(st, p, t)
             self._urgency(p, t, st)
             if st is not None:
                 self._flow_mark(st, p, t)
@@ -2635,10 +2637,56 @@ class Engine:
                           "fraction": round(sf, 2), "dollars": round(s_w)} if shorts else None,
                "high": {"price": fmt_price(hi[0]), "t": hi[1], "drop_pct": round(drop, 2)} if hi else None,
                "low": {"price": fmt_price(lo[0]), "t": lo[1], "rise_pct": round(rise, 2)} if lo else None}
+        # option flow on the trap: puts bought while longs are trapped (calls while shorts are) is money pressing the
+        # same way the trapped crowd will be forced to go; flow the other way says somebody is fading the move
+        out["flow"] = self._trap_flow(st, side, (hi[1] if side == "long" else lo[1]) if side and hi and lo else None, t) if side else None
         out["text"] = narrative.day_trap_text(st.symbol, out, price)
         # the actionable level: the trapped crowd's average is where the next push meets their exit
         out["exit"] = (fmt_price(l_avg) if side == "long" else fmt_price(s_avg)) if side else None
         return out
+
+    def _trap_flow(self, st, side, since, t):
+        """Option money on this name since the extreme that set the trap: calls and puts bought at the ask, and
+        which way they lean against the trapped crowd. 'presses' = flow goes the way the trapped side must exit
+        (puts on trapped longs, calls on trapped shorts); 'fades' = flow is betting on the trapped side's recovery."""
+        prints = list(self.flow.by_symbol.get(st.symbol, ()))
+        since = since if since is not None else t - 3600.0
+        prints = [p for p in prints if p.get("t", 0) >= since and p.get("side") == "ask"]
+        lean, calls, puts = board.flow_leans(prints)
+        presses = puts if side == "long" else calls
+        fades = calls if side == "long" else puts
+        verdict = "" if not calls and not puts else ("PRESSES" if presses > fades else "FADES" if fades > presses else "MIXED")
+        return {"calls": calls, "puts": puts, "prints": len(prints), "since": since, "presses": presses, "fades": fades, "verdict": verdict}
+
+    def _trap_flow_watch(self, st, p, t):
+        """A print that presses a trapped crowd: puts bought while longs are trapped, calls while shorts are.
+        Says it when the pressing money since the trap passes the bar, then again each time it doubles."""
+        side = "long" if "LONGS" in (getattr(st, "day_trap_state", "") or "") else "short" if "SHORTS" in (getattr(st, "day_trap_state", "") or "") else None
+        if not side or p.get("side") != "ask" or p.get("cp") != ("P" if side == "long" else "C"):
+            return
+        ext = st.day_hi if side == "long" else st.day_lo        # money since the extreme that set the trap, as on the pane
+        f = self._trap_flow(st, side, ext[1] if ext else None, t)
+        bar = float(self.cfg["trap"].get("session_flow_min_dollars", 100000))
+        said = getattr(st, "day_trap_flow_said", 0.0)
+        if f["presses"] < bar or f["presses"] < 2 * said or t - getattr(st, "day_trap_flow_said_t", -1e9) < 120:
+            return
+        st.day_trap_flow_said, st.day_trap_flow_said_t = f["presses"], t
+        what = "puts" if side == "long" else "calls"
+        who = "trapped longs" if side == "long" else "trapped shorts"
+        label = f"FLOW PRESSES {who.upper()}"
+        text = (f"{label}: {narrative.dollars(f['presses'])} of {what} bought at the ask since the trap"
+                f"{' (' + narrative.dollars(f['fades']) + ' the other way)' if f['fades'] else ''}. "
+                f"Option money is leaning on the same side the {who} will be forced to {'sell' if side == 'long' else 'cover'} into.")
+        words = f"{board.say_money(f['presses'])} in {what} since the {who} were called. The flow is pressing them."
+        alert = {"t": t, "symbol": st.symbol, "label": label, "price": fmt_price(st.price()), "side": "ask" if side == "short" else "bid",
+                 "role": "trap", "text": text, "words": words, "premium": f["presses"], "cp": p.get("cp"),
+                 "key": f"{round(t, 2)}|{st.symbol}|{label}|{f['presses']}"}
+        self.alerts.appendleft(alert); self._rec(dict(alert, ev="alert")); self.log(st.symbol, text, t, kind="flow")
+        for fn in self.listeners:
+            try:
+                fn(alert)
+            except Exception:
+                pass
 
     def _day_trap_watch(self, st, dt, t):
         """Say it once when the day's trap state changes (and not again for 5 minutes); and once when price comes
@@ -2656,6 +2704,8 @@ class Engine:
         # the crowd's exit stays a level for an hour after the trap was called: by the time price gets back there
         # they are no longer "underwater", but that is exactly where their selling / covering meets the push
         if state and dt.get("exit"):
+            if not same_side:
+                st.day_trap_flow_said = 0.0
             st.day_trap_memo = {"side": dt["side"], "exit": dt["exit"], "t": t, "state": state}
         memo = getattr(st, "day_trap_memo", None)
         if memo and t - memo["t"] > float(self.cfg["trap"].get("session_exit_memory_seconds", 3600)):
