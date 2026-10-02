@@ -34,6 +34,12 @@ with ladder trading that is **locked to paper accounts** until you deliberately 
   lock, the clock. When order routing is down the ticket's TRANSMIT is disabled and the reason is shown.
 - **Data**: a value that is not there shows as —. Nothing is invented.
 
+## The ladder (DOM): install, IBKR setup, paper checklist, architecture
+
+See **docs/LADDER.md** for installation, launch, TWS configuration, the operating modes (PRACTICE / IBKR
+PAPER / IBKR LIVE), the paper-trading acceptance checklist (`tools/acceptance.py`), the architecture map
+and the known limitations.
+
 ## Level II: SIMPLE, TIGHT and WIDE
 
 SIMPLE (default; the button in the ladder bar cycles the three) is order flow and nothing else: BID · PRICE ·

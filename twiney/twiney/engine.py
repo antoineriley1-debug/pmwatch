@@ -2622,6 +2622,7 @@ class Engine:
             "changed": change if change and t - change["t"] < 20 and change.get("prev") else None,
             "play": {k: st.play.get(k) for k in ("side", "trigger", "second_entry", "target", "stop", "mp", "atr", "notes", "setup")},
             "last": fmt_price(st.l1["last"]),
+            "prev_close": fmt_price(st.l1.get("close")),
             "bid": fmt_price(bid), "ask": fmt_price(ask),
             "day": {"open": fmt_price(st.l1.get("open")), "high": fmt_price(st.l1.get("high")), "low": fmt_price(st.l1.get("low")),
                     "prev_close": fmt_price(st.l1.get("close")), "volume": st.l1.get("volume"),
