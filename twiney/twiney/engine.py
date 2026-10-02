@@ -906,14 +906,21 @@ class Engine:
                     raise ValueError(f"{k} must be positive")
                 return v
             try:
-                side = fields.get("side", p["side"])
-                if side not in ("long", "short"):
-                    return False, "side must be long or short"
                 trigger = num("trigger") if "trigger" in fields else p.get("trigger")
                 second = num("second_entry") if "second_entry" in fields else p.get("second_entry")
                 target = num("mp") if "mp" in fields else num("target") if "target" in fields else p.get("target")
                 stop = num("stop") if "stop" in fields else p.get("stop")
                 atr = num("atr") if "atr" in fields else p.get("atr")
+                side = fields.get("side", p["side"])
+                # typed levels pick the side unless you picked it yourself with L/S: a stop above the target is a
+                # short, a stop below it a long (then a 2nd entry under the pivot a short, over it a long)
+                if "side" not in fields and not p.get("side_set"):
+                    if stop and target and stop != target:
+                        side = "short" if stop > target else "long"
+                    elif trigger and second and trigger != second:
+                        side = "short" if second < trigger else "long"
+                if side not in ("long", "short"):
+                    return False, "side must be long or short"
             except ValueError as exc:
                 return False, str(exc)
             if trigger and second:
