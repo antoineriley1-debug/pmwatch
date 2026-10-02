@@ -86,6 +86,10 @@ class EngineRef:
         return getattr(self._box["engine"], name)
 
 
+_SNAP_LOCK = threading.Lock()
+_SNAP_CACHE = {}
+
+
 def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_path=None, config_path=None, hooks=None):
     hooks = hooks if hooks is not None else {}
     class Handler(BaseHTTPRequestHandler):
@@ -132,9 +136,18 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                 full = None
                 if "full" in q:   # the page names the symbols it still needs history for; "" = none
                     full = {x.strip().upper() for x in q.get("full", [""])[0].split(",") if x.strip()}
-                snap = engine.snapshot(clock(), extra, full)
-                snap["build"] = BUILD
-                self._send(200, json.dumps(snap, default=str), "application/json")
+                key = (tuple(extra), tuple(sorted(full)) if full is not None else None)
+                now = time.monotonic()
+                with _SNAP_LOCK:
+                    hit = _SNAP_CACHE.get(key)
+                    if hit and now - hit[0] < 0.2:
+                        body = hit[1]
+                    else:
+                        snap = engine.snapshot(clock(), extra, full)
+                        snap["build"] = BUILD
+                        body = json.dumps(snap, default=str)
+                        _SNAP_CACHE.clear(); _SNAP_CACHE[key] = (now, body)
+                self._send(200, body, "application/json")
             elif path == "/api/options/chain":
                 q = parse_qs(urlparse(self.path).query, keep_blank_values=True)
                 sym = str(q.get("symbol", [""])[0]).upper()

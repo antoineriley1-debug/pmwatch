@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261002-1956">
+<meta name="build" content="20261002-2010">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -745,6 +745,8 @@ i.tl{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:3p
 .bt-hd .btflt{font:10px var(--sans);letter-spacing:.08em;color:var(--dim);margin-right:auto}.bt-hd .btflt input{width:46px;font:11px var(--mono);background:#0b0f16;color:var(--text);border:1px solid var(--line);border-radius:3px;padding:1px 4px}
 .lad.lad3.simple td.sz .rl .rlm{display:none}
 
+#stCycle{font:10px var(--mono);color:var(--dim);margin-left:6px}#stCycle.warn{color:var(--gold)}#stCycle.bad{color:var(--sell);font-weight:800}
+
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
   --buy:#3fb56f;--sell:#d9534f;--gold:#e3a83a;--cyan:#5aa9d6;--violet:#a48bd6;--warn:#d9a441;
@@ -1090,7 +1092,7 @@ body.resizing .zbody{pointer-events:none}
   <span class="spacer"></span>
   <span id="stLoss" title="day loss lock: realized + open P&L against your daily limit">DAY LOSS LIMIT <b>—</b></span>
   <span id="leds"><span class="ld" id="ledMkt"><i></i>MKT</span><span class="ld" id="ledOpt"><i></i>OPT</span></span>
-  <span id="stBuild" title="the build of this page; the desk reloads itself when a newer build starts">BUILD <b>—</b></span>
+  <span id="stBuild" title="the build of this page; the desk reloads itself when a newer build starts">BUILD <b>—</b></span> <span id="stCycle" title="how long one update takes on this machine: the answer from TED plus the draw"></span>
   <span id="stClock"></span>
 </div>
 </div>
@@ -3448,7 +3450,7 @@ function btCols(){ return Object.assign({who: false, times: true, shares: true, 
 function renderBigTape(d){
   const box = P.bigtape && P.bigtape.pc.querySelector(".p-bigtape"); if (!box) return;
   const body = box.querySelector(".bt-body");
-  const bt = d && d.bigtape;
+  let bt = d && d.bigtape;
   if (!bt){ body.innerHTML = `<div class="dim" style="padding:4px 6px">${NA}</div>`; return; }
   const c = btCols(), who = s => s === "buy" ? "PAID UP" : "HIT";
   const minSh = btNum(store.get("btMinSh", "")), minUsd = btNum(store.get("btMinUsd", ""));
@@ -4379,12 +4381,17 @@ function render(s){
   speakNew(s);
 }
 let timer = null, lastGood = Date.now();
-// every second, whatever the requests are doing: no answer for 2 s = lights red, screen greyed (never green over frozen prices)
-setInterval(() => {
-  const lost = Date.now() - lastGood > 2000;
+// how long a full cycle takes on THIS machine: the answer from TED, and the time the page needs to draw it. The poll
+// paces itself on it (never piles requests up), and the greying only happens when a real answer is overdue
+const CYCLE = {fetch: 0, draw: 0, bytes: 0, interval: 250, lostAfter: 6000};
+const cycleWords = () => `last answer ${CYCLE.fetch} ms (${Math.round(CYCLE.bytes / 1024)} KB), drawn in ${CYCLE.draw} ms, polling every ${CYCLE.interval} ms`;
+function markLost(){
+  const lost = Date.now() - lastGood > CYCLE.lostAfter;
   document.body.classList.toggle("stale", lost);
-  if (lost) for (const id of ["ledMkt", "ledOpt"]){ const el = document.getElementById(id); if (el){ el.className = "ld red"; el.title = "No answer from TED for " + Math.round((Date.now() - lastGood) / 1000) + " s — prices on screen are NOT live"; } }
-}, 1000);
+  if (lost) for (const id of ["ledMkt", "ledOpt"]){ const el = document.getElementById(id); if (el){ el.className = "ld red"; el.title = "No answer from TED for " + Math.round((Date.now() - lastGood) / 1000) + " s — prices on screen are NOT live · " + cycleWords(); } }
+  return lost;
+}
+setInterval(markLost, 1000);
 const BARS = {};   // symbol -> {bars, daily, ver}: the page's own copy of the history
 const HVER = {};   // symbol -> the history version the engine last reported
 async function poll(now){
@@ -4394,10 +4401,12 @@ async function poll(now){
     // history is fetched once per symbol and kept here; every poll after that carries only the last bars
     // fetch it again whenever the engine's history for that symbol has changed (IBKR history lands after startup)
     const need = [...new Set(TABS.list.concat(curSym ? [curSym] : []).concat((state && state.symbols) || []))].filter(s => !BARS[s] || (HVER[s] != null && BARS[s].ver !== HVER[s]));
-    const ac = new AbortController(), to = setTimeout(() => ac.abort(), 2500);   // a hung request never freezes the desk
+    const ac = new AbortController(), to = setTimeout(() => ac.abort(), 15000);   // a hung request never freezes the desk; a slow one is still an answer
+    const t0 = performance.now();
     const r = await fetch("/api/state?extra=" + encodeURIComponent(extra) + "&full=" + encodeURIComponent(need.join(",")), {cache: "no-store", signal: ac.signal});
     clearTimeout(to);
-    const s = await r.json();
+    const txt = await r.text(); CYCLE.bytes = txt.length; const s = JSON.parse(txt);
+    CYCLE.fetch = Math.round(performance.now() - t0);
     for (const d of (s.panes || []).concat(Object.values(s.extra || {}))){
       if (!d) continue;
       const c = BARS[d.symbol];
@@ -4412,14 +4421,23 @@ async function poll(now){
       if (c.bars.length > 2600) c.bars.splice(0, c.bars.length - 2600);
       d.bars = c.bars; d.daily = c.daily;
     }
+    const t1 = performance.now();
     render(s);
+    CYCLE.draw = Math.round(performance.now() - t1);
     lastGood = Date.now();
-  } catch (e){ document.querySelector("#stConn b").textContent = "DASHBOARD LOST CONTACT WITH TED"; document.querySelector("#stConn .led").className = "led bad"; }
-  // no answer for 2 s: the lights say so (never green over frozen prices) and the page greys out
-  const lost = Date.now() - lastGood > 2000;
-  document.body.classList.toggle("stale", lost);
-  if (lost) for (const id of ["ledMkt", "ledOpt"]){ const el = document.getElementById(id); if (el){ el.className = "ld red"; el.title = "No answer from TED for " + Math.round((Date.now() - lastGood) / 1000) + " s — prices on screen are NOT live"; } }
-  timer = setTimeout(poll, document.hidden ? 1000 : 250);   // 4 updates a second while you are looking
+    const sb = document.getElementById("stCycle"); if (sb){ const w = `${CYCLE.fetch + CYCLE.draw} ms`; if (sb.textContent !== w){ sb.textContent = w; sb.title = cycleWords(); } sb.className = CYCLE.fetch + CYCLE.draw > 1500 ? "bad" : CYCLE.fetch + CYCLE.draw > 600 ? "warn" : ""; }
+  } catch (e){
+    if (e && e.name !== "AbortError" && !(e instanceof TypeError && /fetch|network/i.test(String(e.message)))){
+      // the answer came, the DRAW failed: that is a page bug, not a lost connection — say so and keep going
+      console.error("TED draw error", e); lastGood = Date.now();
+      const el = document.getElementById("stCycle"); if (el){ el.textContent = "DRAW ERROR: " + String(e.message).slice(0, 80); el.className = "bad"; el.title = String(e.stack || e); }
+    } else { document.querySelector("#stConn b").textContent = "DASHBOARD LOST CONTACT WITH TED"; document.querySelector("#stConn .led").className = "led bad"; }
+  }
+  // pace on this machine: 4 a second when it keeps up, slower when a cycle takes longer, never two requests at once
+  CYCLE.interval = Math.min(3000, Math.max(250, Math.round(1.5 * (CYCLE.fetch + CYCLE.draw))));
+  CYCLE.lostAfter = Math.max(6000, 4 * CYCLE.interval);
+  markLost();
+  timer = setTimeout(poll, document.hidden ? Math.max(1000, CYCLE.interval) : CYCLE.interval);
 }
 
 
