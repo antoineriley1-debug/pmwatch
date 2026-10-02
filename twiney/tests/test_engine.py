@@ -543,7 +543,8 @@ class BigTapeTests(unittest.TestCase):
     def test_blocks_and_builders(self):
         from twiney.tape import Tape
         tp = Tape({"window_seconds": 30.0, "min_prints_for_read": 5, "control_ratio": 0.65, "large_print_shares": 5000, "keep_prints": 200,
-                   "big_tape_shares": 5000, "big_tape_dollars": 250000, "big_tape_minutes": 30, "build_window_seconds": 90, "build_prints": 3, "build_dollars": 500000})
+                   "big_tape_shares": 5000, "big_tape_dollars": 250000, "big_tape_minutes": 30, "build_window_seconds": 90, "build_prints": 3, "build_dollars": 500000,
+                   "big_tape_x_average": 0})
         # a buyer working 10.05: six prints of 1,200 at the ask inside a minute
         for i in range(6):
             tp.add(100.0 + i * 10, 10.05, 1200, 10.04, 10.05)
@@ -563,15 +564,34 @@ class BigTapeTests(unittest.TestCase):
         bs = tp.big(520.0)["builders"]
         self.assertEqual([(x["prints"], x["still"]) for x in bs], [(3, True), (6, False)])
 
+    def test_bar_scales_with_the_tickers_own_tape(self):
+        """A $750 ETF prints $250K all day long: a print makes the big tape only when it is also many times the
+        ticker's own average print, so the big tape stays the big players."""
+        from twiney.tape import Tape
+        tp = Tape({"window_seconds": 30.0, "min_prints_for_read": 5, "control_ratio": 0.65, "large_print_shares": 5000, "keep_prints": 500,
+                   "big_tape_shares": 10000, "big_tape_dollars": 1000000, "big_tape_x_average": 20, "big_tape_minutes": 30,
+                   "build_window_seconds": 90, "build_prints": 5, "build_dollars": 2000000})
+        for i in range(100):
+            tp.add(100.0 + i, 750.0, 2000, 749.99, 750.0)      # ordinary tape: $1.5M prints, 2,000 shares each
+        b = tp.big(250.0)
+        self.assertEqual(b["prints"], [])                          # money alone does not make it: not above 20x the average
+        self.assertEqual(len(b["builders"]), 1)                    # the same side at the same price 100 times IS a builder
+        tp.add(260.0, 750.0, 60000, 749.99, 750.0)               # 60,000 shares at once: 25x the average, $45M
+        b = tp.big(270.0)
+        self.assertEqual([p["size"] for p in b["prints"]], [60000])
+        self.assertEqual(b["x_average"], 20); self.assertGreater(b["average"], 2000)
+
     def test_pane_carries_the_big_tape(self):
         e = connected_engine()
         e.apply_slot("AAA", True, 0.0)
         e.on_l1("AAA", "bid", 9.99, 1.0); e.on_l1("AAA", "ask", 10.0, 1.0)
-        for i in range(4):
+        for i in range(40):                                   # the ordinary tape: 100-share prints
+            e.on_print("AAA", 9.99, 100, "X", 1.0 + i * 0.02)
+        for i in range(6):                                    # then the same buyer at 10.00 six times
             e.on_print("AAA", 10.0, 2000, "X", 2.0 + i)
-        pane = next(x for x in e.snapshot(7.0)["panes"] if x and x["symbol"] == "AAA")
+        pane = next(x for x in e.snapshot(9.0)["panes"] if x and x["symbol"] == "AAA")
         bt = pane["bigtape"]
-        self.assertEqual(bt["builders"][0]["side"], "buy"); self.assertEqual(bt["builders"][0]["shares"], 8000)
+        self.assertEqual(bt["builders"][0]["side"], "buy"); self.assertEqual(bt["builders"][0]["shares"], 12000)
         self.assertEqual(bt["builders"][0]["price"], 10.0)
 
 

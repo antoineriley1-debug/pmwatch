@@ -176,11 +176,12 @@ class BigMoney:
                 txt = (f"{lbl}: stock {s:.2f} is {dir_} the {be:.2f} breakeven — worth at least {usd(value)}, buyers up {usd(pnl)}+" if buyers else
                        f"{lbl} sold: stock {s:.2f} is {dir_} the {be:.2f} breakeven — the sellers are down at least {usd(pnl)}")
             elif itm:
-                st = "BUYERS UNDERWATER" if buyers else "SELLERS AHEAD"
-                txt = (f"{lbl}: in the money but under the {be:.2f} breakeven — intrinsic {usd(value)} of {usd(paid)} paid" if buyers else
+                # in the money, just not yet past what they paid: the direction is right, so never "underwater"
+                st = "BUYERS IN THE MONEY" if buyers else "SELLERS AHEAD"
+                txt = (f"{lbl}: in the money, {abs(s - k):.2f} {dir_} the strike — needs {be:.2f} to break even, worth {usd(value)} of {usd(paid)} paid" if buyers else
                        f"{lbl} sold: in the money, under the {be:.2f} breakeven — the sellers still ahead")
             else:
-                st = "BUYERS UNDERWATER" if buyers else "SELLERS AHEAD"
+                st = "BUYERS OUT OF THE MONEY" if buyers else "SELLERS AHEAD"
                 need = f"needs {'above' if cp == 'C' else 'below'} {k:g} strike, {be:.2f} to break even"
                 txt = (f"{lbl}: out of the money ({need}) — stock {s:.2f}" if buyers else
                        f"{lbl} sold: out of the money, stock {s:.2f} — the sellers keep it all if it stays there")
@@ -188,7 +189,7 @@ class BigMoney:
             if d is not None:
                 left = (d - _dt.date.fromtimestamp(now)).days
                 txt += f" · {max(0, left)}d left"
-        out.update(status=st, text=txt, good=pnl >= 0 if buyers else pnl < 0)
+        out.update(status=st, text=txt, good=(pnl >= 0 or st == "BUYERS IN THE MONEY") if buyers else pnl < 0)
         return out
 
     def for_symbol(self, symbol, spot, now, close_on=None, limit=12):

@@ -28,9 +28,11 @@ class BigMoneyTests(unittest.TestCase):
     def test_open_calls_underwater_and_in_profit(self):
         p = _p(NOW - 3 * 86400)                                            # 1000 x 130C @ 6.00 = $600K, breakeven 136
         r = BigMoney.judge(p, 131.0, NOW)
-        self.assertEqual(r["status"], "BUYERS UNDERWATER")
+        self.assertEqual(r["status"], "BUYERS IN THE MONEY")                 # the direction is right: never "underwater"
         self.assertEqual((r["breakeven"], r["value"], r["pnl"]), (136.0, 100000, -500000))
-        self.assertIn("under the 136.00 breakeven", r["text"])
+        self.assertIn("needs 136.00 to break even", r["text"]); self.assertTrue(r["good"])
+        r = BigMoney.judge(p, 125.0, NOW)
+        self.assertEqual(r["status"], "BUYERS OUT OF THE MONEY"); self.assertFalse(r["good"])
         r = BigMoney.judge(p, 140.0, NOW)
         self.assertEqual(r["status"], "BUYERS IN PROFIT")
         self.assertEqual(r["value"], 1000000)

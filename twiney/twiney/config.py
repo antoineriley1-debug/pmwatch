@@ -98,12 +98,13 @@ DEFAULTS = {
         "large_print_shares": 5000,
         "keep_prints": 200,
         # the BIG TAPE: a second time & sales filtered to large orders and position builders
-        "big_tape_shares": 5000,        # a print this big (shares) makes the big tape
-        "big_tape_dollars": 250000,     # ... or this much money in one print (a block)
+        "big_tape_shares": 10000,       # a print this big (shares) makes the big tape
+        "big_tape_dollars": 1000000,    # ... or this much money in one print (a block)
+        "big_tape_x_average": 20,       # ... and at least this many times the ticker's own average print (scales per name)
         "big_tape_minutes": 30,         # how far back it looks
         "build_window_seconds": 90,     # same side, same price, prints no further apart than this = one builder
-        "build_prints": 3,              # a builder needs at least this many prints
-        "build_dollars": 500000,        # ... adding up to big_tape_shares, or this much money
+        "build_prints": 5,              # a builder needs at least this many prints
+        "build_dollars": 2000000,       # ... adding up to big_tape_shares, or this much money
     },
     "trap": {
         # aggressive prints (paid the offer / hit the bid) this far back that are now

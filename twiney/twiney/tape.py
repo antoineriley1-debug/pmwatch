@@ -122,9 +122,14 @@ class Tape:
         win = float(c.get("build_window_seconds", 90))
         need = int(c.get("build_prints", 3))
         busd = float(c.get("build_dollars", 500000))
+        x_avg = float(c.get("big_tape_x_average", 20))
         cut = now - mins * 60
         rows = [p for p in self.prints if p["t"] >= cut and p["side"] in ("buy", "sell")]
-        prints = [p for p in rows if p["size"] >= sh or p["size"] * p["price"] >= usd]
+        # the bar scales with the name: a print has to be big in money or shares AND many times this ticker's
+        # own average print, so a busy $750 ETF does not flood the big tape with ordinary trades
+        avg = (sum(p["size"] for p in rows) / len(rows)) if rows else 0.0
+        floor = x_avg * avg
+        prints = [p for p in rows if (p["size"] >= sh or p["size"] * p["price"] >= usd) and p["size"] >= floor]
         # builders: runs of the same side at the same price with no gap longer than the window
         groups, runs = {}, []
         for p in rows:
@@ -142,7 +147,7 @@ class Tape:
             g["biggest"] = max(g["biggest"], p["size"])
         builders = [dict(g, still=now - g["last_t"] <= win, first_age=round(now - g["first_t"]), last_age=round(now - g["last_t"]),
                          shares=round(g["shares"]), dollars=round(g["dollars"]))
-                    for g in runs if g["prints"] >= need and (g["shares"] >= sh or g["dollars"] >= busd)]
+                    for g in runs if g["prints"] >= need and (g["shares"] >= sh or g["dollars"] >= busd) and g["shares"] >= floor]
         builders.sort(key=lambda g: (-g["still"], g["last_age"]))
         return {"prints": list(reversed(prints))[:60], "builders": builders[:20],
-                "shares": sh, "dollars": usd, "minutes": mins, "window": win, "need": need}
+                "shares": sh, "dollars": usd, "minutes": mins, "window": win, "need": need, "x_average": x_avg, "average": round(avg)}
