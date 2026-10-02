@@ -147,3 +147,50 @@ class SignalProviderTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OptionChainTests(unittest.TestCase):
+    """Opening option positions from the desk: the chain, quotes, Greeks, the order through the gate, the fill."""
+    def test_practice_chain_quotes_greeks_and_open(self):
+        from twiney import options
+        e, tr = sim(max_dollars_per_order=50000)
+        e.on_l1("AAA", "bid", 99.99, 1.0); e.on_l1("AAA", "ask", 100.0, 1.0); e.on_l1("AAA", "last", 100.0, 1.0); e.tick(1.0)
+        now = 1_800_000_000.0
+        ch = e.option_chain("AAA", None, "C", now)
+        self.assertTrue(ch["available"]); self.assertEqual(ch["source"], "PRACTICE")
+        self.assertEqual(len(ch["expiries"]), 6); self.assertTrue(all(len(x) == 8 for x in ch["expiries"]))
+        row = next(r for r in ch["rows"] if r["strike"] == 100.0)
+        self.assertTrue(row["ask"] > row["bid"] >= 0); self.assertAlmostEqual(row["delta"], 0.5, delta=0.1)
+        self.assertEqual(ch["right"], "C"); self.assertTrue(0 < row["dte"] < 60)
+        put = next(r for r in e.option_chain("AAA", ch["expiry"], "P", now)["rows"] if r["strike"] == 100.0)
+        self.assertTrue(-0.6 < put["delta"] < -0.4)
+        # buy 2 calls at the ask: filled by the practice broker, position in contracts, Greeks on the row
+        out = tr.opt_open("AAA", ch["expiry"], 100.0, "C", "BUY", 2, None, now)
+        self.assertTrue(out["ok"], out)
+        key = options.key_of("AAA", ch["expiry"], 100.0, "C")
+        pos = e.opt_positions[key]
+        self.assertEqual(pos["qty"], 2); self.assertAlmostEqual(pos["avg_cost"], row["ask"] * 100, places=2)
+        view = e.snapshot(now)["account"]["opt_positions"][0]
+        self.assertEqual(view["label"], f"AAA {ch['expiry'][4:6]}/{ch['expiry'][6:8]} 100C"); self.assertIsNotNone(view["delta"])
+        # scale out one at the bid, then close
+        self.assertTrue(tr.opt_adjust(key, 1, "close", None, now + 1)["ok"])
+        self.assertEqual(e.opt_positions[key]["qty"], 1)
+        self.assertTrue(tr.opt_adjust(key, 0, "close", None, now + 2)["ok"])
+        self.assertNotIn(key, e.opt_positions)
+        # the gate: dollars are real (price × 100 × contracts)
+        out = tr.opt_open("AAA", ch["expiry"], 100.0, "C", "BUY", 700, None, now + 3)
+        self.assertFalse(out["ok"]); self.assertIn("cap", out["reason"])
+        far = ch["expiries"][-1]                                              # a dearer contract: the dollar cap
+        e.option_chain("AAA", far, "C", now)
+        out = tr.opt_open("AAA", far, 100.0, "C", "BUY", 400, None, now + 4)
+        self.assertFalse(out["ok"]); self.assertIn("cap", out["reason"])
+        self.assertFalse(tr.opt_open("AAA", "20991231", 100.0, "C", "BUY", 1, None, now)["ok"])   # not on the chain
+        self.assertFalse(tr.opt_open("AAA", ch["expiry"], 100.0, "C", "BUY", 0, None, now)["ok"])
+
+    def test_bs_sanity(self):
+        from twiney import options
+        c = options.bs_price(100, 100, 30, "C"); p = options.bs_price(100, 100, 30, "P")
+        self.assertTrue(3 < c < 5); self.assertTrue(abs(c - p) < 0.5)
+        self.assertEqual(options.bs_price(100, 90, 0, "C"), 10.0)
+        g = options.bs_greeks(100, 100, 30, "C")
+        self.assertTrue(0.45 < g["delta"] < 0.6); self.assertTrue(g["theta"] < 0); self.assertTrue(g["gamma"] > 0)

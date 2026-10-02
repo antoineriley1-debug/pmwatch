@@ -219,6 +219,37 @@ class TwineyWrapper:
     def contractDetailsEnd(self, reqId):
         self.req.pop(reqId, None)
 
+    # the Greeks IBKR computes with every option quote (tick types 10 bid / 11 ask / 12 last / 13 model)
+    def tickOptionComputation(self, reqId, tickType, *rest):
+        kind, key = self.req.get(reqId, (None, None))
+        if kind != "opt":
+            return
+        # ibapi 9.8x: (impliedVol, delta, optPrice, pvDividend, gamma, vega, theta, undPrice)
+        # ibapi 10.x: (tickAttrib, impliedVol, delta, optPrice, pvDividend, gamma, vega, theta, undPrice)
+        vals = list(rest[1:]) if len(rest) >= 9 else list(rest)
+        if len(vals) < 7:
+            return
+        iv, delta, _px, _pv, gamma, vega, theta = [num(v) for v in vals[:7]]
+        if tickType not in (13, 12, 11, 10) or (delta is None and iv is None):
+            return
+        if getattr(self, "_greek_pref", {}).get(key, 13) < tickType:
+            return                               # the model tick (13) wins over bid / ask / last when both come
+        self._greek_pref = getattr(self, "_greek_pref", {})
+        self._greek_pref[key] = tickType
+        self.engine.on_opt_greeks(key, {"iv": None if iv is None or iv < 0 else round(iv, 3), "delta": None if delta is None or abs(delta) > 1 else round(delta, 3),
+                                        "gamma": None if gamma is None or gamma < 0 else round(gamma, 4), "vega": None if vega is None or vega < 0 else round(vega, 3),
+                                        "theta": None if theta is None else round(theta, 3)}, self.clock())
+
+    # the option chain: expiries and strikes from IBKR (secDefOptParams), SMART's answer
+    def securityDefinitionOptionParameter(self, reqId, exchange, underlyingConId, tradingClass, multiplier, expirations, strikes):
+        kind, sym = self.req.get(reqId, (None, None))
+        if kind != "chain" or exchange != "SMART":
+            return
+        self.engine.on_opt_chain(sym, list(expirations), [num(x) for x in strikes], num(multiplier) or 100, underlyingConId, self.clock())
+
+    def securityDefinitionOptionParameterEnd(self, reqId):
+        self.req.pop(reqId, None)
+
     # L1 -------------------------------------------------------------------
     def tickPrice(self, reqId, tickType, price, attrib):
         field = PRICE_TICKS.get(tickType)
@@ -386,6 +417,20 @@ def make_contract(play):
     c.currency = play.get("currency") or "USD"
     if play.get("primary_exchange"):
         c.primaryExchange = play["primary_exchange"]
+    return c
+
+
+def make_option_contract(symbol, expiry, strike, right, mult=100, exchange="SMART", currency="USD"):
+    from ibapi.contract import Contract
+    c = Contract()
+    c.symbol = symbol
+    c.secType = "OPT"
+    c.lastTradeDateOrContractMonth = expiry
+    c.strike = float(strike)
+    c.right = right[:1].upper()
+    c.multiplier = str(int(mult))
+    c.exchange = exchange
+    c.currency = currency
     return c
 
 
@@ -778,6 +823,45 @@ class MarketDataSession:
                 self.app.reqMktData(rid, self.opt_contracts[key], "", False, False, [])
             except Exception as exc:
                 log.warning("option quote request failed for %s: %s", key, exc)
+
+    def request_chain(self, symbol):
+        """Ask IBKR for the symbol's option chain (needs the underlying conId from contract details)."""
+        with self._lock:
+            st = self.engine.syms.get(symbol)
+            con_id = (getattr(st, "contract", None) or {}).get("con_id") if st else None
+            if self.app is None or not self.ready or not con_id:
+                return False
+            rid = self._rid()
+            self.app.req[rid] = ("chain", symbol)
+            self.app.reqSecDefOptParams(rid, symbol, "", "STK", int(con_id))
+            return True
+
+    def watch_option_quotes(self, symbol, keys, mult=100):
+        """Quote the chain rows the page is looking at (and drop the ones it left, unless held)."""
+        with self._lock:
+            if self.app is None or not self.ready:
+                return
+            want = set(keys)
+            for key, rid in list(self.opt_ids.items()):
+                if key.startswith(symbol + " ") and key not in want and key not in self.engine.opt_positions:
+                    try:
+                        self.app.cancelMktData(rid)
+                    except Exception:
+                        pass
+                    self.opt_ids.pop(key, None); self.app.req.pop(rid, None)
+            for key in keys:
+                if key in self.opt_ids:
+                    continue
+                if key not in self.opt_contracts:
+                    sym, exp, strike, right = key.split(" ")[0], key.split(" ")[1], float(key.split(" ")[2][:-1]), key.split(" ")[2][-1]
+                    self.opt_contracts[key] = make_option_contract(sym, exp, strike, right, mult)
+                rid = self._rid()
+                self.app.req[rid] = ("opt", key)
+                self.opt_ids[key] = rid
+                try:
+                    self.app.reqMktData(rid, self.opt_contracts[key], "", False, False, [])
+                except Exception as exc:
+                    log.warning("option quote request failed for %s: %s", key, exc)
 
     def send_option_order(self, key, action, qty, price, now, reducing=False, role="option"):
         """A LIMIT DAY order on an option contract you hold (scale in / out, close). Same gate as a stock order:

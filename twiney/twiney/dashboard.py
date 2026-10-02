@@ -9,6 +9,7 @@ import os
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlparse
 
 STATIC = os.path.join(os.path.dirname(__file__), "static", "dashboard.html")
 
@@ -126,7 +127,6 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                 with open(STATIC, "rb") as fh:
                     self._send(200, fh.read(), "text/html; charset=utf-8")
             elif path == "/api/state":
-                from urllib.parse import parse_qs, urlparse
                 q = parse_qs(urlparse(self.path).query, keep_blank_values=True)
                 extra = [x.strip().upper() for x in (q.get("extra", [""])[0]).split(",") if x.strip()][:12]
                 full = None
@@ -135,6 +135,17 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                 snap = engine.snapshot(clock(), extra, full)
                 snap["build"] = BUILD
                 self._send(200, json.dumps(snap, default=str), "application/json")
+            elif path == "/api/options/chain":
+                q = parse_qs(urlparse(self.path).query, keep_blank_values=True)
+                sym = str(q.get("symbol", [""])[0]).upper()
+                ch = engine.option_chain(sym, q.get("expiry", [None])[0] or None, q.get("right", ["C"])[0], clock())
+                sess = getattr(engine, "session", None)
+                if sess is not None and sym and ch.get("available") is False and ch.get("source") is None and hasattr(sess, "request_chain"):
+                    sess.request_chain(sym)                 # live: ask IBKR once; the next poll has it
+                if sess is not None and ch.get("available") and ch.get("source") == "IBKR" and hasattr(sess, "watch_option_quotes"):
+                    sess.watch_option_quotes(sym, [r["key"] for r in ch["rows"]], ch.get("mult") or 100)
+                self._send(200, json.dumps(ch, default=str), "application/json")
+                return
             elif path == "/api/ps60/signals":
                 from . import ps60 as _ps60
                 q = parse_qs(urlparse(self.path).query, keep_blank_values=True)
@@ -142,7 +153,6 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                 self._send(200, json.dumps(_ps60.SignalProvider(engine).signals(sym), default=str), "application/json")
                 return
             elif path == "/api/urgency":
-                from urllib.parse import parse_qs, urlparse
                 q = parse_qs(urlparse(self.path).query)
                 sym = (q.get("symbol", [""])[0] or "").strip().upper()[:10]
                 out = engine.urgency_for(sym, clock()) if sym else {"symbol": "", "live": [], "history": []}
@@ -193,7 +203,6 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                 self.end_headers()
                 self.wfile.write(data)
             elif path == "/api/desk/export" and desk is not None:
-                from urllib.parse import parse_qs, urlparse
                 name = os.path.basename(parse_qs(urlparse(self.path).query).get("name", [""])[0])
                 data = desk.export_bundle(name, clock())
                 if data is None:
@@ -528,6 +537,9 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                     out = tr.breakeven(sym, now)
                 elif action == "partial":
                     out = tr.partial(sym, body.get("shares"), body.get("price"), now)
+                elif action == "opt_open":
+                    out = tr.opt_open(sym, str(body.get("expiry", "")), body.get("strike"), str(body.get("right", "C")),
+                                      str(body.get("action", "BUY")), body.get("contracts"), body.get("price"), now)
                 elif action == "opt_adjust":
                     out = tr.opt_adjust(str(body.get("key", "")), body.get("contracts"), str(body.get("mode", "")), body.get("price"), now)
                 elif action == "modify":

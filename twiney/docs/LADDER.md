@@ -94,6 +94,27 @@ or BLOCKED with the reason. Against the practice desk: `--port 8799 --demo --yes
   quote it hit, so the delta is labelled ESTIMATED, never exchange data. Reloads are described as what was
   observed (refilled N times, $ traded into it), never as intent.
 
+## Options from the desk
+
+The OPTION CHAIN panel (docks beside PLAY SETUP; tab, drag or close it like any panel) is option order entry:
+
+- **Chain**: expiries and strikes come from IBKR (`reqSecDefOptParams`, SMART) once the underlying is
+  resolved; pick the expiry and CALLS / PUTS. The practice desk makes its own chain (weekly expiries, strikes
+  on the usual steps) and prices it with a Black-Scholes model, labelled PRACTICE prices.
+- **Quotes and Greeks**: the strikes around the spot are quoted live (`reqMktData` on each contract; IBKR's
+  `tickOptionComputation` supplies delta, gamma, theta, vega and implied vol — the model tick wins). The row
+  shows BID / ASK / LAST / Δ / IV; the position row shows its net delta. Quotes for rows you scroll away from
+  are cancelled, held contracts keep theirs.
+- **Open**: CT = contracts per click, PX = your limit (blank = at the touch: ask to buy, bid to sell). BUY /
+  SELL on a row sends a LIMIT DAY order on that contract through the same gate as a stock order, in real
+  dollars (price × multiplier × contracts); never market, never without a price. The confirmation box shows
+  the contract, the limit and the dollars (ONE-CLICK skips it). Working option orders list under the chain
+  with a cancel.
+- **Manage**: the position shows in POSITIONS with OUT 25 / 50 / 75 / … / X and IN +1 / +½ / +1× / +…, and
+  the row's X in the chain closes it. Option fills go to the journal, separate from the stock P&L.
+- IBKR needs option market-data permissions on the paper account for live quotes (OPRA); without them the
+  chain lists but rows show no quote and ask for a typed price.
+
 ## Architecture
 
 | Concern | Module |
@@ -106,6 +127,7 @@ or BLOCKED with the reason. Against the practice desk: `--port 8799 --demo --yes
 | Reload / conviction (REAL / FAKE size) | `twiney/levels.py`, `twiney/conviction.py` |
 | PS60 (second entry, MP, grade) and the `SignalProvider` interface | `twiney/ps60.py` |
 | Option flow, conviction board, big money | `twiney/flow.py`, `twiney/board.py`, `twiney/bigmoney.py` |
+| Options: contract keys, practice chain and pricer, Greeks | `twiney/options.py` |
 | Persistence: plays, layouts, alerts, recordings, grades, structured log | `plays.json`, `layouts.json`, `recordings/` (`desk.log` = JSON lines) |
 | Replay (pause / play / speed / step / restart / scrub) | `twiney/replay.py` |
 | HTTP API and the page | `twiney/dashboard.py`, `twiney/static/dashboard.html` |
@@ -131,7 +153,7 @@ PERMISSION · FATAL) in MESSAGES and in `recordings/desk.log`; the original code
 ## Known limitations
 
 - Trailing stops are not sent to IBKR (templates carry `trail` for later; the stop is a stop-limit).
-- Option order entry opens no new contracts: option positions held in the account are scaled from POSITIONS.
+- Option spreads (multi-leg combos) are not built; each leg is its own order.
 - Column reorder is by layout (three ladder layouts), not by dragging a header.
 - The delta is estimated from the quote each print hit; IBKR does not provide aggressor-side trade data.
 - Depth beyond the inside quote needs an IBKR Level II subscription; without it the ladder still trades.

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261002-0145">
+<meta name="build" content="20261002-1310">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -709,6 +709,17 @@ i.tl{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:3p
 .cat-order-rejection,.cat-fatal{background:#5a1218;color:#fff} .cat-permission,.cat-connection{background:#3a2e12;color:#f2d59a} .cat-market-data{background:#1a3350;color:#cfe4ff}
 #tkTpl{height:20px;font-size:10.5px;max-width:110px}
 
+/* OPTION CHAIN */
+.oc{display:flex;flex-direction:column;height:100%} .oc-hd{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;padding:3px 6px;font:10.5px var(--sans);background:#121315;border-bottom:1px solid var(--line)}
+.oc-hd .sym{color:var(--gold);font-weight:800;font-size:12px} .oc-hd select{height:20px;font-size:11px} .oc-hd .cp button{padding:1px 8px;font-size:10px;letter-spacing:.08em} .oc-hd .cp button.on{color:var(--gold);border-color:var(--gold)}
+.oc-hd .qty{display:inline-flex;gap:3px;align-items:center;color:var(--dim)} .oc-hd .qty input{width:54px;height:18px;font:11px var(--mono)}
+.oc-body{flex:1 1 0;overflow:auto} .oct{width:100%;table-layout:fixed} .oct th{font-size:9px;letter-spacing:.08em;color:var(--dim);padding:1px 4px;text-align:right;position:sticky;top:0;background:#0b0f16} .oct th:first-child{text-align:left}
+.oct td{padding:0 4px;height:16px;line-height:16px;font:11px var(--mono);text-align:right;white-space:nowrap;overflow:hidden} .oct td.k{text-align:left;font-weight:700}
+.oct tr.itm td.k{color:var(--gold)} .oct tr.atm td{background:rgba(227,168,58,.10)} .oct tr.held td{background:rgba(63,181,111,.08)} .oct td.b{color:var(--buy)} .oct td.s{color:var(--sell)}
+.oct td.act{text-align:right} .oct td.act button{padding:0 5px;font-size:9.5px;height:15px;line-height:13px;margin-left:2px} .oct .ob{color:var(--buy);border-color:var(--buy)} .oct .os{color:var(--sell);border-color:var(--sell)}
+.oct .hold{font:700 9px var(--sans);padding:0 3px;border-radius:2px;background:#26303f;margin-left:2px} .oct .hold.b{color:var(--buy)} .oct .hold.s{color:var(--sell)}
+.oc .wks{border-top:1px solid var(--line);padding:2px 6px;font:10.5px var(--mono)} .oc .wk{display:flex;gap:6px;align-items:center} .oc .wk button{padding:0 4px;font-size:9px}
+
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
   --buy:#3fb56f;--sell:#d9534f;--gold:#e3a83a;--cyan:#5aa9d6;--violet:#a48bd6;--warn:#d9a441;
@@ -1093,6 +1104,13 @@ body.resizing .zbody{pointer-events:none}
       <label title="off: fires once and is gone · on: keeps firing (with a cooldown)"><input type="checkbox" id="alRepeat"> every time</label>
       <button id="alAdd">ADD ALERT</button><span class="dim" id="alMsg"></span></div><div id="alList"></div></div></div>
   <div class="pnl" data-p="conviction"><div class="pc"><div id="cvPanel"></div></div></div>
+  <div class="pnl" data-p="options"><div class="pc"><div class="oc"><div class="oc-hd">
+    <span class="sym" id="ocSym"></span><select id="ocExp" title="expiry"></select>
+    <span class="cp"><button data-right="C" class="on">CALLS</button><button data-right="P">PUTS</button></span>
+    <span class="dim" id="ocSpot"></span><span class="spacer"></span>
+    <span class="qty" title="contracts per click">CT <input id="ocQty" type="number" min="1" step="1" value="1"></span>
+    <span class="qty" title="limit price per contract: blank = at the touch (ask to buy, bid to sell)">PX <input id="ocPx" type="number" step="0.01" min="0" placeholder="touch"></span>
+    <span class="dim" id="ocSrc"></span></div><div class="oc-body"></div></div></div></div>
   <div class="pnl" data-p="bigmoney"><div class="pc"><div class="bm-hd"><span><b id="bmSym"></b> BIG OPTION MONEY · last 30 days</span><span class="dim">how the people who paid are doing now · hover for the numbers</span></div><div class="bm-list" id="bmList"></div></div></div>
   <div class="pnl fa" data-p="urgency"><div class="fa-top"><div class="fa-tabs"><span class="off" data-go="flow">OPTION FLOW</span><span class="on">URGENT FLOW</span></div>
     <div class="fa-sub"><span title="short-dated, out-of-the-money contracts being bought at the ask again and again, ranked by dollars per minute, sweeps and whether it is speeding up">Short-dated · out of the money · bought in a hurry</span><label><input type="checkbox" id="urMine"> Watchlist</label><label><input type="checkbox" id="urHot"> Called only</label><span class="ur-search"><input id="urQ" placeholder="TICKER" maxlength="8" spellcheck="false" title="one ticker: everything chased on it right now, and everything that came in earlier this session"><button id="urThis" title="the ticker on your chart">CHART</button><button id="urClr" title="back to the whole market">✕</button></span></div></div><div class="pc"><div id="urList"></div></div></div>
@@ -1351,10 +1369,10 @@ function makeColsResizable(table){
 
 /* ===================== TED — TWINEY EXECUTION DESK: panel pool ===================== */
 const PANELS = {
-  chart: "CHART", foot: "FOOTPRINT 5m", book: "LEVEL II", tape: "TIME & SALES", bigtape: "BIG TAPE", setup: "PLAY SETUP", ps60: "PS60", conviction: "CONVICTION", reload: "RELOADS",
+  chart: "CHART", foot: "FOOTPRINT 5m", book: "LEVEL II", tape: "TIME & SALES", bigtape: "BIG TAPE", options: "OPTION CHAIN", setup: "PLAY SETUP", ps60: "PS60", conviction: "CONVICTION", reload: "RELOADS",
   ticket: "ORDER ENTRY", positions: "POSITIONS", orders: "ORDERS", watch: "WATCHLIST", calls: "CALLS",
   flow: "OPTION FLOW", eqflow: "EQUITY FLOW", urgency: "URGENT FLOW", bigmoney: "BIG MONEY 30D", myalerts: "ALERTS", desk: "DESK", journal: "JOURNAL", messages: "MESSAGES"};
-const SYMBOL_LINKED = new Set(["chart", "foot", "book", "tape", "bigtape", "ps60", "reload", "ticket", "calls", "setup", "bigmoney", "conviction"]);
+const SYMBOL_LINKED = new Set(["chart", "foot", "book", "tape", "bigtape", "options", "ps60", "reload", "ticket", "calls", "setup", "bigmoney", "conviction"]);
 const ZONES = ["TL", "TC", "TR", "TX", "BL", "BC", "BR", "BX"];   // four columns × two rows; a column with one zone runs full height
 const PRESETS = {
   "PS60 Execution": {zones: {TL: ["watch", "myalerts"], TC: ["chart"], TR: ["book"], TX: ["tape"], BL: ["positions", "orders"], BC: ["conviction", "setup", "flow", "urgency", "bigmoney", "eqflow", "ps60", "reload", "calls"], BR: ["ticket"]},
@@ -2678,7 +2696,7 @@ function normalize(l){
   const placed = new Set([].concat(...ZONES.map(z => out.zones[z])).concat(Object.keys(out.floats || {})));
   // a panel new in a build docks itself once (ALERTS beside the watchlist, EQUITY FLOW beside the option flow), so it is
   // not lost behind the PANELS menu; a panel you hid yourself stays hidden
-  const NEW_PANELS = {myalerts: "TL", eqflow: "BC", urgency: "BC", bigmoney: "BC", conviction: "BC", bigtape: "BX"};
+  const NEW_PANELS = {myalerts: "TL", eqflow: "BC", urgency: "BC", bigmoney: "BC", conviction: "BC", bigtape: "BX", options: "BC"};
   out.seen = Array.isArray(out.seen) ? out.seen : Object.keys(P).filter(id => !(id in NEW_PANELS));
   for (const id of Object.keys(NEW_PANELS)) if (P[id] && !out.seen.includes(id)){ out.seen.push(id); if (!placed.has(id)){ out.zones[NEW_PANELS[id]].push(id); placed.add(id); } }
   out.hidden = Object.keys(P).filter(id => !placed.has(id));
@@ -3171,6 +3189,57 @@ function renderBook(d){
   for (const a of fresh){ const row = wrap.querySelector(`tr[data-price="${a.price}"]`); if (row && !row.classList.contains("flash")) row.classList.add("flash"); }
   rlBanner(wrap, d);
 }
+/* OPTION CHAIN: expiries and strikes from IBKR (the practice desk makes its own), quotes and Greeks for the strikes
+   around the spot, BUY / SELL to open from the row. Polled on its own (not in the big state payload) while the
+   panel is on screen. */
+const OC = {right: "C", expiry: null, data: null, timer: null, busy: false};
+async function pollChain(){
+  if (OC.busy) return; const sym = curSym, p = P.options; if (!sym || !p || !p.el.classList.contains("on") || p.el.offsetParent === null) return;
+  OC.busy = true;
+  try { const r = await fetch(`/api/options/chain?symbol=${encodeURIComponent(sym)}&right=${OC.right}${OC.expiry ? "&expiry=" + OC.expiry : ""}`); OC.data = await r.json(); renderChain(); }
+  catch (e) {} finally { OC.busy = false; }
+}
+setInterval(pollChain, 1000);
+function renderChain(){
+  const box = P.options && P.options.pc.querySelector(".oc"); if (!box) return;
+  const d = OC.data, body = box.querySelector(".oc-body");
+  document.getElementById("ocSym").textContent = curSym || "";
+  if (!d || !d.available){ body.innerHTML = `<div class="dim" style="padding:6px">${d && d.note ? esc(d.note) : "no chain yet"}${d && d.source === null && state && state.connection && state.connection.state === "CONNECTED" ? " — asked IBKR; needs the contract resolved and option data permissions" : ""}</div>`; return; }
+  const sel = document.getElementById("ocExp");
+  const opts = d.expiries.map(x => `<option value="${x}" ${x === d.expiry ? "selected" : ""}>${x.slice(4, 6)}/${x.slice(6, 8)}${x.slice(0, 4) !== String(new Date().getFullYear()) ? "/" + x.slice(2, 4) : ""}</option>`).join("");
+  if (sel.dataset.h !== opts){ sel.dataset.h = opts; sel.innerHTML = opts; }
+  if (OC.expiry !== d.expiry) OC.expiry = d.expiry;
+  box.querySelectorAll(".cp button").forEach(b => b.classList.toggle("on", b.dataset.right === d.right));
+  document.getElementById("ocSpot").textContent = d.spot ? `spot ${px(d.spot)} · ${d.rows.length ? Math.round(d.rows[0].dte) + "d" : ""}` : "";
+  document.getElementById("ocSrc").textContent = d.source === "PRACTICE" ? "PRACTICE prices (model)" : "IBKR";
+  const on = canTrade(), red = canReduce();
+  const rows = d.rows.map(r => { const itm = d.right === "C" ? r.strike < d.spot : r.strike > d.spot; const held = r.qty;
+    return `<tr class="${itm ? "itm" : "otm"} ${Math.abs(r.strike - d.spot) < (d.rows[1] ? Math.abs(d.rows[1].strike - d.rows[0].strike) / 2 : 0.5) ? "atm" : ""} ${held ? "held" : ""}" data-key="${esc(r.key)}" data-strike="${r.strike}">
+      <td class="k">${r.strike % 1 ? r.strike.toFixed(2) : r.strike}${held ? ` <span class="hold ${held > 0 ? "b" : "s"}">${held > 0 ? "+" : ""}${held}</span>` : ""}</td>
+      <td class="b">${r.bid == null ? "—" : r.bid.toFixed(2)}</td><td class="s">${r.ask == null ? "—" : r.ask.toFixed(2)}</td><td class="dim">${r.last == null ? "—" : r.last.toFixed(2)}</td>
+      <td class="dl" title="delta: how much the contract moves per $1 in the stock">${r.delta == null ? "—" : r.delta.toFixed(2)}</td><td class="dim" title="implied volatility">${r.iv == null ? "—" : Math.round(r.iv * 100) + "%"}</td>
+      <td class="act"><button class="ob" data-oo="BUY" ${on ? "" : "disabled"} title="BUY to open at the ask (or your PX)">BUY</button><button class="os" data-oo="SELL" ${on ? "" : "disabled"} title="SELL to open at the bid (or your PX)">SELL</button>${held ? `<button class="danger" data-oc="${esc(r.key)}" ${red ? "" : "disabled"} title="close every contract at the touch">X</button>` : ""}</td></tr>`; }).join("");
+  const working = (d.orders || []).map(o => `<div class="wk"><span class="${o.action === "BUY" ? "b" : "s"}">${esc(o.action)} ${o.remaining ?? o.qty} ${esc(o.symbol)} @ ${o.lmt}</span> <span class="dim">${esc(o.status || "")}</span> <button data-cxl="${o.order_id}" class="danger">✕</button></div>`).join("");
+  const html = `<table class="t oct"><tr><th>STRIKE</th><th>BID</th><th>ASK</th><th>LAST</th><th>Δ</th><th>IV</th><th></th></tr>${rows}</table>${working ? `<div class="wks">${working}</div>` : ""}`;
+  if (body.dataset.h === html) return; body.dataset.h = html;
+  const keep = body.scrollTop; body.innerHTML = html; body.scrollTop = keep;
+}
+(function(){ const p = P.options; if (!p) return;
+  p.el.addEventListener("change", e => { if (e.target.id === "ocExp"){ OC.expiry = e.target.value; pollChain(); } });
+  p.el.addEventListener("keydown", e => { if (e.target.matches("input")) e.stopPropagation(); });
+  p.el.addEventListener("click", async e => {
+    const rb = e.target.closest(".cp button[data-right]"); if (rb){ OC.right = rb.dataset.right; pollChain(); return; }
+    const cx = e.target.closest("button[data-cxl]"); if (cx){ cancelMine(+cx.dataset.cxl); return; }
+    const oc = e.target.closest("button[data-oc]"); if (oc){ if (!confirm("CLOSE every contract of " + oc.dataset.oc + "?")) return; const out = await post("/api/trade/opt_adjust", {key: oc.dataset.oc, contracts: 0, mode: "close"}); toast(out.ok ? "Sent: " + out.sent : "Blocked: " + (out.reason || ""), out.ok); return; }
+    const b = e.target.closest("button[data-oo]"); if (!b || !OC.data) return;
+    const tr = b.closest("tr"), strike = +tr.dataset.strike, n = Math.max(1, +document.getElementById("ocQty").value || 1), pxv = document.getElementById("ocPx").value;
+    const d = OC.data, what = `${b.dataset.oo} ${n} ${curSym} ${d.expiry.slice(4, 6)}/${d.expiry.slice(6, 8)} ${strike}${d.right}`;
+    const send = async () => { const out = await post("/api/trade/opt_open", {symbol: curSym, expiry: d.expiry, strike, right: d.right, action: b.dataset.oo, contracts: n, price: pxv === "" ? null : +pxv}); toast(out.ok ? "Sent: " + out.sent : "Blocked: " + (out.reason || ""), out.ok); poll(true); pollChain(); };
+    if (T().one_click) return send();
+    const row = d.rows.find(r => r.strike === strike) || {}; const ref = pxv !== "" ? +pxv : (b.dataset.oo === "BUY" ? row.ask : row.bid);
+    confirmBox(what, `limit ${ref != null ? "$" + ref.toFixed(2) : "?"} a contract · about $${sz(Math.round((ref || 0) * 100 * n))} · ${d.source === "PRACTICE" ? "practice" : "IBKR paper"}`, b.dataset.oo === "BUY" ? "b" : "s", send);
+  });
+})();
 /* right-click a ladder row: every order action at that price, in one menu */
 function ladderMenu(d, price, x, y, chip){
   const old = document.getElementById("cmenu"); if (old) old.remove();
@@ -3714,7 +3783,7 @@ function renderPositions(s){
     const off = (n, lbl, tip) => `<button data-oclose="${esc(p.key)}" data-n="${n}" ${on && n > 0 ? "" : "disabled"} title="${tip}: ${long ? "sell" : "buy back"} ${ct(n)} at the ${long ? "bid" : "ask"}">${lbl}</button>`;
     const add = (n, lbl) => `<button data-oadd="${esc(p.key)}" data-n="${n}" ${canTrade() ? "" : "disabled"} title="scale in: ${long ? "buy" : "sell"} ${ct(n)} more at the ${long ? "ask" : "bid"}">${lbl}</button>`;
     const quote = p.bid != null || p.ask != null ? `${p.bid != null ? p.bid.toFixed(2) : NA} / ${p.ask != null ? p.ask.toFixed(2) : NA}` : `<span class="dim">no quote</span>`;
-    return `<tr class="posrow opt"><td class="l"><b>${esc(p.label)}</b> <span class="${long ? "b" : "s"}">${long ? "L" : "S"} ${ct(q)}</span></td><td>${p.per_contract.toFixed(2)}</td><td>${quote}</td>
+    return `<tr class="posrow opt"><td class="l"><b>${esc(p.label)}</b> <span class="${long ? "b" : "s"}">${long ? "L" : "S"} ${ct(q)}</span>${p.delta != null ? ` <span class="dim" title="delta">Δ${(p.delta * p.qty).toFixed(1)}</span>` : ""}</td><td>${p.per_contract.toFixed(2)}</td><td>${quote}</td>
       <td class="pct ${p.pnl == null ? "" : p.pnl >= 0 ? "up" : "dn"}">${p.pnl == null ? NA : (p.pnl >= 0 ? "+" : "−") + "$" + sz(Math.abs(p.pnl).toFixed(0))}</td><td></td>
       <td class="l ctl">${off(Math.max(1, Math.floor(q / 4)), "25", "take off a quarter")}${off(Math.max(1, Math.floor(q / 2)), "50", "take off half")}${off(Math.max(1, Math.floor(q * 3 / 4)), "75", "take off three quarters")}<button data-oclose="${esc(p.key)}" data-n="ask" ${on ? "" : "disabled"} title="take off a number of contracts you type, at a price you type">…</button>
         <span class="sep"></span>${add(1, "+1")}${add(Math.max(1, Math.floor(q / 2)), "+½")}${add(q, "+1×")}<button data-oadd="${esc(p.key)}" data-n="ask" ${canTrade() ? "" : "disabled"} title="scale in by a number of contracts you type, at a price you type">+…</button>

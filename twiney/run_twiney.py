@@ -99,6 +99,7 @@ def run_live(cfg, plays, args):
     engine.bigmoney = BigMoney(cfg["flow"], os.path.join(cfg["recording"]["dir"], "big_money.jsonl"))
     gate = TradingGate(cfg)
     session = MarketDataSession(engine, cfg, plays, factory, gate=gate)
+    engine.session = session
     engine.play_listeners.append(session.add_play)
     engine.remove_listeners.append(session.remove_play)
     trader = Trader(engine, cfg, IbkrBroker(engine, session), gate) if cfg["trading"]["enabled"] else None

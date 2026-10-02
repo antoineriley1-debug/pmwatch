@@ -5,7 +5,7 @@ JSONL replay and tests identically. The engine never talks to IBKR; it returns
 slot commands ("depth_on"/"depth_off") which the market-data adapter executes.
 """
 
-from . import board, orderflow
+from . import board, options, orderflow
 import threading
 from collections import deque
 
@@ -185,6 +185,9 @@ class Engine:
         self.orders = {}        # key -> order dict (pending + recently finished)
         self.positions = {}
         self.opt_fills = []
+        self.opt_chain = {}       # symbol -> {expiries, strikes, mult, con_id, source, t}
+        self.opt_quotes = {}      # option key -> {bid, ask, last, t} (chain rows on watch + positions)
+        self.opt_watch = {}       # symbol -> {expiry, right, keys[]}: the chain rows the page is looking at
         self.jlog_path = None     # recordings/desk.log: one JSON line per connection / order / fill / error event
         self._jlog = None
         self.opt_positions = {}   # option key -> {symbol, expiry, strike, right, mult, qty, avg_cost, bid, ask, last}     # (account, symbol) -> {"qty", "avg_cost"}
@@ -527,7 +530,8 @@ class Engine:
         return {"key": p["key"], "label": label, "symbol": p.get("symbol"), "expiry": exp, "strike": p.get("strike"),
                 "right": p.get("right"), "mult": mult, "qty": p["qty"], "avg_cost": p["avg_cost"],
                 "per_contract": p["avg_cost"] / mult if mult else p["avg_cost"],
-                "bid": p.get("bid"), "ask": p.get("ask"), "last": p.get("last"), "mark": mark, "pnl": None if pnl is None else round(pnl, 2)}
+                "bid": p.get("bid"), "ask": p.get("ask"), "last": p.get("last"), "mark": mark, "pnl": None if pnl is None else round(pnl, 2),
+                "delta": p.get("delta")}
 
     def on_opt_position(self, account, key, fields, qty, avg_cost, t):
         """An option position from IBKR (contracts; avg_cost is per contract, IBKR style). Shown in POSITIONS with
@@ -535,7 +539,8 @@ class Engine:
         with self.lock:
             self.account_seen = True
             if qty:
-                cur = self.opt_positions.get(key) or {"bid": None, "ask": None, "last": None}
+                q = self.opt_quotes.get(key) or {}
+                cur = self.opt_positions.get(key) or {"bid": q.get("bid"), "ask": q.get("ask"), "last": q.get("last"), "delta": q.get("delta")}
                 cur.update(fields, key=key, account=account, qty=qty, avg_cost=avg_cost, t=t)
                 self.opt_positions[key] = cur
             else:
@@ -543,10 +548,80 @@ class Engine:
 
     def on_opt_quote(self, key, field, price, t):
         with self.lock:
+            if field not in ("bid", "ask", "last"):
+                return
+            q = self.opt_quotes.setdefault(key, {"bid": None, "ask": None, "last": None})
+            q[field] = price
+            q["t"] = t
             p = self.opt_positions.get(key)
-            if p is not None and field in ("bid", "ask", "last"):
+            if p is not None:
                 p[field] = price
                 p["quote_t"] = t
+            sim = getattr(self, "sim_broker", None)
+            if sim is not None and hasattr(sim, "on_opt_market"):
+                sim.on_opt_market(key, t)
+
+    def on_opt_greeks(self, key, greeks, t):
+        """Delta / gamma / theta / vega / implied vol for a contract (IBKR's tickOptionComputation, or the practice model)."""
+        with self.lock:
+            q = self.opt_quotes.setdefault(key, {"bid": None, "ask": None, "last": None})
+            for k in ("delta", "gamma", "theta", "vega", "iv"):
+                if greeks.get(k) is not None:
+                    q[k] = greeks[k]
+            q["greeks_t"] = t
+            p = self.opt_positions.get(key)
+            if p is not None:
+                p["delta"] = q.get("delta")
+
+    def on_opt_chain(self, symbol, expiries, strikes, mult, con_id, t, source="IBKR"):
+        """The option chain for a symbol: expiries and strikes (from IBKR's secDefOptParams, or made up by the
+        practice desk). Quotes come separately, for the rows the page watches."""
+        with self.lock:
+            self.opt_chain[str(symbol).upper()] = {"expiries": sorted(set(expiries)), "strikes": sorted(set(float(x) for x in strikes)),
+                                                   "mult": float(mult or 100), "con_id": con_id, "source": source, "t": t}
+
+    def option_chain(self, symbol, expiry=None, right="C", t=None, width=10):
+        """What the OPTION CHAIN panel shows: the chain, the watched expiry / right, the strikes around the spot
+        with their quotes. On the practice desk the chain and the quotes are generated here."""
+        t = t if t is not None else self.last_t
+        symbol = str(symbol).upper()
+        with self.lock:
+            st = self.syms.get(symbol)
+            spot = st.price() if st else None
+            if self.connection["state"] == "DEMO" and spot:
+                if symbol not in self.opt_chain or t - self.opt_chain[symbol]["t"] > 3600:
+                    self.on_opt_chain(symbol, options.practice_expiries(t), options.practice_strikes(spot), 100, None, t, source="PRACTICE")
+            ch = self.opt_chain.get(symbol)
+            if not ch:
+                return {"symbol": symbol, "spot": spot, "available": False, "source": None, "expiries": [], "rows": [],
+                        "note": "no chain yet" if self.connection["state"] != "DEMO" else "waiting for a price"}
+            expiry = expiry if expiry in ch["expiries"] else (ch["expiries"][0] if ch["expiries"] else None)
+            right = "P" if str(right).upper().startswith("P") else "C"
+            strikes = ch["strikes"]
+            if spot and strikes:
+                i = min(range(len(strikes)), key=lambda k: abs(strikes[k] - spot))
+                strikes = strikes[max(0, i - width): i + width + 1]
+            keys = [options.key_of(symbol, expiry, k, right) for k in strikes] if expiry else []
+            self.opt_watch[symbol] = {"expiry": expiry, "right": right, "keys": keys, "t": t}
+            if ch["source"] == "PRACTICE" and spot:
+                days = options.dte(expiry, t) if expiry else 0
+                for k, strike in zip(keys, strikes):
+                    q = options.practice_quote(spot, strike, expiry, right, t)
+                    if q:
+                        for f in ("bid", "ask", "last"):
+                            self.on_opt_quote(k, f, q[f], t)
+                        self.on_opt_greeks(k, options.bs_greeks(spot, strike, days or 0, right), t)
+            rows = []
+            for k, strike in zip(keys, strikes):
+                q = self.opt_quotes.get(k) or {}
+                pos = self.opt_positions.get(k)
+                rows.append({"key": k, "strike": strike, "bid": q.get("bid"), "ask": q.get("ask"), "last": q.get("last"),
+                             "delta": q.get("delta"), "gamma": q.get("gamma"), "theta": q.get("theta"), "vega": q.get("vega"), "iv": q.get("iv"),
+                             "qty": pos["qty"] if pos else 0, "dte": options.dte(expiry, t) if expiry else None,
+                             "otm_pct": round((strike - spot) / spot * 100 * (1 if right == "C" else -1), 1) if spot else None})
+            return {"symbol": symbol, "spot": spot, "available": True, "source": ch["source"], "expiries": ch["expiries"],
+                    "expiry": expiry, "right": right, "mult": ch["mult"], "rows": rows,
+                    "orders": [o for o in self._pending() if o.get("opt") and str(o.get("symbol", "")).startswith(symbol + " ")]}
 
     def on_opt_fill(self, exec_id, key, side, qty, price, t):
         """An option execution: journaled and listed with the fills, kept OUT of the stock fills so the stock's

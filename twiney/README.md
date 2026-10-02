@@ -92,8 +92,9 @@ BE stop to breakeven, X close.
   The same buttons scale it: OUT 25 / 50 / 75 / … / X and IN +1 / +½ / +1× / +…, LIMIT DAY orders on the
   contract at the touch or at a price you type. Closing is never blocked (disarmed, locked, over the caps);
   adding goes through the caps in real dollars (price × 100 × contracts). Option fills land in the journal.
-  Opening a NEW option position (an option chain, picking a strike) is not on the desk yet: open it in TWS and
-  scale it from here. The practice desk is stock only.
+  The OPTION CHAIN panel opens new positions: expiries and strikes from IBKR (a model-priced practice chain on
+  the practice desk), quotes and Greeks per strike, BUY / SELL to open at the touch or your price, the same caps
+  in real dollars. See docs/LADDER.md → Options from the desk.
 
 ## Trading from the ladder (paper only)
 - **ARM** in the header. TWINEY starts DISARMED every launch; nothing can be sent until you arm it.

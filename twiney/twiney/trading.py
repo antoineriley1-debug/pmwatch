@@ -473,6 +473,50 @@ class SimBroker:
     def position(self, symbol):
         return self.pos.get(symbol, [0.0, 0.0])[0]
 
+    # ---- practice options: LIMIT DAY orders on a contract, filled against the practice quote ------------
+    def place_option(self, key, action, qty, price, now, reducing=False):
+        with self.lock:
+            oid = self.next_id
+            self.next_id += 1
+            o = {"id": oid, "symbol": key, "action": action, "qty": qty, "remaining": qty, "type": "LMT", "price": price,
+                 "aux": None, "parent": None, "role": "option", "status": "Submitted", "tif": "DAY", "t": now, "children": [],
+                 "oca": None, "held": False, "opt": True}
+            self.orders[oid] = o
+            self.engine.on_order(f"sim{oid}", now, symbol=key, action=action, qty=float(qty), remaining=float(qty), type="LMT",
+                                 lmt=price, aux=None, tif="DAY", status="Submitted", order_id=oid, role="option", mine=True, parent=None, opt=True)
+            self.on_opt_market(key, now)
+            return oid
+
+    def on_opt_market(self, key, now):
+        """A practice option order fills when its limit reaches the quote (buy at or over the ask, sell at or
+        under the bid), at the quote; the position lands in the engine like one from TWS."""
+        q = self.engine.opt_quotes.get(key) or {}
+        for o in list(self.orders.values()):
+            if not o.get("opt") or o["symbol"] != key or o["status"] not in ("Submitted", "PreSubmitted"):
+                continue
+            px = q.get("ask") if o["action"] == BUY else q.get("bid")
+            if px is None or (o["action"] == BUY and o["price"] < px) or (o["action"] == SELL and o["price"] > px):
+                continue
+            n = o["remaining"]
+            o["remaining"], o["status"] = 0, "Filled"
+            mult = 100.0
+            pos = self.engine.opt_positions.get(key)
+            cur = pos["qty"] if pos else 0
+            cost = pos["avg_cost"] if pos else 0.0
+            signed = n if o["action"] == BUY else -n
+            new_qty = cur + signed
+            if cur == 0 or (cur > 0) != (new_qty > 0) and new_qty != 0:
+                avg = px * mult
+            elif abs(new_qty) > abs(cur):
+                avg = (cost * abs(cur) + px * mult * n) / abs(new_qty)
+            else:
+                avg = cost
+            sym, exp, rest = key.split(" ", 2)
+            fields = {"symbol": sym, "expiry": exp, "strike": float(rest[:-1]), "right": rest[-1], "mult": mult, "local": ""}
+            self.engine.on_opt_position(self.account, key, fields, new_qty, avg if new_qty else 0.0, now)
+            self.engine.on_order(f"sim{o['id']}", now, status="Filled", filled=float(n), remaining=0.0, avg_fill=px, order_id=o["id"])
+            self.engine.on_opt_fill(f"sim{self.session}.{o['id']}", key, "BOT" if o["action"] == BUY else "SLD", n, px, now)
+
 
 class IbkrBroker:
     """Sends orders to TWS through the market-data session (paper or live)."""
@@ -1464,6 +1508,55 @@ class Trader:
             self._note(now, f"SENT REVERSE {action} {qty} {symbol} @ {money(price)} (after the flatten)", True)
             self.engine._rec({"ev": "reverse", "t": now, "sym": symbol, "from": pos, "action": action, "qty": qty, "px": price, "id": oid})
             return {"ok": True, "id": oid, "flatten": flat, "sent": f"{action} {qty} {symbol} @ {money(price)} (reverse)"}
+
+    def opt_open(self, symbol, expiry, strike, right, action, contracts, price=None, now=None):
+        """Open (or add to) an option position from the chain: BUY or SELL ``contracts`` of the picked contract,
+        LIMIT DAY, at the touch (ask to buy, bid to sell) or at your price. Goes through the trading gate in real
+        dollars (price × multiplier × contracts); never market, never blind: no quote and no price = no order."""
+        from . import options as _o
+        with self.lock:
+            now = now or time.time()
+            symbol = str(symbol).upper()
+            if not (self.gate.can_trade() and self.gate.armed):
+                return {"ok": False, "reason": self.gate.why_not() or "disarmed"}
+            try:
+                n = int(contracts)
+                strike = float(strike)
+            except (TypeError, ValueError):
+                return {"ok": False, "reason": "contracts and strike must be numbers"}
+            if n <= 0:
+                return {"ok": False, "reason": "how many contracts?"}
+            right = "P" if str(right).upper().startswith("P") else "C"
+            action = BUY if str(action).upper() == BUY else SELL
+            key = _o.key_of(symbol, expiry, strike, right)
+            ch = self.engine.opt_chain.get(symbol) or {}
+            if expiry not in (ch.get("expiries") or []):
+                return {"ok": False, "reason": f"{expiry} is not an expiry on the {symbol} chain"}
+            mult = float(ch.get("mult") or 100)
+            q = self.engine.opt_quotes.get(key) or {}
+            if price in (None, ""):
+                price = q.get("ask") if action == BUY else q.get("bid")
+                if not price:
+                    return {"ok": False, "reason": f"no quote on {key} yet — type a price"}
+            price = round(float(price), 2)
+            if price <= 0:
+                return {"ok": False, "reason": "price must be positive"}
+            reason = self.gate.check(action, n, price * mult, now, "LMT")
+            if reason:
+                self._note(now, f"BLOCKED {action} {n} {key} @ {money(price)}: {reason}", False)
+                return {"ok": False, "reason": reason}
+            broker = self.broker
+            if isinstance(broker, IbkrBroker):
+                broker.session.opt_contract(key, broker.session.opt_contracts.get(key) or __import__("twiney.ibkr", fromlist=["make_option_contract"]).make_option_contract(symbol, expiry, strike, right, mult))
+            try:
+                oid = broker.place_option(key, action, n, price, now, reducing=False)
+            except Exception as exc:
+                self._note(now, f"FAILED {action} {n} {key} @ {money(price)}: {exc}", False)
+                return {"ok": False, "reason": str(exc)}
+            self._note(now, f"SENT {action} {n} {key} @ {money(price)} (${n * price * mult:,.0f})", True)
+            self.engine._rec({"ev": "order", "t": now, "sym": key, "action": action, "qty": n, "px": price, "type": "LMT",
+                              "aux": None, "tif": "DAY", "legs": [], "id": oid, "role": "option"})
+            return {"ok": True, "id": oid, "key": key, "sent": f"{action} {n} {key} @ {money(price)}"}
 
     def opt_adjust(self, key, contracts, mode, price=None, now=None):
         """Scale an OPTION position you hold: mode "close" takes contracts off (all of them with contracts 0 /
