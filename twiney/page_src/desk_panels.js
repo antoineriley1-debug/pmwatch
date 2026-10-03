@@ -723,13 +723,46 @@ async function sendPartial(sym, el){
   toast(out.ok ? "Sent: " + out.sent : "Partial blocked: " + (out.reason || ""), out.ok);
   if (out.ok){ PP[sym] = {open: false}; P.positions.last = null; P.ticket.last = null; poll(true); }
 }
+/* MANAGE THE POSITION from ORDER ENTRY, in one small box: where you are, the stop (by price or one click), a
+   trailing stop, BE / PARTIAL / CLOSE, then the scale plan and take-offs folded to one line each. */
+function posManagerHTML(s, d){
+  const pos = d.position, long = pos.qty > 0, q = Math.abs(pos.qty), last = d.last || pos.avg_cost, red = canReduce();
+  const pnl = pos.pnl != null ? pos.pnl : (last - pos.avg_cost) * pos.qty;
+  const stopO = (d.orders || []).find(o => o.role === "stop" && o.action === (long ? "SELL" : "BUY"));
+  const stopPx = stopO ? stopO.price : null, risk = stopPx != null ? (long ? stopPx - pos.avg_cost : pos.avg_cost - stopPx) * q : null;
+  const trail = ((s.trading || {}).trails || {})[d.symbol];
+  const tv = store.get("trailDollars", 0.5), sv = TK.stopPx != null && TK.stopSym === d.symbol ? TK.stopPx : (stopPx != null ? stopPx : snapPx(long ? last - 0.5 : last + 0.5));
+  const offs = [0.25, 0.5, 1];
+  return `<div class="pm">
+    <div class="pmr"><b class="${long ? "b" : "s"}">${long ? "LONG" : "SHORT"} ${sz(q)}</b><span>@ ${px(pos.avg_cost)}</span>
+      <span class="${pnl >= 0 ? "b" : "s"}">${pnl >= 0 ? "+" : "−"}$${sz(Math.abs(Math.round(pnl)))}</span>
+      ${stopPx != null ? `<span class="pmstop" title="your working stop">STOP ${px(stopPx)}${risk != null ? ` <i>${risk >= 0 ? "+" : "−"}$${sz(Math.abs(Math.round(risk)))}</i>` : ""}</span>` : `<span class="pmstop none" title="no stop order is working on this position">NO STOP</span>`}
+      <span class="pmbtn"><button data-be="${esc(d.symbol)}" ${red ? "" : "disabled"} title="stop to your entry price">BE</button><button data-partial="${esc(d.symbol)}" ${red ? "" : "disabled"} title="take part off: shares and price">PART</button><button class="danger" data-close="${esc(d.symbol)}" ${red ? "" : "disabled"} title="close the whole position at the touch">CLOSE</button></span></div>
+    <div class="pmr">
+      <label>STOP</label><input id="pmStop" type="number" step="${last < 1 ? "0.0001" : "0.01"}" value="${sv}" title="the stop price"><button data-pmstop="set" ${red ? "" : "disabled"} title="put the stop at this price (moves the working stop)">SET</button>
+      ${offs.map(o => `<button data-pmstop="${o}" ${red ? "" : "disabled"} title="stop ${long ? "under" : "over"} the price by $${o.toFixed(2)}: ${px(snapPx(long ? last - o : last + o))}">${long ? "−" : "+"}${o % 1 ? String(o).replace(/^0/, "") : o}</button>`).join("")}
+      <label class="tl">TRAIL $</label><input id="pmTrail" type="number" step="0.05" min="0.01" value="${trail ? trail.dist : tv}" title="how far the stop trails behind the best price"><button data-pmtrail="${trail ? "off" : "on"}" class="${trail ? "on" : ""}" ${red ? "" : "disabled"} title="${trail ? `trailing: best ${px(trail.best)}, stop ${trail.stop != null ? px(trail.stop) : "—"} · click to stop trailing` : "trail the stop behind the price: it only moves in your favour"}">${trail ? "TRAILING" : "TRAIL"}</button></div>
+    ${partialHTML(d.symbol)}${scalePlanHTML(s, d)}${takeoffHTML(d)}</div>`;
+}
+document.addEventListener("click", async e => {
+  const d = curData(); if (!d || !d.position || !d.position.qty) return;
+  const long = d.position.qty > 0, last = d.last || d.position.avg_cost;
+  const sb = e.target.closest("button[data-pmstop]");
+  if (sb){ const v = sb.dataset.pmstop === "set" ? +document.getElementById("pmStop").value : snapPx(long ? last - +sb.dataset.pmstop : last + +sb.dataset.pmstop);
+    if (!(v > 0)){ toast("Type a stop price", false); return; }
+    TK.stopPx = null; const out = await post("/api/trade/stop", {symbol: d.symbol, price: v}); toast(out.ok ? out.sent : "Stop: " + (out.reason || ""), out.ok); P.ticket.last = null; poll(true); return; }
+  const tb = e.target.closest("button[data-pmtrail]");
+  if (tb){ const on = tb.dataset.pmtrail === "on", dist = +document.getElementById("pmTrail").value; if (on) store.set("trailDollars", dist);
+    const out = await post("/api/trade/trail", {symbol: d.symbol, dollars: dist, on}); toast(out.ok ? (on ? `Trailing $${dist.toFixed(2)} behind the best price` : "Trail off — the stop stays") : "Trail: " + (out.reason || ""), out.ok); P.ticket.last = null; poll(true); return; }
+});
+document.addEventListener("input", e => { if (e.target.id === "pmStop"){ TK.stopPx = e.target.value; TK.stopSym = curSym; } });
 /* SCALE PLAN on the position: rungs measured from your average entry. MP = room to the target (a dollar, take a
    quarter; two, take a third; the rest rides). CASH = continuation, take more sooner. BUILD = add on strength, then
    scale out. TAKE pct is of what is LEFT; AUTO fires at the touch when the rung is reached, manual shows READY. */
 const SPC = {};   // symbol -> custom rung rows being typed
 function scalePlanHTML(s, d){
   const pos = d.position, long = pos.qty > 0, t = (s && s.trading) || {}, plan = (t.scale_plans || {})[d.symbol], tpls = t.scale_templates || {};
-  const open = store.get("scaleOpen", true);
+  const open = store.get("scaleOpen", false);
   const head = `<button class="tohead" data-sp-toggle="1" title="show / hide the scale plan">${open ? "▾" : "▸"} SCALE PLAN</button>`;
   if (!open) return `<div class="scale">${head}${plan ? ` <span class="dim">${esc(plan.kind)} · ${plan.left_pct}% left</span>` : ""}</div>`;
   if (!plan){
@@ -753,7 +786,7 @@ function scalePlanHTML(s, d){
 }
 document.addEventListener("click", async e => {
   const d = curData(); if (!d) return;
-  if (e.target.closest("button[data-sp-toggle]")){ store.set("scaleOpen", !store.get("scaleOpen", true)); P.ticket.last = null; renderTicket(state, d, true); return; }
+  if (e.target.closest("button[data-sp-toggle]")){ store.set("scaleOpen", !store.get("scaleOpen", false)); P.ticket.last = null; renderTicket(state, d, true); return; }
   const k = e.target.closest("button[data-sp-kind]"); if (k){ const out = await post("/api/trade/scale_plan", {symbol: d.symbol, kind: k.dataset.spKind}); toast(out.ok ? "Scale plan on: " + k.dataset.spKind : "Scale plan: " + (out.reason || ""), out.ok); poll(true); return; }
   if (e.target.closest("button[data-sp-addrow]")){ const box = e.target.closest(".scale"); const mv = +box.querySelector(".sp-mv").value, act = box.querySelector(".sp-act").value, pct = +box.querySelector(".sp-pct").value; if (!(mv > 0) || !(pct > 0)){ toast("Dollars and percent, please", false); return; } (SPC[d.symbol] = SPC[d.symbol] || []).push({move: mv, action: act, pct}); P.ticket.last = null; renderTicket(state, d, true); return; }
   if (e.target.closest("button[data-sp-custom]")){ const out = await post("/api/trade/scale_plan", {symbol: d.symbol, kind: "CUSTOM", rungs: SPC[d.symbol] || []}); if (out.ok) SPC[d.symbol] = []; toast(out.ok ? "Custom scale plan on" : "Scale plan: " + (out.reason || ""), out.ok); poll(true); return; }
@@ -764,7 +797,7 @@ document.addEventListener("click", async e => {
 // take-off presets: one press = a limit for your chosen share of the position at entry + $X a share (long) / − $X (short)
 const TAKE_OFF = [0.75, 1, 1.5, 2, 2.5, 5];
 function takeoffHTML(d){
-  const pos = d.position, long = pos.qty > 0, q = Math.abs(pos.qty), open = store.get("takeoffOpen", true), pct = +store.get("takeoffPct", 50);
+  const pos = d.position, long = pos.qty > 0, q = Math.abs(pos.qty), open = store.get("takeoffOpen", false), pct = +store.get("takeoffPct", 50);
   const n = Math.max(1, Math.min(q - 1, Math.round(q * pct / 100)));
   return `<div class="takeoff"><button class="tohead" data-to-toggle="1" title="show / hide the take-off buttons">${open ? "▾" : "▸"} TAKE OFF</button>${open ? `
     <span class="topct">${[25, 50, 75].map(k => `<button data-to-pct="${k}" class="${pct === k ? "on" : ""}" title="take off ${k}% of the position">${k}%</button>`).join("")}<span class="dim">${sz(n)} sh</span></span>
@@ -772,7 +805,7 @@ function takeoffHTML(d){
       return `<button data-to="${x}" ${canReduce() && q > 1 ? "" : "disabled"} title="${long ? "SELL" : "BUY"} ${sz(n)} @ ${px(p)} (entry ${px(pos.avg_cost)} ${long ? "+" : "−"} $${x.toFixed(2)})">+$${x % 1 ? x.toFixed(2) : x}</button>`; }).join("")}</span>` : ""}</div>`;
 }
 document.addEventListener("click", async e => {
-  if (e.target.closest("button[data-to-toggle]")){ store.set("takeoffOpen", !store.get("takeoffOpen", true)); P.ticket.last = null; renderTicket(state, curData(), true); return; }
+  if (e.target.closest("button[data-to-toggle]")){ store.set("takeoffOpen", !store.get("takeoffOpen", false)); P.ticket.last = null; renderTicket(state, curData(), true); return; }
   const pc = e.target.closest("button[data-to-pct]"); if (pc){ store.set("takeoffPct", +pc.dataset.toPct); P.ticket.last = null; renderTicket(state, curData(), true); return; }
   const b = e.target.closest("button[data-to]"); if (!b) return;
   const d = curData(); if (!d || !d.position || !d.position.qty) return;
@@ -884,10 +917,7 @@ function renderTicket(s, d, force){
       <span class="opts"><label><input type="checkbox" id="tkBracket" ${t.bracket ? "checked" : ""}> bracket</label><select id="tkTpl" title="what the bracket is: PLAY = the stop and target you drew; a template brackets from the entry price (stop −$, targets +$ with share splits)">${["PLAY"].concat(t.bracket_templates || []).map(n => `<option value="${esc(n)}" ${(t.bracket_template || "PLAY") === n ? "selected" : ""}>${esc(n)}</option>`).join("")}</select><label><input type="checkbox" id="tkScale" ${t.scale ? "checked" : ""}> PS60 exits</label></span>
       <button id="tkCxl" ${d && d.orders && d.orders.length ? "" : "disabled"} class="danger" title="cancel every working order on this symbol">CXL ALL</button>
     </div>
-    ${d && d.position && d.position.qty ? `<div class="trow pos"><span class="posbox"><span>IN <b class="${d.position.qty > 0 ? "b" : "s"}">${d.position.qty > 0 ? "LONG" : "SHORT"} ${sz(Math.abs(d.position.qty))}</b> @ ${px(d.position.avg_cost)}</span>
-      <button data-be="${esc(d.symbol)}" ${canReduce() ? "" : "disabled"} title="move the stop to your entry price; any other stop orders on ${esc(d.symbol)} are cancelled">BE</button>
-      <button data-partial="${esc(d.symbol)}" ${canReduce() ? "" : "disabled"} title="take part of the profit: you pick the shares and the price">PARTIAL</button>
-      <button class="danger" data-close="${esc(d.symbol)}" ${canReduce() ? "" : "disabled"} title="close the whole position with a limit at the touch">CLOSE</button></span>${scalePlanHTML(s, d)}${takeoffHTML(d)}${partialHTML(d.symbol)}</div>` : ""}
+    ${d && d.position && d.position.qty ? posManagerHTML(s, d) : ""}
     ${on ? "" : `<div class="why">${esc(whyNot())}${d && d.position && d.position.qty ? " · closing still works: CLOSE, FLATTEN, or a " + (d.position.qty > 0 ? "SELL" : "BUY") + " up to " + sz(Math.abs(d.position.qty)) : ""}</div>`}
     ${TK.log.length ? `<div class="st">${TK.log.slice(0, 2).map(l => `<div>${esc(l)}</div>`).join("")}</div>` : ""}</div>`;
   panelHTML("ticket", html);

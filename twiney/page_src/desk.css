@@ -475,3 +475,25 @@ i.tl{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:3p
 .oc .oct tr[data-strike]{cursor:pointer} .oc .oct tr.sel td{background:rgba(230,193,90,.18)!important} .oc .oct tr.sel td.k{box-shadow:inset 3px 0 0 var(--gold)}
 .oc .oct button.off{opacity:.45}
 #armBtn[data-pulse]{animation:armpulse .4s 6 alternate} @keyframes armpulse{from{box-shadow:0 0 0 0 var(--gold)}to{box-shadow:0 0 0 4px var(--gold);color:var(--gold)}}
+
+/* POSITION box in ORDER ENTRY: small, everything on two lines */
+.ticket .pm{margin-top:3px;padding:3px 5px;border:1px solid var(--line);border-radius:4px;font:11px var(--mono);display:grid;gap:3px}
+.ticket .pm .pmr{display:flex;flex-wrap:wrap;gap:3px 6px;align-items:center}
+.ticket .pm .b{color:var(--buy)} .ticket .pm .s{color:var(--sell)} .ticket .pm b{font-weight:800}
+.ticket .pm .pmstop{padding:0 5px;border:1px solid var(--sell);border-radius:3px;color:#ffd0d5} .ticket .pm .pmstop i{font-style:normal;opacity:.8}
+.ticket .pm .pmstop.none{border-color:var(--gold);color:var(--gold);animation:spready 1s infinite alternate}
+.ticket .pm .pmbtn{margin-left:auto;display:inline-flex;gap:3px}
+.ticket .pm button{padding:1px 6px;font-size:10px;height:20px} .ticket .pm label{font:700 9.5px var(--sans);letter-spacing:.08em;color:var(--dim)} .ticket .pm label.tl{margin-left:6px}
+.ticket .pm input{width:62px;height:20px;font:11px var(--mono);padding:0 3px} .ticket .pm #pmTrail{width:44px}
+.ticket .pm button[data-pmtrail].on{color:var(--gold);border-color:var(--gold)}
+.ticket .pm .scale,.ticket .pm .takeoff,.ticket .pm .pp{margin:0;padding:2px 4px;font-size:10px}
+.ticket .pm .scale .tohead,.ticket .pm .takeoff .tohead{padding:0 4px;font-size:10px}
+
+/* ORDER ENTRY as a small square: the option row on one line, normal-size checkboxes */
+.ticket.compact .trow.sub{display:flex;flex-wrap:wrap;gap:3px 8px;align-items:center}
+.ticket.compact .trow.sub .opts{display:inline-flex;flex-wrap:wrap;gap:3px 8px;align-items:center}
+.ticket.compact .trow.sub .opts label{display:inline-flex!important;flex-direction:row!important;align-items:center;gap:3px;font:700 9.5px var(--sans)!important;letter-spacing:.06em}
+.ticket.compact input[type=checkbox]{width:13px!important;height:13px!important;margin:0!important;transform:none!important}
+.ticket.compact .trow.sub select{height:20px;font-size:10px;padding:0 2px}
+.ticket.compact .trow.sub #tkCxl{padding:1px 6px;font-size:10px;height:20px}
+.ticket.compact .trow{gap:3px 4px} .ticket.compact .trow .row{gap:2px}

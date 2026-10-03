@@ -90,3 +90,25 @@ class ChartStopTests(unittest.TestCase):
         self.assertEqual(len(stops), 1); self.assertEqual(stops[0].get("aux"), 9.7)
         quote(e, 9.60, 9.61, 6.0); quote(e, 9.60, 9.61, 6.5)                            # price trades through the stop
         self.assertEqual(broker.position("AAA"), 0)
+
+
+class TicketStopTrailTests(unittest.TestCase):
+    """From ORDER ENTRY: a stop by price (refused when it is through the market) and a trailing stop that only moves
+    in your favour; both ride the STOP line, which is the stop order."""
+    def test_stop_and_trail(self):
+        e, tr, broker = make()
+        tr.submit("AAA", "BUY", 10.0, 100, 2.0, bracket=False); quote(e, 9.99, 10.00, 3.0)
+        self.assertFalse(tr.set_stop("AAA", 10.20, 4.0)["ok"])                       # above the price on a long: refused
+        self.assertTrue(tr.set_stop("AAA", 9.60, 4.0)["ok"]); tr.watchdog(4.5)
+        stops = [o for o in e._pending("AAA") if o.get("role") == "stop"]
+        self.assertEqual([o.get("aux") for o in stops], [9.6])
+        self.assertTrue(tr.set_trail("AAA", 0.50, True, 5.0)["ok"]); tr.watchdog(5.5)   # 10.00 - 0.50 = 9.50 is worse: stop stays
+        self.assertEqual(e.syms["AAA"].play["stop"], 9.6)
+        quote(e, 10.49, 10.50, 6.0); tr.watchdog(6.5)                                  # new high 10.50: stop to 10.00
+        self.assertEqual(e.syms["AAA"].play["stop"], 10.0)
+        self.assertEqual([o.get("aux") for o in e._pending("AAA") if o.get("role") == "stop"], [10.0])
+        quote(e, 10.29, 10.30, 7.0); tr.watchdog(7.5)                                  # pullback: the stop never moves back
+        self.assertEqual(e.syms["AAA"].play["stop"], 10.0)
+        quote(e, 9.95, 9.96, 8.0); quote(e, 9.95, 9.96, 8.5)                          # trades through 10.00: out
+        self.assertEqual(broker.position("AAA"), 0)
+        tr.watchdog(9.0); self.assertNotIn("AAA", tr.trails)

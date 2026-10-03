@@ -564,6 +564,10 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                 elif action == "scale_plan":
                     out = (tr.clear_scale_plan(sym, now) if body.get("clear") else
                            tr.set_scale_plan(sym, body.get("kind"), body.get("rungs"), body.get("auto"), now))
+                elif action == "stop":
+                    out = tr.set_stop(sym, body.get("price"), now)
+                elif action == "trail":
+                    out = tr.set_trail(sym, body.get("dollars"), bool(body.get("on", True)), now)
                 elif action == "scale_fire":
                     out = tr.fire_scale_rung(sym, body.get("i"), now)
                 else:

@@ -572,6 +572,7 @@ class Trader:
         self.bracket = bool(self.cfg["bracket"])
         self.scale = bool(self.cfg["scale_plan"]["enabled"])
         self.scale_plans = {}          # symbol -> SCALE PLAN on the position (rungs from the average entry)
+        self.trails = {}               # symbol -> {"dist", "best", "side"}: a trailing stop riding the STOP line
         self.families = {}   # entry order id -> {"symbol", "entry", "stop", "cash": [...], "be_done"}
         self.nonces = {}     # ticket nonce -> result (double-submit protection)
         self.mismatch = {}   # symbol -> since when its working exits have not matched the position
@@ -1025,6 +1026,10 @@ class Trader:
         except Exception as exc:
             log.warning("scale plan: %s", exc)
         try:
+            self._trail_tick(now or time.time())
+        except Exception as exc:
+            log.warning("trailing stop: %s", exc)
+        try:
             self._guard_exits(now or time.time())
         except Exception as exc:
             log.warning("exit guard: %s", exc)
@@ -1307,6 +1312,76 @@ class Trader:
                 self._lines_are_exits(play, now)
             except Exception as exc:
                 log.warning("chart exits %s: %s", play.get("symbol"), exc)
+
+    # ---- STOP and TRAIL from the ticket: they set the STOP line; the line is the stop order (_lines_are_exits) --------
+    def set_stop(self, symbol, price, now=None):
+        """A stop for the position at ``price``: below the market for a long, above it for a short. The STOP line is
+        set and the stop order follows it (placed, or moved if one is working)."""
+        with self.lock:
+            now = now or time.time()
+            pos = int(self.broker.position(symbol))
+            if not pos:
+                return {"ok": False, "reason": "no position to protect"}
+            try:
+                price = float(price)
+            except (TypeError, ValueError):
+                return {"ok": False, "reason": "stop price must be a number"}
+            st = self.engine.syms.get(symbol)
+            last = st.price() if st else None
+            price = snap(price, -1 if pos > 0 else +1, symbol)
+            if last is not None and ((pos > 0 and price >= last) or (pos < 0 and price <= last)):
+                return {"ok": False, "reason": f"a stop at {money(price)} is through the price {money(last)} — it would fill at once. "
+                                               f"Use CLOSE to get out now"}
+            self.engine.set_play_level(symbol, "stop", price, now, source="ticket")
+            self._note(now, f"{symbol}: STOP set {money(price)} for {abs(pos):,} sh", True)
+            return {"ok": True, "stop": price, "sent": f"STOP {money(price)} on {abs(pos):,} {symbol}"}
+
+    def set_trail(self, symbol, dollars, on=True, now=None):
+        """Trail the stop ``dollars`` behind the best price since you turned it on: it only ever moves in your favour."""
+        with self.lock:
+            now = now or time.time()
+            if not on:
+                self.trails.pop(symbol, None)
+                self._note(now, f"{symbol}: trail off (the stop stays where it is)", True)
+                return {"ok": True, "trail": None}
+            pos = int(self.broker.position(symbol))
+            if not pos:
+                return {"ok": False, "reason": "no position to trail"}
+            try:
+                d = float(dollars)
+            except (TypeError, ValueError):
+                return {"ok": False, "reason": "trail distance must be a number"}
+            if d <= 0:
+                return {"ok": False, "reason": "trail distance must be above 0"}
+            st = self.engine.syms.get(symbol)
+            last = st.price() if st else None
+            if last is None:
+                return {"ok": False, "reason": "no price yet"}
+            self.trails[symbol] = {"dist": round(d, 4), "best": last, "side": "long" if pos > 0 else "short", "t": now}
+            self._note(now, f"{symbol}: TRAIL ${d:.2f} behind the best price, from {money(last)}", True)
+            self._trail_tick(now)
+            return {"ok": True, "trail": dict(self.trails[symbol])}
+
+    def _trail_tick(self, now):
+        for symbol, tr in list(self.trails.items()):
+            pos = int(self.broker.position(symbol))
+            if not pos or ("long" if pos > 0 else "short") != tr["side"]:
+                self.trails.pop(symbol, None)
+                continue
+            st = self.engine.syms.get(symbol)
+            last = st.price() if st else None
+            if last is None:
+                continue
+            long_ = pos > 0
+            tr["best"] = max(tr["best"], last) if long_ else min(tr["best"], last)
+            want = snap(tr["best"] - tr["dist"] if long_ else tr["best"] + tr["dist"], -1 if long_ else +1, symbol)
+            cur = (st.play or {}).get("stop")
+            tk = tick_size(want, symbol)
+            better = cur is None or (want > cur + tk / 2 if long_ else want < cur - tk / 2)
+            through = (want >= last) if long_ else (want <= last)
+            if better and not through:
+                self.engine.set_play_level(symbol, "stop", want, now, source="trail")
+                tr["stop"] = want
 
     def _stops_moved_by_desk(self, symbol):
         return any(f.get("symbol") == symbol and f.get("be_done") for f in getattr(self, "families", {}).values())
@@ -1855,6 +1930,7 @@ class Trader:
                  filled_chip_seconds=float(self.cfg.get("filled_chip_seconds", 90)),
                  bracket_template=self.bracket_template, bracket_templates=list(self.bracket_templates().keys()),
                  scale_plans={sym: self._plan_view(sym, pl, time.time()) for sym, pl in self.scale_plans.items()},
+                 trails={sym: dict(tr) for sym, tr in self.trails.items()},
                  scale_templates={k: v for k, v in (self.cfg["scale_plan"].get("templates") or {}).items()},
                  qty_presets=list(self.cfg.get("qty_presets") or [25, 50, 100, 200, 500, 1000]))
         return s
