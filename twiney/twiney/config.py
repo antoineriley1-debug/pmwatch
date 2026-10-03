@@ -195,6 +195,8 @@ DEFAULTS = {
         "auto_arm_on_second_entry": True,
         # when an auto-entry trade goes flat (stopped out, target, flatten) its 2nd entry, stop and target lines go
         "clear_lines_when_flat": True,
+        # CHART TRADING: on any open position the STOP / TARGET lines are its exit orders (draw = order in, drag = moved)
+        "lines_are_exits": True,
         # the FILLED chip on the 2nd entry line goes this many seconds after the fill
         "filled_chip_seconds": 90,
         "risk_dollars": 100,

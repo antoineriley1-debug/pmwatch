@@ -69,3 +69,24 @@ class ScalePlanTests(unittest.TestCase):
         quote(e, 9.29, 9.30, 5.0); tr.watchdog(5.5); quote(e, 9.29, 9.30, 6.0)                       # down 69c for a short: both rungs
         self.assertEqual(broker.position("AAA"), -72)                                                  # 10% of 100, then 20% of 90
         self.assertFalse(tr.set_scale_plan("BBB", kind="MP", now=7.0)["ok"])                           # no position, no plan
+
+
+class ChartStopTests(unittest.TestCase):
+    """A stop drawn on the chart on a position opened from the ticket (no bracket) goes in as a real stop order,
+    follows the line when dragged, and gets you out when price trades through it."""
+    def test_drawn_stop_protects_a_manual_position(self):
+        e, tr, broker = make()
+        self.assertTrue(tr.submit("AAA", "BUY", 10.0, 100, 2.0, bracket=False)["ok"])
+        quote(e, 9.99, 10.00, 3.0)
+        self.assertEqual(broker.position("AAA"), 100)
+        tr.watchdog(3.5)
+        self.assertFalse([o for o in e._pending("AAA") if o.get("role") == "stop"])     # no line, no stop
+        ok, why = e.set_play_setup("AAA", {"stop": 9.50}, 4.0); self.assertTrue(ok, why)  # draw a stop under a long
+        tr.watchdog(4.5)
+        stops = [o for o in e._pending("AAA") if o.get("role") == "stop"]
+        self.assertEqual(len(stops), 1); self.assertEqual(stops[0].get("aux"), 9.5); self.assertEqual(stops[0].get("qty"), 100)
+        self.assertTrue(e.set_play_level("AAA", "stop", 9.70, 5.0, source="chart")); tr.watchdog(5.5)   # drag the line up on the chart
+        stops = [o for o in e._pending("AAA") if o.get("role") == "stop"]
+        self.assertEqual(len(stops), 1); self.assertEqual(stops[0].get("aux"), 9.7)
+        quote(e, 9.60, 9.61, 6.0); quote(e, 9.60, 9.61, 6.5)                            # price trades through the stop
+        self.assertEqual(broker.position("AAA"), 0)

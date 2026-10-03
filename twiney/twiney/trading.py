@@ -893,6 +893,7 @@ class Trader:
                     have = need
                 if self.broker.modify(o["order_id"], be, now):
                     moved += 1
+                    self._stop_line_follows(symbol, be, now)
                 need -= have
             except Exception as exc:
                 self._note(now, f"{symbol}: could not move stop {o['order_id']}: {exc}", False)
@@ -1252,7 +1253,7 @@ class Trader:
         if not pos or (pos > 0) != long_:
             if now - s["t"] > 5.0:                    # the position report can trail the fill; flat for real: done
                 self.auto_sync.pop(sym, None)
-                if s.get("held") and self.cfg.get("clear_lines_when_flat", True):
+                if s.get("held") and not s.get("manual") and self.cfg.get("clear_lines_when_flat", True):
                     self._clear_trade_lines(play, now)
             return
         exit_action = SELL if long_ else BUY
@@ -1302,6 +1303,54 @@ class Trader:
                 self._auto_one(play, now)
             except Exception as exc:
                 log.warning("auto 2nd entry %s: %s", play.get("symbol"), exc)
+            try:
+                self._lines_are_exits(play, now)
+            except Exception as exc:
+                log.warning("chart exits %s: %s", play.get("symbol"), exc)
+
+    def _stops_moved_by_desk(self, symbol):
+        return any(f.get("symbol") == symbol and f.get("be_done") for f in getattr(self, "families", {}).values())
+
+    def _stop_line_follows(self, symbol, price, now):
+        """The desk moved the stop order itself (breakeven): the STOP line on the chart moves with it, so the line
+        never pulls the order back to where it was."""
+        try:
+            if symbol in self.auto_sync:
+                self.auto_sync[symbol]["stop"] = snap(round(float(price), 4))
+            self.engine.set_play_level(symbol, "stop", price, now, source="breakeven")
+        except Exception as exc:
+            log.warning("stop line follow %s: %s", symbol, exc)
+
+    def _lines_are_exits(self, play, now):
+        """CHART TRADING for every position, however it was opened (ticket, ladder, chart, auto): the STOP and TARGET
+        lines on the chart are the position's exit orders. Draw a stop and a stop order goes in for the shares you
+        hold; drag it and the order moves with it. Existing exits are adopted at their prices, so nothing is
+        re-sent for a line that already matches."""
+        if not self.cfg.get("lines_are_exits", True):
+            return
+        sym = play["symbol"]
+        if sym in self.auto_sync:
+            self._auto_protect(play, now)
+            return
+        pos = int(self.broker.position(sym))
+        if not pos or not (play.get("stop") or play.get("target")):
+            return
+        exit_action = SELL if pos > 0 else BUY
+        pend = [o for o in self.engine._pending(sym) if o.get("action") == exit_action and o.get("status") != "PendingCancel"]
+        # exits already working are adopted as they are: a bracket stop, or a target split into cash-flow / runner
+        # pieces (PS60 exits) covers that line, so only a line with no order behind it sends one
+        stops = [o for o in pend if o.get("role") == "stop"]
+        tgts = [o for o in pend if o.get("role") == "target" or str(o.get("role") or "").startswith(("cash_flow", "runner"))]
+        have_stop = (stops[0].get("aux") or stops[0].get("lmt")) if stops else None
+        have_tgt = (next((o.get("lmt") for o in tgts if o.get("role") == "target"), None) or play.get("target")) if tgts else None
+        if stops and play.get("stop") and len({round(float(o.get("aux") or o.get("lmt") or 0), 4) for o in stops}) > 1:
+            have_stop = play.get("stop")       # several stop pieces at different prices: leave them to the ladder
+        if have_stop is not None and play.get("stop") and abs(float(have_stop) - float(play["stop"])) > 1e-6 and len(stops) and \
+                self._stops_moved_by_desk(sym):
+            self._stop_line_follows(sym, have_stop, now)
+        self.auto_sync[sym] = {"stop": have_stop, "target": have_tgt, "action": BUY if pos > 0 else SELL, "t": now,
+                               "held": True, "manual": True}
+        self._auto_protect(play, now)
 
     def _auto_one(self, play, now):
         sym = play["symbol"]
@@ -1448,6 +1497,7 @@ class Trader:
                     moved = [sid for sid in live if self.broker.modify(sid, fam["entry"], now)]
                     if moved:
                         self._note(now, f"{fam['symbol']}: cash flow taken — stop moved to breakeven {money(fam['entry'])}", True)
+                        self._stop_line_follows(fam["symbol"], fam["entry"], now)
                 except Exception as exc:
                     self._note(now, f"{fam['symbol']}: could not move the stop to breakeven: {exc}", False)
 
