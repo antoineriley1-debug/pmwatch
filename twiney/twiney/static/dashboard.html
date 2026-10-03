@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261003-0418">
+<meta name="build" content="20261003-0423">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -760,6 +760,10 @@ i.tl{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:3p
 .lad td.asz .ghost{right:2px;left:auto} .lad td.bsz .ghost{left:2px;right:auto}
 @keyframes ghost{0%{opacity:1;transform:none}75%{opacity:1;transform:none}100%{opacity:0;transform:none}}
 
+.fl .itm{font:bold 10px ui-monospace,Menlo,Consolas,monospace;color:#9fb4d0;border:1px solid #4a5a70;border-radius:3px;padding:0 5px;margin-left:6px}
+
+#voiceFlowBtn.off{color:var(--sell);border-color:var(--sell)} #soloBtn.on{color:var(--gold);border-color:var(--gold)}
+
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
   --buy:#3fb56f;--sell:#d9534f;--gold:#e3a83a;--cyan:#5aa9d6;--violet:#a48bd6;--warn:#d9a441;
@@ -1069,7 +1073,7 @@ body.resizing .zbody{pointer-events:none}
   <span class="clipgrp"><button id="clipBtn" title="Save the last minutes of this recording to the journal as a clip">CLIP</button><select id="clipLen" title="how far back the clip reaches"><option value="60">1m</option><option value="120" selected>2m</option><option value="300">5m</option><option value="600">10m</option></select></span>
   <span class="sep"></span>
   <button id="trainBtn" title="Training: no reload calls, tags or voice. You read the tape; REVEAL in the RELOADS window checks your call.">TRAIN OFF</button>
-  <button id="voiceBtn" title="Voice: reload buyer / seller calls for the ACTIVE tab only">VOICE ON</button>
+  <button id="voiceBtn" title="Voice on / off">VOICE ON</button><button id="voiceFlowBtn" title="Option flow in the voice: unusual calls / puts, repeat flow, the dough. Off = you hear reload buyers and sellers only">FLOW VOICE</button><button id="soloBtn" title="THIS TICKER: the voice and the OPTION FLOW panel follow the tab you are on and nothing else">ALL TICKERS</button>
   <input type="range" id="voiceVol" min="0" max="1" step="0.1" style="width:60px" title="voice volume">
   <button id="soundBtn" title="beep on calls (active tab)">BEEP</button>
   <span class="spacer"></span>
@@ -4173,21 +4177,35 @@ function reloadWords(a){
   if (a.label === "PULLED") return `Reload ${who} at ${px(a.price)} pulled.`;
   return null;
 }
+const voiceFlow = () => store.get("voiceFlow", true);      // option flow in the voice
+const solo = () => store.get("solo", false);                // THIS TICKER: voice and the flow panel follow the active tab only
+const FLOW_ROLES = new Set(["flow", "dough", "urgency", "equity"]);
 function speakNew(s){
   const items = [];
   for (const a of (s.alerts || []).slice(0, 8)){
     if (spoken.has("a" + a.key) || s.now - a.t > 8) continue;   // stale calls stay quiet: the ladder has moved on
     spoken.add("a" + a.key);
-    if (a.role === "conviction"){ if (!training() && a.words) items.push(a.words); continue; }   // READY TO GO / AGAINST YOU: always said
-    const fw = flowWords(a);
-    if (fw){ if (!training()) items.push(fw); continue; }   // unusual flow is for the whole watchlist, whatever tab is up
-    if (a.symbol !== TABS.active || training()) continue;   // background tabs never speak; training mode says nothing
+    if (training()) continue;                                    // training mode says nothing
+    const mine = a.symbol === TABS.active;
+    if (a.role === "conviction"){ if (a.words && (mine || !solo())) items.push(a.words); continue; }   // READY TO GO / AGAINST YOU
+    const isFlow = FLOW_ROLES.has(a.role) || /^UNUSUAL|REPEAT FLOW|FLOW/.test(a.label || "");
+    if (isFlow){ const fw = flowWords(a); if (fw && voiceFlow() && (mine || !solo())) items.push(fw); continue; }
+    if (a.role === "trap"){ if (a.words && mine) items.push(a.words); continue; }   // trapped crowd: the tab you are on
+    if (!mine) continue;                                         // background tabs never speak
     const w = reloadWords(a); if (w) items.push(w);
   }
   if (voiceFirst){ voiceFirst = false; return; }
   if (!store.get("voice", true)) return;
-  for (const t of items.slice(-2)) say(t);
+  for (const t of items.slice(-4)) say(t);                       // a reloader AND the flow on him both get said, in order
 }
+function renderVoiceBtns(){
+  const f = document.getElementById("voiceFlowBtn"), so = document.getElementById("soloBtn");
+  if (f){ f.textContent = voiceFlow() ? "FLOW VOICE" : "FLOW MUTED"; f.classList.toggle("off", !voiceFlow()); }
+  if (so){ so.textContent = solo() ? "THIS TICKER" : "ALL TICKERS"; so.classList.toggle("on", solo()); }
+}
+document.getElementById("voiceFlowBtn").addEventListener("click", () => { store.set("voiceFlow", !voiceFlow()); renderVoiceBtns(); say(voiceFlow() ? "Flow voice on." : "Flow voice off. Reloaders only.", true); });
+document.getElementById("soloBtn").addEventListener("click", () => { store.set("solo", !solo()); renderVoiceBtns(); const el = document.getElementById("flowList"); if (el) el.dataset.h = ""; if (state) renderFlow(state); say(solo() ? "This ticker only." : "All tickers.", true); });
+renderVoiceBtns();
 document.getElementById("voiceBtn").addEventListener("click", () => { const on = !store.get("voice", true); store.set("voice", on); document.getElementById("voiceBtn").textContent = on ? "VOICE ON" : "VOICE OFF"; if (on) say("Voice on.", true); renderTabs(); });
 document.getElementById("voiceVol").value = store.get("voiceVol", 1);
 document.getElementById("voiceVol").addEventListener("change", e => store.set("voiceVol", +e.target.value));
@@ -4202,7 +4220,7 @@ function renderFlow(s){
   const filt = (document.getElementById("flowFilter").value || "").trim().toUpperCase();
   const onlyU = document.getElementById("flowUnusual").checked, mine = document.getElementById("flowMine").checked;
   const fc = (state && state.flow_cfg) || {otm_pct: 3, min_premium: 250000};
-  const rows = (s.flow || []).filter(p => (!filt || p.symbol.startsWith(filt)) && (!mine || (s.symbols || []).includes(p.symbol)))
+  const rows = (s.flow || []).filter(p => (!filt || p.symbol.startsWith(filt)) && (!mine || (s.symbols || []).includes(p.symbol)) && (!solo() || p.symbol === curSym))
     .map(p => { const away = p.side === "ask" && p.otm_pct != null && p.otm_pct >= fc.otm_pct && p.premium >= 50000; return Object.assign({away}, p); })
     .filter(p => !onlyU || p.away).slice(0, 60);
   const src = document.getElementById("flowSrc"); const st = s.connection && s.connection.state === "DEMO" ? "PRACTICE FLOW" : "QUANT DATA"; if (src.textContent !== st) src.textContent = st;
@@ -4220,9 +4238,10 @@ function renderFlow(s){
     const soon = sized && dte != null && dte < 1 ? "EXPIRES TODAY" : sized && dte != null && dte <= 5 ? "THIS WEEK" : "";
     const n = again[[p.symbol, p.strike, p.cp, p.expiry].join("|")] || 0, far = p.otm_pct != null && p.otm_pct >= fc.otm_pct;
     const rep = p.side === "ask" && n >= 2 && far ? `AGAIN ×${n} · ${p.otm_pct.toFixed(0)}% OUT` : "";
-    return `<div class="fl ${cp === "C" ? "c" : "p"} ${p.away ? "away" : ""} ${soon || rep ? "know" : ""}" title="${p.side === "ask" ? "bought at the ask" : p.side === "bid" ? "sold at the bid" : "mid"}${p.otm_pct != null ? ` · ${p.otm_pct > 0 ? p.otm_pct.toFixed(1) + "% out of the money" : Math.abs(p.otm_pct).toFixed(1) + "% in the money"}` : ""}${soon ? " · size this close to expiry: somebody may know something" : ""}${rep ? " · the same far-out strike keeps getting bought with size" : ""}">
+    const deep = p.otm_pct != null && p.otm_pct <= -3 ? `${Math.abs(p.otm_pct).toFixed(0)}% IN THE MONEY` : "";
+    return `<div class="fl ${cp === "C" ? "c" : "p"} ${p.away ? "away" : ""} ${soon || rep ? "know" : ""}" title="${p.side === "ask" ? "bought at the ask" : p.side === "bid" ? "sold at the bid" : "mid"}${p.otm_pct != null ? ` · ${p.otm_pct > 0 ? p.otm_pct.toFixed(1) + "% out of the money" : Math.abs(p.otm_pct).toFixed(1) + "% in the money"}` : ""}${soon ? " · size this close to expiry: somebody may know something" : ""}${rep ? " · the same far-out strike keeps getting bought with size" : ""}${deep ? " · deep in the money: delta near one, moves dollar for dollar with the stock. That is a hedge or stock replacement, not a bet on a move — not the short-dated out-of-the-money dough we wait for" : ""}">
       <div class="tm">${nyHM(p.t)}</div>
-      <div class="top"><span class="tk">${esc(p.symbol)}</span><span class="prem">${kfmt$(p.premium)}</span><span class="dots ${p.side === "ask" ? "a" : ""}">${p.kind === "sweep" || p.kind === "split" ? "<i></i><i></i>" : p.kind === "block" ? "<i></i>" : ""}</span>${soon ? `<span class="kn">${soon}</span>` : ""}${rep ? `<span class="kn rep">${rep}</span>` : ""}${p.away && !rep ? `<span class="aw">WAYS AWAY</span>` : ""}${urg ? `<span class="urg" title="this contract is being bought in a hurry: short-dated, out of the money, print after print">⚡ URGENT</span>` : ""}</div>
+      <div class="top"><span class="tk">${esc(p.symbol)}</span><span class="prem">${kfmt$(p.premium)}</span><span class="dots ${p.side === "ask" ? "a" : ""}">${p.kind === "sweep" || p.kind === "split" ? "<i></i><i></i>" : p.kind === "block" ? "<i></i>" : ""}</span>${soon ? `<span class="kn">${soon}</span>` : ""}${rep ? `<span class="kn rep">${rep}</span>` : ""}${deep ? `<span class="itm">${deep}</span>` : ""}${p.away && !rep ? `<span class="aw">WAYS AWAY</span>` : ""}${urg ? `<span class="urg" title="this contract is being bought in a hurry: short-dated, out of the money, print after print">⚡ URGENT</span>` : ""}</div>
       <div class="cols"><span><i>EXP</i>${exp(p.expiry)}</span><span><i>STRIKE</i>${strike(p.strike)}</span><span><i>C/P</i>${cp}</span><span><i>SPOT</i>${p.spot != null ? (+p.spot).toFixed(2) : NA}</span><span><i>TYPE</i><span class="ty">${typ(p)}</span></span><span><i>DETAILS</i>${sz(p.size)} @ ${p.price != null ? p.price.toFixed(2) : NA}</span></div></div>`; }).join("")
     : `<div class="dim" style="padding:10px">${(s.flow || []).length ? "Nothing matches the filter." : (s.connection && s.connection.state === "DEMO" ? "Practice flow is warming up." : "No option flow. Add your Quant Data key in SETTINGS, Quant Data, then RESTART NOW.")}</div>`;
   if (el.dataset.h !== html){ el.dataset.h = html; el.innerHTML = html; }

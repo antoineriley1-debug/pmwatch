@@ -123,3 +123,16 @@ class QuantDataShapeTests(unittest.TestCase):
         self.assertEqual(opt["label"], "NO PRINTS")
         self.assertIn("foo, bar", opt["detail"])
         self.assertIn("quantdata_sample.json", opt["detail"])
+
+
+class PremiumUnitsTests(unittest.TestCase):
+    """The money on a print is contracts x price x 100: a vendor 'premium' smaller than that (per contract, thousands,
+    or a field that means something else) is replaced by the computed figure; a sane one is kept."""
+    def test_vendor_premium_below_contracts_times_price_is_recomputed(self):
+        from twiney.flow import normalize
+        p = normalize({"ticker": "NVDA", "strike": 190, "cp": "C", "size": 1000, "price": 8.30, "premium": 830,
+                       "expiry": "2026-10-09", "side": "ASK", "spot": 185.0}, now=1_800_000_000.0)
+        self.assertEqual(p["premium"], 830000.0)
+        q = normalize({"ticker": "NVDA", "strike": 190, "cp": "C", "size": 1000, "price": 8.30, "premium": 831500,
+                       "expiry": "2026-10-09", "side": "ASK", "spot": 185.0}, now=1_800_000_000.0)
+        self.assertEqual(q["premium"], 831500.0)

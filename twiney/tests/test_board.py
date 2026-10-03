@@ -189,7 +189,7 @@ class NoSidePickedTests(unittest.TestCase):
         self.assertEqual(board.say_money(2000000), "2 million dollars")
         b = {"symbol": "TSLA", "board_state": "READY_TO_GO", "side_bias": "LONG", "side_picked": True, "chart_gate": {"ok": True},
              "flow_gate": {"cluster": {"dollars": 308000, "repeats": 4}}, "reasons": []}
-        self.assertEqual(board.words(b), "TSLA long, ready to go. The chart is confirmed and the flow is confirmed: 308 thousand dollars went into short term calls, 4 times. They keep coming.")
+        self.assertEqual(board.words(b), "TSLA long, ready to go. The chart is confirmed and the flow is confirmed: 308 thousand dollars went into short term calls, 4 times. They keep scooping up the calls.")
         b["flow_gate"]["cluster"]["dte"] = 0.6
         self.assertIn("short term calls, expiring today, 4 times", board.words(b))
         self.assertEqual(board.say_expiry(1.4), "expiring tomorrow"); self.assertEqual(board.say_expiry(3.2), "expiring in 3 days"); self.assertEqual(board.say_expiry(None), "")

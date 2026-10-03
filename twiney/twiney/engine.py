@@ -778,8 +778,11 @@ class Engine:
                     fn(alert)
                 except Exception:
                     pass
-            words = (f"unusual {what} buying, {k(u['premium'])} premium"
-                     f"{', ' + str(round(u['otm_pct'])) + ' percent out of the money' if u['otm_pct'] is not None else ''}")
+            otm = u.get("otm_pct")
+            words = (f"unusual {what} buying, {narrative.say_dollars(u['premium'])}"
+                     + (f", {round(otm)} percent out of the money. They keep scooping up the {what}." if otm is not None and otm > 0 else
+                        f", {abs(round(otm))} percent in the money. That is a hedge or stock replacement, not the dough." if otm is not None and otm <= -3 else
+                        f", right at the money." if otm is not None else "."))
             if st is not None:
                 self._say(st, "flow", u["cp"], "flow", t, words)
             else:                                    # off the watchlist: no per-symbol state, the detector's cooldown is enough
@@ -1691,10 +1694,10 @@ class Engine:
         where = (f", {exp}" if exp else "") + (f", {top['strike']:g} strike" if top.get("strike") else "")
         if dough["state"] == "FLOW CONFIRMED" and not picked:
             text = f"FLOW on {st.symbol}: {dough['text']}. No side picked — this is what the money is doing."
-            words = f"{money} just went into short term {side}{where}, and it keeps coming. They're pounding the {side}."
+            words = f"{money} just went into short term {side}{where}. They keep scooping up the {side}."
         elif dough["state"] == "FLOW CONFIRMED":
             text = f"FLOW CONFIRMED on {st.symbol} {st.play['side']}: {dough['text']}. The dough is here."
-            words = f"{money} just went into short term {side}{where}, with your {st.play['side']}, and it keeps coming. They're pounding the {side}."
+            words = f"{money} just went into short term {side}{where}, with your {st.play['side']}. They keep scooping up the {side}."
         else:
             text = f"FLOW AGAINST {st.symbol} {st.play['side']}: {dough['text']}."
             words = f"The flow is against your {st.play['side']}: {narrative.say_dollars(dough['against'])} went into short term {other}."

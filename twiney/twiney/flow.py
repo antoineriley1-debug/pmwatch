@@ -181,8 +181,13 @@ def normalize(rec, now=None):
     size = _num(_pick(rec, "size")) or 0.0
     price = _num(_pick(rec, "price"))
     premium = _num(_pick(rec, "premium"))
-    if premium is None and price is not None:
-        premium = price * 100.0 * size
+    # the money is contracts x price x 100: when the vendor's premium field says less than that (a per-contract
+    # figure, thousands, or a field like "value" that means something else) the computed figure is the truth
+    calc = price * 100.0 * size if price is not None and size else None
+    if premium is None:
+        premium = calc
+    elif calc and premium < calc * 0.5:
+        premium = calc
     spot = _num(_pick(rec, "spot"))
     side = str(_pick(rec, "side") or "").strip().upper()
     if "BID" in side:                      # "AT BID", "AT_BID", "BELOW BID"
