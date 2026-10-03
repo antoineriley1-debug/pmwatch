@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261003-0407">
+<meta name="build" content="20261003-0408">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -753,6 +753,12 @@ i.tl{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:3p
 .p-bigtape .t.bt{table-layout:auto;width:100%;min-width:max-content} .p-bigtape .t.bt td{overflow:visible;text-align:right;padding:0 5px}
 .p-bigtape .t.bt td.px{text-align:left} .p-bigtape .t.bt td:last-child{padding-right:6px}
 .p-tape .t.tape2 td{white-space:nowrap;overflow:visible}
+
+/* the "eaten / refilled" flash on a ladder row: big enough to read, holds 2.5 s, says what happened */
+.lad td.sz .ghost{top:0;bottom:0;display:flex;align-items:center;font:800 11px var(--mono);line-height:1;padding:0 5px;border-radius:3px;background:rgba(5,8,12,.92);animation:ghost 2.6s 1 forwards;z-index:3}
+.lad td.sz .ghost.dn{color:#ff6b7a;border:1px solid rgba(255,77,94,.7)} .lad td.sz .ghost.up{color:#7dffb8;border:1px solid rgba(38,208,124,.7)}
+.lad td.asz .ghost{right:2px;left:auto} .lad td.bsz .ghost{left:2px;right:auto}
+@keyframes ghost{0%{opacity:1;transform:none}75%{opacity:1;transform:none}100%{opacity:0;transform:none}}
 
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
@@ -3398,8 +3404,8 @@ function eatMarks(wrap, d){
       }
       if (cell && m.last != null && size !== m.last && now - m.pt < 4000){
         const dlt = size - m.last;
-        if (dlt < 0 && size > 0){ cell.classList.add("hit"); cell.insertAdjacentHTML("beforeend", `<i class="ghost dn">−${kfmt(-dlt)}</i>`); }
-        else if (dlt > 0 && m.last > 0 && m.last < m.peak * 0.7){ cell.classList.add("refill"); cell.insertAdjacentHTML("beforeend", `<i class="ghost up">+${kfmt(dlt)} ↻</i>`); }
+        if (dlt < 0 && size > 0){ cell.classList.add("hit"); cell.insertAdjacentHTML("beforeend", `<i class="ghost dn" title="${kfmt(-dlt)} shares just came off this price: hit, or pulled">−${kfmt(-dlt)} HIT</i>`); }
+        else if (dlt > 0 && m.last > 0 && m.last < m.peak * 0.7){ cell.classList.add("refill"); cell.insertAdjacentHTML("beforeend", `<i class="ghost up" title="${kfmt(dlt)} shares just came back at this price: a refill">+${kfmt(dlt)} REFILL</i>`); }
       }
       m.last = size; m.pt = now;
       if ((side === "bid" && r.best_bid) || (side === "ask" && r.best_ask)) touch[side] = {price: r.price, size, peak: m.peak};
