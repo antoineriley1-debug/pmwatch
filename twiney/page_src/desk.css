@@ -1,0 +1,499 @@
+
+/* ===== PS60 EXECUTION DESK — application shell ===== */
+html,body{height:100%} body{overflow:hidden;font-size:12px}
+#app{display:grid;grid-template-rows:34px 26px minmax(0,1fr) 22px;height:100vh}
+#cmd{display:flex;align-items:center;gap:6px;padding:0 8px;background:#0b0f15;border-bottom:1px solid var(--line);white-space:nowrap;overflow:hidden}
+#cmd > *{flex:0 0 auto}
+#cmd button{padding:2px 7px;font-size:11px;border-radius:3px}
+#cmd label{display:inline-flex;align-items:center;gap:3px;font-size:11px;color:var(--dim)}
+#brand{font-size:12px;font-weight:800;letter-spacing:.14em;color:var(--gold);margin-right:4px}
+#symbox{display:flex;align-items:center;gap:2px}
+#symIn{width:96px;font:700 14px var(--mono);letter-spacing:.06em;text-transform:uppercase;background:#05070b;color:var(--gold);border:1px solid #3b3410;border-radius:3px;padding:3px 6px}
+#symIn:focus{outline:1px solid var(--gold)}
+#symIn::placeholder{color:#4a5566;font:400 11px system-ui;letter-spacing:0;text-transform:none}
+#symHist{font:inherit;font-size:11px;background:#05070b;color:var(--dim);border:1px solid var(--line);border-radius:3px;max-width:40px}
+#cmd .spacer{flex:1 1 0 !important;min-width:4px}
+#cmd .sep{width:1px;height:18px;background:var(--line);margin:0 3px}
+.led{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--dim);margin-right:4px;vertical-align:middle}
+.led.ok{background:var(--buy);box-shadow:0 0 5px var(--buy)} .led.warn{background:var(--warn)} .led.bad{background:var(--sell)}
+#armBtn{font-weight:800;letter-spacing:.06em} #armBtn.armed{background:#0f3d25;border-color:var(--buy);color:#dfffee} #armBtn.off{color:var(--dim)}
+#armBtn.locked{background:#5a1218;border-color:var(--sell);color:#fff}
+#sideBtn{font-weight:800;padding:2px 7px;min-width:0;margin-left:2px} #sideBtn.long{background:#0f3d25;border-color:var(--buy);color:#dfffee} #sideBtn.short{background:#5a1218;border-color:var(--sell);color:#fff} #sideBtn:disabled{opacity:.4}
+/* workspace tab bar */
+#wsbar{display:flex;align-items:center;gap:2px;padding:0 6px;background:#0d121a;border-bottom:1px solid var(--line);white-space:nowrap;overflow:hidden}
+.stab{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;font:700 12px var(--mono);letter-spacing:.06em;color:var(--dim);border:1px solid transparent;border-bottom:0;border-radius:3px 3px 0 0;cursor:pointer;height:24px;box-sizing:border-box}
+.stab.on{background:var(--panel);color:var(--gold);border-color:var(--line)}
+.stab .x{font-size:10px;color:var(--dim);padding:0 2px} .stab .x:hover{color:var(--sell)}
+.stab .v{font-size:10px;opacity:.7}
+#wsbar .add{padding:1px 8px;font-size:12px;border-radius:3px}
+#wsbar .right{margin-left:auto;display:flex;gap:4px;align-items:center}
+#wsbar select,#wsbar button{font-size:11px;padding:1px 6px;border-radius:3px}
+/* docking workspace */
+#work{position:relative;display:grid;min-height:0;min-width:0;background:#070a0f;
+  grid-template-columns:var(--c1,0px) var(--g1,0px) minmax(0,1fr) var(--g2,0px) var(--c3,0px) var(--g3,0px) var(--c4,0px);
+  grid-template-rows:minmax(0,1fr) var(--gr,0px) var(--r2,0px)}
+.zone{display:flex;flex-direction:column;min-height:0;min-width:0;position:relative;background:var(--panel);border:1px solid var(--line);margin:1px}
+.zone.empty{display:none}
+.zone[data-zone="TL"]{grid-column:1;grid-row:1} .zone[data-zone="TC"]{grid-column:3;grid-row:1} .zone[data-zone="TR"]{grid-column:5;grid-row:1} .zone[data-zone="TX"]{grid-column:7;grid-row:1}
+.zone[data-zone="BL"]{grid-column:1;grid-row:3} .zone[data-zone="BC"]{grid-column:3;grid-row:3} .zone[data-zone="BR"]{grid-column:5;grid-row:3} .zone[data-zone="BX"]{grid-column:7;grid-row:3}
+.zone.tall{grid-row:1/4}   /* a column with only one zone in it runs the full height */
+.zone.drop{outline:2px solid var(--gold);outline-offset:-2px}
+.ztabs{display:flex;align-items:stretch;height:22px;flex:0 0 auto;background:#0f141c;border-bottom:1px solid var(--line);overflow:hidden}
+.ztab{display:inline-flex;align-items:center;gap:6px;padding:0 8px;font-size:10.5px;letter-spacing:.08em;color:var(--dim);cursor:grab;border-right:1px solid var(--line);user-select:none;white-space:nowrap}
+.ztab.on{background:var(--panel);color:var(--text);font-weight:700}
+.ztab .sym{color:var(--gold);font-family:var(--mono);letter-spacing:.02em;font-weight:700}
+.ztab .ctl{display:none;gap:2px;margin-left:2px} .ztab.on .ctl{display:inline-flex}
+.ztab .ctl span{cursor:pointer;padding:0 3px;color:var(--dim)} .ztab .ctl span:hover{color:var(--text)}
+.zbody{flex:1 1 0;min-height:0;position:relative}
+.pnl{position:absolute;inset:0;display:none;min-height:0;overflow:hidden;flex-direction:column}
+.pnl.on{display:flex}
+.pnl > .pc{flex:1 1 0;min-height:0;overflow:auto;position:relative}
+.pnl > .pc.nos{overflow:hidden}
+.gut{background:transparent;z-index:3} .gut:hover{background:rgba(255,197,61,.35)}
+.gut.v{cursor:col-resize;grid-row:1/4} .gut.h{cursor:row-resize;grid-column:1/8;grid-row:2}
+#g1{grid-column:2} #g2{grid-column:4}
+/* floating panel */
+.float{position:absolute;z-index:8;background:var(--panel);border:1px solid var(--gold);box-shadow:0 8px 30px rgba(0,0,0,.6);display:flex;flex-direction:column;min-width:240px;min-height:120px;resize:both;overflow:hidden}
+.float .ztabs{cursor:move}
+.max{position:absolute !important;inset:2px !important;z-index:9;width:auto !important;height:auto !important}
+/* chart / foot in panels */
+.pnl .chart-wrap{position:absolute;inset:0;border:0;border-radius:0}
+/* ticket */
+.ticket{display:grid;grid-template-columns:auto 1fr;gap:4px 8px;padding:6px 8px;align-items:center;font-size:12px}
+.ticket label{color:var(--dim);font-size:10.5px;letter-spacing:.06em;text-align:right}
+.ticket input,.ticket select{font:inherit;font-family:var(--mono);background:#05070b;color:var(--text);border:1px solid var(--line);border-radius:3px;padding:3px 6px;width:100%;box-sizing:border-box}
+.ticket .row{display:flex;gap:4px;align-items:center} .ticket .row input{flex:1}
+.ticket .row button{padding:2px 6px;font-size:10.5px;border-radius:3px}
+.ticket .sides{display:flex;gap:4px} .ticket .sides button{flex:1;font-weight:800;letter-spacing:.08em;padding:5px 0;border-radius:3px;opacity:.5}
+.ticket .sides button.on{opacity:1} .ticket .sides .b.on{background:#0f3d25;border-color:var(--buy);color:#dfffee} .ticket .sides .s.on{background:#4a161b;border-color:var(--sell);color:#ffe3e6}
+.ticket .go{grid-column:1/3;display:flex;gap:6px;align-items:center;margin-top:2px}
+.ticket .go button.tx{flex:1;font-weight:800;letter-spacing:.1em;padding:6px 0;border-radius:3px;font-size:13px}
+.ticket .go button.tx.b{background:#0f3d25;border-color:var(--buy);color:#dfffee} .ticket .go button.tx.s{background:#4a161b;border-color:var(--sell);color:#ffe3e6}
+.ticket .go button.tx:disabled{opacity:.35;cursor:not-allowed}
+.ticket .why{grid-column:1/3;font-size:11px;color:var(--warn);min-height:14px}
+.ticket .st{grid-column:1/3;font-family:var(--mono);font-size:11px;color:var(--dim);border-top:1px solid var(--line);padding-top:4px;max-height:80px;overflow:auto}
+.ticket .st b{color:var(--text)}
+.ticket .qbtn{padding:2px 6px}
+.ticket .val{font-family:var(--mono)} .ticket .opts{grid-column:1/3;display:flex;gap:12px;color:var(--dim);font-size:11px}
+/* tables */
+.grid{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:11.5px;font-variant-numeric:tabular-nums}
+.grid th{position:sticky;top:0;background:#0f141c;color:var(--dim);font-weight:500;font-size:10px;letter-spacing:.06em;padding:3px 6px;text-align:right;border-bottom:1px solid var(--line)}
+.grid td{padding:2px 6px;text-align:right;border-bottom:1px solid #131923;white-space:nowrap}
+.grid th:first-child,.grid td:first-child{text-align:left}
+.grid tr.sel td{background:#1a2230} .grid tr:hover td{background:#141b26}
+.grid td.l{text-align:left} .grid .b{color:var(--buy)} .grid .s{color:var(--sell)}
+.grid button{padding:1px 6px;font-size:10.5px;border-radius:3px}
+.grid button.danger{border-color:var(--sell);color:var(--sell)} .grid button.danger:hover{background:#4a161b;color:#fff}
+.stt{font-size:10px;font-weight:700;letter-spacing:.06em;padding:0 5px;border-radius:2px;background:#1a2230}
+.stt.FILLED{color:var(--buy)} .stt.CANCELED,.stt.REJECTED{color:var(--sell)} .stt.ACKNOWLEDGED{color:var(--cyan)} .stt.SUBMITTED,.stt.CREATED,.stt.CANCEL{color:var(--warn)} .stt.PARTIALLY{color:var(--gold)}
+.pct.up{color:var(--buy)} .pct.dn{color:var(--sell)}
+/* quote strip inside the chart panel */
+.qs{display:flex;gap:10px;align-items:center;padding:2px 8px;font-family:var(--mono);font-size:12px;white-space:nowrap;overflow:hidden;background:#0f141c;border-bottom:1px solid var(--line);flex:0 0 auto;height:22px}
+.qs .sym{font-weight:800;color:var(--gold);font-size:13px} .qs .dim{font-size:11px}
+/* status bar */
+#status{display:flex;align-items:center;gap:14px;padding:0 10px;background:#0b0f15;border-top:1px solid var(--line);font-family:var(--mono);font-size:11px;color:var(--dim);white-space:nowrap;overflow:hidden}
+#status b{color:var(--text)} #status .spacer{flex:1}
+/* PS60 panel */
+.ps60p{padding:6px 10px;font-size:12px} .ps60p .hl{font-size:13px;font-weight:600;margin-bottom:4px}
+.ps60p ul{margin:2px 0 6px 16px;padding:0;color:#c4cddb} .ps60p li{margin:1px 0}
+.ps60p .kv{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;font-family:var(--mono);font-size:11.5px;margin:4px 0}
+.ps60p .kv span:nth-child(odd){color:var(--dim);letter-spacing:.06em;font-size:10px}
+.reloads{display:grid;gap:4px;padding:6px 10px}
+.rl{display:grid;grid-template-columns:auto 1fr;gap:1px 10px;padding:6px 10px;border-left:4px solid var(--dim);background:var(--panel2);font-family:var(--mono)}
+.rl.buyer{border-color:var(--buy)} .rl.seller{border-color:var(--sell)} .rl.gone{opacity:.55}
+.rl .t{grid-column:1/3;font-weight:800;letter-spacing:.08em;font-size:12px} .rl.buyer .t{color:var(--buy)} .rl.seller .t{color:var(--sell)}
+.rl .k{color:var(--dim);font-size:10px;letter-spacing:.06em} .rl .v{font-size:12px;color:var(--text)}
+/* menus */
+.menu .pop{min-width:200px}
+.pop .row{display:flex;gap:6px;align-items:center;padding:2px 0} .pop input{font:inherit;font-size:11px;background:#05070b;color:var(--text);border:1px solid var(--line);border-radius:3px;padding:2px 5px}
+.pop button{font-size:11px;padding:1px 6px;border-radius:3px}
+/* hotkeys */
+.hk{width:100%;border-collapse:collapse;font-size:12px} .hk td{padding:3px 6px;border-bottom:1px solid #131923} .hk td.k{font-family:var(--mono);color:var(--gold);width:120px}
+.hk td.k.cap{outline:1px solid var(--gold)} .hk .danger{color:var(--sell);font-size:10px}
+.ladder-wrap{border:0;border-radius:0;height:100%}
+.lad{font-size:11.5px} .lad td{height:18px}
+#modal .box{border-radius:4px}
+.legend{display:none}
+.toast{border-radius:3px}
+.pane .chart-hint{display:none}
+.dz{position:absolute;inset:0;z-index:5;pointer-events:none}
+.wlrow{display:grid;grid-template-columns:1fr auto auto;gap:6px;padding:3px 8px;font-family:var(--mono);font-size:11.5px;cursor:pointer;border-bottom:1px solid #131923;align-items:center}
+.wlrow:hover{background:#141b26} .wlrow.cur{background:#1a2230;box-shadow:inset 3px 0 0 var(--gold)}
+.wlrow .g{font-size:9.5px;font-weight:700;padding:0 5px;border-radius:2px}
+.wlrow .g.READY{background:#163a28;color:var(--buy)} .wlrow .g.WATCH{background:#3a3016;color:var(--gold)} .wlrow .g.PASS{background:#3a1a1e;color:var(--sell)}
+.wlrow .w{grid-column:1/4;font-size:10px;color:var(--dim);font-family:system-ui;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* PLAY SETUP: the trader's inputs; everything else derives from them */
+.setup .hdr{grid-column:1/3;display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--dim);letter-spacing:.06em}
+.setup .hdr b{color:var(--gold);font-size:13px;letter-spacing:0}
+.setup input.bad{border-color:var(--sell)}
+.setup .derived{grid-column:1/3;display:grid;grid-template-columns:auto 1fr;gap:2px 10px;font-family:var(--mono);font-size:11.5px;background:#0a0e15;border:1px solid var(--line);border-radius:3px;padding:5px 8px;margin-top:2px}
+.setup .derived span:nth-child(odd){color:var(--dim);letter-spacing:.06em;font-size:10px}
+.setup .derived .ok{color:var(--buy)} .setup .derived .no{color:var(--sell)} .setup .derived .gold{color:var(--gold)}
+.setup .go button.save{flex:1;font-weight:800;letter-spacing:.1em;padding:6px 0;border-radius:3px;background:#2a2410;border-color:var(--gold);color:#ffeeb0}
+.setup .go button.save:disabled{opacity:.35}
+.setup .msg{grid-column:1/3;font-size:11px;min-height:14px}
+.ticket .risk{display:flex;gap:4px;align-items:center;font-size:11px} .ticket .risk input{width:70px;flex:none} .ticket .risk .out{color:var(--gold);font-family:var(--mono)}
+
+/* big size on the ladder: adjustable bar, stronger tint the more it matters */
+.ladbar{display:flex;align-items:center;gap:6px;padding:2px 8px;height:22px;flex:0 0 auto;background:#0f1012;border-bottom:1px solid #202124;font:500 9.5px var(--sans);letter-spacing:.12em;text-transform:uppercase;color:#7d7f85}
+.ladbar input{width:64px;height:17px;font:11px var(--mono);background:#0a0a0b;color:var(--gold);border:1px solid #26282c;padding:0 4px}
+.ladbar button{padding:0 6px;font-size:9px;height:17px}
+.lad td.sz.big{background:rgba(227,168,58,.16);color:#f2d59a;font-weight:600}
+.lad td.sz.huge{background:rgba(227,168,58,.34);color:#fff;font-weight:700;box-shadow:inset 0 0 0 1px rgba(227,168,58,.6)}
+.lad td.bsz.big,.lad td.bsz.huge{box-shadow:inset 3px 0 0 var(--buy)} .lad td.asz.big,.lad td.asz.huge{box-shadow:inset -3px 0 0 var(--sell)}
+.lad .bigx{display:inline-block;margin:0 3px;padding:0 3px;font:700 9px var(--sans);letter-spacing:.04em;background:var(--gold);color:#0c0c0d;vertical-align:middle}
+.lad .sz{width:auto;min-width:58px;white-space:nowrap}
+
+/* tape speed meter (top of TIME & SALES) */
+.tspeed{display:grid;grid-template-columns:auto auto 1fr;grid-template-rows:auto 26px;gap:2px 10px;align-items:baseline;padding:5px 6px 6px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel);z-index:2}
+.tspeed .tsv{display:flex;gap:4px;align-items:baseline}
+.tspeed .tsv b{font:600 13px var(--mono,monospace)} .tspeed .tsv i{font-style:normal;font-size:9px;letter-spacing:.08em;color:var(--dim)}
+.tspeed .tst{justify-self:end;font-size:10px;font-weight:600;letter-spacing:.08em;color:var(--dim)} .tspeed .tst em{font-style:normal;opacity:.75}
+.tspeed.up .tst{color:var(--gold)} .tspeed.down .tst{color:var(--cyan)}
+.tspeed svg{grid-column:1/-1;width:100%;height:26px;display:block}
+/* ladder: compact but never clipped (column floors come from the header's data-min) */
+.ladbar{letter-spacing:.06em;gap:5px;padding:2px 6px}
+.ladbar input{width:58px}
+.ladder-wrap{overflow-x:auto}
+.lad td.sz{font-variant-numeric:tabular-nums}
+.lad td.whoc{padding:0 1px;text-align:center}
+.lad td.whoc .who{margin:0}
+.lad td.bars .bar-n{font-size:10px}
+.lad td.act{font-size:9.5px;letter-spacing:.02em}
+.lad th:last-child .colgrip{display:none}
+.lad td.px{position:relative}
+.lad td.px .lt{position:absolute;left:1px;top:50%;transform:translateY(-50%);font:700 7.5px var(--sans);letter-spacing:0;line-height:9px;padding:0 1px;background:#d6d6d3;color:#0c0c0d}
+.lad td.px.tagged{text-align:right;padding-left:13px;padding-right:2px}
+.lad td.whoc .pips,.lad td.whoc .bigx{font:600 9px var(--mono);letter-spacing:-.02em;margin:0;padding:0 1px}
+.lad td.whoc .pips.b{color:var(--buy)} .lad td.whoc .pips.a{color:var(--sell)}
+.lad td.whoc .bigx{background:none;color:var(--gold)}
+.lad td.bars{padding:0 2px}
+.lad td.act{padding:0 1px}
+td.bars.l .bar-n{margin-right:1px} td.bars.r .bar-n{margin-left:1px}
+.lad .bar{max-width:calc(100% - 4px)}
+.lad td.whoc .pips{letter-spacing:-.06em}
+/* watchlist add / remove, alerts, equity flow */
+.wlx{margin-left:6px;color:var(--dim);cursor:pointer;font-size:10px;visibility:hidden} .wlrow:hover .wlx,.alrow:hover .wlx{visibility:visible} .wlx:hover{color:var(--sell)}
+.alform{display:flex;flex-wrap:wrap;gap:4px;padding:6px 8px;border-bottom:1px solid var(--line);align-items:center;font:11px var(--sans)}
+.alform input,.alform select{height:20px;font:11px var(--mono);background:#0a0a0b;color:var(--text);border:1px solid #26282c;padding:0 4px}
+.alform #alSym{width:70px;text-transform:uppercase} .alform #alVal{width:90px} .alform label{color:var(--dim);white-space:nowrap}
+.alrow{display:grid;grid-template-columns:auto 1fr auto;gap:8px;padding:3px 8px;font:11.5px var(--mono);border-bottom:1px solid #131923;align-items:center}
+.alrow b{color:var(--gold)} .alrow i{font-style:normal}
+.fl.eq .venue{font:700 9.5px var(--sans);letter-spacing:.08em;padding:1px 6px;border-radius:3px;background:#2c2e33;color:#d6d6d3} .fl.eq .venue.dk{background:#3b2a52;color:#e2d4ff}
+.fl.eq.dk .tk{background:#5a3f86} .fl.eq.lt .tk{background:#3a4658} .fl.eq.c .tk{background:#17a86a} .fl.eq.p .tk{background:#d64541}
+.cmenu .balert{background:#3a2e12;border-color:var(--gold);color:#f2d59a}
+/* ladder option-flow marks */
+.lad th.flow,.lad td.flow{display:none} .lad.flowcol th.flow,.lad.flowcol td.flow{display:table-cell} .lad.flowcol .fdot{display:none}
+.lad td.flow{padding:0 2px;text-align:left;font:600 9.5px var(--mono);white-space:nowrap;overflow:hidden}
+.lad .fm b{padding:0 2px;border-radius:2px;margin-right:2px} .lad .fm b.c{background:rgba(63,181,111,.25);color:#9fe0bd} .lad .fm b.p{background:rgba(217,83,79,.25);color:#f5b3b0}
+.lad .fm i{font-style:normal;color:var(--dim);margin-right:2px} .lad .fm u{text-decoration:none;color:var(--gold)}
+.lad .fm.hot b,.lad .fdot.hot{box-shadow:0 0 0 1px var(--gold),0 0 6px var(--gold);animation:flowring 1.4s infinite}
+@keyframes flowring{0%,100%{box-shadow:0 0 0 1px var(--gold),0 0 4px var(--gold)}50%{box-shadow:0 0 0 1px var(--gold),0 0 10px var(--gold)}}
+.lad .fdot{font-size:10px;line-height:1;border-radius:50%} .lad .fdot.c{color:var(--buy)} .lad .fdot.p{color:var(--sell)} .lad .fdot u{text-decoration:none;font-size:8px;color:var(--gold);vertical-align:top}
+/* urgent flow */
+.fl .urg{font:700 9.5px var(--sans);letter-spacing:.08em;padding:1px 6px;border-radius:3px;background:var(--gold);color:#0c0c0d;margin-left:6px}
+.fl .acc{font:700 9.5px var(--sans);letter-spacing:.06em;color:var(--gold);margin-left:6px}
+.fl.ur .bar{flex:1;height:6px;background:#263043;border-radius:3px;overflow:hidden;margin-left:8px} .fl.ur .bar i{display:block;height:100%;background:var(--gold)}
+.fl.ur.p .bar i{background:#d64541} .fl.ur.hot{box-shadow:inset 3px 0 0 var(--gold)}
+.lad .fm em.urg{font-style:normal;color:var(--gold);margin-right:1px}
+/* the tag column holds R16 and a ghost C / P / A: compact, never clipped; the SOMEBODY KNOWS bolt beside it only when the ladder is wide (the gold price outline says it otherwise) */
+.lad td.whoc .who.big{font-size:9.5px;padding:0 2px;letter-spacing:0} .lad td.whoc .who.gone,.lad td.whoc .who.was{padding:0 3px}
+.lad:not(.flowcol) td.whoc .knows{display:none}
+/* trade log under the play setup */
+.setup .row .suclr{padding:0 6px;font-size:10px;margin-left:4px;color:var(--dim)} .setup .row .suclr:hover{color:var(--sell);border-color:var(--sell)}
+.tlog{margin:8px 6px 6px;border-top:1px solid var(--line);padding-top:6px}
+.tlog-hd{display:flex;justify-content:space-between;align-items:baseline;font:600 10px var(--sans);letter-spacing:.12em;color:var(--dim)} .tlog-hd b{color:var(--gold);margin-left:6px}
+.tlog-in{display:flex;gap:4px;margin:5px 0} .tlog-in input{flex:1;height:22px;font:11.5px var(--mono);background:#0a0a0b;color:var(--text);border:1px solid #26282c;padding:0 6px}
+.tlog-in button{height:22px;padding:0 8px;font-size:10px;white-space:nowrap} .tlog-in button.on{background:#3d1c1c;border-color:#ff2d55;color:#ffb3bb}
+.tlog-list{max-height:220px;overflow-y:auto}
+.tl{display:grid;grid-template-columns:auto auto 1fr;gap:6px;padding:3px 2px;border-bottom:1px solid #131923;font:11.5px var(--mono);align-items:start}
+.tl .tm{color:var(--dim);font-size:10.5px} .tl .ic{width:14px;text-align:center} .tl .tx{white-space:normal;line-height:1.35}
+.tl.level .tx{color:var(--gold)} .tl.voice .tx{color:var(--text)} .tl.typed .tx{color:#b8b8b4}
+/* reload buyer / seller: unmistakable on the ladder */
+.lad td.bars.rlw{font:800 9px var(--sans);letter-spacing:.06em;color:#fff;text-align:center;padding:0;overflow:hidden}
+.lad td.bars.rlw.b{background:var(--buy)} .lad td.bars.rlw.s{background:var(--sell)}
+.lad tr.rl-bid td.bsz{background:rgba(63,181,111,.85);color:#fff;font-weight:700} .lad tr.rl-ask td.asz{background:rgba(217,83,79,.85);color:#fff;font-weight:700}
+.lad tr.rl-bid td.px,.lad tr.rl-ask td.px{font-weight:800}
+.lad tr.rl-bid td:first-child{box-shadow:inset 3px 0 0 var(--buy)} .lad tr.rl-ask td:last-child{box-shadow:inset -3px 0 0 var(--sell)}
+.lad tr.flash td{animation:rlflash 0.5s 6}
+@keyframes rlflash{0%,100%{filter:none}50%{filter:brightness(2.2)}}
+/* the banner over the ladder */
+.rlban{display:none;flex-wrap:wrap;gap:4px;padding:3px 6px;background:#0f1012;border-bottom:1px solid #202124}
+.rlban.on{display:flex}
+.rlb{font:800 10px var(--sans);letter-spacing:.08em;padding:2px 7px;border-radius:3px;cursor:pointer;color:#fff;white-space:nowrap}
+.rlb.b{background:var(--buy)} .rlb.s{background:var(--sell)} .rlb.on{opacity:.9} .rlb.up,.rlb.down{animation:rlflash 1.2s infinite}
+/* ladder text size (COLS -> Text size) */
+.ladder-wrap{--ladz:1}
+.lad{font-size:calc(11.5px * var(--ladz))} .lad td{height:calc(18px * var(--ladz))} .lad th{font-size:calc(9px * var(--ladz))}
+.lad td.whoc .who.big,.lad td.whoc .pips,.lad td.whoc .bigx{font-size:calc(9.5px * var(--ladz))} .lad td.bars .bar-n{font-size:calc(10px * var(--ladz))}
+.lad td.act{font-size:calc(9.5px * var(--ladz))} .lad td.flow{font-size:calc(9.5px * var(--ladz))} .lad td.bars.rlw{font-size:calc(9px * var(--ladz))}
+.lad td.px .lt{font-size:calc(7.5px * var(--ladz))}
+.lad.zoomtrim th.act,.lad.zoomtrim td.act{display:none}
+.setup .auto{grid-column:1/3;display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;font-family:var(--mono);font-size:11px;background:#0a0e15;border:1px solid var(--line);border-radius:3px;padding:5px 8px}
+.setup .auto label{display:flex;gap:5px;align-items:center;font-size:10px;letter-spacing:.06em;color:var(--gold);white-space:nowrap;cursor:pointer}
+.setup .auto.off label{color:var(--dim)} .setup .auto .ok{color:var(--buy)} .setup .auto .gold{color:var(--gold)} .setup .auto .dim{color:var(--dim)}
+.setup .go #suClear{padding:6px 10px;font-size:10.5px;letter-spacing:.08em}
+.setup .auto .no{color:var(--sell)}
+.qs .qgear{padding:0 7px;font-size:14px;line-height:18px;margin-left:4px}
+.cs-pop{display:block;position:fixed;z-index:70;width:330px;max-height:78vh;overflow:auto;padding:8px 10px;font-size:11.5px}
+.cs-pop .cs-hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+.cs-pop .cs-hd button{margin-left:4px;padding:1px 7px}
+.cs-pop h5{margin:9px 0 3px;font-size:10px;letter-spacing:.12em;color:var(--gold)}
+.cs-pop .cs-row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:2px 0}
+.cs-pop .cs-row input[type=color]{width:34px;height:20px;padding:0;border:1px solid var(--line);background:none}
+.cs-pop .cs-row input[type=range]{width:110px}
+.cs-pop .cs-row button{padding:0 5px;font-size:10px}
+.cs-pop{background:#0e1117;border:1px solid #2a3548;border-radius:4px;box-shadow:0 10px 30px rgba(0,0,0,.6);color:#d6d6d3}
+.cs-pop .cs-row span:first-child{color:#c9ced6}
+
+/* Level II, traditional and compact: buyers left, sellers right; columns shrink to a few px and the text clips */
+.lad.lad3{font-size:calc(11px * var(--ladz,1));border-collapse:collapse}
+.lad.lad3 td{height:calc(15px * var(--ladz,1));padding:0 2px;white-space:nowrap;overflow:hidden;text-overflow:clip;line-height:1}
+.lad.lad3 th{font-size:calc(9px * var(--ladz,1));padding:1px 2px;white-space:nowrap;overflow:hidden;letter-spacing:.04em;position:relative}
+.lad.lad3 th.flow,.lad.lad3 td.flow{display:table-cell} .lad.lad3.noflow th.flow,.lad.lad3.noflow td.flow{display:none}
+.lad.lad3 td.flow{font:600 calc(9.5px * var(--ladz,1)) var(--mono);text-align:center}
+.lad.lad3 td.fc{background:rgba(38,208,124,.04)} .lad.lad3 td.fp{background:rgba(255,77,94,.04)}
+.lad.lad3 .fs.c{color:#3ee08f} .lad.lad3 .fs.p{color:#ff6b78} .lad.lad3 .fs u{text-decoration:none;opacity:.7;font-size:.85em;margin-left:1px}
+.lad.lad3 .fs.hot{outline:1px solid currentColor;outline-offset:-1px;border-radius:2px;padding:0 1px}
+.lad.lad3 td.sz.click{cursor:pointer} .lad.lad3 td.sz.click:hover{outline:1px solid rgba(255,255,255,.35);outline-offset:-1px}
+.lad.lad3 td.sz .mine{margin-left:2px} .lad.lad3 td.sz .mine .chip{font-size:.85em;padding:0 2px}
+.lad.lad3 td.bars.rlw{font:700 calc(10px * var(--ladz,1)) var(--mono);letter-spacing:0;text-align:center}
+.lad.lad3 td.bars .bar-n{font-size:calc(9.5px * var(--ladz,1))}
+.lad.lad3 td.act{font-size:calc(9px * var(--ladz,1))}
+.lad.lad3 .colgrip{width:7px;right:-3px}
+body.colresizing,body.colresizing *{cursor:col-resize!important;user-select:none}
+.legend.lg3{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center;font-size:10px;padding:3px 4px}
+.legend.lg3 .howto{padding:0 6px;font-size:9.5px;margin-left:auto}
+.howto-pop{display:block;position:fixed;z-index:75;width:400px;max-width:calc(100vw - 16px);background:#0e1117;border:1px solid #2a3548;border-radius:4px;box-shadow:0 10px 30px rgba(0,0,0,.6);padding:8px 12px;font-size:12px;line-height:1.45;color:#d6d6d3}
+.howto-pop p{margin:6px 0} .howto-pop .cs-hd{display:flex;justify-content:space-between;align-items:center}
+/* the header (and its column grips) stays pinned to the top of the ladder while the rows scroll */
+.lad.lad3 tr:first-child th{position:sticky;top:0;z-index:5;background:#0d1016;box-shadow:inset 0 -1px 0 #2a3548}
+
+.bm-hd{display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 10px;padding:4px 6px;font-size:10.5px;letter-spacing:.06em;border-bottom:1px solid var(--line)}
+.bm-list{overflow:auto;max-height:100%}
+.bm{display:grid;grid-template-columns:auto auto auto 1fr;gap:1px 8px;padding:4px 6px;border-bottom:1px solid #1a2130;font:11px var(--mono);border-left:3px solid #3a4558}
+.bm.good{border-left-color:var(--buy)} .bm.bad{border-left-color:var(--sell)}
+.bm .amt{font-weight:700;color:var(--gold)} .bm .ct.c{color:#3ee08f} .bm .ct.p{color:#ff6b78} .bm .ag{color:var(--dim)}
+.bm .st{font-weight:700;letter-spacing:.04em} .bm.good .st{color:var(--buy)} .bm.bad .st{color:var(--sell)}
+.bm .tx{grid-column:1/-1;color:#c9ced6;font-family:var(--sans);font-size:11.5px}
+.bm .st{background:none!important;border:0!important;padding:0!important;margin:0!important;box-shadow:none!important}
+
+.fa-sub .ur-search{display:inline-flex;gap:3px;align-items:center;margin-left:auto}
+.fa-sub .ur-search input{width:64px;text-transform:uppercase;font:600 11px var(--mono);padding:1px 4px}
+.fa-sub .ur-search button{padding:0 5px;font-size:10px}
+.ur-head{padding:5px 8px;font-size:11.5px;border-bottom:1px solid var(--line)} .ur-head .c{color:#3ee08f} .ur-head .p{color:#ff6b78}
+.ur-sec{padding:4px 8px 2px;font-size:9.5px;letter-spacing:.14em;color:var(--gold)}
+.ur-h{display:grid;grid-template-columns:44px 1fr 30px 56px 44px 44px 14px;gap:4px;padding:2px 8px;font:11px var(--mono);border-bottom:1px solid #161c27;align-items:center}
+.ur-h.c .ct{color:#3ee08f} .ur-h.p .ct{color:#ff6b78} .ur-h .tm,.ur-h .k,.ur-h .dte{color:var(--dim)} .ur-h .pr{color:var(--gold);text-align:right} .ur-h .otm{text-align:right;color:#c9ced6}
+.setup .derived .gold,.kv .gold{color:var(--gold)} .kv .ok{color:var(--buy)} .kv .no{color:var(--sell)}
+
+/* CONVICTION BOARD strip over the chart and panel */
+.cvstrip{display:none;align-items:center;gap:10px;padding:2px 8px;font:11.5px var(--mono);height:20px;border-bottom:1px solid var(--line);background:#0f141c;white-space:nowrap;overflow:hidden}
+.cvstrip.pass,.cvstrip.watch,.cvstrip.armed,.cvstrip.ready_to_go,.cvstrip.invalidated{display:flex}
+.cvstrip .cvv{font-weight:800;letter-spacing:.06em} .cvstrip .cvs{font-weight:700;color:var(--gold)}
+.cvstrip.ready_to_go .cvv{color:#dfffee;background:#0f3d25;padding:0 6px;border-radius:2px;animation:cvpulse 1.2s ease-in-out infinite}
+.cvstrip.armed .cvv{color:var(--gold)} .cvstrip.watch .cvv{color:#c9ced6} .cvstrip.pass .cvv{color:var(--dim)}
+.cvstrip.invalidated .cvv{color:#ffe3e6;background:#4a161b;padding:0 6px;border-radius:2px;animation:cvpulse 1.2s ease-in-out infinite}
+@keyframes cvpulse{0%,100%{box-shadow:0 0 0 0 rgba(255,255,255,0)}50%{box-shadow:0 0 0 3px rgba(255,255,255,.18)}}
+.gates b{font-weight:700;color:var(--dim);margin-right:8px;letter-spacing:.04em} .gates b.on{color:var(--buy)} .gates.big{margin-top:5px;font:12px var(--mono)}
+i.tl{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:3px;vertical-align:middle;background:#3a4558} i.tl.green{background:var(--buy)} i.tl.yellow{background:var(--gold)} i.tl.red{background:var(--sell)}
+.cvstrip .lanes{display:inline-flex;gap:2px} .cvstrip .lanes i.tl{margin:0}
+.cvhead{padding:8px 10px;border-bottom:1px solid var(--line)} .cvhead .v{font:800 15px var(--sans);letter-spacing:.06em} .cvhead .s{font:12px var(--mono);margin-top:2px}
+.cvhead.ready_to_go .v{color:var(--buy)} .cvhead.armed .v{color:var(--gold)} .cvhead.watch .v{color:#c9ced6} .cvhead.pass .v{color:var(--dim)} .cvhead.invalidated .v{color:var(--sell)}
+.cvrows{padding:4px 0} .cvr{display:grid;grid-template-columns:116px 1fr;gap:6px;padding:3px 10px;font:11.5px var(--mono);border-left:3px solid #2a3548;border-bottom:1px solid #161c27}
+.cvr.green{border-left-color:var(--buy)} .cvr.yellow{border-left-color:var(--gold)} .cvr.red{border-left-color:var(--sell)} .cvr .n{font-weight:700;letter-spacing:.04em} .cvr .t{color:#c9ced6;font-family:var(--sans);white-space:normal}
+
+/* TIGHT ladder: bid · price · ask, reloaders as colour + tag, one FLOW column */
+.lad.lad3.tight td{height:calc(14px * var(--ladz,1));padding:0 2px}
+.lad.lad3.tight td.px{text-align:center;font-weight:600}
+.lad.lad3.tight .rtag{display:inline-block;font:700 8.5px var(--sans);letter-spacing:.02em;padding:0 2px;border-radius:2px;background:rgba(0,0,0,.35);color:#fff;margin:0 2px;vertical-align:middle}
+.lad.lad3.tight td.bsz{text-align:right} .lad.lad3.tight td.asz{text-align:left}
+.lad.lad3.tight td.bars .bar-n{font-size:calc(9px * var(--ladz,1))}
+.lad.lad3.tight td.flow.fc{text-align:right;padding-right:3px} .lad.lad3.tight td.flow.fp{text-align:left;padding-left:3px}
+#ladMode{font-size:10px;padding:1px 6px;letter-spacing:.08em;font-weight:700;color:var(--gold)}
+/* tape: price and size only */
+.p-tape .t.tape2 td{padding:0 6px;height:14px;line-height:14px;font-size:11px} .p-tape .t.tape2 th{font-size:9px;padding:1px 6px}
+.p-tape .t.tape2 tr.buy td{background:rgba(63,181,111,.06)} .p-tape .t.tape2 tr.sell td{background:rgba(217,83,79,.06)}
+.p-tape .t.tape2 td.large{font-weight:800}
+/* compact ticket */
+.ticket.compact{display:block;padding:4px 6px;font-size:11px}
+.ticket.compact .trow{display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin:2px 0}
+.ticket.compact .trow.sub{font-size:10.5px;color:var(--dim)}
+.ticket.compact .sym{color:var(--gold);font-weight:800;font-size:13px} .ticket.compact .q{font-family:var(--mono);font-size:10.5px}
+.ticket.compact .sides{display:inline-flex;gap:2px} .ticket.compact .sides button{padding:2px 10px;height:22px;font-size:11px;letter-spacing:.1em}
+.ticket.compact input,.ticket.compact select{height:22px;font-size:11px;padding:0 4px} .ticket.compact input#tkQty{width:62px} .ticket.compact input#tkPx,.ticket.compact input#tkAux{width:76px} .ticket.compact input#tkRisk{width:56px}
+.ticket.compact .row{display:inline-flex;gap:2px;align-items:center} .ticket.compact .row button,.ticket.compact .qbtn{padding:1px 5px;font-size:10px;height:22px}
+.ticket.compact .tx{font-weight:800;letter-spacing:.12em;padding:0 14px;height:24px;font-size:12px;border-radius:3px;margin-left:auto}
+.ticket.compact .tx.b{background:#0f3d25;border-color:var(--buy);color:#dfffee} .ticket.compact .tx.s{background:#4a161b;border-color:var(--sell);color:#ffe3e6} .ticket.compact .tx:disabled{opacity:.35}
+.ticket.compact .risk{display:inline-flex;gap:4px;align-items:center} .ticket.compact .risk label{font-size:9.5px;letter-spacing:.1em} .ticket.compact .szb{padding:1px 6px;font-size:10.5px;color:var(--gold);font-weight:700}
+.ticket.compact .opts{display:inline-flex;gap:8px} .ticket.compact .opts label{font-size:10.5px;color:var(--dim)}
+.ticket.compact .posbox{display:inline-flex;gap:4px;align-items:center;font-size:11px;margin:0} .ticket.compact .posbox button{padding:1px 6px;font-size:10px}
+.ticket.compact .takeoff{display:inline-flex;flex-wrap:wrap;gap:3px;align-items:center;font-size:10px;margin-left:6px}
+.ticket.compact .takeoff button{padding:1px 5px;font-size:10px}
+.ticket.compact .why{font-size:10.5px;color:var(--warn)} .ticket.compact .st{font-family:var(--mono);font-size:10px;color:var(--dim);border-top:1px solid var(--line);margin-top:2px;padding-top:2px}
+/* compact positions */
+.grid.pos2{font-size:11px} .grid.pos2 td{padding:1px 5px} .grid.pos2 th{padding:2px 5px;font-size:9px}
+.grid.pos2 td.ctl button{padding:0 5px;font-size:10px;margin-right:2px;height:18px;line-height:16px}
+.ticket.compact select{width:auto;max-width:110px} .grid.pos2 th{white-space:nowrap}
+
+/* pin box: what you clicked, held still under the panel */
+.pinbox{display:none;position:sticky;bottom:0;background:#0b0f16;border-top:1px solid var(--line);padding:3px 6px;font:10.5px var(--sans);color:var(--text);line-height:1.3}
+.pinbox.on{display:flex;gap:6px;align-items:flex-start} .pinbox .txt{flex:1;white-space:normal} .pinbox .x{padding:0 4px;font-size:10px;line-height:14px}
+.grid.pos2 td.ctl .sep{display:inline-block;width:6px} .grid.pos2 tr.opt td:first-child b{color:var(--gold)}
+
+/* the orders being taken: size as a bar against its 90 s peak, a flash and a floating −n when prints eat it */
+.lad td.sz{position:relative;--fill:100%}
+.lad td.sz.eat::before{content:"";position:absolute;top:1px;bottom:1px;width:var(--fill);pointer-events:none;opacity:.35}
+.lad td.bsz.eat::before{right:0;background:linear-gradient(to left,rgba(63,181,111,.55),rgba(63,181,111,.15))}
+.lad td.asz.eat::before{left:0;background:linear-gradient(to right,rgba(217,83,79,.55),rgba(217,83,79,.15))}
+.lad td.sz > *{position:relative}
+.lad td.sz.hit{animation:eathit .6s 1} .lad td.sz.refill{animation:eatrefill .8s 1}
+@keyframes eathit{0%{background:rgba(255,255,255,.35)}100%{background:transparent}}
+@keyframes eatrefill{0%{background:rgba(227,168,58,.6)}100%{background:transparent}}
+.lad td.sz .ghost{position:absolute;right:2px;top:-9px;font:700 9px var(--mono);font-style:normal;pointer-events:none;animation:ghost 1.4s 1 forwards;padding:0 2px;border-radius:2px;background:#0b0f16}
+.lad td.bsz .ghost{right:auto;left:2px} .lad td.sz .ghost.dn{color:#fff} .lad td.sz .ghost.up{color:var(--gold)}
+@keyframes ghost{0%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(-10px)}}
+.eatbar{display:flex;justify-content:space-between;gap:8px;position:sticky;bottom:0;background:#0b0f16;border-top:1px solid var(--line);padding:2px 6px;font:10.5px var(--mono);white-space:nowrap;overflow:hidden}
+.eatbar .b{color:var(--buy)} .eatbar .s{color:var(--sell)} .eatbar b{font-weight:800}
+
+/* BIG TAPE: its own panel */
+.p-bigtape{display:flex;flex-direction:column;height:100%}
+.p-bigtape .bt-hd{display:flex;justify-content:flex-end;padding:1px 4px;background:#0f141c} .p-bigtape .bt-hd button{font-size:9.5px;padding:0 6px}
+.p-bigtape .t.bt{table-layout:auto}
+.p-bigtape .bt-body{flex:1 1 0;overflow:auto}
+.p-bigtape .t.bt{width:100%;table-layout:fixed} .p-bigtape .t.bt td{padding:0 4px;height:14px;line-height:14px;font-size:11px;white-space:nowrap;overflow:hidden}
+.p-bigtape .t.bt td.px{font-weight:800} .p-bigtape .t.bt tr.cols th{font-size:9px;padding:0 4px;color:var(--dim);text-align:left}
+.p-bigtape .t.bt th.sec{text-align:left;font-size:9px;letter-spacing:.1em;padding:2px 4px;background:#0f141c;color:var(--gold)}
+.p-bigtape .t.bt tr.buy td{background:rgba(63,181,111,.08)} .p-bigtape .t.bt tr.sell td{background:rgba(217,83,79,.08)}
+.p-bigtape .t.bt tr.bld.live td{font-weight:700} .p-bigtape .t.bt tr.bld.live td:first-child{box-shadow:inset 3px 0 0 var(--gold)}
+.p-bigtape .t.bt td.buy{color:var(--buy)} .p-bigtape .t.bt td.sell{color:var(--sell)}
+
+/* SIMPLE ladder: bid · price · ask, order flow only */
+.lad.lad3.simple td{height:calc(15px * var(--ladz,1));padding:0 3px}
+.lad.lad3.simple td.px{text-align:center;font-weight:600}
+.lad.lad3.simple td.sz{font-size:calc(11.5px * var(--ladz,1))} .lad.lad3.simple td.bsz{text-align:right} .lad.lad3.simple td.asz{text-align:left}
+.lad.lad3.simple td.sz.fake .szn{opacity:.4;font-weight:400} .lad.lad3.simple td.sz.big .szn{font-weight:800} .lad.lad3.simple td.sz.huge .szn{font-weight:800;color:var(--gold)}
+.lad.lad3.simple td.sz.big,.lad.lad3.simple td.sz.huge{background:none;box-shadow:none;color:inherit}
+.lad.lad3.simple td.sz.rf-REAL .szn,.lad.lad3.simple td.sz.rf-MIXED .szn,.lad.lad3.simple td.sz.rf-FAKE .szn{box-shadow:none;text-decoration:none}
+.lad.lad3.simple td.sz .abs{position:absolute;bottom:0;height:2px;background:currentColor;opacity:.55;pointer-events:none} .lad.lad3.simple td.bsz .abs{right:0;color:var(--buy)} .lad.lad3.simple td.asz .abs{left:0;color:var(--sell)}
+.lad.lad3.simple td.sz .rl{font:700 9px var(--sans);letter-spacing:.02em;margin:0 3px;color:#fff;opacity:.95}
+.lad.lad3.simple tr.rl-bid td.bsz,.lad.lad3.simple tr.rl-ask td.asz{color:#fff}
+.lad.lad3.simple td.sz .fmk{position:absolute;top:2px;bottom:2px;width:3px;pointer-events:auto} .lad.lad3.simple td.bsz .fmk{left:0;background:#3ee08f} .lad.lad3.simple td.asz .fmk{right:0;background:#ff6b78}
+.lad.lad3.simple td.sz .fmk.big{width:5px} .lad.lad3.simple td.sz .fmk.hot{box-shadow:0 0 4px 1px currentColor;color:inherit}
+.lad.lad3.simple tr.rl-bid td:first-child,.lad.lad3.simple tr.rl-ask td:last-child{box-shadow:none}
+
+/* ladder status strip, qty box, avg row, context menu */
+.ladstat{display:flex;gap:7px;align-items:center;padding:2px 6px;font:11px var(--sans);background:#0b0f16;border-bottom:1px solid var(--line);white-space:nowrap;overflow:hidden}
+.ladstat .sym{color:var(--gold);font-weight:800;font-size:12px} .ladstat .mono{font-family:var(--mono)} .ladstat .up{color:var(--buy)} .ladstat .dn{color:var(--sell)} .ladstat i{font-style:normal} .ladstat i.b{color:var(--buy)} .ladstat i.s{color:var(--sell)}
+.ladstat .pos{font-weight:800;font-family:var(--mono)} .ladstat .pos.b{color:var(--buy)} .ladstat .pos.s{color:var(--sell)}
+.ladstat .led{display:inline-block;width:7px;height:7px;border-radius:50%;background:#555} .ladstat .led.ok{background:var(--buy)} .ladstat .led.warn{background:var(--gold)} .ladstat .led.bad{background:var(--sell)}
+.ladstat .mode{font:800 9.5px var(--sans);letter-spacing:.12em;padding:0 5px;border:1px solid var(--line);border-radius:2px;color:var(--dim)} .ladstat .mode.live{background:#5a1218;border-color:var(--sell);color:#fff;animation:livepulse 1.2s infinite}
+@keyframes livepulse{50%{background:#8a1a24}}
+.qtybox{display:inline-flex;gap:3px;align-items:center;font-size:10px;color:var(--dim)} .qtybox input{width:54px;height:18px;font:11px var(--mono);padding:0 4px}
+.qtybox button{padding:0 4px;font-size:9.5px;height:18px} .qtybox button.on{color:var(--gold);border-color:var(--gold)}
+.lad tr.avgrow td.px{box-shadow:inset 0 0 0 1px var(--gold)} .lad .avgtag{display:inline-block;font:800 8px var(--sans);letter-spacing:.06em;padding:0 3px;margin-right:3px;border-radius:2px;background:var(--gold);color:#0c0c0d;vertical-align:middle}
+.lad tr.avgrow.long td.px{box-shadow:inset 0 0 0 1px var(--buy)} .lad tr.avgrow.short td.px{box-shadow:inset 0 0 0 1px var(--sell)}
+.cmenu.lmenu{min-width:250px} .cmenu .sep{height:1px;background:var(--line);margin:3px 0}
+.lad{--ladh:1} .lad.lad3 td{height:calc(15px * var(--ladz,1) * var(--ladh,1))}
+.cat{display:inline-block;font:700 8.5px var(--sans);letter-spacing:.06em;padding:0 4px;border-radius:2px;background:#26303f;color:#cfd8e6;margin-right:2px}
+.cat-order-rejection,.cat-fatal{background:#5a1218;color:#fff} .cat-permission,.cat-connection{background:#3a2e12;color:#f2d59a} .cat-market-data{background:#1a3350;color:#cfe4ff}
+#tkTpl{height:20px;font-size:10.5px;max-width:110px}
+
+/* OPTION CHAIN */
+.oc{display:flex;flex-direction:column;height:100%} .oc-hd{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;padding:3px 6px;font:10.5px var(--sans);background:#0f141c;border-bottom:1px solid var(--line)}
+.oc-hd .sym{color:var(--gold);font-weight:800;font-size:12px} .oc-hd select{height:20px;font-size:11px} .oc-hd .cp button{padding:1px 8px;font-size:10px;letter-spacing:.08em} .oc-hd .cp button.on{color:var(--gold);border-color:var(--gold)}
+.oc-hd .qty{display:inline-flex;gap:3px;align-items:center;color:var(--dim)} .oc-hd .qty input{width:54px;height:18px;font:11px var(--mono)}
+.oc-body{flex:1 1 0;overflow:auto} .oct{width:100%;table-layout:fixed} .oct th{font-size:9px;letter-spacing:.08em;color:var(--dim);padding:1px 4px;text-align:right;position:sticky;top:0;background:#0b0f16} .oct th:first-child{text-align:left}
+.oct td{padding:0 4px;height:16px;line-height:16px;font:11px var(--mono);text-align:right;white-space:nowrap;overflow:hidden} .oct td.k{text-align:left;font-weight:700}
+.oct tr.itm td.k{color:var(--gold)} .oct tr.atm td{background:rgba(227,168,58,.10)} .oct tr.held td{background:rgba(63,181,111,.08)} .oct td.b{color:var(--buy)} .oct td.s{color:var(--sell)}
+.oct td.act{text-align:right} .oct td.act button{padding:0 5px;font-size:9.5px;height:15px;line-height:13px;margin-left:2px} .oct .ob{color:var(--buy);border-color:var(--buy)} .oct .os{color:var(--sell);border-color:var(--sell)}
+.oct .hold{font:700 9px var(--sans);padding:0 3px;border-radius:2px;background:#26303f;margin-left:2px} .oct .hold.b{color:var(--buy)} .oct .hold.s{color:var(--sell)}
+.oc .wks{border-top:1px solid var(--line);padding:2px 6px;font:10.5px var(--mono)} .oc .wk{display:flex;gap:6px;align-items:center} .oc .wk button{padding:0 4px;font-size:9px}
+.rlb.ord{border-style:dashed} .rlb.ord.b{color:var(--buy)} .rlb.ord.s{color:var(--sell)}
+.lad.lad3.simple td.sz .rl.back,.lad.lad3 .rtag.back{background:var(--gold);color:#0c0c0d}
+/* the same reloader on both screens: a glowing border on his ladder row while he is active, and on every print that hits him */
+.lad tr.rl-bid.cv-active td.bsz{box-shadow:inset 0 0 0 1px #7dffb8,0 0 7px 1px rgba(63,181,111,.8) !important} .lad tr.rl-ask.cv-active td.asz{box-shadow:inset 0 0 0 1px #ffa0a8,0 0 7px 1px rgba(217,83,79,.8) !important}
+.p-tape .t.tape2 tr.rlhit td{box-shadow:inset 0 0 0 1px rgba(255,255,255,.25)} .p-tape .t.tape2 tr.rlhit.b td{background:rgba(63,181,111,.28);box-shadow:inset 0 0 0 1px #7dffb8} .p-tape .t.tape2 tr.rlhit.s td{background:rgba(217,83,79,.28);box-shadow:inset 0 0 0 1px #ffa0a8}
+.p-tape .t.tape2 tr.rlhit td:first-child{border-left:3px solid currentColor}
+
+.keyst{font:bold 11px ui-monospace,Menlo,Consolas,monospace;margin:0 0 4px;padding:3px 6px;border-radius:3px}.keyst.ok{color:#0b8f55;background:rgba(11,143,85,.12)}.keyst.no{color:#c4283a;background:rgba(196,40,58,.12)}
+
+/* OPTION FLOW: somebody may know something */
+.fl.know{border-left:3px solid var(--gold);background:rgba(230,193,90,.08)}
+.fl .kn{font:bold 10px ui-monospace,Menlo,Consolas,monospace;color:#111;background:var(--gold);border-radius:3px;padding:1px 5px;margin-left:6px;letter-spacing:.3px}
+.fl .kn.rep{background:#ff8a3d}
+
+/* RELOADER ROW: a glowing outline, never a solid fill — the size, the drain bar and the money badge all stay readable */
+.lad tr.rl-bid td.bsz{background:rgba(63,181,111,.18);color:var(--buy);font-weight:800;box-shadow:inset 0 0 0 1px var(--buy)}
+.lad tr.rl-ask td.asz{background:rgba(217,83,79,.18);color:var(--sell);font-weight:800;box-shadow:inset 0 0 0 1px var(--sell)}
+.lad.lad3.simple tr.rl-bid td.bsz,.lad.lad3.simple tr.rl-ask td.asz{color:inherit}
+.lad.lad3.simple tr.rl-bid td.bsz .szn{color:var(--buy)} .lad.lad3.simple tr.rl-ask td.asz .szn{color:var(--sell)}
+.lad.lad3.simple td.sz .rl{font:700 9px var(--sans);letter-spacing:.02em;color:#0c0c0d;background:var(--buy);border-radius:3px;padding:0 4px;margin:0 4px;opacity:.95;white-space:nowrap}
+.lad.lad3.simple td.asz .rl{background:var(--sell)}
+.lad.lad3.simple td.sz .abs{height:3px;opacity:.9}
+
+.bt-hd .btflt{font:10px var(--sans);letter-spacing:.08em;color:var(--dim);margin-right:auto}.bt-hd .btflt input{width:46px;font:11px var(--mono);background:#0b0f16;color:var(--text);border:1px solid var(--line);border-radius:3px;padding:1px 4px}
+.lad.lad3.simple td.sz .rl .rlm{display:none}
+
+#stCycle{font:10px var(--mono);color:var(--dim);margin-left:6px}#stCycle.warn{color:var(--gold)}#stCycle.bad{color:var(--sell);font-weight:800}
+
+.ticket .sides button.opt{flex:0 0 auto;margin-left:8px;opacity:1;color:var(--gold);border-color:var(--gold);font-size:10px;padding:2px 8px}
+
+/* BIG TAPE: columns size to their numbers and never clip; a panel too narrow scrolls sideways instead of cutting */
+.p-bigtape .t.bt{table-layout:auto;width:100%;min-width:max-content} .p-bigtape .t.bt td{overflow:visible;text-align:right;padding:0 5px}
+.p-bigtape .t.bt td.px{text-align:left} .p-bigtape .t.bt td:last-child{padding-right:6px}
+.p-tape .t.tape2 td{white-space:nowrap;overflow:visible}
+
+/* the "eaten / refilled" flash on a ladder row: big enough to read, holds 2.5 s, says what happened */
+.lad td.sz .ghost{top:0;bottom:0;display:flex;align-items:center;font:800 11px var(--mono);line-height:1;padding:0 5px;border-radius:3px;background:rgba(5,8,12,.92);animation:ghost 2.6s 1 forwards;z-index:3}
+.lad td.sz .ghost.dn{color:#ff6b7a;border:1px solid rgba(255,77,94,.7)} .lad td.sz .ghost.up{color:#7dffb8;border:1px solid rgba(38,208,124,.7)}
+.lad td.asz .ghost{right:2px;left:auto} .lad td.bsz .ghost{left:2px;right:auto}
+@keyframes ghost{0%{opacity:1;transform:none}75%{opacity:1;transform:none}100%{opacity:0;transform:none}}
+
+.fl .itm{font:bold 10px ui-monospace,Menlo,Consolas,monospace;color:#9fb4d0;border:1px solid #4a5a70;border-radius:3px;padding:0 5px;margin-left:6px}
+
+#voiceFlowBtn.off{color:var(--sell);border-color:var(--sell)} #soloBtn.on{color:var(--gold);border-color:var(--gold)}
+
+/* SCALE PLAN in the ticket */
+.ticket .scale{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;width:100%;margin:4px 0 2px;padding:4px 6px;border:1px solid var(--line);border-radius:4px;font-size:10.5px}
+.ticket .scale.on{border-color:rgba(230,193,90,.45)}
+.ticket .scale .spk button,.ticket .scale .spc button{padding:2px 7px;font-size:10px} .ticket .scale .spc input{width:44px;font:11px var(--mono);padding:1px 3px} .ticket .scale .spc select{font-size:10px}
+.ticket .scale .spst b.b{color:var(--buy)} .ticket .scale .spst b.s{color:var(--sell)}
+.ticket .scale .spleft{position:relative;flex:1 1 140px;height:14px;background:#0b0f16;border:1px solid var(--line);border-radius:3px;overflow:hidden}
+.ticket .scale .spleft i{position:absolute;left:0;top:0;bottom:0;background:rgba(230,193,90,.35)} .ticket .scale .spleft b{position:absolute;left:6px;top:0;line-height:12px;font:800 10px var(--mono);color:var(--text)}
+.ticket .scale button[data-sp-auto].on{color:var(--gold);border-color:var(--gold)}
+.ticket .scale .sprs{width:100%;display:grid;gap:2px}
+.ticket .scale .spr{display:grid;grid-template-columns:52px 70px 1fr auto;gap:6px;align-items:center;padding:1px 4px;border-radius:3px;font:11px var(--mono)}
+.ticket .scale .spr.next{background:rgba(230,193,90,.08)} .ticket .scale .spr.ready{background:rgba(230,193,90,.22);animation:spready 1s infinite alternate} .ticket .scale .spr.done{opacity:.55}
+.ticket .scale .spr.add span{color:var(--buy)} .ticket .scale .spr i{font-style:normal;color:var(--dim)} .ticket .scale .spr button{padding:1px 6px;font-size:10px}
+@keyframes spready{from{box-shadow:inset 0 0 0 1px rgba(230,193,90,.4)}to{box-shadow:inset 0 0 0 1px var(--gold)}}
+
+/* OPTION CHAIN: say why nothing sends; a selected strike */
+.oc .ocwarn{margin:2px 4px 4px;padding:4px 8px;border:1px solid var(--sell);border-radius:4px;color:#ffd0d5;background:rgba(196,40,58,.15);font:700 11px var(--sans);letter-spacing:.04em}
+.oc .ocwarn.q{border-color:var(--gold);color:var(--gold);background:rgba(230,193,90,.08)} .oc .ocwarn button{padding:1px 10px;font-weight:800;color:var(--gold);border-color:var(--gold)}
+.oc .oct tr[data-strike]{cursor:pointer} .oc .oct tr.sel td{background:rgba(230,193,90,.18)!important} .oc .oct tr.sel td.k{box-shadow:inset 3px 0 0 var(--gold)}
+.oc .oct button.off{opacity:.45}
+#armBtn[data-pulse]{animation:armpulse .4s 6 alternate} @keyframes armpulse{from{box-shadow:0 0 0 0 var(--gold)}to{box-shadow:0 0 0 4px var(--gold);color:var(--gold)}}
+
+/* POSITION box in ORDER ENTRY: small, everything on two lines */
+.ticket .pm{margin-top:3px;padding:3px 5px;border:1px solid var(--line);border-radius:4px;font:11px var(--mono);display:grid;gap:3px}
+.ticket .pm .pmr{display:flex;flex-wrap:wrap;gap:3px 6px;align-items:center}
+.ticket .pm .b{color:var(--buy)} .ticket .pm .s{color:var(--sell)} .ticket .pm b{font-weight:800}
+.ticket .pm .pmstop{padding:0 5px;border:1px solid var(--sell);border-radius:3px;color:#ffd0d5} .ticket .pm .pmstop i{font-style:normal;opacity:.8}
+.ticket .pm .pmstop.none{border-color:var(--gold);color:var(--gold);animation:spready 1s infinite alternate}
+.ticket .pm .pmbtn{margin-left:auto;display:inline-flex;gap:3px}
+.ticket .pm button{padding:1px 6px;font-size:10px;height:20px} .ticket .pm label{font:700 9.5px var(--sans);letter-spacing:.08em;color:var(--dim)} .ticket .pm label.tl{margin-left:6px}
+.ticket .pm input{width:62px;height:20px;font:11px var(--mono);padding:0 3px} .ticket .pm #pmTrail{width:44px}
+.ticket .pm button[data-pmtrail].on{color:var(--gold);border-color:var(--gold)}
+.ticket .pm .scale,.ticket .pm .takeoff,.ticket .pm .pp{margin:0;padding:2px 4px;font-size:10px}
+.ticket .pm .scale .tohead,.ticket .pm .takeoff .tohead{padding:0 4px;font-size:10px}
+
+/* ORDER ENTRY as a small square: the option row on one line, normal-size checkboxes */
+.ticket.compact .trow.sub{display:flex;flex-wrap:wrap;gap:3px 8px;align-items:center}
+.ticket.compact .trow.sub .opts{display:inline-flex;flex-wrap:wrap;gap:3px 8px;align-items:center}
+.ticket.compact .trow.sub .opts label{display:inline-flex!important;flex-direction:row!important;align-items:center;gap:3px;font:700 9.5px var(--sans)!important;letter-spacing:.06em}
+.ticket.compact input[type=checkbox]{width:13px!important;height:13px!important;margin:0!important;transform:none!important}
+.ticket.compact .trow.sub select{height:20px;font-size:10px;padding:0 2px}
+.ticket.compact .trow.sub #tkCxl{padding:1px 6px;font-size:10px;height:20px}
+.ticket.compact .trow{gap:3px 4px} .ticket.compact .trow .row{gap:2px}
