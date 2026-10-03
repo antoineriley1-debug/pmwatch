@@ -195,13 +195,16 @@ function renderChain(){
   document.getElementById("ocSrc").textContent = d.source === "PRACTICE" ? "PRACTICE prices (model)" : "IBKR";
   const on = canTrade(), red = canReduce();
   const rows = d.rows.map(r => { const itm = d.right === "C" ? r.strike < d.spot : r.strike > d.spot; const held = r.qty;
-    return `<tr class="${itm ? "itm" : "otm"} ${Math.abs(r.strike - d.spot) < (d.rows[1] ? Math.abs(d.rows[1].strike - d.rows[0].strike) / 2 : 0.5) ? "atm" : ""} ${held ? "held" : ""}" data-key="${esc(r.key)}" data-strike="${r.strike}">
+    return `<tr class="${itm ? "itm" : "otm"} ${Math.abs(r.strike - d.spot) < (d.rows[1] ? Math.abs(d.rows[1].strike - d.rows[0].strike) / 2 : 0.5) ? "atm" : ""} ${held ? "held" : ""} ${OC.sel === r.strike ? "sel" : ""}" data-key="${esc(r.key)}" data-strike="${r.strike}" title="click to select this strike: its mid goes into PX">
       <td class="k">${r.strike % 1 ? r.strike.toFixed(2) : r.strike}${held ? ` <span class="hold ${held > 0 ? "b" : "s"}">${held > 0 ? "+" : ""}${held}</span>` : ""}</td>
       <td class="b">${r.bid == null ? "—" : r.bid.toFixed(2)}</td><td class="s">${r.ask == null ? "—" : r.ask.toFixed(2)}</td><td class="dim">${r.last == null ? "—" : r.last.toFixed(2)}</td>
       <td class="dl" title="delta: how much the contract moves per $1 in the stock">${r.delta == null ? "—" : r.delta.toFixed(2)}</td><td class="dim" title="implied volatility">${r.iv == null ? "—" : Math.round(r.iv * 100) + "%"}</td>
-      <td class="act"><button class="ob" data-oo="BUY" ${on ? "" : "disabled"} title="BUY to open at the ask (or your PX)">BUY</button><button class="os" data-oo="SELL" ${on ? "" : "disabled"} title="SELL to open at the bid (or your PX)">SELL</button>${held ? `<button class="danger" data-oc="${esc(r.key)}" ${red ? "" : "disabled"} title="close every contract at the touch">X</button>` : ""}</td></tr>`; }).join("");
+      <td class="act"><button class="ob ${on ? "" : "off"}" data-oo="BUY" title="BUY to open at the ask (or your PX)">BUY</button><button class="os ${on ? "" : "off"}" data-oo="SELL" title="SELL to open at the bid (or your PX)">SELL</button>${held ? `<button class="danger" data-oc="${esc(r.key)}" title="close every contract at the touch">X</button>` : ""}</td></tr>`; }).join("");
   const working = (d.orders || []).map(o => `<div class="wk"><span class="${o.action === "BUY" ? "b" : "s"}">${esc(o.action)} ${o.remaining ?? o.qty} ${esc(o.symbol)} @ ${o.lmt}</span> <span class="dim">${esc(o.status || "")}</span> <button data-cxl="${o.order_id}" class="danger">✕</button></div>`).join("");
-  const html = `<table class="t oct"><tr><th>STRIKE</th><th>BID</th><th>ASK</th><th>LAST</th><th>Δ</th><th>IV</th><th></th></tr>${rows}</table>${working ? `<div class="wks">${working}</div>` : ""}`;
+  const noQ = d.rows.length && d.rows.every(r => r.bid == null && r.ask == null);
+  const banner = !on ? `<div class="ocwarn">TRADING IS DISARMED — <button data-ocarm="1">ARM</button> to send option orders ${T().why_not && !/DISARMED/i.test(T().why_not) ? "· " + esc(T().why_not) : ""}</div>`
+    : noQ ? `<div class="ocwarn q">NO QUOTES on this chain (market closed, or no option data on this login) — click a strike and type your limit in PX</div>` : "";
+  const html = banner + `<table class="t oct"><tr><th>STRIKE</th><th>BID</th><th>ASK</th><th>LAST</th><th>Δ</th><th>IV</th><th></th></tr>${rows}</table>${working ? `<div class="wks">${working}</div>` : ""}`;
   if (body.dataset.h === html) return; body.dataset.h = html;
   const keep = body.scrollTop; body.innerHTML = html; body.scrollTop = keep;
 }
@@ -213,8 +216,18 @@ document.addEventListener("click", e => { const b = e.target.closest("button[dat
     const rb = e.target.closest(".cp button[data-right]"); if (rb){ OC.right = rb.dataset.right; pollChain(); return; }
     const cx = e.target.closest("button[data-cxl]"); if (cx){ cancelMine(+cx.dataset.cxl); return; }
     const oc = e.target.closest("button[data-oc]"); if (oc){ if (!confirm("CLOSE every contract of " + oc.dataset.oc + "?")) return; const out = await post("/api/trade/opt_adjust", {key: oc.dataset.oc, contracts: 0, mode: "close"}); toast(out.ok ? "Sent: " + out.sent : "Blocked: " + (out.reason || ""), out.ok); return; }
-    const b = e.target.closest("button[data-oo]"); if (!b || !OC.data) return;
+    if (e.target.closest("button[data-ocarm]")){ document.getElementById("armBtn").click(); setTimeout(() => { const bd = P.options.pc.querySelector(".oc-body"); if (bd) bd.dataset.h = ""; renderChain(); }, 600); return; }
+    const b = e.target.closest("button[data-oo]");
+    if (!b){ const rowEl = e.target.closest("tr[data-strike]"); if (rowEl && OC.data){ const k = +rowEl.dataset.strike, r = OC.data.rows.find(x => x.strike === k) || {};
+        OC.sel = k; const mid = r.bid != null && r.ask != null ? (r.bid + r.ask) / 2 : (r.last != null ? r.last : null);
+        if (mid != null) document.getElementById("ocPx").value = mid.toFixed(2); else document.getElementById("ocPx").focus();
+        const bd = P.options.pc.querySelector(".oc-body"); if (bd) bd.dataset.h = ""; renderChain(); }
+      return; }
+    if (!OC.data) return;
+    if (!canTrade()){ const w = T().why_not || "trading is DISARMED"; toast(/click ARM/i.test(w) ? w : w + " — click ARM (top left) first", false); const a = document.getElementById("armBtn"); if (a){ a.dataset.pulse = "1"; setTimeout(() => { delete a.dataset.pulse; }, 2400); } return; }
     const tr = b.closest("tr"), strike = +tr.dataset.strike, n = Math.max(1, +document.getElementById("ocQty").value || 1), pxv = document.getElementById("ocPx").value;
+    { const r0 = OC.data.rows.find(x => x.strike === strike) || {}; const touch = b.dataset.oo === "BUY" ? r0.ask : r0.bid;
+      if (pxv === "" && touch == null){ toast("No quote on that contract — type your limit price in PX, then press " + b.dataset.oo + " again", false); OC.sel = strike; document.getElementById("ocPx").focus(); return; } }
     const d = OC.data, what = `${b.dataset.oo} ${n} ${curSym} ${d.expiry.slice(4, 6)}/${d.expiry.slice(6, 8)} ${strike}${d.right}`;
     const send = async () => { const out = await post("/api/trade/opt_open", {symbol: curSym, expiry: d.expiry, strike, right: d.right, action: b.dataset.oo, contracts: n, price: pxv === "" ? null : +pxv}); toast(out.ok ? "Sent: " + out.sent : "Blocked: " + (out.reason || ""), out.ok); poll(true); pollChain(); };
     if (T().one_click) return send();

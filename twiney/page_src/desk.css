@@ -468,3 +468,10 @@ i.tl{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:3p
 .ticket .scale .spr.next{background:rgba(230,193,90,.08)} .ticket .scale .spr.ready{background:rgba(230,193,90,.22);animation:spready 1s infinite alternate} .ticket .scale .spr.done{opacity:.55}
 .ticket .scale .spr.add span{color:var(--buy)} .ticket .scale .spr i{font-style:normal;color:var(--dim)} .ticket .scale .spr button{padding:1px 6px;font-size:10px}
 @keyframes spready{from{box-shadow:inset 0 0 0 1px rgba(230,193,90,.4)}to{box-shadow:inset 0 0 0 1px var(--gold)}}
+
+/* OPTION CHAIN: say why nothing sends; a selected strike */
+.oc .ocwarn{margin:2px 4px 4px;padding:4px 8px;border:1px solid var(--sell);border-radius:4px;color:#ffd0d5;background:rgba(196,40,58,.15);font:700 11px var(--sans);letter-spacing:.04em}
+.oc .ocwarn.q{border-color:var(--gold);color:var(--gold);background:rgba(230,193,90,.08)} .oc .ocwarn button{padding:1px 10px;font-weight:800;color:var(--gold);border-color:var(--gold)}
+.oc .oct tr[data-strike]{cursor:pointer} .oc .oct tr.sel td{background:rgba(230,193,90,.18)!important} .oc .oct tr.sel td.k{box-shadow:inset 3px 0 0 var(--gold)}
+.oc .oct button.off{opacity:.45}
+#armBtn[data-pulse]{animation:armpulse .4s 6 alternate} @keyframes armpulse{from{box-shadow:0 0 0 0 var(--gold)}to{box-shadow:0 0 0 4px var(--gold);color:var(--gold)}}
