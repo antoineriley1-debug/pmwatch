@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261003-0423">
+<meta name="build" content="20261003-0840">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -763,6 +763,20 @@ i.tl{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:3p
 .fl .itm{font:bold 10px ui-monospace,Menlo,Consolas,monospace;color:#9fb4d0;border:1px solid #4a5a70;border-radius:3px;padding:0 5px;margin-left:6px}
 
 #voiceFlowBtn.off{color:var(--sell);border-color:var(--sell)} #soloBtn.on{color:var(--gold);border-color:var(--gold)}
+
+/* SCALE PLAN in the ticket */
+.ticket .scale{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;width:100%;margin:4px 0 2px;padding:4px 6px;border:1px solid var(--line);border-radius:4px;font-size:10.5px}
+.ticket .scale.on{border-color:rgba(230,193,90,.45)}
+.ticket .scale .spk button,.ticket .scale .spc button{padding:2px 7px;font-size:10px} .ticket .scale .spc input{width:44px;font:11px var(--mono);padding:1px 3px} .ticket .scale .spc select{font-size:10px}
+.ticket .scale .spst b.b{color:var(--buy)} .ticket .scale .spst b.s{color:var(--sell)}
+.ticket .scale .spleft{position:relative;flex:1 1 140px;height:14px;background:#0b0f16;border:1px solid var(--line);border-radius:3px;overflow:hidden}
+.ticket .scale .spleft i{position:absolute;left:0;top:0;bottom:0;background:rgba(230,193,90,.35)} .ticket .scale .spleft b{position:absolute;left:6px;top:0;line-height:12px;font:800 10px var(--mono);color:var(--text)}
+.ticket .scale button[data-sp-auto].on{color:var(--gold);border-color:var(--gold)}
+.ticket .scale .sprs{width:100%;display:grid;gap:2px}
+.ticket .scale .spr{display:grid;grid-template-columns:52px 70px 1fr auto;gap:6px;align-items:center;padding:1px 4px;border-radius:3px;font:11px var(--mono)}
+.ticket .scale .spr.next{background:rgba(230,193,90,.08)} .ticket .scale .spr.ready{background:rgba(230,193,90,.22);animation:spready 1s infinite alternate} .ticket .scale .spr.done{opacity:.55}
+.ticket .scale .spr.add span{color:var(--buy)} .ticket .scale .spr i{font-style:normal;color:var(--dim)} .ticket .scale .spr button{padding:1px 6px;font-size:10px}
+@keyframes spready{from{box-shadow:inset 0 0 0 1px rgba(230,193,90,.4)}to{box-shadow:inset 0 0 0 1px var(--gold)}}
 
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
@@ -3796,6 +3810,44 @@ async function sendPartial(sym, el){
   toast(out.ok ? "Sent: " + out.sent : "Partial blocked: " + (out.reason || ""), out.ok);
   if (out.ok){ PP[sym] = {open: false}; P.positions.last = null; P.ticket.last = null; poll(true); }
 }
+/* SCALE PLAN on the position: rungs measured from your average entry. MP = room to the target (a dollar, take a
+   quarter; two, take a third; the rest rides). CASH = continuation, take more sooner. BUILD = add on strength, then
+   scale out. TAKE pct is of what is LEFT; AUTO fires at the touch when the rung is reached, manual shows READY. */
+const SPC = {};   // symbol -> custom rung rows being typed
+function scalePlanHTML(s, d){
+  const pos = d.position, long = pos.qty > 0, t = (s && s.trading) || {}, plan = (t.scale_plans || {})[d.symbol], tpls = t.scale_templates || {};
+  const open = store.get("scaleOpen", true);
+  const head = `<button class="tohead" data-sp-toggle="1" title="show / hide the scale plan">${open ? "▾" : "▸"} SCALE PLAN</button>`;
+  if (!open) return `<div class="scale">${head}${plan ? ` <span class="dim">${esc(plan.kind)} · ${plan.left_pct}% left</span>` : ""}</div>`;
+  if (!plan){
+    const rows = SPC[d.symbol] || [];
+    return `<div class="scale">${head}
+      <span class="spk">${Object.keys(tpls).map(k => `<button data-sp-kind="${k}" title="${(tpls[k] || []).map(r => "+$" + r.move + " " + r.action + " " + r.pct + "%").join(" · ")}">${k === "MP" ? "MP TRADE" : k === "CASH" ? "CASH FLOW" : k}</button>`).join("")}</span>
+      <span class="spc"><input class="sp-mv" type="number" step="0.05" min="0.05" placeholder="+$" title="dollars a share from your entry"><select class="sp-act"><option>TAKE</option><option>ADD</option></select><input class="sp-pct" type="number" min="1" max="100" placeholder="%" title="percent of what is left (TAKE) or of the position (ADD)"><button data-sp-addrow="1" title="add this rung to a custom plan">+ RUNG</button>${rows.length ? `<span class="dim">${rows.map(r => "+$" + r.move + " " + r.action + " " + r.pct + "%").join(" · ")}</span><button data-sp-custom="1">START CUSTOM</button>` : ""}</span>
+      <span class="dim">templates in SETTINGS › Trading › scale plan</span></div>`;
+  }
+  const mv = plan.move == null ? "—" : (plan.move >= 0 ? "+" : "−") + "$" + Math.abs(plan.move).toFixed(2);
+  const rungs = plan.rungs.map((r, i) => { const st = r.done ? "done" : r.ready ? "ready" : i === plan.next ? "next" : "";
+    return `<div class="spr ${st} ${r.action === "ADD" ? "add" : ""}"><b>+$${(+r.move).toFixed(2)}</b><span>${r.action} ${r.pct}%</span>
+      <i>${r.done ? `✓ ${sz(r.shares)} sh @ ${px(r.price)}` : r.ready ? "READY" : r.note ? esc(r.note) : ""}</i>
+      ${r.done ? "" : `<button data-sp-fire="${i}" ${canReduce() ? "" : "disabled"} title="fire this rung now at the touch">${r.action === "ADD" ? "ADD" : "TAKE"} NOW</button>`}</div>`; }).join("");
+  return `<div class="scale on">${head}
+    <span class="spst"><b class="${long ? "b" : "s"}">${esc(plan.kind)}</b> from ${px(plan.entry)} · now ${mv}</span>
+    <span class="spleft" title="${sz(plan.left)} of ${sz(plan.basis)} shares still on"><i style="width:${Math.max(0, Math.min(100, plan.left_pct || 0))}%"></i><b>${plan.left_pct}% LEFT · ${sz(plan.left)} sh</b></span>
+    <button data-sp-auto="${plan.auto ? 0 : 1}" class="${plan.auto ? "on" : ""}" title="AUTO: a rung fires by itself the moment price reaches it. Off: it shows READY and you press">AUTO ${plan.auto ? "ON" : "OFF"}</button>
+    <button data-sp-clear="1" title="take the plan off (the position stays)">✕</button>
+    <div class="sprs">${rungs}</div></div>`;
+}
+document.addEventListener("click", async e => {
+  const d = curData(); if (!d) return;
+  if (e.target.closest("button[data-sp-toggle]")){ store.set("scaleOpen", !store.get("scaleOpen", true)); P.ticket.last = null; renderTicket(state, d, true); return; }
+  const k = e.target.closest("button[data-sp-kind]"); if (k){ const out = await post("/api/trade/scale_plan", {symbol: d.symbol, kind: k.dataset.spKind}); toast(out.ok ? "Scale plan on: " + k.dataset.spKind : "Scale plan: " + (out.reason || ""), out.ok); poll(true); return; }
+  if (e.target.closest("button[data-sp-addrow]")){ const box = e.target.closest(".scale"); const mv = +box.querySelector(".sp-mv").value, act = box.querySelector(".sp-act").value, pct = +box.querySelector(".sp-pct").value; if (!(mv > 0) || !(pct > 0)){ toast("Dollars and percent, please", false); return; } (SPC[d.symbol] = SPC[d.symbol] || []).push({move: mv, action: act, pct}); P.ticket.last = null; renderTicket(state, d, true); return; }
+  if (e.target.closest("button[data-sp-custom]")){ const out = await post("/api/trade/scale_plan", {symbol: d.symbol, kind: "CUSTOM", rungs: SPC[d.symbol] || []}); if (out.ok) SPC[d.symbol] = []; toast(out.ok ? "Custom scale plan on" : "Scale plan: " + (out.reason || ""), out.ok); poll(true); return; }
+  const a = e.target.closest("button[data-sp-auto]"); if (a){ const out = await post("/api/trade/scale_plan", {symbol: d.symbol, auto: a.dataset.spAuto === "1"}); toast(out.ok ? "AUTO " + (a.dataset.spAuto === "1" ? "on" : "off") : (out.reason || ""), out.ok); poll(true); return; }
+  if (e.target.closest("button[data-sp-clear]")){ await post("/api/trade/scale_plan", {symbol: d.symbol, clear: true}); poll(true); return; }
+  const f = e.target.closest("button[data-sp-fire]"); if (f){ const out = await post("/api/trade/scale_fire", {symbol: d.symbol, i: +f.dataset.spFire}); toast(out.ok ? "Sent: " + (out.sent || "rung fired") : "Rung: " + (out.reason || ""), out.ok); poll(true); return; }
+});
 // take-off presets: one press = a limit for your chosen share of the position at entry + $X a share (long) / − $X (short)
 const TAKE_OFF = [0.75, 1, 1.5, 2, 2.5, 5];
 function takeoffHTML(d){
@@ -3922,7 +3974,7 @@ function renderTicket(s, d, force){
     ${d && d.position && d.position.qty ? `<div class="trow pos"><span class="posbox"><span>IN <b class="${d.position.qty > 0 ? "b" : "s"}">${d.position.qty > 0 ? "LONG" : "SHORT"} ${sz(Math.abs(d.position.qty))}</b> @ ${px(d.position.avg_cost)}</span>
       <button data-be="${esc(d.symbol)}" ${canReduce() ? "" : "disabled"} title="move the stop to your entry price; any other stop orders on ${esc(d.symbol)} are cancelled">BE</button>
       <button data-partial="${esc(d.symbol)}" ${canReduce() ? "" : "disabled"} title="take part of the profit: you pick the shares and the price">PARTIAL</button>
-      <button class="danger" data-close="${esc(d.symbol)}" ${canReduce() ? "" : "disabled"} title="close the whole position with a limit at the touch">CLOSE</button></span>${takeoffHTML(d)}${partialHTML(d.symbol)}</div>` : ""}
+      <button class="danger" data-close="${esc(d.symbol)}" ${canReduce() ? "" : "disabled"} title="close the whole position with a limit at the touch">CLOSE</button></span>${scalePlanHTML(s, d)}${takeoffHTML(d)}${partialHTML(d.symbol)}</div>` : ""}
     ${on ? "" : `<div class="why">${esc(whyNot())}${d && d.position && d.position.qty ? " · closing still works: CLOSE, FLATTEN, or a " + (d.position.qty > 0 ? "SELL" : "BUY") + " up to " + sz(Math.abs(d.position.qty)) : ""}</div>`}
     ${TK.log.length ? `<div class="st">${TK.log.slice(0, 2).map(l => `<div>${esc(l)}</div>`).join("")}</div>` : ""}</div>`;
   panelHTML("ticket", html);

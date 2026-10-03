@@ -561,6 +561,11 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                     out = tr.opt_adjust(str(body.get("key", "")), body.get("contracts"), str(body.get("mode", "")), body.get("price"), now)
                 elif action == "modify":
                     out = tr.modify(body.get("id"), body.get("price"), now)
+                elif action == "scale_plan":
+                    out = (tr.clear_scale_plan(sym, now) if body.get("clear") else
+                           tr.set_scale_plan(sym, body.get("kind"), body.get("rungs"), body.get("auto"), now))
+                elif action == "scale_fire":
+                    out = tr.fire_scale_rung(sym, body.get("i"), now)
                 else:
                     self._send(404, "not found", "text/plain")
                     return

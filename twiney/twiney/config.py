@@ -157,6 +157,17 @@ DEFAULTS = {
             "enabled": False,
             "cash_flow": [{"fraction": 0.5, "dollars": 0.50}, {"fraction": 0.25, "dollars": 1.50}],
             "breakeven_after_cash_flow": True,
+            # SCALE PLAN on a position: rungs measured from your average entry. move = dollars a share in your
+            # favour; TAKE pct = that share of what is LEFT comes off at the touch; ADD pct = that share of the
+            # position is added at the touch. MP = a measured-potential trade with room (Dan: a dollar, take a
+            # quarter; two, take a third; let the rest ride to the target). CASH = a continuation / cash-flow
+            # trade: the move is mostly made, so take more, sooner. BUILD = add on strength first, then scale out
+            "templates": {
+                "MP": [{"move": 1.0, "action": "TAKE", "pct": 25}, {"move": 2.0, "action": "TAKE", "pct": 33}, {"move": 4.0, "action": "TAKE", "pct": 50}],
+                "CASH": [{"move": 0.5, "action": "TAKE", "pct": 33}, {"move": 1.0, "action": "TAKE", "pct": 50}, {"move": 2.0, "action": "TAKE", "pct": 100}],
+                "BUILD": [{"move": 0.5, "action": "ADD", "pct": 50}, {"move": 1.5, "action": "TAKE", "pct": 33}, {"move": 3.0, "action": "TAKE", "pct": 50}],
+            },
+            "auto_default": True,
         },
         # stops go out as STOP-LIMIT (never a naked stop): limit this many ticks through the stop
         "stop_limit_ticks": 10,
@@ -413,6 +424,16 @@ def _check_values(cfg):
         total += f
     if total > 1 + 1e-9:
         raise ConfigError("trading.scale_plan.cash_flow fractions add up to more than the whole position")
+    tpls = cfg["trading"]["scale_plan"].get("templates") or {}
+    if not isinstance(tpls, dict):
+        raise ConfigError("trading.scale_plan.templates must be {NAME: [{move, action, pct}]}")
+    for name, rungs in tpls.items():
+        for i, r in enumerate(rungs if isinstance(rungs, list) else []):
+            if not isinstance(r, dict) or not isinstance(r.get("move"), (int, float)) or r["move"] <= 0 \
+                    or str(r.get("action", "")).upper() not in ("TAKE", "ADD") or not isinstance(r.get("pct"), (int, float)) or not 0 < r["pct"] <= 100:
+                raise ConfigError(f"trading.scale_plan.templates.{name}[{i}] must be {{move > 0, action TAKE|ADD, pct 1-100}}")
+        if not isinstance(rungs, list) or not rungs:
+            raise ConfigError(f"trading.scale_plan.templates.{name} must be a non-empty list")
 
 
 def build_config(raw=None):

@@ -571,6 +571,7 @@ class Trader:
         self.default_shares = self.cfg["default_shares"]
         self.bracket = bool(self.cfg["bracket"])
         self.scale = bool(self.cfg["scale_plan"]["enabled"])
+        self.scale_plans = {}          # symbol -> SCALE PLAN on the position (rungs from the average entry)
         self.families = {}   # entry order id -> {"symbol", "entry", "stop", "cash": [...], "be_done"}
         self.nonces = {}     # ticket nonce -> result (double-submit protection)
         self.mismatch = {}   # symbol -> since when its working exits have not matched the position
@@ -1018,6 +1019,10 @@ class Trader:
         """Called on every dashboard snapshot: breakeven stops after cash flow; exits never bigger than the
         position; daily-loss lock."""
         self._breakeven(now or time.time())
+        try:
+            self._scale_tick(now or time.time())
+        except Exception as exc:
+            log.warning("scale plan: %s", exc)
         try:
             self._guard_exits(now or time.time())
         except Exception as exc:
@@ -1652,6 +1657,135 @@ class Trader:
             return self._reduce(symbol, action, price, shares, now, "close")
         return self.submit(symbol, action, price, shares, now, bracket=False)
 
+    # ---- SCALE PLAN: scale out (and add) off the position as price moves from your entry -----------------
+    def _avg_cost(self, symbol):
+        for (a, s_), p in self.engine.positions.items():
+            if s_ == symbol and p.get("qty"):
+                return float(p.get("avg_cost") or 0) or None
+        return None
+
+    def set_scale_plan(self, symbol, kind=None, rungs=None, auto=None, now=None):
+        """Put a plan on the position: a template (MP / CASH / BUILD from config) or your own rungs. Measured from
+        the average entry; TAKE pct is of what is LEFT at that rung, ADD pct of the position."""
+        with self.lock:
+            now = now or time.time()
+            pos = int(self.broker.position(symbol))
+            if not pos:
+                return {"ok": False, "reason": "no position: a scale plan goes on a position you hold"}
+            cur = self.scale_plans.get(symbol)
+            if rungs is None and kind is None and cur is not None and auto is not None:
+                cur["auto"] = bool(auto)
+                self._note(now, f"{symbol} scale plan AUTO {'on' if cur['auto'] else 'off'}", True)
+                return {"ok": True, "plan": self._plan_view(symbol, cur, now)}
+            tpls = self.cfg["scale_plan"].get("templates") or {}
+            if rungs is None:
+                kind = str(kind or "MP").upper()
+                if kind not in tpls:
+                    return {"ok": False, "reason": f"no scale template {kind}; have {', '.join(tpls)}"}
+                rungs = tpls[kind]
+            else:
+                kind = str(kind or "CUSTOM").upper()
+            clean = []
+            for r in rungs:
+                try:
+                    mv, pct, act = float(r["move"]), float(r["pct"]), str(r.get("action", "TAKE")).upper()
+                except (KeyError, TypeError, ValueError):
+                    return {"ok": False, "reason": "each rung needs move (dollars), action TAKE or ADD, pct"}
+                if mv <= 0 or not 0 < pct <= 100 or act not in ("TAKE", "ADD"):
+                    return {"ok": False, "reason": "rung: move above 0, pct 1-100, action TAKE or ADD"}
+                clean.append({"move": round(mv, 4), "action": act, "pct": round(pct, 1), "done": False, "ready": False,
+                              "shares": None, "price": None, "t": None, "note": ""})
+            clean.sort(key=lambda r: r["move"])
+            entry = self._avg_cost(symbol) or (self.engine.syms[symbol].price() if symbol in self.engine.syms else None)
+            plan = {"symbol": symbol, "kind": kind, "auto": bool(self.cfg["scale_plan"].get("auto_default", True)) if auto is None else bool(auto),
+                    "entry": entry, "side": "long" if pos > 0 else "short", "basis": abs(pos), "rungs": clean, "t": now}
+            self.scale_plans[symbol] = plan
+            self._note(now, f"{symbol} SCALE PLAN {kind} on {abs(pos)} sh from {money(entry) if entry else '?'}: " +
+                       ", ".join(f"+${r['move']:g} {r['action']} {r['pct']:g}%" for r in clean) + (" · AUTO" if plan["auto"] else " · manual"), True)
+            return {"ok": True, "plan": self._plan_view(symbol, plan, now)}
+
+    def clear_scale_plan(self, symbol, now=None):
+        with self.lock:
+            if self.scale_plans.pop(symbol, None) is not None:
+                self._note(now or time.time(), f"{symbol} scale plan cleared", True)
+            return {"ok": True}
+
+    def fire_scale_rung(self, symbol, i, now=None):
+        """Fire one rung by hand, reached or not."""
+        with self.lock:
+            plan = self.scale_plans.get(symbol)
+            if not plan:
+                return {"ok": False, "reason": "no scale plan on " + symbol}
+            try:
+                rung = plan["rungs"][int(i)]
+            except (IndexError, TypeError, ValueError):
+                return {"ok": False, "reason": "no such rung"}
+            if rung["done"]:
+                return {"ok": False, "reason": "that rung already fired"}
+            return self._fire_rung(symbol, plan, rung, now or time.time())
+
+    def _fire_rung(self, symbol, plan, rung, now):
+        pos = int(self.broker.position(symbol))
+        if not pos:
+            return {"ok": False, "reason": "flat"}
+        st = self.engine.syms.get(symbol)
+        bid, ask = st.bbo() if st else (None, None)
+        if bid is None or ask is None:
+            return {"ok": False, "reason": "no quote"}
+        if rung["action"] == "ADD":
+            shares = max(1, int(round(abs(pos) * rung["pct"] / 100.0)))
+            out = self._adjust_unlocked(symbol, shares, "add", now)
+        else:
+            _p, free, why = self._can_reduce_by(symbol, now)
+            if not free:
+                return {"ok": False, "reason": why or "nothing left to take off"}
+            shares = int(round(free * rung["pct"] / 100.0))
+            if rung["pct"] >= 100 or shares >= free:
+                out = self._flatten_unlocked(symbol, now)
+                shares = free
+            else:
+                shares = max(1, shares)
+                touch = bid if pos > 0 else ask
+                out = self._partial_unlocked(symbol, shares, touch, now)
+        if out.get("ok"):
+            rung.update(done=True, ready=False, shares=shares, price=bid if pos > 0 else ask, t=now)
+            left = max(0, abs(pos) - shares) if rung["action"] == "TAKE" else abs(pos) + shares
+            self._note(now, f"{symbol} scale {rung['action']} {rung['pct']:g}% at +${rung['move']:g}: {shares} sh, {left} left of {plan['basis']}", True)
+        else:
+            rung["note"] = out.get("reason", "")
+        return dict(out, rung=rung)
+
+    def _scale_tick(self, now):
+        """Every watchdog pass: a rung is READY once price has moved its dollars from the entry in your favour;
+        with AUTO on it fires at once. Flat = the plan is done."""
+        for symbol, plan in list(self.scale_plans.items()):
+            pos = int(self.broker.position(symbol))
+            if not pos:
+                self.scale_plans.pop(symbol, None)
+                self._note(now, f"{symbol} flat: scale plan finished", True)
+                continue
+            st = self.engine.syms.get(symbol)
+            price = st.price() if st else None
+            if not price or not plan.get("entry"):
+                continue
+            move = (price - plan["entry"]) * (1 if plan["side"] == "long" else -1)
+            for rung in plan["rungs"]:
+                if rung["done"] or move + 1e-9 < rung["move"]:
+                    continue
+                rung["ready"] = True
+                if plan["auto"]:
+                    self._fire_rung(symbol, plan, rung, now)
+
+    def _plan_view(self, symbol, plan, now):
+        pos = int(self.broker.position(symbol))
+        st = self.engine.syms.get(symbol)
+        price = st.price() if st else None
+        move = (price - plan["entry"]) * (1 if plan["side"] == "long" else -1) if price and plan.get("entry") else None
+        left = abs(pos)
+        return dict(plan, pos=pos, left=left, left_pct=round(100.0 * left / plan["basis"]) if plan["basis"] else None,
+                    move=round(move, 2) if move is not None else None, price=price,
+                    next=next((i for i, r in enumerate(plan["rungs"]) if not r["done"]), None))
+
     def set_size(self, shares):
         shares = int(shares)
         if shares <= 0:
@@ -1670,5 +1804,7 @@ class Trader:
                  auto_on=self.auto_on, risk_dollars=self.risk_dollars, auto=self.auto_status(),
                  filled_chip_seconds=float(self.cfg.get("filled_chip_seconds", 90)),
                  bracket_template=self.bracket_template, bracket_templates=list(self.bracket_templates().keys()),
+                 scale_plans={sym: self._plan_view(sym, pl, time.time()) for sym, pl in self.scale_plans.items()},
+                 scale_templates={k: v for k, v in (self.cfg["scale_plan"].get("templates") or {}).items()},
                  qty_presets=list(self.cfg.get("qty_presets") or [25, 50, 100, 200, 500, 1000]))
         return s
