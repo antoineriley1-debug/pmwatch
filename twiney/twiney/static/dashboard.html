@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261002-2324">
+<meta name="build" content="20261003-0407">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -748,6 +748,11 @@ i.tl{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:3p
 #stCycle{font:10px var(--mono);color:var(--dim);margin-left:6px}#stCycle.warn{color:var(--gold)}#stCycle.bad{color:var(--sell);font-weight:800}
 
 .ticket .sides button.opt{flex:0 0 auto;margin-left:8px;opacity:1;color:var(--gold);border-color:var(--gold);font-size:10px;padding:2px 8px}
+
+/* BIG TAPE: columns size to their numbers and never clip; a panel too narrow scrolls sideways instead of cutting */
+.p-bigtape .t.bt{table-layout:auto;width:100%;min-width:max-content} .p-bigtape .t.bt td{overflow:visible;text-align:right;padding:0 5px}
+.p-bigtape .t.bt td.px{text-align:left} .p-bigtape .t.bt td:last-child{padding-right:6px}
+.p-tape .t.tape2 td{white-space:nowrap;overflow:visible}
 
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
