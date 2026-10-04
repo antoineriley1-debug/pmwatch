@@ -565,3 +565,13 @@ i.tl{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:3p
 .fast button.b,.ochead button.big.b{background:#0f3b26;color:#fff;border-color:var(--buy)} .fast button.s,.ochead button.big.s{background:#4a1520;color:#fff;border-color:var(--sell)}
 .fast button.out,.ochead button.out{background:#2a2306;color:var(--gold);border-color:var(--gold)} .fast button.out.all,.ochead button.out.all{background:#5a1218;color:#fff;border-color:var(--sell)}
 .fast span.b{color:var(--buy);font-weight:800} .fast span.s{color:var(--sell);font-weight:800}
+
+.ostopbox{display:inline-flex;align-items:center;gap:4px} .ostopbox select,.ostopbox input{height:20px;font:11px var(--mono);background:#0a0a0b;color:var(--text);border:1px solid #26282c}
+.ostopbox input{width:64px} .ostop{font-weight:800;padding:0 6px;border-radius:3px} .ostop.set{color:#fff;background:#7a1a2a} .ostop.chart{color:#ffb3bb;border:1px solid #ff4d5e} .ostop.none{color:var(--gold);border:1px dashed var(--gold)}
+
+.tgauge{display:flex;align-items:center;gap:6px;padding:3px 6px;font:700 10.5px var(--mono);border-bottom:1px solid var(--line);background:#0b0f16;white-space:nowrap}
+.tgauge .b{color:var(--buy)} .tgauge .s{color:var(--sell)} .tgauge .bar{flex:1;display:flex;height:8px;border-radius:2px;overflow:hidden;background:#1a1f28}
+.tgauge .bar i{display:block;height:100%} .tgauge .bar i.b{background:var(--buy)} .tgauge .bar i.s{background:var(--sell)}
+.flychip{position:fixed;z-index:9999;pointer-events:none;min-width:100px;white-space:nowrap;text-align:center;font:800 11px var(--mono);padding:2px 4px;border-radius:3px;
+  background:#2a2306;color:var(--gold);border:1px solid var(--gold);transition:left .42s cubic-bezier(.3,.7,.3,1),top .42s cubic-bezier(.3,.7,.3,1),opacity .42s ease-in;box-shadow:0 4px 14px rgba(0,0,0,.6)}
+.flychip.b{background:#0f3b26;color:#fff;border-color:var(--buy)} .flychip.s{background:#4a1520;color:#fff;border-color:var(--sell)}

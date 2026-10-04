@@ -426,9 +426,41 @@ P.book.el.addEventListener("scroll", () => { const wrap = P.book.pc.querySelecto
 function renderTape(d){
   const el = P.tape.pc.querySelector(".p-tape");
   if (!d){ el.innerHTML = `<div class="dim" style="padding:8px">${NA}</div>`; P.tape.last = null; renderBigTape(null); return; }
-  const html = tapeSpeedHTML(d.tape.speed) + tapeHTML(d.tape, d.ladder); if (P.tape.last !== html){ P.tape.last = html;
+  const html = tapeGaugeHTML(d.tape) + tapeSpeedHTML(d.tape.speed) + tapeHTML(d.tape, d.ladder); if (P.tape.last !== html){ P.tape.last = html;
     const keep = el.scrollTop; el.innerHTML = html; el.scrollTop = keep; makeColsResizable(el.querySelector("table")); }
-  renderBigTape(d);
+  renderBigTape(d); flyBigPrints(d);
+}
+/* THE MONEY GAUGE: the last minute's dollars paid at the ask (buyers in a rush) against dollars hit at the bid */
+function tapeGaugeHTML(t){
+  const u = t.usd_60 || {buy: 0, sell: 0}, tot = u.buy + u.sell;
+  if (!tot) return `<div class="tgauge dim">LAST MINUTE · no money through yet</div>`;
+  const bp = Math.round(u.buy / tot * 100);
+  return `<div class="tgauge" title="the last 60 seconds: dollars traded at the ask (paid up) vs at the bid (hit)"><span class="b">${usdK(u.buy)} BOUGHT</span><span class="bar"><i class="b" style="width:${bp}%"></i><i class="s" style="width:${100 - bp}%"></i></span><span class="s">${usdK(u.sell)} SOLD</span></div>`;
+}
+/* A BIG PRINT FLIES: when size comes off the ladder in a big print, a chip lifts off its row on LEVEL II and lands
+   on top of TIME & SALES, so the eye follows the money from the book to the tape */
+const FLOWN = new Map();
+function flyBigPrints(d){
+  if (!d || !d.tape || !P.book.el.offsetParent || !P.tape.el.offsetParent) return;
+  const big = (d.ladder && d.ladder.big_shares) || 5000, now = Date.now();
+  for (const [k, at] of FLOWN) if (now - at > 30000) FLOWN.delete(k);
+  let n = 0;
+  for (const r of (d.tape.recent || [])){
+    if (r.age > 2 || r.size < big || n >= 3) continue;
+    const key = `${d.symbol}|${r.price}|${r.size}|${r.exchange}|${Math.round((state.now - r.age) * 2)}`;
+    if (FLOWN.has(key)) continue; FLOWN.set(key, now); n++;
+    const row = P.book.el.querySelector(`.ladder-wrap tr[data-price="${r.price}"]`), dst = P.tape.el.querySelector(".tape2");
+    if (!row || !dst) continue;
+    const a = row.getBoundingClientRect(), b = dst.getBoundingClientRect();
+    if (!a.width || !b.width) continue;
+    const chip = document.createElement("div");
+    chip.className = "flychip " + (r.side === "buy" ? "b" : r.side === "sell" ? "s" : "");
+    chip.textContent = `${r.side === "buy" ? "▲" : r.side === "sell" ? "▼" : "•"} ${kfmt(r.size)} @ ${px(r.price)}`;
+    chip.style.left = (a.left + a.width / 2 - 50) + "px"; chip.style.top = (a.top) + "px";
+    document.body.appendChild(chip);
+    requestAnimationFrame(() => requestAnimationFrame(() => { chip.style.left = (b.left + 8) + "px"; chip.style.top = (b.top + 20) + "px"; chip.style.opacity = "0.15"; }));
+    setTimeout(() => chip.remove(), 900);
+  }
 }
 /* BIG TAPE: the second time & sales, under the first, filtered the way a trader filters for large orders and for
    anyone building a position. Top: BUILDERS — the same side hitting the same price over and over (3+ prints inside
@@ -1031,7 +1063,7 @@ function renderPositions(s){
     const add = (n, lbl) => `<button data-oadd="${esc(p.key)}" data-n="${n}" ${canTrade() ? "" : "disabled"} title="scale in: ${long ? "buy" : "sell"} ${ct(n)} more at the ${long ? "ask" : "bid"}">${lbl}</button>`;
     const quote = p.bid != null || p.ask != null ? `${p.bid != null ? p.bid.toFixed(2) : NA} / ${p.ask != null ? p.ask.toFixed(2) : NA}` : `<span class="dim">no quote</span>`;
     return `<tr class="posrow opt"><td class="l"><b>${esc(p.label)}</b> <span class="${long ? "b" : "s"}">${long ? "L" : "S"} ${ct(q)}</span>${p.delta != null ? ` <span class="dim" title="delta">Δ${(p.delta * p.qty).toFixed(1)}</span>` : ""}</td><td>${p.per_contract.toFixed(2)}</td><td>${quote}</td>
-      <td class="pct ${p.pnl == null ? "" : p.pnl >= 0 ? "up" : "dn"}">${p.pnl == null ? NA : (p.pnl >= 0 ? "+" : "−") + "$" + sz(Math.abs(p.pnl).toFixed(0))}</td><td></td>
+      <td class="pct ${p.pnl == null ? "" : p.pnl >= 0 ? "up" : "dn"}">${p.pnl == null ? NA : (p.pnl >= 0 ? "+" : "−") + "$" + sz(Math.abs(p.pnl).toFixed(0))}</td><td class="mono dim">${(() => { const os = (T().opt_stops || {})[p.key]; return os ? `<span class="s" title="${os.source === "chart" ? "your chart STOP line" : "the stop you set"}">S ${os.on === "stock" ? esc(p.symbol) + " " : ""}${(+os.price).toFixed(2)}</span>` : `<span class="gold" title="no stop on this contract: set one on the OPTION CHART, or draw a STOP on the stock chart">no stop</span>`; })()}</td>
       <td class="l ctl">${off(Math.max(1, Math.floor(q / 4)), "25", "take off a quarter")}${off(Math.max(1, Math.floor(q / 2)), "50", "take off half")}${off(Math.max(1, Math.floor(q * 3 / 4)), "75", "take off three quarters")}<button data-oclose="${esc(p.key)}" data-n="ask" ${on ? "" : "disabled"} title="take off a number of contracts you type, at a price you type">…</button>
         <span class="sep"></span>${add(1, "+1")}${add(Math.max(1, Math.floor(q / 2)), "+½")}${add(q, "+1×")}<button data-oadd="${esc(p.key)}" data-n="ask" ${canTrade() ? "" : "disabled"} title="scale in by a number of contracts you type, at a price you type">+…</button>
         <button class="danger" data-oclose="${esc(p.key)}" data-n="0" ${on ? "" : "disabled"} title="CLOSE every contract with a limit at the touch">X</button></td></tr>`;
@@ -1870,7 +1902,11 @@ function renderOchHead(){
       <span class="tfs">${[1, 5, 15].map(m => `<button data-ochtf="${m}" class="${tf === m ? "on" : ""}">${m}m</button>`).join("")}</span>
       <span class="cn">${[1, 2, 5, 10].map(n => `<button data-ochn="${n}" class="${OCH.n === n ? "on" : ""}">${n}</button>`).join("")}</span>
       <button class="b big" data-ochnow="BUY">BUY ${OCH.n}</button><button class="s big" data-ochnow="SELL">SELL ${OCH.n}</button>${q ? `${q > 1 ? `<button class="out" data-ochnow="HALF" title="take half off now, at the touch (no confirm)">½ OUT</button>` : ""}<button class="out all" data-ochnow="ALL" title="out of all ${q} now, at the touch (no confirm)">ALL OUT ${q}</button>` : ""}
-      <span class="dim hint">right-click the chart to trade at a price</span>`; }
+      <span class="dim hint">right-click the chart to trade at a price</span>
+      ${q ? (() => { const os = (T().opt_stops || {})[d.key];
+        const now = os ? `<span class="ostop ${os.source}">STOP ${os.on === "stock" ? esc(d.underlying) + " " + (pos.qty > 0 === (d.right === "C") ? "under " : "over ") : "contract at "}${(+os.price).toFixed(2)}${os.source === "chart" ? " · your chart STOP line" : ""}${os.fired ? " · FIRED" : ""}</span>` : `<span class="ostop none">NO STOP</span>`;
+        return `<span class="ostopbox">${now}<select id="ochStopOn" title="what the stop watches"><option value="stock">on ${esc(d.underlying)}</option><option value="option">on the contract</option></select><input id="ochStopPx" type="number" step="0.01" placeholder="${os ? (+os.price).toFixed(2) : "price"}"><button data-ochstop="set" title="stop out of this contract when the price trades through">SET</button>${os && os.source === "set" ? `<button data-ochstop="off" title="take this stop off (the chart STOP line, if any, still protects)">✕</button>` : ""}</span>`; })() : ""}`; }
+  if (h.contains(document.activeElement) && /INPUT|SELECT/.test(document.activeElement.tagName)) return;   // typing a stop
   if (h.dataset.h !== html){ h.dataset.h = html; h.innerHTML = html; }
 }
 async function ochOrder(action, price, n, now){
@@ -1919,6 +1955,11 @@ document.addEventListener("click", e => {
   if (h.dataset.och === "chain"){ showPanel("options"); return; }
   if (h.dataset.ochtf){ store.set("tf.ochart", +h.dataset.ochtf); ochart.view.offset = restOffset(); ochart.view.follow = true; ochart.view.yLo = ochart.view.yHi = null; drawChart(ochart); renderOchHead(); return; }
   if (h.dataset.ochn){ OCH.n = +h.dataset.ochn; renderOchHead(); return; }
+  if (h.dataset.ochstop){ const d = OCH.data; if (!d) return;
+    const price = h.dataset.ochstop === "off" ? null : (document.getElementById("ochStopPx") || {}).value, on = (document.getElementById("ochStopOn") || {}).value || "stock";
+    if (h.dataset.ochstop === "set" && !price){ toast("Type the stop price first", false); return; }
+    post("/api/trade/opt_stop", {key: d.key, price, on}).then(out => { toast(out.ok ? (price ? `Stop set: ${d.label} ${on === "stock" ? "when " + d.underlying + " trades " + price : "at " + price}` : "Stop off") : "Not set: " + (out.reason || ""), out.ok); poll(true); });
+    return; }
   if (h.dataset.ochnow){ const d = OCH.data; if (!d) return; const pos = d.position, q = pos ? Math.abs(pos.qty) : 0, long = pos && pos.qty > 0;
     if (h.dataset.ochnow === "ALL") ochOrder(long ? "SELL" : "BUY", null, q, true);
     else if (h.dataset.ochnow === "HALF") ochOrder(long ? "SELL" : "BUY", null, Math.max(1, Math.floor(q / 2)), true);

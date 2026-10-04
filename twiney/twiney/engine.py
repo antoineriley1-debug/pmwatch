@@ -2945,10 +2945,26 @@ class Engine:
         # volume trades later — it holds on how deep underwater they still are
         l_ok = (hold_l or lf >= lean) and l_under >= (min_under / 2 if hold_l else min_under) and drop >= (min_move / 2 if hold_l else min_move) and hi and t - hi[1] >= min_age
         s_ok = (hold_s or sf >= lean) and s_under >= (min_under / 2 if hold_s else min_under) and rise >= (min_move / 2 if hold_s else min_move) and lo and t - lo[1] >= min_age
+        # the SHAPE: a trap is a move that went one way and turned (gap / run down, then back up: shorts TRAPPED). A clean
+        # trend from the open that left the other side underwater is not a trap — shorts are SQUEEZED (longs FLUSHED)
+        open_px = None
+        try:
+            from .ps60 import ny_offset, SESSION_OPEN
+            off = ny_offset(t); day0 = (int((t + off) // 86400) * 86400) - off + SESSION_OPEN
+            first = [m for m in st.bars if m >= day0]
+            open_px = st.bars[min(first)][0] if first else None
+        except Exception:
+            open_px = None
+        down_first = (open_px - lo[0]) / open_px * 100 if open_px and lo else None     # how far it fell from the open before the low
+        up_first = (hi[0] - open_px) / open_px * 100 if open_px and hi else None       # how far it ran from the open before the high
         if l_ok and (lf >= sf or hold_l) and not (s_ok and hold_s):
-            state, side = ("LONGS TRAPPED HEAVY" if lf >= heavy else "LONGS TRAPPED"), "long"
+            clean = up_first is not None and up_first < min_move / 2
+            word = "LONGS FLUSHED" if clean else "LONGS TRAPPED"
+            state, side = (word + " HEAVY" if lf >= heavy else word), "long"
         elif s_ok:
-            state, side = ("SHORTS TRAPPED HEAVY" if sf >= heavy else "SHORTS TRAPPED"), "short"
+            clean = down_first is not None and down_first < min_move / 2
+            word = "SHORTS SQUEEZED" if clean else "SHORTS TRAPPED"
+            state, side = (word + " HEAVY" if sf >= heavy else word), "short"
         out = {"state": state, "side": side, "session_shares": round(total),
                "longs": {"shares": round(longs), "avg": fmt_price(l_avg), "under_pct": round((l_avg - price) / l_avg * 100, 2) if l_avg else None,
                          "fraction": round(lf, 2), "dollars": round(l_w)} if longs else None,
@@ -3017,8 +3033,12 @@ class Engine:
         st.day_trap_state = state
         # one call per trap: when it starts, when the side flips, and once when it goes HEAVY — not on every wobble
         same_side = state and prev and state.split(" ")[0] == prev.split(" ")[0]
-        if same_side and not ("HEAVY" in state and "HEAVY" not in prev):
+        if not same_side:
+            st.day_trap_heavy_said = "HEAVY" in state          # a new trap: HEAVY counts as said if it starts heavy
+        if same_side and not ("HEAVY" in state and "HEAVY" not in prev and not getattr(st, "day_trap_heavy_said", False)):
             return
+        if same_side:
+            st.day_trap_heavy_said = True                      # HEAVY is said once per trap, never on a wobble at the line
         price = st.price()
         # the crowd's exit stays a level for an hour after the trap was called: by the time price gets back there
         # they are no longer "underwater", but that is exactly where their selling / covering meets the push

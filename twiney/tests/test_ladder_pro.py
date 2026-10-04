@@ -283,6 +283,13 @@ class DayTrapScenarioTests(unittest.TestCase):
             chop += d(100, 101.5, 15, "buy") + d(101.5, 100, 15, "sell")
         self.assertEqual(self._run(chop)[0], [])
         self.assertEqual(self._run(d(100, 108, 400, "buy"))[0], [])
+        # a clean staircase up from the open with sellers hitting the dips: shorts are SQUEEZED (not a reversal trap),
+        # said once
+        stair, p = [], 100.0
+        for _ in range(8):
+            stair += d(p, p + 1.0, 30, "buy") + d(p + 1.0, p + 0.6, 25, "sell"); p += 0.6
+        labels, dt = self._run(stair)
+        self.assertEqual(labels, ["SHORTS SQUEEZED HEAVY"]); self.assertIn("SQUEEZED", dt["state"])
 
     def test_option_flow_on_the_trap(self):
         """Puts bought while longs are trapped PRESS them (confirmation, said once past the bar); calls bought

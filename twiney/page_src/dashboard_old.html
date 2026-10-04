@@ -2100,7 +2100,8 @@ function drawOne(p, cv, v, isFoot){
   // the trapped crowd's exit: the average price the underwater longs (shorts) paid — a dotted line with the words
   if (!isFoot && !clean && CS("trapped") && d.daytrap && d.daytrap.exit_level && d.daytrap.exit_level.price){
     const x = d.daytrap.exit_level, lp = x.price, col = x.side === "long" ? "#c4283a" : "#0b8f55";
-    const label = `${x.side === "long" ? "TRAPPED LONGS' EXIT" : "TRAPPED SHORTS' EXIT"} ${px(lp)} · ${x.side === "long" ? "they sell here" : "they cover here"}`;
+    const word = /SQUEEZED/.test(x.state || "") ? "SQUEEZED SHORTS' EXIT" : /FLUSHED/.test(x.state || "") ? "FLUSHED LONGS' EXIT" : x.side === "long" ? "TRAPPED LONGS' EXIT" : "TRAPPED SHORTS' EXIT";
+    const label = `${word} ${px(lp)} · ${x.side === "long" ? "they sell here" : "they cover here"}`;
     if (lp < lo || lp > hi) (v.edgeTags = v.edgeTags || []).push([lp > hi, `TRAP ${px(lp)}`, lp, col, true]);
     else {
       const yy = y(lp); g.strokeStyle = col; g.globalAlpha = 0.8; g.setLineDash([2, 3]); g.lineWidth = 1.5; g.beginPath(); g.moveTo(0, yy); g.lineTo(plotW, yy); g.stroke(); g.setLineDash([]); g.lineWidth = 1; g.globalAlpha = 1;

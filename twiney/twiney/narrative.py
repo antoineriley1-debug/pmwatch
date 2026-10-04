@@ -382,9 +382,17 @@ def day_trap_flow_words(dt):
 def day_trap_words(dt):
     L, S, hi, lo = dt.get("longs"), dt.get("shorts"), dt.get("high"), dt.get("low")
     if dt.get("side") == "long" and L:
+        if "FLUSHED" in dt["state"]:
+            return (f"longs are getting flushed, a clean move down from the open{', heavy' if 'HEAVY' in dt['state'] else ''}. "
+                    f"{int(L['fraction'] * 100)} percent of today's volume was bought above here, average {px(L['avg'])}. "
+                    f"A bounce to {px(L['avg'])} is where they sell." + day_trap_flow_words(dt))
         return (f"longs are trapped{' heavy' if 'HEAVY' in dt['state'] else ''}. {int(L['fraction'] * 100)} percent of today's volume was bought above here, "
                 f"average {px(L['avg'])}, {L['under_pct']:.1f} percent underwater. A push back to {px(L['avg'])} is where they sell." + day_trap_flow_words(dt))
     if dt.get("side") == "short" and S:
+        if "SQUEEZED" in dt["state"]:
+            return (f"shorts are getting squeezed, a clean run up from the open{', heavy' if 'HEAVY' in dt['state'] else ''}. "
+                    f"{int(S['fraction'] * 100)} percent of today's volume was sold below here, average {px(S['avg'])}. "
+                    f"A dip to {px(S['avg'])} is where they cover." + day_trap_flow_words(dt))
         return (f"shorts are trapped{' heavy' if 'HEAVY' in dt['state'] else ''}. {int(S['fraction'] * 100)} percent of today's volume was sold below here, "
                 f"average {px(S['avg'])}, {S['under_pct']:.1f} percent underwater. A dip back to {px(S['avg'])} is where they cover." + day_trap_flow_words(dt))
     return ""

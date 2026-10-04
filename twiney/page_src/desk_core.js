@@ -305,15 +305,18 @@ function indPopHTML(){
 function renderDataWin(p){
   const wrap = p.el.querySelector(".chart-wrap"); if (!wrap) return;
   let w = wrap.querySelector(".datawin");
+  // each chart has its own box: where you put it and whether it is shrunk. The main chart keeps the old settings;
+  // the other charts (CHART 2 / 3, OPTION CHART) start shrunk to Symbol..Close so the candles stay clear
+  const main = !p.id || p.id === "chart", posKey = main ? "datawin.pos" : "datawin.pos." + p.id, minKey = main ? "datawin.min" : "datawin.min." + p.id, minDefault = !main;
   const on = store.get("datawin", true) && p.data && p.dataBar;
   if (!on){ if (w) w.style.display = "none"; return; }
   if (!w){
     w = document.createElement("div"); w.className = "datawin"; wrap.appendChild(w);
-    const pos = store.get("datawin.pos", null); if (pos){ w.style.left = pos[0] + "px"; w.style.top = pos[1] + "px"; w.style.bottom = "auto"; }
-    w.addEventListener("click", e => { if (e.target.classList.contains("mn")){ store.set("datawin.min", !store.get("datawin.min", false)); w.dataset.h = ""; renderDataWin(p); } });
+    const pos = store.get(posKey, null); if (pos){ w.style.left = pos[0] + "px"; w.style.top = pos[1] + "px"; w.style.bottom = "auto"; }
+    w.addEventListener("click", e => { if (e.target.classList.contains("mn")){ store.set(minKey, !store.get(minKey, minDefault)); w.dataset.h = ""; renderDataWin(p); } });
     w.addEventListener("mousedown", e => { if (e.target.classList.contains("mn")) return; e.stopPropagation(); e.preventDefault(); const r = w.getBoundingClientRect(), wr = wrap.getBoundingClientRect(), dx = e.clientX - r.left, dy = e.clientY - r.top;
       const mv = ev => { w.style.left = Math.max(0, Math.min(wr.width - r.width, ev.clientX - wr.left - dx)) + "px"; w.style.top = Math.max(0, Math.min(wr.height - r.height, ev.clientY - wr.top - dy)) + "px"; w.style.bottom = "auto"; };
-      const up = () => { window.removeEventListener("mousemove", mv); window.removeEventListener("mouseup", up); store.set("datawin.pos", [parseInt(w.style.left), parseInt(w.style.top)]); };
+      const up = () => { window.removeEventListener("mousemove", mv); window.removeEventListener("mouseup", up); store.set(posKey, [parseInt(w.style.left), parseInt(w.style.top)]); };
       window.addEventListener("mousemove", mv); window.addEventListener("mouseup", up); });
   }
   w.style.display = "";
@@ -322,7 +325,7 @@ function renderDataWin(p){
   const lum = c => { const n = parseInt(c.slice(1), 16); return (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)); };
   const f = v => v == null ? "—" : (+v).toFixed(6).replace(/0+$/, "").replace(/\.$/, "");
   const rows = (p.dataRows || []).map(([name, col, val]) => `<div class="r" style="background:${col};color:${lum(col) > 140 ? "#000" : "#fff"}"><span>${name}</span><span>${f(val)}</span></div>`).join("");
-  const min = store.get("datawin.min", false);
+  const min = store.get(minKey, minDefault);
   w.classList.toggle("min", min);
   const html = `<div class="ok"><span>OK</span><b class="mn" title="${min ? "show the indicator values too" : "keep Symbol through Close, hide the indicator values"}">${min ? "+" : "–"}</b></div>
     <div class="kv"><span>Symbol:</span><span>${esc(d.symbol)},${tf === "D" ? "D" : tf}</span></div>

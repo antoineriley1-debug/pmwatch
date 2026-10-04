@@ -51,6 +51,15 @@ class Tape:
                 sell += p["size"]
             else:
                 mid += p["size"]
+        # the money in the last minute: dollars paid at the ask vs dollars hit at the bid (the gauge on T&S)
+        usd_b = usd_s = 0.0
+        for p in reversed(self.prints):
+            if now - p["t"] > 60:
+                break
+            if p["side"] == BUY:
+                usd_b += p["size"] * p["price"]
+            elif p["side"] == SELL:
+                usd_s += p["size"] * p["price"]
         directional = buy + sell
         if n < self.cfg["min_prints_for_read"] or directional <= 0:
             state = "QUIET"
@@ -69,6 +78,7 @@ class Tape:
             "mid_volume": mid,
             "large_prints": large,
             "buy_pct": round(100.0 * buy / directional, 1) if directional else None,
+            "usd_60": {"buy": round(usd_b), "sell": round(usd_s)},
         }
 
     def speed(self, now, span=90, bucket=3, fast=10):

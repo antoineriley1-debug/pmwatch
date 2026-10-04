@@ -102,15 +102,11 @@ stop to breakeven after the first cash flow.
 - **IBKR real-data validation** needs his paper login to have market data shared (Client Portal → Settings → Paper
   Trading Account → share real-time market data → Yes; takes effect next trading day). Then run
   `tools/acceptance.py --reconnect` against TWS paper.
-- **Proposed, not built**: a print "flying" from the ladder row to Time & Sales for big prints, and a buyers-vs-sellers
-  dollar gauge on the tape header. He asked for ideas first; the plan is in the conversation and below:
-  chip lifts off the ladder row when size comes off and a matching print lands within a second, slides to the top of
-  T&S over ~400 ms, gated by the BIG threshold; one tape (not two) with a split header bar of $ at the ask vs $ at
-  the bid over the last minute.
-- **Proposed wording split**: `SHORTS SQUEEZED` for a clean trend that left shorts underwater, keep `SHORTS TRAPPED`
-  for the reversal shape.
-- A stop line does not grow with adds: after ADD rungs or adding size, re-drag the stop to resize it (the exit guard
-  trims stops when you reduce).
+- Built: big prints fly from LEVEL II to T&S (`flyBigPrints`), the last-minute money gauge on T&S (`tape.stats`
+  `usd_60`), `SHORTS SQUEEZED` / `LONGS FLUSHED` for clean trends (TRAPPED stays for reversals; HEAVY said once per
+  trap), the chart stop grows with adds (`_auto_protect`), option stops on the stock or the contract
+  (`Trader.set_opt_stop`, chart STOP line by the contract's direction, setting `trading.option_stop_follows_chart`),
+  IBKR 110 on an option price re-sends once on the dime.
 
 ## Options desk (latest)
 

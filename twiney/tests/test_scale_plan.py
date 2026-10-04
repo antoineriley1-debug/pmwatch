@@ -226,3 +226,56 @@ class PracticeOptionsMoveWithTheStockTests(unittest.TestCase):
         e.on_l1("AAA", "last", 9.40, T + 4); e.practice_opt_tick(T + 5)          # stock down: put up, call down
         self.assertGreater(e.opt_quotes[kp]["last"], p0); self.assertLess(e.opt_quotes[kc]["last"], c0)
         self.assertGreater(e._opt_view(e.opt_positions[kp])["pnl"], 0)
+
+
+class StopGrowsWithAddsTests(unittest.TestCase):
+    def test_adding_shares_grows_the_chart_stop(self):
+        e, tr, broker = make()
+        tr.submit("AAA", "BUY", 10.0, 100, 2.0, bracket=False); quote(e, 9.99, 10.00, 3.0)
+        e.set_play_level("AAA", "stop", 9.50, 3.5, source="chart"); tr.watchdog(3.6)
+        self.assertEqual([o.get("remaining") or o.get("qty") for o in e._pending("AAA") if o.get("role") == "stop"], [100])
+        tr.submit("AAA", "BUY", 10.0, 50, 4.0, bracket=False); quote(e, 9.99, 10.00, 4.5)       # add 50
+        self.assertEqual(broker.position("AAA"), 150)
+        tr.watchdog(5.0); tr.watchdog(8.0)
+        stops = [o for o in e._pending("AAA") if o.get("role") == "stop"]
+        self.assertEqual(sum(int(o.get("remaining") or o.get("qty")) for o in stops), 150)
+        self.assertEqual({o.get("aux") for o in stops}, {9.5})
+
+
+class OptionStopTests(unittest.TestCase):
+    """A contract is stopped out on the STOCK's price (the chart's STOP line, or one you set) or on its own price."""
+    def setUp(self):
+        import time as _t
+        from twiney import options as _o
+        self.e, self.tr, self.broker = make(); self.T = _t.time()
+        self.e.on_l1("AAA", "last", 10.00, self.T)
+        exp = self.e.option_chain("AAA", None, "C", self.T)["expiry"]
+        self.kc, self.kp = _o.key_of("AAA", exp, 10, "C"), _o.key_of("AAA", exp, 10, "P")
+        self.exp = exp
+
+    def held(self, key):
+        return int((self.e.opt_positions.get(key) or {}).get("qty") or 0)
+
+    def test_the_chart_stop_line_takes_a_call_out(self):
+        e, tr, T = self.e, self.tr, self.T
+        self.assertTrue(tr.opt_open("AAA", self.exp, 10, "C", "BUY", 2, None, T)["ok"]); e.practice_opt_tick(T + 1)
+        self.assertEqual(self.held(self.kc), 2)
+        e.set_play_level("AAA", "stop", 9.80, T + 1, source="chart")
+        self.assertEqual(tr.snapshot()["opt_stops"][self.kc]["source"], "chart")
+        e.on_l1("AAA", "last", 9.90, T + 2); tr.watchdog(T + 2); e.practice_opt_tick(T + 3)
+        self.assertEqual(self.held(self.kc), 2)                                          # above the stop: held
+        e.on_l1("AAA", "last", 9.78, T + 4); tr.watchdog(T + 4); e.practice_opt_tick(T + 5)
+        self.assertEqual(self.held(self.kc), 0)                                          # through it: out
+
+    def test_a_put_with_a_stock_stop_and_a_call_with_an_option_stop(self):
+        e, tr, T = self.e, self.tr, self.T
+        tr.opt_open("AAA", self.exp, 10, "P", "BUY", 1, None, T); tr.opt_open("AAA", self.exp, 10, "C", "BUY", 1, None, T); e.practice_opt_tick(T + 1)
+        self.assertFalse(tr.set_opt_stop(self.kp, 9.90, "stock", T + 1)["ok"])           # under the stock on a put: through it
+        self.assertTrue(tr.set_opt_stop(self.kp, 10.25, "stock", T + 1)["ok"])
+        c_bid = e.opt_quotes[self.kc]["bid"]
+        self.assertTrue(tr.set_opt_stop(self.kc, round(c_bid - 0.10, 2), "option", T + 1)["ok"])
+        e.on_l1("AAA", "last", 10.30, T + 2); e.practice_opt_tick(T + 2.6); tr.watchdog(T + 3); e.practice_opt_tick(T + 4)
+        self.assertEqual(self.held(self.kp), 0)                                          # stock over 10.25: the put is out
+        self.assertEqual(self.held(self.kc), 1)                                          # the call gained: its stop holds
+        e.on_l1("AAA", "last", 9.70, T + 5); e.practice_opt_tick(T + 5.6); tr.watchdog(T + 6); e.practice_opt_tick(T + 7)
+        self.assertEqual(self.held(self.kc), 0)                                          # the call's bid fell to its stop

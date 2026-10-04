@@ -161,6 +161,27 @@ class TwineyWrapper:
         if kind is None and req_id in self.session.my_orders and code < 2000:
             # an order of ours was refused or cancelled by IBKR: say so on the order, never leave it "working"
             info = self.session.my_orders[req_id]
+            if code == 110 and info.get("opt") and not info.get("_dime"):
+                # the price is not on this option's step (quieter names: dimes at $3 and up): once, on the dime,
+                # rounded toward a fill (up to buy, down to sell)
+                import math as _m
+                px0 = float(info.get("price") or 0)
+                dime = round((_m.ceil(px0 * 10 - 1e-9) if info["action"] == "BUY" else max(1, _m.floor(px0 * 10 + 1e-9))) / 10.0, 2)
+                info["_dime"] = True
+                try:
+                    if info.get("_mod_t") is not None and self.clock() - info["_mod_t"] < 10:
+                        info.pop("_mod_t", None)
+                        self.session.modify_order(req_id, dime, t)
+                        self.engine.on_error(info["symbol"], code, f"order {req_id}: IBKR wants dimes on this contract — moved to {dime:.2f}", t, level="warn", category="ORDER")
+                    else:
+                        self.engine.on_order(self.session.perm_ids.get(req_id) or f"id{req_id}", t, status="Inactive", order_id=req_id, error=f"{code}: {msg}")
+                        nid = self.session.send_option_order(info["symbol"], info["action"], int(info["qty"]), dime, t,
+                                                             reducing=bool(info.get("reducing")), role=info.get("role") or "option")
+                        self.session.my_orders[nid]["_dime"] = True
+                        self.engine.on_error(info["symbol"], code, f"order {req_id}: IBKR wants dimes on this contract — re-sent at {dime:.2f} (order {nid})", t, level="warn", category="ORDER")
+                    return
+                except Exception as exc:
+                    self.engine.on_error(info["symbol"], code, f"order {req_id}: re-send on the dime failed: {exc}", t, level="error", category="ORDER REJECTION")
             if info.get("_mod_t") is not None and self.clock() - info["_mod_t"] < 10 and code != 202:
                 # IBKR refused a MOVE: the order is still working where it was. Put our record back, say so
                 prev = info.pop("_prev", None)
@@ -958,7 +979,8 @@ class MarketDataSession:
             order = self.order_factory(action, qty, "LMT", price, "DAY", None, transmit=True)
             self.order_roles[oid] = role
             self.my_orders[oid] = {"symbol": key, "parent": None, "action": action, "qty": qty, "type": "LMT",
-                                   "tif": "DAY", "aux": None, "price": price, "oca": None, "opt": True}
+                                   "tif": "DAY", "aux": None, "price": price, "oca": None, "opt": True,
+                                   "reducing": reducing, "role": role}
             self.app.placeOrder(oid, contract, order)
             self.engine.on_order(f"id{oid}", now, symbol=key, action=action, qty=float(qty), remaining=float(qty),
                                  type="LMT", lmt=price, aux=None, tif="DAY", status="PendingSubmit",

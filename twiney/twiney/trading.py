@@ -124,7 +124,8 @@ class TradingGate:
         return None
 
     # ---- the check every order must pass ------------------------------------
-    def check(self, action, qty, price, now, order_type="LMT"):
+    def check(self, action, qty, price, now, order_type="LMT", mult=1):
+        """``mult`` 100 for an option: ``price`` is per contract, the caps are checked in real dollars."""
         with self.lock:
             reason = self.why_not()
             if reason:
@@ -145,11 +146,13 @@ class TradingGate:
                 return self._block("size must be positive", action, qty, price, now)
             if price <= 0 and order_type != "MKT":
                 return self._block("price must be positive", action, qty, price, now)
+            unit = "contracts" if mult != 1 else "shares"
             if qty > self.cfg["max_shares_per_order"]:
-                return self._block(f"{qty} shares is over your cap of {self.cfg['max_shares_per_order']}",
+                return self._block(f"{qty} {unit} is over your cap of {self.cfg['max_shares_per_order']}",
                                    action, qty, price, now)
-            if qty * price > self.cfg["max_dollars_per_order"]:
-                return self._block(f"{qty:,} sh × {money(price)} = ${qty * price:,.2f} is over your ${self.cfg['max_dollars_per_order']:,.0f} per-order cap",
+            if qty * price * mult > self.cfg["max_dollars_per_order"]:
+                what = (f"{qty:,} contracts × ${price:,.2f} × {mult:g}" if mult != 1 else f"{qty:,} sh × {money(price)}")
+                return self._block(f"{what} = ${qty * price * mult:,.2f} is over your ${self.cfg['max_dollars_per_order']:,.0f} per-order cap",
                                    action, qty, price, now)
             while self.recent and now - self.recent[0] > 60:
                 self.recent.popleft()
@@ -602,6 +605,8 @@ class Trader:
         self.scale = bool(self.cfg["scale_plan"]["enabled"])
         self.scale_plans = {}          # symbol -> SCALE PLAN on the position (rungs from the average entry)
         self.trails = {}               # symbol -> {"dist", "best", "side"}: a trailing stop riding the STOP line
+        self.opt_stops = {}            # option key -> {"price", "on": "stock" | "option"}: a stop you set on a contract
+        self.opt_stop_fired = {}       # option key -> t it fired (no double sends while the close works)
         self.families = {}   # entry order id -> {"symbol", "entry", "stop", "cash": [...], "be_done"}
         self.nonces = {}     # ticket nonce -> result (double-submit protection)
         self.mismatch = {}   # symbol -> since when its working exits have not matched the position
@@ -995,7 +1000,7 @@ class Trader:
         price = opt_snap(round(float(price), 4)) if opt else snap(round(float(price), 4), symbol=info.get("symbol"))
         qty = int(info.get("remaining") or info.get("qty") or 0)
         # an option order is checked in real dollars (price x 100 x contracts), like when it was sent
-        reason = self.gate.check(info.get("action"), qty, price * 100 if opt else price, now, order_type=info.get("type", "LMT"))
+        reason = self.gate.check(info.get("action"), qty, price, now, order_type=info.get("type", "LMT"), mult=100 if opt else 1)
         if reason:
             self._note(now, f"BLOCKED move of order {oid} to {money(price)}: {reason}", False)
             return {"ok": False, "reason": reason}
@@ -1069,6 +1074,94 @@ class Trader:
             self._note(now, f"{sym}: exits trimmed to the {abs(pos):g} shares you hold" if pos else
                        f"{sym}: flat — leftover exit orders cancelled", True)
 
+    # ---- option stops: on the STOCK's price (PS60 levels) or on the option's own price -----------------------
+
+    def set_opt_stop(self, key, price, on="stock", now=None):
+        """A stop on a contract you hold. ``on`` "stock": out when the stock trades through ``price`` (a call / short
+        put: at or under it; a put / short call: at or over it). "option": out when the contract's own bid (ask on a
+        short) reaches ``price``. ``price`` None takes it off (the chart's STOP line, if any, still protects)."""
+        with self.lock:
+            now = now or time.time()
+            if price in (None, ""):
+                self.opt_stops.pop(key, None)
+                self._note(now, f"{key}: option stop off", True)
+                return {"ok": True, "stop": None}
+            try:
+                price = round(float(price), 4)
+            except (TypeError, ValueError):
+                return {"ok": False, "reason": "stop price must be a number"}
+            p = self.engine.opt_positions.get(key)
+            if p is None:
+                return {"ok": False, "reason": f"no position in {key}"}
+            on = "option" if on == "option" else "stock"
+            bull = (p.get("right") == "C") == (p["qty"] > 0)
+            ref = self._opt_stop_ref(key, p, on)
+            if ref is not None and ((on == "stock" and ((bull and price >= ref) or (not bull and price <= ref))) or
+                                    (on == "option" and ((p["qty"] > 0 and price >= ref) or (p["qty"] < 0 and price <= ref)))):
+                return {"ok": False, "reason": f"a stop at {price:g} is already through {'the stock' if on == 'stock' else 'the contract'} ({ref:g}) — it would fire at once"}
+            self.opt_stops[key] = {"price": price, "on": on, "t": now}
+            self.opt_stop_fired.pop(key, None)
+            self._note(now, f"{key}: STOP {'when ' + p.get('symbol', '') + ' trades ' + ('under' if bull else 'over') if on == 'stock' else 'when the contract trades'} {price:g}", True)
+            return {"ok": True, "stop": dict(self.opt_stops[key])}
+
+    def _opt_stop_ref(self, key, p, on):
+        if on == "stock":
+            st = self.engine.syms.get(p.get("symbol"))
+            return st.price() if st else None
+        q = self.engine.opt_quotes.get(key) or {}
+        return q.get("bid") if p["qty"] > 0 else q.get("ask")
+
+    def _opt_stop_for(self, key, p):
+        """The stop protecting a contract: the one you set, else (SETTINGS, option stop follows the chart) the stock
+        chart's STOP line on the side that hurts this contract (under the price for a call, over it for a put)."""
+        mine = self.opt_stops.get(key)
+        if mine:
+            return dict(mine, source="set")
+        if not self.cfg.get("option_stop_follows_chart", True):
+            return None
+        st = self.engine.syms.get(p.get("symbol"))
+        if st is None or not st.price():
+            return None
+        # a call (or a short put) rides the LONG side's STOP line, a put (or a short call) the SHORT side's — the play's
+        # own side, or the other side drawn under / over it
+        bull = (p.get("right") == "C") == (p["qty"] > 0)
+        own_long = st.play.get("side", "long") == "long"
+        lines = st.play if bull == own_long else (st.play.get("alt") or {})
+        stop = lines.get("stop")
+        return {"price": stop, "on": "stock", "source": "chart"} if stop else None
+
+    def _opt_stop_view(self):
+        out = {}
+        for key, p in list(self.engine.opt_positions.items()):
+            s = self._opt_stop_for(key, p)
+            if s:
+                out[key] = {"price": s["price"], "on": s["on"], "source": s["source"], "fired": key in self.opt_stop_fired}
+        return out
+
+    def _opt_stop_tick(self, now):
+        for key, p in list(self.engine.opt_positions.items()):
+            if not p.get("qty"):
+                continue
+            s = self._opt_stop_for(key, p)
+            if not s or now - self.opt_stop_fired.get(key, -1e9) < 15.0:
+                continue
+            ref = self._opt_stop_ref(key, p, s["on"])
+            if ref is None:
+                continue
+            bull = (p.get("right") == "C") == (p["qty"] > 0)
+            hit = ((ref <= s["price"]) if bull else (ref >= s["price"])) if s["on"] == "stock" else \
+                  ((ref <= s["price"]) if p["qty"] > 0 else (ref >= s["price"]))
+            if not hit:
+                continue
+            self.opt_stop_fired[key] = now
+            out = self.opt_adjust(key, 0, "close", None, now)
+            what = f"{p.get('symbol')} traded {ref:g}" if s["on"] == "stock" else f"the contract traded {ref:g}"
+            self._note(now, f"OPTION STOP: {key} out — {what}, through your {'chart ' if s['source'] == 'chart' else ''}stop {s['price']:g}"
+                            + ("" if out.get("ok") else f" — the close was refused: {out.get('reason')}"), bool(out.get("ok")))
+            self.engine.log(p.get("symbol") or key.split(" ")[0], f"OPTION STOP {key} @ {what}", now, kind="fill")
+            if out.get("ok"):
+                self.opt_stops.pop(key, None)
+
     def watchdog(self, now=None):
         with self.lock:
             return self._watchdog_unlocked(now)
@@ -1089,6 +1182,10 @@ class Trader:
             self._guard_exits(now or time.time())
         except Exception as exc:
             log.warning("exit guard: %s", exc)
+        try:
+            self._opt_stop_tick(now or time.time())
+        except Exception as exc:
+            log.warning("option stop: %s", exc)
         try:
             self._auto_entries(now or time.time())
         except Exception as exc:
@@ -1363,6 +1460,21 @@ class Trader:
                 self.engine.log(sym, f"{role.upper()} order {money(want)} ({abs(pos):,} sh)", now, kind="level")
             except Exception as exc:
                 self._note(now, f"{sym}: {role} order failed: {exc}", False)
+        # the STOP grows with the position: add shares and the stop covers them too (one stop price on the line)
+        if s.get("stop") is not None:
+            left = lambda o: int(o.get("remaining") if o.get("remaining") is not None else o.get("qty") or 0)
+            stops = [o for o in self.engine._pending(sym) if o.get("action") == exit_action and o.get("order_id") is not None
+                     and o.get("role") == "stop" and o.get("status") != "PendingCancel"]
+            have = sum(left(o) for o in stops)
+            prices = {round(float(o.get("aux") or o.get("lmt") or 0), 4) for o in stops}
+            if stops and have < abs(pos) and len(prices) == 1 and now - s.get("grow_t", 0) > 2.0:
+                s["grow_t"] = now
+                big = max(stops, key=left)
+                try:
+                    self.broker.resize(big["order_id"], left(big) + abs(pos) - have, now)
+                    self._note(now, f"{sym}: STOP now covers all {abs(pos):,} shares (was {have:,})", True)
+                except Exception as exc:
+                    self._note(now, f"{sym}: could not grow the stop to {abs(pos):,} shares: {exc}", False)
 
     def _auto_entries(self, now):
         for play in list(self.engine.plays):
@@ -1777,7 +1889,7 @@ class Trader:
             price = round(float(price), 2)
             if price <= 0:
                 return {"ok": False, "reason": "price must be positive"}
-            reason = self.gate.check(action, n, price * mult, now, "LMT")
+            reason = self.gate.check(action, n, price, now, "LMT", mult=mult)
             if reason:
                 self._note(now, f"BLOCKED {action} {n} {key} @ {money(price)}: {reason}", False)
                 return {"ok": False, "reason": reason}
@@ -1831,7 +1943,7 @@ class Trader:
             mult = p.get("mult") or 100
             reducing = mode == "close"
             reason = (self.gate.check_reduce(action, n, price * mult, now) if reducing
-                      else self.gate.check(action, n, price * mult, now, "LMT"))
+                      else self.gate.check(action, n, price, now, "LMT", mult=mult))
             if reason:
                 self._note(now, f"BLOCKED {action} {n} {key} @ {money(price)}: {reason}", False)
                 return {"ok": False, "reason": reason}
@@ -2040,6 +2152,7 @@ class Trader:
                  bracket_template=self.bracket_template, bracket_templates=list(self.bracket_templates().keys()),
                  scale_plans={sym: self._plan_view(sym, pl, time.time()) for sym, pl in self.scale_plans.items()},
                  trails={sym: dict(tr) for sym, tr in self.trails.items()},
+                 opt_stops=self._opt_stop_view(),
                  scale_templates={k: v for k, v in (self.cfg["scale_plan"].get("templates") or {}).items()},
                  qty_presets=list(self.cfg.get("qty_presets") or [25, 50, 100, 200, 500, 1000]),
                  manage_presets=list(self.cfg.get("manage_presets") or [5, 10, 20]),

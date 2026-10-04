@@ -437,6 +437,23 @@ class OptionPositionTests(unittest.TestCase):
     """Option positions from TWS show in POSITIONS with their own quotes and can be scaled in / out of from the
     desk: LIMIT DAY orders on the contract they came in as. Closing is never blocked; adding goes through the
     caps in real dollars."""
+    def test_option_price_off_the_step_is_resent_on_the_dime(self):
+        s, engine, clock = make_session(max_dollars_per_order=20000)
+        s.step(clock()); app = s.app; app.nextValidId(50)
+        app.position("DU1", _Opt(), 5, 312.0)
+        rid = s.opt_ids["TSLA 20261003 240C"]
+        app.tickPrice(rid, 1, 3.40, None); app.tickPrice(rid, 2, 3.50, None)
+        tr = engine.trader; tr.gate.set_accounts(["DU1"]); tr.gate.arm(True)
+        out = tr.opt_adjust("TSLA 20261003 240C", 1, "add", 3.55, clock())     # 3.55: not a dime
+        self.assertTrue(out["ok"], out)
+        oid = out["id"]
+        app.error(oid, 110, "The price does not conform to the minimum price variation for this contract.")
+        last = [c for c in app.calls if c[0] == "placeOrder"][-1]
+        self.assertNotEqual(last[1], oid); self.assertIsInstance(last[2], _Opt)
+        self.assertEqual((last[3]["action"], last[3]["qty"], last[3]["price"]), ("BUY", 1, 3.6))     # up to buy
+        app.error(last[1], 110, "again")                                                            # only once
+        self.assertEqual([c for c in app.calls if c[0] == "placeOrder"][-1][1], last[1])
+
     def test_position_quote_and_orders(self):
         s, engine, clock = make_session(max_dollars_per_order=20000)
         s.step(clock()); app = s.app; app.nextValidId(50)
