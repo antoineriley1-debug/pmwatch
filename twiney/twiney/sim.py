@@ -175,9 +175,11 @@ class DemoFeed:
         for p in plays:
             if not p["active"]:
                 continue
-            base = p.get("trigger") or self.rng.uniform(20, 300)
+            # any level drawn says where the stock trades: the pivot, else the stop or the target alone
+            base = p.get("trigger") or p.get("second_entry") or p.get("stop") or p.get("target") or self.rng.uniform(20, 300)
             mid = round(base * (1 + self.rng.uniform(0.002, 0.006) * self.rng.choice((-1, 1))), 2)
-            lo, hi = sorted(x for x in (p.get("stop"), p.get("target")) if x) or (None, None)
+            band = sorted(x for x in (p.get("stop"), p.get("target")) if x)
+            lo, hi = (band[0], band[-1]) if len(band) == 2 else (None, None)   # a stop alone (or a target alone) is fine
             if lo and hi:   # start inside the play's band so the demo doesn't retire the play at once
                 mid = round(min(max(mid, lo + (hi - lo) * 0.15), hi - (hi - lo) * 0.15), 2)
             self.state[p["symbol"]] = _Sym(p, mid, 0.0)

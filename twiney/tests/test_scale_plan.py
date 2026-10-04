@@ -112,3 +112,15 @@ class TicketStopTrailTests(unittest.TestCase):
         quote(e, 9.95, 9.96, 8.0); quote(e, 9.95, 9.96, 8.5)                          # trades through 10.00: out
         self.assertEqual(broker.position("AAA"), 0)
         tr.watchdog(9.0); self.assertNotIn("AAA", tr.trails)
+
+
+class DemoStartsWithPartialLevelsTests(unittest.TestCase):
+    """The practice feed starts whatever levels a play has: a stop with no target, a target with no stop, or none."""
+    def test_stop_only_target_only_none(self):
+        from twiney.sim import DemoFeed
+        e = Engine(plays(), cfg())
+        for p in (dict(plays()[0], symbol="S1", stop=12.0, target=None, trigger=None, second_entry=None, active=True),
+                  dict(plays()[0], symbol="S2", stop=None, target=15.0, trigger=None, second_entry=None, active=True),
+                  dict(plays()[0], symbol="S3", stop=None, target=None, trigger=None, second_entry=None, active=True)):
+            feed = DemoFeed(e, [p], seed=1)
+            self.assertIn(p["symbol"], feed.state)
