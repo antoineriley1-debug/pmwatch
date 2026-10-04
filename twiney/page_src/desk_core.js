@@ -53,7 +53,16 @@ function applyLayout(){
     if (!ids.includes(LAY.active[z])) LAY.active[z] = ids[0] || null;
     tabs.innerHTML = ids.map(id => `<span class="ztab ${LAY.active[z] === id ? "on" : ""}" draggable="true" data-p="${id}">${PANELS[id]}${SYMBOL_LINKED.has(id) ? ` <span class="sym">${esc(curSym || "")}</span>` : ""}
         <span class="ctl"><span data-act="max" title="maximize / restore">⤢</span><span data-act="float" title="undock (floating window)">⧉</span><span data-act="hide" title="hide (Panels menu brings it back)">✕</span></span></span>`).join("");
-    for (const id of ids){ const p = P[id]; if (p.el.parentElement !== body) body.appendChild(p.el); p.el.classList.toggle("on", LAY.active[z] === id); p.el.classList.remove("float"); p.el.style.cssText = ""; }
+    // SPLIT: two windows in this spot, one above the other (the tab you pick goes top, the other stays below)
+    const split = !!(LAY.split && LAY.split[z]) && ids.length > 1;
+    LAY.second = LAY.second || {};
+    if (split && (!ids.includes(LAY.second[z]) || LAY.second[z] === LAY.active[z])) LAY.second[z] = ids.find(x => x !== LAY.active[z]);
+    const second = split ? LAY.second[z] : null;
+    for (const id of ids){ const p = P[id]; if (p.el.parentElement !== body) body.appendChild(p.el); p.el.classList.toggle("on", LAY.active[z] === id || id === second); p.el.classList.remove("float"); p.el.style.cssText = "";
+      if (split && id === LAY.active[z]) Object.assign(p.el.style, {bottom: "auto", height: "50%"});
+      if (split && id === second) Object.assign(p.el.style, {top: "50%", height: "50%", borderTop: "2px solid #2a3548"}); }
+    tabs.querySelectorAll(".ztab").forEach(t => t.classList.toggle("on2", t.dataset.p === second));
+    if (ids.length > 1) tabs.insertAdjacentHTML("beforeend", `<span class="zsplit ${split ? "on" : ""}" data-zsplit="${z}" title="${split ? "one window here" : "split: two windows here, one above the other"}">${split ? "▭" : "⬓"}</span>`);
   }
   // floating
   for (const [id, f] of Object.entries(LAY.floats || {})){
@@ -107,7 +116,13 @@ document.addEventListener("click", e => {
     else if (act === "dock") dockPicker(id, c);
     else if (act === "max"){ LAY.max = LAY.max === id ? null : id; applyLayout(); }
     return; }
-  if (tab){ const z = tab.closest(".zone"); if (z){ LAY.active[z.dataset.zone] = tab.dataset.p; applyLayout(); } }
+  const zs = e.target.closest(".zsplit"); if (zs){ LAY.split = LAY.split || {}; LAY.split[zs.dataset.zsplit] = !LAY.split[zs.dataset.zsplit]; applyLayout(); return; }
+  if (tab){ const z = tab.closest(".zone"); if (z){ const zn = z.dataset.zone, id = tab.dataset.p;
+    if (LAY.split && LAY.split[zn] && LAY.zones[zn].length > 1){
+      if (id === (LAY.second || {})[zn]){ LAY.second[zn] = LAY.active[zn]; LAY.active[zn] = id; }
+      else if (id !== LAY.active[zn]){ LAY.second = LAY.second || {}; LAY.second[zn] = id; }
+    } else LAY.active[zn] = id;
+    applyLayout(); } }
 });
 // floating window: move by its tab strip; size via the corner (resize:both) is picked up on mouseup
 document.addEventListener("mousedown", e => {
@@ -154,7 +169,10 @@ function renderPanelsMenu(){
 document.getElementById("panelsPop").addEventListener("change", e => { const id = e.target.dataset.show; if (!id) return; if (e.target.checked) showPanel(id); else movePanel(id, null); });
 
 /* ---------- layouts: presets + named, server-side */
-function layoutFromPreset(name){ const p = PRESETS[name]; const l = emptyLayout(); l.zones = JSON.parse(JSON.stringify(p.zones)); l.active = Object.assign({}, p.active); l.sizes = Object.assign(l.sizes, p.sizes); return normalize(l); }
+function layoutFromPreset(name){ const p = PRESETS[name]; const l = emptyLayout(); l.zones = JSON.parse(JSON.stringify(p.zones)); l.active = Object.assign({}, p.active); l.sizes = Object.assign(l.sizes, JSON.parse(JSON.stringify(p.sizes)));
+  if (p.split) l.split = Object.assign({}, p.split); if (p.second) l.second = Object.assign({}, p.second);
+  for (const [id, tf] of Object.entries(p.tf || {})) store.set("tf." + id, tf);
+  return normalize(l); }
 function renderLayoutSel(){
   const sel = document.getElementById("layoutSel");
   const names = [...Object.keys(PRESETS).map(n => "★ " + n), ...Object.keys(LAYOUTS)];

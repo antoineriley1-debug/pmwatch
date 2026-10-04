@@ -275,6 +275,11 @@ class TwineyWrapper:
     def tickSize(self, reqId, tickType, size):
         field = SIZE_TICKS.get(tickType)
         kind, sym = self.req.get(reqId, (None, None))
+        if field is not None and kind == "opt":
+            v = num(size)
+            if v is not None and v >= 0:
+                self.engine.on_opt_size(sym, field, v, self.clock())
+            return
         if field is None or kind != "l1":
             return
         v = num(size)
@@ -374,6 +379,12 @@ class TwineyWrapper:
             if d[:8] == ny_today(self.clock()):
                 return   # today's bar is still forming: the chart builds it live from the minute bars, ATR skips it
             self.engine.on_daily_bar(sym, t0, num(bar.open), num(bar.high), num(bar.low), num(bar.close), num(getattr(bar, "volume", None)))
+            return
+        if kind == "ohistv":
+            try:
+                self.engine.on_opt_hist_vol(sym, float(bar.date), num(bar.volume))
+            except (TypeError, ValueError):
+                pass
             return
         if kind == "ohist":
             try:
@@ -885,6 +896,9 @@ class MarketDataSession:
                 self.app.req[rid] = ("ohist", key)
                 try:
                     self.app.reqHistoricalData(rid, self.opt_contracts[key], "", "2 D", "1 min", "MIDPOINT", 1, 2, False, [])
+                    vid = self._rid()                      # and its TRADES minutes for the volume bars
+                    self.app.req[vid] = ("ohistv", key)
+                    self.app.reqHistoricalData(vid, self.opt_contracts[key], "", "2 D", "1 min", "TRADES", 1, 2, False, [])
                 except Exception as exc:
                     log.warning("option history request failed for %s: %s", key, exc)
 

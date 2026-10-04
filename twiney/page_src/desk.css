@@ -546,3 +546,22 @@ i.tl{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:3p
 .ochead .tfs,.ochead .cn{display:inline-flex;gap:2px} .ochead .hint{font-size:10px}
 #chartsPop button{display:block;width:100%;text-align:left;margin:2px 0}
 .oct td.act button.och{padding:0 4px}
+
+.ztab.on2{color:var(--text);border-bottom:2px solid #5a6b85} .zsplit{cursor:pointer;margin-left:auto;padding:0 6px;color:var(--dim);font-size:12px} .zsplit.on{color:var(--gold)}
+.ohd{padding:3px 6px;font:11px var(--mono);border-bottom:1px solid var(--line);background:#0b0f16;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ohd b{letter-spacing:.08em} .ohd .b{color:var(--buy)} .ohd .s{color:var(--sell)}
+.pnl[data-p="obook"] .pc,.pnl[data-p="otape"] .pc,.pnl[data-p="obig"] .pc{overflow:auto}
+.olad{width:100%;border-collapse:collapse;font:12px var(--mono)} .olad th{font:600 9.5px var(--sans);letter-spacing:.1em;color:var(--dim);padding:2px 4px;position:sticky;top:0;background:#0b0f16}
+.olad td{position:relative;padding:1px 4px;text-align:right;height:17px} .olad td.px{text-align:center;color:#e8e8e6;background:#11151c;width:22%}
+.olad td i{position:absolute;top:2px;bottom:2px;opacity:.35} .olad td.sz.b i,.olad td.tr.b i{background:var(--buy)} .olad td.sz.s i,.olad td.tr.s i{background:var(--sell)}
+.olad td.sz.b i,.olad td.tr.s i{right:0} .olad td.sz.s i,.olad td.tr.b i{left:0} .olad td span{position:relative}
+.olad td.sz.s,.olad td.tr.b{text-align:left} .olad td.tr{color:var(--dim);font-size:11px}
+.olad tr.bb td.px{background:#0f3b26;color:#fff} .olad tr.ba td.px{background:#4a1520;color:#fff} .olad tr[data-oprice]{cursor:pointer} .olad tr[data-oprice]:hover td{background:#1a2230}
+.ofoot{padding:4px 6px;font-size:10.5px}
+.otp{width:100%;border-collapse:collapse;font:12px var(--mono)} .otp th{font:600 9.5px var(--sans);letter-spacing:.1em;color:var(--dim);padding:2px 4px;text-align:right;position:sticky;top:0;background:#0b0f16}
+.otp td{padding:1px 4px;text-align:right} .otp tr.b td{color:var(--buy)} .otp tr.s td{color:var(--sell)} .otp tr.big td{font-weight:800;background:rgba(255,200,60,.07)}
+.fast{display:flex;align-items:center;gap:6px;padding:2px 6px;background:#0b0f16;border-bottom:1px solid var(--line);font:11px var(--mono)}
+.fast:empty{display:none} .fast button,.ochead button.big,.ochead button.out{height:22px;padding:0 10px;font-weight:800}
+.fast button.b,.ochead button.big.b{background:#0f3b26;color:#fff;border-color:var(--buy)} .fast button.s,.ochead button.big.s{background:#4a1520;color:#fff;border-color:var(--sell)}
+.fast button.out,.ochead button.out{background:#2a2306;color:var(--gold);border-color:var(--gold)} .fast button.out.all,.ochead button.out.all{background:#5a1218;color:#fff;border-color:var(--sell)}
+.fast span.b{color:var(--buy);font-weight:800} .fast span.s{color:var(--sell);font-weight:800}

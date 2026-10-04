@@ -111,3 +111,17 @@ stop to breakeven after the first cash flow.
   for the reversal shape.
 - A stop line does not grow with adds: after ADD rungs or adding size, re-drag the stop to resize it (the exit guard
   trims stops when you reduce).
+
+## Options desk (latest)
+
+- **Layout ★ Options Desk**: 1-hour CHART, FOOTPRINT 5m, OPTION CHART, OPTION FLOW + POSITIONS (split), stock LEVEL II +
+  T&S (split), stock BIG TAPE, OPTION LEVEL II + OPTION T&S (split), OPTION BIG TAPE. A zone can be SPLIT (⬓ on its
+  tab bar) to show two windows stacked. CHARTS opens CHART / CHART 2 (5m) / CHART 3 (15m) / FOOTPRINT / OPTION CHART
+  as floating windows; DOCK ▾ docks them, ⧉ floats them.
+- The option side follows the contract on the OPTION CHART (picked in the OPTION CHAIN). `/api/options/bars?key=`
+  returns bars (mid; IBKR MIDPOINT + TRADES history for volume), quote, position, orders and `tape` (book rows, prints,
+  big prints incl. Quant Data flow on that contract). IBKR gives options top of book only; the practice desk models a
+  book. `Engine.practice_opt_tick` re-prices held / ordered / charted contracts from the stock every 0.5 s.
+- FAST strip on the stock chart and the option chart header: BUY / SELL now, ½ OUT, ALL OUT (outs never confirm).
+- Option prices: `opt_through` (fill-now limit, one step through the touch), `opt_snap` (typed / dragged prices on a
+  nickel). Moving an option order re-sends it on the option contract (`IbkrSession.modify_order`).

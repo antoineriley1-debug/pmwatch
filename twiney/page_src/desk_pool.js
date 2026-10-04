@@ -1,6 +1,6 @@
 /* ===================== TED — TWINEY EXECUTION DESK: panel pool ===================== */
 const PANELS = {
-  chart: "CHART", chart2: "CHART 2", chart3: "CHART 3", ochart: "OPTION CHART", foot: "FOOTPRINT 5m", book: "LEVEL II", tape: "TIME & SALES", bigtape: "BIG TAPE", options: "OPTION CHAIN", setup: "PLAY SETUP", ps60: "PS60", conviction: "CONVICTION", reload: "RELOADS",
+  chart: "CHART", chart2: "CHART 2", chart3: "CHART 3", ochart: "OPTION CHART", obook: "OPTION LEVEL II", otape: "OPTION T&S", obig: "OPTION BIG TAPE", foot: "FOOTPRINT 5m", book: "LEVEL II", tape: "TIME & SALES", bigtape: "BIG TAPE", options: "OPTION CHAIN", setup: "PLAY SETUP", ps60: "PS60", conviction: "CONVICTION", reload: "RELOADS",
   ticket: "ORDER ENTRY", positions: "POSITIONS", orders: "ORDERS", watch: "WATCHLIST", calls: "CALLS",
   flow: "OPTION FLOW", eqflow: "EQUITY FLOW", urgency: "URGENT FLOW", bigmoney: "BIG MONEY 30D", myalerts: "ALERTS", desk: "DESK", journal: "JOURNAL", messages: "MESSAGES"};
 const SYMBOL_LINKED = new Set(["chart", "chart2", "chart3", "foot", "book", "tape", "bigtape", "options", "ps60", "reload", "ticket", "calls", "setup", "bigmoney", "conviction"]);
@@ -14,6 +14,9 @@ const PRESETS = {
     active: {TR: "reload"}, sizes: {c1: 380, c3: 380, r2: 260}},
   "Chart Focus": {zones: {TL: [], TC: ["chart"], TR: ["book"], TX: ["tape"], BL: [], BC: ["foot"], BR: ["ticket"], BX: ["setup", "ps60", "reload", "flow", "positions", "orders"]},
     active: {BX: "setup"}, sizes: {c1: 0, c3: 330, c4: 300, r2: 220}},
+  "Options Desk": {zones: {TL: ["chart"], BL: ["foot"], TC: ["ochart"], BC: ["flow", "positions", "orders", "ticket"], TR: ["book", "tape"], BR: ["bigtape"], TX: ["obook", "otape"], BX: ["obig"]},
+    active: {BC: "flow", TR: "book", TX: "obook"}, second: {BC: "positions", TR: "tape", TX: "otape"}, split: {BC: true, TR: true, TX: true},
+    tf: {chart: 60}, sizes: {c1: 420, c3: 330, c4: 330, r2: {L: 330, C: 420, R: 300, X: 300}}},
   "Laptop": {zones: {TL: [], TC: ["chart", "foot", "ps60"], TR: ["book", "tape", "ticket", "reload"], BL: [], BC: ["positions", "orders", "calls", "watch", "desk", "journal", "messages"], BR: []},
     active: {}, sizes: {c1: 0, c3: 360, r2: 180}},
 };

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261004-2251">
+<meta name="build" content="20261004-2301">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -856,6 +856,25 @@ i.tl{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:3p
 #chartsPop button{display:block;width:100%;text-align:left;margin:2px 0}
 .oct td.act button.och{padding:0 4px}
 
+.ztab.on2{color:var(--text);border-bottom:2px solid #5a6b85} .zsplit{cursor:pointer;margin-left:auto;padding:0 6px;color:var(--dim);font-size:12px} .zsplit.on{color:var(--gold)}
+.ohd{padding:3px 6px;font:11px var(--mono);border-bottom:1px solid var(--line);background:#0b0f16;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ohd b{letter-spacing:.08em} .ohd .b{color:var(--buy)} .ohd .s{color:var(--sell)}
+.pnl[data-p="obook"] .pc,.pnl[data-p="otape"] .pc,.pnl[data-p="obig"] .pc{overflow:auto}
+.olad{width:100%;border-collapse:collapse;font:12px var(--mono)} .olad th{font:600 9.5px var(--sans);letter-spacing:.1em;color:var(--dim);padding:2px 4px;position:sticky;top:0;background:#0b0f16}
+.olad td{position:relative;padding:1px 4px;text-align:right;height:17px} .olad td.px{text-align:center;color:#e8e8e6;background:#11151c;width:22%}
+.olad td i{position:absolute;top:2px;bottom:2px;opacity:.35} .olad td.sz.b i,.olad td.tr.b i{background:var(--buy)} .olad td.sz.s i,.olad td.tr.s i{background:var(--sell)}
+.olad td.sz.b i,.olad td.tr.s i{right:0} .olad td.sz.s i,.olad td.tr.b i{left:0} .olad td span{position:relative}
+.olad td.sz.s,.olad td.tr.b{text-align:left} .olad td.tr{color:var(--dim);font-size:11px}
+.olad tr.bb td.px{background:#0f3b26;color:#fff} .olad tr.ba td.px{background:#4a1520;color:#fff} .olad tr[data-oprice]{cursor:pointer} .olad tr[data-oprice]:hover td{background:#1f2024}
+.ofoot{padding:4px 6px;font-size:10.5px}
+.otp{width:100%;border-collapse:collapse;font:12px var(--mono)} .otp th{font:600 9.5px var(--sans);letter-spacing:.1em;color:var(--dim);padding:2px 4px;text-align:right;position:sticky;top:0;background:#0b0f16}
+.otp td{padding:1px 4px;text-align:right} .otp tr.b td{color:var(--buy)} .otp tr.s td{color:var(--sell)} .otp tr.big td{font-weight:800;background:rgba(255,200,60,.07)}
+.fast{display:flex;align-items:center;gap:6px;padding:2px 6px;background:#0b0f16;border-bottom:1px solid var(--line);font:11px var(--mono)}
+.fast:empty{display:none} .fast button,.ochead button.big,.ochead button.out{height:22px;padding:0 10px;font-weight:800}
+.fast button.b,.ochead button.big.b{background:#0f3b26;color:#fff;border-color:var(--buy)} .fast button.s,.ochead button.big.s{background:#4a1520;color:#fff;border-color:var(--sell)}
+.fast button.out,.ochead button.out{background:#2a2306;color:var(--gold);border-color:var(--gold)} .fast button.out.all,.ochead button.out.all{background:#5a1218;color:#fff;border-color:var(--sell)}
+.fast span.b{color:var(--buy);font-weight:800} .fast span.s{color:var(--sell);font-weight:800}
+
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
   --buy:#3fb56f;--sell:#d9534f;--gold:#e3a83a;--cyan:#5aa9d6;--violet:#a48bd6;--warn:#d9a441;
@@ -1224,10 +1243,13 @@ body.resizing .zbody{pointer-events:none}
   <div class="sbody"><div class="snav" id="setNav"></div><div class="sform" id="setForm"></div></div>
 </div></div>
 <template id="tplPanels">
+  <div class="pnl" data-p="obook"><div class="ohd" id="obookHd"></div><div class="pc"><div class="obook"></div></div></div>
+  <div class="pnl" data-p="otape"><div class="ohd" id="otapeHd"></div><div class="pc"><div class="otape"></div></div></div>
+  <div class="pnl" data-p="obig"><div class="ohd" id="obigHd"></div><div class="pc"><div class="obig"></div></div></div>
   <div class="pnl" data-p="chart2"><div class="pc nos"><div class="chart-wrap"><div class="chart-tools"></div><canvas></canvas></div></div></div>
   <div class="pnl" data-p="chart3"><div class="pc nos"><div class="chart-wrap"><div class="chart-tools"></div><canvas></canvas></div></div></div>
   <div class="pnl" data-p="ochart"><div class="ochead" id="ochHead"></div><div class="pc nos"><div class="chart-wrap"><canvas></canvas></div></div></div>
-  <div class="pnl" data-p="chart"><div class="qs"></div><div class="cvstrip" id="cvStrip"></div><div class="pc nos"><div class="chart-wrap"><div class="chart-tools"></div><canvas></canvas></div></div></div>
+  <div class="pnl" data-p="chart"><div class="qs"></div><div class="fast" id="fastStock"></div><div class="cvstrip" id="cvStrip"></div><div class="pc nos"><div class="chart-wrap"><div class="chart-tools"></div><canvas></canvas></div></div></div>
   <div class="pnl" data-p="foot"><div class="pc nos"><div class="chart-wrap"><div class="chart-tools"><span class="dim" style="font-size:10.5px;background:rgba(17,22,31,.85);padding:1px 6px">5m FOOTPRINT · SELLERS HIT BID × BUYERS PAID UP</span></div><canvas></canvas></div></div></div>
   <div class="pnl" data-p="book"><div class="ladstat" id="ladStat"></div><div class="ladbar"><span>BIG ≥</span><input id="bigIn" type="number" min="100" step="500" title="shares that count as big on this symbol's ladder. Highlighted when showing; ×N = how many separate times it has shown up at that price today"><span class="dim">sh</span><button id="bigReset" title="back to the config default">DEFAULT</button><span class="dim" id="bigHint"></span><span class="qtybox" title="shares per ladder click (the ticket follows)"><span>QTY</span><input id="ladQty" type="number" min="1" step="1"><span id="ladPresets"></span></span><span class="spacer"></span><button id="ladMode" title="SIMPLE: bid · price · ask — size drains as it gets attacked, reloaders solid with ↻N, option money as an edge mark. TIGHT: adds HIT / PAID and CALLS / PUTS columns. WIDE: everything spelled out">SIMPLE</button><span class="menu" id="colsMenu"><button title="columns">COLS</button><div class="pop" id="colsPop"><h5>LEVEL II COLUMNS</h5><button class="howto" data-howto="1" style="margin-bottom:4px">HOW TO READ IT</button><label><input type="checkbox" data-col="trade" checked> BUY / SELL buttons</label><label><input type="checkbox" data-col="bars" checked> flow bars (sold into bid / bought at ask)</label><label><input type="checkbox" data-col="who" checked> reload tags</label><label><input type="checkbox" data-col="flow" checked> option flow marks (where the stock was when big flow hit)</label><label><input type="checkbox" data-col="center" checked> auto-centre on price</label><label>Click a size <select data-ladclick><option value="join">JOIN: bid side = BUY there, ask side = SELL there</option><option value="hit">HIT: bid side = SELL into it, ask side = BUY from it</option></select></label><label>Rows above / below <select data-rows><option value="8">8</option><option value="12" selected>12</option><option value="20">20</option><option value="30">30</option></select></label><label>Row height <select data-ladh><option value="1">normal</option><option value="0.85">tight</option><option value="1.2">tall</option></select></label><label style="margin-top:6px">Text size <select data-ladz><option value="1">normal</option><option value="1.2">bigger</option><option value="1.4">biggest (widen the LEVEL II pane)</option></select></label><div class="dim" style="font-size:10.5px;margin-top:6px">Drag the grip at the right edge of any header to resize. Double-click a grip to reset.</div></div></span></div><div class="rlban" id="rlBan"></div><div class="pc"><div class="ladder-wrap"></div></div></div>
   <div class="pnl" data-p="tape"><div class="pc"><div class="p-tape"></div></div></div>
@@ -1511,7 +1533,7 @@ function makeColsResizable(table){
 
 /* ===================== TED — TWINEY EXECUTION DESK: panel pool ===================== */
 const PANELS = {
-  chart: "CHART", chart2: "CHART 2", chart3: "CHART 3", ochart: "OPTION CHART", foot: "FOOTPRINT 5m", book: "LEVEL II", tape: "TIME & SALES", bigtape: "BIG TAPE", options: "OPTION CHAIN", setup: "PLAY SETUP", ps60: "PS60", conviction: "CONVICTION", reload: "RELOADS",
+  chart: "CHART", chart2: "CHART 2", chart3: "CHART 3", ochart: "OPTION CHART", obook: "OPTION LEVEL II", otape: "OPTION T&S", obig: "OPTION BIG TAPE", foot: "FOOTPRINT 5m", book: "LEVEL II", tape: "TIME & SALES", bigtape: "BIG TAPE", options: "OPTION CHAIN", setup: "PLAY SETUP", ps60: "PS60", conviction: "CONVICTION", reload: "RELOADS",
   ticket: "ORDER ENTRY", positions: "POSITIONS", orders: "ORDERS", watch: "WATCHLIST", calls: "CALLS",
   flow: "OPTION FLOW", eqflow: "EQUITY FLOW", urgency: "URGENT FLOW", bigmoney: "BIG MONEY 30D", myalerts: "ALERTS", desk: "DESK", journal: "JOURNAL", messages: "MESSAGES"};
 const SYMBOL_LINKED = new Set(["chart", "chart2", "chart3", "foot", "book", "tape", "bigtape", "options", "ps60", "reload", "ticket", "calls", "setup", "bigmoney", "conviction"]);
@@ -1525,6 +1547,9 @@ const PRESETS = {
     active: {TR: "reload"}, sizes: {c1: 380, c3: 380, r2: 260}},
   "Chart Focus": {zones: {TL: [], TC: ["chart"], TR: ["book"], TX: ["tape"], BL: [], BC: ["foot"], BR: ["ticket"], BX: ["setup", "ps60", "reload", "flow", "positions", "orders"]},
     active: {BX: "setup"}, sizes: {c1: 0, c3: 330, c4: 300, r2: 220}},
+  "Options Desk": {zones: {TL: ["chart"], BL: ["foot"], TC: ["ochart"], BC: ["flow", "positions", "orders", "ticket"], TR: ["book", "tape"], BR: ["bigtape"], TX: ["obook", "otape"], BX: ["obig"]},
+    active: {BC: "flow", TR: "book", TX: "obook"}, second: {BC: "positions", TR: "tape", TX: "otape"}, split: {BC: true, TR: true, TX: true},
+    tf: {chart: 60}, sizes: {c1: 420, c3: 330, c4: 330, r2: {L: 330, C: 420, R: 300, X: 300}}},
   "Laptop": {zones: {TL: [], TC: ["chart", "foot", "ps60"], TR: ["book", "tape", "ticket", "reload"], BL: [], BC: ["positions", "orders", "calls", "watch", "desk", "journal", "messages"], BR: []},
     active: {}, sizes: {c1: 0, c3: 360, r2: 180}},
 };
@@ -2913,7 +2938,16 @@ function applyLayout(){
     if (!ids.includes(LAY.active[z])) LAY.active[z] = ids[0] || null;
     tabs.innerHTML = ids.map(id => `<span class="ztab ${LAY.active[z] === id ? "on" : ""}" draggable="true" data-p="${id}">${PANELS[id]}${SYMBOL_LINKED.has(id) ? ` <span class="sym">${esc(curSym || "")}</span>` : ""}
         <span class="ctl"><span data-act="max" title="maximize / restore">⤢</span><span data-act="float" title="undock (floating window)">⧉</span><span data-act="hide" title="hide (Panels menu brings it back)">✕</span></span></span>`).join("");
-    for (const id of ids){ const p = P[id]; if (p.el.parentElement !== body) body.appendChild(p.el); p.el.classList.toggle("on", LAY.active[z] === id); p.el.classList.remove("float"); p.el.style.cssText = ""; }
+    // SPLIT: two windows in this spot, one above the other (the tab you pick goes top, the other stays below)
+    const split = !!(LAY.split && LAY.split[z]) && ids.length > 1;
+    LAY.second = LAY.second || {};
+    if (split && (!ids.includes(LAY.second[z]) || LAY.second[z] === LAY.active[z])) LAY.second[z] = ids.find(x => x !== LAY.active[z]);
+    const second = split ? LAY.second[z] : null;
+    for (const id of ids){ const p = P[id]; if (p.el.parentElement !== body) body.appendChild(p.el); p.el.classList.toggle("on", LAY.active[z] === id || id === second); p.el.classList.remove("float"); p.el.style.cssText = "";
+      if (split && id === LAY.active[z]) Object.assign(p.el.style, {bottom: "auto", height: "50%"});
+      if (split && id === second) Object.assign(p.el.style, {top: "50%", height: "50%", borderTop: "2px solid #2c2e33"}); }
+    tabs.querySelectorAll(".ztab").forEach(t => t.classList.toggle("on2", t.dataset.p === second));
+    if (ids.length > 1) tabs.insertAdjacentHTML("beforeend", `<span class="zsplit ${split ? "on" : ""}" data-zsplit="${z}" title="${split ? "one window here" : "split: two windows here, one above the other"}">${split ? "▭" : "⬓"}</span>`);
   }
   // floating
   for (const [id, f] of Object.entries(LAY.floats || {})){
@@ -2967,7 +3001,13 @@ document.addEventListener("click", e => {
     else if (act === "dock") dockPicker(id, c);
     else if (act === "max"){ LAY.max = LAY.max === id ? null : id; applyLayout(); }
     return; }
-  if (tab){ const z = tab.closest(".zone"); if (z){ LAY.active[z.dataset.zone] = tab.dataset.p; applyLayout(); } }
+  const zs = e.target.closest(".zsplit"); if (zs){ LAY.split = LAY.split || {}; LAY.split[zs.dataset.zsplit] = !LAY.split[zs.dataset.zsplit]; applyLayout(); return; }
+  if (tab){ const z = tab.closest(".zone"); if (z){ const zn = z.dataset.zone, id = tab.dataset.p;
+    if (LAY.split && LAY.split[zn] && LAY.zones[zn].length > 1){
+      if (id === (LAY.second || {})[zn]){ LAY.second[zn] = LAY.active[zn]; LAY.active[zn] = id; }
+      else if (id !== LAY.active[zn]){ LAY.second = LAY.second || {}; LAY.second[zn] = id; }
+    } else LAY.active[zn] = id;
+    applyLayout(); } }
 });
 // floating window: move by its tab strip; size via the corner (resize:both) is picked up on mouseup
 document.addEventListener("mousedown", e => {
@@ -3014,7 +3054,10 @@ function renderPanelsMenu(){
 document.getElementById("panelsPop").addEventListener("change", e => { const id = e.target.dataset.show; if (!id) return; if (e.target.checked) showPanel(id); else movePanel(id, null); });
 
 /* ---------- layouts: presets + named, server-side */
-function layoutFromPreset(name){ const p = PRESETS[name]; const l = emptyLayout(); l.zones = JSON.parse(JSON.stringify(p.zones)); l.active = Object.assign({}, p.active); l.sizes = Object.assign(l.sizes, p.sizes); return normalize(l); }
+function layoutFromPreset(name){ const p = PRESETS[name]; const l = emptyLayout(); l.zones = JSON.parse(JSON.stringify(p.zones)); l.active = Object.assign({}, p.active); l.sizes = Object.assign(l.sizes, JSON.parse(JSON.stringify(p.sizes)));
+  if (p.split) l.split = Object.assign({}, p.split); if (p.second) l.second = Object.assign({}, p.second);
+  for (const [id, tf] of Object.entries(p.tf || {})) store.set("tf." + id, tf);
+  return normalize(l); }
 function renderLayoutSel(){
   const sel = document.getElementById("layoutSel");
   const names = [...Object.keys(PRESETS).map(n => "★ " + n), ...Object.keys(LAYOUTS)];
@@ -4791,7 +4834,7 @@ function render(s){
   renderStatus(s);
   renderQuote(d);
   charts.chart.el.classList.toggle("clean", store.get("clean", true));
-  drawChart(charts.chart); drawChart(charts.foot); drawChart(charts.chart2); drawChart(charts.chart3);
+  drawChart(charts.chart); drawChart(charts.foot); drawChart(charts.chart2); drawChart(charts.chart3); renderFast(d);
   renderBook(d); renderTape(d); renderSetup(d); renderPS60(d); renderReloads(d); renderConviction(d);
   renderTicket(s, d);
   renderWatch(s); renderCalls(s); renderPositions(s); renderOrders(s);
@@ -5058,7 +5101,7 @@ const ochart = (() => { const p = P.ochart; if (!p) return null;
              view: {cw: 8, offset: restOffset(), yLo: null, yHi: null, follow: true, cross: null}};
   p.el._pane = c; wireChart(c, c.canvas, c.view, () => {}, false);
   new ResizeObserver(() => drawChart(c)).observe(p.el); return c; })();
-function ochVisible(){ return P.ochart && P.ochart.el.offsetParent !== null; }
+function ochVisible(){ return ["ochart", "obook", "otape", "obig"].some(id => P[id] && P[id].el.offsetParent !== null); }
 function chartOption(key, show){ if (!key) return; if (OCH.key !== key){ OCH.key = key; OCH.data = null; if (ochart){ ochart.data = null; ochart.view.offset = restOffset(); ochart.view.follow = true; ochart.view.yLo = ochart.view.yHi = null; } }
   if (show) showPanel("ochart"); pollOch(); }
 async function pollOch(){
@@ -5074,7 +5117,7 @@ async function pollOch(){
       position: pos ? {qty: pos.qty, avg_cost: pos.per_contract} : null, showEntry: true, mult: (pos && pos.mult) || 100, unit: "ct",
       trap: null, daytrap: null, reloaders: null, bigmoney: null, marks: [], events: [], lines: [], daily: [], flow: null, footprint: null};
     drawChart(ochart);
-  } catch (e) {} finally { OCH.busy = false; renderOchHead(); }
+  } catch (e) {} finally { OCH.busy = false; renderOchHead(); renderOptPanels(); }
 }
 setInterval(pollOch, 1000);
 function renderOchHead(){
@@ -5087,11 +5130,11 @@ function renderOchHead(){
       ${q ? `<span class="${long ? "b" : "s"}">YOU HAVE ${q}${pos.pnl != null ? ` · ${pos.pnl >= 0 ? "+" : "−"}$${sz(Math.abs(Math.round(pos.pnl)))}` : ""}</span>` : ""}
       <span class="tfs">${[1, 5, 15].map(m => `<button data-ochtf="${m}" class="${tf === m ? "on" : ""}">${m}m</button>`).join("")}</span>
       <span class="cn">${[1, 2, 5, 10].map(n => `<button data-ochn="${n}" class="${OCH.n === n ? "on" : ""}">${n}</button>`).join("")}</span>
-      <button class="b" data-ochnow="BUY">BUY ${OCH.n}</button><button class="s" data-ochnow="SELL">SELL ${OCH.n}</button>${q ? `<button class="${long ? "s" : "b"}" data-ochnow="ALL">${long ? "SELL" : "BUY"} ALL ${q}</button>` : ""}
+      <button class="b big" data-ochnow="BUY">BUY ${OCH.n}</button><button class="s big" data-ochnow="SELL">SELL ${OCH.n}</button>${q ? `${q > 1 ? `<button class="out" data-ochnow="HALF" title="take half off now, at the touch (no confirm)">½ OUT</button>` : ""}<button class="out all" data-ochnow="ALL" title="out of all ${q} now, at the touch (no confirm)">ALL OUT ${q}</button>` : ""}
       <span class="dim hint">right-click the chart to trade at a price</span>`; }
   if (h.dataset.h !== html){ h.dataset.h = html; h.innerHTML = html; }
 }
-async function ochOrder(action, price, n){
+async function ochOrder(action, price, n, now){
   const d = OCH.data; if (!d) return;
   const pos = d.position, q = pos ? Math.abs(pos.qty) : 0, long = pos && pos.qty > 0;
   const closing = q && ((long && action === "SELL") || (!long && action === "BUY"));
@@ -5101,7 +5144,7 @@ async function ochOrder(action, price, n){
     const out = closing ? await post("/api/trade/opt_adjust", {key: d.key, contracts: k, mode: "close", price})
       : await post("/api/trade/opt_open", {symbol: d.underlying, expiry: d.expiry, strike: d.strike, right: d.right, action, contracts: k, price});
     toast(out.ok ? "Sent: " + out.sent : "Blocked: " + (out.reason || ""), out.ok); poll(true); pollOch(); };
-  if (T().one_click) return send();
+  if (T().one_click || (now && closing)) return send();      // getting out never waits on a confirm
   const ref = price != null ? price : (action === "BUY" ? d.ask : d.bid);
   confirmBox(`${action} ${k} ${d.label}${price != null ? " @ " + price.toFixed(2) : " now"}`, `${price != null ? "limit " + price.toFixed(2) + " — rests until price gets there" : (action === "BUY" ? "at the ask" : "at the bid") + ", fills now"} · about $${sz(Math.round((ref || 0) * 100 * k))}${closing ? " · takes your contracts down" : ""}`, action === "BUY" ? "b" : "s", send);
 }
@@ -5138,7 +5181,9 @@ document.addEventListener("click", e => {
   if (h.dataset.ochtf){ store.set("tf.ochart", +h.dataset.ochtf); ochart.view.offset = restOffset(); ochart.view.follow = true; ochart.view.yLo = ochart.view.yHi = null; drawChart(ochart); renderOchHead(); return; }
   if (h.dataset.ochn){ OCH.n = +h.dataset.ochn; renderOchHead(); return; }
   if (h.dataset.ochnow){ const d = OCH.data; if (!d) return; const pos = d.position, q = pos ? Math.abs(pos.qty) : 0, long = pos && pos.qty > 0;
-    if (h.dataset.ochnow === "ALL") ochOrder(long ? "SELL" : "BUY", null, q); else ochOrder(h.dataset.ochnow, null, OCH.n); }
+    if (h.dataset.ochnow === "ALL") ochOrder(long ? "SELL" : "BUY", null, q, true);
+    else if (h.dataset.ochnow === "HALF") ochOrder(long ? "SELL" : "BUY", null, Math.max(1, Math.floor(q / 2)), true);
+    else ochOrder(h.dataset.ochnow, null, OCH.n); }
 }, true);
 document.getElementById("chartsMenu").querySelector("button").addEventListener("click", e => { e.stopPropagation(); const m = document.getElementById("chartsMenu"), open = !m.classList.contains("open"); document.querySelectorAll(".menu.open").forEach(x => x.classList.remove("open")); m.classList.toggle("open", open); });
 
@@ -5148,6 +5193,74 @@ function openChartWindow(id){
   if (LAY.hidden.includes(id)){ const n = Object.keys(LAY.floats || {}).length; movePanel(id, "float", {l: 90 + n * 34, t: 70 + n * 30, w: 620, h: 400}); }
   else showPanel(id);
   const c = charts[id] || (id === "ochart" ? ochart : null); if (c) setTimeout(() => drawChart(c), 50);
+}
+
+/* ---------- the OPTION side, for the contract on the OPTION CHART: LEVEL II, T&S, BIG TAPE */
+function renderOptPanels(){
+  const d = OCH.data, t = d && d.tape, f = v => v == null ? "—" : (+v).toFixed(2), name = d ? esc(d.label) : "";
+  const none = `<div class="dim" style="padding:8px">Pick a contract: OPTIONS, then click a strike (or 📈). Its book, prints and big prints show here.</div>`;
+  const hd = (id, title, extra) => { const el = document.getElementById(id); if (!el) return; const h = `<b>${title}</b> <span class="${d && d.right === "P" ? "s" : "b"}">${name}</span>${extra || ""}`; if (el.dataset.h !== h){ el.dataset.h = h; el.innerHTML = h; } };
+  const put = (sel, html) => { const el = document.querySelector(sel); if (el && el.dataset.h !== html){ el.dataset.h = html; el.innerHTML = html; } };
+  if (!d || !t){ put(".obook", none); put(".otape", none); put(".obig", none); hd("obookHd", "OPTION LEVEL II"); hd("otapeHd", "OPTION T&S"); hd("obigHd", "OPTION BIG TAPE"); return; }
+  // LEVEL II for the contract
+  const mx = Math.max(1, ...t.book.map(r => Math.max(r.bid, r.ask))), mt = Math.max(1, ...t.book.map(r => Math.max(r.bought, r.sold)));
+  const rows = t.book.map(r => `<tr class="${r.best_bid ? "bb" : ""} ${r.best_ask ? "ba" : ""}" data-oprice="${r.price}">
+      <td class="tr s">${r.sold ? `<i style="width:${Math.round(r.sold / mt * 100)}%"></i><span>${sz(r.sold)}</span>` : ""}</td>
+      <td class="sz b">${r.bid ? `<i style="width:${Math.round(r.bid / mx * 100)}%"></i><span>${sz(r.bid)}</span>` : ""}</td>
+      <td class="px">${r.price.toFixed(2)}</td>
+      <td class="sz s">${r.ask ? `<i style="width:${Math.round(r.ask / mx * 100)}%"></i><span>${sz(r.ask)}</span>` : ""}</td>
+      <td class="tr b">${r.bought ? `<i style="width:${Math.round(r.bought / mt * 100)}%"></i><span>${sz(r.bought)}</span>` : ""}</td></tr>`).join("");
+  hd("obookHd", "OPTION LEVEL II", ` <span class="dim">bid ${f(d.bid)} × ${t.bid_size ?? "—"} · ask ${f(d.ask)} × ${t.ask_size ?? "—"}${t.deep_book ? " · practice book" : " · IBKR sends the best bid / ask for options (no deeper book)"}</span>`);
+  setTimeout(centerObook, 0);
+  put(".obook", `<table class="olad"><tr><th>SOLD</th><th>BID</th><th>PRICE</th><th>ASK</th><th>BOUGHT</th></tr>${rows}</table><div class="dim ofoot">click a price: BUY / SELL ${OCH.n} there (right-click the OPTION CHART works too)</div>`);
+  // T&S for the contract
+  const tm = x => new Date(x * 1000).toLocaleTimeString("en-US", {timeZone: "America/New_York", hour12: false});
+  const pr = t.prints.map(([tt, pp, n, sd]) => `<tr class="${sd === "buy" ? "b" : sd === "sell" ? "s" : ""} ${n >= 100 ? "big" : ""}"><td class="dim">${tm(tt)}</td><td>${(+pp).toFixed(2)}</td><td>${sz(n)}</td><td class="dim">${sd === "buy" ? "at ask" : sd === "sell" ? "at bid" : ""}</td></tr>`).join("");
+  hd("otapeHd", "OPTION T&S", ` <span class="dim">vol ${sz(t.volume || 0)} · <span class="b">bought ${sz(t.bought)}</span> · <span class="s">sold ${sz(t.sold)}</span></span>`);
+  put(".otape", pr ? `<table class="otp"><tr><th>TIME</th><th>PRICE</th><th>CT</th><th></th></tr>${pr}</table>` : `<div class="dim" style="padding:8px">No prints on this contract yet.</div>`);
+  // BIG TAPE for the contract: big prints + Quant Data sweeps / blocks on it
+  const bg = t.big.map(x => `<tr class="${x.side === "buy" || x.side === "ask" ? "b" : x.side === "sell" || x.side === "bid" ? "s" : ""}"><td class="dim">${tm(x.t)}</td><td>${x.price != null ? (+x.price).toFixed(2) : "—"}</td><td>${sz(x.size || 0)}</td><td>${usdK(x.premium || 0)}</td><td class="dim">${x.src === "flow" ? esc((x.kind || "FLOW").toUpperCase()) : ""}</td></tr>`).join("");
+  hd("obigHd", "OPTION BIG TAPE", ` <span class="dim">100+ contracts or $50k+, and the option flow on this contract</span>`);
+  put(".obig", bg ? `<table class="otp"><tr><th>TIME</th><th>PRICE</th><th>CT</th><th>$</th><th></th></tr>${bg}</table>` : `<div class="dim" style="padding:8px">No big prints on this contract yet.</div>`);
+}
+document.addEventListener("click", e => { const r = e.target.closest(".obook tr[data-oprice]"); if (!r || !OCH.data) return;
+  const price = +r.dataset.oprice, d = OCH.data; optChartMenu(ochart, e.clientX, e.clientY, price); });
+
+/* ---------- FAST: in and out of the stock from the chart, one click. Getting out never asks */
+function renderFast(d){
+  const el = document.getElementById("fastStock"); if (!el) return;
+  if (!d){ el.innerHTML = ""; return; }
+  const pos = d.position, q = pos && pos.qty ? Math.abs(pos.qty) : 0, long = pos && pos.qty > 0, n = TK.qty || (T().default_shares) || 100;
+  const h = `<button class="b big" data-fast="BUY" title="BUY ${sz(n)} now at the ask (3-tick cap)">BUY ${sz(n)}</button><button class="s big" data-fast="SELL" title="SELL ${sz(n)} now at the bid (3-tick cap)">SELL ${sz(n)}</button>
+    ${q ? `<span class="${long ? "b" : "s"}">${long ? "LONG" : "SHORT"} ${sz(q)}</span>${q > 1 ? `<button class="out" data-fast="HALF" title="take half off now (no confirm)">½ OUT</button>` : ""}<button class="out all" data-fast="ALL" title="out of all ${sz(q)} now (no confirm)">ALL OUT</button>` : ""}`;
+  if (el.dataset.h !== h){ el.dataset.h = h; el.innerHTML = h; }
+}
+document.addEventListener("click", async e => {
+  const b = e.target.closest("#fastStock button[data-fast]"); if (!b) return;
+  const d = curData(); if (!d) return;
+  const pos = d.position, q = pos && pos.qty ? Math.abs(pos.qty) : 0, long = pos && pos.qty > 0, act = b.dataset.fast;
+  if (act === "ALL"){ const out = await post("/api/trade/flatten", {symbol: d.symbol}); toast(out.ok ? "OUT: " + (out.sent || "flat") : "Blocked: " + (out.reason || ""), out.ok); poll(true); return; }
+  if (act === "HALF"){ const out = await post("/api/trade/adjust", {symbol: d.symbol, shares: Math.max(1, Math.floor(q / 2)), mode: "close"}); toast(out.ok ? "½ OUT: " + out.sent : "Blocked: " + (out.reason || ""), out.ok); poll(true); return; }
+  // BUY / SELL now: at the touch, never more than 3 ticks through it (like ORDER ENTRY's big buttons)
+  const n = TK.qty || T().default_shares || 100, touch = act === "BUY" ? d.ask : d.bid;
+  if (!(touch > 0)){ toast("No quote yet", false); return; }
+  const tk = tickOfPx(touch), price = snapPx(act === "BUY" ? touch + 3 * tk : touch - 3 * tk);
+  const closing = q && ((long && act === "SELL") || (!long && act === "BUY")) && n <= q;
+  if (!canTrade() && !closing){ toast(whyNot() + (/ARM/i.test(whyNot()) ? "" : " — click ARM"), false); return; }
+  const send = async () => { const out = await post("/api/trade/order", {symbol: d.symbol, action: act, price, qty: n, type: "LMT", bracket: closing ? false : !!T().bracket, tif: "DAY", nonce: "fast" + Date.now()});
+    toast(out.ok ? "Sent: " + out.sent : "Blocked: " + (out.reason || ""), out.ok); poll(true); };
+  if (T().one_click || closing) return send();
+  confirmBox(`${act} ${sz(n)} ${d.symbol} @ ${px(price)}`, `${act === "BUY" ? "ask" : "bid"} ${px(touch)} · fills now, never ${act === "BUY" ? "above" : "below"} ${px(price)}${T().bracket ? " · with your stop and target" : ""} · ONE-CLICK (top bar) skips this box`, act === "BUY" ? "b" : "s", send);
+});
+
+// the option ladder keeps the spread in the middle of the window, unless you scrolled it in the last 4 seconds
+let obookUserScroll = 0;
+(function(){ const pc = P.obook && P.obook.pc; if (pc) pc.addEventListener("wheel", () => { obookUserScroll = Date.now(); }, {passive: true}); })();
+function centerObook(){
+  const pc = P.obook && P.obook.pc; if (!pc || pc.offsetParent === null || Date.now() - obookUserScroll < 4000) return;
+  const a = pc.querySelector("tr.ba"), b = pc.querySelector("tr.bb"); if (!a && !b) return;
+  const top = (a || b).offsetTop, bot = (b || a).offsetTop + (b || a).offsetHeight;
+  pc.scrollTop = Math.max(0, (top + bot) / 2 - pc.clientHeight / 2);
 }
 
 

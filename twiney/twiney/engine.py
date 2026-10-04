@@ -193,7 +193,9 @@ class Engine:
         self.opt_fills = []
         self.opt_chain = {}       # symbol -> {expiries, strikes, mult, con_id, source, t}
         self.opt_quotes = {}      # option key -> {bid, ask, last, t} (chain rows on watch + positions)
-        self.opt_bars = {}        # option key -> {minute: [o, h, l, c, v, 0, 0]} (the OPTION CHART: the contract's mid)
+        self.opt_bars = {}        # option key -> {minute: [o, h, l, c, v, buy_v, sell_v]} (the OPTION CHART: the contract's mid)
+        self.opt_prints = {}      # option key -> deque of [t, price, contracts, "buy" / "sell" / None] (OPTION T&S)
+        self.opt_vol = {}         # option key -> IBKR's cumulative day volume (volume bars from its changes)
         self.opt_watch = {}       # symbol -> {expiry, right, keys[]}: the chain rows the page is looking at
         self.jlog_path = None     # recordings/desk.log: one JSON line per connection / order / fill / error event
         self._jlog = None
@@ -598,7 +600,10 @@ class Engine:
         if hist is not None:            # a finished minute from history: (o, h, l, c); a live minute keeps its close
             o, h, l, c = hist
             b = bars.get(m)
-            bars[m] = [o, max(h, b[1]), min(l, b[2]), b[3], 0.0, 0.0, 0.0] if b else [o, h, l, c, 0.0, 0.0, 0.0]
+            bars[m] = [o, max(h, b[1]), min(l, b[2]), b[3], b[4], b[5], b[6]] if b else [o, h, l, c, 0.0, 0.0, 0.0]
+            wait = (getattr(self, "_opt_vol_wait", None) or {}).get(key)
+            if wait and m in wait:
+                bars[m][4] = wait.pop(m)
         else:
             b = bars.get(m)
             if b is None:
@@ -608,6 +613,115 @@ class Engine:
         if len(bars) > MAX_BARS:
             for k in sorted(bars)[:len(bars) - MAX_BARS]:
                 del bars[k]
+
+    def on_opt_size(self, key, field, size, t):
+        """Bid / ask size, last trade size and day volume of an option contract (IBKR tickSize)."""
+        with self.lock:
+            q = self.opt_quotes.setdefault(key, {"bid": None, "ask": None, "last": None})
+            if field in ("bid_size", "ask_size"):
+                q[field] = size
+            elif field == "last_size":
+                lp = q.get("last_trade") or q.get("last")
+                if lp and size and size > 0:
+                    self.on_opt_print(key, lp, size, t, from_volume=False)
+            elif field == "volume" and size is not None:
+                prev = self.opt_vol.get(key)
+                self.opt_vol[key] = size
+                if prev is not None and size > prev:
+                    m = int(t // BAR_SECONDS) * BAR_SECONDS
+                    b = (self.opt_bars.get(key) or {}).get(m)
+                    if b is not None:
+                        b[4] += size - prev
+
+    def on_opt_print(self, key, price, size, t, side=None, from_volume=True):
+        """One trade in an option contract: OPTION T&S, BIG prints, and the chart's volume (buyers at the ask,
+        sellers at the bid). ``from_volume`` False: IBKR's day volume already counts it in the bar."""
+        from collections import deque as _dq
+        with self.lock:
+            q = self.opt_quotes.get(key) or {}
+            if side is None:
+                b_, a_ = q.get("bid"), q.get("ask")
+                side = "buy" if a_ and price >= a_ - 1e-9 else "sell" if b_ and price <= b_ + 1e-9 else None
+            self.opt_prints.setdefault(key, _dq(maxlen=400)).appendleft([t, round(price, 2), int(size), side])
+            m = int(t // BAR_SECONDS) * BAR_SECONDS
+            bars = self.opt_bars.setdefault(key, {})
+            b = bars.get(m)
+            if b is None:
+                b = bars[m] = [price, price, price, price, 0.0, 0.0, 0.0]
+            if from_volume or key not in self.opt_vol:
+                b[4] += size
+            if side == "buy":
+                b[5] += size
+            elif side == "sell":
+                b[6] += size
+
+    def on_opt_hist_vol(self, key, t0, v):
+        """Volume of one past minute of an option contract (IBKR TRADES history)."""
+        with self.lock:
+            m = int(t0 // BAR_SECONDS) * BAR_SECONDS
+            if v is None or v < 0:
+                return
+            b = (self.opt_bars.get(key) or {}).get(m)
+            if b is not None:
+                b[4] = float(v)
+            else:                       # the price minute has not landed yet: it picks this up when it does
+                self.__dict__.setdefault("_opt_vol_wait", {}).setdefault(key, {})[m] = float(v)
+
+    def option_tape(self, key, t, big_ct=100, big_usd=50000.0):
+        """OPTION T&S, OPTION LEVEL II and OPTION BIG TAPE for one contract. IBKR sends the best bid / ask (with
+        size) for options, no deeper book: the ladder shows that touch and what has traded at each price today."""
+        try:
+            sym, exp, strike, right = options.parse_key(key)
+        except (ValueError, IndexError):
+            return {}
+        with self.lock:
+            q = self.opt_quotes.get(key) or {}
+            prints = list(self.opt_prints.get(key) or [])
+            bid, ask = q.get("bid"), q.get("ask")
+            # the ladder: nickels (or pennies under $3 when the quote is on pennies) around the touch
+            ref = (bid + ask) / 2 if bid and ask else (ask or bid or q.get("last"))
+            rows = []
+            if ref:
+                pennies = any(abs(round(x * 100) % 5) for x in (bid, ask) if x)
+                step = 0.01 if pennies and ref < 3 else 0.05
+                traded = {}
+                for tp, pp, sz, sd in prints:
+                    k = round(pp, 2); tr = traded.setdefault(k, [0, 0]); tr[0 if sd == "buy" else 1 if sd == "sell" else 0] += sz
+                half = max(10, int(((ask or ref) - (bid or ref)) / step / 2) + 8)     # both sides of the spread, 8 rows past each
+                top = round(round(ref / step) * step + half * step, 2)
+                for i in range(2 * half + 1):
+                    px_ = round(top - i * step, 2)
+                    if px_ <= 0:
+                        break
+                    row = {"price": px_, "bid": 0, "ask": 0, "bought": traded.get(px_, [0, 0])[0], "sold": traded.get(px_, [0, 0])[1],
+                           "best_bid": bid is not None and abs(px_ - bid) < step / 2, "best_ask": ask is not None and abs(px_ - ask) < step / 2}
+                    if row["best_bid"]:
+                        row["bid"] = int(q.get("bid_size") or 0)
+                    if row["best_ask"]:
+                        row["ask"] = int(q.get("ask_size") or 0)
+                    if self.connection["state"] == "DEMO" and bid and ask:      # the practice desk models a book
+                        import random as _r
+                        rng = _r.Random(hash((key, px_, int(t // 20))))
+                        if px_ < bid - 1e-9 and bid - px_ < step * 8:
+                            row["bid"] = rng.choice((10, 20, 25, 40, 50, 75, 100, 150, 250))
+                        if px_ > ask + 1e-9 and px_ - ask < step * 8:
+                            row["ask"] = rng.choice((10, 20, 25, 40, 50, 75, 100, 150, 250))
+                    rows.append(row)
+            big = [{"t": tp, "price": pp, "size": sz, "side": sd, "premium": round(pp * sz * 100), "src": "tape"}
+                   for tp, pp, sz, sd in prints if sz >= big_ct or pp * sz * 100 >= big_usd][:40]
+            # Quant Data flow on this very contract (sweeps, blocks): the dough behind it
+            exp_dash = f"{exp[:4]}-{exp[4:6]}-{exp[6:8]}"
+            for f in list(self.flow.by_symbol.get(sym) or []):
+                if f.get("cp") == right and abs((f.get("strike") or 0) - strike) < 1e-6 and str(f.get("expiry", ""))[:10] == exp_dash:
+                    big.append({"t": f["t"], "price": f.get("price"), "size": f.get("size"), "side": f.get("side"),
+                                "premium": f.get("premium"), "src": "flow", "kind": f.get("kind")})
+            big.sort(key=lambda x: -(x["t"] or 0))
+            vol = self.opt_vol.get(key)
+            if vol is None:
+                vol = sum(p[2] for p in prints)
+            return {"book": rows, "prints": prints[:80], "big": big[:40], "bid_size": q.get("bid_size"), "ask_size": q.get("ask_size"),
+                    "volume": vol, "bought": sum(p[2] for p in prints if p[3] == "buy"), "sold": sum(p[2] for p in prints if p[3] == "sell"),
+                    "deep_book": self.connection["state"] == "DEMO"}
 
     def on_opt_hist_bar(self, key, t0, o, h, l, c):
         """A 1-minute MIDPOINT bar of an option contract from IBKR history (the OPTION CHART's context)."""
@@ -626,8 +740,24 @@ class Engine:
             live = self.__dict__.setdefault("opt_live", {})      # key -> last time a chart / ticket asked for it
             keys = set(self.opt_positions) | {o["symbol"] for o in self._pending() if o.get("opt")} | \
                 {k for k, at in live.items() if t - at < 120}
+            import random as _r
             for key in keys:
-                self.practice_quote_key(key, t)
+                before = (self.opt_quotes.get(key) or {}).get("last")
+                if not self.practice_quote_key(key, t):
+                    continue
+                q = self.opt_quotes.get(key) or {}
+                if not (q.get("bid") and q.get("ask")):
+                    continue
+                q["bid_size"] = q.get("bid_size") or _r.choice((10, 20, 30, 50, 80))
+                q["ask_size"] = q.get("ask_size") or _r.choice((10, 20, 30, 50, 80))
+                if _r.random() < 0.15:
+                    q["bid_size"], q["ask_size"] = _r.choice((5, 10, 20, 30, 50, 80, 120)), _r.choice((5, 10, 20, 30, 50, 80, 120))
+                # prints: more when the contract is moving; buyers lift the ask as it rises, sellers hit the bid as it falls
+                up = before is not None and q["last"] > before
+                for _ in range(_r.choice((0, 0, 1, 1, 2, 3))):
+                    buy = _r.random() < (0.68 if up else 0.32 if before is not None and q["last"] < before else 0.5)
+                    size = _r.choice((1, 1, 2, 3, 5, 5, 10, 10, 20, 25, 50)) * (40 if _r.random() < 0.02 else 1)
+                    self.on_opt_print(key, q["ask"] if buy else q["bid"], size, t, "buy" if buy else "sell")
 
     def practice_quote_key(self, key, t):
         """Price one contract from the stock right now (practice desk only). True when it got a quote."""
@@ -671,6 +801,9 @@ class Engine:
                         if None in (fo, fh, fl, fc):
                             continue
                         self._opt_bar(key, m, fc, hist=(fo, max(fh, fl, fo, fc), min(fh, fl, fo, fc), fc))
+                        bb = self.opt_bars[key][m]
+                        v = round(max(0.0, st.bars[m][4]) / 400.0 * (1.0 if strike and abs(strike - c) / c < 0.03 else 0.3))
+                        bb[4] = float(v); bb[5] = float(round(v * 0.5)); bb[6] = float(v - round(v * 0.5))
                 q = options.practice_quote(spot, strike, exp, right, t)
                 if q:
                     for fld in ("bid", "ask", "last"):
@@ -685,7 +818,8 @@ class Engine:
                     "bars": out, "bid": q.get("bid"), "ask": q.get("ask"), "last": mid,
                     "position": self._opt_view(pos) if pos else None,
                     "orders": [o for o in self._pending() if o.get("symbol") == key],
-                    "source": "PRACTICE" if self.connection["state"] == "DEMO" else "IBKR"}
+                    "source": "PRACTICE" if self.connection["state"] == "DEMO" else "IBKR",
+                    "tape": self.option_tape(key, t)}
 
     def on_opt_greeks(self, key, greeks, t):
         """Delta / gamma / theta / vega / implied vol for a contract (IBKR's tickOptionComputation, or the practice model)."""
