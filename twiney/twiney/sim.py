@@ -176,7 +176,10 @@ class DemoFeed:
             if not p["active"]:
                 continue
             # any level drawn says where the stock trades: the pivot, else the stop or the target alone
-            base = p.get("trigger") or p.get("second_entry") or p.get("stop") or p.get("target") or self.rng.uniform(20, 300)
+            from .flow import SimFlow
+            known = {k: v for k, v, _b in SimFlow.MARKET}
+            base = p.get("trigger") or p.get("second_entry") or p.get("stop") or p.get("target") or known.get(p["symbol"]) \
+                or self.rng.uniform(20, 300)
             mid = round(base * (1 + self.rng.uniform(0.002, 0.006) * self.rng.choice((-1, 1))), 2)
             band = sorted(x for x in (p.get("stop"), p.get("target")) if x)
             lo, hi = (band[0], band[-1]) if len(band) == 2 else (None, None)   # a stop alone (or a target alone) is fine

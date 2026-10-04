@@ -104,6 +104,10 @@ def run_live(cfg, plays, args):
     engine.load_user_alerts(os.path.join(os.path.dirname(os.path.abspath(args.plays)), "alerts.json"))
     engine.listeners.append(console_alert)
     note_stripped(engine, args)
+    if CLEANED[0]:
+        engine._save_plays()
+        engine._message("info", "Clean chart: yesterday's lines are off — draw today's pivot, 2nd entry, stop and target "
+                                "(SETTINGS, Trading, clean chart on start)", time.time())
     engine.bigmoney = BigMoney(cfg["flow"], os.path.join(cfg["recording"]["dir"], "big_money.jsonl"))
     gate = TradingGate(cfg)
     session = MarketDataSession(engine, cfg, plays, factory, gate=gate)
@@ -153,6 +157,38 @@ def run_live(cfg, plays, args):
     return 0
 
 
+CLEANED = [0]
+LINE_KEYS = ("trigger", "second_entry", "stop", "target", "mp")
+
+
+def clean_chart(plays, cfg, path=None, today=None):
+    """The first start of a new day comes up with clean charts (SETTINGS, Trading, clean chart on start): the pivot,
+    2nd entry, stop and target lines from an earlier day are gone, the tickers stay. A restart later the same day keeps
+    the lines you drew today. Returns how many tickers had lines taken off."""
+    if not cfg.get("trading", {}).get("clean_chart_on_start", True):
+        return 0
+    if path and os.path.exists(path):
+        marker = os.path.join(os.path.dirname(os.path.abspath(path)), ".clean_chart_v1")
+        first = not os.path.exists(marker)      # this build's first start: the old saved lines go, whatever their date
+        if first:
+            try:
+                open(marker, "w").close()
+            except OSError:
+                pass
+        saved = time.strftime("%Y%m%d", time.localtime(os.path.getmtime(path)))
+        if not first and saved == (today or time.strftime("%Y%m%d")):
+            return 0        # drawn today: keep them
+    n = 0
+    for p in plays:
+        if any(p.get(k) for k in LINE_KEYS) or p.get("alt"):
+            n += 1
+        for k in LINE_KEYS:
+            if k in p:
+                p[k] = None
+        p.pop("alt", None)
+    return n
+
+
 def note_stripped(engine, args):
     """plays.json still carried the example's made-up prices for these tickers: they start blank, and the desk says so."""
     for w in LOAD_WARNINGS:
@@ -195,6 +231,10 @@ def run_demo(cfg, plays, args):
     engine.load_user_alerts(os.path.join(os.path.dirname(os.path.abspath(args.plays)), "alerts.json"))
     engine.listeners.append(console_alert)
     note_stripped(engine, args)
+    if CLEANED[0]:
+        engine._save_plays()
+        engine._message("info", "Clean chart: yesterday's lines are off — draw today's pivot, 2nd entry, stop and target "
+                                "(SETTINGS, Trading, clean chart on start)", time.time())
     # practice flow is made up and the demo price starts fresh every launch: its big prints live in memory
     # only, so the real 30-day memory (recordings/big_money.jsonl) never carries practice prints
     engine.bigmoney = BigMoney(cfg["flow"], None)
@@ -339,6 +379,7 @@ def main(argv=None):
             cfg = load_config(args.config) if os.path.exists(args.config) else build_config({})
             if args.port: cfg["dashboard"]["port"] = args.port
             plays = load_plays(args.plays) if os.path.exists(args.plays) else load_plays("plays.example.json")
+            CLEANED[0] = clean_chart(plays, cfg, args.plays)
             return run_demo(cfg, plays, args)
         if args.replay:
             cfg = load_config(args.config) if os.path.exists(args.config) else build_config({})
@@ -347,7 +388,9 @@ def main(argv=None):
             return run_replay(cfg, plays, args)
         cfg = load_config(args.config)
         if args.port: cfg["dashboard"]["port"] = args.port
-        return run_live(cfg, load_plays(args.plays), args)
+        plays = load_plays(args.plays)
+        CLEANED[0] = clean_chart(plays, cfg, args.plays)
+        return run_live(cfg, plays, args)
     except ConfigError as exc:
         print(f"CONFIG ERROR: {exc}", file=sys.stderr)
         return 2

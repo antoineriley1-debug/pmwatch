@@ -200,6 +200,8 @@ DEFAULTS = {
         "clear_lines_when_flat": True,
         # CHART TRADING: on any open position the STOP / TARGET lines are its exit orders (draw = order in, drag = moved)
         "lines_are_exits": True,
+        # the first start of each day comes up with clean charts (no pivot, 2nd entry, stop or target lines) — you draw today's; a restart later the same day keeps them
+        "clean_chart_on_start": True,
         # the FILLED chip on the 2nd entry line goes this many seconds after the fill
         "filled_chip_seconds": 90,
         "risk_dollars": 100,

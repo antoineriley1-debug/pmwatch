@@ -40,7 +40,7 @@ SECTIONS = [
 
 # settings that are read once at startup: saved at once, used after RESTART
 RESTART = ("ibkr.", "dashboard.", "depth.slots", "depth.rows_requested", "depth.smart_depth", "recording.",
-           "chart.", "account.", "quantdata.", "demo.", "trading.enabled", "trading.allow_live")
+           "chart.", "account.", "quantdata.", "demo.", "trading.enabled", "trading.allow_live", "trading.clean_chart_on_start")
 
 LOCKED = {
     "dashboard.host": "Locked: the desk only listens on this computer.",
