@@ -35,6 +35,17 @@ log = logging.getLogger("twiney.trading")
 BUY, SELL = "BUY", "SELL"
 
 
+
+def opt_through(touch, action):
+    """An option limit that fills now: one price step through the touch (up for a buy, down for a sell), on a
+    grid every option accepts (0.05 under $3, 0.10 at $3 and up). A sell never goes under one step."""
+    import math
+    step = 0.05 if touch < 3 else 0.10
+    if action == BUY:
+        return round(math.ceil(round(touch / step, 6)) * step + (step if abs(touch / step - round(touch / step)) < 1e-6 else 0), 2)
+    v = math.floor(round(touch / step, 6)) * step - (step if abs(touch / step - round(touch / step)) < 1e-6 else 0)
+    return round(max(step, v), 2)
+
 class OrderRejected(ValueError):
     pass
 
@@ -884,7 +895,28 @@ class Trader:
         keep_pool = sorted((o for o in stop_orders if o.get("action") == closing),
                            key=lambda o: (o.get("role") != "stop", -left(o)))
         if not keep_pool:
-            return {"ok": False, "reason": "no working stop to move — the position has no stop"}
+            # no stop working yet: BREAKEVEN puts one on the board — the chart's STOP line goes to your entry and
+            # that line becomes the stop order for every share you hold
+            for o in stop_orders:
+                try:
+                    self.broker.cancel(o["order_id"], now)
+                except Exception as exc:
+                    self._note(now, f"{symbol}: could not cancel stop {o['order_id']}: {exc}", False)
+            self._stop_line_follows(symbol, be, now)
+            if not self.cfg.get("lines_are_exits", True):
+                return {"ok": False, "reason": f"the STOP line is at breakeven {money(be)}, but chart lines are not orders "
+                                              f"(SETTINGS, Trading, lines are exits) — no stop order was sent"}
+            if st is not None:
+                self.auto_sync.pop(symbol, None)
+                self._lines_are_exits(st.play, now)
+            placed = [o for o in self.engine._pending(symbol) if o.get("action") == closing
+                      and (o.get("role") == "stop" or o.get("type") in ("STP", "STP LMT"))]
+            if not placed:
+                return {"ok": False, "reason": f"the STOP line is at breakeven {money(be)} but the stop order did not go in — check ORDERS"}
+            self._note(now, f"{symbol}: BREAKEVEN stop placed at {money(be)} for {abs(int(pos)):,} sh", True)
+            self.engine._rec({"ev": "breakeven", "t": now, "sym": symbol, "px": be})
+            return {"ok": True, "price": be, "moved": 0, "cancelled": 0, "placed": True,
+                    "sent": f"breakeven stop {money(be)} placed for {abs(int(pos)):,} sh"}
         # after this: stops at breakeven covering exactly the position, and no other stop on the board
         need, moved, cancelled = abs(int(pos)), 0, 0
         for o in keep_pool:
@@ -1717,6 +1749,7 @@ class Trader:
                 price = q.get("ask") if action == BUY else q.get("bid")
                 if not price:
                     return {"ok": False, "reason": f"no quote on {key} yet — type a price"}
+                price = opt_through(price, action)   # fills now: a step through the touch, never further
             price = round(float(price), 2)
             if price <= 0:
                 return {"ok": False, "reason": "price must be positive"}
@@ -1765,6 +1798,7 @@ class Trader:
                 price = p.get("bid") if action == SELL else p.get("ask")
                 if not price:
                     return {"ok": False, "reason": f"no quote on {key} yet — type a price"}
+                price = opt_through(price, action)
             price = round(float(price), 2)
             if price <= 0:
                 return {"ok": False, "reason": "price must be positive"}

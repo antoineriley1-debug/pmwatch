@@ -92,6 +92,30 @@ class ChartStopTests(unittest.TestCase):
         self.assertEqual(broker.position("AAA"), 0)
 
 
+class BreakevenTests(unittest.TestCase):
+    """BE puts a stop at your entry: with no stop yet it places one (the STOP line goes to the entry and becomes the
+    order); with a chart stop working it moves that stop and its line to the entry."""
+    def test_breakeven_places_a_stop_when_there_is_none(self):
+        e, tr, broker = make()
+        tr.submit("AAA", "BUY", 10.0, 100, 2.0, bracket=False); quote(e, 9.99, 10.00, 3.0)
+        quote(e, 10.29, 10.30, 4.0)
+        out = tr.breakeven("AAA", 4.5); self.assertTrue(out["ok"], out)
+        stops = [o for o in e._pending("AAA") if o.get("role") == "stop" or o.get("type") in ("STP", "STP LMT")]
+        self.assertEqual(len(stops), 1); self.assertEqual(stops[0].get("aux"), 10.0); self.assertEqual(stops[0].get("qty"), 100)
+        self.assertEqual(e.syms["AAA"].play["stop"], 10.0)
+        tr.watchdog(5.0)
+        self.assertEqual([o.get("aux") for o in e._pending("AAA") if o.get("role") == "stop"], [10.0])   # nothing doubled
+
+    def test_breakeven_moves_the_chart_stop_and_its_line(self):
+        e, tr, broker = make()
+        tr.submit("AAA", "BUY", 10.0, 100, 2.0, bracket=False); quote(e, 9.99, 10.00, 3.0)
+        e.set_play_level("AAA", "stop", 9.50, 3.5, source="chart"); tr.watchdog(3.6)
+        quote(e, 10.29, 10.30, 4.0)
+        self.assertTrue(tr.breakeven("AAA", 4.5)["ok"]); tr.watchdog(5.0)
+        self.assertEqual([o.get("aux") for o in e._pending("AAA") if o.get("role") == "stop"], [10.0])
+        self.assertEqual(e.syms["AAA"].play["stop"], 10.0)
+
+
 class TicketStopTrailTests(unittest.TestCase):
     """From ORDER ENTRY: a stop by price (refused when it is through the market) and a trailing stop that only moves
     in your favour; both ride the STOP line, which is the stop order."""
@@ -172,3 +196,10 @@ class TwoSidedPlayTests(unittest.TestCase):
         self.assertEqual(back["alt"]["second_entry"], 9.75)
         e.clear_play("AAA", 3.0)
         self.assertNotIn("alt", e.syms["AAA"].play)
+
+
+class OptionThroughTests(unittest.TestCase):
+    def test_buy_and_sell_go_one_valid_step_through_the_touch(self):
+        from twiney.trading import opt_through
+        self.assertEqual(opt_through(2.93, "BUY"), 2.95); self.assertEqual(opt_through(2.93, "SELL"), 2.9)
+        self.assertEqual(opt_through(3.12, "BUY"), 3.2); self.assertEqual(opt_through(0.05, "SELL"), 0.05)

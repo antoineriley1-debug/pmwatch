@@ -231,7 +231,7 @@ document.addEventListener("click", e => { const b = e.target.closest("button[dat
         OC.sel = k; const mid = r.bid != null && r.ask != null ? (r.bid + r.ask) / 2 : (r.last != null ? r.last : null);
         OC.link = {sym: curSym, expiry: OC.data.expiry, strike: k, right: OC.data.right, key: r.key, bid: r.bid, ask: r.ask, n: (OC.link && OC.link.n) || 1};
         toast(`ORDER ENTRY now trades ${contractName(OC.link)} — BUY / SELL there send this contract`, true); P.ticket.last = null; poll(true);
-        if (mid != null) document.getElementById("ocPx").value = mid.toFixed(2); else document.getElementById("ocPx").focus();
+        { const pxIn = document.getElementById("ocPx"); pxIn.value = ""; pxIn.placeholder = mid != null ? "mid " + mid.toFixed(2) : "price"; }   // empty = fills now at the touch; type a price to rest a limit
         const bd = P.options.pc.querySelector(".oc-body"); if (bd) bd.dataset.h = ""; renderChain(); }
       return; }
     if (!OC.data) return;
@@ -809,10 +809,12 @@ function contractBoxHTML(s, d){
     ${have}
     <div class="cq"><span class="lbl">CONTRACTS</span>${pre.map(k => `<button data-cn="${k}" class="${k === n ? "on" : ""}">${k}</button>`).join("")}<input id="cnQty" type="number" min="1" step="1" value="${n}"></div>
     <div class="bs"><button class="big b" data-cb="BUY" title="BUY ${n} at the ask ${f(l.ask)}">BUY ${n}<i>${f(l.ask)} · $${sz(Math.round((l.ask || 0) * 100 * n))}</i></button><button class="big s" data-cb="SELL" title="${long ? `SELL ${n} of your ${q}` : `SELL ${n} to open`} at the bid ${f(l.bid)}">SELL ${n}<i>${f(l.bid)} · $${sz(Math.round((l.bid || 0) * 100 * n))}</i></button></div>
+    ${(((s.account || {}).pending) || []).filter(o => o.symbol === l.key && !["FILLED", "CANCELED", "REJECTED"].includes(o.state)).map(o => `<div class="cwk"><span class="${o.action === "BUY" ? "b" : "s"}">WORKING ${esc(o.action)} ${sz(o.remaining ?? o.qty)} @ ${o.lmt ? (+o.lmt).toFixed(2) : "?"}</span> <span class="dim">not filled yet</span> <button class="danger" data-cxl="${o.order_id}">CANCEL</button></div>`).join("")}
     ${q ? `<div class="mgr"><button class="${long ? "s" : "b"} all" data-cb="ALL" title="close all ${q} at the touch">${long ? "SELL" : "BUY"} ALL ${q}</button></div>` : ""}</div>`;
 }
 document.addEventListener("input", e => { if (e.target.id === "cnQty" && OC.link){ OC.link.n = Math.max(1, Math.round(+e.target.value || 1)); } });
 document.addEventListener("click", async e => {
+  const cx = e.target.closest(".simple.contract button[data-cxl]"); if (cx){ cancelMine(+cx.dataset.cxl); return; }
   const b = e.target.closest("button[data-unlink], button[data-cn], button[data-cb]"); if (!b || !P.ticket.el.contains(b) || !OC.link) return;
   const l = OC.link;
   if (b.dataset.unlink){ OC.link = null; P.ticket.last = null; poll(true); const bd = P.options && P.options.pc.querySelector(".oc-body"); if (bd) bd.dataset.h = ""; return; }
@@ -1034,7 +1036,11 @@ function renderPositions(s){
         <span class="sep"></span>${add(1, "+1")}${add(Math.max(1, Math.floor(q / 2)), "+½")}${add(q, "+1×")}<button data-oadd="${esc(p.key)}" data-n="ask" ${canTrade() ? "" : "disabled"} title="scale in by a number of contracts you type, at a price you type">+…</button>
         <button class="danger" data-oclose="${esc(p.key)}" data-n="0" ${on ? "" : "disabled"} title="CLOSE every contract with a limit at the touch">X</button></td></tr>`;
   }).join("");
-  panelHTML("positions", `<table class="grid pos2"><tr><th>POSITION</th><th>ENTRY</th><th>LAST</th><th>P&amp;L %</th><th>STOP · TGT</th><th style="text-align:left" title="25 / 50 / 75 = take that much off at the touch · … = your own number · @ = partial at your price · BE = stop to breakeven · X = close · +½ +1× +… = scale in at the touch">OUT 25 · 50 · 75 · … · @ · BE · X &nbsp; IN +½ · +1× · +…</th></tr>${rows + orows || `<tr><td colspan="6" class="dim l">${A.seen ? "FLAT" : "NO ACCOUNT DATA"}</td></tr>`}</table>`);
+  // option orders that have not filled yet: they are not a position, so say so where you look for it
+  const wk = (A.pending || []).filter(o => / \d{8} /.test(o.symbol || "") && !["FILLED", "CANCELED", "REJECTED"].includes(o.state)).map(o =>
+    `<tr class="posrow opt wk"><td class="l"><b>${esc(o.symbol)}</b> <span class="${o.action === "BUY" ? "b" : "s"}">${esc(o.action)} ${sz(o.remaining ?? o.qty)} ct</span></td><td>${o.lmt ? (+o.lmt).toFixed(2) : NA}</td><td colspan="3" class="l gold">WORKING · not filled yet — it shows here as a position once it fills</td>
+      <td class="l ctl"><button class="danger" data-cxl="${o.order_id}" title="cancel this option order">CANCEL</button></td></tr>`).join("");
+  panelHTML("positions", `<table class="grid pos2"><tr><th>POSITION</th><th>ENTRY</th><th>LAST</th><th>P&amp;L %</th><th>STOP · TGT</th><th style="text-align:left" title="25 / 50 / 75 = take that much off at the touch · … = your own number · @ = partial at your price · BE = stop to breakeven · X = close · +½ +1× +… = scale in at the touch">OUT 25 · 50 · 75 · … · @ · BE · X &nbsp; IN +½ · +1× · +…</th></tr>${rows + orows + wk || `<tr><td colspan="6" class="dim l">${A.seen ? "FLAT" : "NO ACCOUNT DATA"}</td></tr>`}</table>`);
 }
 let showHistory = false, selOrder = null;
 function renderOrders(s){
@@ -1145,6 +1151,7 @@ P.positions.el.addEventListener("click", async e => {
     const out = await post("/api/trade/opt_adjust", {key, contracts: +n, mode, price}); toast(out.ok ? "Sent: " + out.sent : "Blocked: " + (out.reason || ""), out.ok); return; }
   const r = e.target.closest("button[data-red]"); if (r){ let n = r.dataset.n; if (n === "ask"){ n = prompt("Reduce " + r.dataset.red + " by how many shares?"); if (!n) return; } if (!canReduce()) return toast("Can't trade: " + whyNot(), false);
     const out = await post("/api/trade/adjust", {symbol: r.dataset.red, shares: +n, mode: "close"}); toast(out.ok ? "Sent: " + out.sent : "Blocked: " + (out.reason || ""), out.ok); return; }
+  const cw = e.target.closest("button[data-cxl]"); if (cw){ cancelMine(+cw.dataset.cxl); return; }
   const tr = e.target.closest("tr[data-sym]"); if (tr) openTab(tr.dataset.sym, false);
 });
 P.orders.el.addEventListener("click", async e => {

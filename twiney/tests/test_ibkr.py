@@ -450,13 +450,13 @@ class OptionPositionTests(unittest.TestCase):
         self.assertEqual((v["label"], v["bid"], v["ask"], v["per_contract"]), ("TSLA 10/03 240C", 3.40, 3.50, 3.12))
         self.assertAlmostEqual(v["pnl"], (3.45 * 100 - 312.0) * 5, places=2)
         tr = engine.trader; tr.gate.set_accounts(["DU1"]); tr.gate.arm(True)
-        # scale out half at the bid
+        # scale out at the bid: one price step through it (3.40 -> 3.30) so it fills now
         out = tr.opt_adjust("TSLA 20261003 240C", 2, "close", None, clock())
         self.assertTrue(out["ok"], out)
         placed = [c for c in app.calls if c[0] == "placeOrder"][-1]
         oid, contract, order = placed[1], placed[2], placed[3]
         self.assertIsInstance(contract, _Opt)
-        self.assertEqual((order["action"], order["qty"], order["price"], order["type"], order["tif"]), ("SELL", 2, 3.40, "LMT", "DAY"))
+        self.assertEqual((order["action"], order["qty"], order["price"], order["type"], order["tif"]), ("SELL", 2, 3.30, "LMT", "DAY"))
         pend = [o for o in engine._pending() if o.get("symbol") == "TSLA 20261003 240C"]
         self.assertEqual(len(pend), 1); self.assertTrue(pend[0]["opt"])
         # scale in one at the ask, at a typed price
