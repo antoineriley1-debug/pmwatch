@@ -53,5 +53,19 @@ class AllocateTests(unittest.TestCase):
         self.assertEqual(set(got), {"A", "B"})
 
 
+
+
+class FocusSlotTests(unittest.TestCase):
+    def test_ticker_on_screen_always_gets_a_book_even_when_every_slot_is_pinned(self):
+        ranked = [("A", 0.1), ("B", 0.2), ("C", 0.3), ("D", 5.0)]
+        out = allocate({"A": 0, "B": 0, "C": 0}, ranked, 3, 100, 0.2, 30, pinned={"A", "B", "C"}, focus="D")
+        self.assertIn("D", out)
+        self.assertEqual(len(out), 3)
+
+    def test_focus_already_held_changes_nothing(self):
+        ranked = [("A", 0.1), ("B", 0.2)]
+        self.assertEqual(set(allocate({"A": 0, "B": 0}, ranked, 2, 100, 0.2, 30, focus="A")), {"A", "B"})
+
+
 if __name__ == "__main__":
     unittest.main()

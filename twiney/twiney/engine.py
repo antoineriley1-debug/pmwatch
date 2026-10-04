@@ -2359,7 +2359,8 @@ class Engine:
         new = allocate(self.slots, self._rotation_ranking(t), dc["slots"], t,
                        dc["rotate_hysteresis"], dc["min_hold_seconds"],
                        pinned=self.pinned - blocked, protected=self._protected(t),
-                       rotate=self.auto_rotate)
+                       rotate=self.auto_rotate,
+                       focus=self.focus if self.focus in self.syms and self.syms[self.focus].rejected_until <= t else None)
         cmds = list(self._slot_cmds)
         self._slot_cmds = []
         for sym in [s for s in self.slots if s not in new]:
@@ -2617,6 +2618,9 @@ class Engine:
                 real = st.pulls.at(sd, k)
                 if real is not None:
                     row[side + "_real"] = real
+                story = st.pulls.story(sd, k)
+                if story is not None:
+                    row[side + "_story"] = story
                 tr = trk.get((side, k))
                 if tr is not None:
                     # a proven reload keeps the refills that proved it, even after they age out of the window

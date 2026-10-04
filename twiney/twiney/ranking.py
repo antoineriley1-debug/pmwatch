@@ -30,7 +30,7 @@ def rank(plays, prices, blocked=()):
 
 
 def allocate(current, ranked, slots, now, hysteresis, min_hold,
-             pinned=(), protected=(), rotate=True):
+             pinned=(), protected=(), rotate=True, focus=None):
     """Assign the scarce depth slots.
 
     ``current`` maps symbol -> time it got its slot.
@@ -50,11 +50,15 @@ def allocate(current, ranked, slots, now, hysteresis, min_hold,
     protected = set(protected)
     # incumbents that dropped out of the ranking (no price / blocked) give up their slot
     held = {s: t for s, t in current.items() if s in dist or s in pinned}
+    if focus and focus not in held:   # the ticker on screen always has its book, even over other pins
+        if len(held) >= slots and held:
+            del held[max(held, key=lambda s: (s in pinned, s in protected, dist.get(s, inf), s))]
+        held[focus] = now
     for p in sorted(pinned, key=lambda s: (dist.get(s, inf), s)):
         if p in held:
             continue
         if len(held) >= slots:
-            victims = [s for s in held if s not in pinned]
+            victims = [s for s in held if s not in pinned and s != focus]
             if not victims:
                 continue
             del held[max(victims, key=lambda s: (dist.get(s, inf), s))]

@@ -88,6 +88,7 @@ class PullBook:
         self.stats = {ASK: {}, BID: {}}      # price_key -> [filled, pulled, last change t]
         self.pending = {ASK: {}, BID: {}}    # price_key -> [t, shares]: a drop waiting to see if the venue re-quotes
         self.primed = {ASK: False, BID: False}
+        self.added = {ASK: {}, BID: {}}      # price_key -> [shares that came in, most it showed, last change t]
 
     # ---- inputs ------------------------------------------------------------
 
@@ -121,6 +122,23 @@ class PullBook:
         pending = self.pending[side]
         requote = float(self.cfg.get("requote_seconds", 1.0))
         if self.primed[side]:
+            # what came IN at each price: growth of a level, or a new level inside the window we could already see
+            added = self.added[side]
+            lo, hi = (min(prev), max(prev)) if prev else (None, None)
+            for k, cur_size in cur.items():
+                prev_size = prev.get(k)
+                if prev_size is None and (lo is None or not (lo <= k <= hi)):
+                    continue      # scrolled into view, not new
+                grew = cur_size - (prev_size or 0.0)
+                a = added.setdefault(k, [0.0, 0.0, now])
+                if grew > 1e-9:
+                    p_ = pending.get(k)
+                    requoted = min(p_[1], grew) if p_ is not None and now - p_[0] <= requote else 0.0
+                    if grew - requoted > 1e-9:
+                        a[0] += grew - requoted
+                        a[2] = now
+                if cur_size > a[1]:
+                    a[1] = cur_size
             for k, prev_size in prev.items():
                 cur_size = cur.get(k, 0.0)
                 if cur_size < prev_size - 1e-9:
@@ -185,6 +203,17 @@ class PullBook:
             stats = self.stats[s]
             for k in [k for k, st in stats.items() if now - st[2] > keep_seconds]:
                 del stats[k]
+            added = self.added[s]
+            for k in [k for k, a in added.items() if now - a[2] > keep_seconds]:
+                del added[k]
+
+    def story(self, side, k):
+        """Everything this price has been through: shares that came in, traded out of it, were pulled, and the most it showed."""
+        st, a = self.stats[side].get(k), self.added[side].get(k)
+        pend = self.pending[side].get(k)
+        out = {"in": round(a[0]) if a else 0, "traded": round(st[0]) if st else 0,
+               "pulled": round((st[1] if st else 0.0) + (pend[1] if pend else 0.0)), "peak": round(a[1]) if a else 0}
+        return out if out["in"] or out["traded"] or out["pulled"] else None
 
     # ---- reads -------------------------------------------------------------
 

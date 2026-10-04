@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261004-1953">
+<meta name="build" content="20261004-2030">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -663,7 +663,7 @@ i.tl{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:3p
 .lad td.sz .ghost{position:absolute;right:2px;top:-9px;font:700 9px var(--mono);font-style:normal;pointer-events:none;animation:ghost 1.4s 1 forwards;padding:0 2px;border-radius:2px;background:#0b0f16}
 .lad td.bsz .ghost{right:auto;left:2px} .lad td.sz .ghost.dn{color:#fff} .lad td.sz .ghost.up{color:var(--gold)}
 @keyframes ghost{0%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(-10px)}}
-.eatbar{display:flex;justify-content:space-between;gap:8px;position:sticky;bottom:0;background:#0b0f16;border-top:1px solid var(--line);padding:2px 6px;font:10.5px var(--mono);white-space:nowrap;overflow:hidden}
+.eatbar{display:flex;flex-direction:column;gap:1px;position:sticky;bottom:0;background:#0b0f16;border-top:1px solid var(--line);padding:3px 6px;font:11px var(--mono);overflow:hidden} .eatbar .lstory{white-space:normal;line-height:1.35;color:#e8e8e6} .eatbar .ltouch{display:flex;justify-content:space-between;gap:8px;white-space:nowrap;font-size:10px} .eatbar .up{color:var(--buy)} .eatbar .pl{color:#b48cff}
 .eatbar .b{color:var(--buy)} .eatbar .s{color:var(--sell)} .eatbar b{font-weight:800}
 
 /* BIG TAPE: its own panel */
@@ -835,6 +835,15 @@ i.tl{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:3p
 .lvl2 .blvl{flex:1;padding:2px 4px;font-size:10px;white-space:nowrap}
 
 .auto.other{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center;margin-top:4px;font:11px var(--mono)} .auto.other b.s{color:var(--sell)} .auto.other b.b{color:var(--buy)} .auto.other button{margin-left:auto;padding:0 6px}
+
+.rlb.nobook{background:#2a2306;color:var(--gold);border:1px solid var(--gold);white-space:normal;cursor:default;animation:none}
+
+.lad td.sz .ghost.pl{color:#d6c2ff;border:1px solid #b48cff;background:#1d1430}
+
+.simple.contract{border-color:var(--gold)} .simple .clink{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;padding:2px 0 4px;border-bottom:1px dashed #3a3320;margin-bottom:4px}
+.simple .clink b{font-size:13px} .simple .clink button{margin-left:auto;padding:0 8px;height:20px}
+.simple .cq{display:flex;align-items:center;gap:4px;margin:4px 0} .simple .cq button{padding:0 8px;height:22px} .simple .cq button.on{color:var(--gold);border-color:var(--gold)} .simple .cq input{width:54px;height:22px;font:12px var(--mono)}
+.oct tr.linked td{box-shadow:inset 0 1px 0 var(--gold),inset 0 -1px 0 var(--gold)} .oct tr.linked td.k{color:var(--gold)}
 
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
@@ -3335,6 +3344,14 @@ function renderBook(d){
    around the spot, BUY / SELL to open from the row. Polled on its own (not in the big state payload) while the
    panel is on screen. */
 const OC = {right: "C", expiry: null, data: null, timer: null, busy: false};
+function contractName(l){ return `${l.sym} ${l.expiry.slice(4, 6)}/${l.expiry.slice(6, 8)} ${l.strike % 1 ? l.strike.toFixed(2) : l.strike} ${l.right === "C" ? "CALL" : "PUT"}`; }
+async function pollLink(){
+  const l = OC.link; if (!l || l.sym !== curSym || OC.busy) return;
+  const p = P.options; if (p && p.el.classList.contains("on") && p.el.offsetParent !== null && OC.data && OC.data.expiry === l.expiry && OC.data.right === l.right) return;   // the chain poll covers it
+  try { const r = await fetch(`/api/options/chain?symbol=${encodeURIComponent(l.sym)}&right=${l.right}&expiry=${l.expiry}`); const d = await r.json();
+    const row = (d.rows || []).find(x => x.key === l.key || x.strike === l.strike); if (row){ l.bid = row.bid; l.ask = row.ask; } } catch (e) {}
+}
+setInterval(pollLink, 1000);
 async function pollChain(){
   if (OC.busy) return; const sym = curSym, p = P.options; if (!sym || !p || !p.el.classList.contains("on") || p.el.offsetParent === null) return;
   OC.busy = true;
@@ -3355,8 +3372,9 @@ function renderChain(){
   document.getElementById("ocSpot").textContent = d.spot ? `spot ${px(d.spot)} · ${d.rows.length ? Math.round(d.rows[0].dte) + "d" : ""}` : "";
   document.getElementById("ocSrc").textContent = d.source === "PRACTICE" ? "PRACTICE prices (model)" : "IBKR";
   const on = canTrade(), red = canReduce();
+  if (OC.link && OC.link.sym === curSym && d.expiry === OC.link.expiry && d.right === OC.link.right){ const lr = d.rows.find(x => x.key === OC.link.key); if (lr){ OC.link.bid = lr.bid; OC.link.ask = lr.ask; } }
   const rows = d.rows.map(r => { const itm = d.right === "C" ? r.strike < d.spot : r.strike > d.spot; const held = r.qty;
-    return `<tr class="${itm ? "itm" : "otm"} ${Math.abs(r.strike - d.spot) < (d.rows[1] ? Math.abs(d.rows[1].strike - d.rows[0].strike) / 2 : 0.5) ? "atm" : ""} ${held ? "held" : ""} ${OC.sel === r.strike ? "sel" : ""}" data-key="${esc(r.key)}" data-strike="${r.strike}" title="click to select this strike: its mid goes into PX">
+    return `<tr class="${itm ? "itm" : "otm"} ${Math.abs(r.strike - d.spot) < (d.rows[1] ? Math.abs(d.rows[1].strike - d.rows[0].strike) / 2 : 0.5) ? "atm" : ""} ${held ? "held" : ""} ${OC.sel === r.strike ? "sel" : ""} ${OC.link && OC.link.key === r.key ? "linked" : ""}" data-key="${esc(r.key)}" data-strike="${r.strike}" title="click to trade this contract from ORDER ENTRY (its mid goes into PX too)">
       <td class="k">${r.strike % 1 ? r.strike.toFixed(2) : r.strike}${held ? ` <span class="hold ${held > 0 ? "b" : "s"}">${held > 0 ? "+" : ""}${held}</span>` : ""}</td>
       <td class="b">${r.bid == null ? "—" : r.bid.toFixed(2)}</td><td class="s">${r.ask == null ? "—" : r.ask.toFixed(2)}</td><td class="dim">${r.last == null ? "—" : r.last.toFixed(2)}</td>
       <td class="dl" title="delta: how much the contract moves per $1 in the stock">${r.delta == null ? "—" : r.delta.toFixed(2)}</td><td class="dim" title="implied volatility">${r.iv == null ? "—" : Math.round(r.iv * 100) + "%"}</td>
@@ -3381,6 +3399,8 @@ document.addEventListener("click", e => { const b = e.target.closest("button[dat
     const b = e.target.closest("button[data-oo]");
     if (!b){ const rowEl = e.target.closest("tr[data-strike]"); if (rowEl && OC.data){ const k = +rowEl.dataset.strike, r = OC.data.rows.find(x => x.strike === k) || {};
         OC.sel = k; const mid = r.bid != null && r.ask != null ? (r.bid + r.ask) / 2 : (r.last != null ? r.last : null);
+        OC.link = {sym: curSym, expiry: OC.data.expiry, strike: k, right: OC.data.right, key: r.key, bid: r.bid, ask: r.ask, n: (OC.link && OC.link.n) || 1};
+        toast(`ORDER ENTRY now trades ${contractName(OC.link)} — BUY / SELL there send this contract`, true); P.ticket.last = null; poll(true);
         if (mid != null) document.getElementById("ocPx").value = mid.toFixed(2); else document.getElementById("ocPx").focus();
         const bd = P.options.pc.querySelector(".oc-body"); if (bd) bd.dataset.h = ""; renderChain(); }
       return; }
@@ -3480,6 +3500,11 @@ function renderLadStat(d, s){
    cell and floats the shares taken (−1.4K); size coming back after a drop floats +2.0K ↻ (the reload). The strip
    under the ladder spells out the touch on both sides: "ASK 242.75 · 4.7K of 10.2K left · 5.5K bought (54%)". */
 const EAT = new Map();
+document.addEventListener("mouseover", e => {
+  const c = e.target.closest && e.target.closest(".ladder-wrap td.bsz, .ladder-wrap td.asz"); const tr = c && c.closest("tr[data-price]");
+  if (tr){ LADHOVER.sym = curSym; LADHOVER.price = tr.dataset.price; LADHOVER.side = c.classList.contains("bsz") ? "bid" : "ask"; }
+  else if (LADHOVER.sym && !(e.target.closest && e.target.closest(".ladder-wrap"))) LADHOVER.sym = null;
+});
 function eatMarks(wrap, d){
   const rows = (d.ladder && d.ladder.rows) || [], now = Date.now(), sym = d.symbol;
   const touch = {bid: null, ask: null};
@@ -3496,10 +3521,15 @@ function eatMarks(wrap, d){
       }
       if (cell && m.last != null && size !== m.last && now - m.pt < 4000){
         const dlt = size - m.last;
-        if (dlt < 0 && size > 0){ cell.classList.add("hit"); cell.insertAdjacentHTML("beforeend", `<i class="ghost dn" title="${kfmt(-dlt)} shares just came off this price: hit, or pulled">−${kfmt(-dlt)} HIT</i>`); }
+        const trd = Math.max(0, (+r[side === "bid" ? "sold" : "bought"] || 0) - (m.trd != null ? m.trd : (+r[side === "bid" ? "sold" : "bought"] || 0)));
+        if (dlt < 0 && size > 0){
+          const gone = -dlt, traded = Math.min(gone, trd), pulled = gone - traded;
+          const lbl = traded >= gone * 0.5 ? `−${kfmt(traded)} ${side === "bid" ? "SOLD" : "BOUGHT"}${pulled >= 100 ? ` −${kfmt(pulled)} PULLED` : ""}` : `−${kfmt(gone)} PULLED`;
+          cell.classList.add(traded >= gone * 0.5 ? "hit" : "pull");
+          cell.insertAdjacentHTML("beforeend", `<i class="ghost ${traded >= gone * 0.5 ? "dn" : "pl"}" title="${kfmt(gone)} came off ${px(r.price)}: ${kfmt(traded)} traded (prints at this price), ${kfmt(pulled)} just left without trading">${lbl}</i>`); }
         else if (dlt > 0 && m.last > 0 && m.last < m.peak * 0.7){ cell.classList.add("refill"); cell.insertAdjacentHTML("beforeend", `<i class="ghost up" title="${kfmt(dlt)} shares just came back at this price: a refill">+${kfmt(dlt)} REFILL</i>`); }
       }
-      m.last = size; m.pt = now;
+      m.last = size; m.pt = now; m.trd = +r[side === "bid" ? "sold" : "bought"] || 0;
       if ((side === "bid" && r.best_bid) || (side === "ask" && r.best_ask)) touch[side] = {price: r.price, size, peak: m.peak};
     }
   }
@@ -3508,8 +3538,28 @@ function eatMarks(wrap, d){
   const line = (side, t) => { if (!t) return `<span class="${side === "bid" ? "b" : "s"} dim">${side.toUpperCase()} —</span>`;
     const gone = Math.max(0, t.peak - t.size), pct = t.peak ? Math.round(100 * gone / t.peak) : 0;
     return `<span class="${side === "bid" ? "b" : "s"}" title="${side === "bid" ? "the bid" : "the offer"} at ${px(t.price)}: it showed ${sz(t.peak)} at most in the last 90 s; ${sz(t.size)} is left. ${sz(gone)} ${side === "bid" ? "sold into it" : "bought from it"} since (${pct}%)${pct >= 60 ? " — nearly eaten: if it refills, that is a reload" : ""}"><b>${side.toUpperCase()} ${px(t.price)}</b> ${kfmt(t.size)} of ${kfmt(t.peak)}${gone ? ` · ${kfmt(gone)} ${side === "bid" ? "sold into it" : "bought"} (${pct}%)` : " · untouched"}</span>`; };
-  const h = line("bid", touch.bid) + line("ask", touch.ask);
+  // THE LEVEL'S STORY: the row under the mouse, else the biggest size near price. What is sitting, what came in,
+  // what traded out of it, what got pulled, the most it showed
+  let pick = LADHOVER.sym === sym ? rows.find(r => r.price === LADHOVER.price) : null, pside = LADHOVER.side;
+  if (!pick){
+    const li = rows.findIndex(r => r.last || r.best_bid || r.best_ask); let best = 0;
+    rows.forEach((r, i) => { if (li >= 0 && Math.abs(i - li) > 8) return; for (const sd of ["bid", "ask"]) if ((+r[sd] || 0) > best){ best = +r[sd]; pick = r; pside = sd; } });
+  }
+  const st = pick ? levelStory(pick, pside) : "";
+  const h = `<div class="lstory">${st || `<span class="dim">hover a size to see its story: what sits there, what came in, what traded, what got pulled</span>`}</div><div class="ltouch">${line("bid", touch.bid) + line("ask", touch.ask)}</div>`;
   if (bar.dataset.h !== h){ bar.dataset.h = h; bar.innerHTML = h; }
+}
+const LADHOVER = {sym: null, price: null, side: null};
+function levelStory(r, side){
+  const s = r[side + "_story"] || {}, now = +r[side] || 0, took = side === "bid" ? "sold into it" : "bought from it";
+  const parts = [`<b class="${side === "bid" ? "b" : "s"}">${side === "bid" ? "BID" : "ASK"} ${px(r.price)}</b>`,
+    `<b>${sz(now)}</b> sitting`,
+    s.in ? `<span class="up">+${sz(s.in)} came in</span>` : "",
+    s.traded ? `<span class="${side === "bid" ? "s" : "b"}">${sz(s.traded)} ${took}</span>` : `<span class="dim">nothing traded into it</span>`,
+    s.pulled ? `<span class="pl">${sz(s.pulled)} pulled</span>` : "",
+    s.peak > now ? `<span class="dim">most it showed ${sz(s.peak)}</span>` : "",
+    (r[side === "bid" ? "sold" : "bought"] || 0) ? `<span class="dim">${sz(r[side === "bid" ? "sold" : "bought"])} printed at this price in all</span>` : ""];
+  return parts.filter(Boolean).join(" · ");
 }
 /* the banner over the ladder: every proven reload buyer / seller on this symbol, where he is, and a click to jump there */
 function rlBanner(wrap, d){
@@ -3531,8 +3581,10 @@ function rlBanner(wrap, d){
   // never invisible — a tag says where they are, with the chip's cancel on it
   const prices = new Set(rows.map(r => +r.price)), lo = rows.length ? Math.min(...prices) : null, hi = rows.length ? Math.max(...prices) : null;
   const off = (d.orders || []).filter(o => o.price && !prices.has(+o.price) && lo != null).map(o => `<span class="rlb ord ${o.action === "BUY" ? "b" : "s"} ${o.price > hi ? "up" : "down"}" data-oid="${o.id}" title="${esc(o.type || "")} ${esc(o.role || "")} order, ${o.price > hi ? "above" : "below"} the rows on screen · click to cancel it">${o.price > hi ? "▲" : "▼"} YOUR ${esc(o.action)} ${sz(o.qty)} @ ${px(o.price)}${o.type && o.type !== "LMT" ? " " + esc(o.type) : ""} · ${o.price > hi ? "above" : "below"} the ladder ✕</span>`).join("");
-  const html = off + items.map(i => `<span class="rlb ${i.side === "bid" ? "b" : "s"} ${i.where}" data-jump="${i.price}" title="${esc(i.rw.text)} · ${i.stage} · click to jump to it">${i.where === "up" ? "▲" : i.where === "down" ? "▼" : "●"} RELOAD ${i.side === "bid" ? "BUYER" : "SELLER"}${i.rw.back ? ` BACK ×${i.rw.back.n} (gone ${Math.max(1, Math.round((i.rw.back.away || 0) / 60))}m)` : ""} ${px(i.price)} · ${i.side === "bid" ? "bought" : "sold"} ${kfmt(i.rw.n)} sh · ${usdK(i.rw.usd)}${i.rw.back && i.rw.all > i.rw.n ? ` · ${kfmt(i.rw.all)} all visits` : ""}${i.rw.peak && i.rw.n > i.rw.peak ? ` · never showed more than ${kfmt(i.rw.peak)} at once (iceberg, refilled ${i.n}×)` : ""}${i.where !== "on" ? ` · ${i.rowsAway} rows ${i.where}` : ""}${i.knows ? " ⚡" : ""}</span>`).join("");
-  if (ban.dataset.h !== html){ ban.dataset.h = html; ban.innerHTML = html; ban.classList.toggle("on", !!(items.length || off)); }
+  const noBook = rows.length && !rows.some(r => r.bid || r.ask);
+  const nb = noBook ? `<span class="rlb nobook" title="Level II needs one of the ${(state && state.slots) || 3} book slots (LADDERS at the bottom). The ticker on screen takes one; give it a second.">NO BOOK YET FOR ${esc(d.symbol)} · bid and ask sizes come in a moment · the HIT / PAID numbers are what already traded</span>` : "";
+  const html = nb + off + items.map(i => `<span class="rlb ${i.side === "bid" ? "b" : "s"} ${i.where}" data-jump="${i.price}" title="${esc(i.rw.text)} · ${i.stage} · click to jump to it">${i.where === "up" ? "▲" : i.where === "down" ? "▼" : "●"} RELOAD ${i.side === "bid" ? "BUYER" : "SELLER"}${i.rw.back ? ` BACK ×${i.rw.back.n} (gone ${Math.max(1, Math.round((i.rw.back.away || 0) / 60))}m)` : ""} ${px(i.price)} · ${i.side === "bid" ? "bought" : "sold"} ${kfmt(i.rw.n)} sh · ${usdK(i.rw.usd)}${i.rw.back && i.rw.all > i.rw.n ? ` · ${kfmt(i.rw.all)} all visits` : ""}${i.rw.peak && i.rw.n > i.rw.peak ? ` · never showed more than ${kfmt(i.rw.peak)} at once (iceberg, refilled ${i.n}×)` : ""}${i.where !== "on" ? ` · ${i.rowsAway} rows ${i.where}` : ""}${i.knows ? " ⚡" : ""}</span>`).join("");
+  if (ban.dataset.h !== html){ ban.dataset.h = html; ban.innerHTML = html; ban.classList.toggle("on", !!(items.length || off || nb)); }
 }
 P.book.el.addEventListener("click", e => {
   const oc = e.target.closest(".rlb[data-oid]"); if (oc){ if (confirm("Cancel this order?")) cancelMine(+oc.dataset.oid); return; }
@@ -3916,7 +3968,42 @@ async function sendPartial(sym, el){
 /* THE SIMPLE BLOCK at the top of ORDER ENTRY: what you have, in big letters, and plain buttons.
    BUY / SELL send the size in the box at the touch (ask to buy, bid to sell). SELL 5 / 10 / 20 / ALL take shares off a
    long (BUY ... on a short covers it). Taking off always works, armed or not. */
+function contractBoxHTML(s, d){
+  const l = OC.link, t = s.trading || {}, n = l.n || 1;
+  const pos = ((s.account || {}).opt_positions || []).find(p => p.key === l.key), q = pos ? Math.abs(pos.qty) : 0, long = pos && pos.qty > 0;
+  const f = v => v == null ? "—" : (+v).toFixed(2);
+  const have = q ? `<div class="have"><span class="lbl">YOU HAVE</span><b class="${long ? "b" : "s"}">${long ? "" : "SHORT "}${q} ${q === 1 ? "CONTRACT" : "CONTRACTS"}</b><span>paid ${pos.per_contract != null ? pos.per_contract.toFixed(2) : "—"}</span>${pos.pnl != null ? `<b class="pl ${pos.pnl >= 0 ? "b" : "s"}">${pos.pnl >= 0 ? "+" : "−"}$${sz(Math.abs(Math.round(pos.pnl)))}</b>` : ""}</div>`
+    : `<div class="have flat"><span class="lbl">YOU HAVE</span><b>NONE OF THIS CONTRACT</b></div>`;
+  const pre = [1, 2, 5, 10, 20];
+  return `<div class="simple contract"><div class="clink"><span class="lbl">TRADING THE CONTRACT</span><b class="${l.right === "C" ? "b" : "s"}">${esc(contractName(l))}</b><span class="dim">bid ${f(l.bid)} / ask ${f(l.ask)}</span><button data-unlink="1" title="go back to trading ${esc(l.sym)} shares">✕ BACK TO SHARES</button></div>
+    ${have}
+    <div class="cq"><span class="lbl">CONTRACTS</span>${pre.map(k => `<button data-cn="${k}" class="${k === n ? "on" : ""}">${k}</button>`).join("")}<input id="cnQty" type="number" min="1" step="1" value="${n}"></div>
+    <div class="bs"><button class="big b" data-cb="BUY" title="BUY ${n} at the ask ${f(l.ask)}">BUY ${n}<i>${f(l.ask)} · $${sz(Math.round((l.ask || 0) * 100 * n))}</i></button><button class="big s" data-cb="SELL" title="${long ? `SELL ${n} of your ${q}` : `SELL ${n} to open`} at the bid ${f(l.bid)}">SELL ${n}<i>${f(l.bid)} · $${sz(Math.round((l.bid || 0) * 100 * n))}</i></button></div>
+    ${q ? `<div class="mgr"><button class="${long ? "s" : "b"} all" data-cb="ALL" title="close all ${q} at the touch">${long ? "SELL" : "BUY"} ALL ${q}</button></div>` : ""}</div>`;
+}
+document.addEventListener("input", e => { if (e.target.id === "cnQty" && OC.link){ OC.link.n = Math.max(1, Math.round(+e.target.value || 1)); } });
+document.addEventListener("click", async e => {
+  const b = e.target.closest("button[data-unlink], button[data-cn], button[data-cb]"); if (!b || !P.ticket.el.contains(b) || !OC.link) return;
+  const l = OC.link;
+  if (b.dataset.unlink){ OC.link = null; P.ticket.last = null; poll(true); const bd = P.options && P.options.pc.querySelector(".oc-body"); if (bd) bd.dataset.h = ""; return; }
+  if (b.dataset.cn){ l.n = +b.dataset.cn; P.ticket.last = null; poll(true); return; }
+  const s = state || {}, pos = ((s.account || {}).opt_positions || []).find(p => p.key === l.key), q = pos ? Math.abs(pos.qty) : 0, long = pos && pos.qty > 0;
+  const n = Math.max(1, +(document.getElementById("cnQty") || {}).value || l.n || 1);
+  if (b.dataset.cb === "ALL"){ confirmBox(`${long ? "SELL" : "BUY"} ALL ${q} ${contractName(l)}`, "closes the whole contract position at the touch", long ? "s" : "b", async () => {
+      const out = await post("/api/trade/opt_adjust", {key: l.key, contracts: 0, mode: "close", price: null}); toast(out.ok ? "Sent: " + out.sent : "Blocked: " + (out.reason || ""), out.ok); P.ticket.last = null; poll(true); }); return; }
+  const side = b.dataset.cb, touch = side === "BUY" ? l.ask : l.bid;
+  const closing = q && ((long && side === "SELL") || (!long && side === "BUY"));
+  if (!closing && !canTrade()){ toast(whyNot() + (/ARM/i.test(whyNot()) ? "" : " — click ARM"), false); const a = document.getElementById("armBtn"); if (a){ a.dataset.pulse = "1"; setTimeout(() => { delete a.dataset.pulse; }, 2400); } return; }
+  if (touch == null){ toast("No quote on that contract — use the OPTION CHAIN's PX box to set a limit", false); return; }
+  const send = async () => {
+    const out = closing ? await post("/api/trade/opt_adjust", {key: l.key, contracts: Math.min(n, q), mode: "close", price: null})
+      : await post("/api/trade/opt_open", {symbol: l.sym, expiry: l.expiry, strike: l.strike, right: l.right, action: side, contracts: n, price: null});
+    toast(out.ok ? "Sent: " + out.sent : "Blocked: " + (out.reason || ""), out.ok); P.ticket.last = null; poll(true); };
+  if (T().one_click) return send();
+  confirmBox(`${side} ${closing ? Math.min(n, q) : n} ${contractName(l)}`, `${side === "BUY" ? "ask" : "bid"} ${touch.toFixed(2)} a contract · about $${sz(Math.round(touch * 100 * (closing ? Math.min(n, q) : n)))}${closing ? " · takes your contracts down" : ""}`, side === "BUY" ? "b" : "s", send);
+});
 function simpleBoxHTML(s, d){
+  if (OC.link && OC.link.sym === d.symbol) return contractBoxHTML(s, d);
   const pos = d.position, q = pos && pos.qty ? Math.abs(pos.qty) : 0, long = pos && pos.qty > 0, t = s.trading || {};
   const n = TK.qty || t.default_shares || 100, red = canReduce();
   const pnl = q ? (pos.pnl != null ? pos.pnl : ((d.last || pos.avg_cost) - pos.avg_cost) * pos.qty) : null;
@@ -4634,8 +4721,11 @@ function renderStatus(s){
 }
 
 /* ---------- the frame: one snapshot in, each panel decides if it changes */
+let focusAsked = 0;
 function render(s){
   state = s;
+  // the ticker on screen owns a ladder: after a TED restart (or any drift) claim it again
+  if (curSym && s.focus !== curSym && (s.symbols || []).includes(curSym) && Date.now() - focusAsked > 3000){ focusAsked = Date.now(); post("/api/play", {symbol: curSym, action: "focus"}); }
   if (!TABS.list.length && s.symbols && s.symbols.length){ TABS.list = (PREFS.tabs || []).filter(x => s.symbols.includes(x)); if (!TABS.list.length) TABS.list = [s.focus || s.symbols[0]]; TABS.active = (PREFS.active && TABS.list.includes(PREFS.active)) ? PREFS.active : TABS.list[0]; curSym = TABS.active; renderTabs(); }
   const d = dataFor(s, curSym);
   for (const c of Object.values(charts)){
