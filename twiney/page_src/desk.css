@@ -538,3 +538,11 @@ i.tl{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:3p
 .pos2 td.gold{color:var(--gold)} .pos2 tr.wk td{background:rgba(255,200,60,.05)}
 
 .simple .cwk{display:flex;align-items:center;gap:8px;margin:3px 0;font:11px var(--mono)} .simple .cwk button{margin-left:auto;padding:0 6px;height:18px}
+
+.pnl[data-p="ochart"].on{display:flex;flex-direction:column} .pnl[data-p="ochart"] .pc{flex:1;min-height:0} .pnl[data-p="ochart"] .chart-wrap{height:100%}
+.ochead{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;padding:3px 6px;font:11px var(--mono);border-bottom:1px solid var(--line);background:#0b0f16}
+.ochead b{font-size:12px} .ochead .b{color:var(--buy)} .ochead .s{color:var(--sell)} .ochead button{height:20px;padding:0 7px}
+.ochead button.on{color:var(--gold);border-color:var(--gold)} .ochead button.b{color:var(--buy);border-color:var(--buy)} .ochead button.s{color:var(--sell);border-color:var(--sell)}
+.ochead .tfs,.ochead .cn{display:inline-flex;gap:2px} .ochead .hint{font-size:10px}
+#chartsPop button{display:block;width:100%;text-align:left;margin:2px 0}
+.oct td.act button.och{padding:0 4px}

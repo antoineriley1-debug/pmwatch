@@ -52,7 +52,6 @@ class PlayValidationTests(unittest.TestCase):
             [],
             [{"side": "long", "trigger": 1}],
             [{"symbol": "A", "side": "sideways", "trigger": 1}],
-            [{"symbol": "A", "side": "long"}],
             [{"symbol": "A", "side": "long", "trigger": -1}],
             [{"symbol": "A", "trigger": 1}, {"symbol": "a", "trigger": 2}],
             [{"symbol": "A", "trigger": 1, "extra_levels": ["x"]}],
@@ -61,6 +60,11 @@ class PlayValidationTests(unittest.TestCase):
         for raw in bad:
             with self.assertRaises(ConfigError, msg=json.dumps(raw)):
                 validate_plays(raw)
+
+    def test_no_pivot_is_a_watch_only_ticker(self):
+        # a clean chart: the ticker stays, no lines yet. It must load (never stop TED starting)
+        play = validate_plays([{"symbol": "A", "side": "long"}])[0]
+        self.assertEqual(play["symbol"], "A"); self.assertIsNone(play.get("trigger"))
 
 
 if __name__ == "__main__":

@@ -186,6 +186,7 @@ def clean_chart(plays, cfg, path=None, today=None):
             if k in p:
                 p[k] = None
         p.pop("alt", None)
+        p["watch"] = True           # no pivot: a watch-only ticker until you draw one
     return n
 
 

@@ -1218,6 +1218,7 @@ function chartPrice(p){
   return +(Math.round(pr / tk) * tk).toFixed(4);
 }
 function chartMenu(p, v, x, y, price){
+  if (p.opt && typeof optChartMenu === "function") return optChartMenu(p, x, y, price);
   const old = document.getElementById("cmenu"); if (old) old.remove();
   const d = p.data, t = T(), on = canTrade();
   const m = document.createElement("div"); m.id = "cmenu"; m.className = "pop cmenu";
@@ -2049,6 +2050,19 @@ function drawOne(p, cv, v, isFoot){
     g.fillStyle = openPnl >= 0 ? "#0b7a4b" : "#b3123a"; g.fillRect(plotW - ew - 4, yE - 9, ew, 18);
     g.fillStyle = "#ffffff"; g.fillText(etag, plotW - ew + 2, yE + 4);
     g.fillStyle = "#1a1a1a"; g.fillRect(plotW, yE - 8, labelW, 16); g.fillStyle = "#ffffff"; g.fillText(px(ent), plotW + 3, yE + 4);
+    g.font = "11px ui-monospace, Menlo, Consolas, monospace";
+  }
+  if (!bracketOn && !isFoot && d.showEntry && d.position && d.position.qty && d.position.avg_cost){
+    const pos = d.position, ent = pos.avg_cost, yE = y(ent), mult = d.mult || 1;
+    const openPnl = d.last ? (d.last - ent) * pos.qty * mult : 0;
+    g.strokeStyle = "#1a1a1a"; g.lineWidth = 1.5; g.setLineDash([6, 3]);
+    g.beginPath(); g.moveTo(0, yE); g.lineTo(plotW, yE); g.stroke(); g.setLineDash([]);
+    const etag = `${pos.qty > 0 ? "YOU HAVE" : "SHORT"} ${Math.abs(pos.qty)} ${d.unit || ""} @ ${ent.toFixed(2)}  ${openPnl >= 0 ? "+" : "−"}$${Math.abs(openPnl).toFixed(0)}`;
+    g.font = "bold 11px ui-monospace, Menlo, Consolas, monospace";
+    const ew = g.measureText(etag).width + 12;
+    g.fillStyle = openPnl >= 0 ? "#0b7a4b" : "#b3123a"; g.fillRect(plotW - ew - 4, yE - 9, ew, 18);
+    g.fillStyle = "#ffffff"; g.fillText(etag, plotW - ew + 2, yE + 4);
+    g.fillStyle = "#1a1a1a"; g.fillRect(plotW, yE - 8, labelW, 16); g.fillStyle = "#ffffff"; g.fillText(ent.toFixed(2), plotW + 3, yE + 4);
     g.font = "11px ui-monospace, Menlo, Consolas, monospace";
   }
   // your working orders (a grabbed one follows the mouse); with a bracket on, its exits are drawn above

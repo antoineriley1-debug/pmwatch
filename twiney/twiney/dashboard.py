@@ -159,6 +159,14 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                     sess.watch_option_quotes(sym, [r["key"] for r in ch["rows"]], ch.get("mult") or 100)
                 self._send(200, json.dumps(ch, default=str), "application/json")
                 return
+            elif path == "/api/options/bars":
+                q = parse_qs(urlparse(self.path).query, keep_blank_values=True)
+                key = str(q.get("key", [""])[0])
+                sess = getattr(engine, "session", None)
+                if sess is not None and key and hasattr(sess, "chart_option"):
+                    sess.chart_option(key)                  # live: quotes + today's MIDPOINT minutes from IBKR, once
+                self._send(200, json.dumps(engine.option_bars(key, clock()), default=str), "application/json")
+                return
             elif path == "/api/ps60/signals":
                 from . import ps60 as _ps60
                 q = parse_qs(urlparse(self.path).query, keep_blank_values=True)

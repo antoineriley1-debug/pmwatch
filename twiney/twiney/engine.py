@@ -193,6 +193,7 @@ class Engine:
         self.opt_fills = []
         self.opt_chain = {}       # symbol -> {expiries, strikes, mult, con_id, source, t}
         self.opt_quotes = {}      # option key -> {bid, ask, last, t} (chain rows on watch + positions)
+        self.opt_bars = {}        # option key -> {minute: [o, h, l, c, v, 0, 0]} (the OPTION CHART: the contract's mid)
         self.opt_watch = {}       # symbol -> {expiry, right, keys[]}: the chain rows the page is looking at
         self.jlog_path = None     # recordings/desk.log: one JSON line per connection / order / fill / error event
         self._jlog = None
@@ -579,6 +580,10 @@ class Engine:
             q = self.opt_quotes.setdefault(key, {"bid": None, "ask": None, "last": None})
             q[field] = price
             q["t"] = t
+            b_, a_ = q.get("bid"), q.get("ask")
+            mid = (b_ + a_) / 2 if b_ and a_ else (q.get("last") or None)
+            if mid:
+                self._opt_bar(key, t, round(mid, 4))
             p = self.opt_positions.get(key)
             if p is not None:
                 p[field] = price
@@ -586,6 +591,67 @@ class Engine:
             sim = getattr(self, "sim_broker", None)
             if sim is not None and hasattr(sim, "on_opt_market"):
                 sim.on_opt_market(key, t)
+
+    def _opt_bar(self, key, t, price, hist=None):
+        bars = self.opt_bars.setdefault(key, {})
+        m = int(t // BAR_SECONDS) * BAR_SECONDS
+        if hist is not None:            # a finished minute from history: (o, h, l, c); a live minute keeps its close
+            o, h, l, c = hist
+            b = bars.get(m)
+            bars[m] = [o, max(h, b[1]), min(l, b[2]), b[3], 0.0, 0.0, 0.0] if b else [o, h, l, c, 0.0, 0.0, 0.0]
+        else:
+            b = bars.get(m)
+            if b is None:
+                bars[m] = [price, price, price, price, 0.0, 0.0, 0.0]
+            else:
+                b[1] = max(b[1], price); b[2] = min(b[2], price); b[3] = price
+        if len(bars) > MAX_BARS:
+            for k in sorted(bars)[:len(bars) - MAX_BARS]:
+                del bars[k]
+
+    def on_opt_hist_bar(self, key, t0, o, h, l, c):
+        """A 1-minute MIDPOINT bar of an option contract from IBKR history (the OPTION CHART's context)."""
+        with self.lock:
+            if None not in (o, h, l, c):
+                self._opt_bar(key, t0, c, hist=(o, h, l, c))
+
+    def option_bars(self, key, t=None):
+        """Everything the OPTION CHART draws for one contract: its 1-minute bars (the mid), quote, your position in it
+        and your working orders on it. The practice desk models the contract's day from the stock's own minutes."""
+        t = t if t is not None else self.last_t
+        try:
+            sym, exp, strike, right = options.parse_key(key)
+        except (ValueError, IndexError):
+            return {"key": key, "available": False, "note": "not an option contract"}
+        with self.lock:
+            st = self.syms.get(sym)
+            spot = st.price() if st else None
+            if self.connection["state"] == "DEMO" and spot:
+                done = self.__dict__.setdefault("opt_hist_done", set())
+                if key not in done and st.bars:
+                    done.add(key)
+                    for m in sorted(st.bars)[-780:]:
+                        o, h, l, c = st.bars[m][:4]
+                        f = lambda x: (options.practice_quote(x, strike, exp, right, m + BAR_SECONDS) or {}).get("last")
+                        fo, fh, fl, fc = f(o), f(h), f(l), f(c)
+                        if None in (fo, fh, fl, fc):
+                            continue
+                        self._opt_bar(key, m, fc, hist=(fo, max(fh, fl, fo, fc), min(fh, fl, fo, fc), fc))
+                q = options.practice_quote(spot, strike, exp, right, t)
+                if q:
+                    for fld in ("bid", "ask", "last"):
+                        self.on_opt_quote(key, fld, q[fld], t)
+            bars = self.opt_bars.get(key) or {}
+            out = [[m] + [round(x, 4) for x in bars[m]] for m in sorted(bars)]
+            q = self.opt_quotes.get(key) or {}
+            pos = self.opt_positions.get(key)
+            mid = (q["bid"] + q["ask"]) / 2 if q.get("bid") and q.get("ask") else q.get("last")
+            return {"key": key, "available": True, "symbol": key, "underlying": sym, "expiry": exp, "strike": strike,
+                    "right": right, "label": f"{sym} {exp[4:6]}/{exp[6:8]} {strike:g}{right}", "spot": spot,
+                    "bars": out, "bid": q.get("bid"), "ask": q.get("ask"), "last": mid,
+                    "position": self._opt_view(pos) if pos else None,
+                    "orders": [o for o in self._pending() if o.get("symbol") == key],
+                    "source": "PRACTICE" if self.connection["state"] == "DEMO" else "IBKR"}
 
     def on_opt_greeks(self, key, greeks, t):
         """Delta / gamma / theta / vega / implied vol for a contract (IBKR's tickOptionComputation, or the practice model)."""

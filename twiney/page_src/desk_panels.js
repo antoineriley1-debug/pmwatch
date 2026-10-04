@@ -208,7 +208,7 @@ function renderChain(){
       <td class="k">${r.strike % 1 ? r.strike.toFixed(2) : r.strike}${held ? ` <span class="hold ${held > 0 ? "b" : "s"}">${held > 0 ? "+" : ""}${held}</span>` : ""}</td>
       <td class="b">${r.bid == null ? "—" : r.bid.toFixed(2)}</td><td class="s">${r.ask == null ? "—" : r.ask.toFixed(2)}</td><td class="dim">${r.last == null ? "—" : r.last.toFixed(2)}</td>
       <td class="dl" title="delta: how much the contract moves per $1 in the stock">${r.delta == null ? "—" : r.delta.toFixed(2)}</td><td class="dim" title="implied volatility">${r.iv == null ? "—" : Math.round(r.iv * 100) + "%"}</td>
-      <td class="act"><button class="ob ${on ? "" : "off"}" data-oo="BUY" title="BUY to open at the ask (or your PX)">BUY</button><button class="os ${on ? "" : "off"}" data-oo="SELL" title="SELL to open at the bid (or your PX)">SELL</button>${held ? `<button class="danger" data-oc="${esc(r.key)}" title="close every contract at the touch">X</button>` : ""}</td></tr>`; }).join("");
+      <td class="act"><button class="ob ${on ? "" : "off"}" data-oo="BUY" title="BUY to open at the ask (or your PX)">BUY</button><button class="os ${on ? "" : "off"}" data-oo="SELL" title="SELL to open at the bid (or your PX)">SELL</button>${held ? `<button class="danger" data-oc="${esc(r.key)}" title="close every contract at the touch">X</button>` : ""}<button class="och" data-ochart="${esc(r.key)}" title="chart this contract (OPTION CHART) and trade it from the chart">📈</button></td></tr>`; }).join("");
   const working = (d.orders || []).map(o => `<div class="wk"><span class="${o.action === "BUY" ? "b" : "s"}">${esc(o.action)} ${o.remaining ?? o.qty} ${esc(o.symbol)} @ ${o.lmt}</span> <span class="dim">${esc(o.status || "")}</span> <button data-cxl="${o.order_id}" class="danger">✕</button></div>`).join("");
   const noQ = d.rows.length && d.rows.every(r => r.bid == null && r.ask == null);
   const banner = !on ? `<div class="ocwarn">TRADING IS DISARMED — <button data-ocarm="1">ARM</button> to send option orders ${T().why_not && !/DISARMED/i.test(T().why_not) ? "· " + esc(T().why_not) : ""}</div>`
@@ -230,7 +230,7 @@ document.addEventListener("click", e => { const b = e.target.closest("button[dat
     if (!b){ const rowEl = e.target.closest("tr[data-strike]"); if (rowEl && OC.data){ const k = +rowEl.dataset.strike, r = OC.data.rows.find(x => x.strike === k) || {};
         OC.sel = k; const mid = r.bid != null && r.ask != null ? (r.bid + r.ask) / 2 : (r.last != null ? r.last : null);
         OC.link = {sym: curSym, expiry: OC.data.expiry, strike: k, right: OC.data.right, key: r.key, bid: r.bid, ask: r.ask, n: (OC.link && OC.link.n) || 1};
-        toast(`ORDER ENTRY now trades ${contractName(OC.link)} — BUY / SELL there send this contract`, true); P.ticket.last = null; poll(true);
+        toast(`ORDER ENTRY now trades ${contractName(OC.link)} — BUY / SELL there send this contract`, true); P.ticket.last = null; poll(true); if (typeof chartOption === "function") chartOption(r.key, false);
         { const pxIn = document.getElementById("ocPx"); pxIn.value = ""; pxIn.placeholder = mid != null ? "mid " + mid.toFixed(2) : "price"; }   // empty = fills now at the touch; type a price to rest a limit
         const bd = P.options.pc.querySelector(".oc-body"); if (bd) bd.dataset.h = ""; renderChain(); }
       return; }
@@ -805,7 +805,7 @@ function contractBoxHTML(s, d){
   const have = q ? `<div class="have"><span class="lbl">YOU HAVE</span><b class="${long ? "b" : "s"}">${long ? "" : "SHORT "}${q} ${q === 1 ? "CONTRACT" : "CONTRACTS"}</b><span>paid ${pos.per_contract != null ? pos.per_contract.toFixed(2) : "—"}</span>${pos.pnl != null ? `<b class="pl ${pos.pnl >= 0 ? "b" : "s"}">${pos.pnl >= 0 ? "+" : "−"}$${sz(Math.abs(Math.round(pos.pnl)))}</b>` : ""}</div>`
     : `<div class="have flat"><span class="lbl">YOU HAVE</span><b>NONE OF THIS CONTRACT</b></div>`;
   const pre = [1, 2, 5, 10, 20];
-  return `<div class="simple contract"><div class="clink"><span class="lbl">TRADING THE CONTRACT</span><b class="${l.right === "C" ? "b" : "s"}">${esc(contractName(l))}</b><span class="dim">bid ${f(l.bid)} / ask ${f(l.ask)}</span><button data-unlink="1" title="go back to trading ${esc(l.sym)} shares">✕ BACK TO SHARES</button></div>
+  return `<div class="simple contract"><div class="clink"><span class="lbl">TRADING THE CONTRACT</span><b class="${l.right === "C" ? "b" : "s"}">${esc(contractName(l))}</b><span class="dim">bid ${f(l.bid)} / ask ${f(l.ask)}</span><button data-ochart="${esc(l.key)}" title="chart this contract and trade it from the chart">📈 CHART</button><button data-unlink="1" title="go back to trading ${esc(l.sym)} shares">✕ BACK TO SHARES</button></div>
     ${have}
     <div class="cq"><span class="lbl">CONTRACTS</span>${pre.map(k => `<button data-cn="${k}" class="${k === n ? "on" : ""}">${k}</button>`).join("")}<input id="cnQty" type="number" min="1" step="1" value="${n}"></div>
     <div class="bs"><button class="big b" data-cb="BUY" title="BUY ${n} at the ask ${f(l.ask)}">BUY ${n}<i>${f(l.ask)} · $${sz(Math.round((l.ask || 0) * 100 * n))}</i></button><button class="big s" data-cb="SELL" title="${long ? `SELL ${n} of your ${q}` : `SELL ${n} to open`} at the bid ${f(l.bid)}">SELL ${n}<i>${f(l.bid)} · $${sz(Math.round((l.bid || 0) * 100 * n))}</i></button></div>
@@ -1830,3 +1830,96 @@ function renderConviction(d){
     <div class="dim" style="padding:4px 8px;font-size:10.5px">Daily MP 20 · pivot + confirm 20 · 2nd entry 20 · premium ≥ $100K 10 · weeklies 10 · out of the money 10 · repeats 10 · sweeps +5. Flow supports the pivot; it never replaces the second entry.</div>`;
   panelHTML("conviction", html);
 }
+
+/* ---------- OPTION CHART: the contract itself (its mid, minute by minute) and you trade it right there.
+   Pick a contract in the OPTION CHAIN (or 📈 on a row); right-click the chart = BUY / SELL that contract at that
+   price; drag your working order line to move it; BUY / SELL now in the header fill at the touch. */
+const OCH = {key: null, data: null, busy: false, n: 1};
+const ochart = (() => { const p = P.ochart; if (!p) return null;
+  const c = {id: "ochart", type: "chart", el: p.el, isFoot: false, data: null, canvas: p.el.querySelector("canvas"), opt: true,
+             view: {cw: 8, offset: restOffset(), yLo: null, yHi: null, follow: true, cross: null}};
+  p.el._pane = c; wireChart(c, c.canvas, c.view, () => {}, false);
+  new ResizeObserver(() => drawChart(c)).observe(p.el); return c; })();
+function ochVisible(){ return P.ochart && P.ochart.el.offsetParent !== null; }
+function chartOption(key, show){ if (!key) return; if (OCH.key !== key){ OCH.key = key; OCH.data = null; if (ochart){ ochart.data = null; ochart.view.offset = restOffset(); ochart.view.follow = true; ochart.view.yLo = ochart.view.yHi = null; } }
+  if (show) showPanel("ochart"); pollOch(); }
+async function pollOch(){
+  if (OCH.busy || !ochart) return;
+  if (!OCH.key && OC.link) OCH.key = OC.link.key;
+  if (!OCH.key || !ochVisible()){ renderOchHead(); return; }
+  OCH.busy = true;
+  try { const r = await fetch(`/api/options/bars?key=${encodeURIComponent(OCH.key)}`); const d = await r.json(); if (d.key !== OCH.key) return;
+    OCH.data = d;
+    const pos = d.position;
+    ochart.data = {symbol: d.label || d.key, bars: d.bars || [], last: d.last, bid: d.bid, ask: d.ask, play: null, user_levels: [], levels: [],
+      orders: (d.orders || []).map(o => ({id: o.order_id, price: o.lmt, action: o.action, qty: o.remaining ?? o.qty, role: "entry"})),
+      position: pos ? {qty: pos.qty, avg_cost: pos.per_contract} : null, showEntry: true, mult: (pos && pos.mult) || 100, unit: "ct",
+      trap: null, daytrap: null, reloaders: null, bigmoney: null, marks: [], events: [], lines: [], daily: [], flow: null, footprint: null};
+    drawChart(ochart);
+  } catch (e) {} finally { OCH.busy = false; renderOchHead(); }
+}
+setInterval(pollOch, 1000);
+function renderOchHead(){
+  const h = document.getElementById("ochHead"); if (!h) return;
+  const d = OCH.data, f = v => v == null ? "—" : (+v).toFixed(2), tf = store.get("tf.ochart", 1);
+  let html;
+  if (!OCH.key) html = `<span class="dim">No contract yet — open OPTIONS, click a strike (or 📈 on its row) and it charts here.</span><button data-och="chain">OPTIONS</button>`;
+  else { const pos = d && d.position, q = pos ? Math.abs(pos.qty) : 0, long = pos && pos.qty > 0;
+    html = `<b class="${d && d.right === "P" ? "s" : "b"}">${esc(d ? d.label : OCH.key)}</b><span class="dim">bid ${f(d && d.bid)} / ask ${f(d && d.ask)}${d && d.source === "PRACTICE" ? " · practice model" : ""}</span>
+      ${q ? `<span class="${long ? "b" : "s"}">YOU HAVE ${q}${pos.pnl != null ? ` · ${pos.pnl >= 0 ? "+" : "−"}$${sz(Math.abs(Math.round(pos.pnl)))}` : ""}</span>` : ""}
+      <span class="tfs">${[1, 5, 15].map(m => `<button data-ochtf="${m}" class="${tf === m ? "on" : ""}">${m}m</button>`).join("")}</span>
+      <span class="cn">${[1, 2, 5, 10].map(n => `<button data-ochn="${n}" class="${OCH.n === n ? "on" : ""}">${n}</button>`).join("")}</span>
+      <button class="b" data-ochnow="BUY">BUY ${OCH.n}</button><button class="s" data-ochnow="SELL">SELL ${OCH.n}</button>${q ? `<button class="${long ? "s" : "b"}" data-ochnow="ALL">${long ? "SELL" : "BUY"} ALL ${q}</button>` : ""}
+      <span class="dim hint">right-click the chart to trade at a price</span>`; }
+  if (h.dataset.h !== html){ h.dataset.h = html; h.innerHTML = html; }
+}
+async function ochOrder(action, price, n){
+  const d = OCH.data; if (!d) return;
+  const pos = d.position, q = pos ? Math.abs(pos.qty) : 0, long = pos && pos.qty > 0;
+  const closing = q && ((long && action === "SELL") || (!long && action === "BUY"));
+  if (!closing && !canTrade()){ toast(whyNot() + (/ARM/i.test(whyNot()) ? "" : " — click ARM"), false); return; }
+  const k = closing ? Math.min(n, q) : n;
+  const send = async () => {
+    const out = closing ? await post("/api/trade/opt_adjust", {key: d.key, contracts: k, mode: "close", price})
+      : await post("/api/trade/opt_open", {symbol: d.underlying, expiry: d.expiry, strike: d.strike, right: d.right, action, contracts: k, price});
+    toast(out.ok ? "Sent: " + out.sent : "Blocked: " + (out.reason || ""), out.ok); poll(true); pollOch(); };
+  if (T().one_click) return send();
+  const ref = price != null ? price : (action === "BUY" ? d.ask : d.bid);
+  confirmBox(`${action} ${k} ${d.label}${price != null ? " @ " + price.toFixed(2) : " now"}`, `${price != null ? "limit " + price.toFixed(2) + " — rests until price gets there" : (action === "BUY" ? "at the ask" : "at the bid") + ", fills now"} · about $${sz(Math.round((ref || 0) * 100 * k))}${closing ? " · takes your contracts down" : ""}`, action === "BUY" ? "b" : "s", send);
+}
+function optChartMenu(p, x, y, price){
+  const old = document.getElementById("cmenu"); if (old) old.remove();
+  const d = OCH.data; if (!d) return;
+  price = Math.max(0.01, Math.round(price * 100) / 100);
+  const pos = d.position, q = pos ? Math.abs(pos.qty) : 0, long = pos && pos.qty > 0, n = OCH.n;
+  const m = document.createElement("div"); m.id = "cmenu"; m.className = "pop cmenu";
+  m.innerHTML = `<div class="dim" style="font-size:11px;margin-bottom:4px">${esc(d.label)} @ <b style="color:var(--gold)">${price.toFixed(2)}</b><span class="x" title="close">✕</span></div>
+    <button class="bbuy" data-do="buy">BUY ${n} limit @ ${price.toFixed(2)}</button>
+    <button class="bsell" data-do="sell">SELL ${n} limit @ ${price.toFixed(2)}</button>
+    ${q ? `<button class="bflat" data-do="all">${long ? "SELL" : "BUY"} ALL ${q} @ ${price.toFixed(2)}</button>` : ""}
+    ${(d.orders || []).length ? `<button data-do="cxl">Cancel my orders on it (${d.orders.length})</button>` : ""}
+    <div class="dim" style="font-size:10.5px;margin-top:4px">contracts: pick 1 / 2 / 5 / 10 on the chart's header</div>`;
+  m.style.left = Math.min(x, window.innerWidth - 230) + "px"; m.style.top = Math.min(y, window.innerHeight - 160) + "px";
+  document.body.appendChild(m);
+  m.addEventListener("click", async e => {
+    if (e.target.classList.contains("x")){ m.remove(); return; }
+    const b = e.target.closest("button[data-do]"); if (!b) return; m.remove();
+    if (b.dataset.do === "buy") ochOrder("BUY", price, n);
+    else if (b.dataset.do === "sell") ochOrder("SELL", price, n);
+    else if (b.dataset.do === "all") ochOrder(long ? "SELL" : "BUY", price, q);
+    else if (b.dataset.do === "cxl") for (const o of d.orders) await cancelMine(o.order_id);
+  });
+  const away = ev => { if (!m.isConnected){ document.removeEventListener("mousedown", away, true); return; } if (!m.contains(ev.target)) m.remove(); };
+  setTimeout(() => document.addEventListener("mousedown", away, true), 0);
+}
+document.addEventListener("click", e => {
+  const sp = e.target.closest("#chartsPop button[data-showp]"); if (sp){ showPanel(sp.dataset.showp); document.querySelectorAll(".menu.open").forEach(x => x.classList.remove("open")); if (sp.dataset.showp === "ochart") pollOch(); return; }
+  const och = e.target.closest("button[data-ochart]"); if (och){ e.stopPropagation(); chartOption(och.dataset.ochart, true); return; }
+  const h = e.target.closest("#ochHead button"); if (!h) return;
+  if (h.dataset.och === "chain"){ showPanel("options"); return; }
+  if (h.dataset.ochtf){ store.set("tf.ochart", +h.dataset.ochtf); ochart.view.offset = restOffset(); ochart.view.follow = true; ochart.view.yLo = ochart.view.yHi = null; drawChart(ochart); renderOchHead(); return; }
+  if (h.dataset.ochn){ OCH.n = +h.dataset.ochn; renderOchHead(); return; }
+  if (h.dataset.ochnow){ const d = OCH.data; if (!d) return; const pos = d.position, q = pos ? Math.abs(pos.qty) : 0, long = pos && pos.qty > 0;
+    if (h.dataset.ochnow === "ALL") ochOrder(long ? "SELL" : "BUY", null, q); else ochOrder(h.dataset.ochnow, null, OCH.n); }
+}, true);
+document.getElementById("chartsMenu").querySelector("button").addEventListener("click", e => { e.stopPropagation(); const m = document.getElementById("chartsMenu"), open = !m.classList.contains("open"); document.querySelectorAll(".menu.open").forEach(x => x.classList.remove("open")); m.classList.toggle("open", open); });

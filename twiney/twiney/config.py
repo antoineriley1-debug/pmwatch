@@ -537,7 +537,8 @@ def validate_plays(raw):
 
         if item.get("pivot") is not None and item.get("trigger") is None:
             item = dict(item, trigger=item["pivot"])
-        watch = bool(item.get("watch", False))          # a ticker you typed in: no pivot yet
+        # a ticker with no pivot yet (typed in, or a clean chart) is watch-only: never an error that stops TED starting
+        watch = bool(item.get("watch", False)) or item.get("trigger") in (None, "")
         trigger, second = num("trigger", not watch), num("second_entry", False)
         if trigger is None and not watch:
             raise ConfigError(f"{where}: pivot is required")

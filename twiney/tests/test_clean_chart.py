@@ -35,3 +35,19 @@ class CleanChartTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CleanChartReloadTests(unittest.TestCase):
+    def test_a_cleaned_plays_file_loads_again(self):
+        import json
+        from twiney.config import load_plays
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "plays.json")
+            json.dump({"plays": [{"symbol": "AAPL", "side": "long", "pivot": 150.0, "stop": 149.0, "target": 153.0}]}, open(path, "w"))
+            ps = load_plays(path)
+            run_twiney.clean_chart(ps, {"trading": {"clean_chart_on_start": True}}, path)
+            json.dump({"plays": ps}, open(path, "w"))
+            again = load_plays(path)                     # must not stop TED starting
+            self.assertEqual(again[0]["symbol"], "AAPL"); self.assertIsNone(again[0].get("trigger"))
+            json.dump({"plays": [{"symbol": "NVDA", "side": "long", "trigger": None, "stop": None}]}, open(path, "w"))
+            self.assertEqual(load_plays(path)[0]["symbol"], "NVDA")   # an old file with an empty pivot loads too

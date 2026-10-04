@@ -375,6 +375,12 @@ class TwineyWrapper:
                 return   # today's bar is still forming: the chart builds it live from the minute bars, ATR skips it
             self.engine.on_daily_bar(sym, t0, num(bar.open), num(bar.high), num(bar.low), num(bar.close), num(getattr(bar, "volume", None)))
             return
+        if kind == "ohist":
+            try:
+                self.engine.on_opt_hist_bar(sym, float(bar.date), num(bar.open), num(bar.high), num(bar.low), num(bar.close))
+            except (TypeError, ValueError):
+                pass
+            return
         if kind != "hist":
             return
         try:
@@ -854,6 +860,34 @@ class MarketDataSession:
             except Exception as exc:
                 log.warning("option quote request failed for %s: %s", key, exc)
 
+    def chart_option(self, key):
+        """The OPTION CHART on a contract: its quotes, and once its minutes so far (MIDPOINT, 2 days)."""
+        from .options import parse_key
+        with self._lock:
+            if self.app is None or not self.ready:
+                return
+            if key not in self.opt_contracts:
+                try:
+                    sym, exp, strike, right = parse_key(key)
+                except (ValueError, IndexError):
+                    return
+                ch = self.engine.opt_chain.get(sym) or {}
+                self.opt_contracts[key] = make_option_contract(sym, exp, strike, right, ch.get("mult") or 100)
+            asked = getattr(self, "opt_hist_asked", None)
+            if asked is None:
+                asked = self.opt_hist_asked = set()
+            hist = key not in asked
+            asked.add(key)
+        self.subscribe_opt(key)
+        if hist:
+            with self._lock:
+                rid = self._rid()
+                self.app.req[rid] = ("ohist", key)
+                try:
+                    self.app.reqHistoricalData(rid, self.opt_contracts[key], "", "2 D", "1 min", "MIDPOINT", 1, 2, False, [])
+                except Exception as exc:
+                    log.warning("option history request failed for %s: %s", key, exc)
+
     def request_chain(self, symbol):
         """Ask IBKR for the symbol's option chain (needs the underlying conId from contract details)."""
         with self._lock:
@@ -873,7 +907,8 @@ class MarketDataSession:
                 return
             want = set(keys)
             for key, rid in list(self.opt_ids.items()):
-                if key.startswith(symbol + " ") and key not in want and key not in self.engine.opt_positions:
+                if key.startswith(symbol + " ") and key not in want and key not in self.engine.opt_positions \
+                        and key not in (getattr(self, "opt_hist_asked", None) or ()):      # a charted contract keeps its quotes
                     try:
                         self.app.cancelMktData(rid)
                     except Exception:
