@@ -739,18 +739,59 @@ async function sendPartial(sym, el){
   toast(out.ok ? "Sent: " + out.sent : "Partial blocked: " + (out.reason || ""), out.ok);
   if (out.ok){ PP[sym] = {open: false}; P.positions.last = null; P.ticket.last = null; poll(true); }
 }
+/* THE SIMPLE BLOCK at the top of ORDER ENTRY: what you have, in big letters, and plain buttons.
+   BUY / SELL send the size in the box at the touch (ask to buy, bid to sell). SELL 5 / 10 / 20 / ALL take shares off a
+   long (BUY ... on a short covers it). Taking off always works, armed or not. */
+function simpleBoxHTML(s, d){
+  const pos = d.position, q = pos && pos.qty ? Math.abs(pos.qty) : 0, long = pos && pos.qty > 0, t = s.trading || {};
+  const n = TK.qty || t.default_shares || 100, red = canReduce();
+  const pnl = q ? (pos.pnl != null ? pos.pnl : ((d.last || pos.avg_cost) - pos.avg_cost) * pos.qty) : null;
+  const have = q ? `<div class="have"><span class="lbl">YOU HAVE</span><b class="${long ? "b" : "s"}">${long ? "LONG" : "SHORT"} ${sz(q)}</b><b>${esc(d.symbol)}</b><span>avg ${px(pos.avg_cost)}</span>
+      <b class="pl ${pnl >= 0 ? "b" : "s"}">${pnl >= 0 ? "+" : "−"}$${sz(Math.abs(Math.round(pnl)))}</b></div>`
+    : `<div class="have flat"><span class="lbl">YOU HAVE</span><b>NO ${esc(d.symbol)} POSITION</b></div>`;
+  const out = long ? "SELL" : "BUY", pre = (t.manage_presets || [5, 10, 20]).filter(k => k < q);
+  const mgr = q ? `<div class="mgr">${pre.map(k => `<button class="${long ? "s" : "b"}" data-sq="${k}" ${red ? "" : "disabled"} title="${out} ${k} shares at the ${long ? "bid" : "ask"}">${out} ${k}</button>`).join("")}<button class="${long ? "s" : "b"} all" data-sq="all" ${red ? "" : "disabled"} title="${out} all ${sz(q)} at the touch">${out} ALL ${sz(q)}</button></div>` : "";
+  return `<div class="simple">${have}
+    <div class="bs"><button class="big b" data-sb="BUY" title="BUY ${sz(n)} ${esc(d.symbol)} now: at the ask ${px(d.ask)}, never more than 3 ticks above it">BUY ${sz(n)}<i>${px(d.ask)}</i></button><button class="big s" data-sb="SELL" title="SELL ${sz(n)} ${esc(d.symbol)} now: at the bid ${px(d.bid)}, never more than 3 ticks below it">SELL ${sz(n)}<i>${px(d.bid)}</i></button></div>
+    ${mgr}</div>`;
+}
+document.addEventListener("click", async e => {
+  const b = e.target.closest("button[data-sb], button[data-sq]"); if (!b || !P.ticket.el.contains(b)) return;
+  const d = curData(); if (!d) return;
+  const pos = d.position, q = pos && pos.qty ? Math.abs(pos.qty) : 0, long = pos && pos.qty > 0;
+  if (b.dataset.sq){
+    if (b.dataset.sq === "all"){
+      confirmBox(`${long ? "SELL" : "BUY"} ALL ${sz(q)} ${d.symbol}`, "out of the whole position at the touch · its stop and target orders are cancelled", long ? "s" : "b", async () => {
+        const out = await post("/api/trade/flatten", {symbol: d.symbol});
+        toast(out.ok ? (out.flat ? d.symbol + " already flat" : "Sent: " + out.sent) : "Blocked: " + (out.reason || ""), out.ok); P.ticket.last = null; poll(true); });
+      return; }
+    const out = await post("/api/trade/adjust", {symbol: d.symbol, shares: +b.dataset.sq, mode: "close"});
+    toast(out.ok ? "Sent: " + out.sent : "Blocked: " + (out.reason || ""), out.ok); P.ticket.last = null; poll(true); return;
+  }
+  const side = b.dataset.sb, n = +(document.getElementById("tkQty") || {}).value || TK.qty || 100, touch = side === "BUY" ? d.ask : d.bid;
+  if (!(touch > 0)){ toast("No quote yet", false); return; }
+  // fills now like a market order, but capped: up to 3 ticks through the touch, never further
+  const tk = tickOfPx(touch), price = snapPx(side === "BUY" ? touch + 3 * tk : touch - 3 * tk);
+  const closing = q && ((long && side === "SELL") || (!long && side === "BUY")) && n <= q;
+  if (!canTrade() && !closing){ toast(whyNot() + (/ARM/i.test(whyNot()) ? "" : " — click ARM"), false); const a = document.getElementById("armBtn"); if (a){ a.dataset.pulse = "1"; setTimeout(() => { delete a.dataset.pulse; }, 2400); } return; }
+  const send = async () => { const out = await post("/api/trade/order", {symbol: d.symbol, action: side, price, qty: n, type: "LMT", bracket: closing ? false : !!T().bracket, tif: "DAY", nonce: "sb" + Date.now()});
+    toast(out.ok ? "Sent: " + out.sent : "Blocked: " + (out.reason || ""), out.ok); P.ticket.last = null; poll(true); };
+  if (T().one_click) return send();
+  confirmBox(`${side} ${sz(n)} ${d.symbol} @ ${px(price)}`, `${side === "BUY" ? "ask" : "bid"} ${px(touch)} · fills now, never ${side === "BUY" ? "above" : "below"} ${px(price)} · about $${sz(Math.round(n * touch))}${closing ? " · takes your position down" : T().bracket ? " · with your stop and target" : ""}`, side === "BUY" ? "b" : "s", send);
+});
 /* OPTION POSITIONS on this ticker, in ORDER ENTRY: one line per contract with entry, quote, P&L and the buttons
    to take some off, add, or close it all (same orders as POSITIONS: a limit at the touch). */
 function optPosHTML(s, d){
   const rows = ((s.account || {}).opt_positions || []).filter(p => p.symbol === d.symbol || String(p.key || "").split(" ")[0] === d.symbol);
   if (!rows.length) return "";
   const red = canReduce(), on = canTrade();
-  return `<div class="pm opm">${rows.map(p => { const long = p.qty > 0, q = Math.abs(p.qty), half = Math.max(1, Math.floor(q / 2));
+  return `<div class="simple opm">${rows.map(p => { const long = p.qty > 0, q = Math.abs(p.qty), half = Math.max(1, Math.floor(q / 2));
     const mark = long ? p.bid : p.ask, k = esc(p.key);
-    return `<div class="pmr"><b class="${long ? "b" : "s"}">${long ? "+" : "−"}${q} ${esc(p.label || p.key)}</b><span>@ ${p.per_contract != null ? p.per_contract.toFixed(2) : NA}</span>
-      <span class="dim" title="what you would get closing now; P&L is at the mid">${mark != null ? (long ? "bid " : "ask ") + mark.toFixed(2) : "no quote"}</span>
-      ${p.pnl != null ? `<span class="${p.pnl >= 0 ? "b" : "s"}">${p.pnl >= 0 ? "+" : "−"}$${sz(Math.abs(Math.round(p.pnl)))}</span>` : ""}
-      <span class="pmbtn"><button data-tko="${k}" data-n="1" ${red && q > 1 ? "" : "disabled"} title="take 1 contract off at the ${long ? "bid" : "ask"}">−1</button><button data-tko="${k}" data-n="${half}" ${red && q > 1 ? "" : "disabled"} title="take half off (${half} ct)">½</button><button data-tka="${k}" data-n="1" ${on ? "" : "disabled"} title="add 1 contract at the ${long ? "ask" : "bid"}">+1</button><button class="danger" data-tko="${k}" data-n="0" ${red ? "" : "disabled"} title="close all ${q} contracts at the touch">CLOSE</button></span></div>`; }).join("")}</div>`;
+    const out = long ? "SELL" : "BUY", inn = long ? "BUY" : "SELL", pre = (T().manage_option_presets || [1, 2, 5]).filter(n => n < q);
+    return `<div class="have"><span class="lbl">YOU HAVE</span><b class="${long ? "b" : "s"}">${long ? "" : "SHORT "}${q} ${q === 1 ? "CONTRACT" : "CONTRACTS"}</b><b>${esc(p.label || p.key)}</b>
+      <span>paid ${p.per_contract != null ? p.per_contract.toFixed(2) : NA}</span><span class="dim" title="what you would get closing now">${mark != null ? (long ? "bid " : "ask ") + mark.toFixed(2) : "no quote"}</span>
+      ${p.pnl != null ? `<b class="pl ${p.pnl >= 0 ? "b" : "s"}">${p.pnl >= 0 ? "+" : "−"}$${sz(Math.abs(Math.round(p.pnl)))}</b>` : ""}</div>
+      <div class="mgr">${pre.map(n => `<button class="${long ? "s" : "b"}" data-tko="${k}" data-n="${n}" ${red ? "" : "disabled"} title="${out} ${n} contract${n > 1 ? "s" : ""} at the ${long ? "bid" : "ask"}">${out} ${n}</button>`).join("")}<button class="${long ? "s" : "b"} all" data-tko="${k}" data-n="0" ${red ? "" : "disabled"} title="${out} all ${q} at the touch">${out} ALL ${q}</button><button class="${long ? "b" : "s"} add" data-tka="${k}" data-n="1" ${on ? "" : "disabled"} title="${inn} 1 more contract">${inn} 1 MORE</button></div>`; }).join("")}</div>`;
 }
 document.addEventListener("click", async e => {
   const b = e.target.closest("button[data-tko], button[data-tka]"); if (!b || !P.ticket.el.contains(b)) return;
@@ -770,9 +811,7 @@ function posManagerHTML(s, d){
   const tv = store.get("trailDollars", 0.5), sv = TK.stopPx != null && TK.stopSym === d.symbol ? TK.stopPx : (stopPx != null ? stopPx : snapPx(long ? last - 0.5 : last + 0.5));
   const offs = [0.25, 0.5, 1];
   return `<div class="pm">
-    <div class="pmr"><b class="${long ? "b" : "s"}">${long ? "LONG" : "SHORT"} ${sz(q)}</b><span>@ ${px(pos.avg_cost)}</span>
-      <span class="${pnl >= 0 ? "b" : "s"}">${pnl >= 0 ? "+" : "−"}$${sz(Math.abs(Math.round(pnl)))}</span>
-      ${stopPx != null ? `<span class="pmstop" title="your working stop">STOP ${px(stopPx)}${risk != null ? ` <i>${risk >= 0 ? "+" : "−"}$${sz(Math.abs(Math.round(risk)))}</i>` : ""}</span>` : `<span class="pmstop none" title="no stop order is working on this position">NO STOP</span>`}
+    <div class="pmr">${stopPx != null ? `<span class="pmstop" title="your working stop">STOP ${px(stopPx)}${risk != null ? ` <i>${risk >= 0 ? "+" : "−"}$${sz(Math.abs(Math.round(risk)))}</i>` : ""}</span>` : `<span class="pmstop none" title="no stop order is working on this position">NO STOP</span>`}
       <span class="pmbtn"><button data-be="${esc(d.symbol)}" ${red ? "" : "disabled"} title="stop to your entry price">BE</button><button data-partial="${esc(d.symbol)}" ${red ? "" : "disabled"} title="take part off: shares and price">PART</button><button class="danger" data-close="${esc(d.symbol)}" ${red ? "" : "disabled"} title="close the whole position at the touch">CLOSE</button></span></div>
     <div class="pmr">
       <label>STOP</label><input id="pmStop" type="number" step="${last < 1 ? "0.0001" : "0.01"}" value="${sv}" title="the stop price"><button data-pmstop="set" ${red ? "" : "disabled"} title="put the stop at this price (moves the working stop)">SET</button>
@@ -939,7 +978,7 @@ function renderTicket(s, d, force){
   // take-offs), so the ticket takes a few lines and the screen stays with the chart, ladder and tape
   const sizing = (() => { const stop = d && d.play && d.play.stop, ent = TK.px != null ? TK.px : price; if (!stop || !ent) return `<span class="dim">NO STOP</span>`; const r = Math.abs(ent - stop); if (r < tickOfPx(ent) / 2) return `<span class="dim">entry = stop</span>`; const n = capShares(Math.floor(riskDollars() / r), ent); return `<button data-q="set:${Math.max(1, n)}" class="szb" title="size the ticket from your risk $: $${riskDollars()} ÷ $${r.toFixed(2)} a share">${sz(n)} sh</button><span class="dim">$${r.toFixed(2)}/sh</span>`; })();
   TK.type = "LMT"; TK.tif = "DAY";                 // limit, day: the only order you send by hand
-  const html = `<div class="ticket compact">
+  const html = `<div class="ticket compact">${d ? simpleBoxHTML(s, d) : ""}
     <div class="trow">
       <b class="sym">${esc(curSym || NA)}</b><span class="dim q" id="tkQuote">${d ? `${px(d.bid)} / ${px(d.ask)}` : ""}</span>
       <span class="sides"><button class="b ${TK.side === "BUY" ? "on" : ""}" data-side="BUY">BUY</button><button class="s ${TK.side === "SELL" ? "on" : ""}" data-side="SELL">SELL</button><button class="opt" data-openchain="1" title="open the OPTION CHAIN for this ticker: pick expiry and strike, BUY or SELL to open, price box, SEND">OPTIONS</button></span>

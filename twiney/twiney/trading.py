@@ -1932,5 +1932,7 @@ class Trader:
                  scale_plans={sym: self._plan_view(sym, pl, time.time()) for sym, pl in self.scale_plans.items()},
                  trails={sym: dict(tr) for sym, tr in self.trails.items()},
                  scale_templates={k: v for k, v in (self.cfg["scale_plan"].get("templates") or {}).items()},
-                 qty_presets=list(self.cfg.get("qty_presets") or [25, 50, 100, 200, 500, 1000]))
+                 qty_presets=list(self.cfg.get("qty_presets") or [25, 50, 100, 200, 500, 1000]),
+                 manage_presets=list(self.cfg.get("manage_presets") or [5, 10, 20]),
+                 manage_option_presets=list(self.cfg.get("manage_option_presets") or [1, 2, 5]))
         return s

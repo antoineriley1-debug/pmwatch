@@ -499,3 +499,23 @@ i.tl{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:3p
 .ticket.compact .trow{gap:3px 4px} .ticket.compact .trow .row{gap:2px}
 
 .ticket .pm.opm{border-color:rgba(123,108,246,.5)} .ticket .pm.opm .pmr b{font-weight:800}
+
+/* SIMPLE ORDER ENTRY: what you have, big; BUY / SELL; SELL 5 / 10 / 20 / ALL */
+.ticket .simple{display:grid;gap:4px;margin:0 0 5px;padding:5px 6px;border:1px solid var(--line);border-radius:5px;background:#0d1219}
+.ticket .simple .have{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 9px;font:13px var(--mono)}
+.ticket .simple .have .lbl{font:800 9.5px var(--sans);letter-spacing:.12em;color:var(--dim)}
+.ticket .simple .have b{font:800 15px var(--mono)} .ticket .simple .have b.b{color:var(--buy)} .ticket .simple .have b.s{color:var(--sell)}
+.ticket .simple .have.flat b{color:var(--dim);font-size:12px}
+.ticket .simple .bs{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+.ticket .simple .big{height:36px;font:900 15px var(--sans);letter-spacing:.06em;border-radius:5px;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.05}
+.ticket .simple .big i{font:600 10px var(--mono);font-style:normal;opacity:.85}
+.ticket .simple .big.b{background:#0f3d25;border:1px solid var(--buy);color:#dfffee} .ticket .simple .big.s{background:#4a161b;border:1px solid var(--sell);color:#ffe3e6}
+.ticket .simple .big:hover{filter:brightness(1.25)}
+.ticket .simple .mgr{display:flex;flex-wrap:wrap;gap:4px}
+.ticket .simple .mgr button{flex:1 1 0;min-width:58px;height:26px;font:800 11px var(--sans);letter-spacing:.04em;border-radius:4px}
+.ticket .simple .mgr button.s{background:#2a1013;border:1px solid var(--sell);color:#ffd0d5} .ticket .simple .mgr button.b{background:#0c2a1a;border:1px solid var(--buy);color:#d4ffe6}
+.ticket .simple .mgr button.all{flex:1.4 1 0;font-weight:900} .ticket .simple .mgr button.add{flex:1.2 1 0;opacity:.85}
+.ticket .simple .mgr button:disabled{opacity:.35}
+.ticket .simple.opm{border-color:rgba(123,108,246,.55)} .ticket .simple.opm .have b{font-size:13px}
+.ticket .simple .mgr button{white-space:nowrap;padding:0 4px;min-width:0;letter-spacing:0;font-size:11px}
+.ticket .simple .have{white-space:nowrap;overflow:hidden}

@@ -173,6 +173,9 @@ DEFAULTS = {
         "stop_limit_ticks": 10,
         # quick size buttons on the ticket and the ladder bar
         "qty_presets": [25, 50, 100, 200, 500, 1000],
+        # the SELL 5 / SELL 10 / SELL 20 buttons on a stock position (BUY on a short), and the same for option contracts
+        "manage_presets": [5, 10, 20],
+        "manage_option_presets": [1, 2, 5],
         # bracket templates: PLAY = the play's own stop + target (and PS60 exits when on); a template brackets from
         # the entry price instead: stop = entry -$0.25, targets at +$0.25 / +$0.50 / +$0.75 with these share shares.
         # Pick one on the ticket; add your own here. "trail" is not sent to IBKR yet (noted in docs).
