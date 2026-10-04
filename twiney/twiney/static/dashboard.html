@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261004-1855">
+<meta name="build" content="20261004-1931">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -3782,11 +3782,27 @@ P.setup.el.addEventListener("click", async e => {
     toast(out.ok ? `${curSym} auto 2nd entry ${e.target.checked ? "ON" : "OFF"}` : "Could not switch", out.ok); poll(true); return;
   }
   if (e.target.id !== "suSave" || !curSym) return;
-  const f = suFields();
+  saveSetup(false);
+});
+// PLAY SETUP saves itself: leave a box (Tab, Enter, click away) or pick from a list and the play is saved — the
+// grade, the brackets, the conviction board and the ticket sizing follow at once. SAVE PLAY still works.
+async function saveSetup(auto){
+  if (!curSym || SU.saving) return;
+  const sym = curSym, f = suFields();
+  delete f.side;     // SIDE saves on its own when you pick it; the levels decide the side unless you picked it (L/S or SIDE)
   SU.saving = true; suRefresh();
-  const out = await post("/api/play", {symbol: curSym, action: "setup", fields: f});
-  SU.saving = false; SU.dirty = false; SU.msg = out.ok ? "SAVED · grade, brackets and sizing follow these numbers" : "REJECTED · " + (out.reason || "not saved");
-  P.setup.last = null; toast(out.ok ? "Play saved for " + curSym : "Not saved: " + (out.reason || ""), out.ok); poll(true);
+  const out = await post("/api/play", {symbol: sym, action: "setup", fields: f});
+  SU.saving = false;
+  if (out.ok){ SU.dirty = false; SU.msg = auto ? "SAVED" : "SAVED · grade, brackets and sizing follow these numbers"; }
+  else SU.msg = "NOT SAVED · " + (out.reason || "rejected");
+  P.setup.last = null;
+  if (!auto || !out.ok) toast(out.ok ? "Play saved for " + sym : "Not saved: " + (out.reason || ""), out.ok);
+  poll(true);
+}
+let suAutoT = null;
+P.setup.el.addEventListener("change", e => {
+  if (!e.target.matches("input, select, textarea") || ["su_risk", "suAutoOn", "su_side"].includes(e.target.id)) return;
+  clearTimeout(suAutoT); suAutoT = setTimeout(() => saveSetup(true), 250);
 });
 function renderReloads(d){
   if (!d){ panelHTML("reload", `<div class="dim">${NA}</div>`); return; }

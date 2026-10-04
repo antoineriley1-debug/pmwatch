@@ -239,6 +239,8 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                 self._send(404, "not found", "text/plain")
 
         def do_POST(self):
+            with _SNAP_LOCK:          # anything you do shows on the very next update, never a cached one from before it
+                _SNAP_CACHE.clear()
             # only accept requests from this dashboard page (blocks other websites)
             if not self._local():
                 self._send(403, "forbidden", "text/plain")
