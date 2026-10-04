@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261003-1820">
+<meta name="build" content="20261004-1855">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -806,6 +806,8 @@ i.tl{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:3p
 .ticket.compact .trow.sub select{height:20px;font-size:10px;padding:0 2px}
 .ticket.compact .trow.sub #tkCxl{padding:1px 6px;font-size:10px;height:20px}
 .ticket.compact .trow{gap:3px 4px} .ticket.compact .trow .row{gap:2px}
+
+.ticket .pm.opm{border-color:rgba(123,108,246,.5)} .ticket .pm.opm .pmr b{font-weight:800}
 
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
@@ -3852,6 +3854,26 @@ async function sendPartial(sym, el){
   toast(out.ok ? "Sent: " + out.sent : "Partial blocked: " + (out.reason || ""), out.ok);
   if (out.ok){ PP[sym] = {open: false}; P.positions.last = null; P.ticket.last = null; poll(true); }
 }
+/* OPTION POSITIONS on this ticker, in ORDER ENTRY: one line per contract with entry, quote, P&L and the buttons
+   to take some off, add, or close it all (same orders as POSITIONS: a limit at the touch). */
+function optPosHTML(s, d){
+  const rows = ((s.account || {}).opt_positions || []).filter(p => p.symbol === d.symbol || String(p.key || "").split(" ")[0] === d.symbol);
+  if (!rows.length) return "";
+  const red = canReduce(), on = canTrade();
+  return `<div class="pm opm">${rows.map(p => { const long = p.qty > 0, q = Math.abs(p.qty), half = Math.max(1, Math.floor(q / 2));
+    const mark = long ? p.bid : p.ask, k = esc(p.key);
+    return `<div class="pmr"><b class="${long ? "b" : "s"}">${long ? "+" : "−"}${q} ${esc(p.label || p.key)}</b><span>@ ${p.per_contract != null ? p.per_contract.toFixed(2) : NA}</span>
+      <span class="dim" title="what you would get closing now; P&L is at the mid">${mark != null ? (long ? "bid " : "ask ") + mark.toFixed(2) : "no quote"}</span>
+      ${p.pnl != null ? `<span class="${p.pnl >= 0 ? "b" : "s"}">${p.pnl >= 0 ? "+" : "−"}$${sz(Math.abs(Math.round(p.pnl)))}</span>` : ""}
+      <span class="pmbtn"><button data-tko="${k}" data-n="1" ${red && q > 1 ? "" : "disabled"} title="take 1 contract off at the ${long ? "bid" : "ask"}">−1</button><button data-tko="${k}" data-n="${half}" ${red && q > 1 ? "" : "disabled"} title="take half off (${half} ct)">½</button><button data-tka="${k}" data-n="1" ${on ? "" : "disabled"} title="add 1 contract at the ${long ? "ask" : "bid"}">+1</button><button class="danger" data-tko="${k}" data-n="0" ${red ? "" : "disabled"} title="close all ${q} contracts at the touch">CLOSE</button></span></div>`; }).join("")}</div>`;
+}
+document.addEventListener("click", async e => {
+  const b = e.target.closest("button[data-tko], button[data-tka]"); if (!b || !P.ticket.el.contains(b)) return;
+  const key = b.dataset.tko || b.dataset.tka, mode = b.dataset.tko != null ? "close" : "add", n = +b.dataset.n;
+  if (mode === "close" && n === 0 && !confirm("CLOSE every contract of " + key + "?")) return;
+  const out = await post("/api/trade/opt_adjust", {key, contracts: n, mode, price: null});
+  toast(out.ok ? "Sent: " + out.sent : "Blocked: " + (out.reason || ""), out.ok); P.ticket.last = null; poll(true);
+});
 /* MANAGE THE POSITION from ORDER ENTRY, in one small box: where you are, the stop (by price or one click), a
    trailing stop, BE / PARTIAL / CLOSE, then the scale plan and take-offs folded to one line each. */
 function posManagerHTML(s, d){
@@ -4046,7 +4068,7 @@ function renderTicket(s, d, force){
       <span class="opts"><label><input type="checkbox" id="tkBracket" ${t.bracket ? "checked" : ""}> bracket</label><select id="tkTpl" title="what the bracket is: PLAY = the stop and target you drew; a template brackets from the entry price (stop −$, targets +$ with share splits)">${["PLAY"].concat(t.bracket_templates || []).map(n => `<option value="${esc(n)}" ${(t.bracket_template || "PLAY") === n ? "selected" : ""}>${esc(n)}</option>`).join("")}</select><label><input type="checkbox" id="tkScale" ${t.scale ? "checked" : ""}> PS60 exits</label></span>
       <button id="tkCxl" ${d && d.orders && d.orders.length ? "" : "disabled"} class="danger" title="cancel every working order on this symbol">CXL ALL</button>
     </div>
-    ${d && d.position && d.position.qty ? posManagerHTML(s, d) : ""}
+    ${d && d.position && d.position.qty ? posManagerHTML(s, d) : ""}${d ? optPosHTML(s, d) : ""}
     ${on ? "" : `<div class="why">${esc(whyNot())}${d && d.position && d.position.qty ? " · closing still works: CLOSE, FLATTEN, or a " + (d.position.qty > 0 ? "SELL" : "BUY") + " up to " + sz(Math.abs(d.position.qty)) : ""}</div>`}
     ${TK.log.length ? `<div class="st">${TK.log.slice(0, 2).map(l => `<div>${esc(l)}</div>`).join("")}</div>` : ""}</div>`;
   panelHTML("ticket", html);
