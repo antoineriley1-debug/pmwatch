@@ -1,9 +1,9 @@
 /* ===================== TED — TWINEY EXECUTION DESK: panel pool ===================== */
 const PANELS = {
-  chart: "CHART", ochart: "OPTION CHART", foot: "FOOTPRINT 5m", book: "LEVEL II", tape: "TIME & SALES", bigtape: "BIG TAPE", options: "OPTION CHAIN", setup: "PLAY SETUP", ps60: "PS60", conviction: "CONVICTION", reload: "RELOADS",
+  chart: "CHART", chart2: "CHART 2", chart3: "CHART 3", ochart: "OPTION CHART", foot: "FOOTPRINT 5m", book: "LEVEL II", tape: "TIME & SALES", bigtape: "BIG TAPE", options: "OPTION CHAIN", setup: "PLAY SETUP", ps60: "PS60", conviction: "CONVICTION", reload: "RELOADS",
   ticket: "ORDER ENTRY", positions: "POSITIONS", orders: "ORDERS", watch: "WATCHLIST", calls: "CALLS",
   flow: "OPTION FLOW", eqflow: "EQUITY FLOW", urgency: "URGENT FLOW", bigmoney: "BIG MONEY 30D", myalerts: "ALERTS", desk: "DESK", journal: "JOURNAL", messages: "MESSAGES"};
-const SYMBOL_LINKED = new Set(["chart", "foot", "book", "tape", "bigtape", "options", "ps60", "reload", "ticket", "calls", "setup", "bigmoney", "conviction"]);
+const SYMBOL_LINKED = new Set(["chart", "chart2", "chart3", "foot", "book", "tape", "bigtape", "options", "ps60", "reload", "ticket", "calls", "setup", "bigmoney", "conviction"]);
 const ZONES = ["TL", "TC", "TR", "TX", "BL", "BC", "BR", "BX"];   // four columns × two rows; a column with one zone runs full height
 const PRESETS = {
   "PS60 Execution": {zones: {TL: ["watch", "myalerts"], TC: ["chart"], TR: ["book"], TX: ["tape"], BL: ["positions", "orders"], BC: ["conviction", "setup", "flow", "urgency", "bigmoney", "eqflow", "ps60", "reload", "calls"], BR: ["ticket"]},

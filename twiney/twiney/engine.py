@@ -615,6 +615,39 @@ class Engine:
             if None not in (o, h, l, c):
                 self._opt_bar(key, t0, c, hist=(o, h, l, c))
 
+    def practice_opt_tick(self, t, every=0.5):
+        """The practice desk: every contract you hold, have a working order on, chart or picked is re-priced from the
+        stock's price right now (calls gain as the stock rises, puts as it falls), so positions mark and orders
+        fill like the real market even with the OPTION CHAIN closed."""
+        if self.connection["state"] != "DEMO" or t - getattr(self, "_opt_tick_t", 0.0) < every:
+            return
+        self._opt_tick_t = t
+        with self.lock:
+            live = self.__dict__.setdefault("opt_live", {})      # key -> last time a chart / ticket asked for it
+            keys = set(self.opt_positions) | {o["symbol"] for o in self._pending() if o.get("opt")} | \
+                {k for k, at in live.items() if t - at < 120}
+            for key in keys:
+                self.practice_quote_key(key, t)
+
+    def practice_quote_key(self, key, t):
+        """Price one contract from the stock right now (practice desk only). True when it got a quote."""
+        if self.connection["state"] != "DEMO":
+            return False
+        try:
+            sym, exp, strike, right = options.parse_key(key)
+        except (ValueError, IndexError):
+            return False
+        with self.lock:
+            st = self.syms.get(sym)
+            spot = st.price() if st else None
+            q = options.practice_quote(spot, strike, exp, right, t) if spot else None
+            if not q:
+                return False
+            for fld in ("bid", "ask", "last"):
+                self.on_opt_quote(key, fld, q[fld], t)
+            self.on_opt_greeks(key, options.bs_greeks(spot, strike, options.dte(exp, t) or 0, right), t)
+            return True
+
     def option_bars(self, key, t=None):
         """Everything the OPTION CHART draws for one contract: its 1-minute bars (the mid), quote, your position in it
         and your working orders on it. The practice desk models the contract's day from the stock's own minutes."""
@@ -624,6 +657,7 @@ class Engine:
         except (ValueError, IndexError):
             return {"key": key, "available": False, "note": "not an option contract"}
         with self.lock:
+            self.__dict__.setdefault("opt_live", {})[key] = t
             st = self.syms.get(sym)
             spot = st.price() if st else None
             if self.connection["state"] == "DEMO" and spot:

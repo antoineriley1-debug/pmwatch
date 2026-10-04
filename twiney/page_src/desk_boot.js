@@ -43,6 +43,9 @@ window.addEventListener("resize", () => Object.values(charts).forEach(drawChart)
 setInterval(() => { document.getElementById("stClock").textContent = nyT(Date.now() / 1000) + " ET"; }, 1000);
 /* ---------- boot: panels, charts, layout, tabs, first poll */
 mkChart("chart", false); mkChart("foot", true);
+if (store.get("tf.chart2", null) == null) store.set("tf.chart2", 5);
+if (store.get("tf.chart3", null) == null) store.set("tf.chart3", 15);
+mkChart("chart2", false); mkChart("chart3", false);
 (async () => {
   await loadLayouts();
   renderRecent();

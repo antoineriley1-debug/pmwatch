@@ -59,7 +59,7 @@ function applyLayout(){
   for (const [id, f] of Object.entries(LAY.floats || {})){
     const p = P[id]; if (!p) continue;
     if (!p.el.querySelector(":scope > .ztabs")){ const t = document.createElement("div"); t.className = "ztabs"; p.el.prepend(t); }
-    p.el.querySelector(":scope > .ztabs").innerHTML = `<span class="ztab on" draggable="true" data-p="${id}">${PANELS[id]}${SYMBOL_LINKED.has(id) ? ` <span class="sym">${esc(curSym || "")}</span>` : ""}<span class="ctl"><span data-act="dock" title="dock back">⧈</span><span data-act="hide" title="hide">✕</span></span></span>`;
+    p.el.querySelector(":scope > .ztabs").innerHTML = `<span class="ztab on" draggable="true" data-p="${id}">${PANELS[id]}${SYMBOL_LINKED.has(id) ? ` <span class="sym">${esc(curSym || "")}</span>` : ""}<span class="ctl"><span data-act="dock" title="dock it: pick the spot (it stays there)">DOCK ▾</span><span data-act="hide" title="hide">✕</span></span></span>`;
     p.el.classList.add("on", "float"); work.appendChild(p.el);
     Object.assign(p.el.style, {left: f.l + "px", top: f.t + "px", width: f.w + "px", height: f.h + "px"});
   }
@@ -103,8 +103,8 @@ document.addEventListener("click", e => {
   const c = e.target.closest(".ztab .ctl span"); const tab = e.target.closest(".ztab");
   if (c){ e.stopPropagation(); const id = tab.dataset.p, act = c.dataset.act;
     if (act === "hide") movePanel(id, null);
-    else if (act === "float") movePanel(id, "float");
-    else if (act === "dock") movePanel(id, "TC");
+    else if (act === "float"){ LAY.home = LAY.home || {}; const z = zoneOf(id); if (z) LAY.home[id] = z; movePanel(id, "float"); }
+    else if (act === "dock") dockPicker(id, c);
     else if (act === "max"){ LAY.max = LAY.max === id ? null : id; applyLayout(); }
     return; }
   if (tab){ const z = tab.closest(".zone"); if (z){ LAY.active[z.dataset.zone] = tab.dataset.p; applyLayout(); } }
@@ -338,3 +338,20 @@ function dataFor(s, sym){ if (!sym || !s) return null; return (s.panes || []).fi
 /* menus live inside bars that clip overflow: place the popup with fixed coordinates when it opens */
 function placePop(m){ const b = m.querySelector(":scope > button"), pop = m.querySelector(":scope > .pop"); if (!b || !pop) return; const r = b.getBoundingClientRect(); pop.style.position = "fixed"; pop.style.top = (r.bottom + 3) + "px"; pop.style.left = "auto"; pop.style.right = Math.max(4, window.innerWidth - r.right) + "px"; pop.style.maxHeight = (window.innerHeight - r.bottom - 12) + "px"; pop.style.overflow = "auto"; }
 document.addEventListener("click", e => { const m = e.target.closest(".menu"); if (!m) return; setTimeout(() => { if (m.classList.contains("open")) placePop(m); }, 0); }, true);
+
+/* DOCK ▾ on a floating window: pick the spot. Back where it came from is first; the layout is saved, so it stays */
+const ZONE_NAMES = {TL: "left, top", BL: "left, bottom", TC: "middle, top", BC: "middle, bottom", TR: "right, top", BR: "right, bottom", TX: "far right, top", BX: "far right, bottom"};
+function dockPicker(id, anchor){
+  const old = document.getElementById("dockPick"); if (old) old.remove();
+  const home = (LAY.home || {})[id];
+  const m = document.createElement("div"); m.id = "dockPick"; m.className = "pop cmenu";
+  m.innerHTML = `<div class="dim" style="font-size:11px;margin-bottom:4px">DOCK ${esc(PANELS[id])} TO</div>` +
+    (home ? `<button data-dz="${home}"><b>back where it was</b> · ${ZONE_NAMES[home]}</button>` : "") +
+    ["TL", "TC", "TR", "TX", "BL", "BC", "BR", "BX"].map(z => `<button data-dz="${z}">${ZONE_NAMES[z]}${LAY.zones[z].length ? ` <span class="dim">(with ${esc(LAY.zones[z].map(x => PANELS[x]).join(", ").slice(0, 40))})</span>` : ` <span class="dim">(empty)</span>`}</button>`).join("");
+  const r = anchor.getBoundingClientRect();
+  m.style.left = Math.min(r.left, window.innerWidth - 280) + "px"; m.style.top = (r.bottom + 4) + "px";
+  document.body.appendChild(m);
+  m.addEventListener("click", e => { const b = e.target.closest("button[data-dz]"); if (!b) return; m.remove(); movePanel(id, b.dataset.dz); const c = charts[id]; if (c) setTimeout(() => drawChart(c), 50); });
+  const away = ev => { if (!m.isConnected){ document.removeEventListener("mousedown", away, true); return; } if (!m.contains(ev.target)) m.remove(); };
+  setTimeout(() => document.addEventListener("mousedown", away, true), 0);
+}

@@ -203,3 +203,26 @@ class OptionThroughTests(unittest.TestCase):
         from twiney.trading import opt_through
         self.assertEqual(opt_through(2.93, "BUY"), 2.95); self.assertEqual(opt_through(2.93, "SELL"), 2.9)
         self.assertEqual(opt_through(3.12, "BUY"), 3.2); self.assertEqual(opt_through(0.05, "SELL"), 0.05)
+
+
+class PracticeOptionsMoveWithTheStockTests(unittest.TestCase):
+    """The practice desk: a call you hold gains as the stock rises and loses as it falls; a put the other way —
+    re-priced every tick even with the OPTION CHAIN closed."""
+    def test_calls_gain_on_the_way_up_puts_on_the_way_down(self):
+        import time as _t
+        from twiney import options as _o
+        e, tr, broker = make(); T = _t.time()
+        e.on_l1("AAA", "last", 10.00, T)
+        ch = e.option_chain("AAA", None, "C", T); exp = ch["expiry"]
+        kc, kp = _o.key_of("AAA", exp, 10, "C"), _o.key_of("AAA", exp, 10, "P")
+        self.assertTrue(tr.opt_open("AAA", exp, 10, "C", "BUY", 1, None, T)["ok"])
+        self.assertTrue(tr.opt_open("AAA", exp, 10, "P", "BUY", 1, None, T)["ok"])
+        e.practice_opt_tick(T + 1)
+        self.assertIn(kc, e.opt_positions); self.assertIn(kp, e.opt_positions)
+        c0, p0 = e.opt_quotes[kc]["last"], e.opt_quotes[kp]["last"]
+        e.on_l1("AAA", "last", 10.60, T + 2); e.practice_opt_tick(T + 3)         # stock up: call up, put down
+        self.assertGreater(e.opt_quotes[kc]["last"], c0); self.assertLess(e.opt_quotes[kp]["last"], p0)
+        self.assertGreater(e._opt_view(e.opt_positions[kc])["pnl"], 0)
+        e.on_l1("AAA", "last", 9.40, T + 4); e.practice_opt_tick(T + 5)          # stock down: put up, call down
+        self.assertGreater(e.opt_quotes[kp]["last"], p0); self.assertLess(e.opt_quotes[kc]["last"], c0)
+        self.assertGreater(e._opt_view(e.opt_positions[kp])["pnl"], 0)

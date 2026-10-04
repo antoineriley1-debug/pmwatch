@@ -1573,7 +1573,7 @@ function render(s){
   renderStatus(s);
   renderQuote(d);
   charts.chart.el.classList.toggle("clean", store.get("clean", true));
-  drawChart(charts.chart); drawChart(charts.foot);
+  drawChart(charts.chart); drawChart(charts.foot); drawChart(charts.chart2); drawChart(charts.chart3);
   renderBook(d); renderTape(d); renderSetup(d); renderPS60(d); renderReloads(d); renderConviction(d);
   renderTicket(s, d);
   renderWatch(s); renderCalls(s); renderPositions(s); renderOrders(s);
@@ -1913,7 +1913,7 @@ function optChartMenu(p, x, y, price){
   setTimeout(() => document.addEventListener("mousedown", away, true), 0);
 }
 document.addEventListener("click", e => {
-  const sp = e.target.closest("#chartsPop button[data-showp]"); if (sp){ showPanel(sp.dataset.showp); document.querySelectorAll(".menu.open").forEach(x => x.classList.remove("open")); if (sp.dataset.showp === "ochart") pollOch(); return; }
+  const sp = e.target.closest("#chartsPop button[data-showp]"); if (sp){ openChartWindow(sp.dataset.showp); document.querySelectorAll(".menu.open").forEach(x => x.classList.remove("open")); if (sp.dataset.showp === "ochart") pollOch(); return; }
   const och = e.target.closest("button[data-ochart]"); if (och){ e.stopPropagation(); chartOption(och.dataset.ochart, true); return; }
   const h = e.target.closest("#ochHead button"); if (!h) return;
   if (h.dataset.och === "chain"){ showPanel("options"); return; }
@@ -1923,3 +1923,11 @@ document.addEventListener("click", e => {
     if (h.dataset.ochnow === "ALL") ochOrder(long ? "SELL" : "BUY", null, q); else ochOrder(h.dataset.ochnow, null, OCH.n); }
 }, true);
 document.getElementById("chartsMenu").querySelector("button").addEventListener("click", e => { e.stopPropagation(); const m = document.getElementById("chartsMenu"), open = !m.classList.contains("open"); document.querySelectorAll(".menu.open").forEach(x => x.classList.remove("open")); m.classList.toggle("open", open); });
+
+/* CHARTS menu: a chart that is not up opens as a floating window (staggered so several can be up at once);
+   one already docked or floating is brought to the front */
+function openChartWindow(id){
+  if (LAY.hidden.includes(id)){ const n = Object.keys(LAY.floats || {}).length; movePanel(id, "float", {l: 90 + n * 34, t: 70 + n * 30, w: 620, h: 400}); }
+  else showPanel(id);
+  const c = charts[id] || (id === "ochart" ? ochart : null); if (c) setTimeout(() => drawChart(c), 50);
+}

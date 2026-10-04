@@ -269,6 +269,7 @@ def run_demo(cfg, plays, args):
             try:                     # one bad step is logged and the practice market keeps going
                 feed.step(now)
                 sim_flow.step(now)
+                engine.practice_opt_tick(now)     # contracts you hold / have orders on / chart move with the stock
             except Exception as exc:
                 log.exception("practice market step failed")
                 engine._message("error", f"practice market step failed: {exc}", now)

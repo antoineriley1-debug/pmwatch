@@ -464,6 +464,12 @@ class OptionPositionTests(unittest.TestCase):
         self.assertTrue(out["ok"], out)
         order = [c for c in app.calls if c[0] == "placeOrder"][-1][3]
         self.assertEqual((order["action"], order["qty"], order["price"]), ("BUY", 1, 3.55))
+        # drag that order on the OPTION CHART: re-sent to IBKR on the option contract, on a nickel, same id
+        oid = out["id"]
+        mv = tr.modify(oid, 3.62, clock())
+        self.assertTrue(mv["ok"], mv)
+        last = [c for c in app.calls if c[0] == "placeOrder"][-1]
+        self.assertEqual(last[1], oid); self.assertIsInstance(last[2], _Opt); self.assertEqual(last[3]["price"], 3.6)
         # adding over the dollar cap is blocked in real dollars (60 contracts × $3.55 × 100 = $21,300)
         out = tr.opt_adjust("TSLA 20261003 240C", 60, "add", 3.55, clock())
         self.assertFalse(out["ok"]); self.assertIn("cap", out["reason"])

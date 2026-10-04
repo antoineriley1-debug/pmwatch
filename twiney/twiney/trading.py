@@ -36,6 +36,21 @@ BUY, SELL = "BUY", "SELL"
 
 
 
+def is_option_key(symbol):
+    """'TSLA 20261003 240C' style keys are option contracts."""
+    parts = str(symbol or "").split(" ")
+    return len(parts) == 3 and parts[1].isdigit() and len(parts[1]) == 8
+
+
+def opt_snap(price):
+    """A typed / dragged option price on a nickel (0.05): valid at any price on the busy (penny-program) names,
+    and under $3 on every option. A price you type on a nickel is never moved."""
+    if not price or price <= 0:
+        return price
+    step = 0.05
+    return round(max(step, round(price / step) * step), 2)
+
+
 def opt_through(touch, action):
     """An option limit that fills now: one price step through the touch (up for a buy, down for a sell), on a
     grid every option accepts (0.05 under $3, 0.10 at $3 and up). A sell never goes under one step."""
@@ -355,7 +370,10 @@ class SimBroker:
             o["t"] = now
             self._report(o, now)
             if o["status"] == "Submitted":
-                self.on_market(o["symbol"], now)
+                if o.get("opt"):
+                    self.on_opt_market(o["symbol"], now)
+                else:
+                    self.on_market(o["symbol"], now)
             return o
 
     def order_info(self, oid):
@@ -973,9 +991,11 @@ class Trader:
         info = self.broker.order_info(oid)
         if not info:
             return {"ok": False, "reason": "no such order"}
-        price = snap(round(float(price), 4), symbol=info.get("symbol"))
+        opt = bool(info.get("opt")) or is_option_key(info.get("symbol"))
+        price = opt_snap(round(float(price), 4)) if opt else snap(round(float(price), 4), symbol=info.get("symbol"))
         qty = int(info.get("remaining") or info.get("qty") or 0)
-        reason = self.gate.check(info.get("action"), qty, price, now, order_type=info.get("type", "LMT"))
+        # an option order is checked in real dollars (price x 100 x contracts), like when it was sent
+        reason = self.gate.check(info.get("action"), qty, price * 100 if opt else price, now, order_type=info.get("type", "LMT"))
         if reason:
             self._note(now, f"BLOCKED move of order {oid} to {money(price)}: {reason}", False)
             return {"ok": False, "reason": reason}
@@ -1745,11 +1765,15 @@ class Trader:
                 return {"ok": False, "reason": f"{expiry} is not an expiry on the {symbol} chain"}
             mult = float(ch.get("mult") or 100)
             q = self.engine.opt_quotes.get(key) or {}
+            if not (q.get("bid") or q.get("ask")) and self.engine.practice_quote_key(key, now):
+                q = self.engine.opt_quotes.get(key) or {}          # practice: any contract is priced from the stock
             if price in (None, ""):
                 price = q.get("ask") if action == BUY else q.get("bid")
                 if not price:
                     return {"ok": False, "reason": f"no quote on {key} yet — type a price"}
                 price = opt_through(price, action)   # fills now: a step through the touch, never further
+            else:
+                price = opt_snap(float(price))
             price = round(float(price), 2)
             if price <= 0:
                 return {"ok": False, "reason": "price must be positive"}
@@ -1799,6 +1823,8 @@ class Trader:
                 if not price:
                     return {"ok": False, "reason": f"no quote on {key} yet — type a price"}
                 price = opt_through(price, action)
+            else:
+                price = opt_snap(float(price))
             price = round(float(price), 2)
             if price <= 0:
                 return {"ok": False, "reason": "price must be positive"}
