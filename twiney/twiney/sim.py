@@ -197,6 +197,8 @@ class DemoFeed:
 
     def add_play(self, p):
         """A typed-in ticker in the demo: a made-up price that trades like the others."""
+        if p["symbol"] in self.state:   # a level changed on a ticker already trading: keep its market
+            return
         import time as _t
         t = self.t or _t.time()
         from .flow import SimFlow

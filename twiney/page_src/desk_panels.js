@@ -369,7 +369,7 @@ function rlBanner(wrap, d){
   // working orders that sit outside the ladder's rows (the still ladder keeps its rows while price moves):
   // never invisible — a tag says where they are, with the chip's cancel on it
   const prices = new Set(rows.map(r => +r.price)), lo = rows.length ? Math.min(...prices) : null, hi = rows.length ? Math.max(...prices) : null;
-  const off = (d.orders || []).filter(o => o.price && !prices.has(+o.price) && lo != null).map(o => `<span class="rlb ord ${o.action === "BUY" ? "b" : "s"} ${o.price > hi ? "up" : "down"}" data-oid="${o.id}" title="${esc(o.type || "")} ${esc(o.role || "")} order, ${o.price > hi ? "above" : "below"} the rows on screen · click to cancel it">${o.price > hi ? "▲" : "▼"} ${esc(o.action)} ${sz(o.qty)} @ ${px(o.price)}${o.type && o.type !== "LMT" ? " " + esc(o.type) : ""} ✕</span>`).join("");
+  const off = (d.orders || []).filter(o => o.price && !prices.has(+o.price) && lo != null).map(o => `<span class="rlb ord ${o.action === "BUY" ? "b" : "s"} ${o.price > hi ? "up" : "down"}" data-oid="${o.id}" title="${esc(o.type || "")} ${esc(o.role || "")} order, ${o.price > hi ? "above" : "below"} the rows on screen · click to cancel it">${o.price > hi ? "▲" : "▼"} YOUR ${esc(o.action)} ${sz(o.qty)} @ ${px(o.price)}${o.type && o.type !== "LMT" ? " " + esc(o.type) : ""} · ${o.price > hi ? "above" : "below"} the ladder ✕</span>`).join("");
   const html = off + items.map(i => `<span class="rlb ${i.side === "bid" ? "b" : "s"} ${i.where}" data-jump="${i.price}" title="${esc(i.rw.text)} · ${i.stage} · click to jump to it">${i.where === "up" ? "▲" : i.where === "down" ? "▼" : "●"} RELOAD ${i.side === "bid" ? "BUYER" : "SELLER"}${i.rw.back ? ` BACK ×${i.rw.back.n} (gone ${Math.max(1, Math.round((i.rw.back.away || 0) / 60))}m)` : ""} ${px(i.price)} · ${i.side === "bid" ? "bought" : "sold"} ${kfmt(i.rw.n)} sh · ${usdK(i.rw.usd)}${i.rw.back && i.rw.all > i.rw.n ? ` · ${kfmt(i.rw.all)} all visits` : ""}${i.rw.peak && i.rw.n > i.rw.peak ? ` · never showed more than ${kfmt(i.rw.peak)} at once (iceberg, refilled ${i.n}×)` : ""}${i.where !== "on" ? ` · ${i.rowsAway} rows ${i.where}` : ""}${i.knows ? " ⚡" : ""}</span>`).join("");
   if (ban.dataset.h !== html){ ban.dataset.h = html; ban.innerHTML = html; ban.classList.toggle("on", !!(items.length || off)); }
 }
@@ -543,13 +543,26 @@ function suDerive(d, f){
   if ((pivot && mp && sgn * (mp - pivot) <= 0) || (mp && entry && sgn * (mp - entry) <= 0)) bad.push("target");
   return {side, pivot, second, stop, mp, entry, entryLbl, risk, room, r, shares, bad, seState, fromSecond: !!second, stopRefLbl};
 }
+// the play's OTHER SIDE (a short under a long, a long over a short): its levels, its entry order, and a clear button
+function otherSideHTML(d){
+  const alt = d.play && d.play.alt; if (!alt) return "";
+  const a = ((state && state.trading) || {}).auto || {}, st = a[d.symbol + "|alt"], side = d.play.side === "long" ? "SHORT" : "LONG";
+  const f = (k, l) => alt[k] ? `<span>${l} <b>${px(alt[k])}</b></span>` : `<span class="dim">${l} —</span>`;
+  const cls = st && (st.state === "WORKING" || st.state === "PARTIAL") ? "ok" : st && st.state === "DONE" ? "gold" : "";
+  return `<div class="auto other"><b class="${side === "SHORT" ? "s" : "b"}">${side === "SHORT" ? "SHORT ▼" : "LONG ▲"} SIDE</b>${f("trigger", "pivot")}${f("second_entry", "2nd")}${f("stop", "stop")}${f("target", "target")}
+    ${st ? `<span class="${cls}"><b>${esc(st.state)}</b> ${esc(st.text || "")}</span>` : ""}<button data-clearalt="1" title="take the ${side.toLowerCase()} side off the chart (its entry order is cancelled)">✕</button></div>`;
+}
+document.addEventListener("click", async e => { if (!e.target.closest("button[data-clearalt]") || !curSym) return;
+  const d = curData(); if (!d || !d.play || !d.play.alt) return;
+  for (const r of ["second_entry", "stop", "target", "trigger"]) if (d.play.alt[r]) await post("/api/level", {symbol: curSym, role: "alt_" + r, price: null});
+  toast(curSym + ": other side cleared", true); P.setup.last = null; poll(true); });
 function autoEntryHTML(d){
   // the 2nd entry you draw is an automatic entry: what the desk has working for it right now, and why not when it has nothing
   const t = (state && state.trading) || {}, a = (t.auto || {})[d.symbol];
   if (!a) return "";
   const cls = a.state === "WORKING" || a.state === "PARTIAL" ? "ok" : a.state === "DONE" ? "gold" : a.state === "OFF" ? "dim" : a.state === "TRIGGERED" ? "no" : "";
   return `<div class="auto ${a.on ? "" : "off"}" id="suAuto"><label title="on: when a 2nd entry, a stop and a target are on the chart and the desk is ARMED, a stop-limit entry is placed through the 2nd entry with the stop and target attached, sized from your risk $. One entry per drawn level."><input type="checkbox" id="suAutoOn" ${a.on ? "checked" : ""}> AUTO 2ND ENTRY</label>
-    <span class="${cls}"><b>${esc(a.state)}</b> ${esc(a.text || "")}</span>${a.state === "WAITING" && a.qty ? ` <span class="dim">· ${sz(a.qty)} sh when it goes</span>` : ""}</div>`;
+    <span class="${cls}"><b>${esc(a.state)}</b> ${esc(a.text || "")}</span>${a.state === "WAITING" && a.qty ? ` <span class="dim">· ${sz(a.qty)} sh when it goes</span>` : ""}</div>${otherSideHTML(d)}`;
 }
 function suDerivedHTML(d, f){
   const x = suDerive(d, f), $ = v => v == null ? NA : "$" + v.toFixed(2);

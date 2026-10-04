@@ -976,9 +976,11 @@ class Engine:
 
     LEVEL_NAMES = {"trigger": "PIVOT", "second_entry": "2ND ENTRY", "target": "TARGET", "stop": "STOP"}
 
-    def set_play_level(self, symbol, role, price, t=None, source="setup"):
+    def set_play_level(self, symbol, role, price, t=None, source="setup", alt=False):
         """Set (or clear, with price None) the play's trigger / second_entry / target / stop
-        from the chart, re-point the reload trackers, and save plays.json."""
+        from the chart, re-point the reload trackers, and save plays.json. ``alt`` = the play's OTHER SIDE."""
+        if alt:
+            return self._set_alt_level(symbol, role, price, t, source)
         with self.lock:
             st = self._st(symbol)
             if st is None or role not in ("trigger", "second_entry", "target", "stop"):
@@ -1031,6 +1033,50 @@ class Engine:
             self._save_plays()
             return True
 
+    def _set_alt_level(self, symbol, role, price, t=None, source="setup"):
+        """The OTHER SIDE of a play (the short under a long, the long over a short): its own pivot, 2nd entry, stop and
+        target. Only its 2nd entry becomes an order; whichever side's 2nd entry fills first, the other is cancelled."""
+        with self.lock:
+            st = self._st(symbol)
+            if st is None or role not in ("trigger", "second_entry", "target", "stop"):
+                return False
+            if price is not None:
+                price = round(float(price), 4)
+                if price <= 0:
+                    return False
+            alt = st.play.setdefault("alt", {})
+            old = alt.get(role)
+            alt[role] = price
+            if role == "second_entry" and price is not None and (old is None or price_key(old) != price_key(price)):
+                alt["auto"] = True
+            other = "SHORT" if st.play.get("side", "long") == "long" else "LONG"
+            name = f"{other} {self.LEVEL_NAMES[role]}"
+            if (old is None) != (price is None) or (old is not None and price is not None and price_key(old) != price_key(price)):
+                self.log(symbol, f"{name} cleared (was {narrative.px(old)})" if price is None else
+                         f"{name} set {narrative.px(price)}" if old is None else f"{name} {narrative.px(old)} → {narrative.px(price)}",
+                         t, kind="level")
+            if not any(alt.get(r) for r in ("trigger", "second_entry", "target", "stop")):
+                st.play.pop("alt", None)
+            self._save_plays()
+            return True
+
+    def set_side_level(self, symbol, side, role, price, t=None, source="chart"):
+        """Draw a level for a SIDE (long or short). The play's own side takes it; the other side goes to the play's OTHER
+        SIDE. A blank play takes the side you draw first."""
+        with self.lock:
+            st = self._st(symbol)
+            if st is None or side not in ("long", "short"):
+                return False
+            p = st.play
+            blank = not any(p.get(r) for r in ("trigger", "second_entry", "target", "stop"))
+            if blank and side != p.get("side", "long"):
+                p["side"] = side; p["side_set"] = True
+                if p.get("alt"):                       # what was the other side is now the play's own side
+                    p.pop("alt", None)
+            if side == p.get("side", "long"):
+                return self.set_play_level(symbol, role, price, t, source)
+            return self._set_alt_level(symbol, role, price, t, source)
+
     def clear_play(self, symbol, t=None):
         """Wipe every level off a play (pivot, 2nd entry, target, stop, extras): a blank chart, still watched."""
         with self.lock:
@@ -1043,6 +1089,7 @@ class Engine:
                     self.set_play_level(symbol, role, None, t, source="CLEAR PLAY")
             for px_ in list(st.play.get("extra_levels") or []):
                 self.remove_level(symbol, px_, t)
+            st.play.pop("alt", None)              # and the other side
             st.play["side_set"] = False          # a blank chart has no side until you pick one or draw it
             old = st.play.get("trigger")
             if old is not None:
@@ -1097,7 +1144,7 @@ class Engine:
             return
         import json
         keep = ("symbol", "side", "side_set", "trigger", "second_entry", "target", "stop", "mp", "atr", "extra_levels", "notes", "setup", "active", "watch",
-                "auto", "exchange", "primary_exchange", "currency")
+                "auto", "exchange", "primary_exchange", "currency", "alt")
         def row(p):
             r = {("pivot" if k == "trigger" else k): p[k] for k in keep if k in p}
             return r
@@ -2451,6 +2498,12 @@ class Engine:
         for key, label in (("target", "TARGET"), ("stop", "STOP")):
             if play.get(key):
                 out.append({"price": play[key], "role": key, "label": label})
+        alt = play.get("alt") or {}
+        if alt:
+            arrow = "↓" if play.get("side", "long") == "long" else "↑"      # the other side: a short under a long, a long over a short
+            for key, label in (("trigger", "PIVOT"), ("second_entry", "2ND ENTRY"), ("target", "TARGET"), ("stop", "STOP")):
+                if alt.get(key):
+                    out.append({"price": alt[key], "role": "alt_" + key, "label": arrow + " " + label, "alt": True})
         return out
 
     def _prune_memory(self, st, t):
@@ -2927,7 +2980,7 @@ class Engine:
             "symbol": sym,
             "pinned": sym in self.pinned,
             "changed": change if change and t - change["t"] < 20 and change.get("prev") else None,
-            "play": {k: st.play.get(k) for k in ("side", "trigger", "second_entry", "target", "stop", "mp", "atr", "notes", "setup")},
+            "play": {k: st.play.get(k) for k in ("side", "trigger", "second_entry", "target", "stop", "mp", "atr", "notes", "setup", "alt")},
             "last": fmt_price(st.l1["last"]),
             "prev_close": fmt_price(st.l1.get("close")),
             "bid": fmt_price(bid), "ask": fmt_price(ask),

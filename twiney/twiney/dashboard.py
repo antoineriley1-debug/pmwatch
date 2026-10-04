@@ -276,9 +276,13 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                     # the pivot is locked: it moves only on an explicit, confirmed request (PLAY SETUP or the mark tool)
                     self._send(409, json.dumps({"ok": False, "reason": "the pivot is locked; change it in PLAY SETUP"}), "application/json")
                     return
-                if role in ("trigger", "second_entry", "target", "stop"):
-                    ok = engine.set_play_level(sym, role, body.get("price") if body.get("on", True) else None, clock(),
-                                               source="chart")
+                price = body.get("price") if body.get("on", True) else None
+                if body.get("side") in ("long", "short") and role in ("trigger", "second_entry", "target", "stop"):
+                    ok = engine.set_side_level(sym, body["side"], role, price, clock(), source="chart")
+                elif role.startswith("alt_") and role[4:] in ("trigger", "second_entry", "target", "stop"):
+                    ok = engine.set_play_level(sym, role[4:], price, clock(), source="chart", alt=True)
+                elif role in ("trigger", "second_entry", "target", "stop"):
+                    ok = engine.set_play_level(sym, role, price, clock(), source="chart")
                 else:
                     ok = (engine.add_level if body.get("on", True) else engine.remove_level)(sym, body.get("price"), clock())
                 self._send(200 if ok else 400, json.dumps({"ok": ok}), "application/json")

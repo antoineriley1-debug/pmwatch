@@ -124,3 +124,51 @@ class DemoStartsWithPartialLevelsTests(unittest.TestCase):
                   dict(plays()[0], symbol="S3", stop=None, target=None, trigger=None, second_entry=None, active=True)):
             feed = DemoFeed(e, [p], seed=1)
             self.assertIn(p["symbol"], feed.state)
+
+
+class TwoSidedPlayTests(unittest.TestCase):
+    """Pivots both ways at once: a long side over the price and a short side under it. Only the 2nd entries are orders
+    (their stop and target ride as children, live only once the entry fills). Whichever fills first, the other entry is
+    cancelled; the side you are in has its stop and target working."""
+    def test_short_side_fills_long_entry_cancelled_stop_gets_out(self):
+        e, tr, broker = make()
+        tr.set_risk(20); tr.set_auto(True, None, 1.5)
+        self.assertTrue(e.set_side_level("AAA", "long", "trigger", 10.20, 2.0))
+        self.assertTrue(e.set_side_level("AAA", "long", "second_entry", 10.25, 2.0))
+        self.assertTrue(e.set_side_level("AAA", "long", "stop", 10.05, 2.0))
+        self.assertTrue(e.set_side_level("AAA", "long", "target", 10.80, 2.0))
+        self.assertTrue(e.set_side_level("AAA", "short", "trigger", 9.80, 2.0))
+        self.assertTrue(e.set_side_level("AAA", "short", "second_entry", 9.75, 2.0))
+        self.assertTrue(e.set_side_level("AAA", "short", "stop", 9.95, 2.0))
+        self.assertTrue(e.set_side_level("AAA", "short", "target", 9.20, 2.0))
+        p = e.syms["AAA"].play
+        self.assertEqual((p["side"], p["second_entry"], p["alt"]["second_entry"]), ("long", 10.25, 9.75))
+        labels = [l["label"] for l in e._user_levels(p)]
+        self.assertIn("↓ 2ND ENTRY", labels); self.assertIn("↓ STOP", labels)
+        tr.watchdog(3.0)
+        entries = [o for o in e._pending("AAA") if o.get("role") == "entry"]
+        self.assertEqual(sorted((o["action"], o.get("aux")) for o in entries), [("BUY", 10.25), ("SELL", 9.75)])   # both 2nd entries working
+        self.assertEqual(broker.position("AAA"), 0)
+        # price breaks down through the short 2nd entry: the short fills
+        quote(e, 9.70, 9.71, 4.0); quote(e, 9.70, 9.71, 4.2)
+        self.assertLess(broker.position("AAA"), 0)
+        tr.watchdog(4.5); quote(e, 9.70, 9.71, 4.7); tr.watchdog(5.0)
+        entries = [o for o in e._pending("AAA") if o.get("role") == "entry"]
+        self.assertEqual(entries, [])                                                     # the long entry is gone
+        stops = [o for o in e._pending("AAA") if o.get("role") == "stop"]
+        self.assertTrue(stops and all(o["action"] == "BUY" and abs(o.get("aux") - 9.95) < 1e-9 for o in stops))   # the short side's stop
+        quote(e, 9.96, 9.97, 6.0); quote(e, 9.96, 9.97, 6.3)                            # back up through 9.95: stopped out
+        self.assertEqual(broker.position("AAA"), 0)
+
+    def test_other_side_saved_and_cleared(self):
+        import json, os, tempfile
+        e, tr, broker = make()
+        d = tempfile.mkdtemp(); e.plays_path = os.path.join(d, "plays.json")
+        e.set_side_level("AAA", "long", "second_entry", 10.25, 2.0); e.set_side_level("AAA", "short", "second_entry", 9.75, 2.0)
+        saved = json.load(open(e.plays_path))["plays"][0]
+        self.assertEqual(saved["alt"]["second_entry"], 9.75)
+        from twiney.config import validate_plays
+        back = validate_plays({"plays": [saved]})[0]
+        self.assertEqual(back["alt"]["second_entry"], 9.75)
+        e.clear_play("AAA", 3.0)
+        self.assertNotIn("alt", e.syms["AAA"].play)

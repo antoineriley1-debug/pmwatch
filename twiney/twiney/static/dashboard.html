@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261004-1936">
+<meta name="build" content="20261004-1953">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -719,7 +719,7 @@ i.tl{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:3p
 .oct td.act{text-align:right} .oct td.act button{padding:0 5px;font-size:9.5px;height:15px;line-height:13px;margin-left:2px} .oct .ob{color:var(--buy);border-color:var(--buy)} .oct .os{color:var(--sell);border-color:var(--sell)}
 .oct .hold{font:700 9px var(--sans);padding:0 3px;border-radius:2px;background:#26303f;margin-left:2px} .oct .hold.b{color:var(--buy)} .oct .hold.s{color:var(--sell)}
 .oc .wks{border-top:1px solid var(--line);padding:2px 6px;font:10.5px var(--mono)} .oc .wk{display:flex;gap:6px;align-items:center} .oc .wk button{padding:0 4px;font-size:9px}
-.rlb.ord{border-style:dashed} .rlb.ord.b{color:var(--buy)} .rlb.ord.s{color:var(--sell)}
+.rlb.ord{background:#0b0d10 !important;border:1px dashed;animation:none;font-family:var(--mono);letter-spacing:0} .rlb.ord.b{color:var(--buy);border-color:var(--buy)} .rlb.ord.s{color:var(--sell);border-color:var(--sell)}
 .lad.lad3.simple td.sz .rl.back,.lad.lad3 .rtag.back{background:var(--gold);color:#0c0c0d}
 /* the same reloader on both screens: a glowing border on his ladder row while he is active, and on every print that hits him */
 .lad tr.rl-bid.cv-active td.bsz{box-shadow:inset 0 0 0 1px #7dffb8,0 0 7px 1px rgba(63,181,111,.8) !important} .lad tr.rl-ask.cv-active td.asz{box-shadow:inset 0 0 0 1px #ffa0a8,0 0 7px 1px rgba(217,83,79,.8) !important}
@@ -828,6 +828,13 @@ i.tl{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:3p
 .ticket .simple.opm{border-color:rgba(123,108,246,.55)} .ticket .simple.opm .have b{font-size:13px}
 .ticket .simple .mgr button{white-space:nowrap;padding:0 4px;min-width:0;letter-spacing:0;font-size:11px}
 .ticket .simple .have{white-space:nowrap;overflow:hidden}
+
+/* right-click: both sides' levels */
+.lvl2{display:grid;gap:3px;margin:4px 0;padding:4px;border:1px solid var(--line);border-radius:4px}
+.lvl2>div{display:flex;gap:3px;align-items:center} .lvl2 b{width:58px;font:800 10px var(--sans);letter-spacing:.06em} .lvl2 b.b{color:var(--buy)} .lvl2 b.s{color:var(--sell)}
+.lvl2 .blvl{flex:1;padding:2px 4px;font-size:10px;white-space:nowrap}
+
+.auto.other{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center;margin-top:4px;font:11px var(--mono)} .auto.other b.s{color:var(--sell)} .auto.other b.b{color:var(--buy)} .auto.other button{margin-left:auto;padding:0 6px}
 
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
@@ -944,7 +951,7 @@ input:focus,select:focus,textarea:focus{outline:1px solid var(--gold);outline-of
 .datawin .r.vol{background:#1a1ad8;color:#fff}
 
 .datawin .ok{display:flex;justify-content:space-between;align-items:center;padding:0 4px} .datawin .ok .mn{cursor:pointer;font-weight:900;font-size:10px;line-height:11px;padding:0 3px}
-.datawin.min .r{display:none}
+.datawin.min .r{display:none} .datawin{height:auto !important}
 .qs .qscreen{height:16px;font:500 9px var(--sans);letter-spacing:.06em;background:#0a0a0b;color:#c9c9c6;border:1px solid #2c2e33;border-radius:2px;padding:0 3px;margin-right:4px}
 .lad tr.xh td{background:rgba(255,0,0,.14)} .lad tr.xh td.px{box-shadow:inset 0 0 0 2px #ff0000}
 
@@ -1681,10 +1688,10 @@ function chartMenu(p, v, x, y, price){
     <button class="bsell" data-do="sell" ${on ? "" : "disabled"}>SELL ${sz(t.default_shares)} limit @ ${px(price)}</button>
     ${d.position ? `<button class="bflat" data-do="flat" ${on ? "" : "disabled"}>Flatten ${esc(d.symbol)}</button>` : ""}
     ${d.orders.length ? `<button data-do="cxl">Cancel all (${d.orders.length})</button>` : ""}
-    <button data-do="lvl" data-role="trigger" class="blvl">PIVOT here ${px(price)}${d.play && d.play.trigger ? ` (now ${px(d.play.trigger)})` : ""}</button>
-    <button data-do="lvl" data-role="second_entry" class="blvl se">2ND ENTRY here ${px(price)} · the entry order</button>
-    <button data-do="lvl" data-role="target" class="blvl">TARGET here ${px(price)}</button>
-    <button data-do="lvl" data-role="stop" class="blvl">STOP here ${px(price)}</button>
+    <div class="lvl2" title="mark both sides: a long setup over the price and a short setup under it. Only the 2nd entries go in as orders; whichever fills first cancels the other, and that side's stop and target go live">
+      <div><b class="b">LONG ▲</b>${["trigger", "second_entry", "stop", "target"].map(r => `<button data-do="lvl" data-side="long" data-role="${r}" class="blvl ${r === "second_entry" ? "se" : ""}">${{trigger: "PIVOT", second_entry: "2ND", stop: "STOP", target: "TARGET"}[r]}</button>`).join("")}</div>
+      <div><b class="s">SHORT ▼</b>${["trigger", "second_entry", "stop", "target"].map(r => `<button data-do="lvl" data-side="short" data-role="${r}" class="blvl ${r === "second_entry" ? "se" : ""}">${{trigger: "PIVOT", second_entry: "2ND", stop: "STOP", target: "TARGET"}[r]}</button>`).join("")}</div>
+      <div class="dim">at ${px(price)}</div></div>
     <button data-do="alert" class="balert">🔔 Alert me when ${esc(d.symbol)} hits ${px(price)}</button>
     ${(() => { const per = v.chartY ? (v.chartY[1] - v.chartY[0]) / ((v.chartH || 1) - 8) : 0; const lv = (d.user_levels || []).find(l => l.role !== "trigger" && Math.abs(l.price - price) <= per * 6);
       return lv ? `<button data-do="rmlevel" data-role="${esc(lv.role)}" data-lp="${lv.price}">✕ Remove ${esc(lv.label)} ${px(lv.price)}</button>` : ""; })()}
@@ -1699,10 +1706,11 @@ function chartMenu(p, v, x, y, price){
     else if (b.dataset.do === "sell") sendOrder(d.symbol, "SELL", price);
     else if (b.dataset.do === "flat") flatten(d.symbol);
     else if (b.dataset.do === "cxl") cancelAll(d.symbol);
-    else if (b.dataset.do === "lvl"){ const role = b.dataset.role, names = {trigger: "pivot", second_entry: "2nd entry", target: "target", stop: "stop"};
-      const cur = d.play && d.play.trigger;
-      if (role === "trigger" && cur && Math.abs(cur - price) > 1e-9 && !confirm(`Move the ${d.symbol} pivot from ${px(cur)} to ${px(price)}?`)) return;
-      post("/api/level", {symbol: d.symbol, role, price, confirm: role === "trigger"}).then(out => { toast(out.ok ? `${d.symbol} ${names[role]} ${px(price)}` + (role === "second_entry" ? " — entry order going in" : "") : "Could not set the " + names[role], out.ok); if (out.ok) poll(true); }); }
+    else if (b.dataset.do === "lvl"){ const role = b.dataset.role, side = b.dataset.side || null, names = {trigger: "pivot", second_entry: "2nd entry", target: "target", stop: "stop"};
+      const own = !side || !d.play || side === d.play.side || !(d.play.trigger || d.play.second_entry || d.play.stop || d.play.target);
+      const cur = own ? d.play && d.play.trigger : d.play && d.play.alt && d.play.alt.trigger;
+      if (role === "trigger" && own && cur && Math.abs(cur - price) > 1e-9 && !confirm(`Move the ${d.symbol} pivot from ${px(cur)} to ${px(price)}?`)) return;
+      post("/api/level", {symbol: d.symbol, role, price, side, confirm: role === "trigger"}).then(out => { toast(out.ok ? `${d.symbol} ${side ? side.toUpperCase() + " " : ""}${names[role]} ${px(price)}` + (role === "second_entry" ? " — entry order going in (armed desk)" : "") : "Could not set the " + names[role], out.ok); if (out.ok) poll(true); }); }
     else if (b.dataset.do === "alert") addAlert({symbol: d.symbol, kind: "price", price, when: "hit", repeat: false});
     else if (b.dataset.do === "rmlevel"){ const role = b.dataset.role, lp = +b.dataset.lp;
       (role === "extra" ? post("/api/level", {symbol: d.symbol, price: lp, on: false, role: "extra"}) : post("/api/level", {symbol: d.symbol, role, price: null}))
@@ -2096,7 +2104,9 @@ function smaSeries(cl, n){ const out = new Array(cl.length).fill(null); let s = 
 function emaSeries(cl, n){ const out = new Array(cl.length).fill(null); if (cl.length < n) return out; const k = 2 / (n + 1); let e = 0; for (let i = 0; i < n; i++) e += cl[i]; e /= n; out[n - 1] = e; for (let i = n; i < cl.length; i++){ e = cl[i] * k + e * (1 - k); out[i] = e; } return out; }
 function bbSeries(cl, n, mult){ const up = new Array(cl.length).fill(null), dn = up.slice(), mid = up.slice(); for (let i = n - 1; i < cl.length; i++){ let s = 0, s2 = 0; for (let j = i - n + 1; j <= i; j++){ s += cl[j]; s2 += cl[j] * cl[j]; } const m = s / n, sd = Math.sqrt(Math.max(0, s2 / n - m * m)); mid[i] = m; up[i] = m + mult * sd; dn[i] = m - mult * sd; } return {up, dn, mid}; }
 const LEVEL_STYLE = {trigger:["#d6d6d3",[],1.6], second_entry:["#5aa9d6",[6,4],1.6], extra:["#b0b0ad",[3,4],1.2],
-  target:["#3fb56f",[2,4],1], stop:["#d9534f",[2,4],1]};
+  target:["#3fb56f",[2,4],1], stop:["#d9534f",[2,4],1],
+  // the OTHER SIDE of the play (a short under a long, a long over a short): same colours, its own dash, an arrow in the label
+  alt_trigger:["#c9b8ff",[10,3,2,3],1.6], alt_second_entry:["#5aa9d6",[10,3,2,3],1.6], alt_target:["#3fb56f",[8,3,2,3],1], alt_stop:["#d9534f",[8,3,2,3],1]};
 
 function drawOne(p, cv, v, isFoot){
   const d = p.data;
@@ -3101,7 +3111,7 @@ function renderDataWin(p){
   if (!on){ if (w) w.style.display = "none"; return; }
   if (!w){
     w = document.createElement("div"); w.className = "datawin"; wrap.appendChild(w);
-    const pos = store.get("datawin.pos", null); if (pos){ w.style.left = pos[0] + "px"; w.style.top = pos[1] + "px"; }
+    const pos = store.get("datawin.pos", null); if (pos){ w.style.left = pos[0] + "px"; w.style.top = pos[1] + "px"; w.style.bottom = "auto"; }
     w.addEventListener("click", e => { if (e.target.classList.contains("mn")){ store.set("datawin.min", !store.get("datawin.min", false)); w.dataset.h = ""; renderDataWin(p); } });
     w.addEventListener("mousedown", e => { if (e.target.classList.contains("mn")) return; e.stopPropagation(); e.preventDefault(); const r = w.getBoundingClientRect(), wr = wrap.getBoundingClientRect(), dx = e.clientX - r.left, dy = e.clientY - r.top;
       const mv = ev => { w.style.left = Math.max(0, Math.min(wr.width - r.width, ev.clientX - wr.left - dx)) + "px"; w.style.top = Math.max(0, Math.min(wr.height - r.height, ev.clientY - wr.top - dy)) + "px"; w.style.bottom = "auto"; };
@@ -3520,7 +3530,7 @@ function rlBanner(wrap, d){
   // working orders that sit outside the ladder's rows (the still ladder keeps its rows while price moves):
   // never invisible — a tag says where they are, with the chip's cancel on it
   const prices = new Set(rows.map(r => +r.price)), lo = rows.length ? Math.min(...prices) : null, hi = rows.length ? Math.max(...prices) : null;
-  const off = (d.orders || []).filter(o => o.price && !prices.has(+o.price) && lo != null).map(o => `<span class="rlb ord ${o.action === "BUY" ? "b" : "s"} ${o.price > hi ? "up" : "down"}" data-oid="${o.id}" title="${esc(o.type || "")} ${esc(o.role || "")} order, ${o.price > hi ? "above" : "below"} the rows on screen · click to cancel it">${o.price > hi ? "▲" : "▼"} ${esc(o.action)} ${sz(o.qty)} @ ${px(o.price)}${o.type && o.type !== "LMT" ? " " + esc(o.type) : ""} ✕</span>`).join("");
+  const off = (d.orders || []).filter(o => o.price && !prices.has(+o.price) && lo != null).map(o => `<span class="rlb ord ${o.action === "BUY" ? "b" : "s"} ${o.price > hi ? "up" : "down"}" data-oid="${o.id}" title="${esc(o.type || "")} ${esc(o.role || "")} order, ${o.price > hi ? "above" : "below"} the rows on screen · click to cancel it">${o.price > hi ? "▲" : "▼"} YOUR ${esc(o.action)} ${sz(o.qty)} @ ${px(o.price)}${o.type && o.type !== "LMT" ? " " + esc(o.type) : ""} · ${o.price > hi ? "above" : "below"} the ladder ✕</span>`).join("");
   const html = off + items.map(i => `<span class="rlb ${i.side === "bid" ? "b" : "s"} ${i.where}" data-jump="${i.price}" title="${esc(i.rw.text)} · ${i.stage} · click to jump to it">${i.where === "up" ? "▲" : i.where === "down" ? "▼" : "●"} RELOAD ${i.side === "bid" ? "BUYER" : "SELLER"}${i.rw.back ? ` BACK ×${i.rw.back.n} (gone ${Math.max(1, Math.round((i.rw.back.away || 0) / 60))}m)` : ""} ${px(i.price)} · ${i.side === "bid" ? "bought" : "sold"} ${kfmt(i.rw.n)} sh · ${usdK(i.rw.usd)}${i.rw.back && i.rw.all > i.rw.n ? ` · ${kfmt(i.rw.all)} all visits` : ""}${i.rw.peak && i.rw.n > i.rw.peak ? ` · never showed more than ${kfmt(i.rw.peak)} at once (iceberg, refilled ${i.n}×)` : ""}${i.where !== "on" ? ` · ${i.rowsAway} rows ${i.where}` : ""}${i.knows ? " ⚡" : ""}</span>`).join("");
   if (ban.dataset.h !== html){ ban.dataset.h = html; ban.innerHTML = html; ban.classList.toggle("on", !!(items.length || off)); }
 }
@@ -3694,13 +3704,26 @@ function suDerive(d, f){
   if ((pivot && mp && sgn * (mp - pivot) <= 0) || (mp && entry && sgn * (mp - entry) <= 0)) bad.push("target");
   return {side, pivot, second, stop, mp, entry, entryLbl, risk, room, r, shares, bad, seState, fromSecond: !!second, stopRefLbl};
 }
+// the play's OTHER SIDE (a short under a long, a long over a short): its levels, its entry order, and a clear button
+function otherSideHTML(d){
+  const alt = d.play && d.play.alt; if (!alt) return "";
+  const a = ((state && state.trading) || {}).auto || {}, st = a[d.symbol + "|alt"], side = d.play.side === "long" ? "SHORT" : "LONG";
+  const f = (k, l) => alt[k] ? `<span>${l} <b>${px(alt[k])}</b></span>` : `<span class="dim">${l} —</span>`;
+  const cls = st && (st.state === "WORKING" || st.state === "PARTIAL") ? "ok" : st && st.state === "DONE" ? "gold" : "";
+  return `<div class="auto other"><b class="${side === "SHORT" ? "s" : "b"}">${side === "SHORT" ? "SHORT ▼" : "LONG ▲"} SIDE</b>${f("trigger", "pivot")}${f("second_entry", "2nd")}${f("stop", "stop")}${f("target", "target")}
+    ${st ? `<span class="${cls}"><b>${esc(st.state)}</b> ${esc(st.text || "")}</span>` : ""}<button data-clearalt="1" title="take the ${side.toLowerCase()} side off the chart (its entry order is cancelled)">✕</button></div>`;
+}
+document.addEventListener("click", async e => { if (!e.target.closest("button[data-clearalt]") || !curSym) return;
+  const d = curData(); if (!d || !d.play || !d.play.alt) return;
+  for (const r of ["second_entry", "stop", "target", "trigger"]) if (d.play.alt[r]) await post("/api/level", {symbol: curSym, role: "alt_" + r, price: null});
+  toast(curSym + ": other side cleared", true); P.setup.last = null; poll(true); });
 function autoEntryHTML(d){
   // the 2nd entry you draw is an automatic entry: what the desk has working for it right now, and why not when it has nothing
   const t = (state && state.trading) || {}, a = (t.auto || {})[d.symbol];
   if (!a) return "";
   const cls = a.state === "WORKING" || a.state === "PARTIAL" ? "ok" : a.state === "DONE" ? "gold" : a.state === "OFF" ? "dim" : a.state === "TRIGGERED" ? "no" : "";
   return `<div class="auto ${a.on ? "" : "off"}" id="suAuto"><label title="on: when a 2nd entry, a stop and a target are on the chart and the desk is ARMED, a stop-limit entry is placed through the 2nd entry with the stop and target attached, sized from your risk $. One entry per drawn level."><input type="checkbox" id="suAutoOn" ${a.on ? "checked" : ""}> AUTO 2ND ENTRY</label>
-    <span class="${cls}"><b>${esc(a.state)}</b> ${esc(a.text || "")}</span>${a.state === "WAITING" && a.qty ? ` <span class="dim">· ${sz(a.qty)} sh when it goes</span>` : ""}</div>`;
+    <span class="${cls}"><b>${esc(a.state)}</b> ${esc(a.text || "")}</span>${a.state === "WAITING" && a.qty ? ` <span class="dim">· ${sz(a.qty)} sh when it goes</span>` : ""}</div>${otherSideHTML(d)}`;
 }
 function suDerivedHTML(d, f){
   const x = suDerive(d, f), $ = v => v == null ? NA : "$" + v.toFixed(2);

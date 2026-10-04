@@ -291,7 +291,7 @@ function renderDataWin(p){
   if (!on){ if (w) w.style.display = "none"; return; }
   if (!w){
     w = document.createElement("div"); w.className = "datawin"; wrap.appendChild(w);
-    const pos = store.get("datawin.pos", null); if (pos){ w.style.left = pos[0] + "px"; w.style.top = pos[1] + "px"; }
+    const pos = store.get("datawin.pos", null); if (pos){ w.style.left = pos[0] + "px"; w.style.top = pos[1] + "px"; w.style.bottom = "auto"; }
     w.addEventListener("click", e => { if (e.target.classList.contains("mn")){ store.set("datawin.min", !store.get("datawin.min", false)); w.dataset.h = ""; renderDataWin(p); } });
     w.addEventListener("mousedown", e => { if (e.target.classList.contains("mn")) return; e.stopPropagation(); e.preventDefault(); const r = w.getBoundingClientRect(), wr = wrap.getBoundingClientRect(), dx = e.clientX - r.left, dy = e.clientY - r.top;
       const mv = ev => { w.style.left = Math.max(0, Math.min(wr.width - r.width, ev.clientX - wr.left - dx)) + "px"; w.style.top = Math.max(0, Math.min(wr.height - r.height, ev.clientY - wr.top - dy)) + "px"; w.style.bottom = "auto"; };

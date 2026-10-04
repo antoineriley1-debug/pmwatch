@@ -469,6 +469,25 @@ def load_config(path):
 LOAD_WARNINGS = []   # level problems found in plays.json on the last load: said on the desk, never a refusal to start
 
 
+def _alt_side(raw):
+    """A play's OTHER SIDE from plays.json: its own pivot / 2nd entry / stop / target (numbers or nothing)."""
+    if not isinstance(raw, dict):
+        return None
+    out = {}
+    for k_in, k in (("pivot", "trigger"), ("trigger", "trigger"), ("second_entry", "second_entry"), ("stop", "stop"), ("target", "target")):
+        v = raw.get(k_in)
+        try:
+            v = float(v) if v not in (None, "") else None
+        except (TypeError, ValueError):
+            v = None
+        if v and v > 0 and out.get(k) is None:
+            out[k] = v
+    if not out:
+        return None
+    out["auto"] = bool(raw.get("auto", True))
+    return out
+
+
 def validate_plays(raw):
     items = raw.get("plays") if isinstance(raw, dict) else raw
     if not isinstance(items, list) or not items:
@@ -552,6 +571,7 @@ def validate_plays(raw):
             "watch": watch,
             "auto": bool(item.get("auto", True)),
             "side_set": bool(item.get("side_set", False)),
+            **({"alt": _alt_side(item.get("alt"))} if _alt_side(item.get("alt")) else {}),
             "exchange": str(item.get("exchange", "SMART")).upper(),
             "primary_exchange": str(item.get("primary_exchange", "")).upper(),
             "currency": str(item.get("currency", "USD")).upper(),
