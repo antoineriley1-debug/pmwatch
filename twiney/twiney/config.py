@@ -387,6 +387,85 @@ DEFAULTS = {
         # how long a price keeps its REAL / FAKE record after the last change (seconds)
         "real_memory_seconds": 3600.0,
     },
+    # the chart studies on the STOCK chart (never the option chart), ported from your TradingView scripts. Each
+    # one switches off on its own; the numbers match TradingView: Wilder ATR, the chart's own EMAs / SMAs / BB
+    "studies": {
+        "gas": True,                    # GAS + ATR (new PS60 Gas + ATR)
+        "airspace": True,               # AIRSPACE (PS60 MP Airspace)
+        "unvisited": True,              # UNVISITED HIGHS / LOWS (new Unvisited Highs Lows)
+        # GAS + ATR
+        "atr_len": 14,                  # ATR length (days)
+        "atr_smoothing": "RMA",         # RMA (Wilder, TradingView's ATR), EMA, SMA or WMA
+        "gas_readout": True,            # the gas tank readout (bottom right)
+        "atr_levels": True,             # 1 / 2 / 3 ATR levels off today's range
+        "atr_zones": True,              # ATR eaten zone colours
+        "atr_one_side": True,           # the ATR ladder only on the side the day is moving
+        "atr_halves": False,            # 1.5 / 2.5 ATR too
+        "open_line": True,              # today's 9:30 open (locked)
+        "prev_day": True,               # prev day high / low / close
+        "premarket": True,              # premarket high / low (locked at 9:30)
+        "after_hours": False,           # the last completed after-hours high / low
+        "old_supply_demand": True,      # last finished month's high (old supply) / low (old demand)
+        "whole_numbers": True,          # whole-number lines
+        "whole_above": 3,               # whole numbers above price
+        "whole_below": 3,               # whole numbers below price
+        "whole_step": 0.0,              # whole-number step (0 = auto: $5 over 200, $1 over 80, else $0.50)
+        "daily_box": True,              # the daily box (last N days)
+        "box_len": 10,                  # daily box lookback (days)
+        "box_tight_only": True,         # only draw the box when it is tight
+        "box_tight_x": 4.0,             # tight = box range up to this x ATR
+        "tight_box": False,             # TIGHT BOX master: replaces the daily box, its edges become the 2nd-entry pivots
+        "tb_window": 10,                # tight box window (completed days)
+        "tb_max_x": 2.0,                # a real tight box is at most this x ATR tall
+        "tb_reject_wild": True,         # no wild bars allowed in the tight box
+        "tb_wild_x": 1.8,               # wild bar = range over this x the window's average
+        "second_entry": True,           # second-entry helper (pivot = your pivot on the chart, or the tight box)
+        "se_retrace_pct": 30.0,         # 2nd entry: retrace % of the first push
+        "se_min_retrace_x": 0.3,        # 2nd entry: and at least this x ATR
+        "se_near_x": 0.15,              # 2nd entry: NEAR within this x ATR
+        "se_hour_reset": True,          # 2nd entry: miss the 60, need a new second
+        "cont_odds": True,              # continuation odds (similar days, 30-minute sample)
+        "cont_tol": 0.15,               # similar day = within this x ATR of today
+        "cont_t1": 1.0,                 # odds target #1 (x ATR)
+        "cont_t2": 1.5,                 # odds target #2 (x ATR)
+        "cont_max_days": 300,           # days in the odds sample
+        "cont_min_days": 20,            # days needed before the odds print
+        "day_after": True,              # day-after stats (exhaustion read)
+        "next_stop": False,             # NEXT STOP lines in the readout
+        "earnings_date": "",            # earnings release date YYYY-MM-DD for the reaction bar (blank = off)
+        "earnings_next_session": True,  # reaction bar = the next session (after-close report); off = same day
+        "label_merge_pct": 0.15,        # labels closer than this % of price share one row
+        # AIRSPACE
+        "air_board": True,              # the AIRSPACE lights board (top right)
+        "air_atr_live": True,           # Airspace ATR distances on the LIVE day's ATR (TradingView Airspace); off = the GAS tank ATR
+        "air_min_air": 5.0,             # min MP air ($)
+        "air_stack_dollars": 1.0,       # stack levels within $
+        "air_stack_atr": 0.20,          # stack levels x ATR (gap limit = the larger)
+        "air_bounce_reject": True,      # Bounce / Reject stubs
+        "air_bb": True,                 # Bollinger upper / lower count as levels
+        "air_range_structure": True,    # range / pivot highs-lows feed the MP band
+        "air_rng_lookback": 15,         # range lookback (days)
+        "air_pivot_bars": 3,            # pivot bars each side
+        "air_weekly_fallback": True,    # Weekly nearest when the Daily is blank
+        "air_mt_supply": True,          # MT SUPPLY Nx line
+        "air_mt_demand": True,          # MT DEMAND Nx line
+        "air_mt_lookback": 80,          # MT lookback (days)
+        "air_mt_touches": 3,            # MT min touches
+        "air_mt_cluster_dollars": 3.0,  # MT cluster within $
+        "air_mt_cluster_atr": 0.10,     # MT cluster x ATR
+        "air_mt_takeout_atr": 0.15,     # MT taken out = this x ATR through
+        "air_merge_tol": 0.50,          # Bounce / Reject: a chart MA within this $ = confluence
+        # UNVISITED HIGHS / LOWS
+        "uv_highs": True,               # unvisited highs (supply)
+        "uv_lows": True,                # unvisited lows (demand)
+        "uv_left": 5,                   # daily pivot left bars
+        "uv_right": 5,                  # daily pivot right bars
+        "uv_max": 12,                   # max levels each side
+        "uv_reach_pct": 0.25,           # within reach % of price = a touch
+        "uv_soft_touch": True,          # soft touch: a touch dashes the line, only a daily close through clears
+        "uv_cluster_pct": 0.50,         # levels within this % merge into one line
+        "uv_age": True,                 # show the age (days) on the label
+    },
     "recording": {
         "enabled": True,
         "dir": "recordings",

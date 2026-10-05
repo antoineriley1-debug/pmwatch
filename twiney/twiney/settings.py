@@ -30,6 +30,7 @@ SECTIONS = [
     ("trap", "Trapped traders", "Aggressive prints now underwater."),
     ("depth", "Market depth", "IBKR depth subscriptions and rotation."),
     ("chart", "Chart history", "History loaded at startup."),
+    ("studies", "Chart studies", "GAS + ATR, AIRSPACE and UNVISITED HIGHS / LOWS on the stock chart (never the option chart). Each switches off on its own."),
     ("account", "Account", "Orders, positions and fills."),
     ("health", "Feed health", "When a feed counts as stale."),
     ("demo", "Practice", "The practice market."),
@@ -57,6 +58,7 @@ CHOICES = {
     "demo.scenario": [(None, "random each session"), ("mixed", "mixed"), ("trend_up", "trend up"), ("trend_down", "trend down"),
                       ("chop", "chop"), ("capitulation", "capitulation"), ("squeeze", "squeeze")],
     "ps60.second_entry_tf": [(1, "1 minute"), (5, "5 minutes")],
+    "studies.atr_smoothing": [("RMA", "RMA · Wilder (TradingView ATR)"), ("EMA", "EMA"), ("SMA", "SMA"), ("WMA", "WMA")],
 }
 
 LABELS = {
@@ -102,6 +104,9 @@ def _help_from_source():
         if m:
             key, rest = m.group(1), m.group(2)
             path = ".".join(stack + [key])
+            tail = re.search(r',\s*#\s*(.+)$', rest)       # a comment on the same line names the setting
+            if tail:
+                INLINE[path] = tail.group(1).strip()
             if pending:
                 out[path] = " ".join(pending)
             pending = []
@@ -116,6 +121,7 @@ def _help_from_source():
     return out
 
 
+INLINE = {}
 HELP = _help_from_source()
 
 
@@ -171,7 +177,7 @@ def schema(cfg):
                 continue                          # an old setting kept only so saved configs still load
             kind = _kind(path, default)
             value = _get(cfg, path)
-            f = {"path": path, "label": _label(path.split(".")[-1]), "help": HELP.get(path, ""), "type": kind,
+            f = {"path": path, "label": INLINE[path] if path.startswith("studies.") and path in INLINE else _label(path.split(".")[-1]), "help": HELP.get(path, ""), "type": kind,
                  "restart": path.startswith(RESTART) or any(path == r for r in RESTART), "locked": LOCKED.get(path)}
             if kind == "secret":
                 f["value"] = ""

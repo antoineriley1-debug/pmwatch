@@ -246,6 +246,26 @@ class DemoFeed:
             rng_pct = (h - l) / max(c, 0.01)
             vol = int(rng.lognormvariate(math.log(s.base * 3000), 0.3) * (0.6 + 25 * rng_pct))
             self.engine.on_daily_bar(sym, day0, o, h, l, c, vol)
+        # the chart studies' 30-minute history (the CONT odds sample, the 60-minute MAs): 13 half hours per practice
+        # day that open at its open, touch its high and low and close at its close
+        for day0, o, h, l, c in day_bars[-160:]:
+            first_hi = rng.random() < 0.5
+            k1, k2 = sorted(rng.sample(range(1, 12), 2))
+            anchors = {0: o, k1: h if first_hi else l, k2: l if first_hi else h, 13: c}
+            keys = sorted(anchors)
+            pts = []
+            for a, b in zip(keys, keys[1:]):
+                for j in range(b - a):
+                    pts.append(anchors[a] + (anchors[b] - anchors[a]) * j / (b - a))
+            pts.append(c)
+            vday = 0.0
+            for j in range(13):
+                bo, bc = pts[j], pts[j + 1]
+                bh = max(bo, bc) + rng.uniform(0, (h - l) * 0.05); bl = min(bo, bc) - rng.uniform(0, (h - l) * 0.05)
+                bh, bl = min(bh, h), max(bl, l)        # the day's high and low are endpoints of the path: never past them
+                t30 = day0 + SESSION_OPEN + 1800 * j
+                self.engine.on_study_bar(sym, "m30", t30, round(bo, 2), round(max(bh, bo, bc), 2), round(min(bl, bo, bc), 2), round(bc, 2),
+                                         float(rng.randint(2000, 20000)))
         sessions = [b[0] for b in day_bars[-5:]]
         n_total = 390 * len(sessions)
         end_px = s.mid0

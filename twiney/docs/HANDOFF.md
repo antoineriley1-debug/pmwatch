@@ -171,3 +171,31 @@ stop to breakeven after the first cash flow.
   (`recording.mark_screenshot` also grabs the screen when Pillow can).
 - `Desk.reconcile` (engine tick, every 5 s): an open journal trade whose real position is flat is dropped and said.
 - JOURNAL panel: IN TRADE card (name it, live P&L, plan, words, marks), then the trades with ▸ details and SAVE.
+
+## Chart studies (your TradingView scripts, inside TED) — stock charts only
+
+`twiney/studies.py` ports three scripts line for line: **new PS60 Gas + ATR**, **PS60 MP Airspace**, **new Unvisited Highs
+Lows**. Each switches off on its own (SETTINGS > Chart studies, or the IND menu on the chart); every input of the
+scripts is a setting there. Never drawn on the option chart.
+
+Data (IBKR, asked one at a time so TWS never flags pacing; asked again each new day after 9:25):
+- Daily 10 years (the Daily / Weekly 200s settle like TradingView's), 30-minute regular hours 1 year (the CONT
+  sample; 60-minute candles = two 30s from 9:30, like TradingView's), 5-minute extended hours 3 days kept up to date
+  (premarket / after hours / the 9:30 open), 5-minute chart history 2 months (the 5 / 15 minute charts' long MAs).
+- Everything is recorded, so replays draw the studies too.
+
+One number everywhere:
+- ATR = Wilder (TradingView's ta.atr) for the desk, the play grades and the studies.
+- High / low of day = the regular session only (9:30-4:00). The chart's daily candle, the ladder's HOD / LOD and
+  the studies use the same one. The practice market (any time of day) is exempt.
+- The study MAs are the chart's MAs: same bars, same formulas (EMA seeded with the SMA, population-stdev BB).
+  Verified equal to the last digit.
+
+Deliberate differences from the TradingView scripts (from reviewing them):
+- Unvisited highs / lows: a level is cleared only by a COMPLETED daily close through it. On TradingView the
+  realtime daily close clears it intraday, and it comes back on a refresh. TED flags "CLOSING THROUGH" until the close.
+- One second-entry helper: the pivot is YOUR pivot on the chart (or the tight box when its master is on). The
+  two scripts each had their own, with different tight-box defaults.
+- Prev day high / low / close before 9:30 = yesterday (the scripts' daily [1] reads the day before in premarket).
+- Earnings: IBKR's API has no earnings calendar, so the reaction bar takes a date you type (SETTINGS).
+- Airspace ATR distances use the live day's ATR like the script; "Airspace ATR on the live day" off = the GAS tank ATR.

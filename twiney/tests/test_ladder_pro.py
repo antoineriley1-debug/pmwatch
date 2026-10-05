@@ -218,7 +218,7 @@ class DayTrapTests(unittest.TestCase):
         from twiney.ps60 import ny_day
         e = Engine(plays(), cfg(trap={"session_lean_fraction": 0.2, "session_heavy_fraction": 0.35, "session_min_move_pct": 1.0}))
         e.on_connection("DEMO", "", 0.0); e.apply_slot("AAA", True, 0.0)
-        t0 = 1_800_000_000.0 + 13.5 * 3600            # a weekday morning, New York
+        t0 = 1_800_000_000.0 + 7.0 * 3600            # a weekday morning, New York
         e.on_l1("AAA", "bid", 99.99, t0); e.on_l1("AAA", "ask", 100.0, t0)
         # the drive: buyers pay up from 100 to 103.5 over eight minutes (8,000 shares)
         for i in range(8):
@@ -252,7 +252,7 @@ class DayTrapScenarioTests(unittest.TestCase):
     def _run(self, path, step=8.0):
         import random
         e = Engine(plays(), cfg()); e.on_connection("DEMO", "", 0.0); e.apply_slot("AAA", True, 0.0)
-        t0 = 1_800_000_000.0 + 13.5 * 3600; t = t0; labels = []
+        t0 = 1_800_000_000.0 + 7.0 * 3600; t = t0; labels = []
         e.listeners.append(lambda a: labels.append(a["label"]) if a.get("role") == "trap" else None)
         for i, (px, sz, side) in enumerate(path):
             bid, ask = (px - 0.01, px) if side == "buy" else (px, px + 0.01)
@@ -297,7 +297,7 @@ class DayTrapScenarioTests(unittest.TestCase):
         d = self._drive
         path = d(185, 187.4, 60, "buy") + d(187.4, 186.8, 20, "sell") + d(186.8, 187.0, 10, "buy") + d(187.0, 183.0, 300, "sell")
         e = Engine(plays(), cfg()); e.on_connection("DEMO", "", 0.0); e.apply_slot("AAA", True, 0.0)
-        t0 = 1_800_000_000.0 + 13.5 * 3600; t = t0; alerts = []
+        t0 = 1_800_000_000.0 + 7.0 * 3600; t = t0; alerts = []
         e.listeners.append(lambda a: alerts.append((round((a["t"] - t0) / 60), a["label"])) if a.get("role") == "trap" else None)
         def flow(cp, prem, when):
             e.on_flow({"t": when, "symbol": "AAA", "cp": cp, "premium": prem, "dte": 4.0, "otm_pct": 3.0, "strike": 180.0 if cp == "P" else 190.0,

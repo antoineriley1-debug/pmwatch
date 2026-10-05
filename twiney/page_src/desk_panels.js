@@ -1826,15 +1826,15 @@ async function poll(now){
       if (!d) continue;
       const c = BARS[d.symbol];
       HVER[d.symbol] = d.hist_ver;
-      if (d.bars_full){ BARS[d.symbol] = {bars: d.bars || [], daily: d.daily || [], ver: d.hist_ver}; continue; }
+      if (d.bars_full){ BARS[d.symbol] = {bars: d.bars || [], daily: d.daily || [], m5: d.m5 || [], m30: d.m30 || [], ver: d.hist_ver}; continue; }
       if (!c){ d.daily = []; continue; }   // only the live tail came: show it, never keep it as the history
       // the tail must join onto what we hold (no missing minutes); if not, fetch the full history next poll
       const tb = (d.bars || [])[0], lastC = c.bars.length ? c.bars[c.bars.length - 1][0] : null;
-      if (tb && lastC != null && tb[0] > lastC + 60){ c.ver = -1; d.bars = c.bars.concat(d.bars); d.daily = c.daily; continue; }
+      if (tb && lastC != null && tb[0] > lastC + 60){ c.ver = -1; d.bars = c.bars.concat(d.bars); d.daily = c.daily; d.m5 = c.m5; d.m30 = c.m30; continue; }
       // merge the tail: replace bars we have by timestamp, append new ones
       for (const b of d.bars || []){ const i = c.bars.findIndex(x => x[0] >= b[0]); if (i < 0) c.bars.push(b); else if (c.bars[i][0] === b[0]) c.bars[i] = b; else c.bars.splice(i, 0, b); }
       if (c.bars.length > 2600) c.bars.splice(0, c.bars.length - 2600);
-      d.bars = c.bars; d.daily = c.daily;
+      d.bars = c.bars; d.daily = c.daily; d.m5 = c.m5; d.m30 = c.m30;
     }
     const t1 = performance.now();
     render(s);

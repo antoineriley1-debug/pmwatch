@@ -6,6 +6,7 @@ slot commands ("depth_on"/"depth_off") which the market-data adapter executes.
 """
 
 from . import board, options, orderflow
+import logging
 import threading
 import time
 from collections import deque
@@ -19,6 +20,8 @@ from .levels import BUILDING, GONE_PENDING, RELOAD, LevelTracker, WATCHING
 from .prices import fmt_price, price_key, tick_size
 from .ranking import allocate, distances, rank
 from .tape import MID, Tape, classify
+
+log = logging.getLogger("twiney.engine")
 
 L1_FIELDS = ("bid", "ask", "last", "bid_size", "ask_size", "last_size", "volume",
              "high", "low", "close", "open")
@@ -73,6 +76,12 @@ class SymbolState:
         self.invalidation_armed = True  # after Reactivate, wait for price to get back inside stop/target first
         self.bars = {}          # minute start -> [o, h, l, c, v, buy_v, sell_v]
         self.daily = {}         # day start -> [o, h, l, c] from IBKR daily bars (ATR)
+        # the chart studies' own IBKR histories (Gas + ATR, Airspace, Unvisited highs / lows): native bars so the
+        # 30 / 60 minute moving averages and samples match TradingView's (60-minute candles = two 30s from 9:30). bar start -> [o, h, l, c, v]
+        self.m30 = {}           # 30 minutes, regular session, 1 year (the CONT odds sample)
+        self.m5x = {}           # 5 minutes WITH extended hours, 3 days, kept up to date (premarket / after hours / 9:30 open)
+        self.m5 = {}            # 5 minutes, the chart's session, 2 months: the 5 / 15 minute charts' long MAs
+        self.study_ver = 0
         self.remounts = set()   # (level, kind, t) already called
         self.sizes = {ASK: {}, BID: {}}   # last aggregated size per price on each side (voice call-outs)
         self.big = {ASK: {}, BID: {}}     # price_key -> [times big size has shown up here, peak, showing now]
@@ -454,10 +463,13 @@ class Engine:
                     st.day_sums[key] = [size, price * size, price]
                 else:
                     ds[0] += size; ds[1] += price * size
-            if st.day_hi is None or price > st.day_hi[0]:
-                st.day_hi = (price, t)
-            if st.day_lo is None or price < st.day_lo[0]:
-                st.day_lo = (price, t)
+            # high / low of day = the REGULAR session only (9:30-4:00 New York), like the daily candle on every
+            # chart package: a premarket print never sets the day's low
+            if self.connection["state"] == "DEMO" or ps60.is_rth(t):
+                if st.day_hi is None or price > st.day_hi[0]:
+                    st.day_hi = (price, t)
+                if st.day_lo is None or price < st.day_lo[0]:
+                    st.day_lo = (price, t)
             ts = st.trap_sums.get(key)
             if ts is None:
                 st.trap_sums[key] = [size, price * size, price]
@@ -499,10 +511,49 @@ class Engine:
             if v is not None:
                 st.daily_vol[t0] = float(v)
             st.hist_ver += 1
-            if len(st.daily) > 300:
-                for k in sorted(st.daily)[:len(st.daily) - 300]:
+            if len(st.daily) > 3000:          # ~12 years: the Daily / Weekly 200s settle exactly like TradingView's
+                for k in sorted(st.daily)[:len(st.daily) - 3000]:
                     del st.daily[k]
                     st.daily_vol.pop(k, None)
+
+    STUDY_CAPS = {"m30": 4400, "m5x": 900, "m5": 4200}
+
+    def on_study_bar(self, symbol, kind, t0, o, h, l, c, v=None):
+        """A native IBKR bar for the chart studies: kind "m30" / "m5x" / "m5" (see SymbolState)."""
+        if kind not in self.STUDY_CAPS:
+            return
+        with self.lock:
+            st = self._st(symbol)
+            if st is None or None in (o, h, l, c):
+                return
+            self._rec({"ev": "sbar", "t": self.last_t or t0, "sym": symbol, "k": kind, "t0": t0, "o": o, "h": h, "l": l, "c": c, "v": v})
+            store = getattr(st, kind)
+            store[t0] = [o, h, l, c, float(v or 0.0)]
+            cap = self.STUDY_CAPS[kind]
+            if len(store) > cap:
+                for k in sorted(store)[:len(store) - cap]:
+                    del store[k]
+            st.study_ver += 1
+            if kind != "m5x":            # the chart's longer history changed: the page fetches it again
+                st.hist_ver += 1
+
+    def studies_for(self, st, t):
+        """The chart studies for one symbol (GAS + ATR, AIRSPACE, UNVISITED HIGHS / LOWS), at most once a second."""
+        sc = self.cfg.get("studies") or {}
+        if not (sc.get("gas") or sc.get("airspace") or sc.get("unvisited")):
+            return None
+        memo = st.__dict__.setdefault("_studies", {})
+        if memo.get("v") is not None and t - memo.get("t", -1e9) < 1.0 and memo.get("ver") == (st.study_ver, st.hist_ver):
+            return memo["v"]
+        from . import studies
+        st._any_session = self.connection["state"] == "DEMO"     # practice: today is whatever the practice market traded
+        try:
+            v = studies.compute(st, t, sc)
+        except Exception as exc:                 # a study must never take the chart down
+            log.exception("studies %s", st.symbol)
+            v = {"error": str(exc)}
+        memo.update(v=v, t=t, ver=(st.study_ver, st.hist_ver))
+        return v
 
     def on_hist_bar(self, symbol, t0, o, h, l, c, v):
         """Historical 1-minute bar (reqHistoricalData) so the chart has context at startup."""
@@ -2912,6 +2963,8 @@ class Engine:
                     self.grades.pop(ev["key"], None)
         elif kind == "dbar":
             self.on_daily_bar(ev["sym"], ev["t0"], ev["o"], ev["h"], ev["l"], ev["c"], ev.get("v"))
+        elif kind == "sbar":
+            self.on_study_bar(ev["sym"], ev["k"], ev["t0"], ev["o"], ev["h"], ev["l"], ev["c"], ev.get("v"))
         elif kind == "flow":
             self.on_flow(ev["p"], t)
         elif kind == "flow_alerts":
@@ -3687,6 +3740,11 @@ class Engine:
             "hist_ver": st.hist_ver,
             "flow": self.flow.summary(sym, t),
             "daily": [[t0] + [fmt_price(x) for x in st.daily[t0]] + [round(st.daily_vol.get(t0) or 0), 0, 0] for t0 in sorted(st.daily)] if full else None,
+            # IBKR's native 5 / 30 minute history: the 5 / 15 and 30 / 60 minute charts reach far enough back for
+            # their 200 EMAs to settle like TradingView's (the minute bars only go back 5 days)
+            "m5": [[k] + [fmt_price(x) for x in st.m5[k][:4]] + [round(st.m5[k][4] or 0), 0, 0] for k in sorted(st.m5)] if full else None,
+            "m30": [[k] + [fmt_price(x) for x in st.m30[k][:4]] + [round(st.m30[k][4] or 0), 0, 0] for k in sorted(st.m30)] if full else None,
+            "studies": self.studies_for(st, t),
             "footprint": self._footprint(st, t),
             "marks": [[m, fmt_price(v[0]), side, round(v[1])] for (m, _k, side), v in st.marks.items()
                       if m >= max(first_bar, t - 390 * 60)],
@@ -3752,6 +3810,7 @@ class Engine:
                 "mode": "PAPER-ONLY ORDER ENTRY · LIVE LOCKED" if not self.cfg["trading"]["allow_live"] else "LIVE TRADING ENABLED",
                 "connection": dict(self.connection),
                 "feeds": self._feeds(t),
+                "studies_on": {k: bool((self.cfg.get("studies") or {}).get(k)) for k in ("gas", "airspace", "unvisited")},
                 "slots": self.cfg["depth"]["slots"],
                 "auto_rotate": self.auto_rotate,
                 "ranking": ranking,

@@ -759,3 +759,18 @@ table.lad.pro tr.atlv td{box-shadow:inset 0 1px 0 var(--lvc), inset 0 -1px 0 var
 .datawin .mn{display:inline-block;background:#1b5e20;color:#fff !important;border-radius:3px;padding:0 4px !important;font:800 9px/12px var(--mono) !important;cursor:pointer;margin-left:6px}
 .datawin .ok .mn{background:#000;color:#0f0 !important}
 .datawin.min{width:118px !important;background:#000 !important;border:1px solid #444 !important;box-shadow:0 4px 14px rgba(0,0,0,.45)}
+
+/* the chart studies' boards (stock charts only): AIRSPACE top left beside the data box, GAS + the 2nd entry bottom
+   right above the volume, so the right side stays clear for price and the level labels. Each starts small: MORE opens it */
+.stbd{position:absolute;z-index:6;font:600 9px/1.25 ui-monospace,Menlo,Consolas,monospace;color:#fff;background:rgba(11,14,17,.94);border:1px solid rgba(120,144,156,.5);max-width:calc(100% - 230px);pointer-events:auto}
+.stbd.air{top:4px;left:128px}
+.stbd.gas{bottom:58px;right:92px;max-width:calc(100% - 240px)}
+.stbd .sth{display:flex;gap:8px;align-items:center;padding:1px 4px;background:#1c232c;color:#9fb0c3;font-weight:800;letter-spacing:.04em;white-space:nowrap}
+.stbd .sth .mini{color:#e8eef6;font-weight:700;letter-spacing:0;overflow:hidden;text-overflow:ellipsis}
+.stbd .stmin{cursor:pointer;background:#000;color:#0f0;border-radius:3px;padding:0 4px;margin-left:auto}
+.stbd .stbody{max-height:42vh;overflow:auto}
+.stbd.air .stbody{max-height:min(46vh,calc(100% - 40px))}
+.stbd table{border-collapse:collapse;width:100%}
+.stbd td{padding:1px 4px;border:1px solid rgba(120,144,156,.25);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px}
+.stbd td.big{font-size:10px;font-weight:800}
+.stbd .r{padding:1px 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

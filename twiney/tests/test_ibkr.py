@@ -643,3 +643,57 @@ class AfterHoursSimOptionsTests(unittest.TestCase):
         out = tr.opt_adjust(key, 1, "close", 3.0, clock())
         self.assertFalse(out["ok"]); self.assertIn("SIMULATED", out["reason"])
         self.assertEqual(len([c for c in app.calls if c[0] == "placeOrder"]), n)
+
+
+class StudyHistoryTests(unittest.TestCase):
+    """The chart studies' IBKR histories: 10 years daily, then 30-minute (1 year, regular hours), 5-minute extended
+    hours (kept up to date) and 5-minute chart history, one request at a time (never 6 on a contract inside 2 s)."""
+    def test_requests_go_out_spaced_and_the_live_one_is_kept(self):
+        s, engine, clock = make_session()
+        s.step(clock()); app = s.app; app.nextValidId(1)
+        daily = [c for c in app.calls if c[0] == "reqHistoricalData" and c[5] == "1 day"]
+        self.assertTrue(daily)
+        self.assertEqual(daily[0][4], "10 Y")
+        before = len([c for c in app.calls if c[0] == "reqHistoricalData"])
+        s.step(clock())                                   # same instant: nothing more yet
+        for _ in range(40):
+            clock.t += 0.7
+            s.step(clock())
+        study = [c for c in app.calls if c[0] == "reqHistoricalData"][before:]
+        sizes = [(c[2], c[4], c[5], c[7], c[9]) for c in study]
+        sym = study[0][2]
+        self.assertIn((sym, "1 Y", "30 mins", 1, False), sizes)
+        self.assertIn((sym, "3 D", "5 mins", 0, True), sizes)        # premarket / after hours, kept up to date
+        self.assertIn((sym, "2 M", "5 mins", 1, False), sizes)
+        self.assertEqual(len(study), 3 * len(s.l1_ids))
+
+    def test_study_bars_reach_the_engine_and_the_live_update(self):
+        s, engine, clock = make_session()
+        s.step(clock()); app = s.app; app.nextValidId(1)
+        for _ in range(40):
+            clock.t += 0.7
+            s.step(clock())
+        rid = next(r for r, v in app.req.items() if v[0] == "m5x")
+        sym = app.req[rid][1]
+        bar = type("B", (), {"date": "1789999800", "open": 10.0, "high": 10.5, "low": 9.9, "close": 10.2, "volume": 500})()
+        app.historicalData(rid, bar)
+        app.historicalDataEnd(rid, "", "")
+        self.assertIn(rid, app.req)                       # kept up to date: the id stays live
+        bar.high = 10.8
+        app.historicalDataUpdate(rid, bar)
+        self.assertEqual(engine.syms[sym].m5x[1789999800.0][1], 10.8)
+
+
+class RegularSessionDayRangeTests(unittest.TestCase):
+    def test_premarket_print_never_sets_the_low_of_day(self):
+        from twiney.engine import Engine
+        e = Engine(plays(), cfg())
+        sym = next(iter(e.syms))
+        pre = 1_800_000_000.0 + 4.0 * 3600            # 7:00 New York
+        rth = 1_800_000_000.0 + 7.0 * 3600            # 10:00 New York
+        e.on_l1(sym, "bid", 9.99, pre); e.on_l1(sym, "ask", 10.01, pre)
+        e.on_print(sym, 9.00, 100, "ARCA", pre)
+        self.assertIsNone(e.syms[sym].day_lo)
+        e.on_print(sym, 10.00, 100, "ARCA", rth)
+        e.on_print(sym, 9.80, 100, "ARCA", rth + 60)
+        self.assertEqual(e.syms[sym].day_lo[0], 9.80)

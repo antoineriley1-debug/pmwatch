@@ -87,8 +87,20 @@ class MeasuredPotentialTests(unittest.TestCase):
 
     def test_atr_from_daily(self):
         daily = [[0, 10, 11, 9, 10.5], [1, 10.5, 12, 10, 11.5], [2, 11.5, 12, 10.5, 11]]
-        self.assertEqual(ps60.atr(daily), 1.75)
+        self.assertAlmostEqual(ps60.atr(daily), 1.8333, places=4)     # under 14 days: the plain average of the TRs
         self.assertIsNone(ps60.atr(daily[:1]))
+
+    def test_atr_is_wilder_like_tradingview(self):
+        # 20 days: TR of day 0 = high - low, then max(h-l, |h-pc|, |l-pc|); RMA(14) seeded with the SMA of the first 14
+        rows, c = [], 100.0
+        for i in range(20):
+            o = c; h = c + 1 + (i % 3) * 0.5; l = c - 1 - (i % 4) * 0.25; c = l + (h - l) * (0.3 + 0.1 * (i % 5))
+            rows.append([i, o, h, l, c])
+        trs = [rows[0][2] - rows[0][3]] + [max(r[2] - r[3], abs(r[2] - p[4]), abs(r[3] - p[4])) for p, r in zip(rows, rows[1:])]
+        e = sum(trs[:14]) / 14
+        for x in trs[14:]:
+            e = (x + 13 * e) / 14
+        self.assertAlmostEqual(ps60.atr(rows), round(e, 4), places=4)
 
 
 class SneakyAndRemountTests(unittest.TestCase):

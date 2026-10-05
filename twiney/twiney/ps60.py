@@ -49,6 +49,13 @@ def ny_seconds(t):
     return d.hour * 3600 + d.minute * 60 + d.second
 
 
+def is_rth(t):
+    """True inside the regular session: a weekday, 9:30 to 4:00 New York."""
+    d = datetime.fromtimestamp(t, tz=timezone.utc).astimezone(NY)
+    s = d.hour * 3600 + d.minute * 60 + d.second
+    return d.weekday() < 5 and 34200 <= s < 57600
+
+
 def ny_offset(t):
     """Seconds to add to a UTC timestamp to get New York wall-clock seconds."""
     return datetime.fromtimestamp(t, tz=timezone.utc).astimezone(NY).utcoffset().total_seconds()
@@ -105,14 +112,18 @@ def daily_from_bars(bars):
 
 
 def atr(daily, n=14):
-    """Average true range over the last ``n`` completed days. None with fewer than 2 days."""
+    """Average true range of the completed days ``daily`` ([t, o, h, l, c] rows), Wilder's smoothing exactly like
+    TradingView's ta.atr(n) (= ta.rma(ta.tr(true), n)): ONE ATR for the desk, the chart studies and the play grades.
+    With fewer days than ``n`` it is the plain average of what there is. None with fewer than 2 days."""
     if len(daily) < 2:
         return None
-    trs = []
-    for prev, cur in zip(daily[:-1], daily[1:]):
-        trs.append(max(cur[2] - cur[3], abs(cur[2] - prev[4]), abs(cur[3] - prev[4])))
-    trs = trs[-n:]
-    return round(sum(trs) / len(trs), 4) if trs else None
+    from .studies import atr_rma
+    hs = [float(b[2]) for b in daily]; ls = [float(b[3]) for b in daily]; cs = [float(b[4]) for b in daily]
+    if len(daily) < n:
+        trs = [hs[0] - ls[0]] + [max(hs[i] - ls[i], abs(hs[i] - cs[i - 1]), abs(ls[i] - cs[i - 1])) for i in range(1, len(daily))]
+        return round(sum(trs) / len(trs), 4)
+    v = atr_rma(hs, ls, cs, n)[-1]
+    return round(v, 4) if v is not None else None
 
 
 def measured_potential(play, price, atr_value, cfg):

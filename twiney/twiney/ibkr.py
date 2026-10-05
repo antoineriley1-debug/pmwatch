@@ -102,7 +102,7 @@ def categorize(code, req_kind=None, order=False):
         return "PERMISSION"
     if order or code in ORDER_DEAD_CODES or (100 <= code < 200) or 10000 <= code < 10100 and req_kind is None:
         return "ORDER REJECTION"
-    if req_kind in ("l1", "depth", "hist", "daily", "opt", "cd") or code in DEPTH_REJECT_CODES or code == 317:
+    if req_kind in ("l1", "depth", "hist", "daily", "opt", "cd", "m30", "m5x", "m5") or code in DEPTH_REJECT_CODES or code == 317:
         return "MARKET DATA"
     return "WARNING" if code >= 2000 else "ORDER REJECTION" if code < 1000 else "WARNING"
 
@@ -436,6 +436,13 @@ class TwineyWrapper:
             except (TypeError, ValueError):
                 pass
             return
+        if kind in ("m30", "m5x", "m5"):     # the chart studies' native bars (epoch seconds with formatDate=2)
+            try:
+                t0 = float(bar.date)
+            except (TypeError, ValueError):
+                return
+            self.engine.on_study_bar(sym, kind, t0, num(bar.open), num(bar.high), num(bar.low), num(bar.close), num(getattr(bar, "volume", None)))
+            return
         if kind != "hist":
             return
         try:
@@ -448,7 +455,13 @@ class TwineyWrapper:
         self.engine.on_hist_bar(sym, t0, o, h, l, c, num(bar.volume))
 
     def historicalDataEnd(self, reqId, start, end):
+        if (self.req.get(reqId) or (None,))[0] == "m5x":
+            return                     # kept up to date: historicalDataUpdate keeps coming on this id
         self.req.pop(reqId, None)
+
+    def historicalDataUpdate(self, reqId, bar):
+        """keepUpToDate: the 5-minute extended-hours bar being built right now (premarket high / low, 9:30 open)."""
+        self.historicalData(reqId, bar)
 
     # tape -----------------------------------------------------------------
     def tickByTickAllLast(self, reqId, tickType, time_, price, size, tickAttribLast, exchange, specialConditions):
@@ -609,6 +622,8 @@ class MarketDataSession:
                     and now - self.connecting_since > 15.0:
                 self.handle_closed("no nextValidId within 15s (check API settings / client id)")
             if self.ready:
+                self._study_step(now)
+                self._study_new_day(now)
                 self.engine.tick(now)
                 self.reconcile_opt_depth(now)
                 self.reconcile_depth()
@@ -727,6 +742,9 @@ class MarketDataSession:
             self.depth_ids.clear()
             self.l1_ids.clear()
             self._forget_opt_quotes()
+            self.__dict__.pop("study_live", None)       # the old connection's requests are gone with it
+            if getattr(self, "study_q", None):
+                self.study_q.clear()
             if self.gate is not None:     # nothing trades until IBKR says again which account this is
                 self.gate.arm(False)
                 self.gate.set_accounts([])
@@ -1043,8 +1061,63 @@ class MarketDataSession:
                                            1 if self.cfg["chart"]["regular_hours_only"] else 0, 2, False, [])
                 did = self._rid()
                 self.app.req[did] = ("daily", sym)
-                self.app.reqHistoricalData(did, self.contract_factory(play), "", "1 Y", "1 day", "TRADES",
+                # 10 years: the Daily and Weekly 200 EMAs settle to TradingView's values (an EMA needs history)
+                self.app.reqHistoricalData(did, self.contract_factory(play), "", "10 Y", "1 day", "TRADES",
                                            1, 2, False, [])
+                self._queue_studies(sym, play)
+
+    # the chart studies' histories go out one at a time (IBKR flags 6+ requests on one contract within 2 s), and again
+    # each new trading day so yesterday's completed bars join the sample
+    STUDY_REQS = (("m30", "1 Y", "30 mins", 1, False), ("m5x", "3 D", "5 mins", 0, True), ("m5", "2 M", "5 mins", None, False))
+
+    def _queue_studies(self, sym, play):
+        from collections import deque
+        q = self.__dict__.setdefault("study_q", deque())
+        for spec in self.STUDY_REQS:
+            q.append((sym, play, spec))
+        self.__dict__.setdefault("study_day", {})[sym] = ny_today(self.clock())
+
+    def _study_step(self, now):
+        q = getattr(self, "study_q", None)
+        if not q or now - getattr(self, "_study_t", 0.0) < 0.6 or self.app is None:
+            return
+        self._study_t = now
+        sym, play, (kind, dur, size, rth, keep) = q.popleft()
+        if rth is None:                                   # the chart's own session (regular hours or not)
+            rth = 1 if self.cfg["chart"]["regular_hours_only"] else 0
+        live = self.__dict__.setdefault("study_live", {})
+        old = live.pop((sym, kind), None)
+        if old is not None:                       # a kept-up-to-date request is replaced: stop the old one
+            try:
+                self.app.cancelHistoricalData(old)
+            except Exception:
+                pass
+            self.app.req.pop(old, None)
+        rid = self._rid()
+        self.app.req[rid] = (kind, sym)
+        if keep:
+            live[(sym, kind)] = rid
+        try:
+            self.app.reqHistoricalData(rid, self.contract_factory(play), "", dur, size, "TRADES", rth, 2, keep, [])
+        except Exception as exc:
+            log.warning("study history %s %s: %s", sym, kind, exc)
+
+    def _study_new_day(self, now):
+        """Once a new New York trading day is past 9:25, every symbol's study histories (and daily bars) are asked
+        again so yesterday's completed session is in the sample."""
+        if now - getattr(self, "_study_day_t", 0.0) < 60 or not self.cfg["chart"]["history"]:
+            return
+        self._study_day_t = now
+        from .ps60 import ny_seconds
+        today = ny_today(now)
+        if ny_seconds(now) < 9 * 3600 + 25 * 60:
+            return
+        for sym, play in self.plays.items():
+            if sym in self.l1_ids and getattr(self, "study_day", {}).get(sym) not in (None, today):
+                did = self._rid()
+                self.app.req[did] = ("daily", sym)
+                self.app.reqHistoricalData(did, self.contract_factory(play), "", "10 Y", "1 day", "TRADES", 1, 2, False, [])
+                self._queue_studies(sym, play)
 
     def reconcile_opt_depth(self, now):
         """The charted contract's book: subscribe it (market depth on the option), drop the old one when you chart another.

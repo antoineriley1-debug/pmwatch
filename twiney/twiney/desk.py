@@ -828,6 +828,10 @@ def dump_state(engine, rec, t):
             for k in sorted(st.daily):
                 o, h, l, c = st.daily[k]
                 rec.write({"ev": "dbar", "t": t, "sym": sym, "t0": k, "o": o, "h": h, "l": l, "c": c, "v": st.daily_vol.get(k)})
+            for kind in ("m30", "m5x", "m5"):
+                for k in sorted(getattr(st, kind, {}) or {}):
+                    o, h, l, c, v = st.__dict__[kind][k]
+                    rec.write({"ev": "sbar", "t": t, "sym": sym, "k": kind, "t0": k, "o": o, "h": h, "l": l, "c": c, "v": v})
             for b in st.bar_list():
                 rec.write({"ev": "hbar", "t": t, "sym": sym, "t0": b[0], "o": b[1], "h": b[2], "l": b[3], "c": b[4], "v": b[5]})
             if st.retired:

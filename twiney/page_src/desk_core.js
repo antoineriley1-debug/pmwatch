@@ -263,6 +263,9 @@ function mkChart(id, isFoot){
     c.tools.addEventListener("change", e => { if (e.target.dataset.mark){ c.view.levelTool = e.target.value || null; renderTools(c); } if (e.target.dataset.screen){ store.set("screen", e.target.value); if (store.get("wick", null) == null) store.set("wick", e.target.value === "desk" ? 1 : 3); drawChart(c); renderTools(c); } });
     c.tools.addEventListener("input", e => {
       const k = e.target.dataset.indk, top = e.target.dataset.top, cs = e.target.dataset.cs;
+      if (e.target.dataset.study){ const on = e.target.checked, nm = e.target.dataset.study;
+        post("/api/settings", {changes: {["studies." + nm]: on}}).then(out => { toast(out.ok ? `${nm.toUpperCase()} ${on ? "ON" : "OFF"}` : "Not saved: " + (out.reason || ""), out.ok); poll(true); });
+        return; }
       if (e.target.dataset.vol){ store.set("volstyle", e.target.dataset.vol); Object.values(charts).forEach(drawChart); }
       if (k){ const IND = store.get("ind", {}); IND[k] = e.target.checked; store.set("ind", IND); drawChart(c); }
       if (top){ store.set(top, e.target.checked); Object.values(charts).forEach(drawChart); const b = c.tools.querySelector(`button[data-${top}]`); if (b) b.classList.toggle("on", e.target.checked); }
@@ -290,7 +293,11 @@ function mkChart(id, isFoot){
 function indPopHTML(){
   const IND = store.get("ind", {}), on = k => IND[k] !== false;
   const box = (k, label, col) => `<label><input type="checkbox" data-indk="${k}" ${on(k) ? "checked" : ""}> <i style="display:inline-block;width:14px;height:3px;background:${col};vertical-align:middle"></i> ${label}</label>`;
-  return `<h5>SCREEN</h5>
+  const SO = (typeof state !== "undefined" && state && state.studies_on) || {};
+  const sbox = (k, label) => `<label><input type="checkbox" data-study="${k}" ${SO[k] ? "checked" : ""}> ${label}</label>`;
+  return `<h5>STUDIES · STOCK CHART</h5>${sbox("gas", "GAS + ATR (tank, ATR levels, PDH / PDL, PMH / PML, box, 2nd entry)")}${sbox("airspace", "AIRSPACE (Bounce / Reject, MP, MT supply / demand, lights board)")}${sbox("unvisited", "UNVISITED HIGHS / LOWS")}
+    <div class="dim" style="font-size:10.5px;margin-bottom:4px">Every piece of each is in SETTINGS &gt; Chart studies.</div>
+    <h5>SCREEN</h5>
     <div class="row"><span class="dim" style="width:64px">CUSTOM</span><input type="color" data-cs="screenColor" value="${store.get("screenColor", "#dfe9f3")}" title="your own screen colour (pick CUSTOM on the toolbar)"><span class="dim" style="font-size:10px">pick CUSTOM on the toolbar to use it</span></div>
     <label><input type="checkbox" data-top="matags" ${store.get("matags", true) ? "checked" : ""}> value tags on the price scale, one per line</label>
     <h5>VOLUME</h5>
@@ -382,4 +389,155 @@ function dockPicker(id, anchor){
   m.addEventListener("click", e => { const b = e.target.closest("button[data-dz]"); if (!b) return; m.remove(); movePanel(id, b.dataset.dz); const c = charts[id]; if (c) setTimeout(() => drawChart(c), 50); });
   const away = ev => { if (!m.isConnected){ document.removeEventListener("mousedown", away, true); return; } if (!m.contains(ev.target)) m.remove(); };
   setTimeout(() => document.addEventListener("mousedown", away, true), 0);
+}
+
+/* ---------- the chart studies: GAS + ATR, AIRSPACE, UNVISITED HIGHS / LOWS (your TradingView scripts, computed by TED
+   from IBKR bars). STOCK charts only — never the option chart. Each one switches off in SETTINGS > Chart studies or the
+   IND menu. Lines stop a few bars right of the last candle; their labels sit right after, levels too close to read
+   share one row ("PDH 141.54 | PMH 141.40"), each name in its own colour. */
+function stX(ctx, t0){
+  // a time on this chart: the first candle at or after it (older than the screen = the left edge)
+  const {bars, x0, cw} = ctx;
+  if (t0 == null || !bars.length || t0 <= bars[0][0]) return 0;
+  let lo = 0, hi = bars.length - 1;
+  if (t0 > bars[hi][0]) return x0 + hi * cw + cw / 2;
+  while (lo < hi){ const m = (lo + hi) >> 1; if (bars[m][0] < t0) lo = m + 1; else hi = m; }
+  return x0 + lo * cw;
+}
+function studyLineList(S){ return [].concat(S.gas ? S.gas.lines || [] : [], S.air ? S.air.lines || [] : [], S.uv ? S.uv.lines || [] : []); }
+function stDash(d){ return d === "dash" ? [6, 4] : d === "dot" ? [2, 3] : []; }
+function studiesBack(ctx){
+  const {g, S, bars, x0, cw, plotW, y, H} = ctx;
+  if (!S || !bars.length) return;
+  const xLast = x0 + (bars.length - 1) * cw + cw / 2, xs = Math.max(0, xLast - 8 * cw), xe = Math.min(plotW - 2, xLast + 4 * cw);
+  const gs = S.gas;
+  if (gs && gs.box){ const xb = stX(ctx, gs.box.t0), y1 = y(gs.box.hi), y2 = y(gs.box.lo);
+    g.fillStyle = gs.box.c + "1f"; g.fillRect(xb, y1, plotW - xb, y2 - y1); g.strokeStyle = gs.box.c; g.lineWidth = 2; g.strokeRect(xb, y1, plotW - xb, y2 - y1); g.lineWidth = 1; }
+  if (gs) for (const z of gs.zones || []){ const ya = y(z.a), yb = y(z.b); g.fillStyle = z.c; g.fillRect(xs, Math.min(ya, yb), Math.max(1, xe - xs), Math.abs(yb - ya)); }
+}
+function studiesFront(ctx){
+  const {g, S, bars, x0, cw, plotW, y, lo, hi, lightScreen} = ctx;
+  if (!S || !bars.length) return;
+  const xLast = x0 + (bars.length - 1) * cw + cw / 2, xs = Math.max(0, xLast - 8 * cw), xe = Math.min(plotW - 2, xLast + 4 * cw);
+  const lines = studyLineList(S);
+  const rows = [], tags = [];
+  for (const L of lines){
+    if (L.p == null || L.p < lo || L.p > hi) continue;
+    const yy = Math.round(y(L.p)) + .5;
+    const from = L.stub ? Math.max(0, xLast) : (L.t0 != null ? stX(ctx, L.t0) : xs);
+    g.strokeStyle = L.c; g.lineWidth = L.w || 1; g.setLineDash(stDash(L.d)); g.globalAlpha = L.fade ? 0.45 : 1;
+    g.beginPath(); g.moveTo(from, yy); g.lineTo(xe, yy); g.stroke();
+    g.globalAlpha = 1;
+    if (L.l) rows.push({p: L.p, t: L.l, c: L.lc || L.c});
+    // the price-scale tag, like the scripts' price-scale plots (not for whole numbers, box edges, today's high / low)
+    if (L.g !== "uv" && L.c !== "rgba(158,158,158,.45)" && !/^(EDGE|TIGHT|High |Low |2ND|1st|pivot)/.test(L.l || "")) tags.push([L.p, L.c]);
+  }
+  g.setLineDash([]); g.lineWidth = 1;
+  // labels: highest first, levels closer than merge % of price share one row
+  rows.sort((a, b) => b.p - a.p);
+  const tol = (S.merge_pct || 0.15) / 100 * (ctx.last || (lo + hi) / 2);
+  g.font = "bold 10px ui-monospace, Menlo, Consolas, monospace";
+  const lx = xe + Math.max(2, cw);
+  for (let i = 0; i < rows.length;){
+    let j = i + 1, sum = rows[i].p;
+    while (j < rows.length && rows[i].p - rows[j].p <= tol){ sum += rows[j].p; j++; }
+    const grp = rows.slice(i, j), yy = y(sum / grp.length) + 3.5;
+    const parts = grp.map((r, k) => ({t: (k ? "  |  " : "") + r.t, c: r.c}));
+    const w = parts.reduce((s, q) => s + g.measureText(q.t).width, 0);
+    const bg = lightScreen ? "rgba(255,255,255,.72)" : "rgba(10,13,18,.72)";
+    if (lx + w > plotW - 3 && grp.length > 1){
+      // too long for one row: each name on its own line, stacked from the shared price down
+      grp.forEach((r, k) => { const tw = g.measureText(r.t).width, x = Math.max(2, Math.min(lx, plotW - tw - 3)), yk = yy + k * 12;
+        g.fillStyle = bg; g.fillRect(x - 2, yk - 10, tw + 4, 13); g.fillStyle = r.c; g.fillText(r.t, x, yk); });
+    } else {
+      let x = Math.max(2, Math.min(lx, plotW - w - 3));
+      g.fillStyle = bg; g.fillRect(x - 2, yy - 10, w + 4, 13);
+      for (const q of parts){ g.fillStyle = q.c; g.fillText(q.t, x, yy); x += g.measureText(q.t).width; }
+    }
+    i = j;
+  }
+  // price-scale tags in each line's colour (drawn by the caller after the clip is lifted)
+  ctx.tags = tags;
+  g.font = "11px ui-monospace, Menlo, Consolas, monospace";
+}
+function studiesTags(ctx){
+  const {g, plotW, labelW, y, lo, hi} = ctx;
+  if (!ctx.tags || !ctx.tags.length) return;
+  g.font = "bold 10px ui-monospace, Menlo, Consolas, monospace";
+  for (const [v, col] of ctx.tags.sort((a, b) => b[0] - a[0])){
+    if (v < lo || v > hi) continue;
+    const yy = y(v); g.fillStyle = col; g.fillRect(plotW + 1, yy - 6, labelW - 2, 12); g.fillStyle = "#ffffff"; g.fillText(v.toFixed(2), plotW + 4, yy + 4);
+  }
+  g.font = "11px ui-monospace, Menlo, Consolas, monospace";
+}
+// the chart's own MA values at the last candle (what you see drawn): the CONFLUENCE row reads these
+function chartPack(cls){
+  const out = [];
+  for (const n of [5, 10, 20, 34, 50, 65, 89, 100, 150, 200]){ const s = emaSeries(cls, n); out.push([n + "E", s[s.length - 1]]); }
+  for (const n of [5, 10, 20, 50, 100, 150, 200]){ const s = smaSeries(cls, n); out.push([n + "S", s[s.length - 1]]); }
+  const bb = bbSeries(cls, 20, 2.0); out.push(["BbU", bb.up[bb.up.length - 1]]); out.push(["BbL", bb.dn[bb.dn.length - 1]]);
+  return out;
+}
+function confluenceRow(p, S){
+  const A = S.air, d = p.data; if (!A || !d) return null;
+  const tf = store.get("tf." + (p.id || "chart"), 1), daily = typeof tf === "string";
+  const pack = daily ? (A.pack60 || []) : (p.studyPack || []);
+  const last = d.last;
+  const match = yv => { let best = "", bd = A.tol + 1; for (const [nm, v] of pack){ if (v == null) continue; const dd = Math.abs(yv - v); if (dd <= A.tol && dd < bd){ bd = dd; best = nm; } } return best; };
+  const line = (lv, side) => { const m = match(lv[0]); if (!m) return null;
+    const dir = lv[0] > last ? "above" : lv[0] < last ? "below" : "at", atrN = A.atr ? Math.abs(last - lv[0]) / A.atr : null;
+    return `confluence ${dir}, ${atrN == null ? "—" : (Math.round(atrN * 100) / 100)} ATR, Daily ${side} ${lv[2]} + ${daily ? "60m" : (tf === 60 ? "60" : tf)} ${m}`; };
+  const b = A.bounce ? line(A.bounce, "Bounce") : null, r = A.reject ? line(A.reject, "Reject") : null;
+  if (b && r) return {t: Math.abs(last - A.bounce[0]) <= Math.abs(last - A.reject[0]) ? b : r, bg: "rgba(69,39,160,.85)", fg: "#fff"};
+  if (b) return {t: b, bg: "rgba(27,94,32,.8)", fg: "#fff"};
+  if (r) return {t: r, bg: "rgba(74,20,140,.8)", fg: "#fff"};
+  return {t: "confluence · none", bg: "rgba(38,50,56,.8)", fg: "#90A4AE"};
+}
+function nextStopRows(p, S){
+  const N = S.gas && S.gas.next_stop, d = p.data; if (!N || !N.y_atr || !d || d.last == null) return [];
+  const c = d.last, a = N.y_atr, lv = N.levels.slice();
+  if (p.studyE65 != null) lv.push([p.studyE65, "EMA65 chart"]);
+  lv.push([Math.ceil(c / N.step) * N.step, "whole"]); lv.push([Math.floor(c / N.step) * N.step, "whole"]);
+  let up = null, dn = null;
+  for (const [v, nm] of lv){ if (v > c + 0.10 * a && (up == null || v < up)) up = v; if (v < c - 0.10 * a && (dn == null || v > dn)) dn = v; }
+  const names = best => { const hit = lv.filter(([v]) => best != null && Math.abs(v - best) <= 0.15 * a); return {n: hit.length, s: hit.slice(0, 3).map(x => x[1]).join(" + ") + (hit.length > 3 ? ` +${hit.length - 3} more` : "")}; };
+  const bias = N.sma50 != null ? (c > N.sma50 ? " · ↑bias" : " · ↓bias") : "";
+  const sand = (best, upSide) => { let k = 0; const band = 0.15 * a; for (const [h, l, cl] of N.last10){ if (upSide ? (Math.abs(h - best) <= band && cl < best) : (Math.abs(l - best) <= band && cl > best)) k++; }
+    if (upSide && N.dH != null && Math.abs(N.dH - best) <= band && c < best) k++; if (!upSide && N.dL != null && Math.abs(N.dL - best) <= band && c > best) k++;
+    return k >= 2 ? ` · LINE IN THE SAND (${k} touches held)` : ""; };
+  const f = v => (Math.round(v * 100) / 100).toString(), out = [];
+  if (up != null){ const nm = names(up), need = up - c, tank = N.left == null ? "" : N.left >= need ? ` · $${f(N.left)} in the tank` : ` · only $${f(N.left)} in the tank`;
+    out.push({t: `SUPPLY (selling) ${f(up)} · ${nm.s} (${nm.n} ${nm.n > 1 ? "levels" : "level"}) · $${f(need)} gas needed${tank}${need < 0.25 * a ? " · THIN" : ""}${sand(up, true)}${bias}`, bg: "rgba(51,11,11,.9)", fg: "#ef5350"}); }
+  if (dn != null){ const nm = names(dn), need = c - dn, tank = N.left == null ? "" : N.left >= need ? ` · $${f(N.left)} in the tank` : ` · only $${f(N.left)} in the tank`;
+    out.push({t: `DEMAND (buying) ${f(dn)} · ${nm.s} (${nm.n} ${nm.n > 1 ? "levels" : "level"}) · $${f(need)} gas needed${tank}${need < 0.25 * a ? " · THIN" : ""}${sand(dn, false)}${bias}`, bg: "rgba(0,51,46,.9)", fg: "#26a69a"}); }
+  return out;
+}
+function renderStudyBoards(p){
+  const wrap = p.el && p.el.querySelector(".chart-wrap"); if (!wrap) return;
+  const S = (!p.opt && p.data && p.data.studies) || null;
+  const box = (cls, html, key) => { let b = wrap.querySelector(".stbd." + cls);
+    if (!html){ if (b) b.remove(); return; }
+    if (!b){ b = document.createElement("div"); b.className = "stbd " + cls; wrap.appendChild(b);
+      b.addEventListener("click", e => { if (e.target.closest(".stmin")){ const k = b.dataset.key; store.set(k, !store.get(k, true)); b.dataset.h = ""; renderStudyBoards(p); } });
+      b.addEventListener("mousedown", e => e.stopPropagation()); }
+    b.dataset.key = key;                     // every board starts small: unset = minimized
+    if (b.dataset.h !== html){ b.dataset.h = html; b.innerHTML = html; } };
+  const row = r => `<div class="r" style="background:${r.bg};color:${r.fg}">${esc(r.t)}</div>`;
+  // AIRSPACE board (top right)
+  if (S && S.air && S.air.board && S.air.board.length){
+    const key = "stmin.air." + (p.id || "chart"), min = store.get(key, true);     // starts as the one-line strip
+    const trs = S.air.board.map(r => {
+      if (r === "CONFLUENCE"){ const c = confluenceRow(p, S); return c ? `<tr><td colspan="3" style="background:${c.bg};color:${c.fg}">${esc(c.t)}</td></tr>` : ""; }
+      if (Array.isArray(r)) return `<tr>${r.map(([t, c, bg]) => `<td style="color:${c}${bg ? ";background:" + bg : ""}">${esc(t)}</td>`).join("")}</tr>`;
+      return `<tr><td colspan="3" class="${r.big ? "big" : ""}" style="background:${r.bg};color:${r.fg}">${esc(r.t)}</td></tr>`; });
+    const head = `<div class="sth">AIRSPACE${min && S.air.mini ? `<span class="mini">${esc(S.air.mini)}</span>` : ""}<b class="stmin" title="${min ? "open the whole board" : "minimize to one line + OVERALL"}">${min ? "MORE ▾" : "LESS ▴"}</b></div>`;
+    box("air", head + `<div class="stbody"><table>${min ? trs[trs.length - 1] : trs.join("")}</table></div>`, key);
+  } else box("air", "");
+  // GAS readout (bottom right) + NEXT STOP
+  if (S && S.gas && ((S.gas.rows || []).length || S.gas.next_stop)){
+    const key = "stmin.gas." + (p.id || "chart"), min = store.get(key, true);     // starts with the tank lines only
+    const rws = (S.gas.rows || []).concat(nextStopRows(p, S));
+    const se = S.gas.se ? row(S.gas.se) : "";               // the second-entry status rides on top of the tank
+    box("gas", `<div class="sth">GAS<b class="stmin" title="${min ? "day-after, continuation odds, next stop" : "just the tank"}">${min ? "MORE ▾" : "LESS ▴"}</b></div><div class="stbody">` + se + (min ? rws.slice(0, 2) : rws).map(row).join("") + `</div>`, key);
+  } else box("gas", "");
 }
