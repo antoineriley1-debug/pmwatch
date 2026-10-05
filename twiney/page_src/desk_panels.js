@@ -2077,6 +2077,32 @@ function obookRows(t){
       <td class="sz s">${r.ask ? `<i style="width:${Math.round(r.ask / mx * 100)}%"></i><span>${sz(r.ask)}</span>` : ""}</td>
       <td class="tr b">${r.bought ? `<i style="width:${Math.round(r.bought / mt * 100)}%"></i><span>${sz(r.bought)}</span>` : ""}</td></tr>`).join("");
 }
+/* The contract's LEVEL II and T&S drawn by the very same code as the stock's (same columns, colours, bars,
+   highlights): its book and prints are turned into the stock ladder / tape shapes. Clicks are renamed (data-oact) so
+   a click in them can only ever trade the CONTRACT, never the stock */
+function optLadderData(d, t){
+  const orders = (d.orders || []), lastTrade = t.prints && t.prints.length ? +t.prints[0][1] : d.last;
+  const rows = t.book.map(r => ({price: r.price, gap: false, bid: r.bid, ask: r.ask, sold: r.sold, bought: r.bought, tags: [], flow: null,
+    mine: orders.filter(o => Math.abs((+o.lmt || 0) - r.price) < 0.004).map(o => ({id: o.order_id, action: o.action, qty: o.remaining ?? o.qty, role: "entry", status: o.status})),
+    best_bid: r.best_bid, best_ask: r.best_ask, last: lastTrade != null && Math.abs(lastTrade - r.price) < 0.004}));
+  return {rows, max_size: Math.max(1, ...rows.map(r => Math.max(r.bid, r.ask))), max_traded: Math.max(1, ...rows.map(r => Math.max(r.sold, r.bought))),
+          memory_minutes: 60, big_shares: 100, huge_shares: 300, big_default: true};
+}
+function optTapeData(t){
+  const now = state ? state.now : Date.now() / 1000;
+  const recent = t.prints.map(([tt, pp, n, sd]) => ({price: +pp, size: n, side: sd || "mid", large: n >= 100, at: null, age: now - tt, exchange: ""}));
+  let b = 0, sl = 0; for (const [tt, pp, n, sd] of t.prints){ if (now - tt > 60) break; if (sd === "buy") b += pp * n * 100; else if (sd === "sell") sl += pp * n * 100; }
+  return {recent, usd_60: {buy: Math.round(b), sell: Math.round(sl)}};
+}
+// the stock ladder's column choices (COLS menu) and widths apply to the contract's ladder too
+function sameCols(tb){ if (!tb || tb.dataset.cols2) return; tb.dataset.cols2 = "1"; try { applyLadCols(tb); makeColsResizable(tb); } catch (e) {} }
+function optLadderHTML(d, t){ return ladderHTML(optLadderData(d, t)).replace(/data-act=/g, "data-oact=").replace(/draggable="true"/g, ""); }
+function optTapeHTML(t){ const tt = optTapeData(t); return tapeGaugeHTML(tt) + tapeHTML(tt, null); }
+// clicks in the contract's ladder: BUY / SELL the contracts (OPTION CHART header count) at that price
+document.addEventListener("click", e => { const c = e.target.closest(".obook td[data-oact], .cbook td[data-oact]"); if (!c || !OCH.data) return; e.stopPropagation();
+  const chip = e.target.closest(".chip[data-id]"); if (chip){ if (confirm("Cancel this order?")) cancelMine(+chip.dataset.id); return; }
+  ochOrder(c.dataset.oact, +c.dataset.px, OCH.n); }, true);
+document.addEventListener("contextmenu", e => { const r = e.target.closest(".obook tr[data-price], .cbook tr[data-price]"); if (!r || !OCH.data) return; e.preventDefault(); optChartMenu(ochart, e.clientX, e.clientY, +r.dataset.price); });
 function obookTable(rows){ return `<table class="olad"><tr><th>SOLD</th><th>BID</th><th>PRICE</th><th>ASK</th><th>BOUGHT</th></tr>${rows}</table><div class="dim ofoot">click a price: BUY / SELL ${OCH.n} there (right-click the OPTION CHART works too)</div>`; }
 function otapeRows(t){
   const tm = x => new Date(x * 1000).toLocaleTimeString("en-US", {timeZone: "America/New_York", hour12: false});
@@ -2185,9 +2211,10 @@ function renderContractL2(){
   if (!on) return;
   let box = P.book.pc.querySelector(".cbook"); if (!box){ box = document.createElement("div"); box.className = "cbook"; P.book.pc.appendChild(box); }
   const d = OCH.data, t = d && d.tape && d.key === OC.link.key ? d.tape : null;
-  const html = contractBar("LEVEL II") + `<div class="obook cb">${t ? obookTable(obookRows(t)) : `<div class="dim" style="padding:8px">Loading the contract's book…</div>`}</div>`;
+  const html = contractBar("LEVEL II") + `<div class="obook cb">${t ? `<div class="ladder-wrap olw">${optLadderHTML(d, t)}</div>` : `<div class="dim" style="padding:8px">Loading the contract's book…</div>`}</div>`;
   if (box.dataset.h !== html){ box.dataset.h = html; box.innerHTML = html; }
-  const pc = box.querySelector(".obook.cb"); if (pc && Date.now() - obookUserScroll > 4000){ const a = pc.querySelector("tr.ba"), b = pc.querySelector("tr.bb"); if (a || b){ const top = (a || b).offsetTop, bot = (b || a).offsetTop + (b || a).offsetHeight; pc.scrollTop = Math.max(0, (top + bot) / 2 - pc.clientHeight / 2); } }
+  sameCols(box.querySelector(".obook.cb table"));
+  const pc = box.querySelector(".obook.cb"); if (pc && Date.now() - obookUserScroll > 4000){ const a = pc.querySelector("tr.ba, tr.best-ask"), b = pc.querySelector("tr.bb, tr.best-bid"); if (a || b){ const top = (a || b).offsetTop, bot = (b || a).offsetTop + (b || a).offsetHeight; pc.scrollTop = Math.max(0, (top + bot) / 2 - pc.clientHeight / 2); } }
 }
 function renderContractTape(){
   const el = P.tape.el, on = contractMode("tape");
@@ -2195,7 +2222,7 @@ function renderContractTape(){
   if (!on) return;
   let box = P.tape.pc.querySelector(".ctape"); if (!box){ box = document.createElement("div"); box.className = "ctape"; P.tape.pc.appendChild(box); }
   const d = OCH.data, t = d && d.tape && d.key === OC.link.key ? d.tape : null;
-  const html = contractBar("T&S") + `<div class="otape cb">${t ? otapeTable(otapeRows(t)) : `<div class="dim" style="padding:8px">Loading the contract's prints…</div>`}</div>`;
+  const html = contractBar("T&S") + `<div class="otape cb">${t ? `<div class="p-tape">${optTapeHTML(t)}</div>` : `<div class="dim" style="padding:8px">Loading the contract's prints…</div>`}</div>`;
   if (box.dataset.h !== html){ box.dataset.h = html; box.innerHTML = html; }
 }
 document.addEventListener("click", e => { if (!e.target.closest("button[data-unlinkall]")) return;
@@ -2218,12 +2245,13 @@ function renderOptPanels(){
       <td class="tr b">${r.bought ? `<i style="width:${Math.round(r.bought / mt * 100)}%"></i><span>${sz(r.bought)}</span>` : ""}</td></tr>`).join("");
   hd("obookHd", "OPTION LEVEL II", ` <span class="dim">bid ${f(d.bid)} × ${t.bid_size ?? "—"} · ask ${f(d.ask)} × ${t.ask_size ?? "—"}${t.deep_book ? " · practice book" : " · IBKR sends the best bid / ask for options (no deeper book)"}</span>`);
   setTimeout(centerObook, 0);
-  put(".pnl[data-p=obook] .obook", obookTable(rows));
+  put(".pnl[data-p=obook] .obook", `<div class="ladder-wrap olw">${optLadderHTML(d, t)}</div>`);
+  sameCols(document.querySelector(".pnl[data-p=obook] .obook table"));
   // T&S for the contract
   const tm = x => new Date(x * 1000).toLocaleTimeString("en-US", {timeZone: "America/New_York", hour12: false});
   const pr = otapeRows(t);
   hd("otapeHd", "OPTION T&S", ` <span class="dim">vol ${sz(t.volume || 0)} · <span class="b">bought ${sz(t.bought)}</span> · <span class="s">sold ${sz(t.sold)}</span></span>`);
-  put(".pnl[data-p=otape] .otape", otapeTable(pr));
+  put(".pnl[data-p=otape] .otape", `<div class="p-tape">${optTapeHTML(t)}</div>`);
   renderContractL2(); renderContractTape();
   // BIG TAPE for the contract: big prints + Quant Data sweeps / blocks on it
   const bg = t.big.map(x => `<tr class="${x.side === "buy" || x.side === "ask" ? "b" : x.side === "sell" || x.side === "bid" ? "s" : ""}"><td class="dim">${tm(x.t)}</td><td>${x.price != null ? (+x.price).toFixed(2) : "—"}</td><td>${sz(x.size || 0)}</td><td>${usdK(x.premium || 0)}</td><td class="dim">${x.src === "flow" ? esc((x.kind || "FLOW").toUpperCase()) : ""}</td></tr>`).join("");
@@ -2265,7 +2293,7 @@ let obookUserScroll = 0;
 (function(){ const pc = P.obook && P.obook.pc; if (pc) pc.addEventListener("wheel", () => { obookUserScroll = Date.now(); }, {passive: true}); })();
 function centerObook(){
   const pc = P.obook && P.obook.pc; if (!pc || pc.offsetParent === null || Date.now() - obookUserScroll < 4000) return;
-  const a = pc.querySelector("tr.ba"), b = pc.querySelector("tr.bb"); if (!a && !b) return;
+  const a = pc.querySelector("tr.ba, tr.best-ask"), b = pc.querySelector("tr.bb, tr.best-bid"); if (!a && !b) return;
   const top = (a || b).offsetTop, bot = (b || a).offsetTop + (b || a).offsetHeight;
   pc.scrollTop = Math.max(0, (top + bot) / 2 - pc.clientHeight / 2);
 }
