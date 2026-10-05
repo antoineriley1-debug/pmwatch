@@ -584,6 +584,8 @@ class IbkrBroker:
 
     def place(self, symbol, action, qty, price, now, order_type="LMT", parent=None, role="entry", tif="DAY",
               aux=None, oca=None, transmit=True, reducing=False):
+        if is_option_key(symbol) and self.engine.opt_sim(now):
+            raise RuntimeError(self.engine.SIM_WHY)
         return self.session.send_order(symbol, action, qty, price, order_type, parent, role, tif, now, aux=aux,
                                        oca=oca, transmit=transmit, reducing=reducing)
 
@@ -611,6 +613,8 @@ class IbkrBroker:
             return sum(p["qty"] for (a, s), p in self.engine.positions.items() if s == symbol)
 
     def place_option(self, key, action, qty, price, now, reducing=False):
+        if self.engine.opt_sim(now):          # a limit priced off a simulated quote never goes to IBKR
+            raise RuntimeError(self.engine.SIM_WHY)
         return self.session.send_option_order(key, action, qty, price, now, reducing=reducing)
 
 

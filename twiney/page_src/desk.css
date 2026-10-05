@@ -750,3 +750,12 @@ table.lad.pro tr.atlv td{box-shadow:inset 0 1px 0 var(--lvc), inset 0 -1px 0 var
 .oct td.act .ldbtn{padding:0 4px;font-size:11px}
 @container (max-width: 879px){ #fastStock .qbarm{display:none} #fastStock .qbwhy{display:none} }
 #restartBanner{position:fixed;left:50%;top:6px;transform:translateX(-50%);z-index:99;background:#b3123a;color:#fff;padding:8px 14px;border-radius:4px;font-size:13px;max-width:900px;box-shadow:0 4px 20px rgba(0,0,0,.6)}
+
+/* after hours on paper: simulated option data is yellow, never mistaken for the real market */
+.simtag{background:#e0b000;color:#111;font-weight:700;padding:0 5px;border-radius:3px;margin-left:6px;white-space:nowrap;font-size:10px;letter-spacing:.03em}
+.pnl.simmode{box-shadow:inset 0 0 0 1px #e0b000}
+
+/* the data box's MORE / LESS: a real button, not a speck */
+.datawin .mn{display:inline-block;background:#1b5e20;color:#fff !important;border-radius:3px;padding:0 4px !important;font:800 9px/12px var(--mono) !important;cursor:pointer;margin-left:6px}
+.datawin .ok .mn{background:#000;color:#0f0 !important}
+.datawin.min{width:118px !important;background:#000 !important;border:1px solid #444 !important;box-shadow:0 4px 14px rgba(0,0,0,.45)}

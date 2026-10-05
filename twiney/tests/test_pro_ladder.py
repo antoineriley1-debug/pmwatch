@@ -88,6 +88,18 @@ class LevelMarksTests(unittest.TestCase):
         self.assertTrue(e.remove_level("AAA", 9.96, 2.1, kind="sneaky"))
         self.assertEqual(e.syms["AAA"].play["sneaky_levels"], [])
 
+    def test_only_hammered_otm_close_dated_strikes(self):
+        e = make()
+        fm = e.syms["AAA"].flow_marks
+        base = {"t": 1.7, "spot": 10.0, "exp": "2026-10-09", "prem": 500000, "kind": "SWEEP", "hot": False}
+        fm.append(dict(base, strike=10.5, cp="C", dte=3, side="ask"))      # OTM call bought, close: ON
+        fm.append(dict(base, strike=9.5, cp="P", dte=2, side="ask"))       # OTM put bought, close: ON
+        fm.append(dict(base, strike=11.0, cp="C", dte=3, side="bid"))      # sold at the bid: off
+        fm.append(dict(base, strike=9.0, cp="C", dte=3, side="ask"))       # in the money: off
+        fm.append(dict(base, strike=12.0, cp="C", dte=45, side="ask"))     # far dated: off
+        got = sorted((m["label"], m["dte"]) for m in lad(e, 2.0)["marks"] if m["role"] == "strike")
+        self.assertEqual(got, [("10.5C", 3.0), ("9.5P", 2.0)])
+
 
 if __name__ == "__main__":
     unittest.main()

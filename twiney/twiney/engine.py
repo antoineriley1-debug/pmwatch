@@ -797,7 +797,7 @@ class Engine:
                                 if v_:
                                     row[nm] = [v_[0], v_[1]]
                     pb = (getattr(self, "opt_pbook", {}) or {}).get(key)
-                    if self.connection["state"] == "DEMO" and pb is not None:   # the practice book: every level's size
+                    if pb is not None and self._sim_like(t):   # the practice book: every level's size
                         row["bid"] = int(pb.size_at("bid", px_)); row["ask"] = int(pb.size_at("ask", px_))
                         row["reload_bid"] = ("bid", int(round(px_ * 100))) in pb.reload
                         row["reload_ask"] = ("ask", int(round(px_ * 100))) in pb.reload
@@ -816,7 +816,7 @@ class Engine:
                 vol = sum(p[2] for p in prints)
             return {"book": rows, "prints": prints[:80], "big": big[:40], "bid_size": q.get("bid_size"), "ask_size": q.get("ask_size"),
                     "volume": vol, "bought": sum(p[2] for p in prints if p[3] == "buy"), "sold": sum(p[2] for p in prints if p[3] == "sell"),
-                    "deep_book": self.connection["state"] == "DEMO" or self._opt_dbook(key, t) is not None}
+                    "deep_book": self._sim_like(t) or self._opt_dbook(key, t) is not None, "sim": self.opt_sim(t)}
 
     def on_opt_hist_bar(self, key, t0, o, h, l, c):
         """A 1-minute TRADES bar of an option contract from IBKR history (the OPTION CHART's context)."""
@@ -833,11 +833,33 @@ class Engine:
         lines = st.play if (right == "C") == own_long else (st.play.get("alt") or {})
         return lines.get("stop")
 
+    SIM_WHY = ("options market closed: option prices are SIMULATED from the stock (paper only) — "
+               "option orders are held until the 9:30 ET open")
+
+    def opt_sim(self, t=None):
+        """After hours on a PAPER account: the options market is closed (IBKR has no live option quotes), so the
+        option chain, chart, LEVEL II and T&S run on the practice model priced from the stock, and the OPT light
+        goes yellow SIM. Never on a LIVE account; off with SETTINGS > Trading > Simulated options after hours."""
+        t = t if t is not None else self.last_t
+        if self.connection["state"] != "CONNECTED" or not self.cfg.get("trading", {}).get("sim_options_after_hours", True):
+            return False
+        tr = self.trader
+        if tr is None or getattr(getattr(tr, "gate", None), "mode", None) != "PAPER":
+            return False
+        if self.cfg.get("trading", {}).get("sim_options_force", False):
+            return True
+        from .ps60 import ny_seconds, ny_day
+        return ny_day(t).weekday() >= 5 or not (9 * 3600 + 30 * 60 <= ny_seconds(t) < 16 * 3600)
+
+    def _sim_like(self, t):
+        """The practice option model runs: the practice desk, or after-hours SIM on paper."""
+        return self.connection["state"] == "DEMO" or self.opt_sim(t)
+
     def practice_opt_tick(self, t, every=0.5):
         """The practice desk: every contract you hold, have a working order on, chart or picked is re-priced from the
         stock's price right now (calls gain as the stock rises, puts as it falls), so positions mark and orders
         fill like the real market even with the OPTION CHAIN closed."""
-        if self.connection["state"] != "DEMO" or t - getattr(self, "_opt_tick_t", 0.0) < every:
+        if t - getattr(self, "_opt_tick_t", 0.0) < every or not self._sim_like(t):
             return
         self._opt_tick_t = t
         with self.lock:
@@ -875,8 +897,8 @@ class Engine:
                 self.on_opt_greeks(key, options.bs_greeks(spot, strike, options.dte(exp, t) or 0, right), t)
 
     def practice_quote_key(self, key, t):
-        """Price one contract from the stock right now (practice desk only). True when it got a quote."""
-        if self.connection["state"] != "DEMO":
+        """Price one contract from the stock right now (practice desk / after-hours SIM). True when it got a quote."""
+        if not self._sim_like(t):
             return False
         try:
             sym, exp, strike, right = options.parse_key(key)
@@ -905,9 +927,12 @@ class Engine:
             self.__dict__.setdefault("opt_live", {})[key] = t
             st = self.syms.get(sym)
             spot = st.price() if st else None
-            if self.connection["state"] == "DEMO" and spot:
+            sim = self._sim_like(t)
+            if sim and spot:
                 done = self.__dict__.setdefault("opt_hist_done", set())
-                if key not in done and st.bars:
+                # practice desk: the contract's day modelled from the stock's minutes; after-hours SIM only when IBKR
+                # gave no real history for it (a few SIM bars from before the chart opened don't count)
+                if key not in done and st.bars and (self.connection["state"] == "DEMO" or len(self.opt_bars.get(key) or ()) < 5):
                     done.add(key)
                     for m in sorted(st.bars)[-780:]:
                         o, h, l, c = st.bars[m][:4]
@@ -935,7 +960,8 @@ class Engine:
                     "bars": out, "bid": q.get("bid"), "ask": q.get("ask"), "last": q.get("last"),
                     "position": self._opt_view(pos) if pos else None,
                     "orders": [o for o in self._pending() if o.get("symbol") == key],
-                    "source": "PRACTICE" if self.connection["state"] == "DEMO" else "IBKR",
+                    "source": "PRACTICE" if self.connection["state"] == "DEMO" else "SIM" if sim else "IBKR",
+                    "sim": sim and self.connection["state"] != "DEMO",
                     "delta": q.get("delta"), "iv": q.get("iv"),
                     "expires_today": exp == time.strftime("%Y%m%d", time.gmtime(t + options_ny_off(t))),
                     "dte": options.dte(exp, t),
@@ -969,9 +995,12 @@ class Engine:
         with self.lock:
             st = self.syms.get(symbol)
             spot = st.price() if st else None
+            sim = self.opt_sim(t)
             if self.connection["state"] == "DEMO" and spot:
                 if symbol not in self.opt_chain or t - self.opt_chain[symbol]["t"] > 3600:
                     self.on_opt_chain(symbol, options.practice_expiries(t), options.practice_strikes(spot), 100, None, t, source="PRACTICE")
+            elif sim and spot and symbol not in self.opt_chain:      # after hours, no chain from IBKR yet: the model's
+                self.on_opt_chain(symbol, options.practice_expiries(t), options.practice_strikes(spot), 100, None, t, source="SIM")
             ch = self.opt_chain.get(symbol)
             if not ch:
                 return {"symbol": symbol, "spot": spot, "available": False, "source": None, "expiries": [], "rows": [],
@@ -984,7 +1013,7 @@ class Engine:
                 strikes = strikes[max(0, i - width): i + width + 1]
             keys = [options.key_of(symbol, expiry, k, right) for k in strikes] if expiry else []
             self.opt_watch[symbol] = {"expiry": expiry, "right": right, "keys": keys, "t": t}
-            if ch["source"] == "PRACTICE" and spot:
+            if (ch["source"] == "PRACTICE" or sim) and spot and expiry:
                 days = options.dte(expiry, t) if expiry else 0
                 booked = getattr(self, "opt_pbook", {})
                 for k, strike in zip(keys, strikes):
@@ -1001,7 +1030,8 @@ class Engine:
                              "delta": q.get("delta"), "gamma": q.get("gamma"), "theta": q.get("theta"), "vega": q.get("vega"), "iv": q.get("iv"),
                              "qty": pos["qty"] if pos else 0, "dte": options.dte(expiry, t) if expiry else None,
                              "otm_pct": round((strike - spot) / spot * 100 * (1 if right == "C" else -1), 1) if spot else None})
-            return {"symbol": symbol, "spot": spot, "available": True, "source": ch["source"], "expiries": ch["expiries"],
+            return {"symbol": symbol, "spot": spot, "available": True, "source": "SIM" if sim else ch["source"], "sim": sim,
+                    "sim_why": self.SIM_WHY if sim else None, "expiries": ch["expiries"],
                     "expiry": expiry, "right": right, "mult": ch["mult"], "rows": rows,
                     "orders": [o for o in self._pending() if o.get("opt") and str(o.get("symbol", "")).startswith(symbol + " ")]}
 
@@ -1074,6 +1104,8 @@ class Engine:
                 opt = ("green", "LIVE", f"Quant Data option flow · polled {int(ok_age)}s ago{last}")
         else:
             opt = ("red", "OFF", "no option data: add your Quant Data key in SETTINGS, then RESTART NOW")
+        if self.opt_sim(t):          # after hours on paper: yellow, whatever the flow feed says
+            opt = ("amber", "SIM", self.SIM_WHY + ". Option flow shows today's real prints (no new ones until the open).")
         return {"market": dict(zip(("color", "label", "detail"), mkt)), "options": dict(zip(("color", "label", "detail"), opt))}
 
     def set_flow_alerts(self, who, t=None):
@@ -1927,6 +1959,8 @@ class Engine:
         with self.lock:
             self._clock(t)
             self._rec({"ev": "tick", "t": t})       # replay runs its ticks at exactly these times
+            if self.connection["state"] == "CONNECTED" and self.opt_sim(t):
+                self.practice_opt_tick(t)          # after hours on paper: the contracts you hold / chart move with the stock
             rc = self.cfg["reload"]
             if self.desk is not None and t - getattr(self, "_recon_t", -1e9) >= 5:
                 self._recon_t = t
@@ -3084,16 +3118,28 @@ class Engine:
         lc = self.cfg.get("ladder", {})
         keep = lc.get("flow_window_minutes", 60) * 60.0
         agg = {}
+        # the strikes being HAMMERED: out-of-the-money calls or puts BOUGHT at the ask, close expirations only
+        # (SETTINGS > Ladder). Sold-at-the-bid, in-the-money and far-dated prints stay in the flow feed, off the ladder
+        max_dte = float(lc.get("strike_max_dte", 7))
+        otm_only = bool(lc.get("strike_otm_only", True))
         for m in st.flow_marks:
-            if t - m["t"] > max(keep, 6.5 * 3600) or not m.get("strike"):
+            if t - m["t"] > max(keep, 6.5 * 3600) or not m.get("strike") or m.get("side") != "ask":
                 continue
-            a = agg.setdefault((m["strike"], m["cp"]), {"prem": 0.0, "n": 0, "hot": False, "t": 0})
+            if m.get("dte") is not None and float(m["dte"]) > max_dte:
+                continue
+            sp = m.get("spot")
+            if otm_only and sp and (m["strike"] <= sp if m["cp"] == "C" else m["strike"] >= sp):
+                continue
+            a = agg.setdefault((m["strike"], m["cp"]), {"prem": 0.0, "n": 0, "hot": False, "t": 0, "dte": None})
             a["prem"] += m["prem"]; a["n"] += 1; a["hot"] = a["hot"] or m["hot"]; a["t"] = max(a["t"], m["t"])
+            if m.get("dte") is not None:
+                a["dte"] = float(m["dte"]) if a["dte"] is None else min(a["dte"], float(m["dte"]))
         floor = float(lc.get("strike_min_premium", 100000))
         top = sorted(((k, a) for k, a in agg.items() if a["prem"] >= floor), key=lambda x: -x[1]["prem"])[:4]
         for (strike, cp), a in top:
             out.append({"price": float(strike), "role": "strike", "cp": cp, "label": f"{strike:g}{cp}",
-                        "prem": round(a["prem"]), "n": a["n"], "hot": a["hot"], "age": round(t - a["t"])})
+                        "prem": round(a["prem"]), "n": a["n"], "hot": a["hot"], "age": round(t - a["t"]),
+                        "dte": None if a["dte"] is None else round(a["dte"], 1), "bought": True})
         # the SNEAKY PIVOTS TED found on the 60-minute (micro supply / demand inside the channel)
         for sp in (getattr(st, "sneaky_auto", None) or [])[:3]:
             out.append({"price": float(sp["price"]), "role": "sneaky_auto", "label": f"SNEAKY {sp.get('kind', '').upper()}",
@@ -3107,6 +3153,8 @@ class Engine:
         for m in out:
             m["dist"] = round(m["price"] - last, 4) if last else None
         return out
+
+    LADDER_ROW_ROLES = ("trigger", "second_entry", "stop", "target", "mp", "extra", "sneaky")   # your drawn lines
 
     def _memory_ladder(self, st, t, user_levels, half_rows=None):
         """Price rows around the market, each carrying what happened there.
@@ -3140,8 +3188,10 @@ class Engine:
         for m in marks:
             k = price_key(m["price"], tk)
             lvmap.setdefault(k, []).append(m)
-            # your lines and the money strikes within reach get their row on the ladder (past a gap) so you see them come
-            if k not in keys and abs(k - ck) <= 80 and m["role"] not in ("hod", "lod"):
+            # YOUR lines (pivot, 2nd entry, stop, target, your levels) get their own row past a gap so you see them
+            # come: they only change when you draw. Marks that come and go (flow strikes, reloaders, auto sneaky
+            # pivots, HOD / LOD) do NOT add rows (that made the ladder grow, shrink and jump): the strip lists them
+            if k not in keys and abs(k - ck) <= 80 and m["role"] in self.LADDER_ROW_ROLES:
                 keys.append(k)
         keys = sorted(set(keys), reverse=True)
         self._prune_memory(st, t)

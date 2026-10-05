@@ -159,13 +159,15 @@ function renderBook(d){
   wrap.innerHTML = html; applyLadCols(wrap.querySelector("table")); makeColsResizable(wrap.querySelector("table")); if (hoverPx != null) ladderHighlight(hoverPx);
   eatMarks(wrap, d); avgRow(wrap, d); fitLadderRows(wrap);
   const cur = wrap.querySelector("tr.lastpx") || wrap.querySelector("tr.best-ask");
-  // a proven reloader within a screen of the price stays in view with it: the ladder centres between the two
-  const rl = [...wrap.querySelectorAll("tr.rl-bid, tr.rl-ask")];
+  // a STILL ladder: the view holds where it is while price trades inside its middle; it re-centres only when price
+  // gets into the top or bottom fifth (or a new symbol opens). Re-centring on every print made every row jump
   const autoCenter = store.get("ladcols", {}).center !== false;
+  wrap.scrollTop = keep;
   if (cur && autoCenter && Date.now() - bookUserScroll > 8000){
-    const near = rl.map(r => r.offsetTop).filter(y => Math.abs(y - cur.offsetTop) < wrap.clientHeight * 0.85).sort((a, b) => Math.abs(a - cur.offsetTop) - Math.abs(b - cur.offsetTop))[0];
-    wrap.scrollTop = (near != null ? (cur.offsetTop + near) / 2 : cur.offsetTop) - wrap.clientHeight / 2;
-  } else wrap.scrollTop = keep;
+    const h = wrap.clientHeight, y = cur.offsetTop - wrap.scrollTop, fresh = wrap.dataset.csym !== d.symbol;
+    if (fresh || y < h * 0.2 || y > h * 0.8) wrap.scrollTop = cur.offsetTop - h / 2;
+    wrap.dataset.csym = d.symbol;
+  }
   // a fresh RELOAD call flashes its row so the eye lands on it
   const fresh = (state.alerts || []).filter(a => a.symbol === d.symbol && /^RELOAD/.test(a.label) && state.now - a.t < 6);
   for (const a of fresh){ const row = wrap.querySelector(`tr[data-price="${a.price}"]`); if (row && !row.classList.contains("flash")) row.classList.add("flash"); }
@@ -263,7 +265,10 @@ function renderChain(){
   if (OC.expiry !== d.expiry) OC.expiry = d.expiry;
   box.querySelectorAll(".cp button").forEach(b => b.classList.toggle("on", b.dataset.right === d.right));
   document.getElementById("ocSpot").textContent = d.spot ? `spot ${px(d.spot)} · ${d.rows.length ? Math.round(d.rows[0].dte) + "d" : ""}` : "";
-  document.getElementById("ocSrc").textContent = d.source === "PRACTICE" ? "PRACTICE prices (model)" : "IBKR";
+  { const src = document.getElementById("ocSrc");
+    src.textContent = d.sim ? "SIM · market closed" : d.source === "PRACTICE" ? "PRACTICE prices (model)" : "IBKR";
+    src.className = d.sim ? "simtag" : "dim"; src.title = d.sim ? (d.sim_why || "") : "";
+    const pn = box.closest(".pnl"); if (pn) pn.classList.toggle("simmode", !!d.sim); }
   const on = canTrade(), red = canReduce();
   if (OC.link && OC.link.sym === curSym && d.expiry === OC.link.expiry && d.right === OC.link.right){ const lr = d.rows.find(x => x.key === OC.link.key); if (lr){ OC.link.bid = lr.bid; OC.link.ask = lr.ask; } }
   const rows = d.rows.map(r => { const itm = d.right === "C" ? r.strike < d.spot : r.strike > d.spot; const held = r.qty;
@@ -1131,7 +1136,7 @@ function renderPositions(s){
     const off = (n, lbl, tip) => `<button data-oclose="${esc(p.key)}" data-n="${n}" ${on && n > 0 ? "" : "disabled"} title="${tip}: ${long ? "sell" : "buy back"} ${ct(n)} at the ${long ? "bid" : "ask"}">${lbl}</button>`;
     const add = (n, lbl) => `<button data-oadd="${esc(p.key)}" data-n="${n}" ${canTrade() ? "" : "disabled"} title="scale in: ${long ? "buy" : "sell"} ${ct(n)} more at the ${long ? "ask" : "bid"}">${lbl}</button>`;
     const quote = p.bid != null || p.ask != null ? `${p.bid != null ? p.bid.toFixed(2) : NA} / ${p.ask != null ? p.ask.toFixed(2) : NA}` : `<span class="dim">no quote</span>`;
-    return `<tr class="posrow opt"><td class="l"><b>${esc(p.label)}</b> <span class="${long ? "b" : "s"}">${long ? "L" : "S"} ${ct(q)}</span>${p.delta != null ? ` <span class="dim" title="delta">Δ${(p.delta * p.qty).toFixed(1)}</span>` : ""}</td><td>${p.per_contract.toFixed(2)}</td><td>${quote}</td>
+    return `<tr class="posrow opt" data-okey="${esc(p.key)}" title="right-click: show this contract on the OPTION CHART"><td class="l"><b>${esc(p.label)}</b> <span class="${long ? "b" : "s"}">${long ? "L" : "S"} ${ct(q)}</span>${p.delta != null ? ` <span class="dim" title="delta">Δ${(p.delta * p.qty).toFixed(1)}</span>` : ""}</td><td>${p.per_contract.toFixed(2)}</td><td>${quote}</td>
       <td class="pct ${p.pnl == null ? "" : p.pnl >= 0 ? "up" : "dn"}">${p.pnl == null ? NA : (p.pnl >= 0 ? "+" : "−") + "$" + sz(Math.abs(p.pnl).toFixed(0))}</td><td class="mono dim">${(() => { const os = (T().opt_stops || {})[p.key]; return os ? `<span class="s" title="${os.source === "chart" ? "your chart STOP line" : "the stop you set"}">S ${os.on === "stock" ? esc(p.symbol) + " " : ""}${(+os.price).toFixed(2)}</span>` : `<span class="gold" title="no stop on this contract: set one on the OPTION CHART, or draw a STOP on the stock chart">no stop</span>`; })()}</td>
       <td class="l ctl">${off(Math.max(1, Math.floor(q / 4)), "25", "take off a quarter")}${off(Math.max(1, Math.floor(q / 2)), "50", "take off half")}${off(Math.max(1, Math.floor(q * 3 / 4)), "75", "take off three quarters")}<button data-oclose="${esc(p.key)}" data-n="ask" ${on ? "" : "disabled"} title="take off a number of contracts you type, at a price you type">…</button>
         <span class="sep"></span>${add(1, "+1")}${add(Math.max(1, Math.floor(q / 2)), "+½")}${add(q, "+1×")}<button data-oadd="${esc(p.key)}" data-n="ask" ${canTrade() ? "" : "disabled"} title="scale in by a number of contracts you type, at a price you type">+…</button>
@@ -1143,6 +1148,36 @@ function renderPositions(s){
       <td class="l ctl"><button class="danger" data-cxl="${o.order_id}" title="cancel this option order">CANCEL</button></td></tr>`).join("");
   panelHTML("positions", `<table class="grid pos2"><tr><th>POSITION</th><th>ENTRY</th><th>LAST</th><th>P&amp;L %</th><th>STOP · TGT</th><th style="text-align:left" title="25 / 50 / 75 = take that much off at the touch · … = your own number · @ = partial at your price · BE = stop to breakeven · X = close · +½ +1× +… = scale in at the touch">OUT 25 · 50 · 75 · … · @ · BE · X &nbsp; IN +½ · +1× · +…</th></tr>${rows + orows + wk || `<tr><td colspan="6" class="dim l">${A.seen ? "FLAT" : "NO ACCOUNT DATA"}</td></tr>`}</table>`);
 }
+/* right-click a position: an option one goes on the OPTION CHART (with its L2, T&S and ORDER ENTRY), the stock
+   chart switches to its underlying; a stock one opens its chart */
+async function showHeldContract(key){
+  const [sym, exp, rest] = String(key).split(" "); if (!rest) return;
+  const strike = parseFloat(rest.slice(0, -1)), right = rest.slice(-1);
+  if (curSym !== sym && typeof openTab === "function") await openTab(sym, true);
+  OC.expiry = exp; OC.right = right; OC.sel = strike;
+  const pos = ((state && state.account && state.account.opt_positions) || []).find(x => x.key === key) || {};
+  OC.link = {sym, expiry: exp, strike, right, key, bid: pos.bid, ask: pos.ask, n: Math.abs(pos.qty || 1) || 1};
+  chartOption(key, true); P.ticket.last = null;
+  if (typeof pollChain === "function") pollChain();
+  if (typeof renderContractL2 === "function"){ renderContractL2(); renderContractTape(); }
+  toast(`${contractName(OC.link)} — on the OPTION CHART, its LEVEL II and T&S${state && state.feeds && state.feeds.options && state.feeds.options.label === "SIM" ? " (SIMULATED: market closed)" : ""}`, true);
+}
+P.positions.el.addEventListener("contextmenu", e => {
+  const tr = e.target.closest("tr.posrow[data-okey], tr.posrow[data-sym]"); if (!tr) return;
+  e.preventDefault();
+  const old = document.getElementById("cmenu"); if (old) old.remove();
+  const m = document.createElement("div"); m.id = "cmenu"; m.className = "pop cmenu";
+  const k = tr.dataset.okey, sy = tr.dataset.sym;
+  m.innerHTML = k ? `<div class="dim" style="font-size:11px;margin-bottom:4px">${esc(k)}<span class="x" title="close (Esc)">✕</span></div>
+      <button data-do="och">📈 Show on the OPTION CHART</button><button data-do="und">Open the ${esc(k.split(" ")[0])} stock chart</button>`
+    : `<div class="dim" style="font-size:11px;margin-bottom:4px">${esc(sy)}<span class="x" title="close (Esc)">✕</span></div><button data-do="und">Open the ${esc(sy)} chart</button>`;
+  m.style.left = Math.min(e.clientX, innerWidth - 240) + "px"; m.style.top = Math.min(e.clientY, innerHeight - 120) + "px";
+  document.body.appendChild(m);
+  m.addEventListener("click", ev => { const b = ev.target.closest("button[data-do]"); if (ev.target.closest(".x") || b) m.remove(); if (!b) return;
+    if (b.dataset.do === "och") showHeldContract(k);
+    else if (typeof openTab === "function") openTab(k ? k.split(" ")[0] : sy, true); });
+  setTimeout(() => document.addEventListener("click", function off(ev){ if (!m.contains(ev.target)){ m.remove(); document.removeEventListener("click", off); } }), 0);
+});
 let showHistory = false, selOrder = null;
 function renderOrders(s){
   const A = s.account;
@@ -1507,7 +1542,10 @@ function renderFlow(s){
   const rows = (s.flow || []).filter(p => (!filt || p.symbol.startsWith(filt)) && (!mine || (s.symbols || []).includes(p.symbol)) && (!solo() || p.symbol === curSym))
     .map(p => { const away = p.side === "ask" && p.otm_pct != null && p.otm_pct >= fc.otm_pct && p.premium >= 50000; return Object.assign({away}, p); })
     .filter(p => !onlyU || p.away).slice(0, 60);
-  const src = document.getElementById("flowSrc"); const st = s.connection && s.connection.state === "DEMO" ? "PRACTICE FLOW" : "QUANT DATA"; if (src.textContent !== st) src.textContent = st;
+  const src = document.getElementById("flowSrc"), fsim = !!(s.feeds && s.feeds.options && s.feeds.options.label === "SIM");
+  const st = s.connection && s.connection.state === "DEMO" ? "PRACTICE FLOW" : fsim ? "SIM · market closed" : "QUANT DATA";
+  if (src.textContent !== st){ src.textContent = st; src.classList.toggle("simtag", fsim); src.title = fsim ? s.feeds.options.detail : ""; }
+  { const pn = src.closest(".pnl"); if (pn) pn.classList.toggle("simmode", fsim); }
   const exp = e => { if (!e) return NA; const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(e); return m ? `${m[2]}/${m[3]}/${m[1].slice(2)}` : e; };
   const strike = k => Number.isInteger(k) ? String(k) : (+k).toFixed(2).replace(/\.?0+$/, "");
   const typ = p => p.kind === "sweep" ? `<b class="ic o"></b>S` : p.kind === "block" ? `<b class="ic sq"></b>B` : p.kind === "split" ? `<b class="ic eq">=</b>S` : `<b class="ic dot"></b>T`;
@@ -2049,7 +2087,7 @@ function renderOchHead(){
   if (!OCH.key) html = `<span class="dim">No contract yet — open OPTIONS, click a strike (or 📈 on its row) and it charts here.</span><button data-och="chain">OPTIONS</button>`;
   else { const pos = d && d.position, q = pos ? Math.abs(pos.qty) : 0, long = pos && pos.qty > 0;
     const rs = d ? optRiskSize(d) : null;
-    html = `<b class="${d && d.right === "P" ? "s" : "b"}">${esc(d ? d.label : OCH.key)}</b>${d && d.expires_today ? `<span class="exptoday" title="expires at 4:00 today: a long one in the money is exercised into shares; the desk calls it out at 3:30 and closes it at 3:50 (SETTINGS, Trading)">EXPIRES TODAY</span>` : d && d.dte != null && d.dte < 7 ? `<span class="dim">${d.dte.toFixed(1)}d left</span>` : ""}<span class="dim">bid ${f(d && d.bid)} / ask ${f(d && d.ask)}${d && d.delta != null ? ` · Δ ${(+d.delta).toFixed(2)}` : ""}${d && d.source === "PRACTICE" ? " · practice model" : ""}</span>
+    html = `<b class="${d && d.right === "P" ? "s" : "b"}">${esc(d ? d.label : OCH.key)}</b>${d && d.expires_today ? `<span class="exptoday" title="expires at 4:00 today: a long one in the money is exercised into shares; the desk calls it out at 3:30 and closes it at 3:50 (SETTINGS, Trading)">EXPIRES TODAY</span>` : d && d.dte != null && d.dte < 7 ? `<span class="dim">${d.dte.toFixed(1)}d left</span>` : ""}<span class="dim">bid ${f(d && d.bid)} / ask ${f(d && d.ask)}${d && d.delta != null ? ` · Δ ${(+d.delta).toFixed(2)}` : ""}${d && d.source === "PRACTICE" ? " · practice model" : ""}</span>${d && d.sim ? `<span class="simtag" title="options market closed: this contract's price is SIMULATED from the stock (paper only); option orders wait for the 9:30 open">SIM · market closed</span>` : ""}
       ${rs ? `<button class="risksz" data-ochn="${rs.n}" title="${esc(rs.why)}">RISK $${riskDollars()} → ${rs.n} ct</button>` : d ? `<span class="dim" title="draw a STOP on the stock chart (or set this contract's stop) and the desk sizes contracts from your RISK $">no stop to size from</span>` : ""}
       ${q ? `<span class="${long ? "b" : "s"}">YOU HAVE ${q}${pos.pnl != null ? ` · ${pos.pnl >= 0 ? "+" : "−"}$${sz(Math.abs(Math.round(pos.pnl)))}` : ""}</span>` : ""}
       <span class="tfs">${[1, 5, 15].map(m => `<button data-ochtf="${m}" class="${tf === m ? "on" : ""}">${m}m</button>`).join("")}</span>
@@ -2403,7 +2441,7 @@ function renderOptPanels(){
       <td class="px">${r.price.toFixed(2)}</td>
       <td class="sz s">${r.ask ? `<i style="width:${Math.round(r.ask / mx * 100)}%"></i><span>${sz(r.ask)}</span>` : ""}</td>
       <td class="tr b">${r.bought ? `<i style="width:${Math.round(r.bought / mt * 100)}%"></i><span>${sz(r.bought)}</span>` : ""}</td></tr>`).join("");
-  hd("obookHd", "OPTION LEVEL II", ` <span class="dim">bid ${f(d.bid)} × ${t.bid_size ?? "—"} · ask ${f(d.ask)} × ${t.ask_size ?? "—"}${t.deep_book ? (d.source === "PRACTICE" ? " · practice book" : " · IBKR book (every exchange)") : " · top of book (IBKR's option book is off or refused — see MESSAGES)"}</span>`);
+  hd("obookHd", "OPTION LEVEL II", ` <span class="dim">bid ${f(d.bid)} × ${t.bid_size ?? "—"} · ask ${f(d.ask)} × ${t.ask_size ?? "—"}${t.deep_book ? (d.source === "PRACTICE" ? " · practice book" : d.source === "SIM" ? " · SIMULATED book (market closed)" : " · IBKR book (every exchange)") : " · top of book (IBKR's option book is off or refused — see MESSAGES)"}</span>`);
   setTimeout(centerObook, 0);
   put(".pnl[data-p=obook] .obook", `<div class="ladder-wrap olw">${optLadderHTML(d, t)}</div>`);
   sameCols(document.querySelector(".pnl[data-p=obook] .obook table"));
@@ -2505,8 +2543,11 @@ function centerSpread(sc){
   if (!sc || sc.offsetParent === null || Date.now() - obookUserScroll < 4000) return;
   const a = sc.querySelector("tr.ba, tr.best-ask"), b = sc.querySelector("tr.bb, tr.best-bid"); if (!a && !b) return;
   const ra = (a || b).getBoundingClientRect(), rb = (b || a).getBoundingClientRect(), box = sc.getBoundingClientRect();
-  const mid = (Math.min(ra.top, rb.top) + Math.max(ra.bottom, rb.bottom)) / 2;
-  sc.scrollTop += mid - (box.top + sc.clientHeight / 2);
+  const mid = (Math.min(ra.top, rb.top) + Math.max(ra.bottom, rb.bottom)) / 2, y = mid - box.top, h = sc.clientHeight;
+  // still: only when the spread drifts into the top or bottom fifth (or a new contract opens) does the view move
+  const key = (typeof OCH !== "undefined" && OCH.key) || "";
+  if (sc.dataset.ckey !== key || y < h * 0.2 || y > h * 0.8) sc.scrollTop += y - h / 2;
+  sc.dataset.ckey = key;
 }
 function centerObook(){ centerSpread(P.obook && P.obook.pc); }
 
@@ -2570,7 +2611,7 @@ const LVRANK = {entry: 0, stop: 0, second_entry: 1, target: 2, trigger: 3, sneak
 const LVSHORT = {entry: "ENTRY", trigger: "PIV", second_entry: "2ND", target: "TGT", stop: "STOP", extra: "LVL", sneaky: "SNKY", sneaky_auto: "SNKY·T", hod: "HOD", lod: "LOD"};
 function lvWords(m, short){
   const base = short && LVSHORT[m.role] ? LVSHORT[m.role] : (LVROLE[m.role] || [m.label])[0];
-  if (m.role === "strike") return `${m.label} ${usdK(m.prem)}${!short && m.n > 1 ? " ×" + m.n : ""}${m.hot ? "⚡" : ""}`;
+  if (m.role === "strike") return `${short ? "" : (m.cp === "P" ? "PUTS HIT " : "CALLS HIT ")}${m.label} ${usdK(m.prem)}${!short && m.n > 1 ? " ×" + m.n : ""}${!short && m.dte != null ? " " + Math.round(m.dte) + "d" : ""}${m.hot ? "⚡" : ""}`;
   if (m.role === "flow") return `${short ? "" : "OPTION FLOW "}${usdK(m.prem)}${m.n > 1 ? " ×" + m.n : ""}${short ? "" : m.buyside ? " (paid the ask)" : " (hit the bid)"}`;
   if (m.role === "reload_bid" || m.role === "reload_ask") return short ? `${m.role === "reload_bid" ? "BUYER" : "SELLER"} ↻${m.refills || ""}` : `${base} ↻${m.refills || ""}`;
   if (m.est) return (short ? "≈" : "≈ ") + base + (short ? "" : ` (when ${m.sym} trades ${px(m.at)})`);

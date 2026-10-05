@@ -54,6 +54,7 @@ def fake_order(action, qty, order_type, price, tif="DAY", parent_id=None, transm
 
 
 def make_session(**trading):
+    trading.setdefault("sim_options_after_hours", False)     # the test clock sits after hours: real quotes unless a test asks
     c = cfg(trading=trading)
     engine = Engine(plays(), c)
     clock = Clock()
@@ -598,3 +599,47 @@ class OptionDepthTests(unittest.TestCase):
         self.assertTrue(any("no option book" in m["text"] for m in engine.messages))
         clock.t += 1; s.step(clock())
         self.assertEqual(len([c for c in app.calls if c[0] == "reqMktDepth" and isinstance(c[2], _Opt)]), 1)
+
+
+class AfterHoursSimOptionsTests(unittest.TestCase):
+    """PAPER after hours: the option chain / chart / L2 / T&S run on the practice model priced from the stock, the
+    OPT light goes yellow SIM, stale IBKR option ticks are ignored, and no option order goes to IBKR on a
+    simulated price. Never on a LIVE account."""
+    def _session(self, acct="DU1"):
+        s, engine, clock = make_session(sim_options_after_hours=True, max_dollars_per_order=50000)
+        clock.t = 1759708800.0 + 21 * 3600          # Monday 5 pm New York: options closed
+        s.step(clock()); app = s.app; app.nextValidId(50)
+        engine.trader.gate.set_accounts([acct])
+        sym = next(iter(s.l1_ids)); rid = s.l1_ids[sym]
+        app.tickPrice(rid, 1, 99.9, None); app.tickPrice(rid, 2, 100.1, None); app.tickPrice(rid, 4, 100.0, None)
+        return s, engine, clock, app, sym
+
+    def test_paper_after_hours_chain_and_light_are_sim(self):
+        s, engine, clock, app, sym = self._session()
+        self.assertTrue(engine.opt_sim(clock()))
+        ch = engine.option_chain(sym, t=clock())
+        self.assertTrue(ch["available"]); self.assertTrue(ch["sim"]); self.assertEqual(ch["source"], "SIM")
+        self.assertTrue(any(r["ask"] for r in ch["rows"]))
+        lights = engine._feeds(clock())
+        self.assertEqual((lights["options"]["color"], lights["options"]["label"]), ("amber", "SIM"))
+
+    def test_live_account_never_sims(self):
+        s, engine, clock, app, sym = self._session(acct="U123")
+        self.assertFalse(engine.opt_sim(clock()))
+
+    def test_market_hours_are_real(self):
+        s, engine, clock, app, sym = self._session()
+        clock.t = 1759708800.0 + 24 * 3600 + 15 * 3600     # Tuesday 11:00 ET
+        self.assertFalse(engine.opt_sim(clock()))
+
+    def test_option_order_is_held_and_ibkr_ticks_ignored(self):
+        s, engine, clock, app, sym = self._session()
+        app.position("DU1", _Opt(symbol=sym), 2, 312.0)
+        key = next(k for k in s.opt_ids if k.startswith(sym + " "))
+        app.tickPrice(s.opt_ids[key], 1, 0.01, None)
+        self.assertNotEqual((engine.opt_quotes.get(key) or {}).get("bid"), 0.01)
+        tr = engine.trader; tr.gate.arm(True)
+        n = len([c for c in app.calls if c[0] == "placeOrder"])
+        out = tr.opt_adjust(key, 1, "close", 3.0, clock())
+        self.assertFalse(out["ok"]); self.assertIn("SIMULATED", out["reason"])
+        self.assertEqual(len([c for c in app.calls if c[0] == "placeOrder"]), n)

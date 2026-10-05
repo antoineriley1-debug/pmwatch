@@ -286,6 +286,8 @@ class TwineyWrapper:
         field = PRICE_TICKS.get(tickType)
         kind, sym = self.req.get(reqId, (None, None))
         if field is not None and kind == "opt":
+            if self.engine.opt_sim(self.clock()):
+                return                          # after hours on paper: the SIM model prices the contracts, not stale IBKR ticks
             v = num(price)
             self.engine.on_opt_quote(sym, field, None if v is None or v <= 0 else v, self.clock())
             return
@@ -314,7 +316,7 @@ class TwineyWrapper:
         kind, sym = self.req.get(reqId, (None, None))
         if field is not None and kind == "opt":
             v = num(size)
-            if v is not None and v >= 0:
+            if v is not None and v >= 0 and not self.engine.opt_sim(self.clock()):
                 self.engine.on_opt_size(sym, field, v, self.clock())
             return
         if field is None or kind != "l1":

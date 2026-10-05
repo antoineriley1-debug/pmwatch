@@ -206,6 +206,8 @@ DEFAULTS = {
         # a 2nd entry drawn with no stop on its side gets a STOP this many dollars away (under a long, over a short);
         # drag it where you want it. 0 = off
         "auto_stop_dollars": 1.0,
+        "sim_options_after_hours": True,
+        "sim_options_force": False,
         # when an auto-entry trade goes flat (stopped out, target, flatten) its 2nd entry, stop and target lines go
         "clear_lines_when_flat": True,
         # CHART TRADING: on any open position the STOP / TARGET lines are its exit orders (draw = order in, drag = moved)
@@ -358,6 +360,8 @@ DEFAULTS = {
         "stack_seconds": 60,
         # option flow STRIKES outlined on the ladder: a strike with at least this premium today (top 4)
         "strike_min_premium": 100000,
+        "strike_max_dte": 7,
+        "strike_otm_only": True,
         # rows above and below the market on the ladder (the COLS menu changes it live)
         "half_rows": 12,
         # a displayed size at or above this is "big": highlighted on the ladder, and counted every time it shows up

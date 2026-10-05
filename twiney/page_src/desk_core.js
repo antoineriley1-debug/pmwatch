@@ -314,7 +314,7 @@ function renderDataWin(p){
   let w = wrap.querySelector(".datawin");
   // each chart has its own box: where you put it and whether it is shrunk. The main chart keeps the old settings;
   // the other charts (CHART 2 / 3, OPTION CHART) start shrunk to Symbol..Close so the candles stay clear
-  const main = !p.id || p.id === "chart", posKey = main ? "datawin.pos2" : "datawin.pos2." + p.id, minKey = main ? "datawin.min2" : "datawin.min2." + p.id, minDefault = true;   // every chart starts with the small box, top left: the candles stay clear
+  const main = !p.id || p.id === "chart", posKey = main ? "datawin.pos2" : "datawin.pos2." + p.id, minKey = main ? "datawin.min3" : "datawin.min2." + p.id, minDefault = !main;   // the stock chart shows the whole box; the shorter charts start with the one-line box
   const on = store.get("datawin", true) && p.data && p.dataBar;
   if (!on){ if (w) w.style.display = "none"; return; }
   if (!w){
@@ -334,19 +334,15 @@ function renderDataWin(p){
   const rows = (p.dataRows || []).map(([name, col, val]) => `<div class="r" style="background:${col};color:${lum(col) > 140 ? "#000" : "#fff"}"><span>${name}</span><span>${f(val)}</span></div>`).join("");
   const min = store.get(minKey, minDefault);
   w.classList.toggle("min", min);
-  if (min){       // small: one line, O H L C, out of the candles' way (+ opens the full box)
-    const one = `<div class="one"><b>${esc(d.symbol)}</b> O ${f(b[1])} H ${f(b[2])} L ${f(b[3])} C ${f(b[4])}<b class="mn" title="show the whole box: date, time and every line's value">+</b></div>`;
-    if (w.dataset.h !== one){ w.dataset.h = one; w.innerHTML = one; } return;
-  }
-  const html = `<div class="ok"><span>OK</span><b class="mn" title="${min ? "show the indicator values too" : "keep Symbol through Close, hide the indicator values"}">${min ? "+" : "–"}</b></div>
+  // shrunk = the black box only (Symbol through Close); the coloured indicator rows and Vol fold away under it
+  const html = `<div class="ok"><span>OK</span><b class="mn" title="${min ? "show every line's value too" : "fold the indicator rows away: keep the black box"}">${min ? "MORE ▾" : "LESS ▴"}</b></div>
     <div class="kv"><span>Symbol:</span><span>${esc(d.symbol)},${tf === "D" ? "D" : tf}</span></div>
     <div class="kv"><span>Date:</span><span>${ny({month: "2-digit", day: "2-digit", year: "2-digit"})}</span></div>
     <div class="kv"><span>Time:</span><span>${tf === "D" ? "00:00" : ny({hour: "2-digit", minute: "2-digit", hourCycle: "h23"})}</span></div>
     <div class="kv"><span>Price:</span><span>${f(p.dataPrice != null ? p.dataPrice : b[4])}</span></div>
     <div class="kv"><span>Open:</span><span>${f(b[1])}</span></div><div class="kv"><span>High:</span><span>${f(b[2])}</span></div>
     <div class="kv"><span>Low:</span><span>${f(b[3])}</span></div><div class="kv"><span>Close:</span><span>${f(b[4])}</span></div>
-    ${rows}
-    <div class="r vol"><span>Vol</span><span>${(b[5] || 0).toLocaleString("en-US")}</span></div>`;
+    ${min ? "" : rows + `<div class="r vol"><span>Vol</span><span>${(b[5] || 0).toLocaleString("en-US")}</span></div>`}`;
   if (w.dataset.h !== html){ w.dataset.h = html; w.innerHTML = html; }
 }
 function renderTools(v){
