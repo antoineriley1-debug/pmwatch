@@ -52,14 +52,26 @@ def opt_snap(price):
 
 
 def opt_through(touch, action):
-    """An option limit that fills now: one price step through the touch (up for a buy, down for a sell), on a
-    grid every option accepts (0.05 under $3, 0.10 at $3 and up). A sell never goes under one step."""
+    """An option limit that fills now: one price step through the touch (up for a buy, down for a sell). The step
+    is the contract's own: a penny when it is quoted in pennies (the busy names under $3), else a nickel under $3 and
+    a dime at $3 and up. A sell is never priced over the bid it is selling into (a 3-cent bid sells at 2 or 3 cents,
+    never at a nickel that would sit unfilled)."""
     import math
-    step = 0.05 if touch < 3 else 0.10
+    cents = round(touch * 100)
+    step = 0.01 if (touch < 3 and cents % 5) else 0.05 if touch < 3 else 0.10
+    n = touch / step
     if action == BUY:
-        return round(math.ceil(round(touch / step, 6)) * step + (step if abs(touch / step - round(touch / step)) < 1e-6 else 0), 2)
-    v = math.floor(round(touch / step, 6)) * step - (step if abs(touch / step - round(touch / step)) < 1e-6 else 0)
-    return round(max(step, v), 2)
+        k = math.ceil(round(n, 6))
+        if abs(n - round(n)) < 1e-6:
+            k += 1
+        return round(k * step, 2)
+    k = math.floor(round(n, 6))
+    if abs(n - round(n)) < 1e-6:
+        k -= 1
+    v = round(k * step, 2)
+    if v <= 0:                                    # nothing under it on the grid: sell AT the bid
+        v = round(touch, 2)
+    return v
 
 class OrderRejected(ValueError):
     pass

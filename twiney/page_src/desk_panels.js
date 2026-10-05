@@ -399,7 +399,7 @@ document.addEventListener("mouseover", e => {
   if (tr){ LADHOVER.sym = curSym; LADHOVER.price = tr.dataset.price; LADHOVER.side = c.classList.contains("bsz") ? "bid" : "ask"; }
   else if (LADHOVER.sym && !(e.target.closest && e.target.closest(".ladder-wrap"))) LADHOVER.sym = null;
 });
-function eatMarks(wrap, d){
+function eatMarks(wrap, d, host){
   const rows = (d.ladder && d.ladder.rows) || [], now = Date.now(), sym = d.symbol;
   const touch = {bid: null, ask: null};
   for (const r of rows){
@@ -428,7 +428,8 @@ function eatMarks(wrap, d){
     }
   }
   if (EAT.size > 4000) for (const k of [...EAT.keys()].slice(0, 2000)) EAT.delete(k);
-  let bar = P.book.pc.querySelector(".eatbar"); if (!bar){ bar = document.createElement("div"); bar.className = "eatbar"; P.book.pc.appendChild(bar); }
+  host = host || P.book.pc;
+  let bar = host.querySelector(":scope > .eatbar, :scope .eatbar"); if (!bar){ bar = document.createElement("div"); bar.className = "eatbar"; host.appendChild(bar); }
   const line = (side, t) => { if (!t) return `<span class="${side === "bid" ? "b" : "s"} dim">${side.toUpperCase()} —</span>`;
     const gone = Math.max(0, t.peak - t.size), pct = t.peak ? Math.round(100 * gone / t.peak) : 0;
     return `<span class="${side === "bid" ? "b" : "s"}" title="${side === "bid" ? "the bid" : "the offer"} at ${px(t.price)}: it showed ${sz(t.peak)} at most in the last 90 s; ${sz(t.size)} is left. ${sz(gone)} ${side === "bid" ? "sold into it" : "bought from it"} since (${pct}%)${pct >= 60 ? " — nearly eaten: if it refills, that is a reload" : ""}"><b>${side.toUpperCase()} ${px(t.price)}</b> ${kfmt(t.size)} of ${kfmt(t.peak)}${gone ? ` · ${kfmt(gone)} ${side === "bid" ? "sold into it" : "bought"} (${pct}%)` : " · untouched"}</span>`; };
@@ -2084,7 +2085,9 @@ function optLadderData(d, t){
   const orders = (d.orders || []), lastTrade = t.prints && t.prints.length ? +t.prints[0][1] : d.last;
   const rows = t.book.map(r => ({price: r.price, gap: false, bid: r.bid, ask: r.ask, sold: r.sold, bought: r.bought, tags: [], flow: null,
     mine: orders.filter(o => Math.abs((+o.lmt || 0) - r.price) < 0.004).map(o => ({id: o.order_id, action: o.action, qty: o.remaining ?? o.qty, role: "entry", status: o.status})),
-    best_bid: r.best_bid, best_ask: r.best_ask, last: lastTrade != null && Math.abs(lastTrade - r.price) < 0.004}));
+    best_bid: r.best_bid, best_ask: r.best_ask, last: lastTrade != null && Math.abs(lastTrade - r.price) < 0.004,
+    bid_state: r.reload_bid ? "RELOAD" : null, bid_proven: !!r.reload_bid, bid_stage: r.reload_bid ? "RELOADING" : null,
+    ask_state: r.reload_ask ? "RELOAD" : null, ask_proven: !!r.reload_ask, ask_stage: r.reload_ask ? "RELOADING" : null}));
   return {rows, max_size: Math.max(1, ...rows.map(r => Math.max(r.bid, r.ask))), max_traded: Math.max(1, ...rows.map(r => Math.max(r.sold, r.bought))),
           memory_minutes: 60, big_shares: 100, huge_shares: 300, big_default: true};
 }
@@ -2214,7 +2217,8 @@ function renderContractL2(){
   const html = contractBar("LEVEL II") + `<div class="obook cb">${t ? `<div class="ladder-wrap olw">${optLadderHTML(d, t)}</div>` : `<div class="dim" style="padding:8px">Loading the contract's book…</div>`}</div>`;
   if (box.dataset.h !== html){ box.dataset.h = html; box.innerHTML = html; }
   sameCols(box.querySelector(".obook.cb table"));
-  const pc = box.querySelector(".obook.cb"); if (pc && Date.now() - obookUserScroll > 4000){ const a = pc.querySelector("tr.ba, tr.best-ask"), b = pc.querySelector("tr.bb, tr.best-bid"); if (a || b){ const top = (a || b).offsetTop, bot = (b || a).offsetTop + (b || a).offsetHeight; pc.scrollTop = Math.max(0, (top + bot) / 2 - pc.clientHeight / 2); } }
+  if (t){ const w = box.querySelector(".obook.cb .ladder-wrap"); if (w) eatMarks(w, {symbol: "opt|" + d.key, ladder: optLadderData(d, t), tape: {recent: []}}, box.querySelector(".obook.cb")); }
+  centerSpread(box.querySelector(".obook.cb"));
 }
 function renderContractTape(){
   const el = P.tape.el, on = contractMode("tape");
@@ -2247,6 +2251,7 @@ function renderOptPanels(){
   setTimeout(centerObook, 0);
   put(".pnl[data-p=obook] .obook", `<div class="ladder-wrap olw">${optLadderHTML(d, t)}</div>`);
   sameCols(document.querySelector(".pnl[data-p=obook] .obook table"));
+  { const w = document.querySelector(".pnl[data-p=obook] .obook .ladder-wrap"); if (w) eatMarks(w, {symbol: "opt|" + d.key, ladder: optLadderData(d, t), tape: {recent: []}}, document.querySelector(".pnl[data-p=obook] .obook")); }
   // T&S for the contract
   const tm = x => new Date(x * 1000).toLocaleTimeString("en-US", {timeZone: "America/New_York", hour12: false});
   const pr = otapeRows(t);
@@ -2290,10 +2295,14 @@ document.addEventListener("click", async e => {
 
 // the option ladder keeps the spread in the middle of the window, unless you scrolled it in the last 4 seconds
 let obookUserScroll = 0;
-(function(){ const pc = P.obook && P.obook.pc; if (pc) pc.addEventListener("wheel", () => { obookUserScroll = Date.now(); }, {passive: true}); })();
-function centerObook(){
-  const pc = P.obook && P.obook.pc; if (!pc || pc.offsetParent === null || Date.now() - obookUserScroll < 4000) return;
-  const a = pc.querySelector("tr.ba, tr.best-ask"), b = pc.querySelector("tr.bb, tr.best-bid"); if (!a && !b) return;
-  const top = (a || b).offsetTop, bot = (b || a).offsetTop + (b || a).offsetHeight;
-  pc.scrollTop = Math.max(0, (top + bot) / 2 - pc.clientHeight / 2);
+(function(){ const pc = P.obook && P.obook.pc; if (pc) pc.addEventListener("wheel", () => { obookUserScroll = Date.now(); }, {passive: true});
+  document.addEventListener("wheel", e => { if (e.target.closest && e.target.closest(".cbook")) obookUserScroll = Date.now(); }, {passive: true}); })();
+function centerSpread(sc){
+  // keep the spread (best bid and best ask) in the middle of the scrolling box, by where they are on screen
+  if (!sc || sc.offsetParent === null || Date.now() - obookUserScroll < 4000) return;
+  const a = sc.querySelector("tr.ba, tr.best-ask"), b = sc.querySelector("tr.bb, tr.best-bid"); if (!a && !b) return;
+  const ra = (a || b).getBoundingClientRect(), rb = (b || a).getBoundingClientRect(), box = sc.getBoundingClientRect();
+  const mid = (Math.min(ra.top, rb.top) + Math.max(ra.bottom, rb.bottom)) / 2;
+  sc.scrollTop += mid - (box.top + sc.clientHeight / 2);
 }
+function centerObook(){ centerSpread(P.obook && P.obook.pc); }

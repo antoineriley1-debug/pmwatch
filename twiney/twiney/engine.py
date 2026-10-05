@@ -558,7 +558,8 @@ class Engine:
     def _opt_view(p):
         """An option position for the page: contract, side, size, cost, quotes and the open P&L in dollars
         (IBKR's avg cost is per contract: multiplier already in)."""
-        mark = p.get("last") if p.get("last") else ((p["bid"] + p["ask"]) / 2 if p.get("bid") and p.get("ask") else None)
+        # an option is marked at the middle of its bid / ask (a last trade can be minutes old on a quiet contract)
+        mark = (p["bid"] + p["ask"]) / 2 if p.get("bid") and p.get("ask") else (p.get("last") or None)
         mult = p.get("mult") or 100
         pnl = None if mark is None else (mark * mult - p["avg_cost"]) * p["qty"]
         exp = p.get("expiry") or ""
@@ -690,7 +691,8 @@ class Engine:
             rows = []
             if ref:
                 pennies = any(abs(round(x * 100) % 5) for x in (bid, ask) if x)
-                step = 0.01 if pennies and ref < 3 else 0.05
+                pbk = (getattr(self, "opt_pbook", {}) or {}).get(key)
+                step = (pbk.g / 100.0) if pbk is not None else (0.01 if pennies and ref < 3 else 0.05)
                 traded = {}
                 for tp, pp, sz, sd in prints:
                     k = round(pp, 2); tr = traded.setdefault(k, [0, 0]); tr[0 if sd == "buy" else 1 if sd == "sell" else 0] += sz
@@ -706,13 +708,11 @@ class Engine:
                         row["bid"] = int(q.get("bid_size") or 0)
                     if row["best_ask"]:
                         row["ask"] = int(q.get("ask_size") or 0)
-                    if self.connection["state"] == "DEMO" and bid and ask:      # the practice desk models a book
-                        import random as _r
-                        rng = _r.Random(hash((key, px_, int(t // 20))))
-                        if px_ < bid - 1e-9 and bid - px_ < step * 8:
-                            row["bid"] = rng.choice((10, 20, 25, 40, 50, 75, 100, 150, 250))
-                        if px_ > ask + 1e-9 and px_ - ask < step * 8:
-                            row["ask"] = rng.choice((10, 20, 25, 40, 50, 75, 100, 150, 250))
+                    pb = (getattr(self, "opt_pbook", {}) or {}).get(key)
+                    if self.connection["state"] == "DEMO" and pb is not None:   # the practice book: every level's size
+                        row["bid"] = int(pb.size_at("bid", px_)); row["ask"] = int(pb.size_at("ask", px_))
+                        row["reload_bid"] = ("bid", int(round(px_ * 100))) in pb.reload
+                        row["reload_ask"] = ("ask", int(round(px_ * 100))) in pb.reload
                     rows.append(row)
             big = [{"t": tp, "price": pp, "size": sz, "side": sd, "premium": round(pp * sz * 100), "src": "tape"}
                    for tp, pp, sz, sd in prints if sz >= big_ct or pp * sz * 100 >= big_usd][:40]
@@ -756,24 +756,35 @@ class Engine:
             live = self.__dict__.setdefault("opt_live", {})      # key -> last time a chart / ticket asked for it
             keys = set(self.opt_positions) | {o["symbol"] for o in self._pending() if o.get("opt")} | \
                 {k for k, at in live.items() if t - at < 120}
-            import random as _r
+            from .optbook import PracticeOptBook
+            books = self.__dict__.setdefault("opt_pbook", {})
             for key in keys:
-                before = (self.opt_quotes.get(key) or {}).get("last")
-                if not self.practice_quote_key(key, t):
+                try:
+                    sym, exp, strike, right = options.parse_key(key)
+                except (ValueError, IndexError):
                     continue
+                st = self.syms.get(sym)
+                spot = st.price() if st else None
+                fair = options.practice_quote(spot, strike, exp, right, t) if spot else None
+                if not fair or not fair.get("ask"):
+                    continue
+                bk = books.get(key)
+                if bk is None:
+                    bk = books[key] = PracticeOptBook(seed=hash(key) & 0xffff)
+                # which way the contract is being pushed: the stock's move since the last tick, signed for a put
+                prev = getattr(bk, "spot", None); bk.spot = spot
+                lean = 0.0 if prev is None else max(-0.3, min(0.3, (spot - prev) / max(1e-9, spot) * 400 * (1 if right == "C" else -1)))
+                prints = bk.step(max(0.01, fair["bid"]), fair["ask"], t, lean)
+                qt = bk.quote()
+                for fld in ("bid", "ask"):
+                    if qt[fld]:
+                        self.on_opt_quote(key, fld, qt[fld], t)
                 q = self.opt_quotes.get(key) or {}
-                if not (q.get("bid") and q.get("ask")):
-                    continue
-                q["bid_size"] = q.get("bid_size") or _r.choice((10, 20, 30, 50, 80))
-                q["ask_size"] = q.get("ask_size") or _r.choice((10, 20, 30, 50, 80))
-                if _r.random() < 0.15:
-                    q["bid_size"], q["ask_size"] = _r.choice((5, 10, 20, 30, 50, 80, 120)), _r.choice((5, 10, 20, 30, 50, 80, 120))
-                # prints: more when the contract is moving; buyers lift the ask as it rises, sellers hit the bid as it falls
-                up = before is not None and q["last"] > before
-                for _ in range(_r.choice((0, 0, 1, 1, 2, 3))):
-                    buy = _r.random() < (0.68 if up else 0.32 if before is not None and q["last"] < before else 0.5)
-                    size = _r.choice((1, 1, 2, 3, 5, 5, 10, 10, 20, 25, 50)) * (40 if _r.random() < 0.02 else 1)
-                    self.on_opt_print(key, q["ask"] if buy else q["bid"], size, t, "buy" if buy else "sell")
+                q["bid_size"], q["ask_size"] = qt["bid_size"], qt["ask_size"]
+                for price, n, side, tt in prints:
+                    self.on_opt_quote(key, "last", price, t)
+                    self.on_opt_print(key, price, n, t, side)
+                self.on_opt_greeks(key, options.bs_greeks(spot, strike, options.dte(exp, t) or 0, right), t)
 
     def practice_quote_key(self, key, t):
         """Price one contract from the stock right now (practice desk only). True when it got a quote."""
@@ -820,10 +831,11 @@ class Engine:
                         bb = self.opt_bars[key][m]
                         v = round(max(0.0, st.bars[m][4]) / 400.0 * (1.0 if strike and abs(strike - c) / c < 0.03 else 0.3))
                         bb[4] = float(v); bb[5] = float(round(v * 0.5)); bb[6] = float(v - round(v * 0.5))
-                q = options.practice_quote(spot, strike, exp, right, t)
-                if q:
-                    for fld in ("bid", "ask", "last"):
-                        self.on_opt_quote(key, fld, q[fld], t)
+                if key not in (getattr(self, "opt_pbook", {}) or {}):   # the contract's own book sets its quote
+                    q = options.practice_quote(spot, strike, exp, right, t)
+                    if q:
+                        for fld in ("bid", "ask", "last"):
+                            self.on_opt_quote(key, fld, q[fld], t)
             bars = self.opt_bars.get(key) or {}
             out = [[m] + [round(x, 4) for x in bars[m]] for m in sorted(bars)]
             q = self.opt_quotes.get(key) or {}
@@ -885,8 +897,9 @@ class Engine:
             self.opt_watch[symbol] = {"expiry": expiry, "right": right, "keys": keys, "t": t}
             if ch["source"] == "PRACTICE" and spot:
                 days = options.dte(expiry, t) if expiry else 0
+                booked = getattr(self, "opt_pbook", {})
                 for k, strike in zip(keys, strikes):
-                    q = options.practice_quote(spot, strike, expiry, right, t)
+                    q = None if k in booked else options.practice_quote(spot, strike, expiry, right, t)
                     if q:
                         for f in ("bid", "ask", "last"):
                             self.on_opt_quote(k, f, q[f], t)

@@ -201,8 +201,10 @@ class TwoSidedPlayTests(unittest.TestCase):
 class OptionThroughTests(unittest.TestCase):
     def test_buy_and_sell_go_one_valid_step_through_the_touch(self):
         from twiney.trading import opt_through
-        self.assertEqual(opt_through(2.93, "BUY"), 2.95); self.assertEqual(opt_through(2.93, "SELL"), 2.9)
+        self.assertEqual(opt_through(2.93, "BUY"), 2.94); self.assertEqual(opt_through(2.93, "SELL"), 2.92)   # quoted in pennies
+        self.assertEqual(opt_through(2.95, "BUY"), 3.0); self.assertEqual(opt_through(2.95, "SELL"), 2.9)    # quoted in nickels
         self.assertEqual(opt_through(3.12, "BUY"), 3.2); self.assertEqual(opt_through(0.05, "SELL"), 0.05)
+        self.assertEqual(opt_through(0.03, "SELL"), 0.02)                    # a 3-cent bid never gets a nickel sell
 
 
 class PracticeOptionsMoveWithTheStockTests(unittest.TestCase):
@@ -219,12 +221,13 @@ class PracticeOptionsMoveWithTheStockTests(unittest.TestCase):
         self.assertTrue(tr.opt_open("AAA", exp, 10, "P", "BUY", 1, None, T)["ok"])
         e.practice_opt_tick(T + 1)
         self.assertIn(kc, e.opt_positions); self.assertIn(kp, e.opt_positions)
-        c0, p0 = e.opt_quotes[kc]["last"], e.opt_quotes[kp]["last"]
+        mid = lambda k: (e.opt_quotes[k]["bid"] + e.opt_quotes[k]["ask"]) / 2
+        c0, p0 = mid(kc), mid(kp)
         e.on_l1("AAA", "last", 10.60, T + 2); e.practice_opt_tick(T + 3)         # stock up: call up, put down
-        self.assertGreater(e.opt_quotes[kc]["last"], c0); self.assertLess(e.opt_quotes[kp]["last"], p0)
+        self.assertGreater(mid(kc), c0); self.assertLess(mid(kp), p0)
         self.assertGreater(e._opt_view(e.opt_positions[kc])["pnl"], 0)
         e.on_l1("AAA", "last", 9.40, T + 4); e.practice_opt_tick(T + 5)          # stock down: put up, call down
-        self.assertGreater(e.opt_quotes[kp]["last"], p0); self.assertLess(e.opt_quotes[kc]["last"], c0)
+        self.assertGreater(mid(kp), p0); self.assertLess(mid(kc), c0)
         self.assertGreater(e._opt_view(e.opt_positions[kp])["pnl"], 0)
 
 
@@ -277,7 +280,7 @@ class OptionStopTests(unittest.TestCase):
         e.on_l1("AAA", "last", 10.30, T + 2); e.practice_opt_tick(T + 2.6); tr.watchdog(T + 3); e.practice_opt_tick(T + 4)
         self.assertEqual(self.held(self.kp), 0)                                          # stock over 10.25: the put is out
         self.assertEqual(self.held(self.kc), 1)                                          # the call gained: its stop holds
-        e.on_l1("AAA", "last", 9.70, T + 5); e.practice_opt_tick(T + 5.6); tr.watchdog(T + 6); e.practice_opt_tick(T + 7)
+        e.on_l1("AAA", "last", 9.40, T + 5); e.practice_opt_tick(T + 5.6); tr.watchdog(T + 6); e.practice_opt_tick(T + 7)
         self.assertEqual(self.held(self.kc), 0)                                          # the call's bid fell to its stop
 
 
