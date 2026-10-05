@@ -593,3 +593,14 @@ i.tl{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:3p
 .cbar .cbtns{margin-left:auto;display:inline-flex;gap:4px} .cbar .cbtns button{margin-left:0}
 .cswitch{display:flex;align-items:center;gap:8px;padding:2px 6px;background:#1c1806;border-bottom:1px solid #6b5a1a;font:10.5px var(--mono);color:var(--gold)}
 .cswitch span{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .cswitch button{height:18px;padding:0 6px;font-size:10px;color:var(--gold);border-color:var(--gold)}
+
+.tmode{display:flex;gap:0;margin:0 0 6px} .tmode button{flex:1;height:28px;font:800 11.5px var(--sans);letter-spacing:.1em;border-radius:0}
+.tmode button:first-child{border-radius:3px 0 0 3px} .tmode button:last-child{border-radius:0 3px 3px 0}
+.tmode button.on{background:#2a2306;color:var(--gold);border-color:var(--gold)}
+.tmore{display:flex;align-items:center;gap:8px;margin:6px 0 2px;font-size:10.5px} .tmore button{height:20px;padding:0 8px;font-size:10px}
+.trow.hidden{display:none !important}
+.simple.pick .prow{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:6px} .simple.pick select{height:22px;font:11px var(--mono);background:#0a0a0b;color:var(--text);border:1px solid #26282c}
+.simple.pick .cp{display:inline-flex} .simple.pick .cp button{height:22px;padding:0 10px} .simple.pick .cp button.on.b{background:#0f3b26;color:#fff} .simple.pick .cp button.on.s{background:#4a1520;color:#fff}
+.pgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-bottom:4px} .pgrid .pk{display:flex;flex-direction:column;align-items:center;height:auto;padding:3px 2px;font:800 12px var(--mono)}
+.pgrid .pk i{font:400 10px var(--mono);color:var(--dim);font-style:normal} .pgrid .pk.itm{background:#13202c} .pgrid .pk.atm{border-color:var(--gold);color:var(--gold)}
+.simple .cq input#sbQty{width:64px}

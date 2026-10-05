@@ -14,9 +14,9 @@ const PRESETS = {
     active: {TR: "reload"}, sizes: {c1: 380, c3: 380, r2: 260}},
   "Chart Focus": {zones: {TL: [], TC: ["chart"], TR: ["book"], TX: ["tape"], BL: [], BC: ["foot"], BR: ["ticket"], BX: ["setup", "ps60", "reload", "flow", "positions", "orders"]},
     active: {BX: "setup"}, sizes: {c1: 0, c3: 330, c4: 300, r2: 220}},
-  "Options Desk": {zones: {TL: ["chart"], BL: ["foot"], TC: ["ochart"], BC: ["flow", "positions", "orders", "ticket"], TR: ["book", "tape"], BR: ["bigtape"], TX: ["obook", "otape"], BX: ["obig"]},
-    active: {BC: "flow", TR: "book", TX: "obook"}, second: {BC: "positions", TR: "tape", TX: "otape"}, split: {BC: true, TR: true, TX: true},
-    tf: {chart: 60}, sizes: {c1: 420, c3: 330, c4: 330, r2: {L: 330, C: 420, R: 300, X: 300}}},
+  "Options Desk": {ver: 2, zones: {TL: ["chart"], BL: ["foot"], TC: ["ochart"], BC: ["ticket", "flow"], TR: ["book", "tape"], BR: ["positions", "bigtape", "orders"], TX: ["obook", "otape"], BX: ["obig"]},
+    active: {BC: "ticket", TR: "book", TX: "obook", BR: "positions"}, second: {BC: "flow", TR: "tape", TX: "otape", BR: "bigtape"}, split: {BC: true, TR: true, TX: true, BR: true},
+    tf: {chart: 60}, sizes: {c1: 420, c3: 330, c4: 330, r2: {L: 330, C: 460, R: 360, X: 300}}},
   "Laptop": {zones: {TL: [], TC: ["chart", "foot", "ps60"], TR: ["book", "tape", "ticket", "reload"], BL: [], BC: ["positions", "orders", "calls", "watch", "desk", "journal", "messages"], BR: []},
     active: {}, sizes: {c1: 0, c3: 360, r2: 180}},
 };

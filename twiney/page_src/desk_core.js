@@ -171,6 +171,7 @@ document.getElementById("panelsPop").addEventListener("change", e => { const id 
 /* ---------- layouts: presets + named, server-side */
 function layoutFromPreset(name){ const p = PRESETS[name]; const l = emptyLayout(); l.zones = JSON.parse(JSON.stringify(p.zones)); l.active = Object.assign({}, p.active); l.sizes = Object.assign(l.sizes, JSON.parse(JSON.stringify(p.sizes)));
   if (p.split) l.split = Object.assign({}, p.split); if (p.second) l.second = Object.assign({}, p.second);
+  l.ver = p.ver || 1;
   for (const [id, tf] of Object.entries(p.tf || {})) store.set("tf." + id, tf);
   return normalize(l); }
 function renderLayoutSel(){
@@ -206,7 +207,9 @@ document.getElementById("layoutPop").addEventListener("click", async e => {
 async function loadLayouts(){
   try { const j = await (await fetch("/api/layouts", {cache: "no-store"})).json(); LAYOUTS = j.layouts || {}; PREFS = j.prefs || {};
     const last = j.last; const local = store.get("lay", null), localName = store.get("layName", null);
-    if (local && localName === last){ LAY = normalize(local); layoutName = localName; }
+    const stale = local && localName && localName.startsWith("★ ") && PRESETS[localName.slice(2)] && (PRESETS[localName.slice(2)].ver || 1) !== (local.ver || 1);
+    if (local && localName === last && !stale){ LAY = normalize(local); layoutName = localName; }
+    else if (stale && localName === last){ LAY = layoutFromPreset(localName.slice(2)); layoutName = localName; }   // a preset that changed in this build
     else if (last && last.startsWith("★ ") && PRESETS[last.slice(2)]){ LAY = layoutFromPreset(last.slice(2)); layoutName = last; }
     else if (last && LAYOUTS[last]){ LAY = normalize(LAYOUTS[last]); layoutName = last; }
   } catch (e) {}
