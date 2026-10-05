@@ -639,7 +639,7 @@ class MarketDataSession:
             if self.gate is not None:
                 self.gate.set_accounts(accounts)
             self.engine._message("info", f"account{'s' if len(accounts) != 1 else ''}: {', '.join(accounts)}"
-                                 + ("  (PAPER)" if accounts and all(a.upper().startswith("DU") for a in accounts)
+                                 + ("  (PAPER)" if accounts and all(a.upper().startswith("D") for a in accounts)
                                     else "  (LIVE)" if accounts else ""), self.clock())
 
     def handle_ready(self, order_id=None):

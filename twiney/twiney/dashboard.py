@@ -554,8 +554,8 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                     ok = tr.gate.arm(bool(body.get("on")))
                     out = {"ok": ok, "armed": tr.gate.armed, "reason": None if ok else tr.gate.why_not()}
                 elif action == "unlock":
-                    if tr.gate.mode == "LIVE":
-                        out = {"ok": False, "reason": "a LIVE account's loss lock holds until tomorrow (or raise the limit in SETTINGS)"}
+                    if tr.gate.mode == "LIVE" and tr.cfg.get("allow_live"):
+                        out = {"ok": False, "reason": "a LIVE (real money) account's loss lock holds until tomorrow (or raise the limit in SETTINGS)"}
                     else:
                         tr.gate.unlock(by_hand=True)
                         out = {"ok": True, "can_trade": tr.gate.can_trade(), "why_not": tr.gate.why_not(), "mode": tr.gate.mode}

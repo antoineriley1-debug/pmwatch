@@ -1,7 +1,7 @@
 
 /* ---------- command bar wiring */
 document.getElementById("armBtn").addEventListener("click", async () => {
-  if (T().locked && T().mode !== "LIVE"){ const u = await post("/api/trade/unlock", {});
+  if (T().locked && !(T().mode === "LIVE" && T().allow_live)){ const u = await post("/api/trade/unlock", {});
     toast(!u.ok ? "Not unlocked: " + (u.reason || "") : u.can_trade ? "Loss lock lifted — now click ARM" : "Loss lock lifted, but TED can't trade yet: " + (u.why_not || ""), u.ok && u.can_trade); poll(true); return; }
   const out = await post("/api/trade/arm", {on: !T().armed}); if (!out.ok) toast("ARM REFUSED · " + out.reason, false); else toast(out.armed ? "ARMED — orders will transmit" : "Disarmed", true); poll(true); });
 document.getElementById("oneclick").addEventListener("change", e => post("/api/trade/oneclick", {on: e.target.checked}));

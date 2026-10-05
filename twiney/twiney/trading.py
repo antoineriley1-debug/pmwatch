@@ -95,7 +95,8 @@ class TradingGate:
         with self.lock:
             self.accounts = [a for a in accounts if a]
             if self.mode != "SIM":
-                self.mode = "PAPER" if self.accounts and all(a.upper().startswith("DU") for a in self.accounts) \
+                # IBKR paper accounts all start with D (DU…, DF… for a paper advisor account, DI…)
+                self.mode = "PAPER" if self.accounts and all(a.upper().startswith("D") for a in self.accounts) \
                     else ("LIVE" if self.accounts else "NONE")
 
     def set_sim(self):
@@ -140,7 +141,7 @@ class TradingGate:
         if self.mode == "NONE":
             return "no account connected yet"
         if self.mode == "LIVE" and not self.cfg["allow_live"]:
-            return "LIVE account detected — TWINEY only trades PAPER (DU…) accounts until trading.allow_live is set"
+            return f"LIVE account {', '.join(self.accounts)} — TED trades PAPER only: log TWS into your PAPER account (or switch on Allow live in SETTINGS)"
         if not self.armed:
             return "trading is DISARMED — click ARM"
         return None
@@ -220,6 +221,7 @@ class TradingGate:
                 "armed": self.armed,
                 "one_click": self.one_click,
                 "allow_market": bool(self.cfg.get("allow_market")),
+                "allow_live": bool(self.cfg.get("allow_live")),
                 "can_trade": self.can_trade(),
                 "why_not": self.why_not(),
                 "accounts": list(self.accounts),
@@ -230,7 +232,7 @@ class TradingGate:
                 "locked": self.locked,
                 "max_position": self.cfg["max_position_shares"],
                 "max_daily_loss": self.cfg["max_daily_loss"],
-                "loss_lock_on": bool(self.cfg["max_daily_loss"]) and (self.mode == "LIVE" or (self.cfg.get("loss_limit_on_paper", False) and not self.unlocked_by_hand)),
+                "loss_lock_on": bool(self.cfg["max_daily_loss"]) and ((self.mode == "LIVE" and bool(self.cfg.get("allow_live"))) or (self.mode in ("PAPER", "SIM") and self.cfg.get("loss_limit_on_paper", False) and not self.unlocked_by_hand)),
                 "blocked": list(self.blocked)[:10],
             }
 
@@ -1511,7 +1513,8 @@ class Trader:
         limit = self.cfg["max_daily_loss"]
         # the lock guards a LIVE account; paper / practice only if you switched it on — and never again today once you
         # lifted it by hand (UNLOCK sticks: it does not come straight back half a second later)
-        guard = bool(limit) and (self.gate.mode == "LIVE" or (self.cfg.get("loss_limit_on_paper", False) and not self.gate.unlocked_by_hand))
+        guard = bool(limit) and ((self.gate.mode == "LIVE" and bool(self.cfg.get("allow_live"))) or
+                                 (self.gate.mode in ("PAPER", "SIM") and self.cfg.get("loss_limit_on_paper", False) and not self.gate.unlocked_by_hand))
         if self.gate.locked:
             # a loss lock that no longer applies lifts by itself: a paper / practice account (live-only lock), the limit
             # switched off, or raised above today's loss. Never a lock that still holds

@@ -173,6 +173,20 @@ class SimTradingTests(unittest.TestCase):
         c = build_config({"trading": {"loss_limit_live_only": False}})
         self.assertFalse(c["trading"]["loss_limit_on_paper"])                # ignored: paper does not lock
 
+    def test_any_D_account_is_paper_and_a_live_account_without_allow_live_never_locks(self):
+        c = cfg(trading={"max_daily_loss": 50})
+        g = TradingGate(c)
+        g.set_accounts(["DF1234567"]); self.assertEqual(g.mode, "PAPER")             # a paper advisor account
+        g.set_accounts(["DU1", "DI2"]); self.assertEqual(g.mode, "PAPER")
+        g.set_accounts(["U7654321"]); self.assertEqual(g.mode, "LIVE")
+        self.assertIn("log TWS into your PAPER account", g.why_not())
+        e = Engine(plays(), c); e.on_connection("CONNECTED", "", 0.0)
+        from twiney.trading import SimBroker
+        tr = Trader(e, c, SimBroker(e), g)
+        g.lock_out("daily loss limit hit ($60.00 against a $50.00 limit)")
+        tr.watchdog(5.0)
+        self.assertIsNone(g.locked)              # can't trade real money anyway: no lock to sit behind
+
     def test_daily_loss_locks_trading_for_the_session(self):
         e, tr, gate, broker = sim_setup(max_daily_loss=50, loss_limit_on_paper=True)
         gate.arm(True)

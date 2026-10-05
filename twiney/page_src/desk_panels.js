@@ -1695,16 +1695,17 @@ function renderStatus(s){
   document.getElementById("stClock").textContent = nyT(Date.now() / 1000) + " ET";
   const arm = document.getElementById("armBtn");
   // always visible: ARM / ARMED; LOCKED on a live account; on paper a lock is one click away from gone (UNLOCK)
-  const paperLock = t.locked && t.mode !== "LIVE";
+  const paperLock = t.locked && !(t.mode === "LIVE" && t.allow_live);
   arm.textContent = paperLock ? "UNLOCK" : t.locked ? "LOCKED" : t.armed ? "ARMED" : "ARM"; arm.className = t.locked ? "locked" : t.armed ? "armed" : "off";
   arm.disabled = !t.can_trade && !paperLock; arm.title = paperLock ? "the daily loss lock is on — click to lift it (paper account), then ARM" : t.can_trade ? "" : (t.why_not || "");
   // the reason, in words, right beside the button — never only in a hover
   const why = document.getElementById("armWhy");
   if (why){ const acct = (t.accounts || []).filter(a => a && a !== "SIM").join(", ");
-    const txt = t.armed ? `${t.mode === "SIM" ? "PRACTICE" : t.mode}${acct ? " " + acct : ""} · orders go out`
-      : paperLock ? "loss lock on — click UNLOCK"
-      : t.can_trade ? `${t.mode === "SIM" ? "PRACTICE" : t.mode}${acct ? " " + acct : ""} · ← click ARM to trade`
-      : "CAN'T ARM: " + String(t.why_not || "no account connected").replace(/^LOCKED for today: /, "locked: ");
+    const who = `${t.mode === "SIM" ? "PRACTICE" : t.mode === "NONE" ? "NO ACCOUNT YET" : t.mode}${acct ? " " + acct : ""}`;
+    const txt = t.armed ? `${who} · orders go out`
+      : paperLock ? `${who} · loss lock on — click UNLOCK`
+      : t.can_trade ? `${who} · ← click ARM to trade`
+      : `${who} · CAN'T ARM: ` + String(t.why_not || "no account connected").replace(/^LOCKED for today: /, "locked: ");
     if (why.textContent !== txt) why.textContent = txt;
     why.className = t.armed ? "ok" : (!t.can_trade && !paperLock) ? "bad" : "go"; }
   const sd = curData(), sb = document.getElementById("sideBtn"), side = sd && sd.play && sd.play.side;
