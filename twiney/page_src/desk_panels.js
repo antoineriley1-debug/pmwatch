@@ -146,7 +146,7 @@ function chartTypeKey(e){
 function renderBook(d){
   const wrap = P.book.pc.querySelector(".ladder-wrap");
   renderLadStat(d, state); renderLadQty(state);
-  renderContractL2(); renderSwitchStrips(); if (contractMode("book")) return;
+  autoPair(); renderContractL2(); renderSwitchStrips(); if (contractMode("book")) return;
   if (!d){ if (P.book.last !== "-"){ P.book.last = "-"; wrap.innerHTML = `<div class="dim" style="padding:8px">${NA}</div>`; } return; }
   if (bookDragging || bookHold) return;       // never redraw rows under a pressed mouse button
   const bi = document.getElementById("bigIn"), L = d.ladder || {};
@@ -214,7 +214,7 @@ document.addEventListener("click", e => { const b = e.target.closest("button[dat
 document.addEventListener("change", e => { if (e.target.id === "sbQty") setLadQty(e.target.value); });
 document.addEventListener("click", e => {
   const m = e.target.closest("button[data-tmode]");
-  if (m){ if (m.dataset.tmode === "stock"){ TMODE = "stock"; OC.link = null; if (typeof CPIN !== "undefined"){ CPIN.book = CPIN.tape = "auto"; store.set("cpin", CPIN); } }
+  if (m){ if (m.dataset.tmode === "stock"){ TMODE = "stock"; OC.link = null; unpair(); if (typeof CPIN !== "undefined"){ CPIN.book = CPIN.tape = "auto"; store.set("cpin", CPIN); } }
     else { TMODE = "opt"; PICK.data = PICK.sym === curSym ? PICK.data : null; pollPick(); }
     P.ticket.last = null; renderTicket(state, curData(), true); poll(true); return; }
   const mo = e.target.closest("button[data-tkmore]"); if (mo){ store.set("tkmore", !store.get("tkmore", false)); P.ticket.last = null; renderTicket(state, curData(), true); return; }
@@ -914,7 +914,7 @@ document.addEventListener("click", async e => {
   const cx = e.target.closest(".simple.contract button[data-cxl]"); if (cx){ cancelMine(+cx.dataset.cxl); return; }
   const b = e.target.closest("button[data-unlink], button[data-cn], button[data-cb]"); if (!b || !P.ticket.el.contains(b) || !OC.link) return;
   const l = OC.link;
-  if (b.dataset.unlink){ OC.link = null; TMODE = "stock"; P.ticket.last = null; poll(true); const bd = P.options && P.options.pc.querySelector(".oc-body"); if (bd) bd.dataset.h = ""; return; }
+  if (b.dataset.unlink){ OC.link = null; TMODE = "stock"; unpair(); P.ticket.last = null; poll(true); const bd = P.options && P.options.pc.querySelector(".oc-body"); if (bd) bd.dataset.h = ""; return; }
   if (b.dataset.cn){ l.n = +b.dataset.cn; P.ticket.last = null; poll(true); return; }
   const s = state || {}, pos = ((s.account || {}).opt_positions || []).find(p => p.key === l.key), q = pos ? Math.abs(pos.qty) : 0, long = pos && pos.qty > 0;
   const n = Math.max(1, +(document.getElementById("cnQty") || {}).value || l.n || 1);
@@ -2098,9 +2098,38 @@ function contractMode(which){
 function contractBar(kind){
   const d = OCH.data, l = OC.link, f = v => v == null ? "—" : (+v).toFixed(2);
   const t = d && d.tape;
-  return `<div class="cbar"><span class="lbl">${kind} · CONTRACT</span><b class="${l.right === "C" ? "b" : "s"}">${esc(contractName(l))}</b><span class="dim">bid ${f(d && d.bid)}${t && t.bid_size != null ? " × " + t.bid_size : ""} · ask ${f(d && d.ask)}${t && t.ask_size != null ? " × " + t.ask_size : ""}${kind === "T&S" && t ? ` · vol ${sz(t.volume || 0)}` : ""}</span><span class="cbtns"><button data-pin="${kind === "T&S" ? "tape" : "book"}" data-pinv="stock" title="only this window goes back to ${esc(l.sym)} shares; ${kind === "T&S" ? "LEVEL II" : "T&S"} and ORDER ENTRY stay on the contract">${esc(l.sym)} SHARES HERE</button><button data-unlinkall="1" title="LEVEL II, T&S and ORDER ENTRY all back on ${esc(l.sym)} shares">✕ ALL BACK TO SHARES</button></span></div>`;
+  return `<div class="cbar"><span class="lbl">${kind} · CONTRACT</span><b class="${l.right === "C" ? "b" : "s"}">${esc(contractName(l))}</b><span class="dim">bid ${f(d && d.bid)}${t && t.bid_size != null ? " × " + t.bid_size : ""} · ask ${f(d && d.ask)}${t && t.ask_size != null ? " × " + t.ask_size : ""}${kind === "T&S" && t ? ` · vol ${sz(t.volume || 0)}` : ""}</span><span class="cbtns"><button data-pairmode="split" title="show the stock's ${kind} AND the contract's, one above the other">SPLIT WITH STOCK</button><button data-pin="${kind === "T&S" ? "tape" : "book"}" data-pinv="stock" title="only this window goes back to ${esc(l.sym)} shares; ${kind === "T&S" ? "LEVEL II" : "T&S"} and ORDER ENTRY stay on the contract">${esc(l.sym)} SHARES HERE</button><button data-unlinkall="1" title="LEVEL II, T&S and ORDER ENTRY all back on ${esc(l.sym)} shares">✕ ALL BACK TO SHARES</button></span></div>`;
 }
 // a window kept on the shares while a contract is picked: a thin strip to bring the contract into it
+/* BOTH BOOKS: with a contract picked, the stock's LEVEL II and T&S stay as they are and the contract's open under
+   them in the same spot (split). ONE WINDOW flips the stock ones to the contract instead (the old way) */
+const PAIRED = {};      // contract window -> {zone, wasSplit, wasSecond} we put it in
+function pairMode(){ return store.get("pairmode", "split"); }
+function autoPair(){
+  if (pairMode() !== "split" || !(OC.link && OC.link.sym === curSym) || !LAY) return;
+  let changed = false;
+  for (const [main, opt] of [["book", "obook"], ["tape", "otape"]]){
+    if (P[opt].el.offsetParent !== null || (LAY.floats || {})[opt]) continue;     // already up somewhere
+    const z = zoneOf(main); if (!z) continue;
+    if (!LAY.zones[z].includes(opt)){ for (const zz of ZONES) LAY.zones[zz] = LAY.zones[zz].filter(x => x !== opt); LAY.hidden = LAY.hidden.filter(x => x !== opt); LAY.zones[z].push(opt); }
+    LAY.split = LAY.split || {}; LAY.second = LAY.second || {};
+    PAIRED[opt] = {zone: z, wasSplit: !!LAY.split[z], wasSecond: LAY.second[z]};
+    LAY.split[z] = true; LAY.active[z] = main; LAY.second[z] = opt; changed = true;
+  }
+  if (changed){ applyLayout(); pollOch(); }
+}
+function unpair(){
+  let changed = false;
+  for (const [opt, p] of Object.entries(PAIRED)){
+    LAY.zones[p.zone] = LAY.zones[p.zone].filter(x => x !== opt); if (!LAY.hidden.includes(opt)) LAY.hidden.push(opt);
+    LAY.split[p.zone] = p.wasSplit; if (p.wasSecond) LAY.second[p.zone] = p.wasSecond; delete PAIRED[opt]; changed = true;
+  }
+  if (changed) applyLayout();
+}
+document.addEventListener("click", e => { const b = e.target.closest("button[data-pairmode]"); if (!b) return; e.stopPropagation();
+  store.set("pairmode", b.dataset.pairmode);
+  if (b.dataset.pairmode === "split"){ autoPair(); } else { unpair(); }
+  P.book.last = null; P.tape.last = null; renderContractL2(); renderContractTape(); poll(true); }, true);
 function renderSwitchStrips(){
   for (const [which, pid] of [["book", "book"], ["tape", "tape"]]){
     const pc = P[pid].pc; let el = pc.querySelector(":scope > .cswitch");
@@ -2132,11 +2161,12 @@ function renderContractTape(){
   if (box.dataset.h !== html){ box.dataset.h = html; box.innerHTML = html; }
 }
 document.addEventListener("click", e => { if (!e.target.closest("button[data-unlinkall]")) return;
-  OC.link = null; TMODE = "stock"; CPIN.book = CPIN.tape = "auto"; store.set("cpin", CPIN); P.ticket.last = null; renderContractL2(); renderContractTape(); renderSwitchStrips(); poll(true); toast("Back on the shares", true); });
+  OC.link = null; TMODE = "stock"; CPIN.book = CPIN.tape = "auto"; unpair(); store.set("cpin", CPIN); P.ticket.last = null; renderContractL2(); renderContractTape(); renderSwitchStrips(); poll(true); toast("Back on the shares", true); });
 function renderOptPanels(){
   const d = OCH.data, t = d && d.tape, f = v => v == null ? "—" : (+v).toFixed(2), name = d ? esc(d.label) : "";
   const none = `<div class="dim" style="padding:8px">Pick a contract: OPTIONS, then click a strike (or 📈). Its book, prints and big prints show here.</div>`;
-  const hd = (id, title, extra) => { const el = document.getElementById(id); if (!el) return; const h = `<b>${title}</b> <span class="${d && d.right === "P" ? "s" : "b"}">${name}</span>${extra || ""}`; if (el.dataset.h !== h){ el.dataset.h = h; el.innerHTML = h; } };
+  const btns = OC.link && OC.link.sym === curSym ? `<span class="ohbtn"><button data-pairmode="switch" title="one window: LEVEL II / T&S flip to the contract instead of showing both">ONE WINDOW</button><button data-unlinkall="1" title="close the contract windows; everything back on the shares">✕ BACK TO SHARES</button></span>` : "";
+  const hd = (id, title, extra) => { const el = document.getElementById(id); if (!el) return; const h = `<b>${title}</b> <span class="${d && d.right === "P" ? "s" : "b"}">${name}</span>${extra || ""}${id !== "obigHd" ? btns : ""}`; if (el.dataset.h !== h){ el.dataset.h = h; el.innerHTML = h; } };
   const put = (sel, html) => { const el = document.querySelector(sel); if (el && el.dataset.h !== html){ el.dataset.h = html; el.innerHTML = html; } };
   if (!d || !t){ put(".pnl[data-p=obook] .obook", none); put(".pnl[data-p=otape] .otape", none); put(".obig", none); hd("obookHd", "OPTION LEVEL II"); hd("otapeHd", "OPTION T&S"); hd("obigHd", "OPTION BIG TAPE"); return; }
   // LEVEL II for the contract

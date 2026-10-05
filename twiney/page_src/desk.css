@@ -604,3 +604,6 @@ i.tl{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:3p
 .pgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-bottom:4px} .pgrid .pk{display:flex;flex-direction:column;align-items:center;height:auto;padding:3px 2px;font:800 12px var(--mono)}
 .pgrid .pk i{font:400 10px var(--mono);color:var(--dim);font-style:normal} .pgrid .pk.itm{background:#13202c} .pgrid .pk.atm{border-color:var(--gold);color:var(--gold)}
 .simple .cq input#sbQty{width:64px}
+
+.ohd{display:flex;align-items:center;gap:6px} .ohd .ohbtn{margin-left:auto;display:inline-flex;gap:4px} .ohd .ohbtn button{height:18px;padding:0 6px;font-size:9.5px}
+.ohd{flex-wrap:wrap;white-space:normal;row-gap:2px}
