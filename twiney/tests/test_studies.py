@@ -204,7 +204,7 @@ class UnvisitedTests(unittest.TestCase):
         rows2 = self._rows(hs + [109.9], {13: 105.0})
         out = S.unvisited(rows2, False, dict(CFG, uv_lows=False))
         self.assertEqual(out["lines"][0]["d"], "dash")
-        self.assertIn("x1", out["lines"][0]["l"])
+        self.assertNotIn("x1", out["lines"][0]["l"])                   # the label is just the date, high and price
         # a daily CLOSE above clears it
         rows3 = self._rows(hs + [111.0], {13: 110.5})
         self.assertEqual(S.unvisited(rows3, False, dict(CFG, uv_lows=False))["lines"], [])
@@ -220,7 +220,7 @@ class UnvisitedTests(unittest.TestCase):
         hs = [100, 101, 102, 103, 104, 110, 104, 103, 102, 101, 100, 101, 102, 103, 104, 110.3, 104, 103, 102, 101, 100]
         out = S.unvisited(self._rows(hs), False, dict(CFG, uv_lows=False))
         self.assertEqual(len(out["lines"]), 1)
-        self.assertIn("[2]", out["lines"][0]["l"]); self.assertEqual(out["lines"][0]["w"], 3)
+        self.assertIn("110.00 / 110.30", out["lines"][0]["l"]); self.assertEqual(out["lines"][0]["w"], 3)
 
 
 class ContTests(unittest.TestCase):

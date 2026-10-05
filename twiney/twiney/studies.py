@@ -924,7 +924,7 @@ def mt_supply(rows, cfg, atr_v):
                 peak_j, peak = j, hj
     if peak is None or cnt < int(cfg["air_mt_touches"]):
         return None
-    return {"p": peak, "n": cnt, "t0": ts[n - peak_j]}
+    return {"p": peak, "n": cnt, "t0": ts[n - peak_j], "age": peak_j}
 
 
 def mt_demand(rows, cfg, atr_v):
@@ -980,7 +980,7 @@ def mt_demand(rows, cfg, atr_v):
                 tj, trough = j, lj
     if trough is None or cnt < int(cfg["air_mt_touches"]):
         return None
-    return {"p": trough, "n": cnt, "t0": ts[n - tj]}
+    return {"p": trough, "n": cnt, "t0": ts[n - tj], "age": tj}
 
 
 def fuel_words(need_atr, need_dollars, left):
@@ -1135,7 +1135,8 @@ def airspace(st, t, cfg, drows, live, g):
 
 def mt_label(m, side):
     d = ny(m["t0"] + 43200)
-    return f"{MONTHS[d.month - 1]} {d.day} {side} · {m['n']}x @ {m['p']:.2f}"
+    # the date, high / low, price and how many trading days since it formed
+    return f"{MONTHS[d.month - 1]} {d.day} {side} @ {m['p']:.2f}" + (f"  {m['age']}d" if m.get("age") is not None else "")
 
 
 # --------------------------------------------------------------------------------------------- UNVISITED HIGHS / LOWS
@@ -1198,7 +1199,8 @@ def unvisited(drows, live, cfg):
             age = day_i - oldest[3]
             multi = len(grp) > 1
             col = (K(cfg, "col_uv_high_cluster") if multi else K(cfg, "col_uv_high")) if up else (K(cfg, "col_uv_low_cluster") if multi else K(cfg, "col_uv_low"))
-            label = f"{_date(oldest[1])}  " + " / ".join(s2(a[0]) for a in grp) + (f"  [{len(grp)}]" if multi else "") + f"  x{tou}"
+            # the date, high / low, price and the age in trading days (no touch count)
+            label = f"{_date(oldest[1])} {'high' if up else 'low'} @ " + " / ".join(f"{a[0]:.2f}" for a in sorted(grp, key=lambda a: a[0]))
             if cfg["uv_age"]:
                 label += f"  {age}d"
             testing = closing = False

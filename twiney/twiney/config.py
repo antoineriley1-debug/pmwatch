@@ -507,7 +507,7 @@ DEFAULTS = {
         "uv_reach_pct": 0.25,           # within reach % of price = a touch
         "uv_soft_touch": True,          # soft touch: a touch dashes the line, only a daily close through clears
         "uv_cluster_pct": 0.50,         # levels within this % merge into one line
-        "uv_age": True,                 # show the age (days) on the label
+        "uv_age": True,                 # show the age (trading days since the high / low formed) on the label
     },
     "recording": {
         "enabled": True,
