@@ -454,6 +454,19 @@ class OptionPositionTests(unittest.TestCase):
         app.error(last[1], 110, "again")                                                            # only once
         self.assertEqual([c for c in app.calls if c[0] == "placeOrder"][-1][1], last[1])
 
+    def test_option_quotes_come_back_after_a_reconnect(self):
+        s, engine, clock = make_session(max_dollars_per_order=20000)
+        s.step(clock()); app = s.app; app.nextValidId(50)
+        app.position("DU1", _Opt(), 5, 312.0)
+        self.assertIn("TSLA 20261003 240C", s.opt_ids)
+        app.connectionClosed()                                   # TWS restarts / the network drops
+        self.assertEqual(s.opt_ids, {})
+        clock.t += 2.1; s.step(clock()); app2 = s.app; app2.nextValidId(60)
+        self.assertIsNot(app2, app)
+        app2.position("DU1", _Opt(), 5, 312.0)                    # IBKR re-sends the position on the new connection
+        self.assertIn("TSLA 20261003 240C", s.opt_ids)
+        self.assertTrue(any(c[0] == "reqMktData" and len(c) > 1 and c[1] == s.opt_ids["TSLA 20261003 240C"] for c in app2.calls))
+
     def test_position_quote_and_orders(self):
         s, engine, clock = make_session(max_dollars_per_order=20000)
         s.step(clock()); app = s.app; app.nextValidId(50)

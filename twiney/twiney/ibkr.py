@@ -668,15 +668,27 @@ class MarketDataSession:
                                           "Order flow reads are not valid on delayed data. " + self.NO_DATA_FIX, t)
             self.subscribe_l1()
 
+    def _forget_opt_quotes(self):
+        """A reconnect (or lost data) ends every option quote stream: forget them, so each contract you hold, chart
+        or watch asks again (positions re-subscribe as IBKR re-sends them; charts and the chain on their next poll)."""
+        for rid in list(self.opt_ids.values()):
+            if self.app is not None:
+                self.app.req.pop(rid, None)
+        self.opt_ids.clear()
+        self.opt_hist_asked = set()
+
     def handle_data_lost(self, msg):
         with self._lock:
             t = self.clock()
             self.engine.on_connection("DATA_LOST", f"[1101] {msg}", t)
             self.depth_ids.clear()
             self.l1_ids.clear()
+            self._forget_opt_quotes()
             self._forget_ids()
             if self.app is not None:
                 self.subscribe_l1()
+                for key in list(self.engine.opt_positions):      # the contracts you hold get their quotes back now
+                    self.subscribe_opt(key)
             self.engine.on_connection("CONNECTED", "[1101] restored, resubscribed", t)
 
     def handle_closed(self, reason):
@@ -689,6 +701,7 @@ class MarketDataSession:
             self.connecting_since = None
             self.depth_ids.clear()
             self.l1_ids.clear()
+            self._forget_opt_quotes()
             if self.gate is not None:     # nothing trades until IBKR says again which account this is
                 self.gate.arm(False)
                 self.gate.set_accounts([])
