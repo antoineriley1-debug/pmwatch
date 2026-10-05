@@ -295,7 +295,8 @@ function indPopHTML(){
   const box = (k, label, col) => `<label><input type="checkbox" data-indk="${k}" ${on(k) ? "checked" : ""}> <i style="display:inline-block;width:14px;height:3px;background:${col};vertical-align:middle"></i> ${label}</label>`;
   const SO = (typeof state !== "undefined" && state && state.studies_on) || {};
   const sbox = (k, label) => `<label><input type="checkbox" data-study="${k}" ${SO[k] ? "checked" : ""}> ${label}</label>`;
-  return `<h5>STUDIES · STOCK CHART</h5>${sbox("gas", "GAS + ATR (tank, ATR levels, PDH / PDL, PMH / PML, box, 2nd entry)")}${sbox("airspace", "AIRSPACE (Bounce / Reject, MP, MT supply / demand, lights board)")}${sbox("unvisited", "UNVISITED HIGHS / LOWS")}
+  return `<h5>STUDIES · STOCK CHART</h5>${sbox("gas", "GAS + ATR (tank, ATR levels, PDH / PDL, PMH / PML, box, 2nd entry)")}${sbox("airspace", "AIRSPACE (Bounce / Reject, MP, MT supply / demand)")}${sbox("unvisited", "UNVISITED HIGHS / LOWS")}
+    <div style="margin-left:14px">${sbox("gas_readout", "GAS readout panel (bottom right)")}${sbox("air_board", "AIRSPACE board panel (top left)")}</div>
     <div class="dim" style="font-size:10.5px;margin-bottom:4px">Every piece of each is in SETTINGS &gt; Chart studies.</div>
     <h5>SCREEN</h5>
     <div class="row"><span class="dim" style="width:64px">CUSTOM</span><input type="color" data-cs="screenColor" value="${store.get("screenColor", "#dfe9f3")}" title="your own screen colour (pick CUSTOM on the toolbar)"><span class="dim" style="font-size:10px">pick CUSTOM on the toolbar to use it</span></div>
@@ -430,7 +431,7 @@ function studiesFront(ctx){
     g.globalAlpha = 1;
     if (L.l) rows.push({p: L.p, t: L.l, c: L.lc || L.c});
     // the price-scale tag, like the scripts' price-scale plots (not for whole numbers, box edges, today's high / low)
-    if (L.g !== "uv" && L.c !== "rgba(158,158,158,.45)" && !/^(EDGE|TIGHT|High |Low |2ND|1st|pivot)/.test(L.l || "")) tags.push([L.p, L.c]);
+    if (L.g !== "uv" && L.c !== "rgba(158,158,158,.45)" && !/^(BOX EDGE|TIGHT|HIGH OF DAY|LOW OF DAY|2ND|1st|pivot)/.test(L.l || "")) tags.push([L.p, L.c]);
   }
   g.setLineDash([]); g.lineWidth = 1;
   // labels: highest first, levels closer than merge % of price share one row
@@ -444,14 +445,12 @@ function studiesFront(ctx){
     const grp = rows.slice(i, j), yy = y(sum / grp.length) + 3.5;
     const parts = grp.map((r, k) => ({t: (k ? "  |  " : "") + r.t, c: r.c}));
     const w = parts.reduce((s, q) => s + g.measureText(q.t).width, 0);
-    const bg = lightScreen ? "rgba(255,255,255,.72)" : "rgba(10,13,18,.72)";
     if (lx + w > plotW - 3 && grp.length > 1){
       // too long for one row: each name on its own line, stacked from the shared price down
       grp.forEach((r, k) => { const tw = g.measureText(r.t).width, x = Math.max(2, Math.min(lx, plotW - tw - 3)), yk = yy + k * 12;
-        g.fillStyle = bg; g.fillRect(x - 2, yk - 10, tw + 4, 13); g.fillStyle = r.c; g.fillText(r.t, x, yk); });
+        g.fillStyle = r.c; g.fillText(r.t, x, yk); });
     } else {
       let x = Math.max(2, Math.min(lx, plotW - w - 3));
-      g.fillStyle = bg; g.fillRect(x - 2, yy - 10, w + 4, 13);
       for (const q of parts){ g.fillStyle = q.c; g.fillText(q.t, x, yy); x += g.measureText(q.t).width; }
     }
     i = j;
@@ -518,7 +517,11 @@ function renderStudyBoards(p){
   const box = (cls, html, key) => { let b = wrap.querySelector(".stbd." + cls);
     if (!html){ if (b) b.remove(); return; }
     if (!b){ b = document.createElement("div"); b.className = "stbd " + cls; wrap.appendChild(b);
-      b.addEventListener("click", e => { if (e.target.closest(".stmin")){ const k = b.dataset.key; store.set(k, !store.get(k, true)); b.dataset.h = ""; renderStudyBoards(p); } });
+      b.addEventListener("click", e => {
+        if (e.target.closest(".stmin")){ const k = b.dataset.key; store.set(k, !store.get(k, true)); b.dataset.h = ""; renderStudyBoards(p); }
+        const hide = e.target.closest(".sthide");
+        if (hide) post("/api/settings", {changes: {["studies." + hide.dataset.hide]: false}}).then(out => { toast(out.ok ? "Hidden · bring it back in the IND menu or SETTINGS > Chart studies" : "Not saved: " + (out.reason || ""), out.ok); poll(true); });
+      });
       b.addEventListener("mousedown", e => e.stopPropagation()); }
     b.dataset.key = key;                     // every board starts small: unset = minimized
     if (b.dataset.h !== html){ b.dataset.h = html; b.innerHTML = html; } };
@@ -530,14 +533,19 @@ function renderStudyBoards(p){
       if (r === "CONFLUENCE"){ const c = confluenceRow(p, S); return c ? `<tr><td colspan="3" style="background:${c.bg};color:${c.fg}">${esc(c.t)}</td></tr>` : ""; }
       if (Array.isArray(r)) return `<tr>${r.map(([t, c, bg]) => `<td style="color:${c}${bg ? ";background:" + bg : ""}">${esc(t)}</td>`).join("")}</tr>`;
       return `<tr><td colspan="3" class="${r.big ? "big" : ""}" style="background:${r.bg};color:${r.fg}">${esc(r.t)}</td></tr>`; });
-    const head = `<div class="sth">AIRSPACE${min && S.air.mini ? `<span class="mini">${esc(S.air.mini)}</span>` : ""}<b class="stmin" title="${min ? "open the whole board" : "minimize to one line + OVERALL"}">${min ? "MORE ▾" : "LESS ▴"}</b></div>`;
+    const head = `<div class="sth">AIRSPACE${min && S.air.mini ? `<span class="mini">${esc(S.air.mini)}</span>` : ""}<b class="stmin" title="${min ? "open the whole board" : "minimize to one line + OVERALL"}">${min ? "MORE ▾" : "LESS ▴"}</b><b class="sthide" data-hide="air_board" title="hide the AIRSPACE board (the lines stay)">✕</b></div>`;
     box("air", head + `<div class="stbody"><table>${min ? trs[trs.length - 1] : trs.join("")}</table></div>`, key);
+    // never over the data box (its LESS / MORE must stay clickable): sit just right of it when it is up top
+    const ab = wrap.querySelector(".stbd.air"), dw = wrap.querySelector(".datawin");
+    if (ab){ const dwOn = dw && dw.style.display !== "none" && dw.offsetTop < 60;
+      const left = dwOn ? dw.offsetLeft + dw.offsetWidth + 6 : 6;
+      if (ab.style.left !== left + "px") ab.style.left = left + "px"; }
   } else box("air", "");
   // GAS readout (bottom right) + NEXT STOP
-  if (S && S.gas && ((S.gas.rows || []).length || S.gas.next_stop)){
+  if (S && S.gas && ((S.gas.rows || []).length || S.gas.next_stop || S.gas.se)){
     const key = "stmin.gas." + (p.id || "chart"), min = store.get(key, true);     // starts with the tank lines only
     const rws = (S.gas.rows || []).concat(nextStopRows(p, S));
     const se = S.gas.se ? row(S.gas.se) : "";               // the second-entry status rides on top of the tank
-    box("gas", `<div class="sth">GAS<b class="stmin" title="${min ? "day-after, continuation odds, next stop" : "just the tank"}">${min ? "MORE ▾" : "LESS ▴"}</b></div><div class="stbody">` + se + (min ? rws.slice(0, 2) : rws).map(row).join("") + `</div>`, key);
+    box("gas", `<div class="sth">GAS<b class="stmin" title="${min ? "day-after, continuation odds, next stop" : "just the tank"}">${min ? "MORE ▾" : "LESS ▴"}</b>${(S.gas.rows || []).length ? `<b class="sthide" data-hide="gas_readout" title="hide the GAS readout (the lines stay)">✕</b>` : ""}</div><div class="stbody">` + se + (min ? rws.slice(0, 2) : rws).map(row).join("") + `</div>`, key);
   } else box("gas", "");
 }

@@ -514,15 +514,15 @@ def gas(st, t, cfg, drows, live):
     if cfg["tight_box"]:
         if tb["valid"]:
             box = {"t0": tb_t0, "hi": hh, "lo": ll, "c": C_TB}
-            lv(hh, C_TB, f"TIGHT EDGE {s2(hh)} · {s2(ht_x)}x ATR tall")
-            lv(ll, C_TB, f"TIGHT EDGE {s2(ll)}")
+            lv(hh, C_TB, f"TIGHT BOX EDGE {s2(hh)} · {s2(ht_x)}x ATR tall")
+            lv(ll, C_TB, f"TIGHT BOX EDGE {s2(ll)}")
     elif cfg["daily_box"]:
         n = int(cfg["box_len"])
         if len(drows) >= n:
             bh = max(hs[-n:]); bl = min(ls[-n:])
             if not cfg["box_tight_only"] or (y_atr and bh - bl <= float(cfg["box_tight_x"]) * y_atr):
                 box = {"t0": drows[-n][0], "hi": bh, "lo": bl, "c": C_BOX}
-                lv(bh, C_BOX, f"EDGE {s2(bh)}"); lv(bl, C_BOX, f"EDGE {s2(bl)}")
+                lv(bh, C_BOX, f"BOX EDGE {s2(bh)}"); lv(bl, C_BOX, f"BOX EDGE {s2(bl)}")
     # the last completed session's levels (yesterday: today's bar is still forming)
     pdr = drows[L - 1] if live else drows[L]
     if cfg["old_supply_demand"]:
@@ -549,7 +549,7 @@ def gas(st, t, cfg, drows, live):
         one = bool(cfg["atr_one_side"])
         keep_up = (lambda rv: move_up) if one else (lambda rv: rv > 0 or move_up)
         keep_dn = (lambda rv: not move_up) if one else (lambda rv: rv > 0 or not move_up)
-        lv(dH, C_HL, nm("High", dH), 1, "solid", "#424242"); lv(dL, C_HL, nm("Low", dL), 1, "solid", "#424242")
+        lv(dH, C_HL, nm("HIGH OF DAY", dH), 1, "solid", "#424242"); lv(dL, C_HL, nm("LOW OF DAY", dL), 1, "solid", "#424242")
 
         def tag(ms, y, spent, m):
             return f"{ms} Traveled ${s2(m * y_atr)} @ {s2(y)}" if spent else f"{ms} ${s2(m * y_atr)} · {s2(y)}"
@@ -574,9 +574,9 @@ def gas(st, t, cfg, drows, live):
         step = whole_step(last, float(cfg["whole_step"]))
         base = round(last / step) * step
         for i in range(1, int(cfg["whole_above"]) + 1):
-            lv(base + step * i, C_WHOLE, f"{base + step * i:.2f}", 1, "solid", "#757575")
+            lv(base + step * i, C_WHOLE, f"WHOLE {base + step * i:.2f}", 1, "solid", "#757575")
         for i in range(1, int(cfg["whole_below"]) + 1):
-            lv(base - step * i, C_WHOLE, f"{base - step * i:.2f}", 1, "solid", "#757575")
+            lv(base - step * i, C_WHOLE, f"WHOLE {base - step * i:.2f}", 1, "solid", "#757575")
     play = st.play or {}
     side = "Short" if play.get("side") == "short" else "Long"
     se = second_entry(st, t, cfg, y_atr, play.get("trigger"), side, tb)

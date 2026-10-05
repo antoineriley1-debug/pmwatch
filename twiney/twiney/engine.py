@@ -3810,7 +3810,7 @@ class Engine:
                 "mode": "PAPER-ONLY ORDER ENTRY · LIVE LOCKED" if not self.cfg["trading"]["allow_live"] else "LIVE TRADING ENABLED",
                 "connection": dict(self.connection),
                 "feeds": self._feeds(t),
-                "studies_on": {k: bool((self.cfg.get("studies") or {}).get(k)) for k in ("gas", "airspace", "unvisited")},
+                "studies_on": {k: bool((self.cfg.get("studies") or {}).get(k)) for k in ("gas", "airspace", "unvisited", "air_board", "gas_readout")},
                 "slots": self.cfg["depth"]["slots"],
                 "auto_rotate": self.auto_rotate,
                 "ranking": ranking,
