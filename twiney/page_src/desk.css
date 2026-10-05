@@ -777,3 +777,5 @@ table.lad.pro tr.atlv td{box-shadow:inset 0 1px 0 var(--lvc), inset 0 -1px 0 var
 .stbd .sthide{cursor:pointer;color:#ff8a80;padding:0 3px;margin-left:2px}
 /* the data box is pinned at its TOP only: pinned at both ends it stretched, and LESS left a tall empty black box */
 .datawin{bottom:auto !important}
+/* the open / close arrows: big enough to hit */
+.datawin .mn{font-size:11px !important;padding:0 5px !important} .stbd .stmin{font-size:11px;padding:0 5px}

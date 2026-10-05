@@ -343,7 +343,7 @@ function renderDataWin(p){
   const min = store.get(minKey, minDefault);
   w.classList.toggle("min", min);
   // shrunk = the black box only (Symbol through Close); the coloured indicator rows and Vol fold away under it
-  const html = `<div class="ok"><span>OK</span><b class="mn" title="${min ? "show every line's value too" : "fold the indicator rows away: keep the black box"}">${min ? "MORE ▾" : "LESS ▴"}</b></div>
+  const html = `<div class="ok"><span>OK</span><b class="mn" title="${min ? "show every line's value too" : "fold the indicator rows away: keep the black box"}">${min ? "▾" : "▴"}</b></div>
     <div class="kv"><span>Symbol:</span><span>${esc(d.symbol)},${tf === "D" ? "D" : tf}</span></div>
     <div class="kv"><span>Date:</span><span>${ny({month: "2-digit", day: "2-digit", year: "2-digit"})}</span></div>
     <div class="kv"><span>Time:</span><span>${tf === "D" ? "00:00" : ny({hour: "2-digit", minute: "2-digit", hourCycle: "h23"})}</span></div>
@@ -533,7 +533,7 @@ function renderStudyBoards(p){
       if (r === "CONFLUENCE"){ const c = confluenceRow(p, S); return c ? `<tr><td colspan="3" style="background:${c.bg};color:${c.fg}">${esc(c.t)}</td></tr>` : ""; }
       if (Array.isArray(r)) return `<tr>${r.map(([t, c, bg]) => `<td style="color:${c}${bg ? ";background:" + bg : ""}">${esc(t)}</td>`).join("")}</tr>`;
       return `<tr><td colspan="3" class="${r.big ? "big" : ""}" style="background:${r.bg};color:${r.fg}">${esc(r.t)}</td></tr>`; });
-    const head = `<div class="sth">AIRSPACE${min && S.air.mini ? `<span class="mini">${esc(S.air.mini)}</span>` : ""}<b class="stmin" title="${min ? "open the whole board" : "minimize to one line + OVERALL"}">${min ? "MORE ▾" : "LESS ▴"}</b><b class="sthide" data-hide="air_board" title="hide the AIRSPACE board (the lines stay)">✕</b></div>`;
+    const head = `<div class="sth">AIRSPACE${min && S.air.mini ? `<span class="mini">${esc(S.air.mini)}</span>` : ""}<b class="stmin" title="${min ? "open the whole board" : "minimize to one line + OVERALL"}">${min ? "▾" : "▴"}</b><b class="sthide" data-hide="air_board" title="hide the AIRSPACE board (the lines stay)">✕</b></div>`;
     box("air", head + `<div class="stbody"><table>${min ? trs[trs.length - 1] : trs.join("")}</table></div>`, key);
     // never over the data box (its LESS / MORE must stay clickable): sit just right of it when it is up top
     const ab = wrap.querySelector(".stbd.air"), dw = wrap.querySelector(".datawin");
@@ -546,6 +546,6 @@ function renderStudyBoards(p){
     const key = "stmin.gas." + (p.id || "chart"), min = store.get(key, true);     // starts with the tank lines only
     const rws = (S.gas.rows || []).concat(nextStopRows(p, S));
     const se = S.gas.se ? row(S.gas.se) : "";               // the second-entry status rides on top of the tank
-    box("gas", `<div class="sth">GAS<b class="stmin" title="${min ? "day-after, continuation odds, next stop" : "just the tank"}">${min ? "MORE ▾" : "LESS ▴"}</b>${(S.gas.rows || []).length ? `<b class="sthide" data-hide="gas_readout" title="hide the GAS readout (the lines stay)">✕</b>` : ""}</div><div class="stbody">` + se + (min ? rws.slice(0, 2) : rws).map(row).join("") + `</div>`, key);
+    box("gas", `<div class="sth">GAS<b class="stmin" title="${min ? "day-after, continuation odds, next stop" : "just the tank"}">${min ? "▾" : "▴"}</b>${(S.gas.rows || []).length ? `<b class="sthide" data-hide="gas_readout" title="hide the GAS readout (the lines stay)">✕</b>` : ""}</div><div class="stbody">` + se + (min ? rws.slice(0, 2) : rws).map(row).join("") + `</div>`, key);
   } else box("gas", "");
 }
