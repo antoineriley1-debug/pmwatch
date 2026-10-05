@@ -599,8 +599,10 @@ async function setLadQty(n){ n = Math.max(1, Math.round(+n || 0)); if (!n) retur
 document.getElementById("ladQty").addEventListener("change", e => setLadQty(e.target.value));
 document.getElementById("ladQty").addEventListener("keydown", e => { e.stopPropagation(); if (e.key === "Enter"){ setLadQty(e.target.value); e.target.blur(); } });
 document.getElementById("ladPresets").addEventListener("click", e => { const b = e.target.closest("button[data-qp]"); if (b) setLadQty(b.dataset.qp); });
-(function(){ const b = document.getElementById("ladMode"); if (!b) return; const MODES = ["simple", "tight", "wide"]; const paint = () => { b.textContent = store.get("ladMode", "simple").toUpperCase(); }; paint();
-  b.addEventListener("click", () => { const m = store.get("ladMode", "simple"); store.set("ladMode", MODES[(MODES.indexOf(m) + 1) % MODES.length]); paint(); P.book.last = null; poll(true); }); })();
+(function(){ const b = document.getElementById("ladMode"); if (!b) return; const MODES = ["pro", "simple", "tight", "wide"];
+  if (!store.get("ladPro1", false)){ store.set("ladPro1", true); store.set("ladMode", "pro"); }      // the PRO ladder arrives as the default once
+  const paint = () => { b.textContent = store.get("ladMode", "pro").toUpperCase(); }; paint();
+  b.addEventListener("click", () => { const m = store.get("ladMode", "pro"); store.set("ladMode", MODES[(MODES.indexOf(m) + 1) % MODES.length]); paint(); P.book.last = null; poll(true); }); })();
 /* PIN BOX: the tape and the ladder move too fast to hover. Click a print, a reload $ cell, a FLOW tag or a price
    and what you would have read on hover stays in a small box at the bottom of that panel until the next click. */
 function pinBox(panel){ let b = panel.pc.querySelector(".pinbox"); if (!b){ b = document.createElement("div"); b.className = "pinbox"; b.innerHTML = `<span class="txt"></span><button class="x" title="clear">✕</button>`; panel.pc.appendChild(b); b.querySelector(".x").addEventListener("click", () => { b.classList.remove("on"); b.querySelector(".txt").textContent = ""; }); } return b; }
@@ -919,8 +921,8 @@ document.addEventListener("click", async e => {
   if (b.dataset.cn){ l.n = +b.dataset.cn; P.ticket.last = null; poll(true); return; }
   const s = state || {}, pos = ((s.account || {}).opt_positions || []).find(p => p.key === l.key), q = pos ? Math.abs(pos.qty) : 0, long = pos && pos.qty > 0;
   const n = Math.max(1, +(document.getElementById("cnQty") || {}).value || l.n || 1);
-  if (b.dataset.cb === "ALL"){ confirmBox(`${long ? "SELL" : "BUY"} ALL ${q} ${contractName(l)}`, "closes the whole contract position at the touch", long ? "s" : "b", async () => {
-      const out = await post("/api/trade/opt_adjust", {key: l.key, contracts: 0, mode: "close", price: null}); toast(out.ok ? "Sent: " + out.sent : "Blocked: " + (out.reason || ""), out.ok); P.ticket.last = null; poll(true); }); return; }
+  if (b.dataset.cb === "ALL"){        // getting out never waits on a confirm box
+    const out = await post("/api/trade/opt_adjust", {key: l.key, contracts: 0, mode: "close", price: null}); toast(out.ok ? "OUT: " + out.sent : "Blocked: " + (out.reason || ""), out.ok); P.ticket.last = null; poll(true); return; }
   const side = b.dataset.cb, touch = side === "BUY" ? l.ask : l.bid;
   const closing = q && ((long && side === "SELL") || (!long && side === "BUY"));
   if (!closing && !canTrade()){ toast(whyNot() + (/ARM/i.test(whyNot()) ? "" : " — click ARM"), false); const a = document.getElementById("armBtn"); if (a){ a.dataset.pulse = "1"; setTimeout(() => { delete a.dataset.pulse; }, 2400); } return; }
@@ -954,10 +956,9 @@ document.addEventListener("click", async e => {
   const d = curData(); if (!d) return;
   const pos = d.position, q = pos && pos.qty ? Math.abs(pos.qty) : 0, long = pos && pos.qty > 0;
   if (b.dataset.sq){
-    if (b.dataset.sq === "all"){
-      confirmBox(`${long ? "SELL" : "BUY"} ALL ${sz(q)} ${d.symbol}`, "out of the whole position at the touch · its stop and target orders are cancelled", long ? "s" : "b", async () => {
-        const out = await post("/api/trade/flatten", {symbol: d.symbol});
-        toast(out.ok ? (out.flat ? d.symbol + " already flat" : "Sent: " + out.sent) : "Blocked: " + (out.reason || ""), out.ok); P.ticket.last = null; poll(true); });
+    if (b.dataset.sq === "all"){        // getting out never waits on a confirm box
+      const out = await post("/api/trade/flatten", {symbol: d.symbol});
+      toast(out.ok ? (out.flat ? d.symbol + " already flat" : "OUT: " + out.sent) : "Blocked: " + (out.reason || ""), out.ok); P.ticket.last = null; poll(true);
       return; }
     const out = await post("/api/trade/adjust", {symbol: d.symbol, shares: +b.dataset.sq, mode: "close"});
     toast(out.ok ? "Sent: " + out.sent : "Blocked: " + (out.reason || ""), out.ok); P.ticket.last = null; poll(true); return;
@@ -2100,15 +2101,63 @@ function obookRows(t){
 /* The contract's LEVEL II and T&S drawn by the very same code as the stock's (same columns, colours, bars,
    highlights): its book and prints are turned into the stock ladder / tape shapes. Clicks are renamed (data-oact) so
    a click in them can only ever trade the CONTRACT, never the stock */
+// THIS VISIT on the contract, from its own prints (oldest first): a visit to a price ends 3 steps away
+function optVisits(d, t, step){
+  const out = {}, open = new Set(), prints = (t.prints || []).slice().reverse(), now = state ? state.now : Date.now() / 1000;
+  const ca = OPTCLR[d.key + "|above"] || 0, cb = OPTCLR[d.key + "|below"] || 0, bid = d.bid, ask = d.ask;
+  for (const [tt, pp, n, sd] of prints){
+    const p = +(+pp).toFixed(2), k = Math.round(p / step);
+    if ((ca && tt <= ca && ask != null && p > ask) || (cb && tt <= cb && bid != null && p < bid)) continue;
+    for (const j of [...open]) if (Math.abs(j - k) >= 3) open.delete(j);
+    let v = out[p];
+    if (!open.has(k)){ if (!v) v = out[p] = {s: 0, b: 0, ts: []}; else { v.s = 0; v.b = 0; } v.ts.push(tt); open.add(k); }
+    if (sd === "sell") v.s += n; else if (sd === "buy") v.b += n;
+    v.open = true; v.k = k;
+  }
+  for (const v of Object.values(out)){ v.open = open.has(v.k); v.n = v.ts.filter(x => now - x <= 3600).length; }
+  return out;
+}
+// your stock chart's lines, read on the contract: the contract's own stop exactly, and where the contract should be
+// when the stock gets to your 2nd entry / target / stop / pivot (today's delta: ≈ mid + Δ × the stock's move)
+function optMarks(d){
+  const out = [], mid = d.bid != null && d.ask != null ? (d.bid + d.ask) / 2 : d.last, spot = d.spot, delta = d.delta;
+  const add = (price, role, label, extra) => { if (price != null && price > 0) out.push(Object.assign({price: +price.toFixed(2), role, label, dist: mid != null ? +(price - mid).toFixed(2) : null}, extra || {})); };
+  const os = (T().opt_stops || {})[d.key];
+  if (os && os.on === "option") add(+os.price, "stop", "STOP", {exact: true});
+  const pos = d.position; if (pos && pos.per_contract) add(+pos.per_contract, "entry", "YOUR ENTRY", {exact: true});
+  const pane = paneFor(d.underlying), pl = pane && pane.play;
+  if (pl && mid != null && spot && delta != null){
+    const ownLong = (pl.side || "long") === "long", lines = (d.right === "C") === ownLong ? pl : (pl.alt || {});
+    for (const [r, lbl] of [["second_entry", "2ND ENTRY"], ["target", "TARGET"], ["stop", "STOP"], ["trigger", "PIVOT"]]){
+      if (!lines[r] || (r === "stop" && os && os.on === "option")) continue;
+      add(mid + delta * (lines[r] - spot), r, lbl, {est: true, at: lines[r], sym: d.underlying});
+    }
+    for (const sp of (pl.sneaky_levels || [])) add(mid + delta * (sp - spot), "sneaky", "SNEAKY PIVOT", {est: true, at: sp, sym: d.underlying});
+  }
+  // the OPTION FLOW on this very contract: the price the big money paid (Quant Data sweeps / blocks, and 100+ lots)
+  const fl = {};
+  for (const b of ((d.tape || {}).big || [])){ if (b.price == null) continue; const k = (+b.price).toFixed(2), f = fl[k] = fl[k] || {prem: 0, n: 0, buy: 0};
+    f.prem += +b.premium || 0; f.n += 1; if (b.side === "buy" || /ask/i.test(b.side || "")) f.buy += +b.premium || 0; }
+  for (const [k, f] of Object.entries(fl)) if (f.prem >= 25000)
+    add(+k, "flow", "FLOW", {prem: f.prem, n: f.n, cp: d.right, buyside: f.buy >= f.prem / 2});
+  return out;
+}
 function optLadderData(d, t){
   const orders = (d.orders || []), lastTrade = t.prints && t.prints.length ? +t.prints[0][1] : d.last;
   const rows = t.book.map(r => ({price: r.price, gap: false, bid: r.bid, ask: r.ask, sold: r.sold, bought: r.bought, tags: [], flow: null,
     mine: orders.filter(o => Math.abs((+o.lmt || 0) - r.price) < 0.004).map(o => ({id: o.order_id, action: o.action, qty: o.remaining ?? o.qty, role: "entry", status: o.status})),
     best_bid: r.best_bid, best_ask: r.best_ask, last: lastTrade != null && Math.abs(lastTrade - r.price) < 0.004,
     bid_state: r.reload_bid ? "RELOAD" : null, bid_proven: !!r.reload_bid, bid_stage: r.reload_bid ? "RELOADING" : null,
-    ask_state: r.reload_ask ? "RELOAD" : null, ask_proven: !!r.reload_ask, ask_stage: r.reload_ask ? "RELOADING" : null}));
+    ask_state: r.reload_ask ? "RELOAD" : null, ask_proven: !!r.reload_ask, ask_stage: r.reload_ask ? "RELOADING" : null,
+    ps_b: r.ps_b, ps_a: r.ps_a}));
+  const step = t.book.length > 1 ? Math.abs(t.book[0].price - t.book[1].price) || 0.01 : 0.01;
+  const vis = optVisits(d, t, step), marks = optMarks(d);
+  for (const r of rows){
+    const v = vis[+(+r.price).toFixed(2)]; if (v){ r.vs = v.s; r.vb = v.b; r.vn = v.n; r.vopen = v.open; }
+    const lv = marks.filter(m => Math.abs(m.price - r.price) < step / 2); if (lv.length) r.lv = lv;
+  }
   return {rows, max_size: Math.max(1, ...rows.map(r => Math.max(r.bid, r.ask))), max_traded: Math.max(1, ...rows.map(r => Math.max(r.sold, r.bought))),
-          memory_minutes: 60, big_shares: 100, huge_shares: 300, big_default: true};
+          memory_minutes: 60, big_shares: 100, huge_shares: 300, big_default: true, marks, tick: step, stack_seconds: 60};
 }
 function optTapeData(t){
   const now = state ? state.now : Date.now() / 1000;
@@ -2313,6 +2362,7 @@ function renderFast(d){
     <button class="b big" data-qb="BUY" title="BUY ${x.n} ${x.unit} now: a limit at the ask (${f(x.ask)})">BUY</button><button class="s big" data-qb="SELL" title="SELL ${x.n} ${x.unit} now: a limit at the bid (${f(x.bid)})">SELL</button>
     <button class="out close" data-qb="CLOSE" ${q ? "" : "disabled"} title="close the whole position now, a limit at the touch">CLOSE POSITION</button><span class="qbout">${outw}</span>${pct}
     <span class="qbpos ${q ? (long ? "b" : "s") : "dim"}">${q ? `${long ? "LONG" : "SHORT"} ${sz(q)} ${x.unit}` : "FLAT"}${x.opt ? " · " + esc(x.name) : ""}</span>`;
+  renderOptPos(d);
   if (el.contains(document.activeElement) && document.activeElement.id === "qbQty") return;     // typing a size
   if (el.dataset.h !== h){ el.dataset.h = h; el.innerHTML = h; }
 }
@@ -2407,4 +2457,124 @@ function tradeAsBox(sym, se, onPick, onCancel){
     }
     return rawPost(path, body);
   };
+}
+
+/* ---------- THE PRO LADDER (default). Jigsaw's Depth & Sales, made for PS60:
+   LEVEL │ STACK │ SOLD │ BID │ PRICE │ ASK │ BOUGHT │ STACK
+   · SOLD / BOUGHT = THIS VISIT: what hit the bid / lifted the ask since price came back to this price (a visit ends when
+     price trades 3 ticks away — one cent of chop is not leaving). ×N on the price = visits in the last 15 minutes.
+   · STACK = size ADDED (+, buyers / sellers stepping up) or PULLED (−, left without trading) at that price in the last
+     minute. Lit = big: STEPPING UP / PULLING.
+   · BID / ASK = resting size: drains as it gets hit, ↻N solid green / red = the RELOAD buyer / seller (your edge), with the
+     $ he absorbed; ↩×2 = he came BACK.
+   · LEVEL = your chart: PIVOT, 2ND ENTRY, TARGET, STOP (both sides), SNEAKY PIVOT (yours and TED's), the option STRIKES
+     getting the money, high / low of day — a coloured band on the row, AT … when price is on it; off the rows they sit in
+     the strips above / below with their distance. */
+const LVROLE = {trigger: ["PIVOT", "pv"], second_entry: ["2ND ENTRY", "se"], target: ["TARGET", "tg"], stop: ["STOP", "sl"], extra: ["LEVEL", "ex"],
+  sneaky: ["SNEAKY PIVOT", "sn"], sneaky_auto: ["SNEAKY", "sn"], hod: ["HIGH OF DAY", "hl"], lod: ["LOW OF DAY", "hl"], strike: ["STRIKE", "st"],
+  reload_bid: ["RELOAD BUYER", "rb"], reload_ask: ["RELOAD SELLER", "ra"], entry: ["YOUR ENTRY", "hl"], flow: ["FLOW", "st"]};
+const LVRANK = {entry: 0, stop: 0, second_entry: 1, target: 2, trigger: 3, sneaky: 4, reload_bid: 5, reload_ask: 5, flow: 6, strike: 6, sneaky_auto: 7, extra: 8, hod: 9, lod: 9};
+const LVSHORT = {entry: "ENTRY", trigger: "PIV", second_entry: "2ND", target: "TGT", stop: "STOP", extra: "LVL", sneaky: "SNKY", sneaky_auto: "SNKY·T", hod: "HOD", lod: "LOD"};
+function lvWords(m, short){
+  const base = short && LVSHORT[m.role] ? LVSHORT[m.role] : (LVROLE[m.role] || [m.label])[0];
+  if (m.role === "strike") return `${m.label} ${usdK(m.prem)}${!short && m.n > 1 ? " ×" + m.n : ""}${m.hot ? "⚡" : ""}`;
+  if (m.role === "flow") return `${short ? "" : "OPTION FLOW "}${usdK(m.prem)}${m.n > 1 ? " ×" + m.n : ""}${short ? "" : m.buyside ? " (paid the ask)" : " (hit the bid)"}`;
+  if (m.role === "reload_bid" || m.role === "reload_ask") return short ? `${m.role === "reload_bid" ? "BUYER" : "SELLER"} ↻${m.refills || ""}` : `${base} ↻${m.refills || ""}`;
+  if (m.est) return (short ? "≈" : "≈ ") + base + (short ? "" : ` (when ${m.sym} trades ${px(m.at)})`);
+  return base + (m.alt && !short ? " (other side)" : "");
+}
+function lvCls(m){ const c = (LVROLE[m.role] || ["", "ex"])[1]; return m.role === "strike" || m.role === "flow" ? "st" + (m.cp === "P" ? "p" : "c") : c; }
+function distTxt(d, tick){ if (d == null) return ""; const t = Math.round(Math.abs(d) / (tick || 0.01)); return (d >= 0 ? "+" : "−") + Math.abs(d).toFixed(Math.abs(d) < 1 && tick && tick < 0.01 ? 4 : 2) + (t <= 50 ? ` · ${t}t` : ""); }
+function ladderProHTML(L){
+  const rows = L.rows; if (!rows.length) return `<div class="empty">Waiting for the book…</div>`;
+  const ms = Math.max(L.max_traded, 1), big = L.big_shares || 5000;
+  const vmax = Math.max(1, ...rows.map(r => Math.max(r.vs || 0, r.vb || 0)));
+  const chips = (r, side) => (r.mine || []).filter(o => o.id != null && (o.action === "BUY") === (side === "b")).map(o =>
+    `<span class="chip ${side} ${o.status === "PreSubmitted" ? "wait" : ""}" data-id="${o.id}" draggable="true" title="${esc(o.role)} order — click to cancel, drag to move">${sz(o.qty)}</span>`).join(" ");
+  const mark = (r, cp) => { const f = r.flow; if (!f) return ""; const sum = cp === "C" ? f.c : f.p; if (!sum) return ""; const items = f.items.filter(m => m.cp === cp); const urg = f.urgent && items.some(m => m.urgent !== false);
+    return `<i class="fmk ${cp === "C" ? "c" : "p"} ${urg ? "hot" : ""} ${sum >= 1e6 ? "big" : ""}" title="${esc(flowTitle(Object.assign({}, f, {items})))}"></i>`; };
+  const stack = (r, side) => { const ps = r["ps_" + (side === "bid" ? "b" : "a")]; if (!ps) return `<td class="stk ${side}"></td>`;
+    const [add, pull] = ps, net = add - pull, who = side === "bid" ? "BUYERS" : "SELLERS";
+    const up = add >= big * 0.5 && add > pull * 1.5, dn = pull >= big * 0.5 && pull > add * 1.5;
+    // clean: only size that matters shows (a fifth of BIG or more), the rest is noise until it adds up
+    if (Math.max(add, pull) < big * 0.2) return `<td class="stk ${side}"></td>`;
+    const txt = Math.abs(net) < big * 0.2 ? "" : (net > 0 ? "+" : "−") + kfmt(Math.abs(net));
+    const tip = `last ${L.stack_seconds || 60}s at ${px(r.price)}: ${sz(add)} shares ADDED to the ${side} (${who.toLowerCase()} stepping up), ${sz(pull)} PULLED without trading` + (up ? ` — ${who} STEPPING UP` : dn ? ` — ${who} PULLING` : "");
+    return `<td class="stk ${side} ${net > 0 ? "add" : "pull"} ${up ? "lit" : dn ? "litp" : ""}" title="${esc(tip)}">${txt}</td>`; };
+  const visit = (r, side) => { const v = side === "bid" ? (r.vs || 0) : (r.vb || 0); if (!v) return `<td class="vis ${side}"></td>`;
+    const w = Math.round(100 * v / vmax), word = side === "bid" ? "SOLD into the bid" : "BOUGHT from the ask";
+    return `<td class="vis ${side} ${r.vopen ? "open" : "past"}" title="${esc(`${sz(v)} shares ${word} at ${px(r.price)} ${r.vopen ? "this visit (price is here now)" : "on the last visit"} = ${usdK(v * r.price)}${r.vn > 1 ? ` · price has been back here ${r.vn} times in ${L.memory_minutes} min` : ""}`)}"><span class="vb" style="width:${w}%"></span><b>${kfmt(v)}</b></td>`; };
+  let h = "";
+  // the strips: what sits above and below the rows (your lines, the strikes, the reloaders), nearest first
+  const top = +rows[0].price, bot = +rows[rows.length - 1].price;
+  const off = (L.marks || []).filter(m => m.price > top || m.price < bot);
+  const up = off.filter(m => m.price > top).sort((a, b) => a.price - b.price).slice(0, 4);
+  const dn = off.filter(m => m.price < bot).sort((a, b) => b.price - a.price).slice(0, 4);
+  const pill = (m, arrow) => `<span class="lvp ${lvCls(m)}" title="${esc(lvWords(m) + " " + px(m.price) + " · " + distTxt(m.dist, L.tick) + " from the last price")}">${arrow} ${esc(lvWords(m, true))} ${px(m.price)} <i>${distTxt(m.dist, L.tick)}</i></span>`;
+  h += `<div class="lvstrip top">${up.map(m => pill(m, "▲")).join("") || `<span class="dim">nothing marked above</span>`}<span class="sp"></span><button data-lclr="above" title="clear SOLD / BOUGHT / STACK above the ask (after a move down)">CLR ▲</button></div>`;
+  h += `<table class="lad lad3 pro" data-cols="ladpro"><tr>
+    <th class="lvh" data-w="64" data-min="26" title="your chart on the ladder: PIVOT, 2ND ENTRY, TARGET, STOP, SNEAKY PIVOT, option STRIKES getting the money, high / low of day, the RELOAD buyer / seller — and how far they are">LEVEL</th>
+    <th class="stkh" data-w="40" data-min="16" title="STACK on the bid: + size added (buyers stepping up), − size pulled without trading, last ${L.stack_seconds || 60}s. Lit = big">STK</th>
+    <th class="vish" data-w="44" data-min="18" title="SOLD this visit: shares that hit the bid at this price since price came back here">SOLD</th>
+    <th class="szh" data-w="54" data-min="20" title="BID: resting buy orders. Drains as it gets hit. Solid green ↻N = the RELOAD BUYER refilling. Click to BUY there">BID</th>
+    <th class="pxh" data-w="58" data-min="26">PRICE</th>
+    <th class="szh" data-w="54" data-min="20" title="ASK: resting sell orders. Drains as it gets lifted. Solid red ↻N = the RELOAD SELLER refilling. Click to SELL there">ASK</th>
+    <th class="vish" data-w="44" data-min="18" title="BOUGHT this visit: shares that lifted the ask at this price since price came back here">BOT</th>
+    <th class="stkh" data-w="40" data-min="16" title="STACK on the ask: + size added (sellers stepping up), − size pulled without trading, last ${L.stack_seconds || 60}s. Lit = big">STK</th></tr>`;
+  for (const r of rows){
+    const pb = r.bid_state === "RELOAD" || r.bid_proven, pa = r.ask_state === "RELOAD" || r.ask_proven;
+    const stg = pb ? (r.bid_stage || "RELOADING") : pa ? (r.ask_stage || "RELOADING") : "";
+    const cv = pb ? (r.bid_conv == null ? 1 : r.bid_conv) : pa ? (r.ask_conv == null ? 1 : r.ask_conv) : 1;
+    const lv = (r.lv || []).filter(m => !(m.role === "reload_bid" || m.role === "reload_ask")).sort((a, b) => (LVRANK[a.role] ?? 9) - (LVRANK[b.role] ?? 9));
+    const rel = pb ? (lv.length ? "BUYER ↻" : "RELOAD BUYER ↻") + (r.bid_refills || "") : pa ? (lv.length ? "SELLER ↻" : "RELOAD SELLER ↻") + (r.ask_refills || "") : "";
+    const at = r.last && lv.length;
+    const cls = [r.gap ? "gap" : "", r.best_bid ? "best-bid" : "", r.best_ask ? "best-ask" : "", r.last ? "lastpx" : "", pb ? "rl-bid" : "", pa ? "rl-ask" : "",
+      stg ? "cv-" + stageSlug(stg) : "", lv.length ? "lvrow lv-" + lvCls(lv[0]) : "", at ? "atlv" : "", lv.some(m => m.alt) ? "lvalt" : ""].join(" ");
+    const rb = pb ? reloadMoney(r, "bid") : null, ra = pa ? reloadMoney(r, "ask") : null;
+    const goneB = !pb && /CLEANED UP|PULLED/.test(r.bid_stage || "") ? `<span class="gone">${r.bid_stage === "PULLED" ? "PULLED" : "CLEANED"}</span>` : "";
+    const goneA = !pa && /CLEANED UP|PULLED/.test(r.ask_stage || "") ? `<span class="gone">${r.ask_stage === "PULLED" ? "PULLED" : "CLEANED"}</span>` : "";
+    const fakeB = r.bid_real && r.bid_real.label === "FAKE" ? " fake" : "", fakeA = r.ask_real && r.ask_real.label === "FAKE" ? " fake" : "";
+    const bigB = r.bid_big ? (r.bid_big.huge ? " huge" : " big") : "", bigA = r.ask_big ? (r.ask_big.huge ? " huge" : " big") : "";
+    const absB = r.sold && r.sold / ms >= 0.15 ? Math.round(100 * r.sold / ms) : 0, absA = r.bought && r.bought / ms >= 0.15 ? Math.round(100 * r.bought / ms) : 0;
+    const tB = rb ? rb.text : [r.bid ? sz(r.bid) + " showing" : "", r.sold ? sz(r.sold) + " sold into this price in " + L.memory_minutes + " min = " + usdK(r.sold * r.price) : "", r.bid_real ? realWords(r.bid_real) : ""].filter(Boolean).join(" · ");
+    const tA = ra ? ra.text : [r.ask ? sz(r.ask) + " showing" : "", r.bought ? sz(r.bought) + " bought from this price in " + L.memory_minutes + " min = " + usdK(r.bought * r.price) : "", r.ask_real ? realWords(r.ask_real) : ""].filter(Boolean).join(" · ");
+    // the LEVEL cell: your line first, then the reloader sitting on it ("RELOAD SELLER AT YOUR 2ND ENTRY" is the whole read)
+    const lvTxt = lv.length ? (at ? "AT " : "") + lvWords(lv[0], true) + (lv.length > 1 ? ` +${lv.length - 1}` : "") : "";
+    const lvTip = lv.map(m => lvWords(m) + " " + px(m.price) + (m.role === "sneaky_auto" ? ` (TED found it: ${m.touches || "?"} touches, room $${(m.room || 0).toFixed(2)})` : "")).join(" · ") + (rel ? (lv.length ? " · " : "") + (pb ? rb.text : ra.text) : "");
+    const lvCell = `<td class="lvc" title="${esc(lvTip)}">${lvTxt ? `<b>${esc(lvTxt)}</b>` : ""}${rel ? `<span class="rlv ${pb ? "b" : "s"}">${lv.length ? "◆ " : ""}${esc(rel)}</span>` : ""}</td>`;
+    h += `<tr class="${cls}" data-price="${r.price}" style="--cv:${cv}">${lvCell}${stack(r, "bid")}${visit(r, "bid")}
+      <td class="sz bsz click${fakeB}${bigB}" data-act="BUY" data-px="${r.price}" title="${esc(tB)}">${mark(r, "C")}${goneB}${absB ? `<span class="abs" style="width:${absB}%"></span>` : ""}${pb ? `<span class="rl${r.bid_back ? " back" : ""}">${r.bid_back ? "↩×" + r.bid_back.n + " " : ""}↻${r.bid_refills || ""}${rb && rb.usd ? `<i class="rlm"> ${usdK(rb.usd)}</i>` : ""}</span>` : ""}<span class="szn">${r.bid ? kfmt(r.bid) : ""}</span>${chips(r, "b") ? `<span class="mine">${chips(r, "b")}</span>` : ""}</td>
+      <td class="px">${px(r.price)}${r.vn > 1 ? `<sup title="price has been back to ${px(r.price)} ${r.vn} times in ${L.memory_minutes} min">×${r.vn}</sup>` : ""}</td>
+      <td class="sz asz click${fakeA}${bigA}" data-act="SELL" data-px="${r.price}" title="${esc(tA)}"><span class="szn">${r.ask ? kfmt(r.ask) : ""}</span>${chips(r, "s") ? `<span class="mine">${chips(r, "s")}</span>` : ""}${pa ? `<span class="rl${r.ask_back ? " back" : ""}">${ra && ra.usd ? `<i class="rlm">${usdK(ra.usd)} </i>` : ""}↻${r.ask_refills || ""}${r.ask_back ? " ↩×" + r.ask_back.n : ""}</span>` : ""}${goneA}${absA ? `<span class="abs" style="width:${absA}%"></span>` : ""}${mark(r, "P")}</td>
+      ${visit(r, "ask")}${stack(r, "ask")}</tr>`;
+  }
+  h += `</table><div class="lvstrip bot">${dn.map(m => pill(m, "▼")).join("") || `<span class="dim">nothing marked below</span>`}<span class="sp"></span><button data-lclr="below" title="clear SOLD / BOUGHT / STACK below the bid (after a move up)">CLR ▼</button></div>`;
+  return h;
+}
+document.addEventListener("click", async e => {
+  const b = e.target.closest("button[data-lclr]"); if (!b) return;
+  const host = b.closest(".pnl"), opt = host && /obook|otape/.test(host.dataset.p || "") || b.closest(".cbook");
+  if (opt){ OPTCLR[OCH.key + "|" + b.dataset.lclr] = Date.now() / 1000; P.book.last = null; renderOptPanels && renderOptPanels(); return; }
+  const out = await post("/api/ladder/clear", {symbol: curSym, where: b.dataset.lclr});
+  toast(out.ok ? `Ladder cleared ${b.dataset.lclr === "above" ? "above the ask" : "below the bid"}` : "Nothing to clear", out.ok); P.book.last = null; poll(true);
+});
+const OPTCLR = {};
+
+/* TRADING THE OPTION, READING THE STOCK: on the stock chart, every contract you hold on this ticker — how many, the P&L,
+   and what it should be worth when the stock gets to your TARGET (your measured potential) and to your STOP (today's
+   delta: ≈ mid + Δ × the stock's move) */
+function renderOptPos(d){
+  const el = document.getElementById("optPosStrip"); if (!el) return;
+  const ps = (((state || {}).account || {}).opt_positions || []).filter(p => p.symbol === d.symbol && p.qty);
+  const pl = d.play || {}, spot = d.last;
+  const h = ps.map(p => {
+    const long = p.qty > 0, q = Math.abs(p.qty), mult = p.mult || 100, mid = p.bid != null && p.ask != null ? (p.bid + p.ask) / 2 : (p.bid ?? p.ask);
+    const lines = (p.right === "C") === ((pl.side || "long") === "long") ? pl : (pl.alt || {});
+    const at = (lvl, word, cls) => { if (!lvl || mid == null || p.delta == null || !spot) return "";
+      const est = Math.max(0.01, mid + p.delta * (lvl - spot)), pnl = (est - p.per_contract) * mult * p.qty;
+      return `<span class="${cls}" title="when ${esc(d.symbol)} trades ${px(lvl)} the contract should be about ${est.toFixed(2)} (today's delta ${(+p.delta).toFixed(2)})">${word} ${px(lvl)} ≈ ${est.toFixed(2)} <b>${pnl >= 0 ? "+" : "−"}$${sz(Math.abs(Math.round(pnl)))}</b></span>`; };
+    const os = (T().opt_stops || {})[p.key];
+    return `<div class="op"><b class="${long ? "b" : "s"}">◆ ${long ? "LONG" : "SHORT"} ${q} ${esc(p.label)}</b><span>paid ${(+p.per_contract).toFixed(2)} · now ${mid != null ? mid.toFixed(2) : "—"}</span>${p.pnl != null ? `<b class="${p.pnl >= 0 ? "b" : "s"}">${p.pnl >= 0 ? "+" : "−"}$${sz(Math.abs(Math.round(p.pnl)))}</b>` : ""}
+      ${at(lines.target, "TARGET", "tg")}${at(lines.stop, "STOP", "sl")}${!lines.stop && os ? `<span class="sl">STOP ${os.on === "stock" ? esc(d.symbol) + " " : "contract "}${(+os.price).toFixed(2)}</span>` : ""}</div>`; }).join("");
+  if (el.dataset.h !== h){ el.dataset.h = h; el.innerHTML = h; }
 }

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261005-1650">
+<meta name="build" content="20261005-1715">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -943,6 +943,45 @@ i.tl{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:3p
 #fastStock .big{padding:2px 10px;font-size:12px}
 #fastStock .qbout{margin-left:6px;font-weight:700;font-size:11px;color:#c8ccd4}
 #fastStock .out[data-qb^="P"]{min-width:42px}
+/* ===== PRO LADDER ===== */
+table.lad.pro{--se:#5aa9d6;--tg:#3fb56f;--sl:#d9534f;--pv:#d6d6d3;--sn:#f0a8ff;--stc:#2fe0a8;--stp:#ff7a9a;--hl:#e8b931;--ex:#9aa4b4}
+table.lad.pro td,table.lad.pro th{padding:0 3px}
+table.lad.pro td.lvc{font-size:10px;font-weight:700;letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:110px;text-align:left}
+table.lad.pro td.lvc .rlv{display:inline-block;margin-left:3px;padding:0 4px;border-radius:2px;font-size:9.5px}
+table.lad.pro td.lvc .rlv.b{background:#0b7a4b;color:#fff} table.lad.pro td.lvc .rlv.s{background:#b3123a;color:#fff}
+table.lad.pro tr.lvrow td{border-top:1px solid var(--lvc);border-bottom:1px solid var(--lvc);background-image:linear-gradient(var(--lvt),var(--lvt))}
+table.lad.pro tr.lvrow td.lvc{color:var(--lvc);border-left:3px solid var(--lvc)}
+table.lad.pro tr.lv-se{--lvc:var(--se);--lvt:rgba(63,208,255,.10)} table.lad.pro tr.lv-tg{--lvc:var(--tg);--lvt:rgba(38,208,124,.10)}
+table.lad.pro tr.lv-sl{--lvc:var(--sl);--lvt:rgba(255,77,94,.10)} table.lad.pro tr.lv-pv{--lvc:var(--pv);--lvt:rgba(219,227,238,.08)}
+table.lad.pro tr.lv-sn{--lvc:var(--sn);--lvt:rgba(240,168,255,.09)} table.lad.pro tr.lv-stc{--lvc:var(--stc);--lvt:rgba(47,224,168,.08)}
+table.lad.pro tr.lv-stp{--lvc:var(--stp);--lvt:rgba(255,122,154,.08)} table.lad.pro tr.lv-hl{--lvc:var(--hl);--lvt:rgba(232,185,49,.06)}
+table.lad.pro tr.lv-ex{--lvc:var(--ex);--lvt:rgba(154,164,180,.06)}
+table.lad.pro tr.lvalt td.lvc{border-left-style:dashed}
+table.lad.pro tr.atlv td{animation:atlv 1s ease-in-out infinite alternate}
+@keyframes atlv{from{background-color:transparent}to{background-color:rgba(255,255,255,.10)}}
+table.lad.pro tr.atlv td.lvc b{color:#fff;background:var(--lvc);padding:0 3px;border-radius:2px}
+table.lad.pro td.stk{font-size:10.5px;text-align:center;font-variant-numeric:tabular-nums}
+table.lad.pro td.stk.add.bid{color:#7cf0b4} table.lad.pro td.stk.add.ask{color:#ff9aa8}
+table.lad.pro td.stk.pull{color:#8a90a0;font-style:italic}
+table.lad.pro td.stk.lit.bid{background:#0b7a4b;color:#fff;font-weight:800} table.lad.pro td.stk.lit.ask{background:#b3123a;color:#fff;font-weight:800}
+table.lad.pro td.stk.litp{background:#3a3d44;color:#e2e4ea;font-weight:700}
+table.lad.pro td.vis{position:relative;font-size:10.5px;text-align:center;font-variant-numeric:tabular-nums}
+table.lad.pro td.vis .vb{position:absolute;top:2px;bottom:2px;opacity:.35}
+table.lad.pro td.vis.bid .vb{right:0;background:#d9534f} table.lad.pro td.vis.ask .vb{left:0;background:#3fb56f}
+table.lad.pro td.vis b{position:relative;font-weight:700} table.lad.pro td.vis.bid b{color:#e8a3a3} table.lad.pro td.vis.ask b{color:#9fe0bd}
+table.lad.pro td.vis.past{opacity:.45}
+table.lad.pro td.px sup{font-size:8.5px;color:#e8b931;margin-left:2px;font-weight:700}
+.lvstrip{position:sticky;z-index:3;display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding:2px 4px;background:#101216;border:1px solid #23262c;font-size:10px}
+.lvstrip.top{top:0} .lvstrip.bot{bottom:0}
+.lvstrip .sp{flex:1} .lvstrip button{font-size:9.5px;padding:0 5px}
+.lvp{padding:0 5px;border-radius:2px;border:1px solid var(--c,#555);color:var(--c,#ccc);white-space:nowrap;font-weight:700}
+.lvp i{font-style:normal;color:#aab0bb;font-weight:400}
+.lvp.se{--c:#5aa9d6} .lvp.tg{--c:#3fb56f} .lvp.sl{--c:#d9534f} .lvp.pv{--c:#d6d6d3} .lvp.sn{--c:#f0a8ff} .lvp.stc{--c:#2fe0a8} .lvp.stp{--c:#ff7a9a} .lvp.hl{--c:#e8b931} .lvp.ex{--c:#9aa4b4}
+.lvp.rb{--c:#2fd38a;background:#0b3a25} .lvp.ra{--c:#ff6b7d;background:#3a0f18}
+#optPosStrip{display:flex;flex-direction:column;gap:2px;padding:0 6px}
+#optPosStrip:empty{display:none}
+#optPosStrip .op{display:flex;flex-wrap:wrap;gap:10px;align-items:center;font-size:11.5px;padding:2px 6px;background:#1d1830;border:1px solid #5b3fa8;border-radius:3px}
+#optPosStrip .op .tg{color:#3fb56f} #optPosStrip .op .sl{color:#d9534f}
 
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
@@ -1318,7 +1357,7 @@ body.resizing .zbody{pointer-events:none}
   <div class="pnl" data-p="chart2"><div class="pc nos"><div class="chart-wrap"><div class="chart-tools"></div><canvas></canvas></div></div></div>
   <div class="pnl" data-p="chart3"><div class="pc nos"><div class="chart-wrap"><div class="chart-tools"></div><canvas></canvas></div></div></div>
   <div class="pnl" data-p="ochart"><div class="ochead" id="ochHead"></div><div class="pc nos"><div class="chart-wrap"><canvas></canvas></div></div></div>
-  <div class="pnl" data-p="chart"><div class="qs"></div><div class="fast" id="fastStock"></div><div class="cvstrip" id="cvStrip"></div><div class="pc nos"><div class="chart-wrap"><div class="chart-tools"></div><canvas></canvas></div></div></div>
+  <div class="pnl" data-p="chart"><div class="qs"></div><div class="fast" id="fastStock"></div><div class="optpos" id="optPosStrip"></div><div class="cvstrip" id="cvStrip"></div><div class="pc nos"><div class="chart-wrap"><div class="chart-tools"></div><canvas></canvas></div></div></div>
   <div class="pnl" data-p="foot"><div class="pc nos"><div class="chart-wrap"><div class="chart-tools"><span class="dim" style="font-size:10.5px;background:rgba(17,22,31,.85);padding:1px 6px">5m FOOTPRINT · SELLERS HIT BID × BUYERS PAID UP</span></div><canvas></canvas></div></div></div>
   <div class="pnl" data-p="book"><div class="ladstat" id="ladStat"></div><div class="ladbar"><span>BIG ≥</span><input id="bigIn" type="number" min="100" step="500" title="shares that count as big on this symbol's ladder. Highlighted when showing; ×N = how many separate times it has shown up at that price today"><span class="dim">sh</span><button id="bigReset" title="back to the config default">DEFAULT</button><span class="dim" id="bigHint"></span><span class="qtybox" title="shares per ladder click (the ticket follows)"><span>QTY</span><input id="ladQty" type="number" min="1" step="1"><span id="ladPresets"></span></span><span class="spacer"></span><button id="ladMode" title="SIMPLE: bid · price · ask — size drains as it gets attacked, reloaders solid with ↻N, option money as an edge mark. TIGHT: adds HIT / PAID and CALLS / PUTS columns. WIDE: everything spelled out">SIMPLE</button><span class="menu" id="colsMenu"><button title="columns">COLS</button><div class="pop" id="colsPop"><h5>LEVEL II COLUMNS</h5><button class="howto" data-howto="1" style="margin-bottom:4px">HOW TO READ IT</button><label><input type="checkbox" data-col="trade" checked> BUY / SELL buttons</label><label><input type="checkbox" data-col="bars" checked> flow bars (sold into bid / bought at ask)</label><label><input type="checkbox" data-col="who" checked> reload tags</label><label><input type="checkbox" data-col="flow" checked> option flow marks (where the stock was when big flow hit)</label><label><input type="checkbox" data-col="center" checked> auto-centre on price</label><label>Click a size <select data-ladclick><option value="join">JOIN: bid side = BUY there, ask side = SELL there</option><option value="hit">HIT: bid side = SELL into it, ask side = BUY from it</option></select></label><label>Rows above / below <select data-rows><option value="8">8</option><option value="12" selected>12</option><option value="20">20</option><option value="30">30</option></select></label><label>Row height <select data-ladh><option value="1">normal</option><option value="0.85">tight</option><option value="1.2">tall</option></select></label><label style="margin-top:6px">Text size <select data-ladz><option value="1">normal</option><option value="1.2">bigger</option><option value="1.4">biggest (widen the LEVEL II pane)</option></select></label><div class="dim" style="font-size:10.5px;margin-top:6px">Drag the grip at the right edge of any header to resize. Double-click a grip to reset.</div></div></span></div><div class="rlban" id="rlBan"></div><div class="pc"><div class="ladder-wrap"></div></div></div>
   <div class="pnl" data-p="tape"><div class="pc"><div class="p-tape"></div></div></div>
@@ -1614,10 +1653,10 @@ const ZONES = ["TL", "TC", "TR", "TX", "BL", "BC", "BR", "BX"];   // four column
 const PRESETS = {
   // Twiney's desk: the STOCK on top (chart with the ORDER BAR, its LEVEL II and T&S to the right), the OPTION CHAIN and
   // option data on the left, and the CONTRACT underneath (option chart, its LEVEL II and T&S lined up under the stock's)
-  "Stock + Options": {ver: 1, exact: true, zones: {TL: ["options", "flow", "ticket", "obig"], TC: ["chart"], TR: ["book"], TX: ["tape"],
+  "Stock + Options": {ver: 2, exact: true, zones: {TL: ["options", "flow", "ticket", "obig"], TC: ["chart"], TR: ["book"], TX: ["tape"],
                                        BL: ["positions", "orders", "setup"], BC: ["ochart"], BR: ["obook"], BX: ["otape"]},
     active: {TL: "options", BL: "positions"}, tf: {chart: 5},
-    sizes: {c1: 380, c3: 300, c4: 270, r2: {L: 330, C: 420, R: 420, X: 420}}},
+    sizes: {c1: 340, c3: 400, c4: 250, r2: {L: 330, C: 420, R: 420, X: 420}}},
   "PS60 Execution": {zones: {TL: ["watch", "myalerts"], TC: ["chart"], TR: ["book"], TX: ["tape"], BL: ["positions", "orders"], BC: ["conviction", "setup", "flow", "urgency", "bigmoney", "eqflow", "ps60", "reload", "calls"], BR: ["ticket"]},
     active: {BL: "positions", BC: "setup"}, sizes: {c1: 200, c3: 330, c4: 290, r2: {L: 250, C: 330, R: 430, X: 250}}},
   "Scalping": {zones: {TL: ["ticket", "setup"], TC: ["book"], TR: ["tape"], BL: ["positions"], BC: ["chart"], BR: ["orders", "reload"]},
@@ -1676,10 +1715,11 @@ function wireChart(p, cv, v, saveView, isFoot){
       const price = yAt(); if (price == null) return;
       const tk = price >= 1 ? 0.01 : 0.0001, snapped = +(Math.round(price / tk) * tk).toFixed(4), role = v.levelTool;
       const names = {second_entry: "2nd entry", trigger: "pivot", target: "target", stop: "stop", extra: "level"};
-      if (role === "extra"){
-        const hit = (p.data.user_levels || []).find(l => l.role === "extra" && Math.abs(l.price - snapped) <= tk * 2);
-        post("/api/level", {symbol: p.data.symbol, price: hit ? hit.price : snapped, on: !hit, role: "extra"})
-          .then(out => toast(out.ok ? (hit ? "Level removed " + px(hit.price) : "Level added " + px(snapped) + " — saved to plays.json") : "Could not save level", out.ok));
+      if (role === "extra" || role === "sneaky"){
+        const hit = (p.data.user_levels || []).find(l => l.role === role && Math.abs(l.price - snapped) <= tk * 2);
+        const nm = role === "sneaky" ? "Sneaky pivot" : "Level";
+        post("/api/level", {symbol: p.data.symbol, price: hit ? hit.price : snapped, on: !hit, role})
+          .then(out => toast(out.ok ? (hit ? nm + " removed " + px(hit.price) : nm + " " + px(snapped) + " — on the chart and the ladder") : "Could not save it", out.ok));
       } else {
         const cur = p.data.play && p.data.play[role];
         if (role === "trigger" && cur && Math.abs(cur - snapped) > 1e-9 && !confirm(`Move the ${p.data.symbol} pivot from ${px(cur)} to ${px(snapped)}?`)){ v.levelTool = null; renderTools(p); return; }
@@ -1823,6 +1863,7 @@ function chartMenu(p, v, x, y, price){
       <div><b class="b">LONG ▲</b>${["trigger", "second_entry", "stop", "target"].map(r => `<button data-do="lvl" data-side="long" data-role="${r}" class="blvl ${r === "second_entry" ? "se" : ""}">${{trigger: "PIVOT", second_entry: "2ND", stop: "STOP", target: "TARGET"}[r]}</button>`).join("")}</div>
       <div><b class="s">SHORT ▼</b>${["trigger", "second_entry", "stop", "target"].map(r => `<button data-do="lvl" data-side="short" data-role="${r}" class="blvl ${r === "second_entry" ? "se" : ""}">${{trigger: "PIVOT", second_entry: "2ND", stop: "STOP", target: "TARGET"}[r]}</button>`).join("")}</div>
       <div class="dim">at ${px(price)}</div></div>
+    <button data-do="sneaky" class="bsneaky" title="mark a SNEAKY PIVOT here: the micro supply / demand inside the 60-minute channel. A line on the chart and on the ladder">◇ SNEAKY PIVOT here</button>
     <button data-do="alert" class="balert">🔔 Alert me when ${esc(d.symbol)} hits ${px(price)}</button>
     ${(() => { const per = v.chartY ? (v.chartY[1] - v.chartY[0]) / ((v.chartH || 1) - 8) : 0; const lv = (d.user_levels || []).find(l => l.role !== "trigger" && Math.abs(l.price - price) <= per * 6);
       return lv ? `<button data-do="rmlevel" data-role="${esc(lv.role)}" data-lp="${lv.price}">✕ Remove ${esc(lv.label)} ${px(lv.price)}</button>` : ""; })()}
@@ -1842,9 +1883,10 @@ function chartMenu(p, v, x, y, price){
       const cur = own ? d.play && d.play.trigger : d.play && d.play.alt && d.play.alt.trigger;
       if (role === "trigger" && own && cur && Math.abs(cur - price) > 1e-9 && !confirm(`Move the ${d.symbol} pivot from ${px(cur)} to ${px(price)}?`)) return;
       post("/api/level", {symbol: d.symbol, role, price, side, confirm: role === "trigger"}).then(out => { toast(out.ok ? `${d.symbol} ${side ? side.toUpperCase() + " " : ""}${names[role]} ${px(price)}` + (role === "second_entry" ? " — entry order going in (armed desk)" : "") : "Could not set the " + names[role], out.ok); if (out.ok) poll(true); }); }
+    else if (b.dataset.do === "sneaky") post("/api/level", {symbol: d.symbol, price, on: true, role: "sneaky"}).then(out => { toast(out.ok ? `${d.symbol} SNEAKY PIVOT ${px(price)} — on the chart and the ladder` : "Could not mark it", out.ok); if (out.ok) poll(true); });
     else if (b.dataset.do === "alert") addAlert({symbol: d.symbol, kind: "price", price, when: "hit", repeat: false});
     else if (b.dataset.do === "rmlevel"){ const role = b.dataset.role, lp = +b.dataset.lp;
-      (role === "extra" ? post("/api/level", {symbol: d.symbol, price: lp, on: false, role: "extra"}) : post("/api/level", {symbol: d.symbol, role, price: null}))
+      (role === "extra" || role === "sneaky" ? post("/api/level", {symbol: d.symbol, price: lp, on: false, role}) : post("/api/level", {symbol: d.symbol, role, price: null}))
         .then(out => { toast(out.ok ? "Level removed " + px(lp) : "Could not remove it", out.ok); if (out.ok) poll(true); }); }
   });
   // any click outside closes it (a click inside on a disabled button must not use that up), so does Escape or 20 s
@@ -2067,7 +2109,8 @@ function ladderTightHTML(L){
 }
 function ladderHTML(L){
   if (!L || !L.rows.length) return `<div class="empty">Waiting for the book…</div>`;
-  const mode = store.get("ladMode", "simple");
+  const mode = store.get("ladMode", "pro");
+  if (mode === "pro") return ladderProHTML(L);
   if (mode === "simple") return ladderSimpleHTML(L);
   if (mode === "tight") return ladderTightHTML(L);
   const ms = Math.max(L.max_traded, 1);
@@ -2234,7 +2277,7 @@ const DAN_BB = "#151eed";
 function smaSeries(cl, n){ const out = new Array(cl.length).fill(null); let s = 0; for (let i = 0; i < cl.length; i++){ s += cl[i]; if (i >= n) s -= cl[i - n]; if (i >= n - 1) out[i] = s / n; } return out; }
 function emaSeries(cl, n){ const out = new Array(cl.length).fill(null); if (cl.length < n) return out; const k = 2 / (n + 1); let e = 0; for (let i = 0; i < n; i++) e += cl[i]; e /= n; out[n - 1] = e; for (let i = n; i < cl.length; i++){ e = cl[i] * k + e * (1 - k); out[i] = e; } return out; }
 function bbSeries(cl, n, mult){ const up = new Array(cl.length).fill(null), dn = up.slice(), mid = up.slice(); for (let i = n - 1; i < cl.length; i++){ let s = 0, s2 = 0; for (let j = i - n + 1; j <= i; j++){ s += cl[j]; s2 += cl[j] * cl[j]; } const m = s / n, sd = Math.sqrt(Math.max(0, s2 / n - m * m)); mid[i] = m; up[i] = m + mult * sd; dn[i] = m - mult * sd; } return {up, dn, mid}; }
-const LEVEL_STYLE = {trigger:["#d6d6d3",[],1.6], second_entry:["#5aa9d6",[6,4],1.6], extra:["#b0b0ad",[3,4],1.2],
+const LEVEL_STYLE = {trigger:["#d6d6d3",[],1.6], second_entry:["#5aa9d6",[6,4],1.6], extra:["#b0b0ad",[3,4],1.2], sneaky:["#f0a8ff",[4,3],1.4],
   target:["#3fb56f",[2,4],1], stop:["#d9534f",[2,4],1],
   // the OTHER SIDE of the play (a short under a long, a long over a short): same colours, its own dash, an arrow in the label
   alt_trigger:["#c9b8ff",[10,3,2,3],1.6], alt_second_entry:["#5aa9d6",[10,3,2,3],1.6], alt_target:["#3fb56f",[8,3,2,3],1], alt_stop:["#d9534f",[8,3,2,3],1]};
@@ -2289,7 +2332,7 @@ function drawOne(p, cv, v, isFoot){
   let lo = Infinity, hi = -Infinity;
   for (const b of bars){ lo = Math.min(lo, b[3]); hi = Math.max(hi, b[2]); }
   if (d.last){ lo = Math.min(lo, d.last); hi = Math.max(hi, d.last); }
-  const core = isFoot ? [] : d.user_levels.filter(l => ["trigger","second_entry","extra"].includes(l.role));
+  const core = isFoot ? [] : d.user_levels.filter(l => ["trigger","second_entry","extra","sneaky"].includes(l.role));
   const reach = Math.max(hi - lo, (isFinite(lo) ? lo : 0) * 0.004) * 1.5;
   for (const l of core){ if (l.price >= lo - reach && l.price <= hi + reach){ lo = Math.min(lo, l.price); hi = Math.max(hi, l.price); } }
   // an open position keeps its whole bracket on screen: entry, stop and target
@@ -2670,7 +2713,7 @@ function drawOne(p, cv, v, isFoot){
   const olk = !isFoot && d.play && v.seChipY != null && ((state && state.trading && state.trading.opt_links) || {})[d.symbol];
   if (olk){
     // OPTIONS: this 2nd entry buys the contract on the OPTION CHART when the stock trades through it
-    const yy = v.seChipY, k = olk.key.split(" "), c = `${olk.qty}× ${k[2]}`;
+    const yy = v.seChipY, k = olk.key.split(" "), c = `${olk.state === "IN" && olk.held ? olk.held : olk.qty}× ${k[2]}`;
     const t = olk.state === "IN" ? `◆ IN ${c}` : olk.state === "SENT" ? `◆ BUYING ${c}` : olk.why ? `✕ ${c} WAITS` : `◆ OPTION ${c}`;
     g.font = "bold 10px ui-monospace, Menlo, Consolas, monospace";
     const tw = g.measureText(t).width + 10, tx = plotW - tw - 4, ty = yy - 7;
@@ -3964,8 +4007,10 @@ async function setLadQty(n){ n = Math.max(1, Math.round(+n || 0)); if (!n) retur
 document.getElementById("ladQty").addEventListener("change", e => setLadQty(e.target.value));
 document.getElementById("ladQty").addEventListener("keydown", e => { e.stopPropagation(); if (e.key === "Enter"){ setLadQty(e.target.value); e.target.blur(); } });
 document.getElementById("ladPresets").addEventListener("click", e => { const b = e.target.closest("button[data-qp]"); if (b) setLadQty(b.dataset.qp); });
-(function(){ const b = document.getElementById("ladMode"); if (!b) return; const MODES = ["simple", "tight", "wide"]; const paint = () => { b.textContent = store.get("ladMode", "simple").toUpperCase(); }; paint();
-  b.addEventListener("click", () => { const m = store.get("ladMode", "simple"); store.set("ladMode", MODES[(MODES.indexOf(m) + 1) % MODES.length]); paint(); P.book.last = null; poll(true); }); })();
+(function(){ const b = document.getElementById("ladMode"); if (!b) return; const MODES = ["pro", "simple", "tight", "wide"];
+  if (!store.get("ladPro1", false)){ store.set("ladPro1", true); store.set("ladMode", "pro"); }      // the PRO ladder arrives as the default once
+  const paint = () => { b.textContent = store.get("ladMode", "pro").toUpperCase(); }; paint();
+  b.addEventListener("click", () => { const m = store.get("ladMode", "pro"); store.set("ladMode", MODES[(MODES.indexOf(m) + 1) % MODES.length]); paint(); P.book.last = null; poll(true); }); })();
 /* PIN BOX: the tape and the ladder move too fast to hover. Click a print, a reload $ cell, a FLOW tag or a price
    and what you would have read on hover stays in a small box at the bottom of that panel until the next click. */
 function pinBox(panel){ let b = panel.pc.querySelector(".pinbox"); if (!b){ b = document.createElement("div"); b.className = "pinbox"; b.innerHTML = `<span class="txt"></span><button class="x" title="clear">✕</button>`; panel.pc.appendChild(b); b.querySelector(".x").addEventListener("click", () => { b.classList.remove("on"); b.querySelector(".txt").textContent = ""; }); } return b; }
@@ -4284,8 +4329,8 @@ document.addEventListener("click", async e => {
   if (b.dataset.cn){ l.n = +b.dataset.cn; P.ticket.last = null; poll(true); return; }
   const s = state || {}, pos = ((s.account || {}).opt_positions || []).find(p => p.key === l.key), q = pos ? Math.abs(pos.qty) : 0, long = pos && pos.qty > 0;
   const n = Math.max(1, +(document.getElementById("cnQty") || {}).value || l.n || 1);
-  if (b.dataset.cb === "ALL"){ confirmBox(`${long ? "SELL" : "BUY"} ALL ${q} ${contractName(l)}`, "closes the whole contract position at the touch", long ? "s" : "b", async () => {
-      const out = await post("/api/trade/opt_adjust", {key: l.key, contracts: 0, mode: "close", price: null}); toast(out.ok ? "Sent: " + out.sent : "Blocked: " + (out.reason || ""), out.ok); P.ticket.last = null; poll(true); }); return; }
+  if (b.dataset.cb === "ALL"){        // getting out never waits on a confirm box
+    const out = await post("/api/trade/opt_adjust", {key: l.key, contracts: 0, mode: "close", price: null}); toast(out.ok ? "OUT: " + out.sent : "Blocked: " + (out.reason || ""), out.ok); P.ticket.last = null; poll(true); return; }
   const side = b.dataset.cb, touch = side === "BUY" ? l.ask : l.bid;
   const closing = q && ((long && side === "SELL") || (!long && side === "BUY"));
   if (!closing && !canTrade()){ toast(whyNot() + (/ARM/i.test(whyNot()) ? "" : " — click ARM"), false); const a = document.getElementById("armBtn"); if (a){ a.dataset.pulse = "1"; setTimeout(() => { delete a.dataset.pulse; }, 2400); } return; }
@@ -4319,10 +4364,9 @@ document.addEventListener("click", async e => {
   const d = curData(); if (!d) return;
   const pos = d.position, q = pos && pos.qty ? Math.abs(pos.qty) : 0, long = pos && pos.qty > 0;
   if (b.dataset.sq){
-    if (b.dataset.sq === "all"){
-      confirmBox(`${long ? "SELL" : "BUY"} ALL ${sz(q)} ${d.symbol}`, "out of the whole position at the touch · its stop and target orders are cancelled", long ? "s" : "b", async () => {
-        const out = await post("/api/trade/flatten", {symbol: d.symbol});
-        toast(out.ok ? (out.flat ? d.symbol + " already flat" : "Sent: " + out.sent) : "Blocked: " + (out.reason || ""), out.ok); P.ticket.last = null; poll(true); });
+    if (b.dataset.sq === "all"){        // getting out never waits on a confirm box
+      const out = await post("/api/trade/flatten", {symbol: d.symbol});
+      toast(out.ok ? (out.flat ? d.symbol + " already flat" : "OUT: " + out.sent) : "Blocked: " + (out.reason || ""), out.ok); P.ticket.last = null; poll(true);
       return; }
     const out = await post("/api/trade/adjust", {symbol: d.symbol, shares: +b.dataset.sq, mode: "close"});
     toast(out.ok ? "Sent: " + out.sent : "Blocked: " + (out.reason || ""), out.ok); P.ticket.last = null; poll(true); return;
@@ -5465,15 +5509,63 @@ function obookRows(t){
 /* The contract's LEVEL II and T&S drawn by the very same code as the stock's (same columns, colours, bars,
    highlights): its book and prints are turned into the stock ladder / tape shapes. Clicks are renamed (data-oact) so
    a click in them can only ever trade the CONTRACT, never the stock */
+// THIS VISIT on the contract, from its own prints (oldest first): a visit to a price ends 3 steps away
+function optVisits(d, t, step){
+  const out = {}, open = new Set(), prints = (t.prints || []).slice().reverse(), now = state ? state.now : Date.now() / 1000;
+  const ca = OPTCLR[d.key + "|above"] || 0, cb = OPTCLR[d.key + "|below"] || 0, bid = d.bid, ask = d.ask;
+  for (const [tt, pp, n, sd] of prints){
+    const p = +(+pp).toFixed(2), k = Math.round(p / step);
+    if ((ca && tt <= ca && ask != null && p > ask) || (cb && tt <= cb && bid != null && p < bid)) continue;
+    for (const j of [...open]) if (Math.abs(j - k) >= 3) open.delete(j);
+    let v = out[p];
+    if (!open.has(k)){ if (!v) v = out[p] = {s: 0, b: 0, ts: []}; else { v.s = 0; v.b = 0; } v.ts.push(tt); open.add(k); }
+    if (sd === "sell") v.s += n; else if (sd === "buy") v.b += n;
+    v.open = true; v.k = k;
+  }
+  for (const v of Object.values(out)){ v.open = open.has(v.k); v.n = v.ts.filter(x => now - x <= 3600).length; }
+  return out;
+}
+// your stock chart's lines, read on the contract: the contract's own stop exactly, and where the contract should be
+// when the stock gets to your 2nd entry / target / stop / pivot (today's delta: ≈ mid + Δ × the stock's move)
+function optMarks(d){
+  const out = [], mid = d.bid != null && d.ask != null ? (d.bid + d.ask) / 2 : d.last, spot = d.spot, delta = d.delta;
+  const add = (price, role, label, extra) => { if (price != null && price > 0) out.push(Object.assign({price: +price.toFixed(2), role, label, dist: mid != null ? +(price - mid).toFixed(2) : null}, extra || {})); };
+  const os = (T().opt_stops || {})[d.key];
+  if (os && os.on === "option") add(+os.price, "stop", "STOP", {exact: true});
+  const pos = d.position; if (pos && pos.per_contract) add(+pos.per_contract, "entry", "YOUR ENTRY", {exact: true});
+  const pane = paneFor(d.underlying), pl = pane && pane.play;
+  if (pl && mid != null && spot && delta != null){
+    const ownLong = (pl.side || "long") === "long", lines = (d.right === "C") === ownLong ? pl : (pl.alt || {});
+    for (const [r, lbl] of [["second_entry", "2ND ENTRY"], ["target", "TARGET"], ["stop", "STOP"], ["trigger", "PIVOT"]]){
+      if (!lines[r] || (r === "stop" && os && os.on === "option")) continue;
+      add(mid + delta * (lines[r] - spot), r, lbl, {est: true, at: lines[r], sym: d.underlying});
+    }
+    for (const sp of (pl.sneaky_levels || [])) add(mid + delta * (sp - spot), "sneaky", "SNEAKY PIVOT", {est: true, at: sp, sym: d.underlying});
+  }
+  // the OPTION FLOW on this very contract: the price the big money paid (Quant Data sweeps / blocks, and 100+ lots)
+  const fl = {};
+  for (const b of ((d.tape || {}).big || [])){ if (b.price == null) continue; const k = (+b.price).toFixed(2), f = fl[k] = fl[k] || {prem: 0, n: 0, buy: 0};
+    f.prem += +b.premium || 0; f.n += 1; if (b.side === "buy" || /ask/i.test(b.side || "")) f.buy += +b.premium || 0; }
+  for (const [k, f] of Object.entries(fl)) if (f.prem >= 25000)
+    add(+k, "flow", "FLOW", {prem: f.prem, n: f.n, cp: d.right, buyside: f.buy >= f.prem / 2});
+  return out;
+}
 function optLadderData(d, t){
   const orders = (d.orders || []), lastTrade = t.prints && t.prints.length ? +t.prints[0][1] : d.last;
   const rows = t.book.map(r => ({price: r.price, gap: false, bid: r.bid, ask: r.ask, sold: r.sold, bought: r.bought, tags: [], flow: null,
     mine: orders.filter(o => Math.abs((+o.lmt || 0) - r.price) < 0.004).map(o => ({id: o.order_id, action: o.action, qty: o.remaining ?? o.qty, role: "entry", status: o.status})),
     best_bid: r.best_bid, best_ask: r.best_ask, last: lastTrade != null && Math.abs(lastTrade - r.price) < 0.004,
     bid_state: r.reload_bid ? "RELOAD" : null, bid_proven: !!r.reload_bid, bid_stage: r.reload_bid ? "RELOADING" : null,
-    ask_state: r.reload_ask ? "RELOAD" : null, ask_proven: !!r.reload_ask, ask_stage: r.reload_ask ? "RELOADING" : null}));
+    ask_state: r.reload_ask ? "RELOAD" : null, ask_proven: !!r.reload_ask, ask_stage: r.reload_ask ? "RELOADING" : null,
+    ps_b: r.ps_b, ps_a: r.ps_a}));
+  const step = t.book.length > 1 ? Math.abs(t.book[0].price - t.book[1].price) || 0.01 : 0.01;
+  const vis = optVisits(d, t, step), marks = optMarks(d);
+  for (const r of rows){
+    const v = vis[+(+r.price).toFixed(2)]; if (v){ r.vs = v.s; r.vb = v.b; r.vn = v.n; r.vopen = v.open; }
+    const lv = marks.filter(m => Math.abs(m.price - r.price) < step / 2); if (lv.length) r.lv = lv;
+  }
   return {rows, max_size: Math.max(1, ...rows.map(r => Math.max(r.bid, r.ask))), max_traded: Math.max(1, ...rows.map(r => Math.max(r.sold, r.bought))),
-          memory_minutes: 60, big_shares: 100, huge_shares: 300, big_default: true};
+          memory_minutes: 60, big_shares: 100, huge_shares: 300, big_default: true, marks, tick: step, stack_seconds: 60};
 }
 function optTapeData(t){
   const now = state ? state.now : Date.now() / 1000;
@@ -5678,6 +5770,7 @@ function renderFast(d){
     <button class="b big" data-qb="BUY" title="BUY ${x.n} ${x.unit} now: a limit at the ask (${f(x.ask)})">BUY</button><button class="s big" data-qb="SELL" title="SELL ${x.n} ${x.unit} now: a limit at the bid (${f(x.bid)})">SELL</button>
     <button class="out close" data-qb="CLOSE" ${q ? "" : "disabled"} title="close the whole position now, a limit at the touch">CLOSE POSITION</button><span class="qbout">${outw}</span>${pct}
     <span class="qbpos ${q ? (long ? "b" : "s") : "dim"}">${q ? `${long ? "LONG" : "SHORT"} ${sz(q)} ${x.unit}` : "FLAT"}${x.opt ? " · " + esc(x.name) : ""}</span>`;
+  renderOptPos(d);
   if (el.contains(document.activeElement) && document.activeElement.id === "qbQty") return;     // typing a size
   if (el.dataset.h !== h){ el.dataset.h = h; el.innerHTML = h; }
 }
@@ -5772,6 +5865,126 @@ function tradeAsBox(sym, se, onPick, onCancel){
     }
     return rawPost(path, body);
   };
+}
+
+/* ---------- THE PRO LADDER (default). Jigsaw's Depth & Sales, made for PS60:
+   LEVEL │ STACK │ SOLD │ BID │ PRICE │ ASK │ BOUGHT │ STACK
+   · SOLD / BOUGHT = THIS VISIT: what hit the bid / lifted the ask since price came back to this price (a visit ends when
+     price trades 3 ticks away — one cent of chop is not leaving). ×N on the price = visits in the last 15 minutes.
+   · STACK = size ADDED (+, buyers / sellers stepping up) or PULLED (−, left without trading) at that price in the last
+     minute. Lit = big: STEPPING UP / PULLING.
+   · BID / ASK = resting size: drains as it gets hit, ↻N solid green / red = the RELOAD buyer / seller (your edge), with the
+     $ he absorbed; ↩×2 = he came BACK.
+   · LEVEL = your chart: PIVOT, 2ND ENTRY, TARGET, STOP (both sides), SNEAKY PIVOT (yours and TED's), the option STRIKES
+     getting the money, high / low of day — a coloured band on the row, AT … when price is on it; off the rows they sit in
+     the strips above / below with their distance. */
+const LVROLE = {trigger: ["PIVOT", "pv"], second_entry: ["2ND ENTRY", "se"], target: ["TARGET", "tg"], stop: ["STOP", "sl"], extra: ["LEVEL", "ex"],
+  sneaky: ["SNEAKY PIVOT", "sn"], sneaky_auto: ["SNEAKY", "sn"], hod: ["HIGH OF DAY", "hl"], lod: ["LOW OF DAY", "hl"], strike: ["STRIKE", "st"],
+  reload_bid: ["RELOAD BUYER", "rb"], reload_ask: ["RELOAD SELLER", "ra"], entry: ["YOUR ENTRY", "hl"], flow: ["FLOW", "st"]};
+const LVRANK = {entry: 0, stop: 0, second_entry: 1, target: 2, trigger: 3, sneaky: 4, reload_bid: 5, reload_ask: 5, flow: 6, strike: 6, sneaky_auto: 7, extra: 8, hod: 9, lod: 9};
+const LVSHORT = {entry: "ENTRY", trigger: "PIV", second_entry: "2ND", target: "TGT", stop: "STOP", extra: "LVL", sneaky: "SNKY", sneaky_auto: "SNKY·T", hod: "HOD", lod: "LOD"};
+function lvWords(m, short){
+  const base = short && LVSHORT[m.role] ? LVSHORT[m.role] : (LVROLE[m.role] || [m.label])[0];
+  if (m.role === "strike") return `${m.label} ${usdK(m.prem)}${!short && m.n > 1 ? " ×" + m.n : ""}${m.hot ? "⚡" : ""}`;
+  if (m.role === "flow") return `${short ? "" : "OPTION FLOW "}${usdK(m.prem)}${m.n > 1 ? " ×" + m.n : ""}${short ? "" : m.buyside ? " (paid the ask)" : " (hit the bid)"}`;
+  if (m.role === "reload_bid" || m.role === "reload_ask") return short ? `${m.role === "reload_bid" ? "BUYER" : "SELLER"} ↻${m.refills || ""}` : `${base} ↻${m.refills || ""}`;
+  if (m.est) return (short ? "≈" : "≈ ") + base + (short ? "" : ` (when ${m.sym} trades ${px(m.at)})`);
+  return base + (m.alt && !short ? " (other side)" : "");
+}
+function lvCls(m){ const c = (LVROLE[m.role] || ["", "ex"])[1]; return m.role === "strike" || m.role === "flow" ? "st" + (m.cp === "P" ? "p" : "c") : c; }
+function distTxt(d, tick){ if (d == null) return ""; const t = Math.round(Math.abs(d) / (tick || 0.01)); return (d >= 0 ? "+" : "−") + Math.abs(d).toFixed(Math.abs(d) < 1 && tick && tick < 0.01 ? 4 : 2) + (t <= 50 ? ` · ${t}t` : ""); }
+function ladderProHTML(L){
+  const rows = L.rows; if (!rows.length) return `<div class="empty">Waiting for the book…</div>`;
+  const ms = Math.max(L.max_traded, 1), big = L.big_shares || 5000;
+  const vmax = Math.max(1, ...rows.map(r => Math.max(r.vs || 0, r.vb || 0)));
+  const chips = (r, side) => (r.mine || []).filter(o => o.id != null && (o.action === "BUY") === (side === "b")).map(o =>
+    `<span class="chip ${side} ${o.status === "PreSubmitted" ? "wait" : ""}" data-id="${o.id}" draggable="true" title="${esc(o.role)} order — click to cancel, drag to move">${sz(o.qty)}</span>`).join(" ");
+  const mark = (r, cp) => { const f = r.flow; if (!f) return ""; const sum = cp === "C" ? f.c : f.p; if (!sum) return ""; const items = f.items.filter(m => m.cp === cp); const urg = f.urgent && items.some(m => m.urgent !== false);
+    return `<i class="fmk ${cp === "C" ? "c" : "p"} ${urg ? "hot" : ""} ${sum >= 1e6 ? "big" : ""}" title="${esc(flowTitle(Object.assign({}, f, {items})))}"></i>`; };
+  const stack = (r, side) => { const ps = r["ps_" + (side === "bid" ? "b" : "a")]; if (!ps) return `<td class="stk ${side}"></td>`;
+    const [add, pull] = ps, net = add - pull, who = side === "bid" ? "BUYERS" : "SELLERS";
+    const up = add >= big * 0.5 && add > pull * 1.5, dn = pull >= big * 0.5 && pull > add * 1.5;
+    // clean: only size that matters shows (a fifth of BIG or more), the rest is noise until it adds up
+    if (Math.max(add, pull) < big * 0.2) return `<td class="stk ${side}"></td>`;
+    const txt = Math.abs(net) < big * 0.2 ? "" : (net > 0 ? "+" : "−") + kfmt(Math.abs(net));
+    const tip = `last ${L.stack_seconds || 60}s at ${px(r.price)}: ${sz(add)} shares ADDED to the ${side} (${who.toLowerCase()} stepping up), ${sz(pull)} PULLED without trading` + (up ? ` — ${who} STEPPING UP` : dn ? ` — ${who} PULLING` : "");
+    return `<td class="stk ${side} ${net > 0 ? "add" : "pull"} ${up ? "lit" : dn ? "litp" : ""}" title="${esc(tip)}">${txt}</td>`; };
+  const visit = (r, side) => { const v = side === "bid" ? (r.vs || 0) : (r.vb || 0); if (!v) return `<td class="vis ${side}"></td>`;
+    const w = Math.round(100 * v / vmax), word = side === "bid" ? "SOLD into the bid" : "BOUGHT from the ask";
+    return `<td class="vis ${side} ${r.vopen ? "open" : "past"}" title="${esc(`${sz(v)} shares ${word} at ${px(r.price)} ${r.vopen ? "this visit (price is here now)" : "on the last visit"} = ${usdK(v * r.price)}${r.vn > 1 ? ` · price has been back here ${r.vn} times in ${L.memory_minutes} min` : ""}`)}"><span class="vb" style="width:${w}%"></span><b>${kfmt(v)}</b></td>`; };
+  let h = "";
+  // the strips: what sits above and below the rows (your lines, the strikes, the reloaders), nearest first
+  const top = +rows[0].price, bot = +rows[rows.length - 1].price;
+  const off = (L.marks || []).filter(m => m.price > top || m.price < bot);
+  const up = off.filter(m => m.price > top).sort((a, b) => a.price - b.price).slice(0, 4);
+  const dn = off.filter(m => m.price < bot).sort((a, b) => b.price - a.price).slice(0, 4);
+  const pill = (m, arrow) => `<span class="lvp ${lvCls(m)}" title="${esc(lvWords(m) + " " + px(m.price) + " · " + distTxt(m.dist, L.tick) + " from the last price")}">${arrow} ${esc(lvWords(m, true))} ${px(m.price)} <i>${distTxt(m.dist, L.tick)}</i></span>`;
+  h += `<div class="lvstrip top">${up.map(m => pill(m, "▲")).join("") || `<span class="dim">nothing marked above</span>`}<span class="sp"></span><button data-lclr="above" title="clear SOLD / BOUGHT / STACK above the ask (after a move down)">CLR ▲</button></div>`;
+  h += `<table class="lad lad3 pro" data-cols="ladpro"><tr>
+    <th class="lvh" data-w="64" data-min="26" title="your chart on the ladder: PIVOT, 2ND ENTRY, TARGET, STOP, SNEAKY PIVOT, option STRIKES getting the money, high / low of day, the RELOAD buyer / seller — and how far they are">LEVEL</th>
+    <th class="stkh" data-w="40" data-min="16" title="STACK on the bid: + size added (buyers stepping up), − size pulled without trading, last ${L.stack_seconds || 60}s. Lit = big">STK</th>
+    <th class="vish" data-w="44" data-min="18" title="SOLD this visit: shares that hit the bid at this price since price came back here">SOLD</th>
+    <th class="szh" data-w="54" data-min="20" title="BID: resting buy orders. Drains as it gets hit. Solid green ↻N = the RELOAD BUYER refilling. Click to BUY there">BID</th>
+    <th class="pxh" data-w="58" data-min="26">PRICE</th>
+    <th class="szh" data-w="54" data-min="20" title="ASK: resting sell orders. Drains as it gets lifted. Solid red ↻N = the RELOAD SELLER refilling. Click to SELL there">ASK</th>
+    <th class="vish" data-w="44" data-min="18" title="BOUGHT this visit: shares that lifted the ask at this price since price came back here">BOT</th>
+    <th class="stkh" data-w="40" data-min="16" title="STACK on the ask: + size added (sellers stepping up), − size pulled without trading, last ${L.stack_seconds || 60}s. Lit = big">STK</th></tr>`;
+  for (const r of rows){
+    const pb = r.bid_state === "RELOAD" || r.bid_proven, pa = r.ask_state === "RELOAD" || r.ask_proven;
+    const stg = pb ? (r.bid_stage || "RELOADING") : pa ? (r.ask_stage || "RELOADING") : "";
+    const cv = pb ? (r.bid_conv == null ? 1 : r.bid_conv) : pa ? (r.ask_conv == null ? 1 : r.ask_conv) : 1;
+    const lv = (r.lv || []).filter(m => !(m.role === "reload_bid" || m.role === "reload_ask")).sort((a, b) => (LVRANK[a.role] ?? 9) - (LVRANK[b.role] ?? 9));
+    const rel = pb ? (lv.length ? "BUYER ↻" : "RELOAD BUYER ↻") + (r.bid_refills || "") : pa ? (lv.length ? "SELLER ↻" : "RELOAD SELLER ↻") + (r.ask_refills || "") : "";
+    const at = r.last && lv.length;
+    const cls = [r.gap ? "gap" : "", r.best_bid ? "best-bid" : "", r.best_ask ? "best-ask" : "", r.last ? "lastpx" : "", pb ? "rl-bid" : "", pa ? "rl-ask" : "",
+      stg ? "cv-" + stageSlug(stg) : "", lv.length ? "lvrow lv-" + lvCls(lv[0]) : "", at ? "atlv" : "", lv.some(m => m.alt) ? "lvalt" : ""].join(" ");
+    const rb = pb ? reloadMoney(r, "bid") : null, ra = pa ? reloadMoney(r, "ask") : null;
+    const goneB = !pb && /CLEANED UP|PULLED/.test(r.bid_stage || "") ? `<span class="gone">${r.bid_stage === "PULLED" ? "PULLED" : "CLEANED"}</span>` : "";
+    const goneA = !pa && /CLEANED UP|PULLED/.test(r.ask_stage || "") ? `<span class="gone">${r.ask_stage === "PULLED" ? "PULLED" : "CLEANED"}</span>` : "";
+    const fakeB = r.bid_real && r.bid_real.label === "FAKE" ? " fake" : "", fakeA = r.ask_real && r.ask_real.label === "FAKE" ? " fake" : "";
+    const bigB = r.bid_big ? (r.bid_big.huge ? " huge" : " big") : "", bigA = r.ask_big ? (r.ask_big.huge ? " huge" : " big") : "";
+    const absB = r.sold && r.sold / ms >= 0.15 ? Math.round(100 * r.sold / ms) : 0, absA = r.bought && r.bought / ms >= 0.15 ? Math.round(100 * r.bought / ms) : 0;
+    const tB = rb ? rb.text : [r.bid ? sz(r.bid) + " showing" : "", r.sold ? sz(r.sold) + " sold into this price in " + L.memory_minutes + " min = " + usdK(r.sold * r.price) : "", r.bid_real ? realWords(r.bid_real) : ""].filter(Boolean).join(" · ");
+    const tA = ra ? ra.text : [r.ask ? sz(r.ask) + " showing" : "", r.bought ? sz(r.bought) + " bought from this price in " + L.memory_minutes + " min = " + usdK(r.bought * r.price) : "", r.ask_real ? realWords(r.ask_real) : ""].filter(Boolean).join(" · ");
+    // the LEVEL cell: your line first, then the reloader sitting on it ("RELOAD SELLER AT YOUR 2ND ENTRY" is the whole read)
+    const lvTxt = lv.length ? (at ? "AT " : "") + lvWords(lv[0], true) + (lv.length > 1 ? ` +${lv.length - 1}` : "") : "";
+    const lvTip = lv.map(m => lvWords(m) + " " + px(m.price) + (m.role === "sneaky_auto" ? ` (TED found it: ${m.touches || "?"} touches, room $${(m.room || 0).toFixed(2)})` : "")).join(" · ") + (rel ? (lv.length ? " · " : "") + (pb ? rb.text : ra.text) : "");
+    const lvCell = `<td class="lvc" title="${esc(lvTip)}">${lvTxt ? `<b>${esc(lvTxt)}</b>` : ""}${rel ? `<span class="rlv ${pb ? "b" : "s"}">${lv.length ? "◆ " : ""}${esc(rel)}</span>` : ""}</td>`;
+    h += `<tr class="${cls}" data-price="${r.price}" style="--cv:${cv}">${lvCell}${stack(r, "bid")}${visit(r, "bid")}
+      <td class="sz bsz click${fakeB}${bigB}" data-act="BUY" data-px="${r.price}" title="${esc(tB)}">${mark(r, "C")}${goneB}${absB ? `<span class="abs" style="width:${absB}%"></span>` : ""}${pb ? `<span class="rl${r.bid_back ? " back" : ""}">${r.bid_back ? "↩×" + r.bid_back.n + " " : ""}↻${r.bid_refills || ""}${rb && rb.usd ? `<i class="rlm"> ${usdK(rb.usd)}</i>` : ""}</span>` : ""}<span class="szn">${r.bid ? kfmt(r.bid) : ""}</span>${chips(r, "b") ? `<span class="mine">${chips(r, "b")}</span>` : ""}</td>
+      <td class="px">${px(r.price)}${r.vn > 1 ? `<sup title="price has been back to ${px(r.price)} ${r.vn} times in ${L.memory_minutes} min">×${r.vn}</sup>` : ""}</td>
+      <td class="sz asz click${fakeA}${bigA}" data-act="SELL" data-px="${r.price}" title="${esc(tA)}"><span class="szn">${r.ask ? kfmt(r.ask) : ""}</span>${chips(r, "s") ? `<span class="mine">${chips(r, "s")}</span>` : ""}${pa ? `<span class="rl${r.ask_back ? " back" : ""}">${ra && ra.usd ? `<i class="rlm">${usdK(ra.usd)} </i>` : ""}↻${r.ask_refills || ""}${r.ask_back ? " ↩×" + r.ask_back.n : ""}</span>` : ""}${goneA}${absA ? `<span class="abs" style="width:${absA}%"></span>` : ""}${mark(r, "P")}</td>
+      ${visit(r, "ask")}${stack(r, "ask")}</tr>`;
+  }
+  h += `</table><div class="lvstrip bot">${dn.map(m => pill(m, "▼")).join("") || `<span class="dim">nothing marked below</span>`}<span class="sp"></span><button data-lclr="below" title="clear SOLD / BOUGHT / STACK below the bid (after a move up)">CLR ▼</button></div>`;
+  return h;
+}
+document.addEventListener("click", async e => {
+  const b = e.target.closest("button[data-lclr]"); if (!b) return;
+  const host = b.closest(".pnl"), opt = host && /obook|otape/.test(host.dataset.p || "") || b.closest(".cbook");
+  if (opt){ OPTCLR[OCH.key + "|" + b.dataset.lclr] = Date.now() / 1000; P.book.last = null; renderOptPanels && renderOptPanels(); return; }
+  const out = await post("/api/ladder/clear", {symbol: curSym, where: b.dataset.lclr});
+  toast(out.ok ? `Ladder cleared ${b.dataset.lclr === "above" ? "above the ask" : "below the bid"}` : "Nothing to clear", out.ok); P.book.last = null; poll(true);
+});
+const OPTCLR = {};
+
+/* TRADING THE OPTION, READING THE STOCK: on the stock chart, every contract you hold on this ticker — how many, the P&L,
+   and what it should be worth when the stock gets to your TARGET (your measured potential) and to your STOP (today's
+   delta: ≈ mid + Δ × the stock's move) */
+function renderOptPos(d){
+  const el = document.getElementById("optPosStrip"); if (!el) return;
+  const ps = (((state || {}).account || {}).opt_positions || []).filter(p => p.symbol === d.symbol && p.qty);
+  const pl = d.play || {}, spot = d.last;
+  const h = ps.map(p => {
+    const long = p.qty > 0, q = Math.abs(p.qty), mult = p.mult || 100, mid = p.bid != null && p.ask != null ? (p.bid + p.ask) / 2 : (p.bid ?? p.ask);
+    const lines = (p.right === "C") === ((pl.side || "long") === "long") ? pl : (pl.alt || {});
+    const at = (lvl, word, cls) => { if (!lvl || mid == null || p.delta == null || !spot) return "";
+      const est = Math.max(0.01, mid + p.delta * (lvl - spot)), pnl = (est - p.per_contract) * mult * p.qty;
+      return `<span class="${cls}" title="when ${esc(d.symbol)} trades ${px(lvl)} the contract should be about ${est.toFixed(2)} (today's delta ${(+p.delta).toFixed(2)})">${word} ${px(lvl)} ≈ ${est.toFixed(2)} <b>${pnl >= 0 ? "+" : "−"}$${sz(Math.abs(Math.round(pnl)))}</b></span>`; };
+    const os = (T().opt_stops || {})[p.key];
+    return `<div class="op"><b class="${long ? "b" : "s"}">◆ ${long ? "LONG" : "SHORT"} ${q} ${esc(p.label)}</b><span>paid ${(+p.per_contract).toFixed(2)} · now ${mid != null ? mid.toFixed(2) : "—"}</span>${p.pnl != null ? `<b class="${p.pnl >= 0 ? "b" : "s"}">${p.pnl >= 0 ? "+" : "−"}$${sz(Math.abs(Math.round(p.pnl)))}</b>` : ""}
+      ${at(lines.target, "TARGET", "tg")}${at(lines.stop, "STOP", "sl")}${!lines.stop && os ? `<span class="sl">STOP ${os.on === "stock" ? esc(d.symbol) + " " : "contract "}${(+os.price).toFixed(2)}</span>` : ""}</div>`; }).join("");
+  if (el.dataset.h !== h){ el.dataset.h = h; el.innerHTML = h; }
 }
 
 

@@ -938,7 +938,7 @@ function renderTools(v){
     + `<select data-mark="1" class="lvl ${v.view.levelTool ? "on" : ""}" title="Mark a level on the chart: pick what it is, then click the chart at the price. Saved to plays.json.">
         <option value="">＋ mark…</option><option value="second_entry" ${v.view.levelTool==="second_entry"?"selected":""}>2nd entry</option>
         <option value="trigger" ${v.view.levelTool==="trigger"?"selected":""}>pivot</option><option value="target" ${v.view.levelTool==="target"?"selected":""}>target</option>
-        <option value="stop" ${v.view.levelTool==="stop"?"selected":""}>stop</option><option value="extra" ${v.view.levelTool==="extra"?"selected":""}>extra level</option></select>`;
+        <option value="stop" ${v.view.levelTool==="stop"?"selected":""}>stop</option><option value="extra" ${v.view.levelTool==="extra"?"selected":""}>extra level</option><option value="sneaky" ${v.view.levelTool==="sneaky"?"selected":""}>sneaky pivot</option></select>`;
   v.canvas.classList.toggle("lvltool", !!v.view.levelTool);
 }
 
@@ -1088,10 +1088,11 @@ function wireChart(p, cv, v, saveView, isFoot){
       const price = yAt(); if (price == null) return;
       const tk = price >= 1 ? 0.01 : 0.0001, snapped = +(Math.round(price / tk) * tk).toFixed(4), role = v.levelTool;
       const names = {second_entry: "2nd entry", trigger: "pivot", target: "target", stop: "stop", extra: "level"};
-      if (role === "extra"){
-        const hit = (p.data.user_levels || []).find(l => l.role === "extra" && Math.abs(l.price - snapped) <= tk * 2);
-        post("/api/level", {symbol: p.data.symbol, price: hit ? hit.price : snapped, on: !hit, role: "extra"})
-          .then(out => toast(out.ok ? (hit ? "Level removed " + px(hit.price) : "Level added " + px(snapped) + " — saved to plays.json") : "Could not save level", out.ok));
+      if (role === "extra" || role === "sneaky"){
+        const hit = (p.data.user_levels || []).find(l => l.role === role && Math.abs(l.price - snapped) <= tk * 2);
+        const nm = role === "sneaky" ? "Sneaky pivot" : "Level";
+        post("/api/level", {symbol: p.data.symbol, price: hit ? hit.price : snapped, on: !hit, role})
+          .then(out => toast(out.ok ? (hit ? nm + " removed " + px(hit.price) : nm + " " + px(snapped) + " — on the chart and the ladder") : "Could not save it", out.ok));
       } else {
         const cur = p.data.play && p.data.play[role];
         if (role === "trigger" && cur && Math.abs(cur - snapped) > 1e-9 && !confirm(`Move the ${p.data.symbol} pivot from ${px(cur)} to ${px(snapped)}?`)){ v.levelTool = null; renderTools(p); return; }
@@ -1235,6 +1236,7 @@ function chartMenu(p, v, x, y, price){
       <div><b class="b">LONG ▲</b>${["trigger", "second_entry", "stop", "target"].map(r => `<button data-do="lvl" data-side="long" data-role="${r}" class="blvl ${r === "second_entry" ? "se" : ""}">${{trigger: "PIVOT", second_entry: "2ND", stop: "STOP", target: "TARGET"}[r]}</button>`).join("")}</div>
       <div><b class="s">SHORT ▼</b>${["trigger", "second_entry", "stop", "target"].map(r => `<button data-do="lvl" data-side="short" data-role="${r}" class="blvl ${r === "second_entry" ? "se" : ""}">${{trigger: "PIVOT", second_entry: "2ND", stop: "STOP", target: "TARGET"}[r]}</button>`).join("")}</div>
       <div class="dim">at ${px(price)}</div></div>
+    <button data-do="sneaky" class="bsneaky" title="mark a SNEAKY PIVOT here: the micro supply / demand inside the 60-minute channel. A line on the chart and on the ladder">◇ SNEAKY PIVOT here</button>
     <button data-do="alert" class="balert">🔔 Alert me when ${esc(d.symbol)} hits ${px(price)}</button>
     ${(() => { const per = v.chartY ? (v.chartY[1] - v.chartY[0]) / ((v.chartH || 1) - 8) : 0; const lv = (d.user_levels || []).find(l => l.role !== "trigger" && Math.abs(l.price - price) <= per * 6);
       return lv ? `<button data-do="rmlevel" data-role="${esc(lv.role)}" data-lp="${lv.price}">✕ Remove ${esc(lv.label)} ${px(lv.price)}</button>` : ""; })()}
@@ -1254,9 +1256,10 @@ function chartMenu(p, v, x, y, price){
       const cur = own ? d.play && d.play.trigger : d.play && d.play.alt && d.play.alt.trigger;
       if (role === "trigger" && own && cur && Math.abs(cur - price) > 1e-9 && !confirm(`Move the ${d.symbol} pivot from ${px(cur)} to ${px(price)}?`)) return;
       post("/api/level", {symbol: d.symbol, role, price, side, confirm: role === "trigger"}).then(out => { toast(out.ok ? `${d.symbol} ${side ? side.toUpperCase() + " " : ""}${names[role]} ${px(price)}` + (role === "second_entry" ? " — entry order going in (armed desk)" : "") : "Could not set the " + names[role], out.ok); if (out.ok) poll(true); }); }
+    else if (b.dataset.do === "sneaky") post("/api/level", {symbol: d.symbol, price, on: true, role: "sneaky"}).then(out => { toast(out.ok ? `${d.symbol} SNEAKY PIVOT ${px(price)} — on the chart and the ladder` : "Could not mark it", out.ok); if (out.ok) poll(true); });
     else if (b.dataset.do === "alert") addAlert({symbol: d.symbol, kind: "price", price, when: "hit", repeat: false});
     else if (b.dataset.do === "rmlevel"){ const role = b.dataset.role, lp = +b.dataset.lp;
-      (role === "extra" ? post("/api/level", {symbol: d.symbol, price: lp, on: false, role: "extra"}) : post("/api/level", {symbol: d.symbol, role, price: null}))
+      (role === "extra" || role === "sneaky" ? post("/api/level", {symbol: d.symbol, price: lp, on: false, role}) : post("/api/level", {symbol: d.symbol, role, price: null}))
         .then(out => { toast(out.ok ? "Level removed " + px(lp) : "Could not remove it", out.ok); if (out.ok) poll(true); }); }
   });
   // any click outside closes it (a click inside on a disabled button must not use that up), so does Escape or 20 s
@@ -1479,7 +1482,8 @@ function ladderTightHTML(L){
 }
 function ladderHTML(L){
   if (!L || !L.rows.length) return `<div class="empty">Waiting for the book…</div>`;
-  const mode = store.get("ladMode", "simple");
+  const mode = store.get("ladMode", "pro");
+  if (mode === "pro") return ladderProHTML(L);
   if (mode === "simple") return ladderSimpleHTML(L);
   if (mode === "tight") return ladderTightHTML(L);
   const ms = Math.max(L.max_traded, 1);
@@ -1646,7 +1650,7 @@ const DAN_BB = "#151eed";
 function smaSeries(cl, n){ const out = new Array(cl.length).fill(null); let s = 0; for (let i = 0; i < cl.length; i++){ s += cl[i]; if (i >= n) s -= cl[i - n]; if (i >= n - 1) out[i] = s / n; } return out; }
 function emaSeries(cl, n){ const out = new Array(cl.length).fill(null); if (cl.length < n) return out; const k = 2 / (n + 1); let e = 0; for (let i = 0; i < n; i++) e += cl[i]; e /= n; out[n - 1] = e; for (let i = n; i < cl.length; i++){ e = cl[i] * k + e * (1 - k); out[i] = e; } return out; }
 function bbSeries(cl, n, mult){ const up = new Array(cl.length).fill(null), dn = up.slice(), mid = up.slice(); for (let i = n - 1; i < cl.length; i++){ let s = 0, s2 = 0; for (let j = i - n + 1; j <= i; j++){ s += cl[j]; s2 += cl[j] * cl[j]; } const m = s / n, sd = Math.sqrt(Math.max(0, s2 / n - m * m)); mid[i] = m; up[i] = m + mult * sd; dn[i] = m - mult * sd; } return {up, dn, mid}; }
-const LEVEL_STYLE = {trigger:["#dbe3ee",[],1.6], second_entry:["#3fd0ff",[6,4],1.6], extra:["#b9c3d3",[3,4],1.2],
+const LEVEL_STYLE = {trigger:["#dbe3ee",[],1.6], second_entry:["#3fd0ff",[6,4],1.6], extra:["#b9c3d3",[3,4],1.2], sneaky:["#f0a8ff",[4,3],1.4],
   target:["#26d07c",[2,4],1], stop:["#ff4d5e",[2,4],1],
   // the OTHER SIDE of the play (a short under a long, a long over a short): same colours, its own dash, an arrow in the label
   alt_trigger:["#c9b8ff",[10,3,2,3],1.6], alt_second_entry:["#3fd0ff",[10,3,2,3],1.6], alt_target:["#26d07c",[8,3,2,3],1], alt_stop:["#ff4d5e",[8,3,2,3],1]};
@@ -1705,7 +1709,7 @@ function drawOne(p, cv, v, isFoot){
   let lo = Infinity, hi = -Infinity;
   for (const b of bars){ lo = Math.min(lo, b[3]); hi = Math.max(hi, b[2]); }
   if (d.last){ lo = Math.min(lo, d.last); hi = Math.max(hi, d.last); }
-  const core = isFoot ? [] : d.user_levels.filter(l => ["trigger","second_entry","extra"].includes(l.role));
+  const core = isFoot ? [] : d.user_levels.filter(l => ["trigger","second_entry","extra","sneaky"].includes(l.role));
   const reach = Math.max(hi - lo, (isFinite(lo) ? lo : 0) * 0.004) * 1.5;
   for (const l of core){ if (l.price >= lo - reach && l.price <= hi + reach){ lo = Math.min(lo, l.price); hi = Math.max(hi, l.price); } }
   // an open position keeps its whole bracket on screen: entry, stop and target
@@ -2086,7 +2090,7 @@ function drawOne(p, cv, v, isFoot){
   const olk = !isFoot && d.play && v.seChipY != null && ((state && state.trading && state.trading.opt_links) || {})[d.symbol];
   if (olk){
     // OPTIONS: this 2nd entry buys the contract on the OPTION CHART when the stock trades through it
-    const yy = v.seChipY, k = olk.key.split(" "), c = `${olk.qty}× ${k[2]}`;
+    const yy = v.seChipY, k = olk.key.split(" "), c = `${olk.state === "IN" && olk.held ? olk.held : olk.qty}× ${k[2]}`;
     const t = olk.state === "IN" ? `◆ IN ${c}` : olk.state === "SENT" ? `◆ BUYING ${c}` : olk.why ? `✕ ${c} WAITS` : `◆ OPTION ${c}`;
     g.font = "bold 10px ui-monospace, Menlo, Consolas, monospace";
     const tw = g.measureText(t).width + 10, tx = plotW - tw - 4, ty = yy - 7;

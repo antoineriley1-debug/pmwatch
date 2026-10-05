@@ -27,6 +27,8 @@ Two things live here.
    cancel that net out between two reads are invisible. Read the number as a tilt, not a measurement.
 """
 
+from collections import deque
+
 from .book import ASK, BID
 from .prices import price_key
 
@@ -89,6 +91,7 @@ class PullBook:
         self.pending = {ASK: {}, BID: {}}    # price_key -> [t, shares]: a drop waiting to see if the venue re-quotes
         self.primed = {ASK: False, BID: False}
         self.added = {ASK: {}, BID: {}}      # price_key -> [shares that came in, most it showed, last change t]
+        self.ps = {ASK: {}, BID: {}}         # price_key -> deque[(t, +shares stacked | -shares pulled)]: PULL / STACK
 
     # ---- inputs ------------------------------------------------------------
 
@@ -137,6 +140,7 @@ class PullBook:
                     if grew - requoted > 1e-9:
                         a[0] += grew - requoted
                         a[2] = now
+                        self._ev(side, k, now, grew - requoted)
                 if cur_size > a[1]:
                     a[1] = cur_size
             for k, prev_size in prev.items():
@@ -197,6 +201,7 @@ class PullBook:
                     st = self.stats[s].setdefault(k, [0.0, 0.0, now])
                     st[1] += sh
                     st[2] = now
+                    self._ev(s, k, t0, -sh)
 
     def prune(self, now, keep_seconds):
         for s in (ASK, BID):
@@ -206,6 +211,34 @@ class PullBook:
             added = self.added[s]
             for k in [k for k, a in added.items() if now - a[2] > keep_seconds]:
                 del added[k]
+            ps = self.ps[s]
+            for k in [k for k, q in ps.items() if not q or now - q[-1][0] > keep_seconds]:
+                del ps[k]
+
+    def _ev(self, side, k, t, d):
+        q = self.ps[side].get(k)
+        if q is None:
+            q = self.ps[side][k] = deque(maxlen=400)
+        q.append((t, d))
+
+    def pullstack(self, side, k, now, window=60.0):
+        """PULL / STACK at one price: (shares stacked, shares pulled) in the last ``window`` seconds. Stacked = size
+        that came in (buyers / sellers stepping up); pulled = size that left without trading."""
+        q = self.ps[side].get(k)
+        if not q:
+            return None
+        while q and now - q[0][0] > window:
+            q.popleft()
+        if not q:
+            del self.ps[side][k]
+            return None
+        add = sum(d for _t, d in q if d > 0)
+        return (round(add), round(-sum(d for _t, d in q if d < 0)))
+
+    def clear_ps(self, side, keep):
+        """Forget PULL / STACK at the prices ``keep`` says no to (the ladder's clear buttons)."""
+        for k in [k for k in self.ps[side] if not keep(k)]:
+            del self.ps[side][k]
 
     def story(self, side, k):
         """Everything this price has been through: shares that came in, traded out of it, were pulled, and the most it showed."""

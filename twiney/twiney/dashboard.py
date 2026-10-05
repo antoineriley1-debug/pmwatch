@@ -277,6 +277,9 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                 self._send(200, json.dumps({"ok": True}), "application/json")
             elif path.startswith("/api/trade/"):
                 self._trade(path[len("/api/trade/"):], body)
+            elif path == "/api/ladder/clear":
+                ok = engine.ladder_clear(str(body.get("symbol", "")).upper(), str(body.get("where", "all")), clock())
+                self._send(200 if ok else 400, json.dumps({"ok": ok}), "application/json")
             elif path == "/api/level":
                 sym = str(body.get("symbol", "")).upper()
                 role = str(body.get("role", "extra"))
@@ -299,6 +302,8 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                     ok = engine.set_play_level(sym, role[4:], price, clock(), source="chart", alt=True)
                 elif role in ("trigger", "second_entry", "target", "stop"):
                     ok = engine.set_play_level(sym, role, price, clock(), source="chart")
+                elif role == "sneaky":
+                    ok = (engine.add_level if body.get("on", True) else engine.remove_level)(sym, body.get("price"), clock(), kind="sneaky")
                 else:
                     ok = (engine.add_level if body.get("on", True) else engine.remove_level)(sym, body.get("price"), clock())
                 self._send(200 if ok else 400, json.dumps({"ok": ok}), "application/json")

@@ -143,3 +143,18 @@ stop to breakeven after the first cash flow.
   every share); taking profit along the way trims them (`_guard_exits`).
 - **Cancel from ORDERS**: CANCELLING… at once, CANCEL PENDING until IBKR confirms, a cancelled STOP / TARGET takes its
   line off the chart; orders typed in TWS say "cancel it in TWS" (the API can't).
+
+## PRO ladder (default Level II mode)
+
+`LEVEL │ STK │ SOLD │ BID │ PRICE │ ASK │ BOT │ STK` (`ladderProHTML` in desk_panels.js; MODES pro → simple → tight → wide).
+- SOLD / BOT = this visit (`Engine._visit`): resets when price returns after trading `ladder.visit_away_ticks` (3) away;
+  ×N on the price = visits in 15 min. STK = `PullBook.pullstack` (added vs pulled, `ladder.stack_seconds` 60); shown
+  from a fifth of BIG, lit at half of BIG (stepping up / pulling).
+- LEVEL / strips = `Engine._ladder_marks`: play lines (both sides), `sneaky_levels` (drawn: MARK → sneaky pivot or
+  right-click ◇ SNEAKY PIVOT here) and TED's 60-minute sneaky pivots, HOD / LOD, proven reloaders, and option strikes
+  with `ladder.strike_min_premium` ($100K) today. Lines within 80 rows get their own row past a gap.
+- CLR ▲ / CLR ▼ = `/api/ladder/clear` (`Engine.ladder_clear`: baselines age out with the prints they covered).
+- Option ladder: visits from the contract's prints, pull / stack from the practice book or the touch's size changes
+  live (`on_opt_size`), marks = the contract stop, your entry, the stock lines as ≈ contract prices (mid + Δ × move),
+  and the option flow on that contract.
+- Stock chart: `#optPosStrip` = contracts held on the ticker with ≈ value and P&L at the TARGET and STOP.

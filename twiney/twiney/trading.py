@@ -1338,8 +1338,9 @@ class Trader:
             if play.get("trade_as") != "option" or not play.get("opt_key"):
                 continue
             s = self.opt_link.get(play["symbol"]) or {}
-            out[play["symbol"]] = {"key": play["opt_key"], "qty": int(play.get("opt_qty") or 1),
-                                   "state": s.get("state") or "WAITING", "why": s.get("why") or ""}
+            held = int((self.engine.opt_positions.get(play["opt_key"]) or {}).get("qty") or 0)
+            out[play["symbol"]] = {"key": play["opt_key"], "qty": int(play.get("opt_qty") or 1), "held": held,
+                                   "state": "IN" if held > 0 else (s.get("state") or "WAITING"), "why": s.get("why") or ""}
         return out
 
     def _opt_stop_view(self):

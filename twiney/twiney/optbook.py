@@ -10,6 +10,7 @@ the contract right now and returns the prints that happened:
 """
 
 import random
+from collections import deque
 
 
 class PracticeOptBook:
@@ -22,6 +23,8 @@ class PracticeOptBook:
         self.reload = {}        # (side, cents) -> [base size, refills left]
         self.last = None        # cents of the last trade
         self.g = 1              # price step in cents
+        self.ev = deque(maxlen=2000)    # (t, "bid" | "ask", cents, +stacked | -pulled): PULL / STACK on the ladder
+        self.t = 0.0
 
     # ---- helpers -------------------------------------------------------------
 
@@ -75,6 +78,7 @@ class PracticeOptBook:
             if rl and rl[1] > 0:
                 rl[1] -= 1
                 book[price] = rl[0]                     # the reloader is back at the same price
+                self.ev.append((t, side, price, rl[0]))
             else:
                 del book[price]
                 self.reload.pop((side, price), None)
@@ -86,6 +90,7 @@ class PracticeOptBook:
         """Advance the book to the model's fair bid / ask (dollars). ``lean`` > 0 = the stock is rising (buyers
         lead), < 0 = falling. Returns the prints [(price, contracts, 'buy' | 'sell', t)]."""
         r, prints = self.rng, []
+        self.t = t
         mid = (fair_bid + fair_ask) / 2.0
         self.g = 1 if mid < 3 else 5
         fb, fa = self._grid(fair_bid * 100), self._grid(fair_ask * 100)
@@ -140,13 +145,16 @@ class PracticeOptBook:
                 if (side, p) not in self.reload:
                     cut = max(1, int(book[p] * r.choice((0.3, 0.5, 1.0))))
                     book[p] -= cut
+                    self.ev.append((t, side, p, -cut))
                     if book[p] <= 0:
                         del book[p]
         if r.random() < 0.35:
             side = r.choice(("bid", "ask")); book = self.bids if side == "bid" else self.asks
             if book:
                 p = r.choice(sorted(book, reverse=(side == "bid"))[:5])
-                book[p] += r.choice((5, 10, 20, 25, 50))
+                add = r.choice((5, 10, 20, 25, 50))
+                book[p] += add
+                self.ev.append((t, side, p, add))
         # 4. market makers step in toward the fair price when the spread is wider than it should be
         bb, ba = self.best_bid(), self.best_ask()
         if bb is None:

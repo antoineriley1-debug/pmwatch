@@ -439,6 +439,7 @@ class Engine:
                 cell[1 if rec["side"] == "buy" else 2] += size
                 if len(st.foot) > 240:
                     del st.foot[min(st.foot)]
+            self._visit(st, k, rec["side"], size, t)
             item = (t, k, price, rec["side"], size)
             st.memory.append(item)
             key = (k, rec["side"])
@@ -625,7 +626,22 @@ class Engine:
         with self.lock:
             q = self.opt_quotes.setdefault(key, {"bid": None, "ask": None, "last": None})
             if field in ("bid_size", "ask_size"):
+                # PULL / STACK at the touch (IBKR sends options top of book only): the same price, more size = stacked;
+                # less size with no prints there to explain it = pulled
+                side = "bid" if field == "bid_size" else "ask"
+                px_ = q.get(side)
+                old, oldpx = q.get(field), q.get("_" + side + "_px")
+                if px_ and old is not None and size is not None and oldpx is not None and abs(oldpx - px_) < 1e-9 and size != old:
+                    d = float(size) - float(old)
+                    if d < 0:
+                        traded = sum(p_[2] for p_ in list(self.opt_prints.get(key) or [])[:20]
+                                     if abs(p_[1] - px_) < 1e-9 and t - p_[0] <= 1.5)
+                        d = -max(0.0, -d - traded)
+                    if abs(d) > 1e-9:
+                        self.__dict__.setdefault("opt_ps", {}).setdefault(key, deque(maxlen=600)).append(
+                            (t, side, int(round(px_ * 100)), d))
                 q[field] = size
+                q["_" + side + "_px"] = px_
             elif field == "last_size":
                 lp = q.get("last_trade") or q.get("last")
                 if lp and size and size > 0:
@@ -694,6 +710,13 @@ class Engine:
                 traded = {}
                 for tp, pp, sz, sd in prints:
                     k = round(pp, 2); tr = traded.setdefault(k, [0, 0]); tr[0 if sd == "buy" else 1 if sd == "sell" else 0] += sz
+                # PULL / STACK per price, last 60 s: the practice book's own adds / pulls, or the touch's size changes live
+                pstack = {}
+                evs = list(getattr(pbk, "ev", ()) or ()) if pbk is not None else list((getattr(self, "opt_ps", {}) or {}).get(key) or ())
+                for et, eside, ec, d in evs:
+                    if t - et <= 60:
+                        a = pstack.setdefault((eside, ec), [0.0, 0.0])
+                        a[0 if d > 0 else 1] += abs(d)
                 half = max(10, int(((ask or ref) - (bid or ref)) / step / 2) + 8)     # both sides of the spread, 8 rows past each
                 top = round(round(ref / step) * step + half * step, 2)
                 for i in range(2 * half + 1):
@@ -706,6 +729,11 @@ class Engine:
                         row["bid"] = int(q.get("bid_size") or 0)
                     if row["best_ask"]:
                         row["ask"] = int(q.get("ask_size") or 0)
+                    ps_, pa_ = pstack.get(("bid", int(round(px_ * 100)))), pstack.get(("ask", int(round(px_ * 100))))
+                    if ps_:
+                        row["ps_b"] = [round(ps_[0]), round(ps_[1])]
+                    if pa_:
+                        row["ps_a"] = [round(pa_[0]), round(pa_[1])]
                     pb = (getattr(self, "opt_pbook", {}) or {}).get(key)
                     if self.connection["state"] == "DEMO" and pb is not None:   # the practice book: every level's size
                         row["bid"] = int(pb.size_at("bid", px_)); row["ask"] = int(pb.size_at("ask", px_))
@@ -1174,13 +1202,15 @@ class Engine:
 
     # ---- levels drawn on the chart -------------------------------------------
 
-    def add_level(self, symbol, price, t=None):
+    def add_level(self, symbol, price, t=None, kind="extra"):
+        """An extra level, or (kind "sneaky") a SNEAKY PIVOT you marked: a line on the chart and the ladder, watched for
+        reloaders like the pivot."""
         with self.lock:
             st = self._st(symbol)
             if st is None or not price or price <= 0:
                 return False
             price = round(float(price), 4)
-            lv = st.play.setdefault("extra_levels", [])
+            lv = st.play.setdefault("sneaky_levels" if kind == "sneaky" else "extra_levels", [])
             if any(price_key(price) == price_key(x) for x in lv):
                 return True
             lv.append(price)
@@ -1415,6 +1445,8 @@ class Engine:
                     self.set_play_level(symbol, role, None, t, source="CLEAR PLAY")
             for px_ in list(st.play.get("extra_levels") or []):
                 self.remove_level(symbol, px_, t)
+            for px_ in list(st.play.get("sneaky_levels") or []):
+                self.remove_level(symbol, px_, t, kind="sneaky")
             st.play.pop("alt", None)              # and the other side
             st.play["side_set"] = False          # a blank chart has no side until you pick one or draw it
             old = st.play.get("trigger")
@@ -1438,14 +1470,15 @@ class Engine:
             self._save_plays()
             return True
 
-    def remove_level(self, symbol, price, t=None):
+    def remove_level(self, symbol, price, t=None, kind="extra"):
         with self.lock:
             st = self._st(symbol)
             if st is None:
                 return False
             k = price_key(price)
-            lv = st.play.get("extra_levels", [])
-            st.play["extra_levels"] = [x for x in lv if price_key(x) != k]
+            fld = "sneaky_levels" if kind == "sneaky" else "extra_levels"
+            lv = st.play.get(fld, [])
+            st.play[fld] = [x for x in lv if price_key(x) != k]
             for side in (BID, ASK):
                 tr = st.trackers.get((side, k))
                 if tr is not None and tr.role == "extra":
@@ -1469,7 +1502,7 @@ class Engine:
         if not self.plays_path:
             return
         import json
-        keep = ("symbol", "side", "side_set", "trigger", "second_entry", "target", "stop", "mp", "atr", "extra_levels", "notes", "setup", "active", "watch",
+        keep = ("symbol", "side", "side_set", "trigger", "second_entry", "target", "stop", "mp", "atr", "extra_levels", "sneaky_levels", "notes", "setup", "active", "watch",
                 "auto", "exchange", "primary_exchange", "currency", "alt", "trade_as", "trade_as_set", "opt_key", "opt_qty")
         def row(p):
             r = {("pivot" if k == "trigger" else k): p[k] for k in keep if k in p}
@@ -1677,7 +1710,7 @@ class Engine:
         wanted = [(p["trigger"], "trigger")] if p.get("trigger") else []
         if p.get("second_entry"):
             wanted.append((p["second_entry"], "second_entry"))
-        wanted += [(lv, "extra") for lv in p.get("extra_levels", [])]
+        wanted += [(lv, "extra") for lv in p.get("extra_levels", [])] + [(lv, "extra") for lv in p.get("sneaky_levels", [])]
         for price, role in wanted:
             for side in (BID, ASK):
                 key = (side, price_key(price))
@@ -2077,7 +2110,12 @@ class Engine:
                 gr = dict(gr, grade="WATCH", why=(gr["why"] + "; " if gr["why"] else "") + "ARMED — waiting the flow gate: " + fgate["lanes"][lane][1])
         self._dough_watch(st, dough, t)
         return {"se": se, "mp": mp, "grade": gr["grade"], "why": gr["why"], "gates": gr["gates"], "flow": fs,
-                "dough": dough, "sneaky": ps60.sneaky_pivots(bars, atr_value, pc), "atr": atr_value}
+                "dough": dough, "sneaky": self._sneaky_keep(st, ps60.sneaky_pivots(bars, atr_value, pc)), "atr": atr_value}
+
+    @staticmethod
+    def _sneaky_keep(st, sp):
+        st.sneaky_auto = list(sp or [])          # the ladder marks them too
+        return sp
 
     def _dough_watch(self, st, dough, t):
         """Say it once when the flow confirms the play's side (and once when it turns against it)."""
@@ -2852,6 +2890,8 @@ class Engine:
             out.append({"price": play["second_entry"], "role": "second_entry", "label": "2ND ENTRY"})
         for lv in play.get("extra_levels", []):
             out.append({"price": lv, "role": "extra", "label": "LEVEL"})
+        for lv in play.get("sneaky_levels", []):
+            out.append({"price": lv, "role": "sneaky", "label": "SNEAKY PIVOT"})
         for key, label in (("target", "TARGET"), ("stop", "STOP")):
             if play.get(key):
                 out.append({"price": play[key], "role": key, "label": label})
@@ -2869,6 +2909,11 @@ class Engine:
         while st.memory and t - st.memory[0][0] > MEMORY_SECONDS:
             _t, k, _p, side, size = st.memory.popleft()
             key = (k, side)
+            cl = (getattr(st, "mem_clear", None) or {}).get(key)
+            if cl is not None and _t <= cl[0]:
+                cl[1] -= size
+                if cl[1] <= 1e-9:
+                    del st.mem_clear[key]
             v = st.mem_sums.get(key, 0.0) - size
             if v <= 1e-9:
                 st.mem_sums.pop(key, None)
@@ -2894,6 +2939,94 @@ class Engine:
                 ts[0] -= size; ts[1] -= p * size
                 if ts[0] <= 1e-9:
                     del st.trap_sums[key]
+
+    def _visit(self, st, k, side, size, t):
+        """SOLD / BOUGHT THIS VISIT: what hit the bid / lifted the ask at a price since price last came back to it. A
+        visit ends when price trades ``ladder.visit_away_ticks`` ticks away (3): one cent of chop is not leaving."""
+        away = max(1, int(self.cfg.get("ladder", {}).get("visit_away_ticks", 3)))
+        vis = st.__dict__.setdefault("visits", {})
+        op = st.__dict__.setdefault("visit_open", set())
+        for j in [j for j in op if abs(j - k) >= away]:
+            op.discard(j)
+        v = vis.get(k)
+        if k not in op:
+            if v is None:
+                v = vis[k] = {"s": 0.0, "b": 0.0, "ts": deque(maxlen=60), "t": t}
+            else:
+                v["s"] = v["b"] = 0.0
+            v["ts"].append(t)
+            op.add(k)
+        if side == "sell":
+            v["s"] += size
+        elif side == "buy":
+            v["b"] += size
+        v["t"] = t
+        if len(vis) > 3000:
+            for j in sorted(vis, key=lambda j: vis[j]["t"])[:1000]:
+                if j not in op:
+                    del vis[j]
+
+    def ladder_clear(self, symbol, where, t=None):
+        """The ladder's clear buttons (Jigsaw's arrows, both counts): "above" clears what traded over the ask (after a
+        move down), "below" under the bid (after a move up), "all" the whole ladder. The prints stay in the tape."""
+        with self.lock:
+            st = self._st(symbol)
+            if st is None:
+                return False
+            t = t or self.last_t
+            bid, ask = st.bbo()
+            hi = price_key(ask) if ask else None
+            lo = price_key(bid) if bid else None
+            if where == "above" and hi is None or where == "below" and lo is None:
+                return False
+            hit = (lambda k: k > hi) if where == "above" else (lambda k: k < lo) if where == "below" else (lambda k: True)
+            clear = st.__dict__.setdefault("mem_clear", {})
+            for key, v in list(st.mem_sums.items()):
+                if hit(key[0]) and v > 0:
+                    clear[key] = [t, v]
+            for k in [k for k in (getattr(st, "visits", None) or {}) if hit(k)]:
+                del st.visits[k]
+            for sd in (BID, ASK):
+                st.pulls.clear_ps(sd, lambda k: not hit(k))
+            return True
+
+    def _ladder_marks(self, st, t, user_levels, last):
+        """Everything worth a line on the ladder, with its distance from price: your PS60 lines (both sides, as drawn
+        on the chart), the day's high / low, and the option STRIKES getting the money today."""
+        out = []
+        for lv in user_levels:
+            out.append({"price": float(lv["price"]), "role": lv["role"].replace("alt_", ""), "label": lv["label"].replace("↓ ", "").replace("↑ ", ""),
+                        "alt": bool(lv.get("alt"))})
+        if st.day_hi:
+            out.append({"price": st.day_hi[0], "role": "hod", "label": "HIGH OF DAY"})
+        if st.day_lo:
+            out.append({"price": st.day_lo[0], "role": "lod", "label": "LOW OF DAY"})
+        lc = self.cfg.get("ladder", {})
+        keep = lc.get("flow_window_minutes", 60) * 60.0
+        agg = {}
+        for m in st.flow_marks:
+            if t - m["t"] > max(keep, 6.5 * 3600) or not m.get("strike"):
+                continue
+            a = agg.setdefault((m["strike"], m["cp"]), {"prem": 0.0, "n": 0, "hot": False, "t": 0})
+            a["prem"] += m["prem"]; a["n"] += 1; a["hot"] = a["hot"] or m["hot"]; a["t"] = max(a["t"], m["t"])
+        floor = float(lc.get("strike_min_premium", 100000))
+        top = sorted(((k, a) for k, a in agg.items() if a["prem"] >= floor), key=lambda x: -x[1]["prem"])[:4]
+        for (strike, cp), a in top:
+            out.append({"price": float(strike), "role": "strike", "cp": cp, "label": f"{strike:g}{cp}",
+                        "prem": round(a["prem"]), "n": a["n"], "hot": a["hot"], "age": round(t - a["t"])})
+        # the SNEAKY PIVOTS TED found on the 60-minute (micro supply / demand inside the channel)
+        for sp in (getattr(st, "sneaky_auto", None) or [])[:3]:
+            out.append({"price": float(sp["price"]), "role": "sneaky_auto", "label": f"SNEAKY {sp.get('kind', '').upper()}",
+                        "touches": sp.get("touches"), "room": sp.get("room")})
+        # the RELOAD buyers / sellers TED has proven: your edge, on the ladder strip too when they are off the rows
+        for tr in st.trackers.values():
+            if tr.proven and tr.displayed > 0:
+                out.append({"price": float(tr.price), "role": "reload_" + ("bid" if tr.side == BID else "ask"),
+                            "label": "RELOAD " + ("BUYER" if tr.side == BID else "SELLER"),
+                            "refills": max(tr.refreshes_window(t), tr.proven_refills), "absorbed": round(tr.absorbed_total)})
+        for m in out:
+            m["dist"] = round(m["price"] - last, 4) if last else None
+        return out
 
     def _memory_ladder(self, st, t, user_levels, half_rows=None):
         """Price rows around the market, each carrying what happened there.
@@ -2922,13 +3055,24 @@ class Engine:
         for lv in user_levels:
             k = price_key(lv["price"], tk)
             tags.setdefault(k, []).append(lv["label"])
-            if k not in keys and abs(k - ck) <= 80 and lv["role"] in ("trigger", "second_entry", "extra"):
+        marks = self._ladder_marks(st, t, user_levels, st.price())
+        lvmap = {}
+        for m in marks:
+            k = price_key(m["price"], tk)
+            lvmap.setdefault(k, []).append(m)
+            # your lines and the money strikes within reach get their row on the ladder (past a gap) so you see them come
+            if k not in keys and abs(k - ck) <= 80 and m["role"] not in ("hod", "lod"):
                 keys.append(k)
         keys = sorted(set(keys), reverse=True)
         self._prune_memory(st, t)
         sums = st.mem_sums
-        sold = {k: sums.get((k, "sell"), 0.0) for k in keys}
-        bought = {k: sums.get((k, "buy"), 0.0) for k in keys}
+        clr = getattr(st, "mem_clear", None) or {}
+        sold = {k: max(0.0, sums.get((k, "sell"), 0.0) - (clr.get((k, "sell")) or (0, 0.0))[1]) for k in keys}
+        bought = {k: max(0.0, sums.get((k, "buy"), 0.0) - (clr.get((k, "buy")) or (0, 0.0))[1]) for k in keys}
+        vis = getattr(st, "visits", None) or {}
+        vopen = getattr(st, "visit_open", None) or set()
+        lc = self.cfg.get("ladder", {})
+        sw = float(lc.get("stack_seconds", 60))
         mine = {}
         for o in self._pending(st.symbol):
             # a stop / stop-limit sits on the ladder at its TRIGGER (where it fires), a limit at its limit
@@ -2965,6 +3109,17 @@ class Engine:
                 "flow": flow_rows.get(k),
                 "best_bid": k == bb, "best_ask": k == ba, "last": k == lk,
             }
+            v = vis.get(k)
+            if v is not None:
+                row["vs"], row["vb"] = round(v["s"]), round(v["b"])
+                row["vn"] = sum(1 for x in v["ts"] if t - x <= MEMORY_SECONDS)
+                row["vopen"] = k in vopen
+            for side, sd in (("b", BID), ("a", ASK)):
+                ps = st.pulls.pullstack(sd, k, t, sw)
+                if ps is not None:
+                    row["ps_" + side] = ps
+            if k in lvmap:
+                row["lv"] = lvmap[k]
             for side in ("bid", "ask"):
                 sd = BID if side == "bid" else ASK
                 rec = st.big[sd].get(k)
@@ -3016,7 +3171,8 @@ class Engine:
             prev = k
         return {"rows": rows, "max_size": round(max_size), "max_traded": round(max_traded),
                 "memory_minutes": MEMORY_SECONDS // 60, "big_shares": big_bar, "big_default": st.big_shares is None,
-                "huge_shares": big_bar * huge_x}
+                "huge_shares": big_bar * huge_x, "marks": marks, "last": last, "tick": tk,
+                "visit_away": int(lc.get("visit_away_ticks", 3)), "stack_seconds": int(sw)}
 
     def _day_trap_pane(self, st, t):
         dt = self._day_trap(st, t, st.price())
@@ -3361,7 +3517,7 @@ class Engine:
             "pinned": sym in self.pinned,
             "changed": change if change and t - change["t"] < 20 and change.get("prev") else None,
             "play": {k: st.play.get(k) for k in ("side", "trigger", "second_entry", "target", "stop", "mp", "atr", "notes", "setup", "alt",
-                                                  "trade_as", "trade_as_set", "opt_key", "opt_qty")},
+                                                  "trade_as", "trade_as_set", "opt_key", "opt_qty", "sneaky_levels")},
             "last": fmt_price(st.l1["last"]),
             "prev_close": fmt_price(st.l1.get("close")),
             "bid": fmt_price(bid), "ask": fmt_price(ask),

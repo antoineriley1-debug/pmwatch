@@ -634,3 +634,42 @@ i.tl{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:3p
 #fastStock .big{padding:2px 10px;font-size:12px}
 #fastStock .qbout{margin-left:6px;font-weight:700;font-size:11px;color:#c8ccd4}
 #fastStock .out[data-qb^="P"]{min-width:42px}
+/* ===== PRO LADDER ===== */
+table.lad.pro{--se:#3fd0ff;--tg:#26d07c;--sl:#ff4d5e;--pv:#dbe3ee;--sn:#f0a8ff;--stc:#2fe0a8;--stp:#ff7a9a;--hl:#e8b931;--ex:#9aa4b4}
+table.lad.pro td,table.lad.pro th{padding:0 3px}
+table.lad.pro td.lvc{font-size:10px;font-weight:700;letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:110px;text-align:left}
+table.lad.pro td.lvc .rlv{display:inline-block;margin-left:3px;padding:0 4px;border-radius:2px;font-size:9.5px}
+table.lad.pro td.lvc .rlv.b{background:#0b7a4b;color:#fff} table.lad.pro td.lvc .rlv.s{background:#b3123a;color:#fff}
+table.lad.pro tr.lvrow td{border-top:1px solid var(--lvc);border-bottom:1px solid var(--lvc);background-image:linear-gradient(var(--lvt),var(--lvt))}
+table.lad.pro tr.lvrow td.lvc{color:var(--lvc);border-left:3px solid var(--lvc)}
+table.lad.pro tr.lv-se{--lvc:var(--se);--lvt:rgba(63,208,255,.10)} table.lad.pro tr.lv-tg{--lvc:var(--tg);--lvt:rgba(38,208,124,.10)}
+table.lad.pro tr.lv-sl{--lvc:var(--sl);--lvt:rgba(255,77,94,.10)} table.lad.pro tr.lv-pv{--lvc:var(--pv);--lvt:rgba(219,227,238,.08)}
+table.lad.pro tr.lv-sn{--lvc:var(--sn);--lvt:rgba(240,168,255,.09)} table.lad.pro tr.lv-stc{--lvc:var(--stc);--lvt:rgba(47,224,168,.08)}
+table.lad.pro tr.lv-stp{--lvc:var(--stp);--lvt:rgba(255,122,154,.08)} table.lad.pro tr.lv-hl{--lvc:var(--hl);--lvt:rgba(232,185,49,.06)}
+table.lad.pro tr.lv-ex{--lvc:var(--ex);--lvt:rgba(154,164,180,.06)}
+table.lad.pro tr.lvalt td.lvc{border-left-style:dashed}
+table.lad.pro tr.atlv td{animation:atlv 1s ease-in-out infinite alternate}
+@keyframes atlv{from{background-color:transparent}to{background-color:rgba(255,255,255,.10)}}
+table.lad.pro tr.atlv td.lvc b{color:#fff;background:var(--lvc);padding:0 3px;border-radius:2px}
+table.lad.pro td.stk{font-size:10.5px;text-align:center;font-variant-numeric:tabular-nums}
+table.lad.pro td.stk.add.bid{color:#7cf0b4} table.lad.pro td.stk.add.ask{color:#ff9aa8}
+table.lad.pro td.stk.pull{color:#8a90a0;font-style:italic}
+table.lad.pro td.stk.lit.bid{background:#0b7a4b;color:#fff;font-weight:800} table.lad.pro td.stk.lit.ask{background:#b3123a;color:#fff;font-weight:800}
+table.lad.pro td.stk.litp{background:#3a3d44;color:#e2e4ea;font-weight:700}
+table.lad.pro td.vis{position:relative;font-size:10.5px;text-align:center;font-variant-numeric:tabular-nums}
+table.lad.pro td.vis .vb{position:absolute;top:2px;bottom:2px;opacity:.35}
+table.lad.pro td.vis.bid .vb{right:0;background:#ff4d5e} table.lad.pro td.vis.ask .vb{left:0;background:#26d07c}
+table.lad.pro td.vis b{position:relative;font-weight:700} table.lad.pro td.vis.bid b{color:#ffb3bb} table.lad.pro td.vis.ask b{color:#9fffcf}
+table.lad.pro td.vis.past{opacity:.45}
+table.lad.pro td.px sup{font-size:8.5px;color:#e8b931;margin-left:2px;font-weight:700}
+.lvstrip{position:sticky;z-index:3;display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding:2px 4px;background:#101216;border:1px solid #23262c;font-size:10px}
+.lvstrip.top{top:0} .lvstrip.bot{bottom:0}
+.lvstrip .sp{flex:1} .lvstrip button{font-size:9.5px;padding:0 5px}
+.lvp{padding:0 5px;border-radius:2px;border:1px solid var(--c,#555);color:var(--c,#ccc);white-space:nowrap;font-weight:700}
+.lvp i{font-style:normal;color:#aab0bb;font-weight:400}
+.lvp.se{--c:#3fd0ff} .lvp.tg{--c:#26d07c} .lvp.sl{--c:#ff4d5e} .lvp.pv{--c:#dbe3ee} .lvp.sn{--c:#f0a8ff} .lvp.stc{--c:#2fe0a8} .lvp.stp{--c:#ff7a9a} .lvp.hl{--c:#e8b931} .lvp.ex{--c:#9aa4b4}
+.lvp.rb{--c:#2fd38a;background:#0b3a25} .lvp.ra{--c:#ff6b7d;background:#3a0f18}
+#optPosStrip{display:flex;flex-direction:column;gap:2px;padding:0 6px}
+#optPosStrip:empty{display:none}
+#optPosStrip .op{display:flex;flex-wrap:wrap;gap:10px;align-items:center;font-size:11.5px;padding:2px 6px;background:#1d1830;border:1px solid #5b3fa8;border-radius:3px}
+#optPosStrip .op .tg{color:#26d07c} #optPosStrip .op .sl{color:#ff4d5e}

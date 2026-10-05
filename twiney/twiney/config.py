@@ -344,6 +344,13 @@ DEFAULTS = {
         # the rows stay still while price moves inside them; they re-centre only when price comes within this many
         # rows of the top or bottom edge (bigger = re-centres sooner)
         "recenter_rows": 4,
+        # SOLD / BOUGHT "this visit": a visit to a price ends when price trades this many ticks away from it (Jigsaw
+        # resets on any tick away, which in a stock flickers the numbers to zero all day)
+        "visit_away_ticks": 3,
+        # PULL / STACK: seconds of size added (stacked) / pulled without trading, per price
+        "stack_seconds": 60,
+        # option flow STRIKES outlined on the ladder: a strike with at least this premium today (top 4)
+        "strike_min_premium": 100000,
         # rows above and below the market on the ladder (the COLS menu changes it live)
         "half_rows": 12,
         # a displayed size at or above this is "big": highlighted on the ladder, and counted every time it shows up
@@ -582,6 +589,7 @@ def validate_plays(raw):
             "mp": mp_level,
             "atr": num("atr", False),
             "extra_levels": extra,
+            "sneaky_levels": [float(v) for v in (item.get("sneaky_levels") or []) if isinstance(v, (int, float)) and v > 0],
             "notes": str(item.get("notes", "")),
             "setup": str(item.get("setup", "") or ""),
             "active": bool(item.get("active", True)),
