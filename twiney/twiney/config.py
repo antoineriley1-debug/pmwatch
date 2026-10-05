@@ -154,6 +154,8 @@ DEFAULTS = {
         "max_position_shares": 1000,
         # day P&L (realized + open) at or below -this disarms trading for the rest of the session
         "max_daily_loss": 500,
+        # the daily loss lock only guards a LIVE (real money) account: paper and practice never lock you out
+        "loss_limit_live_only": True,
         # PS60 exits: cash-flow scale-outs, runner to the target (measured potential), stop to
         # breakeven after the first cash flow. Off = plain stop + target bracket.
         "scale_plan": {

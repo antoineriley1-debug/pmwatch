@@ -108,6 +108,12 @@ class TradingGate:
             self.locked = reason
             self.armed = False
 
+    def unlock(self):
+        """Lift the loss lock (paper / practice, or the limit was raised / switched off). Stays DISARMED: you ARM."""
+        with self.lock:
+            self.locked = None
+            return True
+
     def arm(self, on):
         with self.lock:
             if on and not self.can_trade():
@@ -220,6 +226,7 @@ class TradingGate:
                 "locked": self.locked,
                 "max_position": self.cfg["max_position_shares"],
                 "max_daily_loss": self.cfg["max_daily_loss"],
+                "loss_lock_on": bool(self.cfg["max_daily_loss"]) and (self.mode == "LIVE" or not self.cfg.get("loss_limit_live_only", True)),
                 "blocked": list(self.blocked)[:10],
             }
 
@@ -1495,10 +1502,17 @@ class Trader:
         except Exception as exc:
             log.warning("auto 2nd entry: %s", exc)
         limit = self.cfg["max_daily_loss"]
+        guard = bool(limit) and (self.gate.mode == "LIVE" or not self.cfg.get("loss_limit_live_only", True))
         if self.gate.locked:
+            # a loss lock that no longer applies lifts by itself: a paper / practice account (live-only lock), the limit
+            # switched off, or raised above today's loss. Never a lock that still holds
+            if str(self.gate.locked).startswith("daily loss limit") and (not guard or self.day_pnl()["total"] > -abs(limit)):
+                self.gate.unlock()
+                self._note(now or time.time(), "Daily loss lock lifted" + ("" if guard else f" — it only guards a LIVE account; this is {self.gate.mode}") + " — click ARM to trade", True)
+                return
             self._cancel_entries(now or time.time())   # every run while locked: one that failed or came in late goes too
             return
-        if not limit:
+        if not guard:
             return
         pnl = self.day_pnl()
         if pnl["total"] <= -abs(limit):

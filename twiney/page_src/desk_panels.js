@@ -157,7 +157,7 @@ function renderBook(d){
   P.book.last = html;
   const keep = wrap.scrollTop;
   wrap.innerHTML = html; applyLadCols(wrap.querySelector("table")); makeColsResizable(wrap.querySelector("table")); if (hoverPx != null) ladderHighlight(hoverPx);
-  eatMarks(wrap, d); avgRow(wrap, d);
+  eatMarks(wrap, d); avgRow(wrap, d); fitLadderRows(wrap);
   const cur = wrap.querySelector("tr.lastpx") || wrap.querySelector("tr.best-ask");
   // a proven reloader within a screen of the price stays in view with it: the ladder centres between the two
   const rl = [...wrap.querySelectorAll("tr.rl-bid, tr.rl-ask")];
@@ -418,10 +418,10 @@ function eatMarks(wrap, d, host){
         const trd = Math.max(0, (+r[side === "bid" ? "sold" : "bought"] || 0) - (m.trd != null ? m.trd : (+r[side === "bid" ? "sold" : "bought"] || 0)));
         if (dlt < 0 && size > 0){
           const gone = -dlt, traded = Math.min(gone, trd), pulled = gone - traded;
-          const lbl = traded >= gone * 0.5 ? `−${kfmt(traded)} ${side === "bid" ? "SOLD" : "BOUGHT"}${pulled >= 100 ? ` −${kfmt(pulled)} PULLED` : ""}` : `−${kfmt(gone)} PULLED`;
+          const lbl = traded >= gone * 0.5 ? `−${kfmt(traded)} ${side === "bid" ? "sold" : "bot"}${pulled >= 100 ? ` −${kfmt(pulled)} pull` : ""}` : `−${kfmt(gone)} pull`;
           cell.classList.add(traded >= gone * 0.5 ? "hit" : "pull");
           cell.insertAdjacentHTML("beforeend", `<i class="ghost ${traded >= gone * 0.5 ? "dn" : "pl"}" title="${kfmt(gone)} came off ${px(r.price)}: ${kfmt(traded)} traded (prints at this price), ${kfmt(pulled)} just left without trading">${lbl}</i>`); }
-        else if (dlt > 0 && m.last > 0 && m.last < m.peak * 0.7){ cell.classList.add("refill"); cell.insertAdjacentHTML("beforeend", `<i class="ghost up" title="${kfmt(dlt)} shares just came back at this price: a refill">+${kfmt(dlt)} REFILL</i>`); }
+        else if (dlt > 0 && m.last > 0 && m.last < m.peak * 0.7){ cell.classList.add("refill"); cell.insertAdjacentHTML("beforeend", `<i class="ghost up" title="${kfmt(dlt)} shares just came back at this price: a refill">+${kfmt(dlt)} ↻</i>`); }
       }
       m.last = size; m.pt = now; m.trd = +r[side === "bid" ? "sold" : "bought"] || 0;
       if ((side === "bid" && r.best_bid) || (side === "ask" && r.best_ask)) touch[side] = {price: r.price, size, peak: m.peak};
@@ -585,7 +585,7 @@ function tapeSpeedHTML(sp){
 function applyLadCols(tbl){ if (!tbl) return; const c = store.get("ladcols", {}); const wrap = tbl.closest(".ladder-wrap"); if (wrap){ wrap.style.setProperty("--ladz", String(store.get("ladz", 1))); wrap.style.setProperty("--ladh", String(store.get("ladh", 1))); } tbl.classList.toggle("notrade", c.trade !== true); tbl.classList.toggle("nobars", c.bars === false); tbl.classList.toggle("nowho", c.who === false); tbl.classList.toggle("noflow", c.flow === false); if (tbl._applyCols) tbl._applyCols(); }
 document.getElementById("colsMenu").querySelector("button").addEventListener("click", e => { e.stopPropagation(); const m = document.getElementById("colsMenu"), open = !m.classList.contains("open"); document.querySelectorAll(".menu.open").forEach(x => x.classList.remove("open")); m.classList.toggle("open", open); const c = store.get("ladcols", {}); const rs = m.querySelector("select[data-rows]"); if (rs) rs.value = String(store.get("ladRows", 12)); const lc = m.querySelector("select[data-ladclick]"); if (lc) lc.value = store.get("ladClick", "join"); const hs = m.querySelector("select[data-ladh]"); if (hs) hs.value = String(store.get("ladh", 1)); m.querySelectorAll("input[data-col]").forEach(i => { i.checked = i.dataset.col === "trade" ? c.trade === true : c[i.dataset.col] !== false; }); const z = m.querySelector("select[data-ladz]"); if (z) z.value = String(store.get("ladz", 1)); });
 document.getElementById("colsPop").addEventListener("change", e => {
-  if (e.target.dataset.rows != null){ post("/api/ladder", {half_rows: +e.target.value}); store.set("ladRows", +e.target.value); P.book.last = null; poll(true); return; }
+  if (e.target.dataset.rows != null){ store.set("ladRowsAuto", false); post("/api/ladder", {half_rows: +e.target.value}); store.set("ladRows", +e.target.value); P.book.last = null; poll(true); return; }   // your pick: the ladder stops sizing itself
   if (e.target.dataset.ladclick != null){ store.set("ladClick", e.target.value); return; }
   if (e.target.dataset.ladh != null){ store.set("ladh", +e.target.value || 1); applyLadCols(P.book.pc.querySelector("table.lad")); return; }
   if (e.target.dataset.ladz != null){ store.set("ladz", +e.target.value || 1); applyLadCols(P.book.pc.querySelector("table.lad")); P.book.last = null; poll(true); return; } const k = e.target.dataset.col; if (!k) return; const c = store.get("ladcols", {}); c[k] = e.target.checked; store.set("ladcols", c); applyLadCols(P.book.pc.querySelector("table.lad")); });
@@ -1692,10 +1692,13 @@ function renderStatus(s){
   document.querySelector("#stOrders b").textContent = t.locked ? "LOCKED" : t.can_trade ? (t.armed ? "ARMED · " + (t.mode || "") : "READY · disarmed") : "OFF · " + (t.why_not || "");
   document.querySelector("#stLadders b").textContent = `${s.depth.length}/${s.slots}`;
   document.getElementById("stRec").innerHTML = s.desk && s.desk.recording ? `<span class="led bad"></span>REC <b>${fmtDur(s.now - (s.desk.started || s.now))}</b>` : "";
-  if (t.pnl) document.querySelector("#stLoss b").textContent = `${t.pnl.total >= 0 ? "+" : "−"}$${sz(Math.abs(t.pnl.total).toFixed(0))} / −$${sz(t.max_daily_loss || 0)}`;
+  if (t.pnl) document.querySelector("#stLoss b").textContent = `${t.pnl.total >= 0 ? "+" : "−"}$${sz(Math.abs(t.pnl.total).toFixed(0))}` + (t.loss_lock_on ? ` / −$${sz(t.max_daily_loss || 0)}` : " · no lock (paper)");
   document.getElementById("stClock").textContent = nyT(Date.now() / 1000) + " ET";
   const arm = document.getElementById("armBtn");
-  arm.textContent = t.locked ? "LOCKED" : t.armed ? "ARMED" : "ARM"; arm.className = t.locked ? "locked" : t.armed ? "armed" : "off"; arm.disabled = !t.can_trade; arm.title = t.can_trade ? "" : (t.why_not || "");
+  // always visible: ARM / ARMED; LOCKED on a live account; on paper a lock is one click away from gone (UNLOCK)
+  const paperLock = t.locked && t.mode !== "LIVE";
+  arm.textContent = paperLock ? "UNLOCK" : t.locked ? "LOCKED" : t.armed ? "ARMED" : "ARM"; arm.className = t.locked ? "locked" : t.armed ? "armed" : "off";
+  arm.disabled = !t.can_trade && !paperLock; arm.title = paperLock ? "the daily loss lock is on — click to lift it (paper account), then ARM" : t.can_trade ? "" : (t.why_not || "");
   const sd = curData(), sb = document.getElementById("sideBtn"), side = sd && sd.play && sd.play.side;
   sb.textContent = side === "short" ? "S" : "L"; sb.className = side === "short" ? "short" : "long"; sb.disabled = !side; sb.title = side ? `${curSym} is a ${side.toUpperCase()} — click for ${side === "short" ? "LONG" : "SHORT"} (your levels stay)` : "no ticker on screen";
   document.getElementById("oneclick").checked = !!t.one_click; document.getElementById("bracket").checked = !!t.bracket; document.getElementById("scale").checked = !!t.scale;
@@ -2340,7 +2343,7 @@ function renderOptPanels(){
   const d = OCH.data, t = d && d.tape, f = v => v == null ? "—" : (+v).toFixed(2), name = d ? esc(d.label) : "";
   const none = `<div class="dim" style="padding:8px">Pick a contract: OPTIONS, then click a strike (or 📈). Its book, prints and big prints show here.</div>`;
   const pm = pairMode();
-  const btns = OC.link && OC.link.sym === curSym ? `<span class="ohbtn">${pm === "left" ? `<button data-pairmode="split" title="put the contract's LEVEL II / T&S under the stock's instead">UNDER STOCK</button>` : `<button data-pairmode="left" title="put the contract's LEVEL II and T&S together in the left column">LEFT</button>`}<button data-pairmode="switch" title="one window: LEVEL II / T&S flip to the contract instead of showing both">ONE WINDOW</button><button data-unlinkall="1" title="close the contract windows; everything back on the shares">✕ BACK TO SHARES</button></span>` : "";
+  const btns = OC.link && OC.link.sym === curSym ? `<span class="ohbtn">${pm === "left" ? `<button data-pairmode="split" title="put the contract's LEVEL II / T&S under the stock's instead">UNDER</button>` : `<button data-pairmode="left" title="put the contract's LEVEL II and T&S together in the left column">LEFT</button>`}<button data-pairmode="switch" title="one window: LEVEL II / T&S flip to the contract instead of showing both">1 WINDOW</button><button data-unlinkall="1" title="close the contract windows; everything back on the shares">✕ SHARES</button></span>` : "";
   const hd = (id, title, extra) => { const el = document.getElementById(id); if (!el) return; const h = `<b>${title}</b> <span class="${d && d.right === "P" ? "s" : "b"}">${name}</span>${extra || ""}${id !== "obigHd" ? btns : ""}`; if (el.dataset.h !== h){ el.dataset.h = h; el.innerHTML = h; } };
   const put = (sel, html) => { const el = document.querySelector(sel); if (el && el.dataset.h !== html){ el.dataset.h = html; el.innerHTML = html; } };
   if (!d || !t){ put(".pnl[data-p=obook] .obook", none); put(".pnl[data-p=otape] .otape", none); put(".obig", none); hd("obookHd", "OPTION LEVEL II"); hd("otapeHd", "OPTION T&S"); hd("obigHd", "OPTION BIG TAPE"); return; }
@@ -2394,10 +2397,10 @@ function renderFast(d){
   const outw = x.held < 0 ? "COVER" : "SELL";
   const pct = [25, 50, 75, 100].map(p => `<button class="out ${p === 100 ? "all" : ""}" data-qb="P${p}" ${q ? "" : "disabled"} title="${q ? `${outw} ${p}% of your ${q} ${x.unit} now, a limit at the touch` : "nothing to sell"}">${p}%</button>`).join("");
   const h = (d.halted ? `<span class="haltbadge" title="IBKR says it is halted: nothing trades, orders sit">${esc(d.halted)}</span>` : "") +
-    `<span class="qbmode"><button data-qbm="stock" class="${x.opt ? "" : "on"}">STOCK ${esc(d.symbol)}</button><button data-qbm="option" class="${x.opt ? "on" : ""}" ${k ? "" : "disabled"} title="${k ? "trade " + esc(shortKey(k)) + " (the OPTION CHART's contract)" : "pick a contract in OPTIONS first"}">OPTION${k ? " " + esc(k.split(" ")[2]) : ""}</button></span>
+    `<span class="qbmode"><button data-qbm="stock" class="${x.opt ? "" : "on"}">STOCK<i class="qsym"> ${esc(d.symbol)}</i></button><button data-qbm="option" class="${x.opt ? "on" : ""}" ${k ? "" : "disabled"} title="${k ? "trade " + esc(shortKey(k)) + " (the OPTION CHART's contract)" : "pick a contract in OPTIONS first"}">OPT<i class="qsym">ION</i>${k ? " " + esc(k.split(" ")[2]) : ""}</button></span>
     <input id="qbQty" type="number" min="1" step="1" value="${x.n}" title="${x.opt ? "contracts" : "shares"}"><span class="dim">${x.unit}</span>
     <button class="b big" data-qb="BUY" title="BUY ${x.n} ${x.unit} now: a limit at the ask (${f(x.ask)})">BUY</button><button class="s big" data-qb="SELL" title="SELL ${x.n} ${x.unit} now: a limit at the bid (${f(x.bid)})">SELL</button>
-    <button class="out close" data-qb="CLOSE" ${q ? "" : "disabled"} title="close the whole position now, a limit at the touch">CLOSE POSITION</button><span class="qbout">${outw}</span>${pct}
+    <button class="out close" data-qb="CLOSE" ${q ? "" : "disabled"} title="close the whole position now, a limit at the touch">CLOSE<i class="qsym"> POSITION</i></button><span class="qbout">${outw}</span>${pct}
     <span class="qbpos ${q ? (long ? "b" : "s") : "dim"}">${q ? `${long ? "LONG" : "SHORT"} ${sz(q)} ${x.unit}` : "FLAT"}${x.opt ? " · " + esc(x.name) : ""}</span>`;
   renderOptPos(d);
   if (el.contains(document.activeElement) && document.activeElement.id === "qbQty") return;     // typing a size
@@ -2548,22 +2551,22 @@ function ladderProHTML(L){
   const up = off.filter(m => m.price > top).sort((a, b) => a.price - b.price).slice(0, 4);
   const dn = off.filter(m => m.price < bot).sort((a, b) => b.price - a.price).slice(0, 4);
   const pill = (m, arrow) => `<span class="lvp ${lvCls(m)}" title="${esc(lvWords(m) + " " + px(m.price) + " · " + distTxt(m.dist, L.tick) + " from the last price")}">${arrow} ${esc(lvWords(m, true))} ${px(m.price)} <i>${distTxt(m.dist, L.tick)}</i></span>`;
-  h += `<div class="lvstrip top">${up.map(m => pill(m, "▲")).join("") || `<span class="dim">nothing marked above</span>`}<span class="sp"></span><button data-lclr="above" title="clear SOLD / BOUGHT / STACK above the ask (after a move down)">CLR ▲</button></div>`;
+  h += `<div class="lvstrip top">${up.map(m => pill(m, "▲")).join("")}${dn.map(m => pill(m, "▼")).join("")}${up.length || dn.length ? "" : `<span class="dim">your lines off the ladder show here</span>`}<span class="sp"></span><button data-lclr="above" title="clear SOLD / BOUGHT / +/− above the ask (after a move down)">CLR ▲</button><button data-lclr="below" title="clear SOLD / BOUGHT / +/− below the bid (after a move up)">CLR ▼</button></div>`;
   h += `<table class="lad lad3 pro" data-cols="ladpro"><tr>
     <th class="lvh" data-w="64" data-min="26" title="your chart on the ladder: PIVOT, 2ND ENTRY, TARGET, STOP, SNEAKY PIVOT, option STRIKES getting the money, high / low of day, the RELOAD buyer / seller — and how far they are">LEVEL</th>
-    <th class="stkh" data-w="40" data-min="16" title="STACK on the bid: + size added (buyers stepping up), − size pulled without trading, last ${L.stack_seconds || 60}s. Lit = big">STK</th>
+    <th class="stkh" data-w="40" data-min="16" title="+/− on the BID: + size ADDED (buyers stepping up), − size PULLED without trading, last ${L.stack_seconds || 60}s. Lit = big">+/−</th>
     <th class="vish" data-w="44" data-min="18" title="SOLD this visit: shares that hit the bid at this price since price came back here">SOLD</th>
     <th class="szh" data-w="54" data-min="20" title="BID: resting buy orders. Drains as it gets hit. Solid green ↻N = the RELOAD BUYER refilling. Click to BUY there">BID</th>
     <th class="pxh" data-w="58" data-min="26">PRICE</th>
     <th class="szh" data-w="54" data-min="20" title="ASK: resting sell orders. Drains as it gets lifted. Solid red ↻N = the RELOAD SELLER refilling. Click to SELL there">ASK</th>
-    <th class="vish" data-w="44" data-min="18" title="BOUGHT this visit: shares that lifted the ask at this price since price came back here">BOT</th>
-    <th class="stkh" data-w="40" data-min="16" title="STACK on the ask: + size added (sellers stepping up), − size pulled without trading, last ${L.stack_seconds || 60}s. Lit = big">STK</th></tr>`;
+    <th class="vish" data-w="44" data-min="18" title="BOUGHT this visit: shares that lifted the ask at this price since price came back here">BOUGHT</th>
+    <th class="stkh" data-w="40" data-min="16" title="+/− on the ASK: + size ADDED (sellers stepping up), − size PULLED without trading, last ${L.stack_seconds || 60}s. Lit = big">+/−</th></tr>`;
   for (const r of rows){
     const pb = r.bid_state === "RELOAD" || r.bid_proven, pa = r.ask_state === "RELOAD" || r.ask_proven;
     const stg = pb ? (r.bid_stage || "RELOADING") : pa ? (r.ask_stage || "RELOADING") : "";
     const cv = pb ? (r.bid_conv == null ? 1 : r.bid_conv) : pa ? (r.ask_conv == null ? 1 : r.ask_conv) : 1;
     const lv = (r.lv || []).filter(m => !(m.role === "reload_bid" || m.role === "reload_ask")).sort((a, b) => (LVRANK[a.role] ?? 9) - (LVRANK[b.role] ?? 9));
-    const rel = pb ? (lv.length ? "BUYER ↻" : "RELOAD BUYER ↻") + (r.bid_refills || "") : pa ? (lv.length ? "SELLER ↻" : "RELOAD SELLER ↻") + (r.ask_refills || "") : "";
+    const rel = pb ? "BUYER ↻" + (r.bid_refills || "") : pa ? "SELLER ↻" + (r.ask_refills || "") : "";
     const at = r.last && lv.length;
     const cls = [r.gap ? "gap" : "", r.best_bid ? "best-bid" : "", r.best_ask ? "best-ask" : "", r.last ? "lastpx" : "", pb ? "rl-bid" : "", pa ? "rl-ask" : "",
       stg ? "cv-" + stageSlug(stg) : "", lv.length ? "lvrow lv-" + lvCls(lv[0]) : "", at ? "atlv" : "", lv.some(m => m.alt) ? "lvalt" : ""].join(" ");
@@ -2585,7 +2588,7 @@ function ladderProHTML(L){
       <td class="sz asz click${fakeA}${bigA}" data-act="SELL" data-px="${r.price}" title="${esc(tA)}"><span class="szn">${r.ask ? kfmt(r.ask) : ""}</span>${chips(r, "s") ? `<span class="mine">${chips(r, "s")}</span>` : ""}${pa ? `<span class="rl${r.ask_back ? " back" : ""}">${ra && ra.usd ? `<i class="rlm">${usdK(ra.usd)} </i>` : ""}↻${r.ask_refills || ""}${r.ask_back ? " ↩×" + r.ask_back.n : ""}</span>` : ""}${goneA}${absA ? `<span class="abs" style="width:${absA}%"></span>` : ""}${mark(r, "P")}</td>
       ${visit(r, "ask")}${stack(r, "ask")}</tr>`;
   }
-  h += `</table><div class="lvstrip bot">${dn.map(m => pill(m, "▼")).join("") || `<span class="dim">nothing marked below</span>`}<span class="sp"></span><button data-lclr="below" title="clear SOLD / BOUGHT / STACK below the bid (after a move up)">CLR ▼</button></div>`;
+  h += `</table>`;
   return h;
 }
 document.addEventListener("click", async e => {
@@ -2615,3 +2618,17 @@ function renderOptPos(d){
       ${at(lines.target, "TARGET", "tg")}${at(lines.stop, "STOP", "sl")}${!lines.stop && os ? `<span class="sl">STOP ${os.on === "stock" ? esc(d.symbol) + " " : "contract "}${(+os.price).toFixed(2)}</span>` : ""}</div>`; }).join("");
   if (el.dataset.h !== h){ el.dataset.h = h; el.innerHTML = h; }
 }
+
+/* the ladder fills its panel: as many rows as the window holds (8 to 40 a side), asked again when you resize. A row
+   count you picked in COLS (Rows) wins: store "ladRowsAuto" off */
+let ladFitT = 0;
+function fitLadderRows(wrap){
+  if (!store.get("ladRowsAuto", true) || !wrap || wrap.offsetParent === null || Date.now() - ladFitT < 3000) return;
+  const tr = wrap.querySelector("table.lad tr[data-price]"); if (!tr) return;
+  const rh = tr.getBoundingClientRect().height || 15, strip = wrap.querySelector(".lvstrip"), head = wrap.querySelector("table.lad tr:first-child");
+  const avail = wrap.clientHeight - (strip ? strip.offsetHeight : 0) - (head ? head.offsetHeight : 0) - 6;
+  const want = Math.max(8, Math.min(40, Math.floor(avail / rh / 2)));
+  const have = (state && state.ladder_half_rows) || store.get("ladRows", 12);
+  if (Math.abs(want - have) >= 1){ ladFitT = Date.now(); store.set("ladRows", want); post("/api/ladder", {half_rows: want}); P.book.last = null; }
+}
+window.addEventListener("resize", () => { ladFitT = 0; });

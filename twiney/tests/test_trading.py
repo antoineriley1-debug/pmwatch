@@ -141,8 +141,22 @@ class SimTradingTests(unittest.TestCase):
         self.assertIn("cap is 150", out["reason"])
         self.assertTrue(tr.submit("AAA", "SELL", 9.99, 100, 4.0, bracket=False)["ok"])  # reducing is always fine
 
+    def test_paper_never_locks_and_an_old_lock_lifts(self):
+        e, tr, gate, broker = sim_setup(max_daily_loss=50)                 # default: the lock guards LIVE only
+        gate.arm(True)
+        tr.submit("AAA", "BUY", 10.00, 100, 2.0, bracket=False)
+        e.on_depth("AAA", 0, UPDATE, BID, 9.40, 500, "", 3.0)
+        e.on_l1("AAA", "bid", 9.40, 3.0); e.on_l1("AAA", "last", 9.40, 3.0)
+        tr.watchdog(4.0)
+        self.assertIsNone(gate.locked); self.assertTrue(gate.armed)          # practice / paper: down $60, still trading
+        gate.lock_out("daily loss limit hit ($60.00 against a $50.00 limit)")  # a lock from an older build
+        tr.watchdog(5.0)
+        self.assertIsNone(gate.locked)                                      # lifted by itself
+        self.assertTrue(gate.arm(True))
+        self.assertFalse(tr.snapshot(run_watchdog=False)["loss_lock_on"])
+
     def test_daily_loss_locks_trading_for_the_session(self):
-        e, tr, gate, broker = sim_setup(max_daily_loss=50)
+        e, tr, gate, broker = sim_setup(max_daily_loss=50, loss_limit_live_only=False)
         gate.arm(True)
         tr.submit("AAA", "BUY", 10.00, 100, 2.0, bracket=False)     # long 100 @ 10.00
         e.on_depth("AAA", 0, UPDATE, BID, 9.40, 500, "", 3.0)         # market drops: open loss $60

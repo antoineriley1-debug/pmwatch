@@ -553,6 +553,11 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                 if action == "arm":
                     ok = tr.gate.arm(bool(body.get("on")))
                     out = {"ok": ok, "armed": tr.gate.armed, "reason": None if ok else tr.gate.why_not()}
+                elif action == "unlock":
+                    if tr.gate.mode == "LIVE":
+                        out = {"ok": False, "reason": "a LIVE account's loss lock holds until tomorrow (or raise the limit in SETTINGS)"}
+                    else:
+                        out = {"ok": tr.gate.unlock()}
                 elif action == "oneclick":
                     tr.gate.one_click = bool(body.get("on"))
                     out = {"ok": True}

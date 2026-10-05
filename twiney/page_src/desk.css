@@ -684,3 +684,55 @@ table.lad.pro td.px sup{font-size:8.5px;color:#e8b931;margin-left:2px;font-weigh
 .trades .res{padding:0 5px;border-radius:2px;font-weight:800;font-size:10px}
 .trades .res.win{background:#0b7a4b;color:#fff} .trades .res.loss{background:#b3123a;color:#fff} .trades .res.scratch{background:#3a3d44;color:#ddd}
 .trades .jx{padding:0 4px;font-size:10px} .trades tr.jdetrow td{background:#101216}
+/* ===== POLISH: one clean screen ===== */
+/* the data window: small, top left, out of the candles' way */
+.datawin{top:4px;left:4px;bottom:auto;width:118px}
+/* PRO ladder: smaller, even type so every column reads without widening the panel */
+table.lad.pro{font-size:11px}
+table.lad.pro th{font:600 8.5px var(--sans);letter-spacing:.06em;padding:1px 2px;top:22px !important}
+table.lad.pro td.lvc{font-size:9px;max-width:none}
+table.lad.pro td.lvc .rlv{font-size:8.5px;padding:0 3px}
+table.lad.pro td.stk, table.lad.pro td.vis{font-size:10px}
+.lvstrip{height:22px;flex-wrap:nowrap;overflow:hidden;white-space:nowrap}
+.lvp{font-size:9.5px}
+/* the flashes (−300 SOLD, PULLED, +REFILL): a small tag in the corner of the size cell, never over the number */
+.lad td.sz .ghost{top:0;bottom:auto;height:auto;display:block;font:700 8px/10px var(--mono);padding:0 2px;border-radius:2px;border-width:0 !important;background:rgba(5,8,12,.85);z-index:3}
+.lad td.asz .ghost{right:1px;left:auto} .lad td.bsz .ghost{left:1px;right:auto}
+.lad td.sz .ghost.dn{color:#ff8a96} .lad td.sz .ghost.up{color:#7dffb8} .lad td.sz .ghost.pl{color:#d6c2ff;background:#1d1430}
+.eatbar{font-size:10px} .eatbar .ltouch{font-size:9.5px}
+/* POSITIONS in a narrow column: the essentials fit, the rest waits for room */
+.pnl[data-p="positions"] .pc{container-type:inline-size}
+@container (max-width: 560px){
+  .pos2 th:nth-child(2), .pos2 td:nth-child(2), .pos2 th:nth-child(5), .pos2 td:nth-child(5){display:none}
+  .pos2 td.ctl button[data-add], .pos2 td.ctl button[data-oadd], .pos2 td.ctl button[data-partial], .pos2 td.ctl .sep, .pos2 td.ctl button[data-n="ask"]{display:none}
+  .pos2 th:last-child{font-size:0} .pos2 th:last-child::after{content:"OUT 25 · 50 · 75 · X";font-size:9px}
+  .pos2 td, .pos2 th{padding:1px 3px}
+}
+/* the ORDER BAR on a laptop screen: one line */
+.pnl[data-p="chart"]{container-type:inline-size}
+@container (max-width: 1000px){
+  #fastStock{gap:2px;padding:2px 4px}
+  #fastStock button{padding:1px 5px;font-size:10px}
+  #fastStock .big{min-width:44px;padding:1px 7px;font-size:11px}
+  #fastStock .qbmode button{padding:2px 5px}
+  #fastStock #qbQty{width:52px}
+  #fastStock .qbout{margin-left:2px}
+  #fastStock .qbpos{display:none}
+}
+.datawin .one{display:flex;gap:5px;align-items:center;padding:1px 5px;font:600 9.5px var(--mono);white-space:nowrap;background:rgba(0,0,0,.78)}
+.datawin.min{width:auto;background:transparent;border-color:#333}
+.datawin .one .mn{cursor:pointer;color:#7dffb8;font-weight:900;margin-left:4px}
+.lad td.sz .ghost{max-width:calc(100% - 2px);overflow:hidden;white-space:nowrap}
+.lvstrip button{margin-left:2px}
+.ohbtn button{font-size:9px;padding:1px 5px;white-space:nowrap}
+@container (max-width: 1000px){ #fastStock .qsym{display:none} #fastStock .qbout{display:none} }
+#fastStock i.qsym{font-style:normal}
+.datawin.min{width:auto !important;height:auto !important;border:0 !important;box-shadow:none;background:transparent;resize:none}
+@container (max-width: 1000px){
+  #fastStock button[data-qb^="P"]{min-width:0;padding:1px 4px}
+  #fastStock > .dim{display:none}
+  #fastStock .close{padding:1px 5px}
+}
+table.lad.pro tr.atlv td.px{animation:none}
+table.lad.pro tr.atlv td{box-shadow:inset 0 1px 0 var(--lvc), inset 0 -1px 0 var(--lvc)}
+@container (min-width: 880px){ #fastStock .qsym{display:inline !important} #fastStock .qbout{display:inline !important} }

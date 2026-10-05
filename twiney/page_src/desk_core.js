@@ -314,7 +314,7 @@ function renderDataWin(p){
   let w = wrap.querySelector(".datawin");
   // each chart has its own box: where you put it and whether it is shrunk. The main chart keeps the old settings;
   // the other charts (CHART 2 / 3, OPTION CHART) start shrunk to Symbol..Close so the candles stay clear
-  const main = !p.id || p.id === "chart", posKey = main ? "datawin.pos" : "datawin.pos." + p.id, minKey = main ? "datawin.min" : "datawin.min." + p.id, minDefault = !main;
+  const main = !p.id || p.id === "chart", posKey = main ? "datawin.pos2" : "datawin.pos2." + p.id, minKey = main ? "datawin.min2" : "datawin.min2." + p.id, minDefault = true;   // every chart starts with the small box, top left: the candles stay clear
   const on = store.get("datawin", true) && p.data && p.dataBar;
   if (!on){ if (w) w.style.display = "none"; return; }
   if (!w){
@@ -334,6 +334,10 @@ function renderDataWin(p){
   const rows = (p.dataRows || []).map(([name, col, val]) => `<div class="r" style="background:${col};color:${lum(col) > 140 ? "#000" : "#fff"}"><span>${name}</span><span>${f(val)}</span></div>`).join("");
   const min = store.get(minKey, minDefault);
   w.classList.toggle("min", min);
+  if (min){       // small: one line, O H L C, out of the candles' way (+ opens the full box)
+    const one = `<div class="one"><b>${esc(d.symbol)}</b> O ${f(b[1])} H ${f(b[2])} L ${f(b[3])} C ${f(b[4])}<b class="mn" title="show the whole box: date, time and every line's value">+</b></div>`;
+    if (w.dataset.h !== one){ w.dataset.h = one; w.innerHTML = one; } return;
+  }
   const html = `<div class="ok"><span>OK</span><b class="mn" title="${min ? "show the indicator values too" : "keep Symbol through Close, hide the indicator values"}">${min ? "+" : "–"}</b></div>
     <div class="kv"><span>Symbol:</span><span>${esc(d.symbol)},${tf === "D" ? "D" : tf}</span></div>
     <div class="kv"><span>Date:</span><span>${ny({month: "2-digit", day: "2-digit", year: "2-digit"})}</span></div>

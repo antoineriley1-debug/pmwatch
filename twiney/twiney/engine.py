@@ -3731,6 +3731,7 @@ class Engine:
                 "voice": [v for v in list(self.voice)[:20] if t - v["t"] < 60],
                 "flow": list(self.flow.recent)[:150],
                 "flow_scope": self.flow_scope,
+                "ladder_half_rows": int(getattr(self, "ladder_half_rows", None) or self.cfg.get("ladder", {}).get("half_rows", 12)),
                 "flow_alerts": self.flow_alerts,
                 "flow_index_min": self.cfg.get("flow", {}).get("index_min_premium", 5000000),
                 "messages": list(self.messages)[:25],
