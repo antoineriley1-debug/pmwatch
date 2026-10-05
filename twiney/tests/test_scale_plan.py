@@ -279,3 +279,39 @@ class OptionStopTests(unittest.TestCase):
         self.assertEqual(self.held(self.kc), 1)                                          # the call gained: its stop holds
         e.on_l1("AAA", "last", 9.70, T + 5); e.practice_opt_tick(T + 5.6); tr.watchdog(T + 6); e.practice_opt_tick(T + 7)
         self.assertEqual(self.held(self.kc), 0)                                          # the call's bid fell to its stop
+
+
+class SellToOpenTests(unittest.TestCase):
+    """Writing a contract you don't own (SHORT) is off unless switched on; covered calls always work; selling what
+    you hold is never blocked; option P&L counts in the day's P&L (the loss lock sees it)."""
+    def setUp(self):
+        import time as _t
+        self.e, self.tr, self.broker = make(); self.T = _t.time()
+        self.e.on_l1("AAA", "last", 10.00, self.T)
+        self.exp = self.e.option_chain("AAA", None, "C", self.T)["expiry"]
+
+    def test_blocked_by_default_allowed_when_switched_on(self):
+        tr, T = self.tr, self.T
+        out = tr.opt_open("AAA", self.exp, 10, "P", "SELL", 1, None, T)
+        self.assertFalse(out["ok"]); self.assertIn("Allow selling to open", out["reason"])
+        out = tr.opt_open("AAA", self.exp, 10, "C", "SELL", 1, None, T)
+        self.assertFalse(out["ok"]); self.assertIn("not covered", out["reason"])
+        tr.cfg["allow_sell_to_open"] = True
+        self.assertTrue(tr.opt_open("AAA", self.exp, 10, "P", "SELL", 1, None, T)["ok"])
+
+    def test_covered_calls_and_selling_what_you_hold(self):
+        e, tr, T = self.e, self.tr, self.T
+        tr.submit("AAA", "BUY", 10.0, 200, T, bracket=False); quote(e, 9.99, 10.00, T + 1)
+        self.assertEqual(self.broker.position("AAA"), 200)
+        self.assertTrue(tr.opt_open("AAA", self.exp, 10, "C", "SELL", 2, None, T + 2)["ok"])      # 2 calls on 200 shares
+        e.practice_opt_tick(T + 3)
+        self.assertFalse(tr.opt_open("AAA", self.exp, 10, "C", "SELL", 1, None, T + 4)["ok"])     # a 3rd is naked
+        tr.opt_open("AAA", self.exp, 10, "P", "BUY", 2, None, T + 4); e.practice_opt_tick(T + 5)
+        self.assertTrue(tr.opt_open("AAA", self.exp, 10, "P", "SELL", 2, None, T + 6)["ok"])      # selling what you own
+
+    def test_option_pnl_is_in_the_day_pnl(self):
+        e, tr, T = self.e, self.tr, self.T
+        tr.opt_open("AAA", self.exp, 10, "C", "BUY", 2, None, T); e.practice_opt_tick(T + 1)
+        e.on_l1("AAA", "last", 10.80, T + 2); e.practice_opt_tick(T + 3)
+        pnl = e.day_pnl()
+        self.assertGreater(pnl["options"], 0); self.assertAlmostEqual(pnl["total"], pnl["realized"] + pnl["open"], places=2)

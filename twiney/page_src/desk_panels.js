@@ -174,6 +174,19 @@ function renderBook(d){
    around the spot, BUY / SELL to open from the row. Polled on its own (not in the big state payload) while the
    panel is on screen. */
 const OC = {right: "C", expiry: null, data: null, timer: null, busy: false};
+/* SELL TO OPEN: selling contracts you don't own leaves you SHORT. Always a red confirm (ONE-CLICK or not), saying so */
+function shortOpening(key, action, n){
+  if (action !== "SELL") return 0;
+  const p = ((state && state.account && state.account.opt_positions) || []).find(x => x.key === key);
+  return Math.max(0, n - Math.max(0, p ? p.qty : 0));
+}
+function shortOpenConfirm(what, so, send){
+  const allowed = !!T().allow_sell_to_open;
+  confirmBox(`SELL TO OPEN · ${what}`, `you'll be SHORT ${so} contract${so === 1 ? "" : "s"}: you take the premium and owe the move. ` +
+    (allowed ? "A short call has no ceiling on the loss; a short put can be assigned the shares. Your IBKR account needs the option level for it."
+             : "Selling to open is OFF (SETTINGS, Trading, Allow selling to open): this goes through only as a covered call (100 shares each)."), "s", send);
+  const m = document.getElementById("modal"); if (m) m.classList.add("shortopen");
+}
 function contractName(l){ return `${l.sym} ${l.expiry.slice(4, 6)}/${l.expiry.slice(6, 8)} ${l.strike % 1 ? l.strike.toFixed(2) : l.strike} ${l.right === "C" ? "CALL" : "PUT"}`; }
 async function pollLink(){
   const l = OC.link; if (!l || l.sym !== curSym || OC.busy) return;
@@ -241,6 +254,7 @@ document.addEventListener("click", e => { const b = e.target.closest("button[dat
       if (pxv === "" && touch == null){ toast("No quote on that contract — type your limit price in PX, then press " + b.dataset.oo + " again", false); OC.sel = strike; document.getElementById("ocPx").focus(); return; } }
     const d = OC.data, what = `${b.dataset.oo} ${n} ${curSym} ${d.expiry.slice(4, 6)}/${d.expiry.slice(6, 8)} ${strike}${d.right}`;
     const send = async () => { const out = await post("/api/trade/opt_open", {symbol: curSym, expiry: d.expiry, strike, right: d.right, action: b.dataset.oo, contracts: n, price: pxv === "" ? null : +pxv}); toast(out.ok ? "Sent: " + out.sent : "Blocked: " + (out.reason || ""), out.ok); poll(true); pollChain(); };
+    { const row0 = d.rows.find(r => r.strike === strike) || {}; const so = shortOpening(row0.key, b.dataset.oo, n); if (so) return shortOpenConfirm(what, so, send); }
     if (T().one_click) return send();
     const row = d.rows.find(r => r.strike === strike) || {}; const ref = pxv !== "" ? +pxv : (b.dataset.oo === "BUY" ? row.ask : row.bid);
     confirmBox(what, `limit ${ref != null ? "$" + ref.toFixed(2) : "?"} a contract · about $${sz(Math.round((ref || 0) * 100 * n))} · ${d.source === "PRACTICE" ? "practice" : "IBKR paper"}`, b.dataset.oo === "BUY" ? "b" : "s", send);
@@ -863,6 +877,7 @@ document.addEventListener("click", async e => {
     const out = closing ? await post("/api/trade/opt_adjust", {key: l.key, contracts: Math.min(n, q), mode: "close", price: null})
       : await post("/api/trade/opt_open", {symbol: l.sym, expiry: l.expiry, strike: l.strike, right: l.right, action: side, contracts: n, price: null});
     toast(out.ok ? "Sent: " + out.sent : "Blocked: " + (out.reason || ""), out.ok); P.ticket.last = null; poll(true); };
+  { const so = closing ? 0 : shortOpening(l.key, side, n); if (so) return shortOpenConfirm(`${n} ${contractName(l)} @ ${touch.toFixed(2)}`, so, send); }
   if (T().one_click) return send();
   confirmBox(`${side} ${closing ? Math.min(n, q) : n} ${contractName(l)}`, `${side === "BUY" ? "ask" : "bid"} ${touch.toFixed(2)} a contract · about $${sz(Math.round(touch * 100 * (closing ? Math.min(n, q) : n)))}${closing ? " · takes your contracts down" : ""}`, side === "BUY" ? "b" : "s", send);
 });
@@ -1919,6 +1934,7 @@ async function ochOrder(action, price, n, now){
     const out = closing ? await post("/api/trade/opt_adjust", {key: d.key, contracts: k, mode: "close", price})
       : await post("/api/trade/opt_open", {symbol: d.underlying, expiry: d.expiry, strike: d.strike, right: d.right, action, contracts: k, price});
     toast(out.ok ? "Sent: " + out.sent : "Blocked: " + (out.reason || ""), out.ok); poll(true); pollOch(); };
+  { const so = closing ? 0 : shortOpening(d.key, action, k); if (so) return shortOpenConfirm(`${k} ${d.label}${price != null ? " @ " + price.toFixed(2) : " now"}`, so, send); }
   if (T().one_click || (now && closing)) return send();      // getting out never waits on a confirm
   const ref = price != null ? price : (action === "BUY" ? d.ask : d.bid);
   confirmBox(`${action} ${k} ${d.label}${price != null ? " @ " + price.toFixed(2) : " now"}`, `${price != null ? "limit " + price.toFixed(2) + " — rests until price gets there" : (action === "BUY" ? "at the ask" : "at the bid") + ", fills now"} · about $${sz(Math.round((ref || 0) * 100 * k))}${closing ? " · takes your contracts down" : ""}`, action === "BUY" ? "b" : "s", send);

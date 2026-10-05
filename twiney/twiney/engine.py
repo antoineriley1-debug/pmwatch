@@ -1099,7 +1099,44 @@ class Engine:
                 if q and last:
                     open_pnl += (last - cost) * q
             realized -= sum(c for k, c in self.commissions.items() if k in self.fills)
-            return {"realized": round(realized, 2), "open": round(open_pnl, 2), "total": round(realized + open_pnl, 2)}
+            # OPTIONS count too (the day-loss lock must see them): today's option fills, contract by contract, from
+            # the position you started the day with (at its average cost), plus the open contracts at their mark
+            o_real, o_open = self._opt_day_pnl()
+            realized += o_real; open_pnl += o_open
+            return {"realized": round(realized, 2), "open": round(open_pnl, 2), "total": round(realized + open_pnl, 2),
+                    "options": round(o_real + o_open, 2)}
+
+    def _opt_day_pnl(self):
+        real = opn = 0.0
+        fills = sorted(self.opt_fills, key=lambda f: f.get("seq", 0))
+        keys = {f["symbol"] for f in fills} | set(self.opt_positions)
+        for key in keys:
+            pos = self.opt_positions.get(key) or {}
+            mult = float(pos.get("mult") or 100)
+            mine = [f for f in fills if f["symbol"] == key]
+            net = sum(f["shares"] * (1 if f["side"] in ("BOT", "BUY") else -1) for f in mine)
+            q = float(pos.get("qty") or 0) - net                     # what you held before today's fills
+            cost = (float(pos.get("avg_cost") or 0) / mult) if q else 0.0
+            for f in mine:
+                qty, px_ = f["shares"] * (1 if f["side"] in ("BOT", "BUY") else -1), f["price"]
+                if q == 0 or (q > 0) == (qty > 0):
+                    nq = q + qty
+                    cost = (q * cost + qty * px_) / nq if nq else 0.0
+                    q = nq
+                else:
+                    closed = min(abs(q), abs(qty))
+                    real += closed * (px_ - cost) * (1 if q > 0 else -1) * mult
+                    q += qty
+                    if q == 0:
+                        cost = 0.0
+                    elif (q > 0) == (qty > 0):
+                        cost = px_
+            if q and pos:
+                b, a, last = pos.get("bid"), pos.get("ask"), pos.get("last")
+                mark = (b + a) / 2 if b and a else last
+                if mark:
+                    opn += (mark - cost) * q * mult
+        return real, opn
 
     # ---- levels drawn on the chart -------------------------------------------
 

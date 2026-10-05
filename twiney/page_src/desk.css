@@ -575,3 +575,5 @@ i.tl{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:3p
 .flychip{position:fixed;z-index:9999;pointer-events:none;min-width:100px;white-space:nowrap;text-align:center;font:800 11px var(--mono);padding:2px 4px;border-radius:3px;
   background:#2a2306;color:var(--gold);border:1px solid var(--gold);transition:left .42s cubic-bezier(.3,.7,.3,1),top .42s cubic-bezier(.3,.7,.3,1),opacity .42s ease-in;box-shadow:0 4px 14px rgba(0,0,0,.6)}
 .flychip.b{background:#0f3b26;color:#fff;border-color:var(--buy)} .flychip.s{background:#4a1520;color:#fff;border-color:var(--sell)}
+
+#modal.shortopen .box{border:2px solid var(--sell);box-shadow:0 0 0 4px rgba(255,77,94,.25)} #modal.shortopen h2{color:#fff;background:#7a1a2a;padding:4px 8px;border-radius:3px}

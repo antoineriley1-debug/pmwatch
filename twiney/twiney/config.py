@@ -204,6 +204,9 @@ DEFAULTS = {
         "clean_chart_on_start": True,
         # a contract you hold is stopped out by the stock chart's STOP line (the side that hurts it) unless you set its own stop
         "option_stop_follows_chart": True,
+        # SELL TO OPEN (writing a contract you don't own: you are SHORT). Off: only covered calls (100 shares each). Your
+        # IBKR account also needs the option level for it; a naked short call has no ceiling on the loss
+        "allow_sell_to_open": False,
         # the FILLED chip on the 2nd entry line goes this many seconds after the fill
         "filled_chip_seconds": 90,
         "risk_dollars": 100,

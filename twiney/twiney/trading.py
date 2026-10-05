@@ -1852,6 +1852,25 @@ class Trader:
             self.engine._rec({"ev": "reverse", "t": now, "sym": symbol, "from": pos, "action": action, "qty": qty, "px": price, "id": oid})
             return {"ok": True, "id": oid, "flatten": flat, "sent": f"{action} {qty} {symbol} @ {money(price)} (reverse)"}
 
+    def _sell_to_open_why(self, symbol, right, key, short_new):
+        """None when this many contracts may be SOLD TO OPEN (written). Off by default (SETTINGS, Trading, Allow
+        selling to open). Covered calls are always allowed: calls sold against 100 shares each that you hold and
+        that no other short call already covers."""
+        if short_new <= 0 or self.cfg.get("allow_sell_to_open", False):
+            return None
+        if right == "C":
+            shares = int(self.broker.position(symbol))
+            short_calls = sum(-int(p["qty"]) for k, p in self.engine.opt_positions.items()
+                              if p.get("symbol") == symbol and p.get("right") == "C" and p["qty"] < 0 and k != key)
+            short_calls += max(0, -int((self.engine.opt_positions.get(key) or {}).get("qty") or 0))
+            if shares >= 100 * (short_calls + short_new):
+                return None                                # covered: you own the shares
+            return (f"selling {short_new} call{'s' if short_new != 1 else ''} to open would leave you SHORT calls not covered by "
+                    f"{symbol} shares (you hold {shares:,}; covering takes {100 * (short_calls + short_new):,}). Selling to "
+                    f"open is off — SETTINGS, Trading, Allow selling to open")
+        return (f"selling {short_new} put{'s' if short_new != 1 else ''} to open would leave you SHORT puts. Selling to open is "
+                f"off — SETTINGS, Trading, Allow selling to open")
+
     def opt_open(self, symbol, expiry, strike, right, action, contracts, price=None, now=None):
         """Open (or add to) an option position from the chain: BUY or SELL ``contracts`` of the picked contract,
         LIMIT DAY, at the touch (ask to buy, bid to sell) or at your price. Goes through the trading gate in real
@@ -1889,6 +1908,12 @@ class Trader:
             price = round(float(price), 2)
             if price <= 0:
                 return {"ok": False, "reason": "price must be positive"}
+            held = int((self.engine.opt_positions.get(key) or {}).get("qty") or 0)
+            short_new = max(0, n - max(0, held)) if action == SELL else 0     # contracts this SELL would open short
+            why = self._sell_to_open_why(symbol, right, key, short_new)
+            if why:
+                self._note(now, f"BLOCKED SELL {n} {key}: {why}", False)
+                return {"ok": False, "reason": why}
             reason = self.gate.check(action, n, price, now, "LMT", mult=mult)
             if reason:
                 self._note(now, f"BLOCKED {action} {n} {key} @ {money(price)}: {reason}", False)
@@ -1928,6 +1953,11 @@ class Trader:
                 if n <= 0:
                     return {"ok": False, "reason": "how many contracts?"}
                 action = BUY if long_ else SELL
+                if not long_:                                   # adding to a short: more contracts sold to open
+                    why = self._sell_to_open_why(p.get("symbol"), p.get("right"), key, n)
+                    if why:
+                        self._note(now, f"BLOCKED SELL {n} more {key}: {why}", False)
+                        return {"ok": False, "reason": why}
             else:
                 return {"ok": False, "reason": f"bad mode {mode}"}
             if price is None or price == "":
@@ -2153,6 +2183,7 @@ class Trader:
                  scale_plans={sym: self._plan_view(sym, pl, time.time()) for sym, pl in self.scale_plans.items()},
                  trails={sym: dict(tr) for sym, tr in self.trails.items()},
                  opt_stops=self._opt_stop_view(),
+                 allow_sell_to_open=bool(self.cfg.get("allow_sell_to_open", False)),
                  scale_templates={k: v for k, v in (self.cfg["scale_plan"].get("templates") or {}).items()},
                  qty_presets=list(self.cfg.get("qty_presets") or [25, 50, 100, 200, 500, 1000]),
                  manage_presets=list(self.cfg.get("manage_presets") or [5, 10, 20]),
