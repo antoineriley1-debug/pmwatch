@@ -589,3 +589,7 @@ i.tl{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:3p
 .cbar{display:flex;flex-wrap:wrap;align-items:center;gap:3px 8px;padding:4px 6px;background:#2a2306;border-bottom:1px solid var(--gold);font:11px var(--mono)}
 .cbar .lbl{font:800 9.5px var(--sans);letter-spacing:.12em;color:var(--gold)} .cbar b{font-size:12.5px} .cbar b.b{color:var(--buy)} .cbar b.s{color:var(--sell)}
 .cbar button{margin-left:auto;height:20px;padding:0 8px}
+
+.cbar .cbtns{margin-left:auto;display:inline-flex;gap:4px} .cbar .cbtns button{margin-left:0}
+.cswitch{display:flex;align-items:center;gap:8px;padding:2px 6px;background:#1c1806;border-bottom:1px solid #6b5a1a;font:10.5px var(--mono);color:var(--gold)}
+.cswitch span{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .cswitch button{height:18px;padding:0 6px;font-size:10px;color:var(--gold);border-color:var(--gold)}

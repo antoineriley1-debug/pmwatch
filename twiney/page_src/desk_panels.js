@@ -146,7 +146,7 @@ function chartTypeKey(e){
 function renderBook(d){
   const wrap = P.book.pc.querySelector(".ladder-wrap");
   renderLadStat(d, state); renderLadQty(state);
-  renderContractL2(); if (contractMode("book")) return;
+  renderContractL2(); renderSwitchStrips(); if (contractMode("book")) return;
   if (!d){ if (P.book.last !== "-"){ P.book.last = "-"; wrap.innerHTML = `<div class="dim" style="padding:8px">${NA}</div>`; } return; }
   if (bookDragging || bookHold) return;       // never redraw rows under a pressed mouse button
   const bi = document.getElementById("bigIn"), L = d.ladder || {};
@@ -451,7 +451,7 @@ P.book.el.addEventListener("click", e => {
 P.book.el.addEventListener("scroll", () => { const wrap = P.book.pc.querySelector(".ladder-wrap"); const d = curData(); if (wrap && d) rlBanner(wrap, d); }, true);
 function renderTape(d){
   const el = P.tape.pc.querySelector(".p-tape");
-  renderContractTape(); if (contractMode("tape")){ renderBigTape(d); return; }
+  renderContractTape(); renderSwitchStrips(); if (contractMode("tape")){ renderBigTape(d); return; }
   if (!d){ el.innerHTML = `<div class="dim" style="padding:8px">${NA}</div>`; P.tape.last = null; renderBigTape(null); return; }
   const html = tapeGaugeHTML(d.tape) + tapeSpeedHTML(d.tape.speed) + tapeHTML(d.tape, d.ladder); if (P.tape.last !== html){ P.tape.last = html;
     const keep = el.scrollTop; el.innerHTML = html; el.scrollTop = keep; makeColsResizable(el.querySelector("table")); }
@@ -2042,16 +2042,32 @@ function otapeTable(pr){ return pr ? `<table class="otp"><tr><th>TIME</th><th>PR
 /* CONTRACT MODE: pick a contract and the main LEVEL II and TIME & SALES follow it, like ORDER ENTRY (unless the
    OPTION LEVEL II / OPTION T&S windows are up — then those carry the contract and these stay on the stock).
    ✕ BACK TO SHARES on top puts all three back on the stock */
+// each window decides on its own: "stock" keeps it on the shares while ORDER ENTRY trades the contract
+const CPIN = (() => { try { return Object.assign({book: "auto", tape: "auto"}, store.get("cpin", {})); } catch (e) { return {book: "auto", tape: "auto"}; } })();
+function setPin(which, v){ CPIN[which] = v; store.set("cpin", CPIN); P.book.last = null; P.tape.last = null; renderContractL2(); renderContractTape(); renderSwitchStrips(); poll(true); }
 function contractMode(which){
   if (!(OC.link && OC.link.sym === curSym)) return false;
+  if (CPIN[which] === "stock") return false;
   const own = P[which === "tape" ? "otape" : "obook"];
   return !(own && own.el.offsetParent !== null);
 }
 function contractBar(kind){
   const d = OCH.data, l = OC.link, f = v => v == null ? "—" : (+v).toFixed(2);
   const t = d && d.tape;
-  return `<div class="cbar"><span class="lbl">${kind} · CONTRACT</span><b class="${l.right === "C" ? "b" : "s"}">${esc(contractName(l))}</b><span class="dim">bid ${f(d && d.bid)}${t && t.bid_size != null ? " × " + t.bid_size : ""} · ask ${f(d && d.ask)}${t && t.ask_size != null ? " × " + t.ask_size : ""}${kind === "T&S" && t ? ` · vol ${sz(t.volume || 0)}` : ""}</span><button data-unlinkall="1" title="LEVEL II, T&S and ORDER ENTRY back on ${esc(l.sym)} shares">✕ BACK TO SHARES</button></div>`;
+  return `<div class="cbar"><span class="lbl">${kind} · CONTRACT</span><b class="${l.right === "C" ? "b" : "s"}">${esc(contractName(l))}</b><span class="dim">bid ${f(d && d.bid)}${t && t.bid_size != null ? " × " + t.bid_size : ""} · ask ${f(d && d.ask)}${t && t.ask_size != null ? " × " + t.ask_size : ""}${kind === "T&S" && t ? ` · vol ${sz(t.volume || 0)}` : ""}</span><span class="cbtns"><button data-pin="${kind === "T&S" ? "tape" : "book"}" data-pinv="stock" title="only this window goes back to ${esc(l.sym)} shares; ${kind === "T&S" ? "LEVEL II" : "T&S"} and ORDER ENTRY stay on the contract">${esc(l.sym)} SHARES HERE</button><button data-unlinkall="1" title="LEVEL II, T&S and ORDER ENTRY all back on ${esc(l.sym)} shares">✕ ALL BACK TO SHARES</button></span></div>`;
 }
+// a window kept on the shares while a contract is picked: a thin strip to bring the contract into it
+function renderSwitchStrips(){
+  for (const [which, pid] of [["book", "book"], ["tape", "tape"]]){
+    const pc = P[pid].pc; let el = pc.querySelector(":scope > .cswitch");
+    const show = OC.link && OC.link.sym === curSym && CPIN[which] === "stock";
+    if (!show){ if (el) el.remove(); continue; }
+    if (!el){ el = document.createElement("div"); el.className = "cswitch"; pc.prepend(el); }
+    const h = `<span>${which === "tape" ? "T&S" : "LEVEL II"} on ${esc(OC.link.sym)} shares · ORDER ENTRY trades ${esc(contractName(OC.link))}</span><button data-pin="${which}" data-pinv="auto">show the contract here</button>`;
+    if (el.dataset.h !== h){ el.dataset.h = h; el.innerHTML = h; }
+  }
+}
+document.addEventListener("click", e => { const b = e.target.closest("button[data-pin]"); if (!b) return; e.stopPropagation(); setPin(b.dataset.pin, b.dataset.pinv); }, true);
 function renderContractL2(){
   const el = P.book.el, on = contractMode("book");
   el.classList.toggle("cmode", on);
@@ -2072,7 +2088,7 @@ function renderContractTape(){
   if (box.dataset.h !== html){ box.dataset.h = html; box.innerHTML = html; }
 }
 document.addEventListener("click", e => { if (!e.target.closest("button[data-unlinkall]")) return;
-  OC.link = null; P.ticket.last = null; renderContractL2(); renderContractTape(); poll(true); toast("Back on the shares", true); });
+  OC.link = null; CPIN.book = CPIN.tape = "auto"; store.set("cpin", CPIN); P.ticket.last = null; renderContractL2(); renderContractTape(); renderSwitchStrips(); poll(true); toast("Back on the shares", true); });
 function renderOptPanels(){
   const d = OCH.data, t = d && d.tape, f = v => v == null ? "—" : (+v).toFixed(2), name = d ? esc(d.label) : "";
   const none = `<div class="dim" style="padding:8px">Pick a contract: OPTIONS, then click a strike (or 📈). Its book, prints and big prints show here.</div>`;
