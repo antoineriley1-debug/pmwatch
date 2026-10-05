@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261005-0006">
+<meta name="build" content="20261005-0014">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -1204,8 +1204,8 @@ body.resizing .zbody{pointer-events:none}
   <input type="range" id="voiceVol" min="0" max="1" step="0.1" style="width:60px" title="voice volume">
   <button id="soundBtn" title="beep on calls (active tab)">BEEP</button>
   <span class="spacer"></span>
-  <span class="menu" id="chartsMenu"><button title="bring a chart back, or open one">CHARTS</button><div class="pop" id="chartsPop"><h5>CHARTS</h5>
-    <button data-showp="chart">STOCK CHART</button><button data-showp="chart2">CHART 2 (opens on 5 min)</button><button data-showp="chart3">CHART 3 (opens on 15 min)</button><button data-showp="foot">FOOTPRINT 5m</button><button data-showp="ochart">OPTION CHART</button>
+  <span class="menu" id="chartsMenu"><button title="bring a chart back, or open one; the contract's Level II and T&S too">CHARTS</button><div class="pop" id="chartsPop"><h5>CHARTS</h5>
+    <button data-showp="chart">STOCK CHART</button><button data-showp="chart2">CHART 2 (opens on 5 min)</button><button data-showp="chart3">CHART 3 (opens on 15 min)</button><button data-showp="foot">FOOTPRINT 5m</button><button data-showp="ochart">OPTION CHART</button><h5 style="margin-top:6px">THE CONTRACT</h5><button data-showp="obook">OPTION LEVEL II</button><button data-showp="otape">OPTION T&amp;S</button><button data-showp="obig">OPTION BIG TAPE</button><button data-showp="optall">ALL THREE + OPTION CHART</button>
     <div class="dim" style="font-size:10.5px;margin-top:4px">Click one to put it up: a closed chart comes back as a floating window. Drag it by its tab; DOCK ▾ on the tab pins it to a spot (it stays there), ⧉ floats it again. OPTION CHART charts the contract you pick in the OPTION CHAIN.</div></div></span>
   <span class="menu" id="panelsMenu"><button>PANELS</button><div class="pop" id="panelsPop"></div></span>
   <span class="menu" id="hkMenu"><button>Hotkeys</button><div class="pop" id="hkPop"></div></span>
@@ -5289,7 +5289,15 @@ document.getElementById("chartsMenu").querySelector("button").addEventListener("
 /* CHARTS menu: a chart that is not up opens as a floating window (staggered so several can be up at once);
    one already docked or floating is brought to the front */
 function openChartWindow(id){
-  if (LAY.hidden.includes(id)){ const n = Object.keys(LAY.floats || {}).length; movePanel(id, "float", {l: 90 + n * 34, t: 70 + n * 30, w: 620, h: 400}); }
+  if (["obook", "otape", "obig"].includes(id)) setTimeout(pollOch, 50);
+  if (id === "optall"){ ["ochart", "obook", "otape", "obig"].forEach(x => openChartWindow(x)); if (!OCH.key) toast("Pick a contract: OPTIONS, then click a strike — these four follow it", true); return; }
+  const small = ["obook", "otape", "obig"].includes(id);
+  if (LAY.hidden.includes(id)){
+    if (small){   // the contract's windows sit side by side (never on top of each other), from the left
+      const k = Object.keys(LAY.floats || {}).filter(x => ["obook", "otape", "obig"].includes(x)).length, W = document.getElementById("work").clientWidth || 1600;
+      movePanel(id, "float", {l: Math.min(W - 340, 210 + k * 340), t: 80, w: 330, h: 470});
+    } else { const n = Object.keys(LAY.floats || {}).length; movePanel(id, "float", {l: 90 + n * 34, t: 70 + n * 30, w: 620, h: 400}); }
+  }
   else showPanel(id);
   const c = charts[id] || (id === "ochart" ? ochart : null); if (c) setTimeout(() => drawChart(c), 50);
 }

@@ -2008,7 +2008,15 @@ document.getElementById("chartsMenu").querySelector("button").addEventListener("
 /* CHARTS menu: a chart that is not up opens as a floating window (staggered so several can be up at once);
    one already docked or floating is brought to the front */
 function openChartWindow(id){
-  if (LAY.hidden.includes(id)){ const n = Object.keys(LAY.floats || {}).length; movePanel(id, "float", {l: 90 + n * 34, t: 70 + n * 30, w: 620, h: 400}); }
+  if (["obook", "otape", "obig"].includes(id)) setTimeout(pollOch, 50);
+  if (id === "optall"){ ["ochart", "obook", "otape", "obig"].forEach(x => openChartWindow(x)); if (!OCH.key) toast("Pick a contract: OPTIONS, then click a strike — these four follow it", true); return; }
+  const small = ["obook", "otape", "obig"].includes(id);
+  if (LAY.hidden.includes(id)){
+    if (small){   // the contract's windows sit side by side (never on top of each other), from the left
+      const k = Object.keys(LAY.floats || {}).filter(x => ["obook", "otape", "obig"].includes(x)).length, W = document.getElementById("work").clientWidth || 1600;
+      movePanel(id, "float", {l: Math.min(W - 340, 210 + k * 340), t: 80, w: 330, h: 470});
+    } else { const n = Object.keys(LAY.floats || {}).length; movePanel(id, "float", {l: 90 + n * 34, t: 70 + n * 30, w: 620, h: 400}); }
+  }
   else showPanel(id);
   const c = charts[id] || (id === "ochart" ? ochart : null); if (c) setTimeout(() => drawChart(c), 50);
 }
