@@ -106,15 +106,32 @@ class Desk:
             json.dump(self._open, fh)
         os.replace(tmp, self.open_path)
 
-    def _new_trade(self, sym, signed, t):
-        play = next((p for p in self.plays if p["symbol"] == sym), None) or getattr(self.engine, "syms", {}).get(sym)
-        play = getattr(play, "play", play) or {}
+    def _new_trade(self, sym, signed, t, fill=None):
+        fill = fill or {}
+        under = sym.split(" ")[0]                     # an option trade is filed under its stock
+        st = getattr(self.engine, "syms", {}).get(under)
+        play = (st.play if st is not None else None) or next((p for p in self.plays if p["symbol"] == under), None) or {}
         self._seq += 1
-        return {"id": f"{sym}-{int(t)}-{self._seq}", "symbol": sym, "side": "long" if signed > 0 else "short",
+        opt = bool(fill.get("opt"))
+        # the PLAN at the moment you got in: the lines on the chart for the direction you took (a put / short rides the
+        # short side). Kept with the trade, so the result is judged against what you planned
+        bull = (signed > 0) if not opt else ((sym.split(" ")[2].endswith("C")) == (signed > 0))
+        own_long = play.get("side", "long") == "long"
+        lines = play if bull == own_long else (play.get("alt") or {})
+        plan = {k: lines.get(k) for k in ("trigger", "second_entry", "stop", "target") if lines.get(k)}
+        side = "long" if signed > 0 else "short"
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        when = datetime.fromtimestamp(t, ZoneInfo("America/New_York")).strftime("%m/%d %H:%M")
+        what = (" ".join(sym.split(" ")[2:]) if opt else side.upper())
+        return {"id": f"{sym.replace(' ', '_')}-{int(t)}-{self._seq}", "symbol": sym, "underlying": under, "side": side,
+                "opt": opt, "mult": float(fill.get("mult") or (100 if opt else 1)),
+                "name": f"{under} {what} {('· ' + play.get('setup')) if play.get('setup') else ''} {when}".replace("  ", " ").strip(),
                 "opened": t, "closed": None, "qty": 0.0, "entry_qty": 0.0, "entry_cost": 0.0,
                 "exit_qty": 0.0, "exit_cost": 0.0, "setup": play.get("setup") or "",
-                "grade": "", "note": "", "pnl": None, "pnl_pct": None, "execs": [],
-                "flow": self.engine.flow.context_text(sym, t) if getattr(self.engine, "flow", None) else ""}
+                "grade": "", "note": "", "pnl": None, "pnl_pct": None, "execs": [], "plan": plan,
+                "rec": self.current_recording(),
+                "flow": self.engine.flow.context_text(under, t) if getattr(self.engine, "flow", None) else ""}
 
     def on_fill(self, fill, t):
         """Build round trips from fills: open on the first fill, close when the position is back to flat.
@@ -127,13 +144,16 @@ class Desk:
                 return
             self._seen.add(ex)
         signed = qty if fill["side"] == "BOT" else -qty
+        if not fill.get("opt"):            # the fill in the trade's log (an option fill is logged by the engine)
+            self.add_note(t, f"FILL {'BOUGHT' if signed > 0 else 'SOLD'} {qty:g} {sym} @ {fill['price']}", sym, kind="fill")
         while abs(signed) > 1e-9:
             tr = self._open.get(sym)
             if tr is None:
-                tr = self._open[sym] = self._new_trade(sym, signed, t)
+                tr = self._open[sym] = self._new_trade(sym, signed, t, fill)
             long_ = tr["side"] == "long"
             if ex and ex not in tr["execs"]:
                 tr["execs"].append(ex)
+            tr["t_last"] = t
             if (signed > 0) == long_:                       # adding
                 tr["entry_qty"] += abs(signed); tr["entry_cost"] += abs(signed) * fill["price"]
                 tr["qty"] += signed
@@ -179,19 +199,136 @@ class Desk:
 
     def _close(self, sym, tr, t):
         long_ = tr["side"] == "long"
+        mult = float(tr.get("mult") or 1)
         entry = tr["entry_cost"] / tr["entry_qty"]; exit_ = tr["exit_cost"] / max(tr["exit_qty"], 1e-9)
         tr["entry"], tr["exit"] = round(entry, 4), round(exit_, 4)
-        tr["pnl"] = round((exit_ - entry) * tr["entry_qty"] * (1 if long_ else -1), 2)
+        tr["pnl"] = round((exit_ - entry) * tr["entry_qty"] * mult * (1 if long_ else -1), 2)
         tr["pnl_pct"] = round((exit_ - entry) / entry * 100 * (1 if long_ else -1), 3) if entry else None
         tr["closed"] = t
         tr["shares"] = tr["entry_qty"]
-        # the trade log: everything set, said and typed on this symbol from a little before the entry to the exit
-        since = (tr.get("opened") or t) - 600
-        tr["log"] = " | ".join(f"{_hm(n['t'])} {n['text']}" for n in self.notes if n.get("symbol") == sym and since <= n["t"] <= t + 1)[:4000]
+        tr["minutes"] = round((t - (tr.get("opened") or t)) / 60.0, 1)
+        # the RESULT: win / loss (a scratch is within a tenth of a percent), and R against the stop you planned
+        tr["result"] = "SCRATCH" if tr["pnl_pct"] is not None and abs(tr["pnl_pct"]) < 0.1 else ("WIN" if tr["pnl"] > 0 else "LOSS")
+        stop = (tr.get("plan") or {}).get("stop")
+        if stop and not tr.get("opt") and abs(entry - stop) > 1e-9:
+            tr["r"] = round((exit_ - entry) * (1 if long_ else -1) / abs(entry - stop), 2)
+        self._fill_story(tr, t)
         self.trades.append({k: v for k, v in tr.items() if k not in ("qty", "entry_cost", "exit_cost", "exit_qty", "entry_qty", "legs")})
         self.engine._rec({"ev": "trade", "t": t, "trade": self.trades[-1]})
         self._write_trades()
         del self._open[sym]
+        try:
+            self.save_trade(self.trades[-1]["id"])
+        except Exception:
+            pass
+        self.engine._message("info", f"JOURNAL: {self.trades[-1]['name']} — {tr['result']} {tr['pnl']:+,.2f}"
+                                     + (f" ({tr['r']:+.2f}R)" if tr.get("r") is not None else "") + " · saved", t, tr.get("underlying"))
+
+    def _fill_story(self, tr, t):
+        """The trade log (everything set, sent, filled, said and marked on the stock from a little before the entry to the
+        exit), the spoken TRANSCRIPT on its own, and the MARKS with what the screen showed."""
+        under = tr.get("underlying") or tr["symbol"].split(" ")[0]
+        since, until = (tr.get("opened") or t) - 600, t + 1
+        notes = [n for n in self.notes if n.get("symbol") in (under, tr["symbol"]) and since <= n["t"] <= until]
+        tr["log"] = " | ".join(f"{_hm(n['t'])} {n['text']}" for n in notes)[:6000]
+        tr["transcript"] = [{"t": n["t"], "text": n["text"].lstrip("🎙 ").strip()} for n in notes if n.get("kind") == "voice"][-40:]
+        tr["marks"] = [{"t": m["t"], "price": m.get("price"), "note": m.get("note"), "context": m.get("context"), "shot": m.get("shot")}
+                       for m in self.marks if m.get("symbol") in (under, tr["symbol"]) and since <= m["t"] <= until][-40:]
+
+    def reconcile(self, t):
+        """An open journal trade must be a real position. One the broker shows FLAT (closed while TED was off, or a
+        practice session that ended) is dropped, said once, so the next trade on that ticker starts fresh. Never in the
+        10 s after a fill (the position report trails it); live, only once positions have had 20 s to arrive."""
+        eng = self.engine
+        first = self.__dict__.setdefault("_recon_first", t)
+        state = (getattr(eng, "connection", {}) or {}).get("state")
+        if state not in ("DEMO", "CONNECTED"):
+            return
+        if state == "CONNECTED" and (t - first < 20 or not getattr(eng, "account_seen", False)):
+            return
+        changed = False
+        for sym, tr in list(self._open.items()):
+            if t - float(tr.get("t_last") or tr.get("opened") or 0) < 10:
+                continue
+            if tr.get("opt"):
+                held = float((getattr(eng, "opt_positions", {}).get(sym) or {}).get("qty") or 0)
+            else:
+                held = sum(float(p.get("qty") or 0) for (a, s_), p in list(eng.positions.items()) if s_ == sym)
+            if held == 0 and abs(float(tr.get("qty") or 0)) > 1e-9:
+                del self._open[sym]
+                changed = True
+                eng._message("warn", f"JOURNAL: the open {sym} trade from {_hm(tr.get('opened') or t)} was dropped — the position is "
+                                     f"flat (it was closed while TED was not watching, so its exit price is not known)", t, sym.split(" ")[0])
+        if changed:
+            self._write_open()
+
+    def open_view(self):
+        """The trades you are IN right now, for the JOURNAL: live P&L, the plan, the log and the words so far."""
+        out = []
+        for sym, tr in list(self._open.items()):
+            if not tr.get("entry_qty"):
+                continue
+            avg = tr["entry_cost"] / tr["entry_qty"]
+            under = tr.get("underlying") or sym.split(" ")[0]
+            if tr.get("opt"):
+                q = (getattr(self.engine, "opt_quotes", {}) or {}).get(sym) or {}
+                now = (q["bid"] + q["ask"]) / 2 if q.get("bid") and q.get("ask") else q.get("last")
+            else:
+                st = self.engine.syms.get(sym)
+                now = st.price() if st else None
+            pnl = round((now - avg) * tr["qty"] * float(tr.get("mult") or 1), 2) if now else None
+            view = dict({k: v for k, v in tr.items() if k not in ("legs", "execs")}, entry=round(avg, 4), now=now, pnl=pnl, open=True)
+            self._fill_story(view, time.time())
+            out.append(view)
+        return out
+
+    def journal_dir(self):
+        return os.path.join(self.dir, "journal")
+
+    def save_trade(self, trade_id):
+        """One page per trade, next to the recordings: journal/<date>-<name>.md — the plan, the fills, the result, what
+        you said and what you marked. Re-written when you rename or grade it."""
+        tr = next((x for x in self.trades if x["id"] == trade_id), None)
+        if tr is None:
+            return None
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        ny = ZoneInfo("America/New_York")
+        when = lambda x: datetime.fromtimestamp(x, ny).strftime("%Y-%m-%d %H:%M:%S") if x else "—"
+        os.makedirs(self.journal_dir(), exist_ok=True)
+        safe = "".join(ch if ch.isalnum() or ch in "-_ " else "-" for ch in (tr.get("name") or tr["id"]))[:60].strip().replace(" ", "_")
+        old = tr.get("file")
+        name = f"{datetime.fromtimestamp(tr.get('opened') or time.time(), ny).strftime('%Y-%m-%d-%H%M')}-{safe}.md"
+        mult = float(tr.get("mult") or 1)
+        unit = "contracts" if tr.get("opt") else "shares"
+        plan = tr.get("plan") or {}
+        L = [f"# {tr.get('name') or tr['id']}", "",
+             f"**{tr.get('result', '—')}  {tr['pnl']:+,.2f} $**  ({tr.get('pnl_pct') or 0:+.2f}%" + (f", {tr['r']:+.2f}R" if tr.get("r") is not None else "") + ")" if tr.get("pnl") is not None else "", "",
+             f"- {tr['symbol']} · {tr['side'].upper()} {tr.get('shares', 0):g} {unit}" + (f" (× {mult:g})" if tr.get("opt") else ""),
+             f"- In {when(tr.get('opened'))} @ {tr.get('entry')} · out {when(tr.get('closed'))} @ {tr.get('exit')} · {tr.get('minutes', '—')} min",
+             f"- Setup: {tr.get('setup') or '—'} · grade: {tr.get('grade') or '—'}",
+             f"- Plan: " + (" · ".join(f"{k.replace('_', ' ').replace('trigger', 'pivot')} {v}" for k, v in plan.items()) or "—"),
+             f"- Option flow at entry: {tr.get('flow') or '—'}",
+             f"- Recording: {tr.get('rec') or '—'}", "",
+             "## Note", "", tr.get("note") or "_—_", "",
+             "## What you said (transcript)", ""]
+        L += [f"- **{_hm(x['t'])}** {x['text']}" for x in (tr.get("transcript") or [])] or ["_nothing recorded_"]
+        L += ["", "## Marks", ""]
+        L += [f"- **{_hm(m['t'])}** {m.get('price') or ''} {m.get('note') or ''}" + (f" — {m['context']}" if m.get("context") else "")
+              + (f" — ![shot](../{m['shot']})" if m.get("shot") else "") for m in (tr.get("marks") or [])] or ["_none_"]
+        L += ["", "## Everything that happened", ""]
+        L += [f"- {line}" for line in (tr.get("log") or "").split(" | ") if line] or ["_—_"]
+        path = os.path.join(self.journal_dir(), name)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("\n".join(L) + "\n")
+        if old and old != name:
+            try:
+                os.remove(os.path.join(self.journal_dir(), old))
+            except OSError:
+                pass
+        tr["file"] = name
+        self._write_trades()
+        return name
 
     def trades_csv(self):
         """The whole trade journal as a spreadsheet (opens in Excel / Google Sheets). Times in New York time."""
@@ -210,14 +347,26 @@ class Desk:
                         tr.get("setup"), tr.get("grade"), tr.get("note"), tr.get("flow"), tr.get("log", ""), tr.get("id")])
         return out.getvalue()
 
-    def tag_trade(self, trade_id, setup=None, grade=None, note=None):
+    def tag_trade(self, trade_id, setup=None, grade=None, note=None, name=None):
+        """Name, setup, grade and note: on a closed trade (its page is saved again) or on the one you are in now."""
         for tr in self.trades:
             if tr["id"] == trade_id:
                 if setup is not None: tr["setup"] = str(setup)[:40]
                 if grade is not None: tr["grade"] = str(grade)[:4]
-                if note is not None: tr["note"] = str(note)[:300]
-                self.engine._rec({"ev": "trade_tag", "t": time.time(), "id": trade_id, "setup": tr["setup"], "grade": tr["grade"], "note": tr["note"]})
+                if note is not None: tr["note"] = str(note)[:2000]
+                if name is not None and str(name).strip(): tr["name"] = str(name).strip()[:80]
+                self.engine._rec({"ev": "trade_tag", "t": time.time(), "id": trade_id, "setup": tr["setup"], "grade": tr["grade"],
+                                  "note": tr["note"], "name": tr.get("name")})
                 self._write_trades()
+                self.save_trade(trade_id)
+                return True
+        for tr in self._open.values():
+            if tr["id"] == trade_id:
+                if setup is not None: tr["setup"] = str(setup)[:40]
+                if grade is not None: tr["grade"] = str(grade)[:4]
+                if note is not None: tr["note"] = str(note)[:2000]
+                if name is not None and str(name).strip(): tr["name"] = str(name).strip()[:80]
+                self._write_open()
                 return True
         return False
 
@@ -347,14 +496,56 @@ class Desk:
                 headline = pane["headline"]
         except Exception:
             pass
+        context = self._screen_context(symbol, t)
         m = {"t": t, "symbol": symbol, "price": price, "note": note or "", "headline": headline, "shot": shot,
-             "n": len(self.marks) + 1}
+             "n": len(self.marks) + 1, "context": context}
         self.marks.append(m)
         self.engine._rec(dict(m, ev="mark"))
+        if symbol and not (note or "").startswith("🎙"):   # a voice note's words land on their own when you stop talking
+            self.add_note(t, f"⚑ MARK {price if price is not None else ''} {('— ' + note) if note else ''} — {context}".replace("  ", " "),
+                          symbol, kind="mark", mark=m["n"])
         if self.recording:
             with open(self.engine.recorder.path[:-6] + ".marks.jsonl", "a", encoding="utf-8") as fh:
                 fh.write(json.dumps(m) + "\n")
         return m
+
+    def _screen_context(self, symbol, t):
+        """What the screen showed at that second, in one line: price, quote, your position and its P&L, your lines, the
+        PS60 read, the reload buyer / seller, the option you hold and the flow."""
+        eng = self.engine
+        st = eng.syms.get(symbol) if symbol else None
+        if st is None:
+            return ""
+        parts = []
+        try:
+            bid, ask = st.bbo()
+            parts.append(f"{symbol} {st.price()}" + (f" ({bid} × {ask})" if bid and ask else ""))
+            pos = sum(p["qty"] for (a, s_), p in eng.positions.items() if s_ == symbol)
+            if pos:
+                parts.append(f"{'LONG' if pos > 0 else 'SHORT'} {abs(pos):g}")
+            for k, p in list(getattr(eng, "opt_positions", {}).items()):
+                if k.split(" ")[0] == symbol and p.get("qty"):
+                    parts.append(f"holding {p['qty']:g} {k}")
+            pl = st.play
+            lv = [f"{n} {pl[k]}" for k, n in (("trigger", "pivot"), ("second_entry", "2nd"), ("stop", "stop"), ("target", "target")) if pl.get(k)]
+            if lv:
+                parts.append(" · ".join(lv))
+            for tr in st.trackers.values():
+                if tr.proven and tr.displayed > 0:
+                    parts.append(f"RELOAD {'BUYER' if tr.side == BID else 'SELLER'} {tr.price} ↻{tr.proven_refills}")
+            try:
+                tp = st.tape.stats(t) or {}
+                if tp.get("read"):
+                    parts.append(f"tape {tp['read']}")
+            except Exception:
+                pass
+            if getattr(eng, "flow", None):
+                fl = eng.flow.context_text(symbol, t)
+                if fl:
+                    parts.append("flow: " + fl[:120])
+        except Exception:
+            pass
+        return " · ".join(x for x in parts if x)[:600]
 
     def add_note(self, t, text, symbol=None, **extra):
         text = text.strip()

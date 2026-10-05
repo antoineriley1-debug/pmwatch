@@ -1551,23 +1551,60 @@ function flowWords(a){
   const what = a.cp === "C" ? "call" : "put";
   return `${a.symbol}: unusual ${what} buying, ${a.premium >= 1e6 ? (a.premium / 1e6).toFixed(1) + " million" : Math.round(a.premium / 1e3) + " thousand"} premium${a.otm_pct != null ? ", " + Math.round(a.otm_pct) + " percent out of the money" : ""}${a.dte != null ? ", " + Math.round(a.dte) + " days out" : ""}.`;
 }
-/* the running trade journal: every round trip, with a setup dropdown so nothing has to be typed */
+/* THE TRADE JOURNAL. On top: the trade(s) you are IN — name it while you trade, the plan, live P&L, every order /
+   fill / line / mark / spoken word so far. Below: every closed trade with its RESULT (win / loss, $, %, R against the
+   stop you planned), the name, setup, grade and note to fill in, ▸ for the transcript, the marks (what the screen showed)
+   and the whole log, and SAVE (one page per trade in recordings/journal, re-saved whenever you change it). */
+const JOPEN = new Set();
+const money2 = v => v == null ? NA : (v >= 0 ? "+$" : "−$") + Math.abs(v).toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+function tradeDetails(t){
+  const tr = (t.transcript || []), mk = (t.marks || []), lg = (t.log || "").split(" | ").filter(Boolean);
+  return `<div class="jdet">
+    <div><b>🎙 WHAT YOU SAID</b>${tr.length ? tr.map(x => `<div class="jl"><i>${nyHM(x.t)}</i> ${esc(x.text)}</div>`).join("") : `<div class="dim">nothing recorded — press MIC while you trade</div>`}</div>
+    <div><b>⚑ MARKS</b>${mk.length ? mk.map(m => `<div class="jl"><i>${nyHM(m.t)}</i> ${m.price != null ? px(m.price) : ""} ${esc(m.note || "")}<span class="dim"> ${esc(m.context || "")}</span>${m.shot ? ` <a href="/recordings/${esc(m.shot)}" target="_blank">📷</a>` : ""}</div>`).join("") : `<div class="dim">no marks — press MARK (M) to capture the screen</div>`}</div>
+    <div><b>EVERYTHING THAT HAPPENED</b>${lg.length ? lg.map(x => `<div class="jl">${esc(x)}</div>`).join("") : `<div class="dim">—</div>`}</div></div>`;
+}
+function planTxt(p){ p = p || {}; return [["trigger", "pivot"], ["second_entry", "2nd"], ["stop", "stop"], ["target", "target"]].filter(([k]) => p[k]).map(([k, n]) => `${n} ${px(p[k])}`).join(" · ") || "no lines drawn"; }
 function renderTrades(s){
   const el = document.getElementById("jTrades"); if (!el) return;
-  const trades = ((s.desk && s.desk.trades) || []).slice().reverse();
-  const html = `<h5>TRADES <a class="btn" href="/api/desk/trades.csv" download title="download the whole journal as a spreadsheet (Excel / Google Sheets)" style="float:right;font-size:10px;padding:1px 8px">EXPORT</a>${trades.length ? `<span class="dim">${trades.length} · ${(() => { const v = trades.reduce((a, t) => a + (t.pnl || 0), 0); return (v >= 0 ? "+$" : "−$") + Math.abs(v).toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2}); })()} total · ${trades.filter(t => (t.pnl || 0) > 0).length}W / ${trades.filter(t => (t.pnl || 0) < 0).length}L</span>` : ""}</h5>` + (trades.length ? `<table class="grid trades"><tr><th>TIME</th><th>SYM</th><th>SIDE</th><th>QTY</th><th>ENTRY</th><th>EXIT</th><th>P&amp;L %</th><th class="l">SETUP</th><th>GRADE</th><th class="l">FLOW AT ENTRY</th><th class="l">NOTE</th></tr>${trades.map(t => `<tr data-id="${esc(t.id)}">
-      <td class="l">${nyT(t.closed || t.opened)}</td><td class="l">${esc(t.symbol)}</td><td class="${t.side === "long" ? "b" : "s"}">${t.side.toUpperCase()}</td><td>${sz(t.shares || 0)}</td><td>${px(t.entry)}</td><td>${px(t.exit)}</td>
-      <td class="pct ${(t.pnl_pct || 0) >= 0 ? "up" : "dn"}">${t.pnl_pct != null ? (t.pnl_pct >= 0 ? "+" : "") + t.pnl_pct.toFixed(2) + "%" : NA}</td>
+  const D = s.desk || {}, trades = (D.trades || []).slice().reverse(), open = D.open || [];
+  const unit = t => t.opt ? "ct" : "sh";
+  const openH = open.map(t => `<div class="jopen" data-id="${esc(t.id)}">
+      <div class="jh"><span class="live">● IN TRADE</span><input data-tname="${esc(t.id)}" value="${esc(t.name || "")}" placeholder="name this play" title="name the play — it is saved with the trade">
+        <b class="${t.side === "long" ? "b" : "s"}">${esc(t.symbol)} ${t.side.toUpperCase()} ${sz(Math.abs(t.qty || t.entry_qty || 0))} ${unit(t)}</b>
+        <span>@ ${t.opt ? (+t.entry).toFixed(2) : px(t.entry)} · now ${t.now != null ? (t.opt ? (+t.now).toFixed(2) : px(t.now)) : NA}</span>
+        <b class="${(t.pnl || 0) >= 0 ? "b" : "s"}">${money2(t.pnl)}</b>
+        <span class="dim">plan: ${esc(planTxt(t.plan))}</span>
+        <span class="dim">🎙 ${(t.transcript || []).length} · ⚑ ${(t.marks || []).length}</span></div>
+      ${tradeDetails(t)}</div>`).join("");
+  const n = trades.length, tot = trades.reduce((a, t) => a + (t.pnl || 0), 0), w = trades.filter(t => t.result === "WIN" || (!t.result && (t.pnl || 0) > 0)).length, l = trades.filter(t => t.result === "LOSS" || (!t.result && (t.pnl || 0) < 0)).length;
+  const head = `<h5>TRADES <a class="btn" href="/api/desk/trades.csv" download title="the whole journal as a spreadsheet" style="float:right;font-size:10px;padding:1px 8px">EXPORT</a>${n ? `<span class="dim">${n} · <b class="${tot >= 0 ? "b" : "s"}">${money2(tot)}</b> · ${w}W / ${l}L${w + l ? ` · ${Math.round(100 * w / (w + l))}% wins` : ""}</span>` : ""}</h5>`;
+  const rows = trades.map(t => { const res = t.result || ((t.pnl || 0) > 0 ? "WIN" : (t.pnl || 0) < 0 ? "LOSS" : "SCRATCH"), op = JOPEN.has(t.id);
+    return `<tr data-id="${esc(t.id)}" class="${op ? "open" : ""}">
+      <td class="l"><button class="jx" data-jx="${esc(t.id)}" title="the transcript, the marks and everything that happened">${op ? "▾" : "▸"}</button> ${nyT(t.closed || t.opened)}</td>
+      <td class="l"><input class="jname" data-tname="${esc(t.id)}" value="${esc(t.name || "")}" placeholder="name this play"></td>
+      <td class="l">${esc(t.symbol)}</td><td class="${t.side === "long" ? "b" : "s"}">${t.side.toUpperCase()} ${sz(t.shares || 0)}${t.opt ? " ct" : ""}</td>
+      <td>${t.opt ? (+t.entry).toFixed(2) : px(t.entry)} → ${t.opt ? (+t.exit).toFixed(2) : px(t.exit)}</td>
+      <td><span class="res ${res.toLowerCase()}">${res}</span> <b class="${(t.pnl || 0) >= 0 ? "b" : "s"}">${money2(t.pnl)}</b> <span class="dim">${t.pnl_pct != null ? (t.pnl_pct >= 0 ? "+" : "") + t.pnl_pct.toFixed(2) + "%" : ""}</span></td>
+      <td title="the result in R: the move against the stop you planned (${esc(planTxt(t.plan))})">${t.r != null ? (t.r >= 0 ? "+" : "") + t.r.toFixed(2) + "R" : NA}</td>
       <td class="l">${setupSel("", t.setup, `data-tsetup="${esc(t.id)}"`)}</td>
       <td><select data-tgrade="${esc(t.id)}"><option value="">—</option>${["A+", "A", "B", "C", "F"].map(g => `<option ${t.grade === g ? "selected" : ""}>${g}</option>`).join("")}</select></td>
-      <td class="l flowc" title="${esc(t.flow || "")}">${esc((t.flow || "").slice(0, 60))}</td>
-      <td class="l"><input data-tnote="${esc(t.id)}" value="${esc(t.note || "")}" placeholder="what you saw, what you did"></td></tr>`).join("")}</table>` : `<div class="dim">No round trips yet. Every entry that gets flattened lands here, filed under the play's setup.</div>`);
+      <td class="l"><input data-tnote="${esc(t.id)}" value="${esc(t.note || "")}" placeholder="what you saw, what you did"></td>
+      <td><button data-jsave="${esc(t.id)}" title="${t.file ? "saved: recordings/journal/" + esc(t.file) + " — save again" : "save this trade's page"}">${t.file ? "✓ SAVED" : "SAVE"}</button></td></tr>
+      ${op ? `<tr class="jdetrow"><td colspan="11">${tradeDetails(t)}</td></tr>` : ""}`; }).join("");
+  const html = openH + head + (n ? `<table class="grid trades"><tr><th>TIME</th><th class="l">PLAY</th><th class="l">SYM</th><th>SIDE</th><th>IN → OUT</th><th>RESULT</th><th>R</th><th class="l">SETUP</th><th>GRADE</th><th class="l">NOTE</th><th></th></tr>${rows}</table>`
+    : `<div class="dim">No closed trades yet. Every trade you take — stock or option — lands here when it is flat: named, with its result, what you said and what you marked.</div>`);
   if (el.dataset.h !== html && !el.contains(document.activeElement)){ el.dataset.h = html; el.innerHTML = html; }
 }
 document.addEventListener("change", async e => {
-  const k = e.target.dataset.tsetup ? "setup" : e.target.dataset.tgrade ? "grade" : e.target.dataset.tnote ? "note" : null; if (!k) return;
-  const id = e.target.dataset.tsetup || e.target.dataset.tgrade || e.target.dataset.tnote;
-  const out = await post("/api/desk/trade", {id, [k]: e.target.value}); if (out.ok) toast("Journal updated", true); const el = document.getElementById("jTrades"); if (el) el.dataset.h = ""; poll(true);
+  const k = e.target.dataset.tsetup ? "setup" : e.target.dataset.tgrade ? "grade" : e.target.dataset.tnote ? "note" : e.target.dataset.tname ? "name" : null; if (!k) return;
+  const id = e.target.dataset.tsetup || e.target.dataset.tgrade || e.target.dataset.tnote || e.target.dataset.tname;
+  const out = await post("/api/desk/trade", {id, [k]: e.target.value}); if (out.ok) toast(k === "name" ? "Play named: " + e.target.value : "Journal updated", true); const el = document.getElementById("jTrades"); if (el) el.dataset.h = ""; poll(true);
+});
+document.addEventListener("keydown", e => { if (e.target.dataset && e.target.dataset.tname && e.key === "Enter") e.target.blur(); });
+document.addEventListener("click", async e => {
+  const x = e.target.closest("button[data-jx]"); if (x){ const id = x.dataset.jx; JOPEN.has(id) ? JOPEN.delete(id) : JOPEN.add(id); const el = document.getElementById("jTrades"); if (el) el.dataset.h = ""; renderTrades(state); return; }
+  const sv = e.target.closest("button[data-jsave]"); if (sv){ const out = await post("/api/desk/save_trade", {id: sv.dataset.jsave}); toast(out.ok ? "Saved: " + out.dir + "/" + out.file : "Not saved: " + (out.reason || ""), out.ok); const el = document.getElementById("jTrades"); if (el) el.dataset.h = ""; poll(true); }
 });
 /* training mode: the desk stops telling you where the reload buyers and sellers are. You read the tape; REVEAL checks your call. */
 function training(){ return store.get("training", false) && (state ? state.now : 0) > (window._revealUntil || 0); }

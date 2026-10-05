@@ -40,7 +40,8 @@ class DeskTests(unittest.TestCase):
             r, _ = replay(path)
             self.assertEqual(r.syms["AAA"].book.best(BID), 9.99)
             self.assertEqual(r.marks_list[0]["note"], "seller sitting at 10")
-            self.assertEqual(r.notes_list[0]["text"], "watching the pivot")
+            self.assertTrue(r.notes_list[0]["text"].startswith("⚑ MARK 10.01 — seller sitting at 10"))   # the mark is in the log too
+            self.assertEqual(r.notes_list[1]["text"], "watching the pivot")
             listed = desk.list_recordings()
             self.assertEqual(listed[0]["marks"][0]["n"], m["n"])
             self.assertTrue(listed[0]["journal"])

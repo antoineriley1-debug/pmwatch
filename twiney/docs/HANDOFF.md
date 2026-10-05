@@ -158,3 +158,16 @@ stop to breakeven after the first cash flow.
   live (`on_opt_size`), marks = the contract stop, your entry, the stock lines as ≈ contract prices (mid + Δ × move),
   and the option flow on that contract.
 - Stock chart: `#optPosStrip` = contracts held on the ticker with ≈ value and P&L at the TARGET and STOP.
+
+## Trade journal
+
+- `Desk` builds a trade per instrument from fills: stocks (`engine.on_fill`) and options (`engine.on_opt_fill`, × mult).
+  A stock trade and an option trade on the same ticker are separate entries; both read the ticker's log.
+- At entry: `plan` (the lines for that direction), default `name`. At exit: `result` WIN / LOSS / SCRATCH (< 0.1 %),
+  `pnl` (× mult), `pnl_pct`, `r` (stock, against the planned stop), `minutes`, `transcript` (voice notes), `marks`
+  (with `context`: what the screen showed), `log` (every order, fill, line, mark, word). One page per trade:
+  `recordings/journal/<date>-<name>.md` (`save_trade`, re-written on rename / grade).
+- Every `Trader._note` (orders, stops, refusals) and fill lands in the log; MARK adds a screen-context line
+  (`recording.mark_screenshot` also grabs the screen when Pillow can).
+- `Desk.reconcile` (engine tick, every 5 s): an open journal trade whose real position is flat is dropped and said.
+- JOURNAL panel: IN TRADE card (name it, live P&L, plan, words, marks), then the trades with ▸ details and SAVE.

@@ -643,6 +643,22 @@ class Trader:
     def _note(self, now, text, ok):
         self.log.appendleft({"t": now, "text": text, "ok": ok})
         self.engine._message("info" if ok else "error", text, now)
+        # every order, stop, target and refusal lands in the journal: the trade's log (under the stock's symbol)
+        sym = self._sym_in(text)
+        if sym and getattr(self.engine, "desk", None) is not None:
+            body = text[len(sym) + 2:] if text.startswith(sym + ": ") else text      # the log line already says the ticker
+            try:
+                self.engine.desk.add_note(now, ("" if ok else "✕ ") + body, sym, kind="order")
+            except Exception as exc:
+                log.warning("journal note: %s", exc)
+
+    def _sym_in(self, text):
+        """The ticker a desk note is about: the first word that is one of yours (a contract counts as its stock)."""
+        syms = self.engine.syms
+        for w in str(text).replace(":", " ").replace(",", " ").split():
+            if w in syms:
+                return w
+        return None
 
     def submit(self, symbol, action, price, qty=None, now=None, bracket=None, order_type="LMT", aux=None, tif="DAY", nonce=None):
         with self.lock:

@@ -505,11 +505,20 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                 if action == "rec":
                     out = dict(desk.toggle(now), ok=True)
                 elif action == "mark":
-                    out = {"ok": True, "mark": desk.mark(now, sym, str(body.get("note", "")))}
+                    out = None
+                    if desk.cfg.get("recording", {}).get("mark_screenshot", True):
+                        shot = desk.screenshot(now, sym, str(body.get("note", "")))     # the mark, with the screen
+                        if shot.get("ok"):
+                            out = {"ok": True, "mark": shot["mark"], "shot": True}
+                    if out is None:
+                        out = {"ok": True, "mark": desk.mark(now, sym, str(body.get("note", "")))}
                 elif action == "note":
                     out = {"ok": desk.set_note(int(body.get("n", 0)), str(body.get("note", "")))}
                 elif action == "trade":
-                    out = {"ok": desk.tag_trade(str(body.get("id", "")), body.get("setup"), body.get("grade"), body.get("note"))}
+                    out = {"ok": desk.tag_trade(str(body.get("id", "")), body.get("setup"), body.get("grade"), body.get("note"), body.get("name"))}
+                elif action == "save_trade":
+                    name = desk.save_trade(str(body.get("id", "")))
+                    out = {"ok": bool(name), "file": name, "dir": desk.journal_dir(), "reason": None if name else "that trade is not closed yet"}
                 elif action == "journal":
                     out = {"ok": True, "notes": desk.add_note(now, str(body.get("text", "")), sym)}
                 elif action == "shot":

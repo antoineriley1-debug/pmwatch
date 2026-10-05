@@ -382,6 +382,8 @@ DEFAULTS = {
     "recording": {
         "enabled": True,
         "dir": "recordings",
+        # every MARK (M) also takes a screenshot of the screen into recordings/shots (Windows / Mac, needs Pillow)
+        "mark_screenshot": True,
     },
 }
 

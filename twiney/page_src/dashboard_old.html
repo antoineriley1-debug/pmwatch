@@ -2530,11 +2530,13 @@ function renderDesk(s){
 let clipList = null, clipListT = 0;
 function fmtDur(sec){ sec = Math.max(0, Math.round(sec)); const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60; return (h ? h + ":" : "") + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0"); }
 async function deskRec(){ const out = await post("/api/desk/rec", {}); if (out.ok) toast(out.recording ? "Recording: " + (out.path || "").split(/[\\/]/).pop() : "Recording stopped — journal written next to it", true); else toast(out.reason || "no desk", false); poll(true); }
-async function deskMark(note){ const d = focusedPane && focusedPane.data; const out = await post("/api/desk/mark", {symbol: d ? d.symbol : null, note: note || ""}); if (out.ok) toast("Marker " + out.mark.n + (d ? " · " + d.symbol : ""), true); else toast(out.reason || "no desk", false); poll(true); }
-async function deskShot(){ const d = focusedPane && focusedPane.data; toast("Screenshot…", true); const out = await post("/api/desk/shot", {symbol: d ? d.symbol : null}); toast(out.ok ? "Saved " + out.path.split(/[\\/]/).pop() : out.reason, out.ok); poll(true); }
+// the ticker on screen (the old pane focus is a fallback): a mark, a note or a snap is always about what you are looking at
+function deskSym(){ return curSym || (focusedPane && focusedPane.data && focusedPane.data.symbol) || null; }
+async function deskMark(note){ const sym = deskSym(); const out = await post("/api/desk/mark", {symbol: sym, note: note || ""}); if (out.ok) toast("⚑ Marked" + (sym ? " " + sym : "") + (out.mark && out.mark.price ? " @ " + px(out.mark.price) : "") + (out.shot ? " · screenshot saved" : "") + " — in the journal", true); else toast(out.reason || "no desk", false); poll(true); }
+async function deskShot(){ toast("Screenshot…", true); const out = await post("/api/desk/shot", {symbol: deskSym()}); toast(out.ok ? "Saved " + out.path.split(/[\\/]/).pop() : out.reason, out.ok); poll(true); }
 document.getElementById("recBtn").addEventListener("click", deskRec);
-async function jAdd(){ const inp = document.getElementById("jText"), text = inp.value.trim(); if (!text) return; const d = focusedPane && focusedPane.data;
-  const out = await post("/api/desk/journal", {text, symbol: d ? d.symbol : null}); if (out.ok){ inp.value = ""; toast("Noted", true); poll(true); } else toast(out.reason || "no desk", false); }
+async function jAdd(){ const inp = document.getElementById("jText"), text = inp.value.trim(); if (!text) return;
+  const out = await post("/api/desk/journal", {text, symbol: deskSym()}); if (out.ok){ inp.value = ""; toast("Noted", true); poll(true); } else toast(out.reason || "no desk", false); }
 document.getElementById("jAdd").addEventListener("click", jAdd);
 document.getElementById("jText").addEventListener("keydown", e => { if (e.key === "Enter") jAdd(); e.stopPropagation(); });
 document.getElementById("markBtn").addEventListener("click", () => deskMark());

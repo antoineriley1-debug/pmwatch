@@ -1016,6 +1016,10 @@ class Engine:
                                    "t": t, "seq": 10**6 + len(self.opt_fills), "opt": True})
             self.opt_fills = self.opt_fills[-60:]
         self.log(key.split(" ")[0], f"OPTION FILL {side} {qty:g} {key} @ {price:.2f}", t, kind="fill")
+        if self.desk is not None:                      # the journal builds the option trade too (in contracts, × 100)
+            mult = float(((self.opt_chain.get(key.split(" ")[0]) or {}).get("mult")) or 100)
+            self.desk.on_fill({"exec_id": exec_id, "symbol": key, "side": "BOT" if str(side).upper() in ("BOT", "BUY") else "SLD",
+                               "shares": qty, "price": price, "opt": True, "mult": mult}, t)
 
     def on_position(self, account, symbol, qty, avg_cost, t):
         with self.lock:
@@ -1924,6 +1928,12 @@ class Engine:
             self._clock(t)
             self._rec({"ev": "tick", "t": t})       # replay runs its ticks at exactly these times
             rc = self.cfg["reload"]
+            if self.desk is not None and t - getattr(self, "_recon_t", -1e9) >= 5:
+                self._recon_t = t
+                try:
+                    self.desk.reconcile(t)          # the journal's open trades are real positions
+                except Exception as exc:
+                    self._message("warn", f"journal check: {exc}", t)
             # the charted contract's book (live): PULL / STACK judged on the same quarter-second reads as the stocks
             for key, bk in list((getattr(self, "opt_dbook", None) or {}).items()):
                 pb = self.opt_dpulls.get(key)
@@ -3729,5 +3739,7 @@ class Engine:
                          "started": self.desk.started if self.desk else None,
                          "notes": (self.desk.notes if self.desk else self.notes_list)[-30:],
                          "marks": (self.desk.marks if self.desk else self.marks_list)[-60:],
-                         "trades": self.desk.trades[-60:] if self.desk else []},
+                         "trades": self.desk.trades[-60:] if self.desk else [],
+                         "open": self.desk.open_view() if self.desk else [],
+                         "journal_dir": self.desk.journal_dir() if self.desk else None},
             }
