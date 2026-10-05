@@ -393,8 +393,9 @@ async function post(path, body){
   let out = null;
   try {
     const r = await fetch(path, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)});
-    out = await r.json();
-  } catch(e){ out = {ok:false, reason:"lost contact with TWINEY"}; }
+    try { out = await r.json(); }
+    catch(e2){ out = {ok:false, reason: r.status === 404 ? "the TED program running doesn't know this button — it is an older version: close the black TED window and start TED again" : "TED answered with an error (" + r.status + ")"}; }
+  } catch(e){ out = {ok:false, reason:"lost contact with TED — is the black TED window still open?"}; }
   poll(true);
   return out;
 }

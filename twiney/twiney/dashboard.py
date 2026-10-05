@@ -617,7 +617,7 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                 elif action == "scale_fire":
                     out = tr.fire_scale_rung(sym, body.get("i"), now)
                 else:
-                    self._send(404, "not found", "text/plain")
+                    self._send(404, json.dumps({"ok": False, "reason": f"unknown order action '{action}' — restart TED after an update"}), "application/json")
                     return
             except Exception as exc:  # never let a broker error kill the dashboard
                 out = {"ok": False, "reason": str(exc)}
@@ -630,8 +630,14 @@ class Dashboard:
     def __init__(self, engine, host, port, clock=time.time, trader=None, desk=None, rec_dir=None, layout_path=None,
                  config_path=None, on_restart=None):
         self.hooks = {"restart": on_restart}
-        self.httpd = ThreadingHTTPServer((host, port), make_handler(engine, clock, trader, desk, rec_dir, layout_path,
-                                                                    config_path, self.hooks))
+        try:
+            self.httpd = ThreadingHTTPServer((host, port), make_handler(engine, clock, trader, desk, rec_dir, layout_path,
+                                                                        config_path, self.hooks))
+        except OSError as exc:
+            if getattr(exc, "errno", None) in (98, 48, 10048) or "in use" in str(exc).lower():
+                raise OSError(f"TED is already running: another TED window is using {host}:{port}. "
+                              "Close every black TED window, then start TED again.") from exc
+            raise
         self.httpd.daemon_threads = True
         self.thread = None
 

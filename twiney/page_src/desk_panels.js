@@ -1682,6 +1682,13 @@ function renderStatus(s){
   // an old tab left open from a previous run: reload it onto the build the server is now serving
   // only onto a NEWER build, and only once per build (a page newer than the server never loops)
   let _tried = null; try { _tried = sessionStorage.getItem("tedReloadedFor"); } catch (e) {}
+  // the other way round: a NEW page on an OLD running TED (a build unzipped over the folder while TED was running).
+  // Buttons the old program does not know would just fail: say so, plainly, until TED is restarted
+  { let rb = document.getElementById("restartBanner");
+    if (s.build && PAGE_BUILD && s.build < PAGE_BUILD){
+      if (!rb){ rb = document.createElement("div"); rb.id = "restartBanner"; document.body.appendChild(rb); }
+      rb.innerHTML = `<b>TED WAS UPDATED — RESTART IT.</b> The page is build ${esc(PAGE_BUILD)}, but the TED program still running is build ${esc(s.build)}. Close the black TED window, then start TED again (start_twiney). Until then some buttons (UNLOCK, ARM…) can't work.`;
+    } else if (rb) rb.remove(); }
   if (s.build && PAGE_BUILD && s.build > PAGE_BUILD && _tried !== s.build && !window._reloading){ window._reloading = true; try { sessionStorage.setItem("tedReloadedFor", s.build); } catch (e) {} toast("New build " + s.build + " is running: reloading", true); setTimeout(() => location.reload(), 800); }
   const c = s.connection, t = s.trading || {};
   const led = document.querySelector("#stConn .led"), cls = c.state === "CONNECTED" ? "ok" : ["CONNECTING", "REPLAY", "DEMO"].includes(c.state) ? "warn" : "bad";

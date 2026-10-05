@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261005-1946">
+<meta name="build" content="20261005-2009">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -1058,6 +1058,7 @@ table.lad.pro tr.atlv td{box-shadow:inset 0 1px 0 var(--lvc), inset 0 -1px 0 var
 .ocload{font-size:10px}
 .oct td.act .ldbtn{padding:0 4px;font-size:11px}
 @container (max-width: 879px){ #fastStock .qbarm{display:none} #fastStock .qbwhy{display:none} }
+#restartBanner{position:fixed;left:50%;top:6px;transform:translateX(-50%);z-index:99;background:#b3123a;color:#fff;padding:8px 14px;border-radius:4px;font-size:13px;max-width:900px;box-shadow:0 4px 20px rgba(0,0,0,.6)}
 
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
@@ -1508,8 +1509,9 @@ async function post(path, body){
   let out = null;
   try {
     const r = await fetch(path, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)});
-    out = await r.json();
-  } catch(e){ out = {ok:false, reason:"lost contact with TWINEY"}; }
+    try { out = await r.json(); }
+    catch(e2){ out = {ok:false, reason: r.status === 404 ? "the TED program running doesn't know this button — it is an older version: close the black TED window and start TED again" : "TED answered with an error (" + r.status + ")"}; }
+  } catch(e){ out = {ok:false, reason:"lost contact with TED — is the black TED window still open?"}; }
   poll(true);
   return out;
 }
@@ -5172,6 +5174,13 @@ function renderStatus(s){
   // an old tab left open from a previous run: reload it onto the build the server is now serving
   // only onto a NEWER build, and only once per build (a page newer than the server never loops)
   let _tried = null; try { _tried = sessionStorage.getItem("tedReloadedFor"); } catch (e) {}
+  // the other way round: a NEW page on an OLD running TED (a build unzipped over the folder while TED was running).
+  // Buttons the old program does not know would just fail: say so, plainly, until TED is restarted
+  { let rb = document.getElementById("restartBanner");
+    if (s.build && PAGE_BUILD && s.build < PAGE_BUILD){
+      if (!rb){ rb = document.createElement("div"); rb.id = "restartBanner"; document.body.appendChild(rb); }
+      rb.innerHTML = `<b>TED WAS UPDATED — RESTART IT.</b> The page is build ${esc(PAGE_BUILD)}, but the TED program still running is build ${esc(s.build)}. Close the black TED window, then start TED again (start_twiney). Until then some buttons (UNLOCK, ARM…) can't work.`;
+    } else if (rb) rb.remove(); }
   if (s.build && PAGE_BUILD && s.build > PAGE_BUILD && _tried !== s.build && !window._reloading){ window._reloading = true; try { sessionStorage.setItem("tedReloadedFor", s.build); } catch (e) {} toast("New build " + s.build + " is running: reloading", true); setTimeout(() => location.reload(), 800); }
   const c = s.connection, t = s.trading || {};
   const led = document.querySelector("#stConn .led"), cls = c.state === "CONNECTED" ? "ok" : ["CONNECTING", "REPLAY", "DEMO"].includes(c.state) ? "warn" : "bad";
