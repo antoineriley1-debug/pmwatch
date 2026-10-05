@@ -146,6 +146,7 @@ function chartTypeKey(e){
 function renderBook(d){
   const wrap = P.book.pc.querySelector(".ladder-wrap");
   renderLadStat(d, state); renderLadQty(state);
+  renderContractL2(); if (contractMode("book")) return;
   if (!d){ if (P.book.last !== "-"){ P.book.last = "-"; wrap.innerHTML = `<div class="dim" style="padding:8px">${NA}</div>`; } return; }
   if (bookDragging || bookHold) return;       // never redraw rows under a pressed mouse button
   const bi = document.getElementById("bigIn"), L = d.ladder || {};
@@ -254,7 +255,7 @@ document.addEventListener("click", e => { const b = e.target.closest("button[dat
     if (!b){ const rowEl = e.target.closest("tr[data-strike]"); if (rowEl && OC.data){ const k = +rowEl.dataset.strike, r = OC.data.rows.find(x => x.strike === k) || {};
         OC.sel = k; const mid = r.bid != null && r.ask != null ? (r.bid + r.ask) / 2 : (r.last != null ? r.last : null);
         OC.link = {sym: curSym, expiry: OC.data.expiry, strike: k, right: OC.data.right, key: r.key, bid: r.bid, ask: r.ask, n: (OC.link && OC.link.n) || 1};
-        toast(`ORDER ENTRY now trades ${contractName(OC.link)} — BUY / SELL there send this contract`, true); P.ticket.last = null; poll(true); if (typeof chartOption === "function") chartOption(r.key, false);
+        toast(`ORDER ENTRY now trades ${contractName(OC.link)} — BUY / SELL there send this contract`, true); P.ticket.last = null; poll(true); if (typeof chartOption === "function") chartOption(r.key, false); renderContractL2(); renderContractTape();
         { const pxIn = document.getElementById("ocPx"); pxIn.value = ""; pxIn.placeholder = mid != null ? "mid " + mid.toFixed(2) : "price"; }   // empty = fills now at the touch; type a price to rest a limit
         const bd = P.options.pc.querySelector(".oc-body"); if (bd) bd.dataset.h = ""; renderChain(); }
       return; }
@@ -450,6 +451,7 @@ P.book.el.addEventListener("click", e => {
 P.book.el.addEventListener("scroll", () => { const wrap = P.book.pc.querySelector(".ladder-wrap"); const d = curData(); if (wrap && d) rlBanner(wrap, d); }, true);
 function renderTape(d){
   const el = P.tape.pc.querySelector(".p-tape");
+  renderContractTape(); if (contractMode("tape")){ renderBigTape(d); return; }
   if (!d){ el.innerHTML = `<div class="dim" style="padding:8px">${NA}</div>`; P.tape.last = null; renderBigTape(null); return; }
   const html = tapeGaugeHTML(d.tape) + tapeSpeedHTML(d.tape.speed) + tapeHTML(d.tape, d.ladder); if (P.tape.last !== html){ P.tape.last = html;
     const keep = el.scrollTop; el.innerHTML = html; el.scrollTop = keep; makeColsResizable(el.querySelector("table")); }
@@ -1907,7 +1909,7 @@ const ochart = (() => { const p = P.ochart; if (!p) return null;
              view: {cw: 8, offset: restOffset(), yLo: null, yHi: null, follow: true, cross: null}};
   p.el._pane = c; wireChart(c, c.canvas, c.view, () => {}, false);
   new ResizeObserver(() => drawChart(c)).observe(p.el); return c; })();
-function ochVisible(){ return ["ochart", "obook", "otape", "obig"].some(id => P[id] && P[id].el.offsetParent !== null); }
+function ochVisible(){ return ["ochart", "obook", "otape", "obig"].some(id => P[id] && P[id].el.offsetParent !== null) || ((contractMode("book") && P.book.el.offsetParent !== null) || (contractMode("tape") && P.tape.el.offsetParent !== null)); }
 function chartOption(key, show){ if (!key) return; if (OCH.key !== key){ OCH.key = key; OCH.data = null; if (ochart){ ochart.data = null; ochart.view.offset = restOffset(); ochart.view.follow = true; ochart.view.yLo = ochart.view.yHi = null; } }
   if (show) showPanel("ochart"); pollOch(); }
 async function pollOch(){
@@ -2022,15 +2024,64 @@ function openChartWindow(id){
 }
 
 /* ---------- the OPTION side, for the contract on the OPTION CHART: LEVEL II, T&S, BIG TAPE */
+function obookRows(t){
+  const mx = Math.max(1, ...t.book.map(r => Math.max(r.bid, r.ask))), mt = Math.max(1, ...t.book.map(r => Math.max(r.bought, r.sold)));
+  return t.book.map(r => `<tr class="${r.best_bid ? "bb" : ""} ${r.best_ask ? "ba" : ""}" data-oprice="${r.price}">
+      <td class="tr s">${r.sold ? `<i style="width:${Math.round(r.sold / mt * 100)}%"></i><span>${sz(r.sold)}</span>` : ""}</td>
+      <td class="sz b">${r.bid ? `<i style="width:${Math.round(r.bid / mx * 100)}%"></i><span>${sz(r.bid)}</span>` : ""}</td>
+      <td class="px">${r.price.toFixed(2)}</td>
+      <td class="sz s">${r.ask ? `<i style="width:${Math.round(r.ask / mx * 100)}%"></i><span>${sz(r.ask)}</span>` : ""}</td>
+      <td class="tr b">${r.bought ? `<i style="width:${Math.round(r.bought / mt * 100)}%"></i><span>${sz(r.bought)}</span>` : ""}</td></tr>`).join("");
+}
+function obookTable(rows){ return `<table class="olad"><tr><th>SOLD</th><th>BID</th><th>PRICE</th><th>ASK</th><th>BOUGHT</th></tr>${rows}</table><div class="dim ofoot">click a price: BUY / SELL ${OCH.n} there (right-click the OPTION CHART works too)</div>`; }
+function otapeRows(t){
+  const tm = x => new Date(x * 1000).toLocaleTimeString("en-US", {timeZone: "America/New_York", hour12: false});
+  return t.prints.map(([tt, pp, n, sd]) => `<tr class="${sd === "buy" ? "b" : sd === "sell" ? "s" : ""} ${n >= 100 ? "big" : ""}"><td class="dim">${tm(tt)}</td><td>${(+pp).toFixed(2)}</td><td>${sz(n)}</td><td class="dim">${sd === "buy" ? "at ask" : sd === "sell" ? "at bid" : ""}</td></tr>`).join("");
+}
+function otapeTable(pr){ return pr ? `<table class="otp"><tr><th>TIME</th><th>PRICE</th><th>CT</th><th></th></tr>${pr}</table>` : `<div class="dim" style="padding:8px">No prints on this contract yet.</div>`; }
+/* CONTRACT MODE: pick a contract and the main LEVEL II and TIME & SALES follow it, like ORDER ENTRY (unless the
+   OPTION LEVEL II / OPTION T&S windows are up — then those carry the contract and these stay on the stock).
+   ✕ BACK TO SHARES on top puts all three back on the stock */
+function contractMode(which){
+  if (!(OC.link && OC.link.sym === curSym)) return false;
+  const own = P[which === "tape" ? "otape" : "obook"];
+  return !(own && own.el.offsetParent !== null);
+}
+function contractBar(kind){
+  const d = OCH.data, l = OC.link, f = v => v == null ? "—" : (+v).toFixed(2);
+  const t = d && d.tape;
+  return `<div class="cbar"><span class="lbl">${kind} · CONTRACT</span><b class="${l.right === "C" ? "b" : "s"}">${esc(contractName(l))}</b><span class="dim">bid ${f(d && d.bid)}${t && t.bid_size != null ? " × " + t.bid_size : ""} · ask ${f(d && d.ask)}${t && t.ask_size != null ? " × " + t.ask_size : ""}${kind === "T&S" && t ? ` · vol ${sz(t.volume || 0)}` : ""}</span><button data-unlinkall="1" title="LEVEL II, T&S and ORDER ENTRY back on ${esc(l.sym)} shares">✕ BACK TO SHARES</button></div>`;
+}
+function renderContractL2(){
+  const el = P.book.el, on = contractMode("book");
+  el.classList.toggle("cmode", on);
+  if (!on) return;
+  let box = P.book.pc.querySelector(".cbook"); if (!box){ box = document.createElement("div"); box.className = "cbook"; P.book.pc.appendChild(box); }
+  const d = OCH.data, t = d && d.tape && d.key === OC.link.key ? d.tape : null;
+  const html = contractBar("LEVEL II") + `<div class="obook cb">${t ? obookTable(obookRows(t)) : `<div class="dim" style="padding:8px">Loading the contract's book…</div>`}</div>`;
+  if (box.dataset.h !== html){ box.dataset.h = html; box.innerHTML = html; }
+  const pc = box.querySelector(".obook.cb"); if (pc && Date.now() - obookUserScroll > 4000){ const a = pc.querySelector("tr.ba"), b = pc.querySelector("tr.bb"); if (a || b){ const top = (a || b).offsetTop, bot = (b || a).offsetTop + (b || a).offsetHeight; pc.scrollTop = Math.max(0, (top + bot) / 2 - pc.clientHeight / 2); } }
+}
+function renderContractTape(){
+  const el = P.tape.el, on = contractMode("tape");
+  el.classList.toggle("cmode", on);
+  if (!on) return;
+  let box = P.tape.pc.querySelector(".ctape"); if (!box){ box = document.createElement("div"); box.className = "ctape"; P.tape.pc.appendChild(box); }
+  const d = OCH.data, t = d && d.tape && d.key === OC.link.key ? d.tape : null;
+  const html = contractBar("T&S") + `<div class="otape cb">${t ? otapeTable(otapeRows(t)) : `<div class="dim" style="padding:8px">Loading the contract's prints…</div>`}</div>`;
+  if (box.dataset.h !== html){ box.dataset.h = html; box.innerHTML = html; }
+}
+document.addEventListener("click", e => { if (!e.target.closest("button[data-unlinkall]")) return;
+  OC.link = null; P.ticket.last = null; renderContractL2(); renderContractTape(); poll(true); toast("Back on the shares", true); });
 function renderOptPanels(){
   const d = OCH.data, t = d && d.tape, f = v => v == null ? "—" : (+v).toFixed(2), name = d ? esc(d.label) : "";
   const none = `<div class="dim" style="padding:8px">Pick a contract: OPTIONS, then click a strike (or 📈). Its book, prints and big prints show here.</div>`;
   const hd = (id, title, extra) => { const el = document.getElementById(id); if (!el) return; const h = `<b>${title}</b> <span class="${d && d.right === "P" ? "s" : "b"}">${name}</span>${extra || ""}`; if (el.dataset.h !== h){ el.dataset.h = h; el.innerHTML = h; } };
   const put = (sel, html) => { const el = document.querySelector(sel); if (el && el.dataset.h !== html){ el.dataset.h = html; el.innerHTML = html; } };
-  if (!d || !t){ put(".obook", none); put(".otape", none); put(".obig", none); hd("obookHd", "OPTION LEVEL II"); hd("otapeHd", "OPTION T&S"); hd("obigHd", "OPTION BIG TAPE"); return; }
+  if (!d || !t){ put(".pnl[data-p=obook] .obook", none); put(".pnl[data-p=otape] .otape", none); put(".obig", none); hd("obookHd", "OPTION LEVEL II"); hd("otapeHd", "OPTION T&S"); hd("obigHd", "OPTION BIG TAPE"); return; }
   // LEVEL II for the contract
-  const mx = Math.max(1, ...t.book.map(r => Math.max(r.bid, r.ask))), mt = Math.max(1, ...t.book.map(r => Math.max(r.bought, r.sold)));
-  const rows = t.book.map(r => `<tr class="${r.best_bid ? "bb" : ""} ${r.best_ask ? "ba" : ""}" data-oprice="${r.price}">
+  const rows = obookRows(t);
+  if (false) t.book.map(r => `<tr class="${r.best_bid ? "bb" : ""} ${r.best_ask ? "ba" : ""}" data-oprice="${r.price}">
       <td class="tr s">${r.sold ? `<i style="width:${Math.round(r.sold / mt * 100)}%"></i><span>${sz(r.sold)}</span>` : ""}</td>
       <td class="sz b">${r.bid ? `<i style="width:${Math.round(r.bid / mx * 100)}%"></i><span>${sz(r.bid)}</span>` : ""}</td>
       <td class="px">${r.price.toFixed(2)}</td>
@@ -2038,12 +2089,13 @@ function renderOptPanels(){
       <td class="tr b">${r.bought ? `<i style="width:${Math.round(r.bought / mt * 100)}%"></i><span>${sz(r.bought)}</span>` : ""}</td></tr>`).join("");
   hd("obookHd", "OPTION LEVEL II", ` <span class="dim">bid ${f(d.bid)} × ${t.bid_size ?? "—"} · ask ${f(d.ask)} × ${t.ask_size ?? "—"}${t.deep_book ? " · practice book" : " · IBKR sends the best bid / ask for options (no deeper book)"}</span>`);
   setTimeout(centerObook, 0);
-  put(".obook", `<table class="olad"><tr><th>SOLD</th><th>BID</th><th>PRICE</th><th>ASK</th><th>BOUGHT</th></tr>${rows}</table><div class="dim ofoot">click a price: BUY / SELL ${OCH.n} there (right-click the OPTION CHART works too)</div>`);
+  put(".pnl[data-p=obook] .obook", obookTable(rows));
   // T&S for the contract
   const tm = x => new Date(x * 1000).toLocaleTimeString("en-US", {timeZone: "America/New_York", hour12: false});
-  const pr = t.prints.map(([tt, pp, n, sd]) => `<tr class="${sd === "buy" ? "b" : sd === "sell" ? "s" : ""} ${n >= 100 ? "big" : ""}"><td class="dim">${tm(tt)}</td><td>${(+pp).toFixed(2)}</td><td>${sz(n)}</td><td class="dim">${sd === "buy" ? "at ask" : sd === "sell" ? "at bid" : ""}</td></tr>`).join("");
+  const pr = otapeRows(t);
   hd("otapeHd", "OPTION T&S", ` <span class="dim">vol ${sz(t.volume || 0)} · <span class="b">bought ${sz(t.bought)}</span> · <span class="s">sold ${sz(t.sold)}</span></span>`);
-  put(".otape", pr ? `<table class="otp"><tr><th>TIME</th><th>PRICE</th><th>CT</th><th></th></tr>${pr}</table>` : `<div class="dim" style="padding:8px">No prints on this contract yet.</div>`);
+  put(".pnl[data-p=otape] .otape", otapeTable(pr));
+  renderContractL2(); renderContractTape();
   // BIG TAPE for the contract: big prints + Quant Data sweeps / blocks on it
   const bg = t.big.map(x => `<tr class="${x.side === "buy" || x.side === "ask" ? "b" : x.side === "sell" || x.side === "bid" ? "s" : ""}"><td class="dim">${tm(x.t)}</td><td>${x.price != null ? (+x.price).toFixed(2) : "—"}</td><td>${sz(x.size || 0)}</td><td>${usdK(x.premium || 0)}</td><td class="dim">${x.src === "flow" ? esc((x.kind || "FLOW").toUpperCase()) : ""}</td></tr>`).join("");
   hd("obigHd", "OPTION BIG TAPE", ` <span class="dim">100+ contracts or $50k+, and the option flow on this contract</span>`);

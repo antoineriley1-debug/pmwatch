@@ -581,3 +581,11 @@ i.tl{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:3p
 .exptoday{background:#7a1a2a;color:#fff;font-weight:800;padding:0 6px;border-radius:3px;animation:livepulse 1.4s infinite}
 .haltbadge{background:#ff2d55;color:#fff;font:800 10px var(--sans);letter-spacing:.1em;padding:1px 6px;border-radius:3px;animation:livepulse 1s infinite}
 .ochead button.risksz{color:var(--gold);border-color:var(--gold)}
+
+.pnl[data-p="book"].cmode .ladstat,.pnl[data-p="book"].cmode .ladbar,.pnl[data-p="book"].cmode .rlban,.pnl[data-p="book"].cmode .ladder-wrap,.pnl[data-p="book"].cmode .eatbar{display:none !important}
+.pnl[data-p="tape"].cmode .p-tape{display:none !important}
+.cbook,.ctape{display:none} .cmode .cbook,.cmode .ctape{display:flex;flex-direction:column;height:100%}
+.cbook .obook.cb,.ctape .otape.cb{flex:1;overflow:auto;min-height:0}
+.cbar{display:flex;flex-wrap:wrap;align-items:center;gap:3px 8px;padding:4px 6px;background:#2a2306;border-bottom:1px solid var(--gold);font:11px var(--mono)}
+.cbar .lbl{font:800 9.5px var(--sans);letter-spacing:.12em;color:var(--gold)} .cbar b{font-size:12.5px} .cbar b.b{color:var(--buy)} .cbar b.s{color:var(--sell)}
+.cbar button{margin-left:auto;height:20px;padding:0 8px}
