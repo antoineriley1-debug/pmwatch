@@ -104,6 +104,9 @@ class SymbolState:
         self.quotes = deque(maxlen=64)   # (t, bid, ask) as the best bid / offer changed: prints are read against it
         self.voice_pending = {}          # (side, price_key) -> size that left, waiting to see if it traded
         self.flow_marks = deque()        # big option prints on this name: where the stock was when each one hit
+        from .pace import PaceBook
+        self.pacebook = PaceBook()       # PACE OF TAPE: 5-second buckets of the tape (speed against its own normal)
+        self.pace = None
         self.rflow_said = {}             # (strike, cp, expiry) -> when REPEAT FLOW was last called on it
         self.l1_volume = None            # IBKR's cumulative day volume (symbols without a tape)
         self.l1_last_raw = None          # IBKR's quote-stream last, kept even while the tape sets the price
@@ -434,6 +437,7 @@ class Engine:
             self.data_t = t
             bid, ask = st.bbo()
             rec = st.tape.add(t, price, size, bid, ask, exchange, side=st.aggressor(price, t))
+            st.pacebook.add(t, price, size, rec["side"])
             st.tape_t = t
             st.l1["last"] = price
             st.pulls.on_print(rec["side"], price, size)
@@ -536,6 +540,84 @@ class Engine:
             st.study_ver += 1
             if kind != "m5x":            # the chart's longer history changed: the page fetches it again
                 st.hist_ver += 1
+
+    def _pace_levels(st, sc_v):
+        """The prices the PACE reads against: your lines on the chart and the studies' levels (not whole numbers,
+        not today's high / low: those move with price)."""
+        out = [(float(lv["price"]), lv["label"]) for lv in st._user_levels_cache if lv.get("price")]
+        for g in ("gas", "air", "uv"):
+            for L in ((sc_v or {}).get(g) or {}).get("lines") or []:
+                import re as _re
+                nm = _re.sub(r"\s+[\d.]+(\s*/\s*[\d.]+)*\s*$", "", (L.get("l") or "").split(" @ ")[0]).strip()   # the name, not its price
+                if L.get("p") is None or nm.startswith(("WHOLE", "HIGH OF DAY", "LOW OF DAY", "BOX EDGE", "TIGHT", "1st push", "pivot")):
+                    continue
+                out.append((float(L["p"]), nm[:28]))
+        return out
+    _pace_levels = staticmethod(_pace_levels)
+
+    def _pace_tick(self, t):
+        """PACE OF TAPE for every stock, twice a second, browser open or not: speed against its own normal, and the
+        calls at your levels (STALLING INTO / PRESSING / BREAKOUT WITH SPEED / BREAK WITHOUT SPEED, + FLOW)."""
+        pc = self.cfg.get("pace") or {}
+        if not pc.get("enabled", True) or t - getattr(self, "_pace_t", -1e9) < 0.5:
+            return
+        self._pace_t = t
+        from . import pace as pace_mod
+        for sym, st in self.syms.items():
+            last = st.price()
+            if last is None or not st.pacebook.b:
+                st.pace = None
+                continue
+            st._user_levels_cache = self._user_levels(st.play)
+            memo = st.__dict__.get("_studies") or {}
+            levels = self._pace_levels(st, memo.get("v")) if pc.get("use_levels", True) else []
+            flow = [(m["t"], m["cp"], m.get("side"), m.get("prem") or 0.0) for m in st.flow_marks]
+            try:
+                knows = {"C": self._knows(st, BID, t), "P": self._knows(st, ASK, t)}    # SOMEBODY KNOWS: calls / puts
+                p = pace_mod.read(st.pacebook, t, last, levels, tick_size(last, sym), pc, flow, knows)
+            except Exception:
+                log.exception("pace %s", sym)
+                continue
+            st.pace = p
+            call = p.get("call")
+            if call and p.get("level") and pc.get("alerts", True):
+                rep_s = float(pc.get("repeat_seconds", 120))
+                said = st.__dict__.setdefault("_pace_said", {})
+                if call.startswith(("BREAKOUT", "BREAKDOWN")):
+                    # one call per break of a level; the only second call allowed is the upgrade to WITH SPEED
+                    key = ("BREAK", round(p["level"][0], 4))
+                    prev = said.get(key)
+                    fresh = prev is None or t - prev[0] >= rep_s
+                    upgrade = prev is not None and not fresh and "WITHOUT" in prev[1] and "WITHOUT" not in call
+                    if fresh or upgrade:
+                        said[key] = (t, call)
+                        self._pace_alert(st, p, t)
+                else:
+                    key = (call, round(p["level"][0], 4)) if call != "SPEED + FLOW" else (call, p["level"][1])
+                    if t - (said.get(key) or (-1e9,))[0] >= rep_s:
+                        said[key] = (t, call)
+                        self._pace_alert(st, p, t)
+
+    def _pace_alert(self, st, p, t):
+        lvl = p["level"]
+        call = p["call"]
+        good = "WITH SPEED" in call
+        text = (f"{call}: {lvl[1]} at {fmt_price(lvl[0])}" if call == "SPEED + FLOW" else f"{call} {lvl[1]} {fmt_price(lvl[0])}") \
+            + f" · tape ×{p['ratio']} its normal pace" + (f" · {p['flow']}" if p.get("flow") else "") \
+            + (f" · buyers {p['buy_pct']}%" if p.get("buy_pct") is not None else "")
+        flow_on = bool(p.get("flow")) and p["flow"].startswith("+") and "WITHOUT" not in call and call != "SPEED + FLOW"
+        alert = {"t": t, "symbol": st.symbol, "label": call + (" + FLOW" if flow_on else ""),
+                 "price": fmt_price(lvl[0]), "side": "ask" if call.startswith(("BREAKOUT", "PRESSING")) or (call == "SPEED + FLOW" and "calls" in lvl[1]) else "bid",
+                 "role": "pace", "text": text, "words": f"{st.symbol}. {p['words']}" if (self.cfg.get("pace") or {}).get("voice", True) else None}
+        alert["key"] = f"{round(t, 2)}|{st.symbol}|{call}|{lvl[0]}"
+        self.alerts.appendleft(alert)
+        self._rec(dict(alert, ev="alert"))
+        self.log(st.symbol, text, t, kind="level")
+        for fn in self.listeners:
+            try:
+                fn(alert)
+            except Exception:
+                pass
 
     def studies_for(self, st, t):
         """The chart studies for one symbol (GAS + ATR, AIRSPACE, UNVISITED HIGHS / LOWS), at most once a second."""
@@ -2012,6 +2094,7 @@ class Engine:
             self._rec({"ev": "tick", "t": t})       # replay runs its ticks at exactly these times
             if self.connection["state"] == "CONNECTED" and self.opt_sim(t):
                 self.practice_opt_tick(t)          # after hours on paper: the contracts you hold / chart move with the stock
+            self._pace_tick(t)
             rc = self.cfg["reload"]
             if self.desk is not None and t - getattr(self, "_recon_t", -1e9) >= 5:
                 self._recon_t = t
@@ -3674,6 +3757,7 @@ class Engine:
         bid, ask = st.bbo()
         tape = st.tape.stats(t)
         tape["speed"] = st.tape.speed(t)
+        tape["pace"] = st.pace
         user_levels = self._user_levels(st.play)
         bars = st.bar_list(MAX_BARS)
         first_bar = bars[0][0] if bars else t
@@ -3810,6 +3894,7 @@ class Engine:
                 "mode": "PAPER-ONLY ORDER ENTRY · LIVE LOCKED" if not self.cfg["trading"]["allow_live"] else "LIVE TRADING ENABLED",
                 "connection": dict(self.connection),
                 "feeds": self._feeds(t),
+                "chart_rth": bool(self.cfg["chart"].get("regular_hours_only", True)),
                 "studies_on": {k: bool((self.cfg.get("studies") or {}).get(k)) for k in ("gas", "airspace", "unvisited", "air_board", "gas_readout", "whole_numbers")},
                 "slots": self.cfg["depth"]["slots"],
                 "auto_rotate": self.auto_rotate,

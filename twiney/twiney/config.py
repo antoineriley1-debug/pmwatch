@@ -389,6 +389,26 @@ DEFAULTS = {
     },
     # the chart studies on the STOCK chart (never the option chart), ported from your TradingView scripts. Each
     # one switches off on its own; the numbers match TradingView: Wilder ATR, the chart's own EMAs / SMAs / BB
+    # PACE OF TAPE: how fast each stock trades against its own normal (the last 20 minutes), and the calls at your
+    # levels: STALLING INTO, PRESSING, BREAKOUT / BREAKDOWN WITH SPEED (+ FLOW when option flow backs it), BREAK WITHOUT SPEED
+    "pace": {
+        "enabled": True,                # read the pace of tape (ladder, T&S, calls)
+        "alerts": True,                 # call the moments: stalling / pressing / breakout with speed / break without speed
+        "voice": True,                  # say them out loud (when voice is on)
+        "use_levels": True,             # read against your lines and the chart studies' levels
+        "surge_ratio": 2.5,             # SURGE: at least this x its normal pace (and faster than 90% of the last 20 min)
+        "fast_ratio": 1.6,              # FAST: at least this x its normal pace
+        "slow_ratio": 0.6,              # SLOW: at most this x its normal pace
+        "dry_ratio": 0.35,              # DRYING UP: at most this x its normal pace
+        "stall_ratio": 0.8,             # STALLING INTO a level: within reach and the tape at most this x normal (or slowing)
+        "break_ratio": 1.8,             # BREAKOUT WITH SPEED: the tape at least this x normal through the level
+        "aggress_pct": 60,              # ... and at least this % of the aggressive shares on the break's side
+        "near_ticks": 5,                # within reach of a level: this many ticks ...
+        "near_pct": 0.03,               # ... or this % of price, whichever is wider
+        "flow_minutes": 15,             # + FLOW: option prints on the break's side in the last N minutes
+        "flow_min_premium": 100000,     # + FLOW: at least this much premium bought at the ask
+        "repeat_seconds": 120,          # a call at the same level is not repeated for this long
+    },
     "studies": {
         "gas": True,                    # GAS + ATR (new PS60 Gas + ATR)
         "airspace": True,               # AIRSPACE (PS60 MP Airspace)

@@ -30,6 +30,7 @@ SECTIONS = [
     ("trap", "Trapped traders", "Aggressive prints now underwater."),
     ("depth", "Market depth", "IBKR depth subscriptions and rotation."),
     ("chart", "Chart history", "History loaded at startup."),
+    ("pace", "Pace of tape", "How fast each stock trades against its own normal, and the calls at your levels: stalling, pressing, breakout with speed (+ flow)."),
     ("studies", "Chart studies", "GAS + ATR, AIRSPACE and UNVISITED HIGHS / LOWS on the stock chart (never the option chart). Each switches off on its own."),
     ("account", "Account", "Orders, positions and fills."),
     ("health", "Feed health", "When a feed counts as stale."),
@@ -180,7 +181,7 @@ def schema(cfg):
                 continue                          # an old setting kept only so saved configs still load
             kind = _kind(path, default)
             value = _get(cfg, path)
-            f = {"path": path, "label": INLINE[path] if path.startswith("studies.") and path in INLINE else _label(path.split(".")[-1]), "help": HELP.get(path, ""), "type": kind,
+            f = {"path": path, "label": INLINE[path] if path.startswith(("studies.", "pace.")) and path in INLINE else _label(path.split(".")[-1]), "help": HELP.get(path, ""), "type": kind,
                  "restart": path.startswith(RESTART) or any(path == r for r in RESTART), "locked": LOCKED.get(path)}
             if kind == "secret":
                 f["value"] = ""

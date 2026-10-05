@@ -1,0 +1,180 @@
+"""PACE OF TAPE: how fast this stock is trading RIGHT NOW against its own normal, who is pushing, and what that
+means at your levels.
+
+Every print lands in a 5-second bucket (buy / sell / other shares, prints, first and last price). From those:
+- RATE: shares a second over the last 15 s, against the MEDIAN 15 s of the last 20 minutes (this stock against
+  itself: 3,000 shares a second is a crawl on NVDA and a stampede on a small cap). ×1.0 = its normal pace.
+- PERCENTILE: where this 15 s ranks among the last 20 minutes' (95 = faster than 95% of them).
+- ACCELERATION: the last 5 s against the last 15 s, and the last 15 s against a minute ago (speeding up / slowing).
+- AGGRESSION: of the shares that crossed the spread in the last 15 s, how much was buyers paying up.
+- STATE: SURGE / FAST / NORMAL / SLOW / DRYING UP.
+
+At a level (your lines, the chart studies' levels):
+- PRESSING <level>: price within reach of it and the tape speeding up into it.
+- STALLING INTO <level>: price within reach of it and the tape slowing / drying up: the move is running out of gas.
+- BREAKOUT / BREAKDOWN WITH SPEED: the level broke in the last 30 s with the tape well above its normal and the
+  aggression on the break's side. With option flow on the same side (calls bought at the ask on a breakout, puts
+  on a breakdown) it carries the dollars: + FLOW $640K calls.
+- BREAK WITHOUT SPEED: the level broke on a normal / slow tape: suspect, the kind that comes back.
+"""
+
+import statistics
+from collections import deque
+
+BUCKET = 5.0
+WINDOW = 1200.0                 # the stock's normal: the last 20 minutes
+
+
+class PaceBook:
+    """The 5-second buckets of one stock's tape (kept as prints arrive)."""
+
+    def __init__(self):
+        self.b = deque(maxlen=int(WINDOW // BUCKET) + 8)    # [t0, buy, sell, other, prints, first px, last px]
+
+    def add(self, t, price, size, side):
+        t0 = (t // BUCKET) * BUCKET
+        if self.b and self.b[-1][0] == t0:
+            r = self.b[-1]
+        elif self.b and t0 < self.b[-1][0]:
+            r = next((x for x in reversed(self.b) if x[0] == t0), None)
+            if r is None:
+                return                                        # older than what we keep: a late print, ignored
+        else:
+            r = [t0, 0.0, 0.0, 0.0, 0, price, price]
+            self.b.append(r)
+        r[1 if side == "buy" else 2 if side == "sell" else 3] += size
+        r[4] += 1
+        r[6] = price
+
+
+def _win(rows, start, end):
+    """Shares, prints, buy, sell in the buckets that started in [start, end)."""
+    sh = n = buy = sell = 0.0
+    for r in rows:
+        if start <= r[0] < end:
+            sh += r[1] + r[2] + r[3]; n += r[4]; buy += r[1]; sell += r[2]
+    return sh, n, buy, sell
+
+
+def knows_txt(k):
+    """SOMEBODY KNOWS in one line: $640K calls · 6 prints · 2 sweeps · 160 strike, 3d."""
+    if not k or not k.get("dollars"):
+        return None
+    top = k.get("top") or {}
+    what = "calls" if k.get("cp") == "C" else "puts"
+    return (f"{_k(k['dollars'])} {what} · {k.get('prints', 0)} prints" + (f" · {k['sweeps']} sweeps" if k.get("sweeps") else "")
+            + (f" · {top['strike']:g} strike" if top.get("strike") is not None else "") + (f", {round(top['dte'])}d" if top.get("dte") is not None else ""))
+
+
+def read(book, now, last, levels, tick, cfg, flow=None, knows=None):
+    """The pace right now. levels = [(price, name)], flow = recent option prints [(t, cp, side, premium)],
+    knows = {"C": ..., "P": ...}: the SOMEBODY KNOWS read for calls and puts (short-dated, out of the money, bought at
+    the ask, again and again)."""
+    rows = [r for r in book.b if now - r[0] < WINDOW + 2 * BUCKET]
+    out = {"state": "QUIET", "ratio": None, "pct": None, "heat": 0.0, "buy_pct": None, "accel": "", "sps": 0, "pps": 0.0,
+           "call": None, "level": None, "flow": None, "words": None, "knows": None}
+    knows = knows or {}
+    for cp in ("C", "P"):                    # the flow tag on the ladder / T&S: who is hammering short-dated options now
+        k = knows.get(cp)
+        if k and k.get("knows"):
+            out["knows"] = {"cp": cp, "text": knows_txt(k), "score": k.get("score")}
+            break
+    if not rows:
+        return out
+    cur0 = (now // BUCKET) * BUCKET                    # the bucket being filled right now
+    w0 = cur0 - 2 * BUCKET                             # the last 15 s = this bucket and the two before it
+    span = max(BUCKET, now - w0)
+    cur_sh, cur_n, cur_b, cur_s = _win(rows, w0, cur0 + BUCKET)
+    sps = cur_sh / span
+    # the stock's normal: every full 15-second slice of the last 20 minutes before that
+    slices = []
+    t = w0
+    while t - 15.0 >= now - WINDOW:
+        slices.append(_win(rows, t - 15.0, t)[0] / 15.0)
+        t -= 15.0
+    active = [x for x in slices if x > 0]
+    if len(active) < 8:
+        out.update(state="WARMING UP", sps=round(sps), pps=round(cur_n / span, 1))
+        return out
+    norm = statistics.median(slices) or (statistics.median(active) * 0.5)
+    ratio = sps / norm if norm > 0 else 0.0
+    pct = 100.0 * sum(1 for x in slices if x <= sps) / len(slices)
+    fast5 = _win(rows, cur0 - BUCKET, cur0 + BUCKET)[0] / max(BUCKET, now - (cur0 - BUCKET))   # the last 5-10 s
+    min_ago = _win(rows, w0 - 60.0, w0 - 45.0)[0]                                                # the same 15 s a minute ago
+    rate5, rate_1m = fast5, min_ago / 15.0
+    accel = ("SPEEDING UP" if rate5 > 1.3 * max(sps, 1e-9) or (sps > 1.4 * max(rate_1m, 1e-9) and sps > norm)
+             else "SLOWING" if rate5 < 0.6 * sps or sps < 0.6 * rate_1m else "")
+    directional = cur_b + cur_s
+    buy_pct = 100.0 * cur_b / directional if directional else None
+    c = cfg
+    state = ("SURGE" if ratio >= c["surge_ratio"] and pct >= 90 else "FAST" if ratio >= c["fast_ratio"]
+             else "DRYING UP" if ratio <= c["dry_ratio"] else "SLOW" if ratio <= c["slow_ratio"] else "NORMAL")
+    out.update(state=state, ratio=round(ratio, 2), pct=round(pct), heat=round(min(1.0, ratio / 3.0), 2), buy_pct=None if buy_pct is None else round(buy_pct),
+               accel=accel, sps=round(sps), pps=round(cur_n / span, 1), norm_sps=round(norm))
+    if last is None:
+        return out
+    levels = levels or []
+    # where price is against the levels
+    near = max(c["near_ticks"] * tick, last * c["near_pct"] / 100.0)
+    past = [r for r in rows if cur0 - 35.0 <= r[0] < cur0 - 25.0]
+    then = past[0][5] if past else None                 # the price ~30 s ago
+    broke = None
+    if then is not None:
+        for p, nm in levels:
+            if then < p <= last and last - p >= tick:
+                broke = ("up", p, nm) if broke is None or p > broke[1] else broke
+            elif then > p >= last and p - last >= tick:
+                broke = ("down", p, nm) if broke is None or p < broke[1] else broke
+    flow_txt, flow_usd, against_usd = None, 0.0, 0.0
+    if broke:
+        up = broke[0] == "up"
+        same = (buy_pct or 0) >= c["aggress_pct"] if up else (buy_pct is not None and 100 - buy_pct >= c["aggress_pct"])
+        if flow:
+            for ft, cp, side, prem in flow:
+                if now - ft <= c["flow_minutes"] * 60 and side == "ask":
+                    if (cp == "C") == up:
+                        flow_usd += prem
+                    else:
+                        against_usd += prem
+        kn = knows.get("C" if up else "P")
+        if kn and kn.get("knows"):
+            flow_txt = "+ SOMEBODY KNOWS " + knows_txt(kn)
+            flow_usd = max(flow_usd, kn.get("dollars") or 0)
+        elif flow_usd >= c["flow_min_premium"]:
+            flow_txt = f"+ FLOW {_k(flow_usd)} {'calls' if up else 'puts'}"
+        elif against_usd >= c["flow_min_premium"]:
+            flow_txt = f"flow against: {_k(against_usd)} {'puts' if up else 'calls'}"
+        fast = ratio >= c["break_ratio"] and same
+        what = ("BREAKOUT" if up else "BREAKDOWN") + (" WITH SPEED" if fast else " WITHOUT SPEED")
+        out.update(call=what, level=[broke[1], broke[2]], flow=flow_txt,
+                   words=(f"{'Breakout' if up else 'Breakdown'} through {broke[2]} with speed, {ratio:.1f} times its normal pace"
+                          + (f", and somebody knows: {_k(flow_usd)} of short dated {'calls' if up else 'puts'} hammered" if flow_txt and "KNOWS" in flow_txt
+                             else f", and {_k(flow_usd)} of {'calls' if up else 'puts'} behind it" if flow_txt and flow_txt.startswith("+") else "")
+                          if fast else f"{broke[2]} broke without speed. Careful, that one can come back"))
+        return out
+    # SPEED + FLOW: the tape speeding up on one side while short-dated out-of-the-money options on that side are
+    # being hammered — wherever price is
+    if out["knows"] and buy_pct is not None and (state in ("FAST", "SURGE") or (accel == "SPEEDING UP" and ratio >= 1.2)):
+        cp = out["knows"]["cp"]
+        if (cp == "C" and buy_pct >= c["aggress_pct"]) or (cp == "P" and 100 - buy_pct >= c["aggress_pct"]):
+            what = "calls" if cp == "C" else "puts"
+            out.update(call="SPEED + FLOW", level=[last, "calls hammered" if cp == "C" else "puts hammered"],
+                       flow="+ SOMEBODY KNOWS " + out["knows"]["text"],
+                       words=f"Tape speeding up, {ratio:.1f} times normal, {'buyers' if cp == 'C' else 'sellers'} in control, and short dated {what} are being hammered")
+            # a level close ahead still gets its own read below only when this did not fire
+            return out
+    # approaching a level: the nearest one in the direction price is travelling
+    going_up = then is None or last >= then
+    ahead = [(p, nm) for p, nm in levels if (p >= last if going_up else p <= last) and abs(p - last) <= near]
+    if ahead:
+        p, nm = min(ahead, key=lambda x: abs(x[0] - last))
+        if ratio <= c["stall_ratio"] or accel == "SLOWING":
+            out.update(call="STALLING INTO", level=[p, nm], words=f"Stalling into {nm}. The tape is drying up")
+        elif ratio >= 1.3 and accel == "SPEEDING UP":
+            out.update(call="PRESSING", level=[p, nm], words=f"Pressing {nm}. The tape is speeding up into it")
+    return out
+
+
+def _k(v):
+    v = float(v or 0)
+    return f"${v / 1e6:.1f}M" if v >= 1e6 else f"${v / 1e3:.0f}K"

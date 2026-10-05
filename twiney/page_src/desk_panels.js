@@ -152,6 +152,7 @@ function renderBook(d){
   const bi = document.getElementById("bigIn"), L = d.ladder || {};
   if (bi && document.activeElement !== bi && L.big_shares != null && bi.dataset.sym + ":" + L.big_shares !== d.symbol + ":" + L.big_shares){ bi.value = Math.round(L.big_shares); bi.dataset.sym = d.symbol; }
   const hint = document.getElementById("bigHint"); if (hint){ const txt = L.big_shares != null ? (L.big_default ? "" : d.symbol + " · ") + "huge ≥" + kfmt(L.huge_shares) : ""; if (hint.textContent !== txt) hint.textContent = txt; }
+  if (d.ladder) d.ladder.pace = d.tape && d.tape.pace;     // PACE OF TAPE rides on top of the ladder
   const html = ladderHTML(training() ? Object.assign({}, d.ladder, {rows: d.ladder.rows.map(r => Object.assign({}, r, {bid_state: null, ask_state: null, bid_refills: 0, ask_refills: 0, bid_verdict: null, ask_verdict: null}))}) : d.ladder);
   if (P.book.last === html) return;
   P.book.last = html;
@@ -499,7 +500,7 @@ function renderTape(d){
   const el = P.tape.pc.querySelector(".p-tape");
   renderContractTape(); renderSwitchStrips(); if (contractMode("tape")){ renderBigTape(d); return; }
   if (!d){ el.innerHTML = `<div class="dim" style="padding:8px">${NA}</div>`; P.tape.last = null; renderBigTape(null); return; }
-  const html = tapeGaugeHTML(d.tape) + tapeSpeedHTML(d.tape.speed) + tapeHTML(d.tape, d.ladder); if (P.tape.last !== html){ P.tape.last = html;
+  const html = tapeGaugeHTML(d.tape) + tapeSpeedHTML(d.tape.speed) + paceHTML(d.tape.pace) + tapeHTML(d.tape, d.ladder); if (P.tape.last !== html){ P.tape.last = html;
     const keep = el.scrollTop; el.innerHTML = html; el.scrollTop = keep; makeColsResizable(el.querySelector("table")); }
   renderBigTape(d); flyBigPrints(d);
 }
@@ -2024,6 +2025,8 @@ function renderBigMoney(d){
 
 /* CONVICTION BOARD: Dan's option-flow timing (the source-of-truth spec). Two gates, eight lanes, 0-100, a traffic light.
    READY TO GO only when the chart gate AND the flow gate are green; one alone is ARMED — WAITING OTHER GATE. */
+// the name under each dot, so the row reads without hovering (click it for the whole CONVICTION panel)
+const LANE_SHORT = {L0_DAILY_MP: "MP", L1_PIVOT: "PIVOT", L2_CONFIRM: "CONFIRM", L3_SECOND_ENTRY: "2ND", L4_BUILD: "BUILD", L5_FLOW_SIDE: "FLOW", L6_FLOW_QUALITY: "QUALITY", L7_CORRELATION: "CORR"};
 const LANE_NAMES = {L0_DAILY_MP: "DAILY MP", L1_PIVOT: "PIVOT", L2_CONFIRM: "CONFIRM", L3_SECOND_ENTRY: "2ND ENTRY", L4_BUILD: "BUILD", L5_FLOW_SIDE: "FLOW SIDE", L6_FLOW_QUALITY: "FLOW QUALITY", L7_CORRELATION: "CORRELATION"};
 function renderConviction(d){
   const strip = document.getElementById("cvStrip"), panel = document.getElementById("cvPanel");
@@ -2031,7 +2034,7 @@ function renderConviction(d){
   const tone = c ? c.board_state.toLowerCase() : "none";
   if (strip){
     const dot = l => `<i class="tl ${l.toLowerCase()}"></i>`;
-    const h = !c ? "" : `<span class="cvv">${esc(c.label)}</span><span class="cvs">${c.score}</span><span class="gates"><b class="${c.chart_gate.ok ? "on" : ""}">CHART ${c.chart_gate.ok ? "✓" : "✗"}</b><b class="${c.flow_gate.ok ? "on" : ""}">FLOW ${c.flow_gate.ok ? "✓" : "✗"}</b></span><span class="lanes">${c.lanes.map(l => `<span title="${esc(LANE_NAMES[l.id] + ": " + l.text)}">${dot(l.light)}</span>`).join("")}</span>${c.max_pain && c.max_pain.options ? `<span class="dim">5m stop ${px(c.max_pain.options)}</span>` : ""}`;
+    const h = !c ? "" : `<span class="cvv">${esc(c.label)}</span><span class="cvs">${c.score}</span><span class="gates"><b class="${c.chart_gate.ok ? "on" : ""}">CHART ${c.chart_gate.ok ? "✓" : "✗"}</b><b class="${c.flow_gate.ok ? "on" : ""}">FLOW ${c.flow_gate.ok ? "✓" : "✗"}</b></span><span class="lanes">${c.lanes.map(l => `<span class="lane" title="${esc(LANE_NAMES[l.id] + ": " + l.text)}">${dot(l.light)}<em>${LANE_SHORT[l.id] || ""}</em></span>`).join("")}</span><span class="cvmore">▸ DETAILS</span>${c.max_pain && c.max_pain.options ? `<span class="dim">5m stop ${px(c.max_pain.options)}</span>` : ""}`;
     if (strip.dataset.h !== h){ strip.dataset.h = h; strip.innerHTML = h; strip.className = "cvstrip " + tone; }
   }
   if (!panel) return;
@@ -2623,6 +2626,23 @@ function lvWords(m, short){
 }
 function lvCls(m){ const c = (LVROLE[m.role] || ["", "ex"])[1]; return m.role === "strike" || m.role === "flow" ? "st" + (m.cp === "P" ? "p" : "c") : c; }
 function distTxt(d, tick){ if (d == null) return ""; const t = Math.round(Math.abs(d) / (tick || 0.01)); return (d >= 0 ? "+" : "−") + Math.abs(d).toFixed(Math.abs(d) < 1 && tick && tick < 0.01 ? 4 : 2) + (t <= 50 ? ` · ${t}t` : ""); }
+/* PACE OF TAPE: speed against this stock's own normal (×1.0 = normal), who is pushing, the flow behind it, and the
+   call at your level. One strip on the ladder and on the T&S, the last-price row glowing harder as the tape runs */
+function paceHTML(pc){
+  if (!pc || pc.state === "QUIET") return "";
+  if (pc.state === "WARMING UP") return `<div class="pacebar s-warm" title="the pace reads this stock against its own last 20 minutes: a few minutes of tape first"><span class="pst">PACE · warming up</span></div>`;
+  const st = pc.state, cls = {SURGE: "surge", FAST: "fast", NORMAL: "norm", SLOW: "slow", "DRYING UP": "dry"}[st] || "norm";
+  const b = pc.buy_pct, acc = pc.accel === "SPEEDING UP" ? "▲" : pc.accel === "SLOWING" ? "▼" : "";
+  const tip = `PACE OF TAPE: ${sz(pc.sps)} shares/s now vs ${sz(pc.norm_sps || 0)} normal (the median 15 s of the last 20 min) = ×${pc.ratio} · faster than ${pc.pct}% of the last 20 min${b != null ? ` · buyers ${b}% / sellers ${100 - b}% of the aggressive shares` : ""}${pc.accel ? " · " + pc.accel : ""}`;
+  const kn = pc.knows ? `<span class="pkn ${pc.knows.cp === "C" ? "c" : "p"}" title="SOMEBODY KNOWS: short-dated, out-of-the-money ${pc.knows.cp === "C" ? "calls" : "puts"} bought at the ask, again and again">⚡ ${esc(pc.knows.text)}</span>` : "";
+  let h = `<div class="pacebar s-${cls}" title="${esc(tip)}"><span class="pst">${st}</span><span class="pg"><i style="width:${Math.max(3, pc.pct || 0)}%"></i></span><span class="prt">×${pc.ratio}</span><span class="pacc">${acc}</span>${b != null ? `<span class="pbs" title="buyers ${b}% / sellers ${100 - b}%"><i class="b" style="width:${b}%"></i><i class="s" style="width:${100 - b}%"></i></span>` : ""}${kn}</div>`;
+  if (pc.call && pc.level){
+    const good = /WITH SPEED|PRESSING|SPEED \+ FLOW/.test(pc.call) && !/WITHOUT/.test(pc.call), warn = /STALLING|WITHOUT/.test(pc.call);
+    const lvl = pc.call === "SPEED + FLOW" ? esc(pc.level[1]) : `${esc(pc.level[1])} ${px(pc.level[0])}`;
+    h += `<div class="pcall ${good ? "good" : warn ? "warn" : ""}">${esc(pc.call)} · ${lvl}${pc.flow ? ` <b>${esc(pc.flow)}</b>` : ""}</div>`;
+  }
+  return h;
+}
 function ladderProHTML(L){
   const rows = L.rows; if (!rows.length) return `<div class="empty">Waiting for the book…</div>`;
   const ms = Math.max(L.max_traded, 1), big = L.big_shares || 5000;
@@ -2649,6 +2669,7 @@ function ladderProHTML(L){
   const up = off.filter(m => m.price > top).sort((a, b) => a.price - b.price).slice(0, 4);
   const dn = off.filter(m => m.price < bot).sort((a, b) => b.price - a.price).slice(0, 4);
   const pill = (m, arrow) => `<span class="lvp ${lvCls(m)}" title="${esc(lvWords(m) + " " + px(m.price) + " · " + distTxt(m.dist, L.tick) + " from the last price")}">${arrow} ${esc(lvWords(m, true))} ${px(m.price)} <i>${distTxt(m.dist, L.tick)}</i></span>`;
+  h += paceHTML(L.pace);
   h += `<div class="lvstrip top">${up.map(m => pill(m, "▲")).join("")}${dn.map(m => pill(m, "▼")).join("")}${up.length || dn.length ? "" : `<span class="dim">your lines off the ladder show here</span>`}<span class="sp"></span><button data-lclr="above" title="clear SOLD / BOUGHT / +/− above the ask (after a move down)">CLR ▲</button><button data-lclr="below" title="clear SOLD / BOUGHT / +/− below the bid (after a move up)">CLR ▼</button></div>`;
   h += `<table class="lad lad3 pro" data-cols="ladpro"><tr>
     <th class="lvh" data-w="64" data-min="26" title="your chart on the ladder: PIVOT, 2ND ENTRY, TARGET, STOP, SNEAKY PIVOT, option STRIKES getting the money, high / low of day, the RELOAD buyer / seller — and how far they are">LEVEL</th>
@@ -2680,7 +2701,9 @@ function ladderProHTML(L){
     const lvTxt = lv.length ? (at ? "AT " : "") + lvWords(lv[0], true) + (lv.length > 1 ? ` +${lv.length - 1}` : "") : "";
     const lvTip = lv.map(m => lvWords(m) + " " + px(m.price) + (m.role === "sneaky_auto" ? ` (TED found it: ${m.touches || "?"} touches, room $${(m.room || 0).toFixed(2)})` : "")).join(" · ") + (rel ? (lv.length ? " · " : "") + (pb ? rb.text : ra.text) : "");
     const lvCell = `<td class="lvc" title="${esc(lvTip)}">${lvTxt ? `<b>${esc(lvTxt)}</b>` : ""}${rel ? `<span class="rlv ${pb ? "b" : "s"}">${lv.length ? "◆ " : ""}${esc(rel)}</span>` : ""}</td>`;
-    h += `<tr class="${cls}" data-price="${r.price}" style="--cv:${cv}">${lvCell}${stack(r, "bid")}${visit(r, "bid")}
+    // the last-price row glows harder the faster the tape runs: green when buyers push, red when sellers do
+    const glow = r.last && L.pace && L.pace.heat ? `;--heat:${L.pace.heat}` : "", gcls = glow ? (L.pace.buy_pct != null && L.pace.buy_pct < 50 ? " pglow s" : " pglow b") : "";
+    h += `<tr class="${cls}${gcls}" data-price="${r.price}" style="--cv:${cv}${glow}">${lvCell}${stack(r, "bid")}${visit(r, "bid")}
       <td class="sz bsz click${fakeB}${bigB}" data-act="BUY" data-px="${r.price}" title="${esc(tB)}">${mark(r, "C")}${goneB}${absB ? `<span class="abs" style="width:${absB}%"></span>` : ""}${pb ? `<span class="rl${r.bid_back ? " back" : ""}">${r.bid_back ? "↩×" + r.bid_back.n + " " : ""}↻${r.bid_refills || ""}${rb && rb.usd ? `<i class="rlm"> ${usdK(rb.usd)}</i>` : ""}</span>` : ""}<span class="szn">${r.bid ? kfmt(r.bid) : ""}</span>${chips(r, "b") ? `<span class="mine">${chips(r, "b")}</span>` : ""}</td>
       <td class="px">${px(r.price)}${r.vn > 1 ? `<sup title="price has been back to ${px(r.price)} ${r.vn} times in ${L.memory_minutes} min">×${r.vn}</sup>` : ""}</td>
       <td class="sz asz click${fakeA}${bigA}" data-act="SELL" data-px="${r.price}" title="${esc(tA)}"><span class="szn">${r.ask ? kfmt(r.ask) : ""}</span>${chips(r, "s") ? `<span class="mine">${chips(r, "s")}</span>` : ""}${pa ? `<span class="rl${r.ask_back ? " back" : ""}">${ra && ra.usd ? `<i class="rlm">${usdK(ra.usd)} </i>` : ""}↻${r.ask_refills || ""}${r.ask_back ? " ↩×" + r.ask_back.n : ""}</span>` : ""}${goneA}${absA ? `<span class="abs" style="width:${absA}%"></span>` : ""}${mark(r, "P")}</td>

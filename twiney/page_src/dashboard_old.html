@@ -1642,7 +1642,10 @@ function barCloseIn(tf, isDaily){
 /* the minute bars only go back 5 days: the 5 / 15 minute charts start with IBKR's 5-minute history (2 months) and
    30 minute and up with its 30-minute history (1 year), so every 200 EMA has enough candles behind it to settle */
 function withHistory(d, tf){
-  const bars = d.bars || [], base = tf >= 30 && (d.m30 || []).length ? d.m30 : tf >= 5 && (d.m5 || []).length ? d.m5 : null;
+  // 30 minute and up: the 30-minute history is regular hours only, so with extended hours on (SETTINGS > Chart
+  // history) those charts build from the 5-minute history instead, which follows your setting
+  const rth = !(typeof state !== "undefined" && state && state.chart_rth === false);
+  const bars = d.bars || [], base = tf >= 30 && rth && (d.m30 || []).length ? d.m30 : tf >= 5 && (d.m5 || []).length ? d.m5 : null;
   if (!base || !bars.length) return bars;
   const first = bars[0][0], older = [];
   for (const b of base){ if (b[0] >= first) break; older.push(b); }
