@@ -377,6 +377,9 @@ const NYF = new Intl.DateTimeFormat("en-US", {timeZone: "America/New_York", hour
 const NYHM = new Intl.DateTimeFormat("en-US", {timeZone: "America/New_York", hourCycle: "h23", hour: "2-digit", minute: "2-digit"});
 const nyT = t => NYF.format(new Date(t * 1000));
 const nyHM = t => NYHM.format(new Date(t * 1000));
+// regular time (1:05 PM) for the option flow
+const NYHM12 = new Intl.DateTimeFormat("en-US", {timeZone: "America/New_York", hour: "numeric", minute: "2-digit", hour12: true});
+const nyHM12 = t => NYHM12.format(new Date(t * 1000));
 const nyDate = (t, o) => new Date(t * 1000).toLocaleDateString("en-US", Object.assign({timeZone: "America/New_York"}, o));
 // a price the exchange takes: 0.01 at $1 and up, 0.0001 below
 const tickOfPx = p => p >= 1 ? 0.01 : 0.0001;

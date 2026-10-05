@@ -375,6 +375,9 @@ function avgRow(wrap, d){
 /* the status strip over the ladder: symbol · last · change · bid / ask · spread · position · avg · P&L % · data · connection · mode */
 function renderLadStat(d, s){
   const el = document.getElementById("ladStat"); if (!el) return;
+  // you asked for it gone: no symbol / price / change / bid-ask line over the Level II (POSITIONS has your trade)
+  if (el.style.display !== "none") el.style.display = "none";
+  return;
   if (!d){ el.innerHTML = ""; return; }
   const t = (s && s.trading) || {}, c = (s && s.connection) || {}, f = (s && s.feeds) || {};
   const chg = d.last && d.prev_close ? (d.last - d.prev_close) / d.prev_close * 100 : null;
@@ -1377,7 +1380,7 @@ function renderUrgency(s){
   const exp = e => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(e || ""); return m ? `${m[2]}/${m[3]}` : (e || NA); };
   const top = rows.length ? rows[0].score : 1;
   const html = rows.length ? rows.map(u => `<div class="fl ur ${u.cp === "C" ? "c" : "p"} ${u.hot ? "hot" : ""}" title="${u.prints} prints bought at the ask in the window, ${u.sweeps} sweeps · ${kfmt$(u.pace)} a minute${u.accel ? " · speeding up" : ""}${u.hot ? " · CALLED: urgent" : ""}">
-      <div class="tm">${nyHM(u.last_t)} <span class="dim">· since ${nyHM(u.first_t)}</span>${u.hot ? ` <span class="urg">⚡ URGENT</span>` : ""}${u.accel ? ` <span class="acc">▲ SPEEDING UP</span>` : ""}</div>
+      <div class="tm">${nyHM12(u.last_t)} <span class="dim">· since ${nyHM12(u.first_t)}</span>${u.hot ? ` <span class="urg">⚡ URGENT</span>` : ""}${u.accel ? ` <span class="acc">▲ SPEEDING UP</span>` : ""}</div>
       <div class="top"><span class="tk">${esc(u.symbol)}</span><span class="prem">${kfmt$(u.dollars)}</span><span class="dots a">${u.sweeps ? "<i></i><i></i>" : ""}</span><span class="bar"><i style="width:${Math.max(4, 100 * u.score / top).toFixed(0)}%"></i></span></div>
       <div class="cols"><span><i>EXP</i>${exp(u.expiry)}${u.dte != null ? ` (${Math.round(u.dte)}d)` : ""}</span><span><i>STRIKE</i>${strike(u.strike)}</span><span><i>C/P</i>${u.cp}</span><span><i>OTM</i>${u.otm_pct != null ? u.otm_pct.toFixed(1) + "%" : NA}</span><span><i>PRINTS</i>${u.prints}${u.sweeps ? ` <b class="dim">${u.sweeps} sw</b>` : ""}</span><span><i>PACE</i>${kfmt$(u.pace)}/m</span>${u.spot != null ? `<span><i>SPOT</i>${(+u.spot).toFixed(2)}</span>` : ""}</div></div>`).join("")
     : `<div class="dim" style="padding:10px">${UR.q ? `Nothing on ${esc(UR.q)} being chased right now.` : "Nothing short-dated and out of the money is being chased right now."}</div>`;
@@ -1386,7 +1389,7 @@ function renderUrgency(s){
     const D = UR.data && UR.data.symbol === UR.q ? UR.data : null, hist = D ? D.history : [];
     const head = `<div class="ur-head"><b>${esc(UR.q)}</b> <span class="dim">urgent-type flow this session:</span> <span class="c">calls ${kfmt$(D ? D.calls : 0)}</span> · <span class="p">puts ${kfmt$(D ? D.puts : 0)}</span> · ${hist.length} prints${D ? "" : ' <span class="dim">loading…</span>'}</div><div class="ur-sec">RIGHT NOW</div>`;
     const earlier = hist.length ? hist.map(h => `<div class="ur-h ${h.cp === "C" ? "c" : "p"}" title="${esc(`${h.size || "?"} contracts @ ${h.price != null ? (+h.price).toFixed(2) : "?"} · stock ${h.spot != null ? (+h.spot).toFixed(2) : "?"} · ${h.otm_pct}% out of the money · ${h.kind}${h.called ? " · this contract was CALLED urgent" : ""}`)}">
-        <span class="tm">${nyHM(h.t)}</span><span class="ct">${flowStrike(h.strike)}${h.cp} ${esc((h.expiry || "").slice(5))}</span><span class="dte">${Math.round(h.dte)}d</span><span class="pr">${kfmt$(h.premium)}</span><span class="k">${esc(h.kind)}</span><span class="otm">${h.otm_pct}%</span>${h.called ? `<span class="urg">⚡</span>` : "<span></span>"}</div>`).join("")
+        <span class="tm">${nyHM12(h.t)}</span><span class="ct">${flowStrike(h.strike)}${h.cp} ${esc((h.expiry || "").slice(5))}</span><span class="dte">${Math.round(h.dte)}d</span><span class="pr">${kfmt$(h.premium)}</span><span class="k">${esc(h.kind)}</span><span class="otm">${h.otm_pct}%</span>${h.called ? `<span class="urg">⚡</span>` : "<span></span>"}</div>`).join("")
       : `<div class="dim" style="padding:6px 10px">Nothing urgent-type on ${esc(UR.q)} yet this session.</div>`;
     full = head + html + `<div class="ur-sec">EARLIER · newest first</div>` + earlier;
   }
@@ -1562,7 +1565,7 @@ function renderFlow(s){
     const rep = p.side === "ask" && n >= 2 && far ? `AGAIN ×${n} · ${p.otm_pct.toFixed(0)}% OUT` : "";
     const deep = p.otm_pct != null && p.otm_pct <= -3 ? `${Math.abs(p.otm_pct).toFixed(0)}% IN THE MONEY` : "";
     return `<div class="fl ${cp === "C" ? "c" : "p"} ${p.away ? "away" : ""} ${soon || rep ? "know" : ""}" title="${p.side === "ask" ? "bought at the ask" : p.side === "bid" ? "sold at the bid" : "mid"}${p.otm_pct != null ? ` · ${p.otm_pct > 0 ? p.otm_pct.toFixed(1) + "% out of the money" : Math.abs(p.otm_pct).toFixed(1) + "% in the money"}` : ""}${soon ? " · size this close to expiry: somebody may know something" : ""}${rep ? " · the same far-out strike keeps getting bought with size" : ""}${deep ? " · deep in the money: delta near one, moves dollar for dollar with the stock. That is a hedge or stock replacement, not a bet on a move — not the short-dated out-of-the-money dough we wait for" : ""}">
-      <div class="tm">${nyHM(p.t)}</div>
+      <div class="tm">${nyHM12(p.t)}</div>
       <div class="top"><span class="tk">${esc(p.symbol)}</span><span class="prem">${kfmt$(p.premium)}</span><span class="dots ${p.side === "ask" ? "a" : ""}">${p.kind === "sweep" || p.kind === "split" ? "<i></i><i></i>" : p.kind === "block" ? "<i></i>" : ""}</span>${soon ? `<span class="kn">${soon}</span>` : ""}${rep ? `<span class="kn rep">${rep}</span>` : ""}${deep ? `<span class="itm">${deep}</span>` : ""}${p.away && !rep ? `<span class="aw">WAYS AWAY</span>` : ""}${urg ? `<span class="urg" title="this contract is being bought in a hurry: short-dated, out of the money, print after print">⚡ URGENT</span>` : ""}</div>
       <div class="cols"><span><i>EXP</i>${exp(p.expiry)}</span><span><i>STRIKE</i>${strike(p.strike)}</span><span><i>C/P</i>${cp}</span><span><i>SPOT</i>${p.spot != null ? (+p.spot).toFixed(2) : NA}</span><span><i>TYPE</i><span class="ty">${typ(p)}</span></span><span><i>DETAILS</i>${sz(p.size)} @ ${p.price != null ? p.price.toFixed(2) : NA}</span></div></div>`; }).join("")
     : `<div class="dim" style="padding:10px">${(s.flow || []).length ? "Nothing matches the filter." : (s.connection && s.connection.state === "DEMO" ? "Practice flow is warming up." : "No option flow. Add your Quant Data key in SETTINGS, Quant Data, then RESTART NOW.")}</div>`;

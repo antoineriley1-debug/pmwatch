@@ -436,33 +436,34 @@ function studiesFront(ctx){
   g.font = font;
   const vis = studyLineList(S).filter(L => L.p != null && L.p >= lo && L.p <= hi).map(L => ({L, yy: Math.round(y(L.p)) + .5}));
   vis.sort((a, b) => a.yy - b.yy);
-  const placed = [], tags = [];
+  const tags = [], room = plotW - 3 - lx0;
+  // ONE column: every label starts at the same x, stacked top to bottom in price order. Two that would touch are
+  // spread apart just enough (never more), and a thin lead runs from each line's end to its own label
+  const top = rowH, bottom = y(lo) - 2, lab = [];
+  for (const it of vis){
+    let text = it.L.l || "";
+    if (text && room < 28) text = "";
+    else if (text && g.measureText(text).width > room){ while (text.length > 3 && g.measureText(text + "…").width > room) text = text.slice(0, -1); text += "…"; }
+    it.text = text; if (text) lab.push(it);
+  }
+  for (let i = 0; i < lab.length; i++) lab[i].ly = Math.max(lab[i].yy, top, i ? lab[i - 1].ly + rowH : -1e9);
+  for (let i = lab.length - 1; i >= 0; i--) lab[i].ly = Math.min(lab[i].ly, i === lab.length - 1 ? bottom : lab[i + 1].ly - rowH);
   for (const it of vis){
     const L = it.L, col = L.c;
-    // the label sits ON its line's price; one that would touch a label already there moves further right, same row
-    let text = L.l || "", w = text ? g.measureText(text).width : 0, x = lx0;
-    if (text){
-      for (let guard = 0; guard < 12; guard++){
-        const hit = placed.find(p => Math.abs(p.y - it.yy) < rowH && x < p.x + p.w + 10 && x + w > p.x - 10);
-        if (!hit) break; x = hit.x + hit.w + 14;
-      }
-      const room = plotW - 3 - x;
-      if (room < 28) text = "";                                           // no room left: the price-scale tag still shows it
-      else if (w > room){ while (text.length > 3 && g.measureText(text + "…").width > room) text = text.slice(0, -1); text += "…"; w = g.measureText(text).width; }
-    }
     const from = L.stub ? Math.max(0, xLast + cw / 2) : (L.t0 != null ? stX(ctx, L.t0) : xs);
     g.strokeStyle = col; g.lineWidth = L.w || 1; g.setLineDash(stDash(L.d)); g.globalAlpha = L.fade ? 0.45 : 1;
     g.beginPath(); g.moveTo(from, it.yy); g.lineTo(xe, it.yy); g.stroke();
-    if (text){
-      // a thin lead from the line's end into its label: you always see which line a label belongs to
-      g.setLineDash([1, 3]); g.lineWidth = 1; g.beginPath(); g.moveTo(xe, it.yy); g.lineTo(x - 3, it.yy); g.stroke();
-      g.globalAlpha = 1; g.fillStyle = Y.one || col; g.fillText(text, x, it.yy + Y.fs / 2 - 1);
-      placed.push({x, y: it.yy, w});
+    if (it.text){
+      const ly = Math.round(it.ly) + .5;
+      g.setLineDash(ly === it.yy ? [1, 3] : []); g.lineWidth = 1; g.globalAlpha = L.fade ? 0.45 : 0.75;
+      g.beginPath(); g.moveTo(xe, it.yy); g.lineTo(lx0 - 4, ly); g.stroke();
+      g.globalAlpha = 1; g.fillStyle = Y.one || col; g.fillText(it.text, lx0, ly + Y.fs / 2 - 1);
     }
     g.globalAlpha = 1;
     // the price-scale tag, like the scripts' price-scale plots (not for whole numbers, box edges, today's high / low)
     if (L.g !== "uv" && !/^(WHOLE|BOX EDGE|TIGHT|HIGH OF DAY|LOW OF DAY|2ND|1st|pivot)/.test(L.l || "")) tags.push([L.p, col]);
   }
+  const placed = lab.map(it => ({x: lx0, y: it.ly, w: g.measureText(it.text).width}));
   g.setLineDash([]); g.lineWidth = 1;
   S._placed = {placed, xLast, plotW};   // (where the labels went: the browser checks read it)
   ctx.tags = tags;                       // price-scale tags in each line's colour (drawn after the clip is lifted)
