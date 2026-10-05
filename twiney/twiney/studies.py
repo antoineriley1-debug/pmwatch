@@ -24,13 +24,26 @@ from zoneinfo import ZoneInfo
 NY = ZoneInfo("America/New_York")
 MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
-# Pine default colours (Settings in each script)
-C_LIVE, C_SPENT = "#26a69a", "#ef5350"
-C_Z1, C_Z2, C_Z3, C_ZS = "rgba(38,166,154,.18)", "rgba(255,213,0,.18)", "rgba(138,0,255,.14)", "rgba(239,83,80,.30)"
-C_PD, C_PM, C_AH, C_OPEN, C_HL = "#e91e8c", "#e91e8c", "#ef6c00", "#b2b5be", "rgba(158,158,158,.6)"
-C_SUP, C_DEM, C_WHOLE, C_BOX, C_TB, C_EARN, C_2ND = "#c62828", "#2e7d32", "rgba(158,158,158,.45)", "#42a5f5", "#f5a623", "#00bcd4", "#6a1b9a"
-C_BOUNCE, C_REJECT, C_MTSUP, C_MTDEM = "#26A69A", "#EF5350", "#E91E63", "#00E5FF"
-C_UVHI, C_UVLO, C_UVHI2, C_UVLO2 = "#ef5350", "#26a69a", "#ff9800", "#00bcd4"
+# every colour and width comes from SETTINGS > Chart studies (defaults = the scripts' own)
+
+
+def K(cfg, key):
+    """A colour from SETTINGS > Chart studies (the scripts' defaults when not set)."""
+    return str(cfg.get(key) or DEFAULT_COL.get(key, "#9e9e9e"))
+
+
+def zone_col(cfg, key):
+    h = K(cfg, key).lstrip("#")
+    a = max(0.0, min(1.0, float(cfg.get("zone_opacity", 18)) / 100.0))
+    return f"rgba({int(h[0:2], 16)},{int(h[2:4], 16)},{int(h[4:6], 16)},{a:.2f})"
+
+
+def _default_cols():
+    from .config import DEFAULTS
+    return {k: v for k, v in DEFAULTS["studies"].items() if k.startswith("col_")}
+
+
+DEFAULT_COL = _default_cols()
 
 
 # --------------------------------------------------------------------------------------------- time helpers
@@ -503,7 +516,9 @@ def gas(st, t, cfg, drows, live):
             lines.append({"p": y, "c": col, "w": w, "d": dash, "l": name, "lc": lc or col, "t0": t0, "g": "gas"})
 
     def nm(base, y):
-        return f"{base} {s2(y)}" if y is not None else base
+        return f"{base} {s2(y)}" if y is not None and cfg.get("lbl_price", True) else base
+
+    wpd, watr, wlv = int(cfg.get("lw_pd", 2)), int(cfg.get("lw_atr", 2)), int(cfg.get("lw_levels", 1))
 
     # box / tight box
     box = None
@@ -513,34 +528,34 @@ def gas(st, t, cfg, drows, live):
           "wild": wild, "htx": ht_x, "t0": tb_t0}
     if cfg["tight_box"]:
         if tb["valid"]:
-            box = {"t0": tb_t0, "hi": hh, "lo": ll, "c": C_TB}
-            lv(hh, C_TB, f"TIGHT BOX EDGE {s2(hh)} · {s2(ht_x)}x ATR tall")
-            lv(ll, C_TB, f"TIGHT BOX EDGE {s2(ll)}")
+            box = {"t0": tb_t0, "hi": hh, "lo": ll, "c": K(cfg, "col_tight_box")}
+            lv(hh, K(cfg, "col_tight_box"), f"TIGHT BOX EDGE {s2(hh)} · {s2(ht_x)}x ATR tall")
+            lv(ll, K(cfg, "col_tight_box"), f"TIGHT BOX EDGE {s2(ll)}")
     elif cfg["daily_box"]:
         n = int(cfg["box_len"])
         if len(drows) >= n:
             bh = max(hs[-n:]); bl = min(ls[-n:])
             if not cfg["box_tight_only"] or (y_atr and bh - bl <= float(cfg["box_tight_x"]) * y_atr):
-                box = {"t0": drows[-n][0], "hi": bh, "lo": bl, "c": C_BOX}
-                lv(bh, C_BOX, f"BOX EDGE {s2(bh)}"); lv(bl, C_BOX, f"BOX EDGE {s2(bl)}")
+                box = {"t0": drows[-n][0], "hi": bh, "lo": bl, "c": K(cfg, "col_box")}
+                lv(bh, K(cfg, "col_box"), f"BOX EDGE {s2(bh)}"); lv(bl, K(cfg, "col_box"), f"BOX EDGE {s2(bl)}")
     # the last completed session's levels (yesterday: today's bar is still forming)
     pdr = drows[L - 1] if live else drows[L]
     if cfg["old_supply_demand"]:
         osup, odem = prev_month_hl(drows, t)
-        lv(osup, C_SUP, nm("old supply", osup), 2); lv(odem, C_DEM, nm("old demand", odem), 2)
+        lv(osup, K(cfg, "col_old_supply"), nm("old supply", osup), wpd); lv(odem, K(cfg, "col_old_demand"), nm("old demand", odem), wpd)
     if cfg["prev_day"]:
-        lv(pdr[2], C_PD, nm("PDH", pdr[2]), 2); lv(pdr[3], C_PD, nm("PDL", pdr[3]), 2)
-        lv(pdr[4], C_PD, nm("PDC", pdr[4]), 1, "dot")
+        lv(pdr[2], K(cfg, "col_pd"), nm("PDH", pdr[2]), wpd); lv(pdr[3], K(cfg, "col_pd"), nm("PDL", pdr[3]), wpd)
+        lv(pdr[4], K(cfg, "col_pdc"), nm("PDC", pdr[4]), wlv, "dot")
     sess = session_levels(st, t)
     if cfg["premarket"]:
-        lv(sess["pmh"], C_PM, nm("PMH", sess["pmh"]), 1, "dash"); lv(sess["pml"], C_PM, nm("PML", sess["pml"]), 1, "dash")
+        lv(sess["pmh"], K(cfg, "col_pm"), nm("PMH", sess["pmh"]), wlv, "dash"); lv(sess["pml"], K(cfg, "col_pm"), nm("PML", sess["pml"]), wlv, "dash")
     if cfg["after_hours"]:
-        lv(sess["ahh"], C_AH, nm("AHH", sess["ahh"]), 1, "dash"); lv(sess["ahl"], C_AH, nm("AHL", sess["ahl"]), 1, "dash")
+        lv(sess["ahh"], K(cfg, "col_ah"), nm("AHH", sess["ahh"]), wlv, "dash"); lv(sess["ahl"], K(cfg, "col_ah"), nm("AHL", sess["ahl"]), wlv, "dash")
     if cfg["open_line"] and sess["open"] is not None:
-        lv(sess["open"], C_OPEN, nm("Open", sess["open"]), 1, "solid", "#455a64", t0=sess["open_t"])
+        lv(sess["open"], K(cfg, "col_open"), nm("TODAY'S OPEN", sess["open"]), wlv, "solid", t0=sess["open_t"])
     er = earnings_range(drows, cfg)
     if er:
-        lv(er[0], C_EARN, nm("EARN H", er[0]), 2); lv(er[1], C_EARN, nm("EARN L", er[1]), 2)
+        lv(er[0], K(cfg, "col_earnings"), nm("EARN H", er[0]), wpd); lv(er[1], K(cfg, "col_earnings"), nm("EARN L", er[1]), wpd)
     # the ATR ladder: today's developing range; market closed = the last session's final ladder
     used_lad = used if is_today else max(dH - dL, abs(dH - prev_c), abs(dL - prev_c))
     if cfg["atr_levels"] and y_atr:
@@ -549,7 +564,7 @@ def gas(st, t, cfg, drows, live):
         one = bool(cfg["atr_one_side"])
         keep_up = (lambda rv: move_up) if one else (lambda rv: rv > 0 or move_up)
         keep_dn = (lambda rv: not move_up) if one else (lambda rv: rv > 0 or not move_up)
-        lv(dH, C_HL, nm("HIGH OF DAY", dH), 1, "solid", "#424242"); lv(dL, C_HL, nm("LOW OF DAY", dL), 1, "solid", "#424242")
+        lv(dH, K(cfg, "col_hl"), nm("HIGH OF DAY", dH), wlv); lv(dL, K(cfg, "col_hl"), nm("LOW OF DAY", dL), wlv)
 
         def tag(ms, y, spent, m):
             return f"{ms} Traveled ${s2(m * y_atr)} @ {s2(y)}" if spent else f"{ms} ${s2(m * y_atr)} · {s2(y)}"
@@ -561,28 +576,28 @@ def gas(st, t, cfg, drows, live):
                 if (keep_up if up else keep_dn)(r[m]):
                     y = dH + r[m] if up else dL - r[m]
                     ys[(m, up)] = y
-                    lv(y, C_SPENT if sp else C_LIVE, tag(ms, y, sp, m), 2 if m == 1.0 else 1, "solid", "#e53935" if sp else "#00897b")
+                    lv(y, K(cfg, "col_atr_spent") if sp else K(cfg, "col_atr_live"), tag(ms, y, sp, m), watr if m == 1.0 else max(1, watr - 1))
         if cfg["atr_zones"]:
             for up in (True, False):
                 base = dH if up else dL
-                for lo_m, hi_m, col in ((None, 1.0, C_Z1), (1.0, 2.0, C_Z2), (2.0, 3.0, C_Z3)):
+                for lo_m, hi_m, col in ((None, 1.0, zone_col(cfg, "col_zone1")), (1.0, 2.0, zone_col(cfg, "col_zone2")), (2.0, 3.0, zone_col(cfg, "col_zone3"))):
                     a_ = base if lo_m is None else ys.get((lo_m, up))
                     b_ = ys.get((hi_m, up))
                     if a_ is not None and b_ is not None:
-                        zones.append({"a": a_, "b": b_, "c": C_ZS if r[hi_m] <= 0 else col})
+                        zones.append({"a": a_, "b": b_, "c": zone_col(cfg, "col_zone_spent") if r[hi_m] <= 0 else col})
     if cfg["whole_numbers"]:
         step = whole_step(last, float(cfg["whole_step"]))
         base = round(last / step) * step
         for i in range(1, int(cfg["whole_above"]) + 1):
-            lv(base + step * i, C_WHOLE, f"WHOLE {base + step * i:.2f}", 1, "solid", "#757575")
+            lv(base + step * i, K(cfg, "col_whole"), f"WHOLE {base + step * i:.2f}", wlv)
         for i in range(1, int(cfg["whole_below"]) + 1):
-            lv(base - step * i, C_WHOLE, f"WHOLE {base - step * i:.2f}", 1, "solid", "#757575")
+            lv(base - step * i, K(cfg, "col_whole"), f"WHOLE {base - step * i:.2f}", wlv)
     play = st.play or {}
     side = "Short" if play.get("side") == "short" else "Long"
     se = second_entry(st, t, cfg, y_atr, play.get("trigger"), side, tb)
     if se and se["ext"] is not None:
-        lv(se["ext"], C_2ND, "2ND" if se["pulled"] else "1st push", 2)
-        lv(se["pivot"], C_2ND, f"pivot {s2(se['pivot'])}", 1, "dot")
+        lv(se["ext"], K(cfg, "col_2nd"), "2ND" if se["pulled"] else "1st push", wpd)
+        lv(se["pivot"], K(cfg, "col_2nd"), f"pivot {s2(se['pivot'])}", 1, "dot")
     # the readout (bottom right)
     rows = []
     if cfg["gas_readout"]:
@@ -608,7 +623,7 @@ def gas(st, t, cfg, drows, live):
             rows += cont_rows(_cont(st, t, cfg, drows, live, y_atr, prev_c), "gas")
     se_row = None
     if se:
-        se_row = {"t": se["text"], "bg": C_2ND if se["near"] else "rgba(0,0,0,.8)", "fg": "#fff"}
+        se_row = {"t": se["text"], "bg": K(cfg, "col_2nd") if se["near"] else "rgba(0,0,0,.8)", "fg": "#fff"}
     elif cfg["second_entry"] and cfg["tight_box"]:
         why = ("building daily data" if tb["htx"] is None else f"{tb['wild']} wild bar(s) in window" if cfg["tb_reject_wild"] and tb["wild"] > 0
                else f"range {s2(tb['htx'])}x ATR > {s2(float(cfg['tb_max_x']))}x limit")
@@ -1044,17 +1059,17 @@ def airspace(st, t, cfg, drows, live, g):
     lbl_px = lambda v: f"{v:.2f}"
     if cfg["air_bounce_reject"]:
         if bounce is not None:
-            lines.append({"p": bounce, "c": C_BOUNCE, "w": 2, "d": "dash", "l": f"BOUNCE {b_src}{_tag(bounce_n)} @ {lbl_px(bounce)}", "lc": C_BOUNCE, "g": "air", "stub": True})
+            lines.append({"p": bounce, "c": K(cfg, "col_bounce"), "w": int(cfg.get("lw_bounce", 2)), "d": "dash", "l": f"BOUNCE {b_src}{_tag(bounce_n)} @ {lbl_px(bounce)}", "lc": K(cfg, "col_bounce"), "g": "air", "stub": True})
         if reject is not None:
-            lines.append({"p": reject, "c": C_REJECT, "w": 2, "d": "dash", "l": f"REJECT {src(sup_w)}{_tag(reject_n)} @ {lbl_px(reject)}", "lc": C_REJECT, "g": "air", "stub": True})
+            lines.append({"p": reject, "c": K(cfg, "col_reject"), "w": int(cfg.get("lw_bounce", 2)), "d": "dash", "l": f"REJECT {src(sup_w)}{_tag(reject_n)} @ {lbl_px(reject)}", "lc": K(cfg, "col_reject"), "g": "air", "stub": True})
     if cfg["air_mt_supply"]:
         ms = mt_supply(drows, cfg, atr_all[-1])
         if ms:
-            lines.append({"p": ms["p"], "c": C_MTSUP, "w": 3, "d": "dash", "l": mt_label(ms, "high"), "lc": C_MTSUP, "g": "air", "t0": ms["t0"]})
+            lines.append({"p": ms["p"], "c": K(cfg, "col_mt_supply"), "w": int(cfg.get("lw_mt", 3)), "d": "dash", "l": mt_label(ms, "high"), "lc": K(cfg, "col_mt_supply"), "g": "air", "t0": ms["t0"]})
     if cfg["air_mt_demand"]:
         md = mt_demand(drows, cfg, atr_all[-1])
         if md:
-            lines.append({"p": md["p"], "c": C_MTDEM, "w": 3, "d": "dash", "l": mt_label(md, "low"), "lc": C_MTDEM, "g": "air", "t0": md["t0"]})
+            lines.append({"p": md["p"], "c": K(cfg, "col_mt_demand"), "w": int(cfg.get("lw_mt", 3)), "d": "dash", "l": mt_label(md, "low"), "lc": K(cfg, "col_mt_demand"), "g": "air", "t0": md["t0"]})
     # the board
     board = []
     if cfg["air_board"]:
@@ -1091,8 +1106,8 @@ def airspace(st, t, cfg, drows, live, g):
         atr_txt = lambda v: "—" if v is None or not atr_d else f"{s2((d_px - v) / atr_d if v < d_px else (v - d_px) / atr_d)} ATR"
         bfull = "—" if bounce is None else f"{b_src}{_tag(bounce_n)} @ {bounce:.2f} · {atr_txt(bounce)}"
         rfull = "—" if reject is None else f"{src(sup_w)}{_tag(reject_n)} @ {reject:.2f} · {atr_txt(reject)}"
-        board.append([["BOUNCE", "#fff"], [bfull, C_BOUNCE], [bfull, C_BOUNCE]])
-        board.append([["REJECT", "#fff"], [rfull, C_REJECT], [rfull, C_REJECT]])
+        board.append([["BOUNCE", "#fff"], [bfull, K(cfg, "col_bounce")], [bfull, K(cfg, "col_bounce")]])
+        board.append([["REJECT", "#fff"], [rfull, K(cfg, "col_reject")], [rfull, K(cfg, "col_reject")]])
         board.append("CONFLUENCE")            # the page fills this row: the chart's own MAs at the Bounce / Reject price
         if cfg["cont_odds"]:
             c = _cont(st, t, cfg, drows, live, g.get("y_atr"), drows[-2][4] if live else drows[-1][4])
@@ -1182,7 +1197,7 @@ def unvisited(drows, live, cfg):
             tou = sum(a[2] for a in grp)
             age = day_i - oldest[3]
             multi = len(grp) > 1
-            col = (C_UVHI2 if multi else C_UVHI) if up else (C_UVLO2 if multi else C_UVLO)
+            col = (K(cfg, "col_uv_high_cluster") if multi else K(cfg, "col_uv_high")) if up else (K(cfg, "col_uv_low_cluster") if multi else K(cfg, "col_uv_low"))
             label = f"{_date(oldest[1])}  " + " / ".join(s2(a[0]) for a in grp) + (f"  [{len(grp)}]" if multi else "") + f"  x{tou}"
             if cfg["uv_age"]:
                 label += f"  {age}d"
@@ -1195,7 +1210,7 @@ def unvisited(drows, live, cfg):
                     label += "  · CLOSING THROUGH (clears at the close)"
                 elif testing:
                     label += "  · testing now"
-            lines.append({"p": y, "c": col, "w": 3 if multi else 1, "d": "dash" if tou > 0 or testing else "solid", "l": label, "lc": col,
+            lines.append({"p": y, "c": col, "w": int(cfg.get("lw_uv", 1)) + (2 if multi else 0), "d": "dash" if tou > 0 or testing else "solid", "l": label, "lc": col,
                           "t0": oldest[1], "g": "uv", "fade": closing})
             i = j
     return {"lines": lines}
@@ -1211,7 +1226,9 @@ def _date(t0):
 def compute(st, t, cfg):
     """Everything the stock chart draws for one symbol (each study None when switched off)."""
     drows, live = daily_series(st, t)
-    out = {"gas": None, "air": None, "uv": None, "merge_pct": float(cfg["label_merge_pct"]), "t": t}
+    out = {"gas": None, "air": None, "uv": None, "t": t,
+           "style": {k: cfg.get(k) for k in ("lbl_size", "lbl_gap_bars", "line_back_bars", "line_fwd_bars", "lbl_space_pct",
+                                             "lbl_color_mode", "col_label")}}
     if not (cfg["gas"] or cfg["airspace"] or cfg["unvisited"]):
         return out
     g = gas(st, t, cfg, drows, live)

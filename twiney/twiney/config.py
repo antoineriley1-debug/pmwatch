@@ -393,6 +393,49 @@ DEFAULTS = {
         "gas": True,                    # GAS + ATR (new PS60 Gas + ATR)
         "airspace": True,               # AIRSPACE (PS60 MP Airspace)
         "unvisited": True,              # UNVISITED HIGHS / LOWS (new Unvisited Highs Lows)
+        # THE LOOK: labels and lines (live: SAVE and the chart redraws)
+        "lbl_size": 9,                  # label text size (px)
+        "lbl_gap_bars": 2,              # labels start this many bars after the line ends
+        "line_back_bars": 8,            # lines start this many bars left of the last candle
+        "line_fwd_bars": 3,             # lines run this many bars past the last candle (labels never touch a candle)
+        "lbl_space_pct": 40,            # the label area may take up to this % of the chart's width
+        "lbl_price": True,              # the price in each label
+        "lbl_color_mode": "line",       # label text: the line's colour, or one colour for every label
+        "col_label": "#111111",         # label text colour when one colour for every label
+        "lw_pd": 2,                     # line width: prev day high / low, old supply / demand
+        "lw_atr": 2,                    # line width: 1 ATR (2 / 3 ATR are one thinner)
+        "lw_levels": 1,                 # line width: the other GAS levels
+        "lw_bounce": 2,                 # line width: Bounce / Reject
+        "lw_mt": 3,                     # line width: MT supply / demand
+        "lw_uv": 1,                     # line width: unvisited highs / lows (a merged line is 2 thicker)
+        "zone_opacity": 18,             # ATR zone colours: opacity (%)
+        "col_pd": "#e91e8c",            # colour: prev day high / low
+        "col_pdc": "#e91e8c",           # colour: prev day close
+        "col_pm": "#e91e8c",            # colour: premarket high / low
+        "col_ah": "#ef6c00",            # colour: after-hours high / low
+        "col_open": "#607d8b",          # colour: today's open
+        "col_hl": "#757575",            # colour: high / low of day
+        "col_old_supply": "#c62828",    # colour: old supply
+        "col_old_demand": "#2e7d32",    # colour: old demand
+        "col_atr_live": "#26a69a",      # colour: ATR level still reachable
+        "col_atr_spent": "#ef5350",     # colour: ATR level traveled
+        "col_zone1": "#26a69a",         # colour: zone range to 1 ATR
+        "col_zone2": "#ffd500",         # colour: zone 1 to 2 ATR
+        "col_zone3": "#8a00ff",         # colour: zone 2 to 3 ATR
+        "col_zone_spent": "#ef5350",    # colour: zone eaten (ATR traveled)
+        "col_whole": "#9e9e9e",         # colour: whole numbers
+        "col_box": "#42a5f5",           # colour: daily box
+        "col_tight_box": "#f5a623",     # colour: tight box
+        "col_earnings": "#00bcd4",      # colour: earnings reaction high / low
+        "col_2nd": "#6a1b9a",           # colour: second entry
+        "col_bounce": "#26a69a",        # colour: Bounce
+        "col_reject": "#ef5350",        # colour: Reject
+        "col_mt_supply": "#e91e63",     # colour: MT supply Nx
+        "col_mt_demand": "#00b8d4",     # colour: MT demand Nx
+        "col_uv_high": "#ef5350",       # colour: unvisited high
+        "col_uv_low": "#26a69a",        # colour: unvisited low
+        "col_uv_high_cluster": "#ff9800",   # colour: merged unvisited highs
+        "col_uv_low_cluster": "#00bcd4",    # colour: merged unvisited lows
         # GAS + ATR
         "atr_len": 14,                  # ATR length (days)
         "atr_smoothing": "RMA",         # RMA (Wilder, TradingView's ATR), EMA, SMA or WMA
@@ -410,7 +453,7 @@ DEFAULTS = {
         "whole_above": 3,               # whole numbers above price
         "whole_below": 3,               # whole numbers below price
         "whole_step": 0.0,              # whole-number step (0 = auto: $5 over 200, $1 over 80, else $0.50)
-        "daily_box": True,              # the daily box (last N days)
+        "daily_box": False,             # the daily box (last N days)
         "box_len": 10,                  # daily box lookback (days)
         "box_tight_only": True,         # only draw the box when it is tight
         "box_tight_x": 4.0,             # tight = box range up to this x ATR
@@ -434,7 +477,7 @@ DEFAULTS = {
         "next_stop": False,             # NEXT STOP lines in the readout
         "earnings_date": "",            # earnings release date YYYY-MM-DD for the reaction bar (blank = off)
         "earnings_next_session": True,  # reaction bar = the next session (after-close report); off = same day
-        "label_merge_pct": 0.15,        # labels closer than this % of price share one row
+        "label_merge_pct": 0.15,        # (retired: labels now sit at their own line, nudged right when they would touch)
         # AIRSPACE
         "air_board": True,              # the AIRSPACE lights board (top right)
         "air_atr_live": True,           # Airspace ATR distances on the LIVE day's ATR (TradingView Airspace); off = the GAS tank ATR

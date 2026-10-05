@@ -58,6 +58,7 @@ CHOICES = {
     "demo.scenario": [(None, "random each session"), ("mixed", "mixed"), ("trend_up", "trend up"), ("trend_down", "trend down"),
                       ("chop", "chop"), ("capitulation", "capitulation"), ("squeeze", "squeeze")],
     "ps60.second_entry_tf": [(1, "1 minute"), (5, "5 minutes")],
+    "studies.lbl_color_mode": [("line", "the line's colour"), ("one", "one colour for every label")],
     "studies.atr_smoothing": [("RMA", "RMA · Wilder (TradingView ATR)"), ("EMA", "EMA"), ("SMA", "SMA"), ("WMA", "WMA")],
 }
 
@@ -148,6 +149,8 @@ def _leaves(d, prefix=""):
 
 
 def _kind(path, default):
+    if path.startswith("studies.col_"):
+        return "color"
     if path in SECRET:
         return "secret"
     if path in CHOICES:
@@ -165,7 +168,7 @@ def _kind(path, default):
     return "text"
 
 
-RETIRED = {"trading.loss_limit_live_only"}
+RETIRED = {"trading.loss_limit_live_only", "studies.label_merge_pct"}
 
 
 def schema(cfg):
@@ -217,6 +220,11 @@ def _coerce(path, raw):
             return [str(x).strip().upper() for x in items if str(x).strip()]
         if kind == "json":
             return raw if isinstance(raw, (list, dict)) else json.loads(raw)
+        if kind == "color":
+            v = str(raw or "").strip()
+            if not re.match(r"^#[0-9a-fA-F]{6}$", v):
+                raise ValueError("must be a colour like #26a69a")
+            return v.lower()
         if kind == "select":
             allowed = [v for v, _l in CHOICES[path]]
             v = None if raw in (None, "", "null") else raw

@@ -114,9 +114,8 @@ class GasTests(unittest.TestCase):
         g = S.gas(self.st, self.t, CFG, drows, live)
         labels = [ln["l"] for ln in g["lines"]]
         self.assertTrue(any(l.startswith("PDH ") and S.s2(self.rows[-1][2]) in l for l in labels))
-        wn = sorted(ln["p"] for ln in g["lines"] if ln["g"] == "gas" and ln["c"] == S.C_WHOLE)
+        wn = sorted(ln["p"] for ln in g["lines"] if ln["l"].startswith("WHOLE "))
         self.assertEqual(wn, [100.0, 101.0, 102.0, 104.0, 105.0, 106.0])
-        self.assertTrue(all(ln["l"].startswith("WHOLE ") for ln in g["lines"] if ln["c"] == S.C_WHOLE))
         self.assertTrue(any(l.startswith("HIGH OF DAY ") for l in labels) and any(l.startswith("LOW OF DAY ") for l in labels))    # $1 steps over $80, round(103) skipped
 
     def test_old_supply_is_last_finished_month(self):

@@ -1712,9 +1712,11 @@ function drawOne(p, cv, v, isFoot){
   // past the last candle, their labels in the open space to the right — never on top of the candles
   let stSpace = 0;
   if (!isFoot && !p.opt && d.studies && off <= 0 && typeof studyLineList === "function"){
-    g.font = "bold 10px ui-monospace, Menlo, Consolas, monospace";
+    const Y = studyStyle(d.studies);
+    g.font = `bold ${Y.fs}px ui-monospace, Menlo, Consolas, monospace`;
     let wmax = 0; for (const L of studyLineList(d.studies)) if (L.l) wmax = Math.max(wmax, g.measureText(L.l).width);
-    stSpace = wmax ? Math.ceil((Math.min(wmax, plotW * 0.33) + 12) / cw) + 5 : 0;
+    // the open space right of the last candle: the lines' run past it, the gap, the widest label (up to your % of the chart)
+    stSpace = wmax ? Math.ceil((Math.min(wmax, plotW * Y.pct) + 10) / cw) + Y.fwd + Math.max(1, Y.gap) + 1 : 0;
   }
   const space = Math.min(Math.max(off < 0 ? -off : 0, stSpace), n - 5);
   if (off < 0) off = 0;

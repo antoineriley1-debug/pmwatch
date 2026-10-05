@@ -779,3 +779,5 @@ table.lad.pro tr.atlv td{box-shadow:inset 0 1px 0 var(--lvc), inset 0 -1px 0 var
 .datawin{bottom:auto !important}
 /* the open / close arrows: big enough to hit */
 .datawin .mn{font-size:11px !important;padding:0 5px !important} .stbd .stmin{font-size:11px;padding:0 5px}
+.stbd .stgear{cursor:pointer;color:#9fb0c3;padding:0 3px}
+.stset{display:block;margin:4px 0 6px;padding:3px 8px;background:#1b5e20;color:#fff;border:0;border-radius:3px;font-weight:800;cursor:pointer}
