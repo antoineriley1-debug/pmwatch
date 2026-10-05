@@ -285,6 +285,14 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                     self._send(409, json.dumps({"ok": False, "reason": "the pivot is locked; change it in PLAY SETUP"}), "application/json")
                     return
                 price = body.get("price") if body.get("on", True) else None
+                tr_ = trader if trader is not None else getattr(engine, "trader", None)
+                if body.get("trade_as") in ("stock", "option") and tr_ is not None:
+                    # STOCK or OPTIONS, picked as the 2nd entry is drawn: set BEFORE the line, so the stock entry
+                    # never goes in for a line meant for the contract
+                    tro = tr_.set_trade_as(sym, body["trade_as"], body.get("opt_key"), body.get("opt_qty"), clock())
+                    if not tro.get("ok"):
+                        self._send(400, json.dumps(tro), "application/json")
+                        return
                 if body.get("side") in ("long", "short") and role in ("trigger", "second_entry", "target", "stop"):
                     ok = engine.set_side_level(sym, body["side"], role, price, clock(), source="chart")
                 elif role.startswith("alt_") and role[4:] in ("trigger", "second_entry", "target", "stop"):
@@ -580,6 +588,8 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                            tr.set_scale_plan(sym, body.get("kind"), body.get("rungs"), body.get("auto"), now))
                 elif action == "stop":
                     out = tr.set_stop(sym, body.get("price"), now)
+                elif action == "trade_as":
+                    out = tr.set_trade_as(sym, str(body.get("mode", "stock")), body.get("opt_key"), body.get("opt_qty"), now)
                 elif action == "opt_stop":
                     out = tr.set_opt_stop(str(body.get("key", "")), body.get("price"), str(body.get("on", "stock")), now)
                 elif action == "trail":

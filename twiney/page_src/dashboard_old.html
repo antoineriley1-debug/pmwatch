@@ -473,8 +473,11 @@ function confirmBox(title, legs, cls, onSend){
   m.querySelector(".send").focus();
 }
 async function cancelMine(id){
+  // every CANCEL button for this order goes grey at once (no double sends); the row reads CANCEL PENDING until IBKR confirms
+  document.querySelectorAll(`button[data-cxl="${id}"]`).forEach(b => { b.disabled = true; b.textContent = "CANCELLING…"; });
   const out = await post("/api/trade/cancel", {id});
-  toast(out.ok ? "Cancel sent" : "Cancel failed: " + (out.reason || ""), out.ok);
+  toast(out.ok ? "Cancel sent — order #" + id : "Cancel failed: " + (out.reason || "unknown"), out.ok);
+  if (typeof poll === "function") poll(true);
 }
 async function flatten(symbol){
   // getting OUT is never blocked: disarmed, locked for the day, over a cap — the server's reducing path takes it
@@ -487,6 +490,7 @@ async function flatten(symbol){
 async function cancelAll(symbol){
   const out = await post("/api/trade/cancel_all", {symbol});
   toast(`Cancelled ${out.cancelled} working order${out.cancelled === 1 ? "" : "s"}`, true);
+  if (typeof poll === "function") poll(true);
 }
 
 /* ---------- resizable columns: drag the right edge of any header cell ---------- */
@@ -2079,7 +2083,21 @@ function drawOne(p, cv, v, isFoot){
   // the 2nd entry IS your entry order: a small tag at the right end of its line (never a banner across the chart).
   // Live / filled / triggered / no order, with the full reason on hover (the data window carries it too)
   v.seChip = null;
-  if (!isFoot && CS("chip") && v.seChipY != null && d.play && d.play.second_entry){
+  const olk = !isFoot && d.play && v.seChipY != null && ((state && state.trading && state.trading.opt_links) || {})[d.symbol];
+  if (olk){
+    // OPTIONS: this 2nd entry buys the contract on the OPTION CHART when the stock trades through it
+    const yy = v.seChipY, k = olk.key.split(" "), c = `${olk.qty}× ${k[2]}`;
+    const t = olk.state === "IN" ? `◆ IN ${c}` : olk.state === "SENT" ? `◆ BUYING ${c}` : olk.why ? `✕ ${c} WAITS` : `◆ OPTION ${c}`;
+    g.font = "bold 10px ui-monospace, Menlo, Consolas, monospace";
+    const tw = g.measureText(t).width + 10, tx = plotW - tw - 4, ty = yy - 7;
+    g.fillStyle = olk.state === "IN" ? "#0b7a4b" : olk.why ? "#b3123a" : "#5b3fa8"; g.fillRect(tx, ty, tw, 14);
+    g.fillStyle = "#ffffff"; g.fillText(t, tx + 5, ty + 10);
+    g.font = "11px ui-monospace, Menlo, Consolas, monospace";
+    v.seChip = {x: tx, y: ty, w: tw, h: 14, text: olk.state === "IN" ? `holding ${olk.qty} ${olk.key} — the STOP line takes it out, the TARGET sells every contract`
+      : olk.state === "SENT" ? `buying ${olk.qty} ${olk.key} now (limit through the ask)`
+      : `OPTIONS: BUY ${olk.qty} ${olk.key} when ${d.symbol} trades through ${px(d.play.second_entry || (d.play.alt || {}).second_entry)}` + (olk.why ? " — NOT NOW: " + olk.why : "")};
+  }
+  else if (!isFoot && CS("chip") && v.seChipY != null && d.play && d.play.second_entry){
     let a = ((state && state.trading && state.trading.auto) || {})[d.symbol];
     if (a && a.state === "DONE" && a.filled_t != null && state.now - a.filled_t > (state.trading.filled_chip_seconds || 90)) a = null;
     if (a){

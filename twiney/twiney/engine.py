@@ -1336,7 +1336,26 @@ class Engine:
                             tr.role = role + "+" + tr.role if tr.role == "auto" else tr.role + "+" + role
             self._rec({"ev": "play_level", "t": t or self.last_t, "sym": symbol, "role": role, "px": price})
             self._save_plays()
+            if role == "second_entry" and price is not None and old is None and source == "chart":
+                self._auto_stop(symbol, st.play, False, price, t)
             return True
+
+    def _auto_stop(self, symbol, lines, alt, se, t):
+        """A NEW 2nd entry drawn on the chart with no stop on its side: the STOP goes in ``trading.auto_stop_dollars``
+        ($1) away — under a long's 2nd entry, over a short's. Drag it where you want it."""
+        d = float((self.cfg.get("trading") or {}).get("auto_stop_dollars") or 0)
+        if d <= 0 or lines.get("stop") is not None:
+            return
+        st = self._st(symbol)
+        side = lines.get("side") or (("short" if st.play.get("side", "long") == "long" else "long") if alt else st.play.get("side", "long"))
+        stop = round(se - d if side == "long" else se + d, 2)
+        if stop <= 0:
+            return
+        if alt:
+            self._set_alt_level(symbol, "stop", stop, t, source="auto stop")
+        else:
+            self.set_play_level(symbol, "stop", stop, t, source="auto stop")
+        self._message("info", f"{symbol}: STOP set ${d:g} from your 2nd entry at {narrative.px(stop)} — drag it to move it", t or self.last_t, symbol)
 
     def _set_alt_level(self, symbol, role, price, t=None, source="setup"):
         """The OTHER SIDE of a play (the short under a long, the long over a short): its own pivot, 2nd entry, stop and
@@ -1363,6 +1382,8 @@ class Engine:
             if not any(alt.get(r) for r in ("trigger", "second_entry", "target", "stop")):
                 st.play.pop("alt", None)
             self._save_plays()
+            if role == "second_entry" and price is not None and old is None and source == "chart" and st.play.get("alt"):
+                self._auto_stop(symbol, st.play["alt"], True, price, t)
             return True
 
     def set_side_level(self, symbol, side, role, price, t=None, source="chart"):
@@ -1449,7 +1470,7 @@ class Engine:
             return
         import json
         keep = ("symbol", "side", "side_set", "trigger", "second_entry", "target", "stop", "mp", "atr", "extra_levels", "notes", "setup", "active", "watch",
-                "auto", "exchange", "primary_exchange", "currency", "alt")
+                "auto", "exchange", "primary_exchange", "currency", "alt", "trade_as", "trade_as_set", "opt_key", "opt_qty")
         def row(p):
             r = {("pivot" if k == "trigger" else k): p[k] for k in keep if k in p}
             return r
@@ -3339,7 +3360,8 @@ class Engine:
             "symbol": sym,
             "pinned": sym in self.pinned,
             "changed": change if change and t - change["t"] < 20 and change.get("prev") else None,
-            "play": {k: st.play.get(k) for k in ("side", "trigger", "second_entry", "target", "stop", "mp", "atr", "notes", "setup", "alt")},
+            "play": {k: st.play.get(k) for k in ("side", "trigger", "second_entry", "target", "stop", "mp", "atr", "notes", "setup", "alt",
+                                                  "trade_as", "trade_as_set", "opt_key", "opt_qty")},
             "last": fmt_price(st.l1["last"]),
             "prev_close": fmt_price(st.l1.get("close")),
             "bid": fmt_price(bid), "ask": fmt_price(ask),

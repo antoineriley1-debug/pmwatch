@@ -619,6 +619,7 @@ class Trader:
         self.trails = {}               # symbol -> {"dist", "best", "side"}: a trailing stop riding the STOP line
         self.opt_stops = {}            # option key -> {"price", "on": "stock" | "option"}: a stop you set on a contract
         self.opt_stop_fired = {}       # option key -> t it fired (no double sends while the close works)
+        self.opt_link = {}             # symbol -> what the chart's lines did on the linked contract (OPTIONS mode)
         self.families = {}   # entry order id -> {"symbol", "entry", "stop", "cash": [...], "be_done"}
         self.nonces = {}     # ticket nonce -> result (double-submit protection)
         self.mismatch = {}   # symbol -> since when its working exits have not matched the position
@@ -726,6 +727,14 @@ class Trader:
                 self.nonces[nonce] = out
             return out
         use_bracket = self.bracket if bracket is None else bool(bracket)
+        # ADDING to a position that already has its stop / take profit working: no second bracket. The add joins
+        # them: once it fills, the existing STOP and TAKE PROFIT grow to cover every share (_grow_exits)
+        joins = False
+        if use_bracket and pos0 and (pos0 > 0) == (action == BUY):
+            exit_side = SELL if pos0 > 0 else BUY
+            if any(o.get("role") in ("stop", "target") and o.get("action") == exit_side and o.get("order_id") is not None
+                   for o in self.engine._pending(symbol)):
+                use_bracket, joins = False, True
         plan = self.cfg["scale_plan"]["cash_flow"] if self.scale else None
         # the price the exits are measured from: a stop entry's TRIGGER (where you get in), never its limit (a cap
         # that can sit well past it — measured from there, a near target was dropped and the stop judged wrongly)
@@ -761,6 +770,8 @@ class Trader:
             what += " + " + " + ".join(
                 f"stop {money(l['aux'])} (limit {money(l['price'])})" if l["role"] == "stop"
                 else f"{l['role'].replace('_', ' ')} {l['qty']} @ {money(l['price'])}" for l in legs)
+        if joins:
+            what += " — adds to your working stop and take profit (they grow when it fills)"
         self._note(now, f"SENT {what}", True)
         self.engine._rec({"ev": "order", "t": now, "sym": symbol, "action": action, "qty": qty, "px": price,
                           "type": order_type, "aux": aux, "tif": tif, "legs": legs, "id": parent_id})
@@ -774,13 +785,45 @@ class Trader:
 
     def cancel(self, oid, now=None):
         with self.lock:
-            return self._cancel_unlocked(oid, now)
+            return self._cancel_unlocked(oid, now, by_hand=True)
 
-    def _cancel_unlocked(self, oid, now=None):
+    def _cancel_unlocked(self, oid, now=None, by_hand=False):
         now = now or time.time()
+        try:
+            oid = int(oid)
+        except (TypeError, ValueError):
+            return {"ok": False, "reason": "no order id"}
+        o = self._order_by_id(oid)
+        if by_hand and o is not None and o.get("status") in self.engine.DONE_STATUSES + ("Done",):
+            return {"ok": False, "reason": f"order #{oid} is already {str(o.get('status')).lower()}"}
         ok = self.broker.cancel(oid, now)
         self._note(now, f"cancel {oid}: {'sent' if ok else 'nothing to cancel'}", ok)
-        return {"ok": ok}
+        if not ok:
+            return {"ok": False, "reason": "not connected to IBKR" if o is not None else f"order #{oid} is not working any more"}
+        if o is not None:
+            with self.engine.lock:          # shown as CANCEL PENDING at once, until IBKR confirms (sim confirms at once)
+                live = self.engine.orders.get(o.get("key"))
+                if live is not None and live.get("status") not in self.engine.DONE_STATUSES + ("Done",):
+                    live["status"] = "PendingCancel"
+            if by_hand:
+                self._hand_cancel_exit(o, now)
+        return {"ok": True}
+
+    def _hand_cancel_exit(self, o, now):
+        """A STOP or TARGET order cancelled by hand from ORDERS: its line comes off the chart too, so the chart never
+        shows an exit that is not working (and the desk does not send it again)."""
+        role, sym = o.get("role"), o.get("symbol")
+        if role not in ("stop", "target") or sym not in self.engine.syms:
+            return
+        s = self.auto_sync.get(sym) or {}
+        alt = bool(s.get("alt"))
+        play = self.engine.syms[sym].play
+        lines = (play.get("alt") or {}) if alt else play
+        if lines.get(role) is not None:
+            self.engine.set_play_level(sym, role, None, now, source="cancelled", alt=alt)
+            self._note(now, f"{sym}: {role} order cancelled — its {role.upper()} line is off the chart", True)
+        if s:
+            s[role] = None
 
     def cancel_all(self, symbol=None, now=None):
         with self.lock:
@@ -1035,6 +1078,38 @@ class Trader:
         r = o.get("role") or ""
         return r in self.EXIT_ROLES or r.startswith("cash_flow")
 
+    def _grow_exits(self, now):
+        """You added to a position: its STOP (always) and its TAKE PROFIT (with brackets on) grow to cover every share
+        you hold — one stop, one take profit, never a second set. A single price each; pieces at different prices
+        (PS60 cash flow, partials) are left as you set them. Only on a settled position (2 s after the last fill)."""
+        grown = self.__dict__.setdefault("_grow_t", {})
+        for sym in list(self.engine.syms):
+            pos = int(self.broker.position(sym))
+            if not pos or now - grown.get(sym, -1e9) < 2.0:
+                continue
+            ft, pt = self.engine.fill_t.get(sym), self.engine.pos_t.get(sym)
+            if pt is None or (ft is not None and (pt < ft or now - ft < 2.0)):
+                continue
+            pend = self.engine._pending(sym)
+            if any(o.get("role") == "entry" and o.get("action") == (BUY if pos > 0 else SELL) for o in pend):
+                continue                                   # an add still working: wait until it is in
+            exit_side = SELL if pos > 0 else BUY
+            left = lambda o: int(o.get("remaining") if o.get("remaining") is not None else o.get("qty") or 0)
+            for role in (("stop", "target") if self.bracket else ("stop",)):
+                grp = [o for o in pend if o.get("role") == role and o.get("action") == exit_side and o.get("order_id") is not None
+                       and o.get("status") != "PendingCancel"]
+                have = sum(left(o) for o in grp)
+                prices = {round(float(o.get("aux") or o.get("lmt") or 0), 4) for o in grp}
+                if not grp or have >= abs(pos) or len(prices) != 1:
+                    continue
+                big = max(grp, key=left)
+                try:
+                    self.broker.resize(big["order_id"], left(big) + abs(pos) - have, now)
+                    grown[sym] = now
+                    self._note(now, f"{sym}: {'STOP' if role == 'stop' else 'TAKE PROFIT'} now covers all {abs(pos):,} shares (was {have:,})", True)
+                except Exception as exc:
+                    self._note(now, f"{sym}: could not grow the {role} to {abs(pos):,} shares: {exc}", False)
+
     def _guard_exits(self, now):
         """Exits must never outgrow the position: after a manual close (or a fill IBKR booked elsewhere) a stop or
         target left for more shares than you hold would open a position the other way when it fills. Once the
@@ -1142,6 +1217,131 @@ class Trader:
         stop = lines.get("stop")
         return {"price": stop, "on": "stock", "source": "chart"} if stop else None
 
+    # ---- OPTIONS from the stock chart: the 2nd entry, STOP and TARGET lines trade the linked contract ----------------
+    def set_trade_as(self, symbol, mode, key=None, qty=None, now=None):
+        """Which the stock chart's lines trade: "stock" (the shares, as always) or "option": the contract on the
+        OPTION CHART (``key``), ``qty`` contracts. The stock's 2nd entry is then never sent as a stock order."""
+        from . import options as _o
+        with self.lock:
+            now = now or time.time()
+            symbol = str(symbol).upper()
+            st = self.engine.syms.get(symbol)
+            if st is None:
+                return {"ok": False, "reason": f"{symbol} is not on the desk"}
+            if mode == "option":
+                try:
+                    usym, exp, strike, right = _o.parse_key(str(key or ""))
+                except (ValueError, IndexError):
+                    return {"ok": False, "reason": "pick a contract first: OPTIONS, click a strike (it charts in the OPTION CHART)"}
+                if usym != symbol:
+                    return {"ok": False, "reason": f"the contract on the OPTION CHART is {usym}, not {symbol} — pick a {symbol} contract"}
+                try:
+                    n = max(1, int(qty or 1))
+                except (TypeError, ValueError):
+                    n = 1
+                cur = self.auto.get(symbol)
+                if cur is not None:                 # a stock entry already working for these lines: it goes
+                    cur["by_desk"] = True
+                    self._cancel_unlocked(cur["id"], now)
+                    self.auto.pop(symbol, None)
+                with self.engine.lock:
+                    st.play.update(trade_as="option", opt_key=str(key), opt_qty=n, trade_as_set=True)
+                    # the contract sets the direction: a call is the LONG side, a put the SHORT side. A one-sided play
+                    # on the other side turns (a two-sided play already has both: the contract rides its own side)
+                    want = "long" if right == "C" else "short"
+                    if st.play.get("side", "long") != want and not st.play.get("alt"):
+                        st.play["side"] = want; st.play["side_set"] = True
+                        self._note(now, f"{symbol}: a {'CALL' if right == 'C' else 'PUT'} is the {want.upper()} side — the play is {want.upper()} now", True)
+                    self.engine._save_plays()
+                self.opt_link[symbol] = {"prev": st.price()}
+                self._note(now, f"{symbol}: the chart's 2nd entry, STOP and TARGET now trade {n} {key}", True)
+                return {"ok": True, "trade_as": "option", "opt_key": key, "opt_qty": n}
+            with self.engine.lock:
+                st.play["trade_as"] = "stock"; st.play["trade_as_set"] = True
+                st.play.pop("opt_key", None); st.play.pop("opt_qty", None)
+                self.engine._save_plays()
+            self.opt_link.pop(symbol, None)
+            self._note(now, f"{symbol}: the chart's lines trade the STOCK", True)
+            return {"ok": True, "trade_as": "stock"}
+
+    def _opt_lines(self, play, right):
+        """The lines a contract rides: a call the LONG side's, a put the SHORT side's (the play's own side, or the
+        other side drawn on the same chart)."""
+        own_long = play.get("side", "long") == "long"
+        if (right == "C") == own_long:
+            return play, False
+        return (play.get("alt") or {}), True
+
+    def _opt_link_tick(self, now):
+        """OPTIONS mode. The stock trades UP through the 2nd entry (a call; DOWN through it for a put): BUY the linked
+        contract, a limit a step through the ask (fills now, never market). The STOP line is the contract's stop
+        (out when the stock trades through it, the option stop). The stock reaches the TARGET: SELL every contract,
+        a limit a step through the bid. Flat again after it was held: the 2nd entry, stop and target come off."""
+        from . import options as _o
+        for play in list(self.engine.plays):
+            if play.get("trade_as") != "option" or not play.get("opt_key"):
+                continue
+            sym, key = play["symbol"], play["opt_key"]
+            try:
+                usym, exp, strike, right = _o.parse_key(key)
+            except (ValueError, IndexError):
+                continue
+            st = self.engine.syms.get(sym)
+            last = st.price() if st else None
+            if last is None:
+                continue
+            s = self.opt_link.setdefault(sym, {})
+            prev, s["prev"] = s.get("prev"), last
+            lines, alt = self._opt_lines(play, right)
+            bull = right == "C"
+            pos = self.engine.opt_positions.get(key) or {}
+            held = int(pos.get("qty") or 0)
+            buying = [o for o in self.engine._pending(key) if o.get("action") == BUY]
+            se, tgt = lines.get("second_entry"), lines.get("target")
+            s["state"], s["why"] = ("IN" if held > 0 else "SENT" if buying else "WAITING"), ""
+            if held > 0:
+                s["held"] = True
+            # the entry: a real cross of the 2nd entry, the way the contract pays (never chased from the far side)
+            if se and held <= 0 and not buying and prev is not None and s.get("sent") != price_key(se):
+                crossed = (prev < se <= last) if bull else (prev > se >= last)
+                if crossed:
+                    s["sent"] = price_key(se)
+                    out = self.opt_open(sym, exp, strike, right, BUY, int(play.get("opt_qty") or 1), None, now)
+                    if out.get("ok"):
+                        s["state"] = "SENT"
+                        self._note(now, f"OPTION ENTRY {sym} traded {'up' if bull else 'down'} through {money(se)}: {out['sent']}", True)
+                        self.engine.log(sym, f"OPTION ENTRY {out['sent']} ({sym} through {money(se)})", now, kind="level")
+                    else:
+                        s["why"] = out.get("reason") or "refused"
+                        self._note(now, f"OPTION ENTRY {sym} crossed {money(se)} but NOT sent: {s['why']}", False)
+            if se and held <= 0 and not buying and s.get("sent") != price_key(se):
+                if not (self.gate.can_trade() and self.gate.armed):
+                    s["why"] = self.gate.why_not() or "trading is DISARMED — click ARM"
+            # the target: the stock got there, every contract goes
+            if tgt and held > 0 and s.get("tgt") != price_key(tgt) and ((last >= tgt) if bull else (last <= tgt)):
+                s["tgt"] = price_key(tgt)
+                out = self.opt_adjust(key, 0, "close", None, now)
+                self._note(now, f"OPTION TARGET {sym} reached {money(tgt)}: " + (out.get("sent") or f"close refused — {out.get('reason')}"),
+                           bool(out.get("ok")))
+                if out.get("ok"):
+                    self.engine.log(sym, f"OPTION TARGET {key} out ({sym} {money(tgt)})", now, kind="fill")
+            # flat again after holding it: the trade is over, its lines come off (the pivot stays)
+            if held <= 0 and s.get("held") and not self.engine._pending(key):
+                s["held"] = False
+                s["sent"] = s["tgt"] = None
+                if self.cfg.get("clear_lines_when_flat", True) and any(lines.get(r) is not None for r in ("second_entry", "stop", "target")):
+                    self._clear_trade_lines(play, now, alt=alt)
+
+    def _opt_link_view(self):
+        out = {}
+        for play in list(self.engine.plays):
+            if play.get("trade_as") != "option" or not play.get("opt_key"):
+                continue
+            s = self.opt_link.get(play["symbol"]) or {}
+            out[play["symbol"]] = {"key": play["opt_key"], "qty": int(play.get("opt_qty") or 1),
+                                   "state": s.get("state") or "WAITING", "why": s.get("why") or ""}
+        return out
+
     def _opt_stop_view(self):
         out = {}
         for key, p in list(self.engine.opt_positions.items()):
@@ -1235,6 +1435,14 @@ class Trader:
             self._guard_exits(now or time.time())
         except Exception as exc:
             log.warning("exit guard: %s", exc)
+        try:
+            self._grow_exits(now or time.time())
+        except Exception as exc:
+            log.warning("exit growth: %s", exc)
+        try:
+            self._opt_link_tick(now or time.time())
+        except Exception as exc:
+            log.warning("option lines: %s", exc)
         try:
             self._opt_stop_tick(now or time.time())
         except Exception as exc:
@@ -1347,6 +1555,9 @@ class Trader:
             return None, "off for this play (cancelled by hand or switched off) — redraw the 2nd entry or switch it on", False
         if not play.get("active", True):
             return None, "play is retired", False
+        real = (self.engine.syms.get(sym).play if self.engine.syms.get(sym) else play)
+        if real.get("trade_as") == "option" and real.get("opt_key"):
+            return None, f"these lines trade the contract {real['opt_key']} (OPTIONS) — no stock order", False
         se, stop, target = play.get("second_entry"), play.get("stop"), play.get("target")
         if not se:
             return None, "draw a 2nd entry on the chart — it goes in as your entry order", False
@@ -2239,7 +2450,7 @@ class Trader:
                  bracket_template=self.bracket_template, bracket_templates=list(self.bracket_templates().keys()),
                  scale_plans={sym: self._plan_view(sym, pl, time.time()) for sym, pl in self.scale_plans.items()},
                  trails={sym: dict(tr) for sym, tr in self.trails.items()},
-                 opt_stops=self._opt_stop_view(),
+                 opt_stops=self._opt_stop_view(), opt_links=self._opt_link_view(),
                  allow_sell_to_open=bool(self.cfg.get("allow_sell_to_open", False)),
                  scale_templates={k: v for k, v in (self.cfg["scale_plan"].get("templates") or {}).items()},
                  qty_presets=list(self.cfg.get("qty_presets") or [25, 50, 100, 200, 500, 1000]),

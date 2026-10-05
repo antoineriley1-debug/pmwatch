@@ -6,6 +6,12 @@ const PANELS = {
 const SYMBOL_LINKED = new Set(["chart", "chart2", "chart3", "foot", "book", "tape", "bigtape", "options", "ps60", "reload", "ticket", "calls", "setup", "bigmoney", "conviction"]);
 const ZONES = ["TL", "TC", "TR", "TX", "BL", "BC", "BR", "BX"];   // four columns × two rows; a column with one zone runs full height
 const PRESETS = {
+  // Twiney's desk: the STOCK on top (chart with the ORDER BAR, its LEVEL II and T&S to the right), the OPTION CHAIN and
+  // option data on the left, and the CONTRACT underneath (option chart, its LEVEL II and T&S lined up under the stock's)
+  "Stock + Options": {ver: 1, exact: true, zones: {TL: ["options", "flow", "ticket", "obig"], TC: ["chart"], TR: ["book"], TX: ["tape"],
+                                       BL: ["positions", "orders", "setup"], BC: ["ochart"], BR: ["obook"], BX: ["otape"]},
+    active: {TL: "options", BL: "positions"}, tf: {chart: 5},
+    sizes: {c1: 380, c3: 300, c4: 270, r2: {L: 330, C: 420, R: 420, X: 420}}},
   "PS60 Execution": {zones: {TL: ["watch", "myalerts"], TC: ["chart"], TR: ["book"], TX: ["tape"], BL: ["positions", "orders"], BC: ["conviction", "setup", "flow", "urgency", "bigmoney", "eqflow", "ps60", "reload", "calls"], BR: ["ticket"]},
     active: {BL: "positions", BC: "setup"}, sizes: {c1: 200, c3: 330, c4: 290, r2: {L: 250, C: 330, R: 430, X: 250}}},
   "Scalping": {zones: {TL: ["ticket", "setup"], TC: ["book"], TR: ["tape"], BL: ["positions"], BC: ["chart"], BR: ["orders", "reload"]},

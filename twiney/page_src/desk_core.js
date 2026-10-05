@@ -173,6 +173,7 @@ document.getElementById("panelsPop").addEventListener("change", e => { const id 
 function layoutFromPreset(name){ const p = PRESETS[name]; const l = emptyLayout(); l.zones = JSON.parse(JSON.stringify(p.zones)); l.active = Object.assign({}, p.active); l.sizes = Object.assign(l.sizes, JSON.parse(JSON.stringify(p.sizes)));
   if (p.split) l.split = Object.assign({}, p.split); if (p.second) l.second = Object.assign({}, p.second);
   l.ver = p.ver || 1;
+  if (p.exact) l.seen = Object.keys(P);          // exactly these panels: the rest wait in PANELS ▾, nothing docks itself
   for (const [id, tf] of Object.entries(p.tf || {})) store.set("tf." + id, tf);
   return normalize(l); }
 function renderLayoutSel(){
@@ -202,7 +203,7 @@ document.getElementById("layoutPop").addEventListener("click", async e => {
   if (act === "save" || act === "dup"){ const nm = name || prompt("Layout name:"); if (!nm) return; const out = await post("/api/layouts", {action: "save", name: nm, layout: LAY}); if (out.ok){ LAYOUTS = out.layouts; layoutName = nm; renderLayoutSel(); toast("Layout saved: " + nm, true); } }
   else if (act === "rename"){ if (!layoutName || layoutName.startsWith("★")) return toast("Pick a saved layout first", false); const to = prompt("New name:", layoutName); if (!to) return; const out = await post("/api/layouts", {action: "rename", name: layoutName, to}); if (out.ok){ LAYOUTS = out.layouts; layoutName = to; renderLayoutSel(); } }
   else if (act === "delete"){ if (!layoutName || layoutName.startsWith("★")) return toast("Presets can't be deleted", false); if (!confirm("Delete layout " + layoutName + "?")) return; const out = await post("/api/layouts", {action: "delete", name: layoutName}); if (out.ok){ LAYOUTS = out.layouts; useLayout("★ PS60 Execution"); } }
-  else if (act === "reset"){ useLayout("★ PS60 Execution"); }
+  else if (act === "reset"){ useLayout("★ Stock + Options"); }
   document.getElementById("layoutMenu").classList.remove("open");
 });
 async function loadLayouts(){
@@ -214,8 +215,10 @@ async function loadLayouts(){
     else if (last && last.startsWith("★ ") && PRESETS[last.slice(2)]){ LAY = layoutFromPreset(last.slice(2)); layoutName = last; }
     else if (last && LAYOUTS[last]){ LAY = normalize(LAYOUTS[last]); layoutName = last; }
   } catch (e) {}
-  if (!LAY){ LAY = layoutFromPreset("PS60 Execution"); layoutName = "★ PS60 Execution"; }
+  if (!LAY){ LAY = layoutFromPreset("Stock + Options"); layoutName = "★ Stock + Options"; }
   renderLayoutSel(); applyLayout();
+  // this build brings Twiney's own layout: it opens once on its own (LAYOUT ▾ still lists every other one)
+  if (!store.get("lay.stockopt1", false)){ store.set("lay.stockopt1", true); if (layoutName !== "★ Stock + Options") useLayout("★ Stock + Options"); }
 }
 
 /* ---------- symbol tabs */

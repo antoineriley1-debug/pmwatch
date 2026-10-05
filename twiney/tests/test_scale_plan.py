@@ -116,6 +116,145 @@ class BreakevenTests(unittest.TestCase):
         self.assertEqual(e.syms["AAA"].play["stop"], 10.0)
 
 
+class CancelFromOrdersTests(unittest.TestCase):
+    """CANCEL in ORDERS: the order goes, a cancelled STOP / TARGET takes its line off the chart (so the chart never
+    shows an exit that is not working and the desk never sends it again), and a dead order says why."""
+    def test_cancel_a_working_limit(self):
+        e, tr, broker = make()
+        oid = tr.submit("AAA", "BUY", 9.00, 100, 2.0, bracket=False)["id"]
+        self.assertTrue(tr.cancel(oid, 3.0)["ok"])
+        self.assertEqual(e._pending("AAA"), [])
+        again = tr.cancel(oid, 4.0)
+        self.assertFalse(again["ok"]); self.assertIn("already", again["reason"])
+
+    def test_cancelled_stop_takes_its_line_off_and_is_not_resent(self):
+        e, tr, broker = make()
+        tr.submit("AAA", "BUY", 10.0, 100, 2.0, bracket=False); quote(e, 9.99, 10.00, 3.0)
+        e.set_play_level("AAA", "stop", 9.50, 3.5, source="chart"); tr.watchdog(3.6)
+        stop = [o for o in e._pending("AAA") if o.get("role") == "stop"]
+        self.assertEqual(len(stop), 1)
+        self.assertTrue(tr.cancel(stop[0]["order_id"], 4.0)["ok"])
+        self.assertIsNone(e.syms["AAA"].play.get("stop"))
+        tr.watchdog(5.0); tr.watchdog(7.0)
+        self.assertEqual([o for o in e._pending("AAA") if o.get("role") == "stop"], [])
+        self.assertEqual(broker.position("AAA"), 100)          # the shares are untouched
+
+
+class OptionsFromTheStockChartTests(unittest.TestCase):
+    """OPTIONS mode: the stock chart's 2nd entry, STOP and TARGET trade the contract on the OPTION CHART. The stock
+    trades up through the 2nd entry: the call is bought (a limit, never market). It reaches the target: every
+    contract is sold. Flat: the lines come off. No stock order is ever sent for those lines."""
+    def _setup(self, right="C"):
+        import time as _t
+        from twiney import options as _o
+        e, tr, broker = make(); T = _t.time()
+        e.on_l1("AAA", "last", 10.00, T)
+        exp = e.option_chain("AAA", None, right, T)["expiry"]
+        key = _o.key_of("AAA", exp, 10, right)
+        return e, tr, broker, T, key
+
+    def _move(self, e, tr, px, t):
+        e.on_l1("AAA", "last", px, t); e.practice_opt_tick(t + 0.6); tr.watchdog(t + 0.7); e.practice_opt_tick(t + 1.4)
+
+    def test_call_in_on_the_entry_out_at_the_target_lines_cleared(self):
+        e, tr, broker, T, key = self._setup("C")
+        self.assertTrue(tr.set_trade_as("AAA", "option", key, 2, T)["ok"])
+        self.assertEqual(e.syms["AAA"].play["trade_as"], "option")
+        e.set_play_level("AAA", "second_entry", 10.20, T, source="chart")
+        e.set_play_level("AAA", "stop", 9.80, T, source="chart")
+        e.set_play_level("AAA", "target", 10.60, T, source="chart")
+        self._move(e, tr, 10.05, T + 1)
+        self.assertEqual([o for o in e._pending() if o.get("opt")], [])          # not crossed yet: nothing
+        self._move(e, tr, 10.25, T + 3)                                           # up through 10.20: the call is bought
+        sent = [o for o in e.orders.values() if o.get("symbol") == key and o.get("action") == "BUY"]
+        self.assertEqual(len(sent), 1); self.assertEqual(sent[0]["qty"], 2)
+        self.assertFalse([o for o in e._pending("AAA")])                         # never a stock order
+        for i in range(6):
+            self._move(e, tr, 10.25 + 0.01 * (i % 2), T + 5 + 2 * i)
+        self.assertEqual(int(e.opt_positions[key]["qty"]), 2)
+        self._move(e, tr, 10.65, T + 20)                                          # the target: every contract goes
+        for i in range(6):
+            self._move(e, tr, 10.65 + 0.01 * (i % 2), T + 22 + 2 * i)
+        self.assertEqual(int((e.opt_positions.get(key) or {}).get("qty") or 0), 0)
+        play = e.syms["AAA"].play
+        self.assertEqual((play.get("second_entry"), play.get("stop"), play.get("target")), (None, None, None))
+
+    def test_put_in_when_the_stock_breaks_down_through_the_short_entry(self):
+        e, tr, broker, T, key = self._setup("P")
+        tr.set_trade_as("AAA", "option", key, 1, T)
+        self.assertEqual(e.syms["AAA"].play["side"], "short")                   # a put makes the play SHORT
+        e.set_play_level("AAA", "second_entry", None, T, source="chart")
+        e.set_play_level("AAA", "second_entry", 9.80, T, source="chart")
+        self._move(e, tr, 9.95, T + 1)
+        self.assertFalse([o for o in e.orders.values() if o.get("symbol") == key])
+        self._move(e, tr, 9.75, T + 3)
+        self.assertEqual(len([o for o in e.orders.values() if o.get("symbol") == key and o.get("action") == "BUY"]), 1)
+
+    def test_the_stop_line_takes_the_call_out(self):
+        e, tr, broker, T, key = self._setup("C")
+        tr.set_trade_as("AAA", "option", key, 1, T)
+        e.set_play_level("AAA", "second_entry", 10.20, T, source="chart"); e.set_play_level("AAA", "stop", 9.90, T, source="chart")
+        self._move(e, tr, 10.05, T + 1); self._move(e, tr, 10.25, T + 3)
+        for i in range(6):
+            self._move(e, tr, 10.25, T + 5 + 2 * i)
+        self.assertEqual(int(e.opt_positions[key]["qty"]), 1)
+        self._move(e, tr, 9.85, T + 20)
+        for i in range(6):
+            self._move(e, tr, 9.85, T + 22 + 2 * i)
+        self.assertEqual(int((e.opt_positions.get(key) or {}).get("qty") or 0), 0)
+
+    def test_no_entry_when_price_was_already_past_and_disarmed_says_why(self):
+        e, tr, broker, T, key = self._setup("C")
+        tr.set_trade_as("AAA", "option", key, 1, T)
+        e.set_play_level("AAA", "second_entry", None, T, source="chart")
+        self._move(e, tr, 10.30, T + 1)
+        e.set_play_level("AAA", "second_entry", 10.20, T + 2, source="chart")    # drawn under the price: waits
+        self._move(e, tr, 10.35, T + 3)
+        self.assertFalse([o for o in e.orders.values() if o.get("symbol") == key])
+        tr.gate.arm(False)
+        self._move(e, tr, 10.10, T + 5)
+        self.assertIn("DISARMED", tr.snapshot(run_watchdog=False)["opt_links"]["AAA"]["why"].upper())
+
+    def test_a_contract_of_another_ticker_is_refused_and_stock_mode_comes_back(self):
+        e, tr, broker, T, key = self._setup("C")
+        self.assertFalse(tr.set_trade_as("AAA", "option", "BBB 20261009 10C", 1, T)["ok"])
+        self.assertFalse(tr.set_trade_as("AAA", "option", None, 1, T)["ok"])
+        tr.set_trade_as("AAA", "option", key, 1, T)
+        self.assertTrue(tr.set_trade_as("AAA", "stock", None, None, T)["ok"])
+        self.assertEqual(e.syms["AAA"].play["trade_as"], "stock"); self.assertNotIn("opt_key", e.syms["AAA"].play)
+
+
+class AutoStopAndAddsTests(unittest.TestCase):
+    """A new 2nd entry brings its STOP $1 away (SETTINGS: trading.auto_stop_dollars); you move it. Adding to a position
+    with brackets on joins the working stop and take profit: they grow to every share, never a second set. Taking
+    profit along the way trims the take profit to what is left."""
+    def test_new_second_entry_gets_a_stop_a_dollar_away_and_keeps_yours(self):
+        e, tr, broker = make()
+        e.set_play_level("AAA", "second_entry", None, 1.0, source="chart")
+        e.set_play_level("AAA", "second_entry", 10.30, 2.0, source="chart")
+        self.assertEqual(e.syms["AAA"].play["stop"], 9.30)
+        e.set_play_level("AAA", "stop", 9.80, 3.0, source="chart")                 # moved by you
+        e.set_play_level("AAA", "second_entry", 10.35, 4.0, source="chart")        # dragging the entry leaves it
+        self.assertEqual(e.syms["AAA"].play["stop"], 9.80)
+        e.set_side_level("AAA", "short", "second_entry", 9.50, 5.0)                # the other side: over a short
+        self.assertEqual(e.syms["AAA"].play["alt"]["stop"], 10.50)
+
+    def test_adds_grow_the_stop_and_take_profit_and_partials_trim_it(self):
+        e, tr, broker = make(); tr.bracket = True
+        e.set_play_level("AAA", "stop", 9.50, 1.5, source="chart"); e.set_play_level("AAA", "target", 11.00, 1.5, source="chart")
+        self.assertTrue(tr.submit("AAA", "BUY", 10.0, 100, 2.0)["ok"]); quote(e, 9.99, 10.00, 3.0)
+        exits = lambda r: [o for o in e._pending("AAA") if o.get("role") == r]
+        self.assertEqual([o["qty"] for o in exits("stop")], [100]); self.assertEqual([o["qty"] for o in exits("target")], [100])
+        out = tr.submit("AAA", "BUY", 10.0, 50, 4.0); self.assertTrue(out["ok"]); self.assertIn("adds to your working stop", out["sent"])
+        quote(e, 9.99, 10.00, 5.0); tr.watchdog(8.0)
+        self.assertEqual(broker.position("AAA"), 150)
+        self.assertEqual([o.get("remaining") or o["qty"] for o in exits("stop")], [150])         # one stop, every share
+        self.assertEqual([o.get("remaining") or o["qty"] for o in exits("target")], [150])       # one take profit
+        tr.adjust("AAA", 50, "close", 9.0); quote(e, 10.29, 10.30, 9.5); tr.watchdog(12.0); tr.watchdog(15.0)
+        self.assertEqual(broker.position("AAA"), 100)
+        self.assertEqual([o.get("remaining") for o in exits("target")], [100])                    # took profit: trimmed
+
+
 class TicketStopTrailTests(unittest.TestCase):
     """From ORDER ENTRY: a stop by price (refused when it is through the market) and a trailing stop that only moves
     in your favour; both ride the STOP line, which is the stop order."""

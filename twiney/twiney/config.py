@@ -196,6 +196,9 @@ DEFAULTS = {
         "auto_entry_max_slip_pct": 0.3,
         # drawing a 2nd entry while DISARMED arms the desk (paper / practice accounts only; never when locked)
         "auto_arm_on_second_entry": True,
+        # a 2nd entry drawn with no stop on its side gets a STOP this many dollars away (under a long, over a short);
+        # drag it where you want it. 0 = off
+        "auto_stop_dollars": 1.0,
         # when an auto-entry trade goes flat (stopped out, target, flatten) its 2nd entry, stop and target lines go
         "clear_lines_when_flat": True,
         # CHART TRADING: on any open position the STOP / TARGET lines are its exit orders (draw = order in, drag = moved)
@@ -585,6 +588,11 @@ def validate_plays(raw):
             "watch": watch,
             "auto": bool(item.get("auto", True)),
             "side_set": bool(item.get("side_set", False)),
+            # the chart's lines trade the STOCK, or the option contract linked from the OPTION CHART (opt_key, opt_qty)
+            "trade_as_set": bool(item.get("trade_as_set", False)),
+            "trade_as": "option" if str(item.get("trade_as", "")).lower() == "option" and item.get("opt_key") else "stock",
+            **({"opt_key": str(item["opt_key"]), "opt_qty": max(1, int(item.get("opt_qty") or 1))}
+               if str(item.get("trade_as", "")).lower() == "option" and item.get("opt_key") else {}),
             **({"alt": _alt_side(item.get("alt"))} if _alt_side(item.get("alt")) else {}),
             "exchange": str(item.get("exchange", "SMART")).upper(),
             "primary_exchange": str(item.get("primary_exchange", "")).upper(),

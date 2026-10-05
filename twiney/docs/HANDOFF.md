@@ -126,3 +126,20 @@ stop to breakeven after the first cash flow.
   a reconnect (`IbkrSession._forget_opt_quotes`); expiration day warning 15:30 + auto-close 15:50
   (`Trader._expiry_tick`, `trading.expiry_*`); halts from IBKR tick 49 (`Engine.on_halt`, HALTED badge, voice);
   RISK sizing for contracts (delta × 100 × distance to the stock stop); option hotkeys (HOTKEYS menu, unassigned).
+
+## Stock + Options desk (latest)
+
+- **Layout `★ Stock + Options`** (default; opens once on its own): option chain / flow / ORDER ENTRY tabs left, stock
+  chart centre with LEVEL II and T&S right, the linked contract underneath (option chart, option LEVEL II, option T&S).
+- **ORDER BAR** on top of the stock chart (`#fastStock`, `renderFast`): STOCK | OPTION switch, size, BUY, SELL,
+  CLOSE POSITION, SELL 25 / 50 / 75 / 100 %. All limits; outs never confirm.
+- **Pick first**: the bar's STOCK / OPTION switch sets the play's `trade_as` (`Trader.set_trade_as`, saved in
+  plays.json with `opt_key`, `opt_qty`, `trade_as_set`). OPTION: the stock chart's 2nd entry buys the contract when the
+  stock trades back through it, the STOP line is its stop (option stop), the TARGET sells every contract
+  (`Trader._opt_link_tick`). A call makes the play long, a put short. No stock order is sent for those lines. Picking
+  another strike moves the link unless the old contract is still held. Not picked yet: a new 2nd entry asks.
+- **Auto stop**: a new 2nd entry drawn with no stop on its side gets one `trading.auto_stop_dollars` ($1) away.
+- **Adds**: with brackets on, adding to a position joins its working stop and take profit (`_grow_exits` grows them to
+  every share); taking profit along the way trims them (`_guard_exits`).
+- **Cancel from ORDERS**: CANCELLING… at once, CANCEL PENDING until IBKR confirms, a cancelled STOP / TARGET takes its
+  line off the chart; orders typed in TWS say "cancel it in TWS" (the API can't).
