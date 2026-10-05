@@ -81,7 +81,7 @@ def practice_quote(spot, strike, expiry, right, now, iv=0.35):
     mid = bs_price(spot, strike, days, right, iv_eff)
     if mid < 0.01:
         return {"bid": 0.0, "ask": 0.01, "last": 0.01}
-    half = max(0.01, mid * (0.03 if mid > 1 else 0.06))
+    half = max(0.01, mid * (0.008 if mid > 1 else 0.03))     # a liquid contract: a few cents wide
     grid = 0.01 if mid < 3 else 0.05
     bid = max(0.0, math.floor((mid - half) / grid) * grid)
     ask = math.ceil((mid + half) / grid) * grid

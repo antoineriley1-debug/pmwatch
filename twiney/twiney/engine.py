@@ -590,10 +590,8 @@ class Engine:
             q = self.opt_quotes.setdefault(key, {"bid": None, "ask": None, "last": None})
             q[field] = price
             q["t"] = t
-            b_, a_ = q.get("bid"), q.get("ask")
-            mid = (b_ + a_) / 2 if b_ and a_ else (q.get("last") or None)
-            if mid:
-                self._opt_bar(key, t, round(mid, 4))
+            if field == "last" and price:      # the chart draws TRADES, the same prices as the T&S and the ladder
+                self._opt_bar(key, t, round(price, 4))
             p = self.opt_positions.get(key)
             if p is not None:
                 p[field] = price
@@ -731,7 +729,7 @@ class Engine:
                     "deep_book": self.connection["state"] == "DEMO"}
 
     def on_opt_hist_bar(self, key, t0, o, h, l, c):
-        """A 1-minute MIDPOINT bar of an option contract from IBKR history (the OPTION CHART's context)."""
+        """A 1-minute TRADES bar of an option contract from IBKR history (the OPTION CHART's context)."""
         with self.lock:
             if None not in (o, h, l, c):
                 self._opt_bar(key, t0, c, hist=(o, h, l, c))
@@ -806,7 +804,7 @@ class Engine:
             return True
 
     def option_bars(self, key, t=None):
-        """Everything the OPTION CHART draws for one contract: its 1-minute bars (the mid), quote, your position in it
+        """Everything the OPTION CHART draws for one contract: its 1-minute bars (trades), quote, your position in it
         and your working orders on it. The practice desk models the contract's day from the stock's own minutes."""
         t = t if t is not None else self.last_t
         try:
@@ -823,7 +821,9 @@ class Engine:
                     done.add(key)
                     for m in sorted(st.bars)[-780:]:
                         o, h, l, c = st.bars[m][:4]
-                        f = lambda x: (options.practice_quote(x, strike, exp, right, m + BAR_SECONDS) or {}).get("last")
+                        def f(x, m=m):          # the model's price on the contract's own tick grid (pennies under $3, else nickels)
+                            v = (options.practice_quote(x, strike, exp, right, m + BAR_SECONDS) or {}).get("last")
+                            return None if v is None else round(round(v / (0.01 if v < 3 else 0.05)) * (0.01 if v < 3 else 0.05), 2)
                         fo, fh, fl, fc = f(o), f(h), f(l), f(c)
                         if None in (fo, fh, fl, fc):
                             continue
@@ -840,10 +840,9 @@ class Engine:
             out = [[m] + [round(x, 4) for x in bars[m]] for m in sorted(bars)]
             q = self.opt_quotes.get(key) or {}
             pos = self.opt_positions.get(key)
-            mid = (q["bid"] + q["ask"]) / 2 if q.get("bid") and q.get("ask") else q.get("last")
             return {"key": key, "available": True, "symbol": key, "underlying": sym, "expiry": exp, "strike": strike,
                     "right": right, "label": f"{sym} {exp[4:6]}/{exp[6:8]} {strike:g}{right}", "spot": spot,
-                    "bars": out, "bid": q.get("bid"), "ask": q.get("ask"), "last": mid,
+                    "bars": out, "bid": q.get("bid"), "ask": q.get("ask"), "last": q.get("last"),
                     "position": self._opt_view(pos) if pos else None,
                     "orders": [o for o in self._pending() if o.get("symbol") == key],
                     "source": "PRACTICE" if self.connection["state"] == "DEMO" else "IBKR",

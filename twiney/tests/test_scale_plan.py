@@ -231,6 +231,35 @@ class PracticeOptionsMoveWithTheStockTests(unittest.TestCase):
         self.assertGreater(e._opt_view(e.opt_positions[kp])["pnl"], 0)
 
 
+class OptionChartDrawsTradesTests(unittest.TestCase):
+    """The OPTION CHART's candles and LAST are the contract's trades: the same prices the OPTION T&S prints and the
+    OPTION LEVEL II shows traded, never a mid between the bid and the ask that nothing traded at."""
+    def test_quotes_alone_draw_nothing_trades_do(self):
+        e, tr, broker = make(); T = 1_790_000_000.0
+        k = "AAA 20261009 10C"
+        e.on_opt_quote(k, "bid", 1.00, T); e.on_opt_quote(k, "ask", 1.10, T)
+        self.assertFalse(e.opt_bars.get(k))
+        e.on_opt_quote(k, "last", 1.10, T + 1); e.on_opt_print(k, 1.10, 5, T + 1, "buy")
+        e.on_opt_quote(k, "bid", 1.02, T + 2)
+        bar = list(e.opt_bars[k].values())[-1]
+        self.assertEqual(bar[:4], [1.10, 1.10, 1.10, 1.10])
+
+    def test_practice_chart_last_is_a_print_on_the_tape(self):
+        import time as _t
+        from twiney import options as _o
+        e, tr, broker = make(); T = _t.time()
+        e.on_l1("AAA", "last", 10.00, T)
+        exp = e.option_chain("AAA", None, "C", T)["expiry"]; k = _o.key_of("AAA", exp, 10, "C")
+        e.option_bars(k, T)
+        for i in range(40):
+            e.on_l1("AAA", "last", 10.00 + 0.01 * (i % 7), T + i); e.practice_opt_tick(T + i + 0.6)
+        d = e.option_bars(k, T + 41)
+        prints = d["tape"]["prints"]
+        self.assertTrue(prints)
+        self.assertAlmostEqual(d["last"], prints[0][1], places=2)
+        self.assertAlmostEqual(d["bars"][-1][4], prints[0][1], places=2)
+
+
 class StopGrowsWithAddsTests(unittest.TestCase):
     def test_adding_shares_grows_the_chart_stop(self):
         e, tr, broker = make()

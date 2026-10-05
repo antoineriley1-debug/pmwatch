@@ -415,9 +415,10 @@ class TwineyWrapper:
             except (TypeError, ValueError):
                 pass
             return
-        if kind == "ohist":
+        if kind == "ohist":             # TRADES minutes: the same prices the OPTION T&S prints, and their volume
             try:
                 self.engine.on_opt_hist_bar(sym, float(bar.date), num(bar.open), num(bar.high), num(bar.low), num(bar.close))
+                self.engine.on_opt_hist_vol(sym, float(bar.date), num(getattr(bar, "volume", None)))
             except (TypeError, ValueError):
                 pass
             return
@@ -937,10 +938,7 @@ class MarketDataSession:
                 rid = self._rid()
                 self.app.req[rid] = ("ohist", key)
                 try:
-                    self.app.reqHistoricalData(rid, self.opt_contracts[key], "", "2 D", "1 min", "MIDPOINT", 1, 2, False, [])
-                    vid = self._rid()                      # and its TRADES minutes for the volume bars
-                    self.app.req[vid] = ("ohistv", key)
-                    self.app.reqHistoricalData(vid, self.opt_contracts[key], "", "2 D", "1 min", "TRADES", 1, 2, False, [])
+                    self.app.reqHistoricalData(rid, self.opt_contracts[key], "", "2 D", "1 min", "TRADES", 1, 2, False, [])
                 except Exception as exc:
                     log.warning("option history request failed for %s: %s", key, exc)
 
