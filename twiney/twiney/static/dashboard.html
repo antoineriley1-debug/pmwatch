@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261005-0044">
+<meta name="build" content="20261005-0054">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -3020,7 +3020,8 @@ function movePanel(id, zone, floatPos){
   applyLayout();
 }
 function showPanel(id){ if (LAY.hidden.includes(id)){ movePanel(id, LAY.zones.TC.length ? "BC" : "TC"); } else { const z = zoneOf(id); if (z){ LAY.active[z] = id; applyLayout(); } } }
-function saveLayoutLocal(){ store.set("lay", LAY); store.set("layName", layoutName); }
+function saveLayoutLocal(){ store.set("lay", LAY); store.set("layName", layoutName);
+  if (typeof OC !== "undefined" && OC.link && typeof rememberPlace === "function" && (zoneOf("obook") || zoneOf("otape") || (LAY.floats || {}).obook || (LAY.floats || {}).otape)) rememberPlace(); }
 /* drag a panel tab into another zone (or out to float) */
 let dragId = null;
 document.addEventListener("dragstart", e => { const t = e.target.closest(".ztab"); if (!t){ return; } dragId = t.dataset.p; e.dataTransfer.setData("text/plain", dragId); e.dataTransfer.effectAllowed = "move"; });
@@ -5408,37 +5409,75 @@ function contractMode(which){
 function contractBar(kind){
   const d = OCH.data, l = OC.link, f = v => v == null ? "—" : (+v).toFixed(2);
   const t = d && d.tape;
-  return `<div class="cbar"><span class="lbl">${kind} · CONTRACT</span><b class="${l.right === "C" ? "b" : "s"}">${esc(contractName(l))}</b><span class="dim">bid ${f(d && d.bid)}${t && t.bid_size != null ? " × " + t.bid_size : ""} · ask ${f(d && d.ask)}${t && t.ask_size != null ? " × " + t.ask_size : ""}${kind === "T&S" && t ? ` · vol ${sz(t.volume || 0)}` : ""}</span><span class="cbtns"><button data-pairmode="split" title="show the stock's ${kind} AND the contract's, one above the other">SPLIT WITH STOCK</button><button data-pin="${kind === "T&S" ? "tape" : "book"}" data-pinv="stock" title="only this window goes back to ${esc(l.sym)} shares; ${kind === "T&S" ? "LEVEL II" : "T&S"} and ORDER ENTRY stay on the contract">${esc(l.sym)} SHARES HERE</button><button data-unlinkall="1" title="LEVEL II, T&S and ORDER ENTRY all back on ${esc(l.sym)} shares">✕ ALL BACK TO SHARES</button></span></div>`;
+  return `<div class="cbar"><span class="lbl">${kind} · CONTRACT</span><b class="${l.right === "C" ? "b" : "s"}">${esc(contractName(l))}</b><span class="dim">bid ${f(d && d.bid)}${t && t.bid_size != null ? " × " + t.bid_size : ""} · ask ${f(d && d.ask)}${t && t.ask_size != null ? " × " + t.ask_size : ""}${kind === "T&S" && t ? ` · vol ${sz(t.volume || 0)}` : ""}</span><span class="cbtns"><button data-pairmode="left" title="the contract's LEVEL II and T&S in the left column; the stock's stay here">CONTRACT ON THE LEFT</button><button data-pin="${kind === "T&S" ? "tape" : "book"}" data-pinv="stock" title="only this window goes back to ${esc(l.sym)} shares; ${kind === "T&S" ? "LEVEL II" : "T&S"} and ORDER ENTRY stay on the contract">${esc(l.sym)} SHARES HERE</button><button data-unlinkall="1" title="LEVEL II, T&S and ORDER ENTRY all back on ${esc(l.sym)} shares">✕ ALL BACK TO SHARES</button></span></div>`;
 }
 // a window kept on the shares while a contract is picked: a thin strip to bring the contract into it
 /* BOTH BOOKS: with a contract picked, the stock's LEVEL II and T&S stay as they are and the contract's open under
    them in the same spot (split). ONE WINDOW flips the stock ones to the contract instead (the old way) */
-const PAIRED = {};      // contract window -> {zone, wasSplit, wasSecond} we put it in
-function pairMode(){ return store.get("pairmode", "split"); }
+const PAIRED = {};
+let PAIR_FOR = null;    // the contract the windows were last opened for      // contract window -> {zone, wasSplit, wasSecond} we put it in
+function pairMode(){ return store.get("pairmode", "left"); }
 function autoPair(){
-  if (pairMode() !== "split" || !(OC.link && OC.link.sym === curSym) || !LAY) return;
-  let changed = false;
-  for (const [main, opt] of [["book", "obook"], ["tape", "otape"]]){
-    if (P[opt].el.offsetParent !== null || (LAY.floats || {})[opt]) continue;     // already up somewhere
-    const z = zoneOf(main); if (!z) continue;
+  const mode = pairMode();
+  if ((mode !== "split" && mode !== "left") || !(OC.link && OC.link.sym === curSym) || !LAY) return;
+  if (PAIR_FOR === OC.link.key) return;          // placed once per contract: after that, move or close them as you like
+  PAIR_FOR = OC.link.key;
+  if (P.obook.el.offsetParent !== null && P.otape.el.offsetParent !== null) return;   // already up
+  LAY.split = LAY.split || {}; LAY.second = LAY.second || {};
+  const place = (opt, z, top) => {
+    if ((LAY.floats || {})[opt]) return false;
     if (!LAY.zones[z].includes(opt)){ for (const zz of ZONES) LAY.zones[zz] = LAY.zones[zz].filter(x => x !== opt); LAY.hidden = LAY.hidden.filter(x => x !== opt); LAY.zones[z].push(opt); }
-    LAY.split = LAY.split || {}; LAY.second = LAY.second || {};
-    PAIRED[opt] = {zone: z, wasSplit: !!LAY.split[z], wasSecond: LAY.second[z]};
-    LAY.split[z] = true; LAY.active[z] = main; LAY.second[z] = opt; changed = true;
+    if (!PAIRED[opt]) PAIRED[opt] = {zone: z, wasSplit: !!LAY.split[z], wasSecond: LAY.second[z], wasActive: LAY.active[z]};
+    return true;
+  };
+  // where YOU last put them wins: dragged to another spot, floated, docked — the next contract opens them there
+  const pref = {obook: store.get("oplace.obook", null), otape: store.get("oplace.otape", null)};
+  if (pref.obook || pref.otape){
+    for (const opt of ["obook", "otape"]){
+      const pr = pref[opt]; if (!pr) continue;
+      if (!PAIRED[opt]) PAIRED[opt] = {zone: pr.zone || null, wasSplit: pr.zone ? !!LAY.split[pr.zone] : false, wasSecond: pr.zone ? LAY.second[pr.zone] : null, wasActive: pr.zone ? LAY.active[pr.zone] : null};
+      for (const zz of ZONES) LAY.zones[zz] = LAY.zones[zz].filter(x => x !== opt); LAY.hidden = LAY.hidden.filter(x => x !== opt); delete (LAY.floats || {})[opt];
+      if (pr.float){ LAY.floats[opt] = pr.float; } else if (pr.zone){ LAY.zones[pr.zone].push(opt); LAY.active[pr.zone] = opt; if (pr.split){ LAY.split[pr.zone] = true; if (pr.second && LAY.zones[pr.zone].includes(pr.second)) LAY.second[pr.zone] = pr.second; if (pr.top) LAY.active[pr.zone] = pr.top; } }
+    }
+    const zb = pref.obook && pref.obook.zone, zt = pref.otape && pref.otape.zone;
+    if (zb && zb === zt){ LAY.split[zb] = true; LAY.active[zb] = "obook"; LAY.second[zb] = "otape"; }
+    applyLayout(); pollOch(); return;
   }
-  if (changed){ applyLayout(); pollOch(); }
+  if (mode === "left"){
+    // the left column's top spot (where the watchlist / option chain sit): contract LEVEL II on top, its T&S under it
+    const z = zoneOf("options") && zoneOf("options")[1] === "L" ? zoneOf("options") : (LAY.zones.TL.length || !LAY.zones.BL.length ? "TL" : "BL");
+    if (place("obook", z) & place("otape", z)){ LAY.split[z] = true; LAY.active[z] = "obook"; LAY.second[z] = "otape"; }
+  } else {
+    for (const [main, opt] of [["book", "obook"], ["tape", "otape"]]){
+      const z = zoneOf(main); if (!z) continue;
+      if (place(opt, z)){ LAY.split[z] = true; LAY.active[z] = main; LAY.second[z] = opt; }
+    }
+  }
+  applyLayout(); pollOch();
+}
+function rememberPlace(){
+  // where the contract windows are right now (only when they are up): the next contract opens them there
+  for (const opt of ["obook", "otape"]){
+    const z = zoneOf(opt), f = (LAY.floats || {})[opt];
+    if (f) store.set("oplace." + opt, {float: Object.assign({}, f)});
+    else if (z) store.set("oplace." + opt, {zone: z, split: !!(LAY.split || {})[z], top: LAY.active[z], second: (LAY.second || {})[z]});
+  }
 }
 function unpair(){
+  PAIR_FOR = null;
+  if (OC.link || Object.keys(PAIRED).length) rememberPlace();
   let changed = false;
   for (const [opt, p] of Object.entries(PAIRED)){
-    LAY.zones[p.zone] = LAY.zones[p.zone].filter(x => x !== opt); if (!LAY.hidden.includes(opt)) LAY.hidden.push(opt);
-    LAY.split[p.zone] = p.wasSplit; if (p.wasSecond) LAY.second[p.zone] = p.wasSecond; delete PAIRED[opt]; changed = true;
+    for (const zz of ZONES) LAY.zones[zz] = LAY.zones[zz].filter(x => x !== opt); delete (LAY.floats || {})[opt]; if (!LAY.hidden.includes(opt)) LAY.hidden.push(opt);
+    if (p.zone){ LAY.split[p.zone] = p.wasSplit; if (p.wasSecond) LAY.second[p.zone] = p.wasSecond; if (p.wasActive && LAY.zones[p.zone].includes(p.wasActive)) LAY.active[p.zone] = p.wasActive; }
+    delete PAIRED[opt]; changed = true;
   }
   if (changed) applyLayout();
 }
 document.addEventListener("click", e => { const b = e.target.closest("button[data-pairmode]"); if (!b) return; e.stopPropagation();
   store.set("pairmode", b.dataset.pairmode);
-  if (b.dataset.pairmode === "split"){ autoPair(); } else { unpair(); }
+  unpair(); store.set("oplace.obook", null); store.set("oplace.otape", null);
+  if (b.dataset.pairmode !== "switch") autoPair();
   P.book.last = null; P.tape.last = null; renderContractL2(); renderContractTape(); poll(true); }, true);
 function renderSwitchStrips(){
   for (const [which, pid] of [["book", "book"], ["tape", "tape"]]){
@@ -5475,7 +5514,8 @@ document.addEventListener("click", e => { if (!e.target.closest("button[data-unl
 function renderOptPanels(){
   const d = OCH.data, t = d && d.tape, f = v => v == null ? "—" : (+v).toFixed(2), name = d ? esc(d.label) : "";
   const none = `<div class="dim" style="padding:8px">Pick a contract: OPTIONS, then click a strike (or 📈). Its book, prints and big prints show here.</div>`;
-  const btns = OC.link && OC.link.sym === curSym ? `<span class="ohbtn"><button data-pairmode="switch" title="one window: LEVEL II / T&S flip to the contract instead of showing both">ONE WINDOW</button><button data-unlinkall="1" title="close the contract windows; everything back on the shares">✕ BACK TO SHARES</button></span>` : "";
+  const pm = pairMode();
+  const btns = OC.link && OC.link.sym === curSym ? `<span class="ohbtn">${pm === "left" ? `<button data-pairmode="split" title="put the contract's LEVEL II / T&S under the stock's instead">UNDER STOCK</button>` : `<button data-pairmode="left" title="put the contract's LEVEL II and T&S together in the left column">LEFT</button>`}<button data-pairmode="switch" title="one window: LEVEL II / T&S flip to the contract instead of showing both">ONE WINDOW</button><button data-unlinkall="1" title="close the contract windows; everything back on the shares">✕ BACK TO SHARES</button></span>` : "";
   const hd = (id, title, extra) => { const el = document.getElementById(id); if (!el) return; const h = `<b>${title}</b> <span class="${d && d.right === "P" ? "s" : "b"}">${name}</span>${extra || ""}${id !== "obigHd" ? btns : ""}`; if (el.dataset.h !== h){ el.dataset.h = h; el.innerHTML = h; } };
   const put = (sel, html) => { const el = document.querySelector(sel); if (el && el.dataset.h !== html){ el.dataset.h = html; el.innerHTML = html; } };
   if (!d || !t){ put(".pnl[data-p=obook] .obook", none); put(".pnl[data-p=otape] .otape", none); put(".obig", none); hd("obookHd", "OPTION LEVEL II"); hd("otapeHd", "OPTION T&S"); hd("obigHd", "OPTION BIG TAPE"); return; }

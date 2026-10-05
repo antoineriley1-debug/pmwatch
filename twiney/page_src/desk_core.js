@@ -92,7 +92,8 @@ function movePanel(id, zone, floatPos){
   applyLayout();
 }
 function showPanel(id){ if (LAY.hidden.includes(id)){ movePanel(id, LAY.zones.TC.length ? "BC" : "TC"); } else { const z = zoneOf(id); if (z){ LAY.active[z] = id; applyLayout(); } } }
-function saveLayoutLocal(){ store.set("lay", LAY); store.set("layName", layoutName); }
+function saveLayoutLocal(){ store.set("lay", LAY); store.set("layName", layoutName);
+  if (typeof OC !== "undefined" && OC.link && typeof rememberPlace === "function" && (zoneOf("obook") || zoneOf("otape") || (LAY.floats || {}).obook || (LAY.floats || {}).otape)) rememberPlace(); }
 /* drag a panel tab into another zone (or out to float) */
 let dragId = null;
 document.addEventListener("dragstart", e => { const t = e.target.closest(".ztab"); if (!t){ return; } dragId = t.dataset.p; e.dataTransfer.setData("text/plain", dragId); e.dataTransfer.effectAllowed = "move"; });
