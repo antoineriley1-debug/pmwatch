@@ -2727,3 +2727,8 @@ function fitLadderRows(wrap){
   if (Math.abs(want - have) >= 1){ ladFitT = Date.now(); store.set("ladRows", want); post("/api/ladder", {half_rows: want}); P.book.last = null; }
 }
 window.addEventListener("resize", () => { ladFitT = 0; });
+/* the dots row under the order bar: click it and the CONVICTION panel opens with every check spelled out
+   (hover one dot for just that check) */
+{ const cv = document.getElementById("cvStrip");
+  if (cv){ cv.style.cursor = "pointer"; cv.title = "the 8 PS60 checks, left to right: DAILY MP · PIVOT · CONFIRM · 2ND ENTRY · BUILD · FLOW SIDE · FLOW QUALITY · CORRELATION. Green = met, yellow = getting there, red = not yet. Hover a dot for that check; click for the CONVICTION panel with all of them.";
+    cv.addEventListener("click", () => { if (typeof showPanel === "function") showPanel("conviction"); }); } }

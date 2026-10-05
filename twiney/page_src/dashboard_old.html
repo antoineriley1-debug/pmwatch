@@ -804,7 +804,7 @@ function ensureView(spec){
       v.tools.addEventListener("click", e => {
         const tf = e.target.dataset.tf;
         if (tf){ store.set("tf." + v.id, +tf); v.view.offset = restOffset(); v.view.follow = true; drawChart(v); renderTools(v); }
-        if (e.target.dataset.vwap){ store.set("vwap", !store.get("vwap", true)); views.forEach(q => { drawChart(q); renderTools(q); }); }
+        if (e.target.dataset.vwap){ store.set("vwapOn", !store.get("vwapOn", false)); views.forEach(q => { drawChart(q); renderTools(q); }); }
         if (e.target.dataset.foot){
           const on = !store.get("foot." + v.id, false); store.set("foot." + v.id, on);
           if (on && v.view.cw < 40){ v.view.cw = 44; v.view.offset = restOffset(); v.view.follow = true; saveView(); }
@@ -932,7 +932,7 @@ function renderTools(v){
   const tf = store.get("tf." + v.id, 1);
   v.tools.innerHTML = [1, 5, 15, 60].map(m => `<button data-tf="${m}" class="${tf===m?"on":""}">${m}m</button>`).join("")
     + `<button data-fit="1" title="show all bars">fit</button>`
-    + `<button data-vwap="1" class="${store.get("vwap", true) ? "on" : ""}" title="Session VWAP: the average price paid today, weighted by volume. Above = buyers in control of the day, below = sellers.">VWAP</button>`
+    + `<button data-vwap="1" class="${store.get("vwapOn", false) ? "on" : ""}" title="Session VWAP: the average price paid today, weighted by volume. Above = buyers in control of the day, below = sellers.">VWAP</button>`
     + `<button data-foot="1" class="${store.get("foot." + v.id, false) ? "on" : ""}" title="Footprint inside every candle on this timeframe: shares SOLD into the bid × BOUGHT at the ask per price. Fills in from live prints. Green = buyers 3:1+, red = sellers 3:1+.">FOOT</button>`
     + `<button data-clean="1" class="${store.get("clean", true) ? "on" : ""}" title="Clean chart: only candles, volume, VWAP, your levels and your orders. Off = also show trapped bands, sneaky pivots, reload marks, bubbles and R/C/P calls.">clean</button>`
     + `<button data-max="1" title="maximize / restore">${v.el.classList.contains("max") ? "⤡" : "⤢"}</button>`
@@ -1878,6 +1878,18 @@ function drawOne(p, cv, v, isFoot){
   }
   // price pane only: candles, MAs, BB and VWAP never spill into the volume pane below
   g.save(); g.beginPath(); g.rect(0, 0, W, plotH + 1); g.clip();
+  const stCtx = (!isFoot && !p.opt && d.studies && typeof studiesBack === "function")
+    ? {g, S: d.studies, bars, x0, cw, plotW, labelW, y, lo, hi, last: d.last, lightScreen: dan} : null;
+  // premarket / after hours: shaded behind their candles like TradingView (orange before 9:30, blue after 4:00)
+  if (!isDaily && !isFoot && store.get("extShade", true)){
+    for (let k = 0; k < bars.length; k++){
+      const t0 = bars[k][0], eo = eoDay(t0), sec = ((t0 + eo) % 86400 + 86400) % 86400;
+      if (sec >= 34200 && sec < 57600) continue;
+      g.fillStyle = sec < 34200 ? "rgba(255,152,0,.16)" : (dan ? "rgba(0,50,140,.13)" : "rgba(33,150,243,.12)");   // visible on every screen
+      g.fillRect(x0 + k * cw, 0, cw + .5, plotH);
+    }
+  }
+  if (stCtx){ studiesBack(stCtx); studiesFront(stCtx); }   // the studies sit BEHIND the candles (labels in the open space right)
   // candles (hollow when the footprint is on, so the cells stay readable)
   const foot = !isDaily && (isFoot || store.get("foot." + p.id, false)) && (d.footprint || []).length;
   // Dan's MA pack, BB and LR: computed on the full aggregated history, drawn for the visible slice
@@ -1910,9 +1922,6 @@ function drawOne(p, cv, v, isFoot){
       g.font = "11px ui-monospace, Menlo, Consolas, monospace";
     }
   }
-  const stCtx = (!isFoot && !p.opt && d.studies && typeof studiesBack === "function")
-    ? {g, S: d.studies, bars, x0, cw, plotW, labelW, y, lo, hi, last: d.last, lightScreen: dan} : null;
-  if (stCtx) studiesBack(stCtx);           // the box and the ATR zones sit behind the candles
   for (let k = 0; k < bars.length; k++){
     const b = bars[k], x = x0 + k * cw + cw / 2, up = b[4] >= b[1];
     const top = y(Math.max(b[1], b[4])), bh = Math.max(1, Math.abs(y(b[1]) - y(b[4])));
@@ -1965,7 +1974,8 @@ function drawOne(p, cv, v, isFoot){
     g.textAlign = "start"; g.font = "11px ui-monospace, Menlo, Consolas, monospace";
   }
   // session VWAP from the 1-minute bars, restarting each New York day
-  if (!isFoot && !isDaily && store.get("vwap", true) && d.bars.length && bars.length){
+  // VWAP is OFF unless you switch it on (the VWAP button on the chart toolbar)
+  if (!isFoot && !isDaily && store.get("vwapOn", false) && d.bars.length && bars.length){
     const eo = etOffset(d.bars[d.bars.length - 1][0]);
     let day = null, pv = 0, vol = 0, k = 0;
     const firstT = bars[0][0], lastT = bars[bars.length - 1][0] + span;
@@ -1986,7 +1996,6 @@ function drawOne(p, cv, v, isFoot){
       g.fillStyle = "#e8a0ff"; g.fillText("VWAP " + px(lastVw), W - labelW + 4, y(lastVw) + 4);
     }
   }
-  if (stCtx) studiesFront(stCtx);          // study lines and their labels right of the candles
   g.restore();
   if (stCtx) studiesTags(stCtx);
   // volume. Dan style: one bar per candle, green on an up close, red on a down close, black outline on the
@@ -2201,7 +2210,11 @@ function drawOne(p, cv, v, isFoot){
     const yy = y(d.last);
     const lastCol = dan ? "#000000" : "#ffc53d";   // the price line: black on the light screens, gold on the desk
     const lstyle = CS("lastStyle", "dotted");
-    if (!isFoot && CS("lastLine")){ g.strokeStyle = lastCol; g.lineWidth = dan ? 1.6 : 1.4; g.setLineDash(lstyle === "solid" ? [] : lstyle === "dashed" ? [7, 4] : [2, 3]); g.beginPath(); g.moveTo(0, yy); g.lineTo(plotW, yy); g.stroke(); g.setLineDash([]); g.lineWidth = 1; }
+    // the last-price line: thin, and only from the last candle to the price scale (never across the chart)
+    if (!isFoot && CS("lastLine") && v.follow !== false && bars.length){
+      const xl = x0 + (bars.length - 1) * cw + cw / 2;
+      g.strokeStyle = lastCol; g.lineWidth = 1; g.setLineDash(lstyle === "solid" ? [] : lstyle === "dashed" ? [5, 3] : [1, 3]);
+      g.beginPath(); g.moveTo(Math.max(0, xl), Math.round(yy) + .5); g.lineTo(plotW, Math.round(yy) + .5); g.stroke(); g.setLineDash([]); g.lineWidth = 1; }
     if (CS("lastLabel")){
       g.fillStyle = lastCol; g.fillRect(plotW, yy - 8, labelW, 16);
       g.fillStyle = dan ? "#ffffff" : "#0a0d12"; g.font = "bold 11px ui-monospace, Menlo, Consolas, monospace"; g.fillText(`LAST ${px(d.last)}`, plotW + 3, yy + 4);

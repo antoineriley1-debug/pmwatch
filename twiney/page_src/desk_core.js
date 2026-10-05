@@ -281,7 +281,7 @@ function mkChart(id, isFoot){
       for (const k of ["mas", "bb"]) if (e.target.dataset[k]){ store.set(k, !store.get(k, k === "mas" || k === "bb")); drawChart(c); renderTools(c); }
       if (e.target.dataset.ind){ e.stopPropagation(); const m = e.target.closest(".menu"), open = !m.classList.contains("open"); document.querySelectorAll(".menu.open").forEach(x => x.classList.remove("open")); m.classList.toggle("open", open); if (open){ m.querySelector(".pop").innerHTML = indPopHTML(); placePop(m); } }
       if (e.target.closest(".menu.ind .pop")) e.stopPropagation();
-      if (e.target.dataset.vwap){ store.set("vwap", !store.get("vwap", true)); drawChart(c); renderTools(c); }
+      if (e.target.dataset.vwap){ store.set("vwapOn", !store.get("vwapOn", false)); drawChart(c); renderTools(c); }
       if (e.target.dataset.foot){ const on = !store.get("foot." + id, false); store.set("foot." + id, on); if (on && c.view.cw < 40){ c.view.cw = 44; c.view.offset = restOffset(); c.view.follow = true; } drawChart(c); renderTools(c); }
       if (e.target.dataset.clean){ store.set("clean", !store.get("clean", true)); el.classList.toggle("clean", store.get("clean", true)); drawChart(c); renderTools(c); }
       if (e.target.dataset.fit){ const n = aggBars(c.data ? c.data.bars : [], store.get("tf." + id, 1)).length || 1; c.view.cw = Math.max(2, Math.min(40, (c.canvas.clientWidth - 86) / n)); c.view.offset = restOffset(); c.view.follow = true; c.view.yLo = c.view.yHi = null; drawChart(c); }
@@ -314,6 +314,7 @@ function indPopHTML(){
     <h5>EMA</h5>${DAN_EMA.map(([n, col]) => box("e" + n, n + " EMA", col)).join("")}
     <h5>EMA · DAILY CHART ONLY</h5>${DAN_EMA_DAILY.map(([n, col]) => box("d" + n, n + " EMA", col)).join("")}
     <h5>BANDS</h5><label><input type="checkbox" data-top="bb" ${store.get("bb", true) ? "checked" : ""}> <i style="display:inline-block;width:14px;height:3px;background:${DAN_BB};vertical-align:middle"></i> Bollinger 20 / 2.0</label>
+    <label><input type="checkbox" data-top="extShade" ${store.get("extShade", true) ? "checked" : ""}> shade premarket (orange) and after hours (blue) on the intraday charts</label>
     <label><input type="checkbox" data-top="datawin" ${store.get("datawin", true) ? "checked" : ""}> data window (the floating OK box: bar values and every line at the cursor)</label>
     <div class="dim" style="font-size:10.5px;margin-top:6px">MAS on the toolbar switches every average at once; these boxes pick the lines.</div>`;
 }
@@ -358,7 +359,7 @@ function renderTools(v){
   if (!v.tools || v.type !== "chart") return;
   const tf = store.get("tf." + v.id, 1);
   v.tools.innerHTML = [1, 5, 15, 60, "D"].map(m => `<button data-tf="${m}" class="${String(tf)===String(m)?"on":""}">${m === "D" ? "D" : m + "m"}</button>`).join("")
-    + `<button data-fit="1">fit</button><button data-vwap="1" class="${store.get("vwap", true) ? "on" : ""}">VWAP</button>`
+    + `<button data-fit="1">fit</button><button data-vwap="1" class="${store.get("vwapOn", false) ? "on" : ""}">VWAP</button>`
     + `<button data-mas="1" class="${store.get("mas", true) ? "on" : ""}" title="Dan's moving averages: SMA 5/10/20/50/100/150/200, EMA 5/10/20/50/100/150/200, plus 34/65/89 EMA on Daily only">MAS</button>`
     + `<button data-bb="1" class="${store.get("bb", true) ? "on" : ""}" title="Bollinger Bands 20 / 2.0">BB</button>`
     + `<select data-screen="1" class="${store.get("screen", "blue") !== "desk" ? "on" : ""}" title="the screen: dark desk, or an eSignal-style light screen with Dan's candles">${[["desk", "DESK"], ["white", "WHITE"], ["blue", "BLUE"], ["pink", "PINK"], ["custom", "CUSTOM"]].map(([v, l]) => `<option value="${v}" ${store.get("screen", "blue") === v ? "selected" : ""}>${l}</option>`).join("")}</select>`
