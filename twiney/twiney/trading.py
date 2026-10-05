@@ -1138,6 +1138,47 @@ class Trader:
                 out[key] = {"price": s["price"], "on": s["on"], "source": s["source"], "fired": key in self.opt_stop_fired}
         return out
 
+    def _expiry_tick(self, now):
+        """EXPIRATION DAY. A contract that expires today: said at the warning time (3:30 New York by default) with what
+        happens at the close — a long one in the money is EXERCISED into shares (100 each), a short one can be
+        ASSIGNED — and, with SETTINGS, Trading, close expiring options on (default), closed at the touch at the
+        close-out time (3:50) so nothing turns into shares overnight."""
+        from .ps60 import ny_offset
+        from .options import parse_key
+        off = ny_offset(now)
+        today = time.strftime("%Y%m%d", time.gmtime(now + off))
+        hm = time.strftime("%H:%M", time.gmtime(now + off))
+        warn_at, close_at = str(self.cfg.get("expiry_warn_at", "15:30")), str(self.cfg.get("expiry_close_at", "15:50"))
+        said = self.__dict__.setdefault("_expiry_said", {})
+        for key, p in list(self.engine.opt_positions.items()):
+            if not p.get("qty") or p.get("expiry") != today:
+                continue
+            sym, _exp, strike, right = parse_key(key)
+            q, long_ = int(abs(p["qty"])), p["qty"] > 0
+            st = self.engine.syms.get(sym)
+            spot = st.price() if st else None
+            itm = spot is not None and ((right == "C" and spot > strike) or (right == "P" and spot < strike))
+            if hm >= warn_at and said.get((key, "warn")) != today:
+                said[(key, "warn")] = today
+                if long_:
+                    risk = (f"it is IN the money: at 4:00 it is exercised into {100 * q:,} {sym} shares "
+                            f"({'bought' if right == 'C' else 'sold short'} at {strike:g})" if itm else "it is out of the money: it expires worthless at 4:00")
+                else:
+                    risk = (f"it is IN the money: you can be ASSIGNED {100 * q:,} {sym} shares at {strike:g}" if itm
+                            else "short and out of the money: it should expire worthless, assignment is still possible")
+                auto = (f" The desk closes it at {close_at} (SETTINGS, Trading, close expiring options)." if self.cfg.get("expiry_auto_close", True)
+                        else " Close it yourself before 4:00 if you don't want that.")
+                self.engine.desk_alert(sym, "EXPIRES TODAY", f"{key}: {q} contract{'s' if q != 1 else ''} EXPIRE TODAY — {risk}.{auto}",
+                                       f"Your {sym} {strike:g} {'calls' if right == 'C' else 'puts'} expire today.", now)
+                self._note(now, f"{key}: expires today — {risk}", False)
+            if self.cfg.get("expiry_auto_close", True) and hm >= close_at and hm < "16:00" and said.get((key, "close")) != today:
+                said[(key, "close")] = today
+                out = self.opt_adjust(key, 0, "close", None, now)
+                self._note(now, f"EXPIRY CLOSE: {key} — {q} contract{'s' if q != 1 else ''} closed at the touch before the 4:00 expiry"
+                                + ("" if out.get("ok") else f" — refused: {out.get('reason')} — CLOSE IT YOURSELF"), bool(out.get("ok")))
+                self.engine.desk_alert(sym, "EXPIRY CLOSE", f"{key}: closing {q} before the 4:00 expiry" + ("" if out.get("ok") else " — the close was refused, close it yourself"),
+                                       f"Closing your {sym} {strike:g} {'calls' if right == 'C' else 'puts'} before the expiry.", now)
+
     def _opt_stop_tick(self, now):
         for key, p in list(self.engine.opt_positions.items()):
             if not p.get("qty"):
@@ -1186,6 +1227,10 @@ class Trader:
             self._opt_stop_tick(now or time.time())
         except Exception as exc:
             log.warning("option stop: %s", exc)
+        try:
+            self._expiry_tick(now or time.time())
+        except Exception as exc:
+            log.warning("expiry guard: %s", exc)
         try:
             self._auto_entries(now or time.time())
         except Exception as exc:

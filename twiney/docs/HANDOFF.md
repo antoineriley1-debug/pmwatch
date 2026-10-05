@@ -121,3 +121,8 @@ stop to breakeven after the first cash flow.
 - FAST strip on the stock chart and the option chart header: BUY / SELL now, ½ OUT, ALL OUT (outs never confirm).
 - Option prices: `opt_through` (fill-now limit, one step through the touch), `opt_snap` (typed / dragged prices on a
   nickel). Moving an option order re-sends it on the option contract (`IbkrSession.modify_order`).
+- Safety (latest): sell to open off by default (`trading.allow_sell_to_open`, covered calls allowed, red SHORT
+  confirm always); day P&L and the loss lock include options and option commissions; option quotes re-subscribe after
+  a reconnect (`IbkrSession._forget_opt_quotes`); expiration day warning 15:30 + auto-close 15:50
+  (`Trader._expiry_tick`, `trading.expiry_*`); halts from IBKR tick 49 (`Engine.on_halt`, HALTED badge, voice);
+  RISK sizing for contracts (delta × 100 × distance to the stock stop); option hotkeys (HOTKEYS menu, unassigned).

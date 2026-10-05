@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261004-2358">
+<meta name="build" content="20261005-0006">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -886,6 +886,10 @@ i.tl{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:3p
 .flychip.b{background:#0f3b26;color:#fff;border-color:var(--buy)} .flychip.s{background:#4a1520;color:#fff;border-color:var(--sell)}
 
 #modal.shortopen .box{border:2px solid var(--sell);box-shadow:0 0 0 4px rgba(255,77,94,.25)} #modal.shortopen h2{color:#fff;background:#7a1a2a;padding:4px 8px;border-radius:3px}
+
+.exptoday{background:#7a1a2a;color:#fff;font-weight:800;padding:0 6px;border-radius:3px;animation:livepulse 1.4s infinite}
+.haltbadge{background:#ff2d55;color:#fff;font:800 10px var(--sans);letter-spacing:.1em;padding:1px 6px;border-radius:3px;animation:livepulse 1s infinite}
+.ochead button.risksz{color:var(--gold);border-color:var(--gold)}
 
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
@@ -3451,6 +3455,17 @@ function renderBook(d){
    around the spot, BUY / SELL to open from the row. Polled on its own (not in the big state payload) while the
    panel is on screen. */
 const OC = {right: "C", expiry: null, data: null, timer: null, busy: false};
+/* RISK SIZE for a contract: your RISK $ over what one contract loses if the stock runs to the stop
+   (delta × 100 × distance) — the stop is this contract's own (on the stock) or the chart's STOP line on its side */
+function optRiskSize(d){
+  const os = (T().opt_stops || {})[d.key], stop = os && os.on === "stock" ? +os.price : d.chart_stop;
+  if (!stop || !d.spot || d.delta == null) return null;
+  const per = Math.abs(d.delta) * 100 * Math.abs(d.spot - stop);
+  if (!(per > 0)) return null;
+  const n = Math.floor(riskDollars() / per);
+  if (n < 1) return null;
+  return {n, why: `RISK $${riskDollars()} ÷ (delta ${Math.abs(d.delta).toFixed(2)} × 100 × ${Math.abs(d.spot - stop).toFixed(2)} to the stop ${stop.toFixed(2)}) = ${n} contracts — click to use it`};
+}
 /* SELL TO OPEN: selling contracts you don't own leaves you SHORT. Always a red confirm (ONE-CLICK or not), saying so */
 function shortOpening(key, action, n){
   if (action !== "SELL") return 0;
@@ -3606,7 +3621,7 @@ function renderLadStat(d, s){
   const mode = t.mode === "LIVE" ? "LIVE TRADING" : t.mode === "PAPER" ? "PAPER" : t.mode === "SIM" ? "PRACTICE" : "NO ORDERS";
   const conn = c.state || "—", cstate = conn === "CONNECTED" ? "ok" : /CONNECTING|RECONNECTING|DEMO|REPLAY/.test(conn) ? "warn" : "bad";
   const mkt = f.mkt || {};
-  const html = `<b class="sym">${esc(d.symbol)}</b><span class="mono">${px(d.last)}</span><span class="mono ${chg == null ? "dim" : chg >= 0 ? "up" : "dn"}">${chg == null ? "—" : (chg >= 0 ? "+" : "") + chg.toFixed(2) + "%"}</span>
+  const html = `<b class="sym">${esc(d.symbol)}</b>${d.halted ? `<span class="haltbadge">${esc(d.halted)}</span>` : ""}<span class="mono">${px(d.last)}</span><span class="mono ${chg == null ? "dim" : chg >= 0 ? "up" : "dn"}">${chg == null ? "—" : (chg >= 0 ? "+" : "") + chg.toFixed(2) + "%"}</span>
     <span class="mono"><i class="b">${px(d.bid)}</i> / <i class="s">${px(d.ask)}</i></span><span class="mono dim">${spread == null ? "" : "sp " + spread.toFixed(spread < 1 ? 2 : 2)}</span>
     <span class="spacer"></span>
     ${pos && pos.qty ? `<span class="pos ${pos.qty > 0 ? "b" : "s"}">${pos.qty > 0 ? "+" : ""}${sz(pos.qty)}</span><span class="mono dim">avg ${px(pos.avg_cost)}</span><span class="mono ${pct >= 0 ? "up" : "dn"}"><b>${pct == null ? "—" : (pct >= 0 ? "+" : "") + pct.toFixed(2) + "%"}</b></span>` : `<span class="dim">FLAT</span>`}
@@ -4607,6 +4622,7 @@ P.ps60.el.addEventListener("click", async e => { const b = e.target.closest("but
 const HK_ACTIONS = [["focusSymbol", "Focus symbol box", false], ["focusTicket", "Focus order ticket", false], ["qtyUp", "Increase quantity", false], ["qtyDown", "Decrease quantity", false],
   ["buy", "BUY at ticket price (or bid)", true], ["sell", "SELL at ticket price (or ask)", true], ["joinBid", "Join the bid (BUY at bid)", true], ["joinAsk", "Join the ask (SELL at ask)", true],
   ["cancelSel", "Cancel selected order", true], ["cancelSym", "Cancel symbol orders (emergency)", true], ["cancelAll", "Cancel EVERY working order", true], ["flatten", "FLATTEN current symbol", true], ["reverse", "REVERSE current position", true],
+  ["optBuy", "OPTION: BUY (contracts on the option chart) now", true], ["optSell", "OPTION: SELL now", true], ["optHalf", "OPTION: ½ OUT now", true], ["optOut", "OPTION: ALL OUT now", true],
   ["rec", "Record on / off", false], ["mark", "Marker", false], ["shot", "Screenshot", false], ["arm", "Arm / disarm", false], ["mic", "Voice note (mic) on / off", false], ["clip", "Clip the last minutes", false]];
 const HK_DEFAULT = {focusSymbol: "Ctrl+L", focusTicket: "T", qtyUp: "+", qtyDown: "-", rec: " ", mark: "M", shot: "P", arm: "A", cancelSym: "Escape"};
 function hotkeys(){ return Object.assign({}, HK_DEFAULT, PREFS.hotkeys || {}); }
@@ -4631,6 +4647,14 @@ function runHotkey(e){
   e.preventDefault();
   const q = document.getElementById("tkQty");
   switch (act){
+    case "optBuy": case "optSell": case "optHalf": case "optOut": {
+      const od = OCH.data; if (!od){ toast("Pick a contract first (OPTIONS, then a strike)", false); break; }
+      const pos = od.position, q = pos ? Math.abs(pos.qty) : 0, long = pos && pos.qty > 0;
+      if (act === "optBuy") ochOrder("BUY", null, OCH.n);
+      else if (act === "optSell") ochOrder("SELL", null, OCH.n);
+      else if (!q) toast("No position in " + od.label, false);
+      else ochOrder(long ? "SELL" : "BUY", null, act === "optOut" ? q : Math.max(1, Math.floor(q / 2)), true);
+      break; }
     case "focusSymbol": document.getElementById("symIn").focus(); break;
     case "focusTicket": showPanel("ticket"); if (q) q.focus(); break;
     case "qtyUp": TK.qty = (TK.qty || 0) + 100; P.ticket.last = null; renderTicket(state, d); break;
@@ -5189,7 +5213,9 @@ function renderOchHead(){
   let html;
   if (!OCH.key) html = `<span class="dim">No contract yet — open OPTIONS, click a strike (or 📈 on its row) and it charts here.</span><button data-och="chain">OPTIONS</button>`;
   else { const pos = d && d.position, q = pos ? Math.abs(pos.qty) : 0, long = pos && pos.qty > 0;
-    html = `<b class="${d && d.right === "P" ? "s" : "b"}">${esc(d ? d.label : OCH.key)}</b><span class="dim">bid ${f(d && d.bid)} / ask ${f(d && d.ask)}${d && d.source === "PRACTICE" ? " · practice model" : ""}</span>
+    const rs = d ? optRiskSize(d) : null;
+    html = `<b class="${d && d.right === "P" ? "s" : "b"}">${esc(d ? d.label : OCH.key)}</b>${d && d.expires_today ? `<span class="exptoday" title="expires at 4:00 today: a long one in the money is exercised into shares; the desk calls it out at 3:30 and closes it at 3:50 (SETTINGS, Trading)">EXPIRES TODAY</span>` : d && d.dte != null && d.dte < 7 ? `<span class="dim">${d.dte.toFixed(1)}d left</span>` : ""}<span class="dim">bid ${f(d && d.bid)} / ask ${f(d && d.ask)}${d && d.delta != null ? ` · Δ ${(+d.delta).toFixed(2)}` : ""}${d && d.source === "PRACTICE" ? " · practice model" : ""}</span>
+      ${rs ? `<button class="risksz" data-ochn="${rs.n}" title="${esc(rs.why)}">RISK $${riskDollars()} → ${rs.n} ct</button>` : d ? `<span class="dim" title="draw a STOP on the stock chart (or set this contract's stop) and the desk sizes contracts from your RISK $">no stop to size from</span>` : ""}
       ${q ? `<span class="${long ? "b" : "s"}">YOU HAVE ${q}${pos.pnl != null ? ` · ${pos.pnl >= 0 ? "+" : "−"}$${sz(Math.abs(Math.round(pos.pnl)))}` : ""}</span>` : ""}
       <span class="tfs">${[1, 5, 15].map(m => `<button data-ochtf="${m}" class="${tf === m ? "on" : ""}">${m}m</button>`).join("")}</span>
       <span class="cn">${[1, 2, 5, 10].map(n => `<button data-ochn="${n}" class="${OCH.n === n ? "on" : ""}">${n}</button>`).join("")}</span>
@@ -5304,7 +5330,7 @@ function renderFast(d){
   const el = document.getElementById("fastStock"); if (!el) return;
   if (!d){ el.innerHTML = ""; return; }
   const pos = d.position, q = pos && pos.qty ? Math.abs(pos.qty) : 0, long = pos && pos.qty > 0, n = TK.qty || (T().default_shares) || 100;
-  const h = `<button class="b big" data-fast="BUY" title="BUY ${sz(n)} now at the ask (3-tick cap)">BUY ${sz(n)}</button><button class="s big" data-fast="SELL" title="SELL ${sz(n)} now at the bid (3-tick cap)">SELL ${sz(n)}</button>
+  const h = (d.halted ? `<span class="haltbadge" title="IBKR says it is halted: nothing trades, orders sit">${esc(d.halted)}</span>` : "") + `<button class="b big" data-fast="BUY" title="BUY ${sz(n)} now at the ask (3-tick cap)">BUY ${sz(n)}</button><button class="s big" data-fast="SELL" title="SELL ${sz(n)} now at the bid (3-tick cap)">SELL ${sz(n)}</button>
     ${q ? `<span class="${long ? "b" : "s"}">${long ? "LONG" : "SHORT"} ${sz(q)}</span>${q > 1 ? `<button class="out" data-fast="HALF" title="take half off now (no confirm)">½ OUT</button>` : ""}<button class="out all" data-fast="ALL" title="out of all ${sz(q)} now (no confirm)">ALL OUT</button>` : ""}`;
   if (el.dataset.h !== h){ el.dataset.h = h; el.innerHTML = h; }
 }

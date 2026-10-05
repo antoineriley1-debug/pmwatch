@@ -315,3 +315,33 @@ class SellToOpenTests(unittest.TestCase):
         e.on_l1("AAA", "last", 10.80, T + 2); e.practice_opt_tick(T + 3)
         pnl = e.day_pnl()
         self.assertGreater(pnl["options"], 0); self.assertAlmostEqual(pnl["total"], pnl["realized"] + pnl["open"], places=2)
+
+
+class ExpiryAndHaltTests(unittest.TestCase):
+    def test_expiring_contracts_are_called_out_then_closed_before_four(self):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        from twiney import options as _o
+        e, tr, broker = make()
+        ny = ZoneInfo("America/New_York")
+        t_warn = datetime(2026, 10, 9, 15, 31, tzinfo=ny).timestamp(); t_close = datetime(2026, 10, 9, 15, 51, tzinfo=ny).timestamp()
+        e.on_l1("AAA", "last", 10.40, t_warn - 60)
+        key = _o.key_of("AAA", "20261009", 10, "C")
+        e.on_opt_position("SIM", key, {"symbol": "AAA", "expiry": "20261009", "strike": 10.0, "right": "C", "mult": 100, "local": ""}, 3, 30.0, t_warn - 60)
+        e.practice_quote_key(key, t_warn - 30)
+        said = []; e.listeners.append(lambda a: said.append(a["label"]))
+        tr.watchdog(t_warn)
+        self.assertIn("EXPIRES TODAY", said)
+        self.assertTrue(any("exercised into 300 AAA shares" in a["text"] for a in e.alerts))
+        tr.watchdog(t_warn + 1); self.assertEqual(said.count("EXPIRES TODAY"), 1)            # said once
+        e.practice_quote_key(key, t_close - 1)
+        tr.watchdog(t_close); e.practice_quote_key(key, t_close + 1)
+        self.assertIn("EXPIRY CLOSE", said)
+        self.assertEqual(int((e.opt_positions.get(key) or {}).get("qty") or 0), 0)           # closed before 4:00
+
+    def test_halt_and_resume_are_said(self):
+        e, tr, broker = make()
+        said = []; e.listeners.append(lambda a: said.append(a["label"]))
+        e.on_halt("AAA", 2, 10.0); e.on_halt("AAA", 2, 11.0); e.on_halt("AAA", 0, 300.0)
+        self.assertEqual(said, ["HALTED", "RESUMED"])
+        self.assertTrue(any("volatility pause" in a["text"] for a in e.alerts))

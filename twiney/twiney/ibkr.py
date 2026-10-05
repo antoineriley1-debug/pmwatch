@@ -293,6 +293,14 @@ class TwineyWrapper:
             return
         self.engine.on_l1(sym, field, v, self.clock())
 
+    def tickGeneric(self, reqId, tickType, value):
+        """Tick 49 = halted (1 halted, 2 volatility pause, 0 trading): said on the desk."""
+        kind, sym = self.req.get(reqId, (None, None))
+        if tickType == 49 and kind == "l1":
+            v = num(value)
+            if v is not None and v >= 0:
+                self.engine.on_halt(sym, v, self.clock())
+
     def tickSize(self, reqId, tickType, size):
         field = SIZE_TICKS.get(tickType)
         kind, sym = self.req.get(reqId, (None, None))

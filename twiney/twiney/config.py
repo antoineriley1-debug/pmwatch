@@ -207,6 +207,12 @@ DEFAULTS = {
         # SELL TO OPEN (writing a contract you don't own: you are SHORT). Off: only covered calls (100 shares each). Your
         # IBKR account also needs the option level for it; a naked short call has no ceiling on the loss
         "allow_sell_to_open": False,
+        # EXPIRATION DAY: contracts that expire today are called out at expiry_warn_at (New York time) and, with
+        # expiry_auto_close on, closed at the touch at expiry_close_at so a long in-the-money one is never exercised
+        # into shares overnight (and a short one is bought back before assignment)
+        "expiry_auto_close": True,
+        "expiry_warn_at": "15:30",
+        "expiry_close_at": "15:50",
         # the FILLED chip on the 2nd entry line goes this many seconds after the fill
         "filled_chip_seconds": 90,
         "risk_dollars": 100,

@@ -7,6 +7,7 @@ slot commands ("depth_on"/"depth_off") which the market-data adapter executes.
 
 from . import board, options, orderflow
 import threading
+import time
 from collections import deque
 
 from . import narrative, ps60
@@ -41,6 +42,12 @@ MAX_BARS = 2400  # ~6 trading days of 1-minute bars, enough for 60-minute candle
 MEMORY_SECONDS = 900   # how long the price-level memory (traded volume by price) looks back
 MARK_MINUTES = 400     # absorption bubbles kept for the chart
 
+
+
+def options_ny_off(t):
+    """Seconds to add to a UTC time to get New York wall time."""
+    from .ps60 import ny_offset
+    return ny_offset(t)
 
 class SymbolState:
     def __init__(self, play, cfg):
@@ -729,6 +736,15 @@ class Engine:
             if None not in (o, h, l, c):
                 self._opt_bar(key, t0, c, hist=(o, h, l, c))
 
+    def _chart_stop_for(self, sym, right):
+        """The stock chart's STOP line a NEW contract would ride: a call the long side's, a put the short side's."""
+        st = self.syms.get(sym)
+        if st is None:
+            return None
+        own_long = st.play.get("side", "long") == "long"
+        lines = st.play if (right == "C") == own_long else (st.play.get("alt") or {})
+        return lines.get("stop")
+
     def practice_opt_tick(self, t, every=0.5):
         """The practice desk: every contract you hold, have a working order on, chart or picked is re-priced from the
         stock's price right now (calls gain as the stock rises, puts as it falls), so positions mark and orders
@@ -819,6 +835,10 @@ class Engine:
                     "position": self._opt_view(pos) if pos else None,
                     "orders": [o for o in self._pending() if o.get("symbol") == key],
                     "source": "PRACTICE" if self.connection["state"] == "DEMO" else "IBKR",
+                    "delta": q.get("delta"), "iv": q.get("iv"),
+                    "expires_today": exp == time.strftime("%Y%m%d", time.gmtime(t + options_ny_off(t))),
+                    "dte": options.dte(exp, t),
+                    "chart_stop": self._chart_stop_for(sym, right),
                     "tape": self.option_tape(key, t)}
 
     def on_opt_greeks(self, key, greeks, t):
@@ -1099,6 +1119,8 @@ class Engine:
                 if q and last:
                     open_pnl += (last - cost) * q
             realized -= sum(c for k, c in self.commissions.items() if k in self.fills)
+            opt_ids = {f.get("exec_id") for f in self.opt_fills if f.get("exec_id")}
+            realized -= sum(c for k, c in self.commissions.items() if k in opt_ids)        # option commissions too
             # OPTIONS count too (the day-loss lock must see them): today's option fills, contract by contract, from
             # the position you started the day with (at its average cost), plus the open contracts at their mark
             o_real, o_open = self._opt_day_pnl()
@@ -1510,6 +1532,36 @@ class Engine:
                     self._message("warn", f"{symbol}: IBKR is sending DELAYED data (no live subscription)", t, symbol)
             else:
                 self.connection["market_data_type"] = mdt
+
+    def desk_alert(self, symbol, label, text, words, t, side=None, price=None):
+        """A desk call (halt, expiry, option stop): on the alert list, in the log, and spoken."""
+        with self.lock:
+            alert = {"t": t, "symbol": symbol, "label": label, "price": price, "side": side, "role": "desk",
+                     "text": text, "words": words, "key": f"{round(t, 2)}|{symbol}|{label}"}
+            self.alerts.appendleft(alert); self._rec(dict(alert, ev="alert")); self.log(symbol, text, t, kind="level")
+        for fn in self.listeners:
+            try:
+                fn(alert)
+            except Exception:
+                pass
+
+    def on_halt(self, symbol, value, t):
+        """IBKR's halted tick (49): 1 = halted, 2 = volatility pause (LULD), 0 = trading. Said once each way."""
+        st = self._st(symbol)
+        if st is None:
+            return
+        halted = value in (1, 2, 1.0, 2.0)
+        was = getattr(st, "halted", False)
+        st.halted = halted
+        st.halt_kind = ("LULD PAUSE" if value in (2, 2.0) else "HALTED") if halted else None
+        if halted and not was:
+            st.halt_t = t
+            what = "a volatility pause (LULD), usually 5 minutes" if value in (2, 2.0) else "a trading halt"
+            self.desk_alert(symbol, "HALTED", f"{symbol} is HALTED: {what}. Nothing trades; your working orders sit until it reopens, "
+                                              f"and it can reopen far from here.", f"{symbol} is halted.", t)
+        elif was and not halted:
+            self.desk_alert(symbol, "RESUMED", f"{symbol} is trading again after the halt. Check your orders and stops: the open can gap.",
+                            f"{symbol} is trading again.", t)
 
     def on_commission(self, exec_id, amount):
         """Commissions per execution (IBKR commissionReport): taken off the day P&L and the loss lock."""
@@ -3320,6 +3372,7 @@ class Engine:
                       if m >= max(first_bar, t - 390 * 60)],
             "events": [[a["t"], a["price"], a["label"], a["side"]] for a in sym_alerts if a["t"] >= first_bar][:60],
             "health": self._health(st, t),
+            "halted": getattr(st, "halt_kind", None),
             "slot_age": round(t - self.slots[sym], 1) if sym in self.slots else None,
         }
 

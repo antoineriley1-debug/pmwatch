@@ -454,6 +454,16 @@ class OptionPositionTests(unittest.TestCase):
         app.error(last[1], 110, "again")                                                            # only once
         self.assertEqual([c for c in app.calls if c[0] == "placeOrder"][-1][1], last[1])
 
+    def test_ibkr_halted_tick_is_said(self):
+        s, engine, clock = make_session()
+        s.step(clock()); app = s.app; app.nextValidId(50)
+        sym, rid = next(iter(s.l1_ids.items()))
+        app.tickGeneric(rid, 49, 1.0)
+        self.assertEqual(engine.syms[sym].halt_kind, "HALTED")
+        self.assertTrue(any(a["label"] == "HALTED" for a in engine.alerts))
+        app.tickGeneric(rid, 49, 0.0)
+        self.assertIsNone(engine.syms[sym].halt_kind)
+
     def test_option_quotes_come_back_after_a_reconnect(self):
         s, engine, clock = make_session(max_dollars_per_order=20000)
         s.step(clock()); app = s.app; app.nextValidId(50)
