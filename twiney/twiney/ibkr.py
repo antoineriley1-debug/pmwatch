@@ -199,6 +199,14 @@ class TwineyWrapper:
                                      error=f"{code}: {msg}")
             self.engine.on_error(info["symbol"], code, f"order {req_id}: {msg}", t, level="info" if code == 202 else "error", category="INFORMATION" if code == 202 else "ORDER REJECTION")
             return
+        if kind == "odepth" and (code == 317 or code in DEPTH_REJECT_CODES or code in (200, 354, 10089, 10090, 10168, 10186)):
+            if code == 317:
+                self.engine.on_opt_depth_reset(sym)
+            else:
+                self.session.mark_dead(req_id)
+                self.session.opt_depth = None
+                self.engine.on_opt_depth_refused(sym, code, msg, t)
+            return
         if code == 317 and kind == "depth":
             self.engine.on_depth_reset(sym, t, "317")
         elif code in DEPTH_REJECT_CODES and kind == "depth":
@@ -321,6 +329,10 @@ class TwineyWrapper:
 
     def updateMktDepthL2(self, reqId, position, marketMaker, operation, side, price, size, isSmartDepth=True):
         kind, sym = self.req.get(reqId, (None, None))
+        if kind == "odepth":
+            self.engine.on_opt_depth(sym, int(position), int(operation), int(side), num(price) or 0.0, num(size) or 0.0,
+                                     marketMaker or "", self.clock())
+            return
         if kind != "depth":
             return
         self.engine.on_depth(sym, int(position), int(operation), int(side),
@@ -596,6 +608,7 @@ class MarketDataSession:
                 self.handle_closed("no nextValidId within 15s (check API settings / client id)")
             if self.ready:
                 self.engine.tick(now)
+                self.reconcile_opt_depth(now)
                 self.reconcile_depth()
                 self.refresh_account(now)
             else:
@@ -685,6 +698,7 @@ class MarketDataSession:
                 self.app.req.pop(rid, None)
         self.opt_ids.clear()
         self.opt_hist_asked = set()
+        self.opt_depth = None
 
     def handle_data_lost(self, msg):
         with self._lock:
@@ -1029,6 +1043,33 @@ class MarketDataSession:
                 self.app.req[did] = ("daily", sym)
                 self.app.reqHistoricalData(did, self.contract_factory(play), "", "1 Y", "1 day", "TRADES",
                                            1, 2, False, [])
+
+    def reconcile_opt_depth(self, now):
+        """The charted contract's book: subscribe it (market depth on the option), drop the old one when you chart another.
+        Released BEFORE stock depth is reconciled, so a freed line goes back to the stock ladders on the same pass."""
+        if self.app is None or not self.ready:
+            return
+        want = self.engine.opt_depth_wanted(now)
+        cur = getattr(self, "opt_depth", None)
+        if cur is not None and cur[0] != want:
+            key, rid = cur
+            if rid not in self.dead:
+                try:
+                    self.app.cancelMktDepth(rid, self.cfg["depth"]["smart_depth"])
+                except Exception as exc:
+                    log.warning("cancel option depth %s: %s", key, exc)
+            self.app.req.pop(rid, None)
+            self.dead.discard(rid)
+            self.opt_depth = cur = None
+        if want is not None and cur is None and want in self.opt_contracts:
+            rid = self._rid()
+            self.app.req[rid] = ("odepth", want)
+            self.opt_depth = (want, rid)
+            try:
+                self.app.reqMktDepth(rid, self.opt_contracts[want], self.cfg["depth"]["rows_requested"], self.cfg["depth"]["smart_depth"], [])
+            except Exception as exc:
+                log.warning("option depth %s: %s", want, exc)
+                self.opt_depth = None
 
     def reconcile_depth(self):
         """Make IBKR depth + tape subscriptions match the engine's slots."""

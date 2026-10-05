@@ -37,6 +37,9 @@ DEFAULTS = {
         "min_hold_seconds": 20.0,
         # after IBKR rejects a depth request (e.g. error 309) skip the symbol this long
         "reject_cooldown_seconds": 30.0,
+        # the contract on the OPTION CHART gets a real book too (each exchange's quote, like TWS BookTrader): it takes one
+        # of the depth lines above while a contract is charted. Off = option Level II shows the top of book only
+        "option_depth": True,
         # rotation leans toward symbols with a live reloader: a symbol's distance is cut by this fraction x its best
         # level's conviction (0 = distance only, 0.5 = a fully ACTIVE reloader reads as half as far away)
         "conviction_weight": 0.5,

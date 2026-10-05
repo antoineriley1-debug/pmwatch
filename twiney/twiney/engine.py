@@ -621,6 +621,56 @@ class Engine:
             for k in sorted(bars)[:len(bars) - MAX_BARS]:
                 del bars[k]
 
+    # ---- the charted contract's own book (IBKR market depth on the option: each exchange's quote) -------------------
+    def opt_depth_wanted(self, t=None):
+        """The contract that should have a book: the one on the OPTION CHART (asked for in the last minute), live only,
+        SETTINGS on, not refused by IBKR in the last 5 minutes."""
+        t = t if t is not None else self.last_t
+        if self.connection.get("state") not in ("CONNECTED",) or not self.cfg["depth"].get("option_depth", True):
+            return None
+        live = getattr(self, "opt_live", None) or {}
+        if not live:
+            return None
+        key, at = max(live.items(), key=lambda kv: kv[1])
+        if t - at > 60 or t - (getattr(self, "opt_depth_refused", {}) or {}).get(key, -1e9) < 300:
+            return None
+        return key
+
+    def on_opt_depth(self, key, position, operation, side, price, size, market_maker, t):
+        from .book import Book
+        from .conviction import PullBook
+        with self.lock:
+            books = self.__dict__.setdefault("opt_dbook", {})
+            bk = books.get(key)
+            if bk is None:
+                bk = books[key] = Book(rows_requested=10)
+                self.__dict__.setdefault("opt_dpulls", {})[key] = PullBook(self.cfg.get("ladder", {}))
+            bk.apply(position, operation, side, price, size, market_maker)
+            self.__dict__.setdefault("opt_depth_t", {})[key] = t
+
+    def on_opt_depth_reset(self, key):
+        with self.lock:
+            bk = (getattr(self, "opt_dbook", None) or {}).get(key)
+            if bk is not None:
+                bk.reset()
+            pb = (getattr(self, "opt_dpulls", None) or {}).get(key)
+            if pb is not None:
+                pb.reset()
+
+    def on_opt_depth_refused(self, key, code, msg, t):
+        with self.lock:
+            self.__dict__.setdefault("opt_depth_refused", {})[key] = t
+            (getattr(self, "opt_dbook", None) or {}).pop(key, None)
+            self._message("warn", f"{key}: IBKR has no option book for it ({code}: {msg}) — the option LEVEL II shows the top of "
+                                  f"book (best bid / ask). Needs OPRA market data, and a free depth line", t, key.split(" ")[0])
+
+    def _opt_dbook(self, key, t):
+        """The contract's live book, when IBKR is sending one (updated in the last 30 s and has both sides)."""
+        bk = (getattr(self, "opt_dbook", None) or {}).get(key)
+        if bk is None or t - (getattr(self, "opt_depth_t", {}) or {}).get(key, -1e9) > 30 or not (bk.levels(BID) and bk.levels(ASK)):
+            return None
+        return bk
+
     def on_opt_size(self, key, field, size, t):
         """Bid / ask size, last trade size and day volume of an option contract (IBKR tickSize)."""
         with self.lock:
@@ -665,6 +715,9 @@ class Engine:
                 b_, a_ = q.get("bid"), q.get("ask")
                 side = "buy" if a_ and price >= a_ - 1e-9 else "sell" if b_ and price <= b_ + 1e-9 else None
             self.opt_prints.setdefault(key, _dq(maxlen=400)).appendleft([t, round(price, 2), int(size), side])
+            pb = (getattr(self, "opt_dpulls", None) or {}).get(key)
+            if pb is not None and side in ("buy", "sell"):
+                pb.on_print(side, price, size)
             m = int(t // BAR_SECONDS) * BAR_SECONDS
             bars = self.opt_bars.setdefault(key, {})
             b = bars.get(m)
@@ -710,6 +763,7 @@ class Engine:
                 traded = {}
                 for tp, pp, sz, sd in prints:
                     k = round(pp, 2); tr = traded.setdefault(k, [0, 0]); tr[0 if sd == "buy" else 1 if sd == "sell" else 0] += sz
+                dbk = self._opt_dbook(key, t)
                 # PULL / STACK per price, last 60 s: the practice book's own adds / pulls, or the touch's size changes live
                 pstack = {}
                 evs = list(getattr(pbk, "ev", ()) or ()) if pbk is not None else list((getattr(self, "opt_ps", {}) or {}).get(key) or ())
@@ -734,6 +788,14 @@ class Engine:
                         row["ps_b"] = [round(ps_[0]), round(ps_[1])]
                     if pa_:
                         row["ps_a"] = [round(pa_[0]), round(pa_[1])]
+                    if dbk is not None:                          # IBKR's book on the contract: every level's size
+                        row["bid"] = int(dbk.size_at(BID, px_) or 0); row["ask"] = int(dbk.size_at(ASK, px_) or 0)
+                        dps = self.opt_dpulls.get(key)
+                        if dps is not None:
+                            for sd_, nm in ((BID, "ps_b"), (ASK, "ps_a")):
+                                v_ = dps.pullstack(sd_, price_key(px_), t, 60.0)
+                                if v_:
+                                    row[nm] = [v_[0], v_[1]]
                     pb = (getattr(self, "opt_pbook", {}) or {}).get(key)
                     if self.connection["state"] == "DEMO" and pb is not None:   # the practice book: every level's size
                         row["bid"] = int(pb.size_at("bid", px_)); row["ask"] = int(pb.size_at("ask", px_))
@@ -754,7 +816,7 @@ class Engine:
                 vol = sum(p[2] for p in prints)
             return {"book": rows, "prints": prints[:80], "big": big[:40], "bid_size": q.get("bid_size"), "ask_size": q.get("ask_size"),
                     "volume": vol, "bought": sum(p[2] for p in prints if p[3] == "buy"), "sold": sum(p[2] for p in prints if p[3] == "sell"),
-                    "deep_book": self.connection["state"] == "DEMO"}
+                    "deep_book": self.connection["state"] == "DEMO" or self._opt_dbook(key, t) is not None}
 
     def on_opt_hist_bar(self, key, t0, o, h, l, c):
         """A 1-minute TRADES bar of an option contract from IBKR history (the OPTION CHART's context)."""
@@ -1862,6 +1924,13 @@ class Engine:
             self._clock(t)
             self._rec({"ev": "tick", "t": t})       # replay runs its ticks at exactly these times
             rc = self.cfg["reload"]
+            # the charted contract's book (live): PULL / STACK judged on the same quarter-second reads as the stocks
+            for key, bk in list((getattr(self, "opt_dbook", None) or {}).items()):
+                pb = self.opt_dpulls.get(key)
+                if pb is not None and bk.synced:
+                    for side in (ASK, BID):
+                        pb.on_book(bk, side, t, judge=True)
+                    pb.prune(t, 600.0)
             for st in self.syms.values():
                 if st.book is None:
                     continue
@@ -2750,7 +2819,8 @@ class Engine:
     def _rotate(self, t):
         dc = self.cfg["depth"]
         blocked = {s for s, st in self.syms.items() if st.rejected_until > t}
-        new = allocate(self.slots, self._rotation_ranking(t), dc["slots"], t,
+        n_slots = max(1, dc["slots"] - (1 if self.opt_depth_wanted(t) else 0))   # the charted contract's book takes one
+        new = allocate(self.slots, self._rotation_ranking(t), n_slots, t,
                        dc["rotate_hysteresis"], dc["min_hold_seconds"],
                        pinned=self.pinned - blocked, protected=self._protected(t),
                        rotate=self.auto_rotate,

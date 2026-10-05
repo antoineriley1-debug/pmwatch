@@ -739,6 +739,27 @@ class Trader:
         # the price the exits are measured from: a stop entry's TRIGGER (where you get in), never its limit (a cap
         # that can sit well past it — measured from there, a near target was dropped and the stop judged wrongly)
         ref = aux if order_type == "STP LMT" else price if order_type == "LMT" else (self.engine.syms[symbol].price() or price)
+        if use_bracket and ref and self.bracket_template == "PLAY" and play is not None and not stop_ok(play, action, ref):
+            # the chart's stop belongs to the OTHER direction (a long's stop under the price, and you SELL short): use
+            # the side you drew for this direction, else a stop trading.auto_stop_dollars ($1) the right way. Never
+            # an order with no stop, never a blocked order because an old line points the other way
+            alt = play.get("alt") or {}
+            alt_side = "short" if play.get("side", "long") == "long" else "long"
+            want_side = "long" if action == BUY else "short"
+            d = float(self.cfg.get("auto_stop_dollars") or 0)
+            fix = None
+            if alt_side == want_side and alt.get("stop") and stop_ok(alt, action, ref):
+                fix = {"stop": alt["stop"], "target": alt.get("target")}
+                why = f"your {want_side.upper()} side's stop {money(alt['stop'])}"
+            elif d > 0:
+                fix = {"stop": snap(ref - d if action == BUY else ref + d, -1 if action == BUY else 1), "target": None}
+                why = f"a stop ${d:g} {'under' if action == BUY else 'over'} at {money(fix['stop'])} (the chart's stop {money(play['stop'])} is for the other direction)"
+            if fix is not None:
+                tgt = fix["target"]
+                if tgt and not ((tgt > ref) if action == BUY else (tgt < ref)):
+                    tgt = None
+                play = dict(play, stop=fix["stop"], target=tgt, mp=tgt)
+                self._note(now, f"{symbol}: {action} {qty} goes out with {why}", True)
         if use_bracket and ref and self.bracket_template == "PLAY" and not stop_ok(play, action, ref):
             reason = (f"your stop {money(play['stop'])} is on the wrong side of a {action} at {money(ref)} — "
                       f"the order would go out with no stop. Fix the stop first")
@@ -1328,9 +1349,10 @@ class Trader:
             # flat again after holding it: the trade is over, its lines come off (the pivot stays)
             if held <= 0 and s.get("held") and not self.engine._pending(key):
                 s["held"] = False
+                how = "target hit" if s.get("tgt") else "stopped out" if key in self.opt_stop_fired else f"out of {key}"
                 s["sent"] = s["tgt"] = None
                 if self.cfg.get("clear_lines_when_flat", True) and any(lines.get(r) is not None for r in ("second_entry", "stop", "target")):
-                    self._clear_trade_lines(play, now, alt=alt)
+                    self._clear_trade_lines(play, now, alt=alt, how=how)
 
     def _opt_link_view(self):
         out = {}
@@ -1654,15 +1676,15 @@ class Trader:
         self._note(now, msg, False)
         self.engine.log(sym, msg, now, kind="level")
 
-    def _clear_trade_lines(self, play, now, alt=False):
+    def _clear_trade_lines(self, play, now, alt=False, how=None):
         """The trade is over (stopped out, target hit, flattened): its 2nd entry, stop and target come off the
         chart, so the board is clean for the next one. The pivot stays."""
         sym = play["symbol"]
         last = self.engine.syms[sym].price()
         lines = (play.get("alt") or {}) if alt else play
         stop, target = lines.get("stop"), lines.get("target")
-        how = ("stopped out" if stop and last is not None and abs(last - stop) <= abs(last - (target or 0)) else
-               "target hit" if target and last is not None else "flat")
+        how = how or ("stopped out" if stop and last is not None and abs(last - stop) <= abs(last - (target or 0)) else
+                      "target hit" if target and last is not None else "flat")
         for role in ("second_entry", "stop", "target"):
             if lines.get(role) is not None:
                 self.engine.set_play_level(sym, role, None, now, source="trade over", alt=alt)

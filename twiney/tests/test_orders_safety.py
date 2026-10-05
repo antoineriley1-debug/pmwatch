@@ -88,9 +88,33 @@ class EntryChecks(unittest.TestCase):
         ok = [tr.submit("AAA", "BUY", 9.00, 400, 2.0 + i, bracket=False)["ok"] for i in range(4)]
         self.assertEqual(ok, [True, True, False, False])
 
-    def test_stop_on_the_wrong_side_refuses_the_entry(self):
+    def test_stop_on_the_wrong_side_gets_a_right_side_stop(self):
+        # the chart's stop points the other way: the entry goes out with a stop $1 the right way, never with none
         e, tr, gate, broker = sim_setup()
         gate.arm(True)
+        e.syms["AAA"].play.update(stop=10.60, target=11.0)
+        out = tr.submit("AAA", "BUY", 9.50, 100, 2.0)
+        self.assertTrue(out["ok"], out)
+        stops = [o for o in pend(e) if o.get("role") == "stop"]
+        self.assertEqual(len(stops), 1); self.assertAlmostEqual(stops[0]["aux"], 8.50)
+        self.assertIn("stop 8.50", out["sent"])
+
+    def test_wrong_side_stop_uses_the_other_side_you_drew(self):
+        e, tr, gate, broker = sim_setup()
+        gate.arm(True)
+        e.syms["AAA"].play.update(side="long", stop=9.00, target=11.0, alt={"stop": 10.40, "target": 9.20})
+        out = tr.submit("AAA", "SELL", 10.50, 100, 2.0)          # a short: the SHORT side's stop 10.40 is under 10.50: wrong too
+        self.assertTrue(out["ok"], out)
+        self.assertAlmostEqual([o for o in pend(e) if o.get("role") == "stop"][0]["aux"], 11.50)
+        e.syms["AAA"].play.update(alt={"stop": 10.80, "target": 9.20})
+        tr.cancel_all(None, 3.0)
+        out = tr.submit("AAA", "SELL", 10.50, 100, 4.0)
+        self.assertAlmostEqual([o for o in pend(e) if o.get("role") == "stop"][0]["aux"], 10.80)
+
+    def test_stop_on_the_wrong_side_refuses_when_auto_stop_is_off(self):
+        e, tr, gate, broker = sim_setup()
+        gate.arm(True)
+        tr.cfg["auto_stop_dollars"] = 0
         e.syms["AAA"].play.update(stop=10.60, target=11.0)
         out = tr.submit("AAA", "BUY", 10.00, 100, 2.0)
         self.assertFalse(out["ok"])

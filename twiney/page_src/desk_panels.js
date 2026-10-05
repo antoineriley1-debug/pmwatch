@@ -2315,7 +2315,7 @@ function renderOptPanels(){
       <td class="px">${r.price.toFixed(2)}</td>
       <td class="sz s">${r.ask ? `<i style="width:${Math.round(r.ask / mx * 100)}%"></i><span>${sz(r.ask)}</span>` : ""}</td>
       <td class="tr b">${r.bought ? `<i style="width:${Math.round(r.bought / mt * 100)}%"></i><span>${sz(r.bought)}</span>` : ""}</td></tr>`).join("");
-  hd("obookHd", "OPTION LEVEL II", ` <span class="dim">bid ${f(d.bid)} × ${t.bid_size ?? "—"} · ask ${f(d.ask)} × ${t.ask_size ?? "—"}${t.deep_book ? " · practice book" : " · IBKR sends the best bid / ask for options (no deeper book)"}</span>`);
+  hd("obookHd", "OPTION LEVEL II", ` <span class="dim">bid ${f(d.bid)} × ${t.bid_size ?? "—"} · ask ${f(d.ask)} × ${t.ask_size ?? "—"}${t.deep_book ? (d.source === "PRACTICE" ? " · practice book" : " · IBKR book (every exchange)") : " · top of book (IBKR's option book is off or refused — see MESSAGES)"}</span>`);
   setTimeout(centerObook, 0);
   put(".pnl[data-p=obook] .obook", `<div class="ladder-wrap olw">${optLadderHTML(d, t)}</div>`);
   sameCols(document.querySelector(".pnl[data-p=obook] .obook table"));

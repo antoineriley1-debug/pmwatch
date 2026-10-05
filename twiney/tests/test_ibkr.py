@@ -552,3 +552,49 @@ class NoSubscriptionTests(SessionTests):
         self.assertEqual(app.calls.count(("reqMarketDataType", 3)), n)    # only once
         light = sess.engine._feeds(sess.clock())["market"]
         self.assertEqual(light["label"], "DELAYED"); self.assertIn("not valid", light["detail"])
+
+
+class OptionDepthTests(unittest.TestCase):
+    """The contract on the OPTION CHART gets a real book (IBKR market depth on the option, each exchange's quote): it
+    takes one depth line from the stock ladders while charted, the option LEVEL II shows every level, and a refusal
+    falls back to the top of book, said in MESSAGES."""
+    def _charted(self):
+        s, engine, clock = make_session()
+        s.step(clock()); app = s.app; app.nextValidId(50)
+        app.position("DU1", _Opt(), 2, 312.0)            # IBKR knows the contract now
+        key = "TSLA 20261003 240C"
+        engine.opt_live = {key: clock()}                  # it is on the OPTION CHART
+        return s, engine, clock, app, key
+
+    def test_charted_contract_gets_a_book_and_a_depth_line(self):
+        s, engine, clock, app, key = self._charted()
+        self.assertEqual(engine.opt_depth_wanted(clock()), key)
+        clock.t += 1; s.step(clock())
+        reqs = [c for c in app.calls if c[0] == "reqMktDepth" and isinstance(c[2], _Opt)]
+        self.assertEqual(len(reqs), 1)
+        rid = reqs[0][1]
+        self.assertLessEqual(len(engine.slots), engine.cfg["depth"]["slots"] - 1)     # one line went to the contract
+        for i, (bp, ap, sz) in enumerate(((3.40, 3.50, 20), (3.35, 3.55, 40), (3.30, 3.60, 15))):
+            app.updateMktDepthL2(rid, i, "CBOE", 0, 1, bp, sz, True)
+            app.updateMktDepthL2(rid, i, "ISE", 0, 0, ap, sz + 5, True)
+        rid_q = s.opt_ids[key]
+        app.tickPrice(rid_q, 1, 3.40, None); app.tickPrice(rid_q, 2, 3.50, None)
+        tape = engine.option_tape(key, clock())
+        self.assertTrue(tape["deep_book"])
+        rows = {round(r["price"], 2): r for r in tape["book"]}
+        self.assertEqual(rows[3.35]["bid"], 40); self.assertEqual(rows[3.60]["ask"], 20)
+        engine.opt_live = {}                                                          # chart closed: the line comes back
+        clock.t += 120; s.step(clock())
+        self.assertIn(("cancelMktDepth", rid, True), app.calls)
+        self.assertIsNone(s.opt_depth)
+
+    def test_refused_book_falls_back_to_top_of_book(self):
+        s, engine, clock, app, key = self._charted()
+        clock.t += 1; s.step(clock())
+        rid = s.opt_depth[1]
+        app.error(rid, 309, "Max number (3) of market depth requests has been reached")
+        self.assertIsNone(s.opt_depth)
+        self.assertIsNone(engine.opt_depth_wanted(clock()))                           # not asked again for 5 minutes
+        self.assertTrue(any("no option book" in m["text"] for m in engine.messages))
+        clock.t += 1; s.step(clock())
+        self.assertEqual(len([c for c in app.calls if c[0] == "reqMktDepth" and isinstance(c[2], _Opt)]), 1)
