@@ -44,7 +44,7 @@ class FlattenTests(unittest.TestCase):
 
 class LossLockTests(unittest.TestCase):
     def test_lock_keeps_the_stop_and_cancels_resting_entries(self):
-        e, tr, gate, broker = sim_setup(max_daily_loss=50, loss_limit_live_only=False)
+        e, tr, gate, broker = sim_setup(max_daily_loss=50, loss_limit_on_paper=True)
         gate.arm(True)
         e.syms["AAA"].play.update(stop=9.00, target=12.0)
         tr.submit("AAA", "BUY", 10.00, 100, 2.0)                 # fills: stop 9.00 working

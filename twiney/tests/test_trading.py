@@ -155,8 +155,26 @@ class SimTradingTests(unittest.TestCase):
         self.assertTrue(gate.arm(True))
         self.assertFalse(tr.snapshot(run_watchdog=False)["loss_lock_on"])
 
+    def test_unlock_by_hand_sticks_even_with_the_paper_lock_on(self):
+        e, tr, gate, broker = sim_setup(max_daily_loss=50, loss_limit_on_paper=True)
+        gate.arm(True)
+        tr.submit("AAA", "BUY", 10.00, 100, 2.0, bracket=False)
+        e.on_depth("AAA", 0, UPDATE, BID, 9.40, 500, "", 3.0)
+        e.on_l1("AAA", "bid", 9.40, 3.0); e.on_l1("AAA", "last", 9.40, 3.0)
+        tr.watchdog(4.0)
+        self.assertIsNotNone(gate.locked)                                   # switched on for paper: it locks
+        gate.unlock(by_hand=True)
+        tr.watchdog(4.5); tr.watchdog(5.0)
+        self.assertIsNone(gate.locked)                                      # UNLOCK sticks: never straight back
+        self.assertTrue(gate.arm(True))
+
+    def test_a_saved_config_with_the_retired_switch_still_loads(self):
+        from twiney.config import build_config
+        c = build_config({"trading": {"loss_limit_live_only": False}})
+        self.assertFalse(c["trading"]["loss_limit_on_paper"])                # ignored: paper does not lock
+
     def test_daily_loss_locks_trading_for_the_session(self):
-        e, tr, gate, broker = sim_setup(max_daily_loss=50, loss_limit_live_only=False)
+        e, tr, gate, broker = sim_setup(max_daily_loss=50, loss_limit_on_paper=True)
         gate.arm(True)
         tr.submit("AAA", "BUY", 10.00, 100, 2.0, bracket=False)     # long 100 @ 10.00
         e.on_depth("AAA", 0, UPDATE, BID, 9.40, 500, "", 3.0)         # market drops: open loss $60

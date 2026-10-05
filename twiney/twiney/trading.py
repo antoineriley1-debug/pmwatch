@@ -87,6 +87,7 @@ class TradingGate:
         self.recent = deque()        # timestamps of accepted orders (rate limit)
         self.blocked = deque(maxlen=50)
         self.locked = None           # reason trading is locked for the rest of the session
+        self.unlocked_by_hand = False  # UNLOCK pressed on paper: the loss lock does not come back this session
         self.lock = threading.RLock()
 
     # ---- state ------------------------------------------------------------
@@ -108,10 +109,13 @@ class TradingGate:
             self.locked = reason
             self.armed = False
 
-    def unlock(self):
-        """Lift the loss lock (paper / practice, or the limit was raised / switched off). Stays DISARMED: you ARM."""
+    def unlock(self, by_hand=False):
+        """Lift the loss lock (paper / practice, or the limit was raised / switched off). Stays DISARMED: you ARM.
+        By hand (UNLOCK, paper): it stays lifted for the rest of the session."""
         with self.lock:
             self.locked = None
+            if by_hand:
+                self.unlocked_by_hand = True
             return True
 
     def arm(self, on):
@@ -226,7 +230,7 @@ class TradingGate:
                 "locked": self.locked,
                 "max_position": self.cfg["max_position_shares"],
                 "max_daily_loss": self.cfg["max_daily_loss"],
-                "loss_lock_on": bool(self.cfg["max_daily_loss"]) and (self.mode == "LIVE" or not self.cfg.get("loss_limit_live_only", True)),
+                "loss_lock_on": bool(self.cfg["max_daily_loss"]) and (self.mode == "LIVE" or (self.cfg.get("loss_limit_on_paper", False) and not self.unlocked_by_hand)),
                 "blocked": list(self.blocked)[:10],
             }
 
@@ -1468,7 +1472,10 @@ class Trader:
     def _watchdog_unlocked(self, now=None):
         """Called on every dashboard snapshot: breakeven stops after cash flow; exits never bigger than the
         position; daily-loss lock."""
-        self._breakeven(now or time.time())
+        try:
+            self._breakeven(now or time.time())
+        except Exception as exc:                 # one failing step never stops the rest (the loss lock check is last)
+            log.warning("breakeven: %s", exc)
         try:
             self._scale_tick(now or time.time())
         except Exception as exc:
@@ -1502,7 +1509,9 @@ class Trader:
         except Exception as exc:
             log.warning("auto 2nd entry: %s", exc)
         limit = self.cfg["max_daily_loss"]
-        guard = bool(limit) and (self.gate.mode == "LIVE" or not self.cfg.get("loss_limit_live_only", True))
+        # the lock guards a LIVE account; paper / practice only if you switched it on — and never again today once you
+        # lifted it by hand (UNLOCK sticks: it does not come straight back half a second later)
+        guard = bool(limit) and (self.gate.mode == "LIVE" or (self.cfg.get("loss_limit_on_paper", False) and not self.gate.unlocked_by_hand))
         if self.gate.locked:
             # a loss lock that no longer applies lifts by itself: a paper / practice account (live-only lock), the limit
             # switched off, or raised above today's loss. Never a lock that still holds

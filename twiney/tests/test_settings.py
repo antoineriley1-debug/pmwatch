@@ -13,6 +13,9 @@ class SettingsTests(unittest.TestCase):
         cfg = build_config({})
         paths = {f["path"] for s in settings.schema(cfg) for f in s["fields"]}
         for path, _v in settings._leaves(DEFAULTS):
+            if path in settings.RETIRED:
+                self.assertNotIn(path, paths)          # a retired setting loads but is not offered
+                continue
             self.assertIn(path, paths, path)
         f = {f["path"]: f for s in settings.schema(cfg) for f in s["fields"]}
         self.assertTrue(f["reload.min_refreshes"]["help"])

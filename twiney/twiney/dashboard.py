@@ -557,7 +557,8 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                     if tr.gate.mode == "LIVE":
                         out = {"ok": False, "reason": "a LIVE account's loss lock holds until tomorrow (or raise the limit in SETTINGS)"}
                     else:
-                        out = {"ok": tr.gate.unlock()}
+                        tr.gate.unlock(by_hand=True)
+                        out = {"ok": True, "can_trade": tr.gate.can_trade(), "why_not": tr.gate.why_not(), "mode": tr.gate.mode}
                 elif action == "oneclick":
                     tr.gate.one_click = bool(body.get("on"))
                     out = {"ok": True}

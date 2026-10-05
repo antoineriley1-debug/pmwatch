@@ -4,7 +4,7 @@
   <span id="brand"><i></i><b>TED</b><span class="long"> TWINEY EXECUTION DESK</span></span>
   <span id="symbox"><input id="symIn" placeholder="SYMBOL" autocomplete="off" spellcheck="false"><select id="symHist" title="recent symbols"><option value="">RECENT</option></select></span>
   <span class="sep"></span>
-  <button id="armBtn" class="off" title="Arm order entry. Disarmed at every launch.">ARM</button>
+  <button id="armBtn" class="off" title="Arm order entry. Disarmed at every launch.">ARM</button><span id="armWhy"></span>
   <button id="sideBtn" class="long" title="LONG / SHORT for the ticker on screen. Click to flip; your levels stay. Drawing a stop and a target sets it on its own (stop above target = short).">L</button>
   <label title="Skip the confirmation box on every order"><input type="checkbox" id="oneclick"> one-click</label>
   <label title="Attach the play's stop and target to every entry"><input type="checkbox" id="bracket"> stop+target</label>
@@ -105,8 +105,8 @@
     <span class="sym" id="ocSym"></span><select id="ocExp" title="expiry"></select>
     <span class="cp"><button data-right="C" class="on">CALLS</button><button data-right="P">PUTS</button></span>
     <span class="dim" id="ocSpot"></span><span class="spacer"></span>
-    <span class="qty" title="contracts per click">CT <input id="ocQty" type="number" min="1" step="1" value="1"></span>
-    <span class="qty" title="limit price per contract: blank = at the touch (ask to buy, bid to sell)">PX <input id="ocPx" type="number" step="0.01" min="0" placeholder="touch"></span>
+    <span class="dim ocload" title="the chain only LOADS a contract: click a strike and it goes on the OPTION CHART and into ORDER ENTRY. Orders are sent from there, never from the chain">click a strike → chart + order form</span>
+    <input id="ocQty" type="hidden" value="1"><input id="ocPx" type="hidden" value="">
     <span class="dim" id="ocSrc"></span></div><div class="oc-body"></div></div></div></div>
   <div class="pnl" data-p="bigmoney"><div class="pc"><div class="bm-hd"><span><b id="bmSym"></b> BIG OPTION MONEY · last 30 days</span><span class="dim">how the people who paid are doing now · hover for the numbers</span></div><div class="bm-list" id="bmList"></div></div></div>
   <div class="pnl fa" data-p="urgency"><div class="fa-top"><div class="fa-tabs"><span class="off" data-go="flow">OPTION FLOW</span><span class="on">URGENT FLOW</span></div>
