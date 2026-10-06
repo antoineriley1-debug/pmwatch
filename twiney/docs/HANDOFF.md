@@ -199,3 +199,24 @@ Deliberate differences from the TradingView scripts (from reviewing them):
 - Prev day high / low / close before 9:30 = yesterday (the scripts' daily [1] reads the day before in premarket).
 - Earnings: IBKR's API has no earnings calendar, so the reaction bar takes a date you type (SETTINGS).
 - Airspace ATR distances use the live day's ATR like the script; "Airspace ATR on the live day" off = the GAS tank ATR.
+
+## PS60 STORY (twiney/story.py)
+
+An extension of PS60, never a replacement: the pivot, 2nd entry, sneaky pivots, targets, ATR, the conviction board
+and every existing call are untouched. Once a second per stock (`Engine._story_tick`) the story reads:
+
+- DAILY CONTEXT: above / below the daily 50 SMA (today's bar included, like the chart) → bullish / bearish PS60,
+  objective = prior-day high / low.
+- PLACES: PS60 levels (pivot, 2nd entry, sneaky, target, both sides) + your lines + prior-day / prior-week /
+  prior-month / 52-week highs and lows + ZONES found in 60 days of 30-minute bars (swing pivots clustered at ~8% of
+  the ATR; at least 3 separate rejections or bounces; overlapping zones merged) + YOUR zones (right-click the chart,
+  ZONE, click the other edge; saved in plays.json as `zones`, replayed as `zone` events).
+- CONFLUENCE: places within ~6% ATR of each other are one place; whole / half dollars and zones join, never start one.
+- HIGH ATTENTION: price within max(8 ticks, 12% ATR, 0.15%) of a place.
+- RELOADS: only x.00 / x.50 reloaders count for PS60 (story + the board's reload-trap lane); the ladder shows all.
+- OPTION FLOW: NOT YET CONFIRMED / DEVELOPING / CONFIRMED / CONFLICTING, ask-side prints ≤21 DTE, deep OTM ×1.5.
+- PRICE RESPONSE: the last 5 minutes against the flow and the tape (absorbed / not responding / responding).
+- The feed (newest first, each moment once) and the big moments to CALLS (`story.alerts`, voice off by default).
+
+Page: the story line over the LEVEL II (COLS toggle), the PS60 STORY panel, zones on the stock chart (IND toggle).
+Settings: SETTINGS > PS60 story. Tests: tests/test_story.py.

@@ -307,6 +307,9 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                 else:
                     ok = (engine.add_level if body.get("on", True) else engine.remove_level)(sym, body.get("price"), clock())
                 self._send(200 if ok else 400, json.dumps({"ok": ok}), "application/json")
+            elif path == "/api/zone":
+                ok = engine.set_zone(str(body.get("symbol", "")).upper(), body.get("lo"), body.get("hi"), bool(body.get("on", True)), clock())
+                self._send(200 if ok else 400, json.dumps({"ok": ok}), "application/json")
             elif path == "/api/settings":
                 from . import settings as _settings
                 from .config import ConfigError

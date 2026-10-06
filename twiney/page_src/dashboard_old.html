@@ -802,7 +802,7 @@ function ensureView(spec){
     const saveView = () => store.set("view." + v.id, {cw: v.view.cw, offset: v.view.offset, yLo: v.view.yLo, yHi: v.view.yHi, follow: v.view.follow});
     wireChart(v, v.canvas, v.view, saveView, isFoot);
     if (!isFoot){
-      v.tools.addEventListener("change", e => { if (e.target.dataset.mark){ v.view.levelTool = e.target.value || null; renderTools(v); } });
+      v.tools.addEventListener("change", e => { if (e.target.dataset.mark){ v.view.levelTool = e.target.value || null; v.view.zoneStart = null; renderTools(v); } });
       v.tools.addEventListener("mousedown", e => e.stopPropagation());
       v.tools.addEventListener("click", e => {
         const tf = e.target.dataset.tf;
@@ -942,7 +942,7 @@ function renderTools(v){
     + `<select data-mark="1" class="lvl ${v.view.levelTool ? "on" : ""}" title="Mark a level on the chart: pick what it is, then click the chart at the price. Saved to plays.json.">
         <option value="">＋ mark…</option><option value="second_entry" ${v.view.levelTool==="second_entry"?"selected":""}>2nd entry</option>
         <option value="trigger" ${v.view.levelTool==="trigger"?"selected":""}>pivot</option><option value="target" ${v.view.levelTool==="target"?"selected":""}>target</option>
-        <option value="stop" ${v.view.levelTool==="stop"?"selected":""}>stop</option><option value="extra" ${v.view.levelTool==="extra"?"selected":""}>extra level</option><option value="sneaky" ${v.view.levelTool==="sneaky"?"selected":""}>sneaky pivot</option></select>`;
+        <option value="stop" ${v.view.levelTool==="stop"?"selected":""}>stop</option><option value="extra" ${v.view.levelTool==="extra"?"selected":""}>extra level</option><option value="sneaky" ${v.view.levelTool==="sneaky"?"selected":""}>sneaky pivot</option><option value="zone" ${v.view.levelTool==="zone"?"selected":""}>zone (2 clicks)</option></select>`;
   v.canvas.classList.toggle("lvltool", !!v.view.levelTool);
 }
 
@@ -1092,6 +1092,15 @@ function wireChart(p, cv, v, saveView, isFoot){
       const price = yAt(); if (price == null) return;
       const tk = price >= 1 ? 0.01 : 0.0001, snapped = +(Math.round(price / tk) * tk).toFixed(4), role = v.levelTool;
       const names = {second_entry: "2nd entry", trigger: "pivot", target: "target", stop: "stop", extra: "level"};
+      if (role === "zone"){
+        // YOUR ZONE: first click one edge, then the other. Watched by the PS60 story from the moment it is drawn
+        if (v.zoneStart == null){ v.zoneStart = snapped; toast(`Zone edge ${px(snapped)}: now click the other edge`, true); return; }
+        const lo = Math.min(v.zoneStart, snapped), hi = Math.max(v.zoneStart, snapped); v.zoneStart = null;
+        if (hi - lo < tk){ toast("A zone needs two different prices", false); v.levelTool = null; renderTools(p); return; }
+        post("/api/zone", {symbol: p.data.symbol, lo, hi, on: true})
+          .then(out => { toast(out.ok ? `${p.data.symbol} ZONE ${px(lo)}–${px(hi)}: on the chart, watched by the PS60 story` : "Could not save the zone", out.ok); if (out.ok) poll(true); });
+        v.levelTool = null; renderTools(p); return;
+      }
       if (role === "extra" || role === "sneaky"){
         const hit = (p.data.user_levels || []).find(l => l.role === role && Math.abs(l.price - snapped) <= tk * 2);
         const nm = role === "sneaky" ? "Sneaky pivot" : "Level";
@@ -1226,6 +1235,13 @@ function chartPrice(p){
   const tk = pr >= 1 ? 0.01 : 0.0001;
   return +(Math.round(pr / tk) * tk).toFixed(4);
 }
+// the colour actually behind the chart (the canvas is see-through on the dark desk): label backings use it
+function chartBg(p){
+  if (p._bg && p._bgT && Date.now() - p._bgT < 5000) return p._bg;
+  let el = p.canvas, c = "#0c0c0d";
+  while (el && el !== document.documentElement){ const b = getComputedStyle(el).backgroundColor; if (b && b !== "transparent" && !/rgba\(.*,\s*0\)$/.test(b)){ c = b; break; } el = el.parentElement; }
+  p._bg = c; p._bgT = Date.now(); return c;
+}
 function chartMenu(p, v, x, y, price){
   if (p.opt && typeof optChartMenu === "function") return optChartMenu(p, x, y, price);
   const old = document.getElementById("cmenu"); if (old) old.remove();
@@ -1242,6 +1258,9 @@ function chartMenu(p, v, x, y, price){
       <div class="dim">at ${px(price)}</div></div>
     <button data-do="sneaky" class="bsneaky" title="mark a SNEAKY PIVOT here: the micro supply / demand inside the 60-minute channel. A line on the chart and on the ladder">◇ SNEAKY PIVOT here</button>
     <button data-do="alert" class="balert">🔔 Alert me when ${esc(d.symbol)} hits ${px(price)}</button>
+    <button data-do="zone" title="draw YOUR ZONE: this price is one edge, then click the chart at the other edge. The PS60 story watches it from then on">▭ ZONE from ${px(price)} (then click the other edge)</button>
+    ${(() => { const z = ((d.play && d.play.zones) || []).find(z => price >= z[0] - 1e-9 && price <= z[1] + 1e-9);
+      return z ? `<button data-do="rmzone" data-lo="${z[0]}" data-hi="${z[1]}">✕ Remove your zone ${px(z[0])}–${px(z[1])}</button>` : ""; })()}
     ${(() => { const per = v.chartY ? (v.chartY[1] - v.chartY[0]) / ((v.chartH || 1) - 8) : 0; const lv = (d.user_levels || []).find(l => l.role !== "trigger" && Math.abs(l.price - price) <= per * 6);
       return lv ? `<button data-do="rmlevel" data-role="${esc(lv.role)}" data-lp="${lv.price}">✕ Remove ${esc(lv.label)} ${px(lv.price)}</button>` : ""; })()}
     ${!on ? `<div class="dim" style="font-size:11px;margin-top:4px">${esc(whyNot())}</div>` : ""}`;
@@ -1262,6 +1281,8 @@ function chartMenu(p, v, x, y, price){
       post("/api/level", {symbol: d.symbol, role, price, side, confirm: role === "trigger"}).then(out => { toast(out.ok ? `${d.symbol} ${side ? side.toUpperCase() + " " : ""}${names[role]} ${px(price)}` + (role === "second_entry" ? " — entry order going in (armed desk)" : "") : "Could not set the " + names[role], out.ok); if (out.ok) poll(true); }); }
     else if (b.dataset.do === "sneaky") post("/api/level", {symbol: d.symbol, price, on: true, role: "sneaky"}).then(out => { toast(out.ok ? `${d.symbol} SNEAKY PIVOT ${px(price)} — on the chart and the ladder` : "Could not mark it", out.ok); if (out.ok) poll(true); });
     else if (b.dataset.do === "alert") addAlert({symbol: d.symbol, kind: "price", price, when: "hit", repeat: false});
+    else if (b.dataset.do === "zone"){ const tk = price >= 1 ? 0.01 : 0.0001; v.levelTool = "zone"; v.zoneStart = +(Math.round(price / tk) * tk).toFixed(4); renderTools(p); toast(`Zone edge ${px(v.zoneStart)}: now click the other edge`, true); }
+    else if (b.dataset.do === "rmzone") post("/api/zone", {symbol: d.symbol, lo: +b.dataset.lo, hi: +b.dataset.hi, on: false}).then(out => { toast(out.ok ? "Zone removed" : "Could not remove it", out.ok); if (out.ok) poll(true); });
     else if (b.dataset.do === "rmlevel"){ const role = b.dataset.role, lp = +b.dataset.lp;
       (role === "extra" || role === "sneaky" ? post("/api/level", {symbol: d.symbol, price: lp, on: false, role}) : post("/api/level", {symbol: d.symbol, role, price: null}))
         .then(out => { toast(out.ok ? "Level removed " + px(lp) : "Could not remove it", out.ok); if (out.ok) poll(true); }); }
@@ -1888,7 +1909,7 @@ function drawOne(p, cv, v, isFoot){
   // price pane only: candles, MAs, BB and VWAP never spill into the volume pane below
   g.save(); g.beginPath(); g.rect(0, 0, W, plotH + 1); g.clip();
   const stCtx = (!isFoot && !p.opt && d.studies && typeof studiesBack === "function")
-    ? {g, S: d.studies, bars, x0, cw, plotW, labelW, y, lo, hi, last: d.last, lightScreen: dan} : null;
+    ? {g, S: d.studies, bars, x0, cw, plotW, labelW, y, lo, hi, last: d.last, lightScreen: dan, bg: C.bg || chartBg(p)} : null;
   // premarket / after hours: shaded behind their candles like TradingView (orange before 9:30, blue after 4:00)
   if (!isDaily && !isFoot && store.get("extShade", true)){
     for (let k = 0; k < bars.length; k++){
@@ -1898,6 +1919,9 @@ function drawOne(p, cv, v, isFoot){
       g.fillRect(x0 + k * cw, 0, cw + .5, plotH);
     }
   }
+  // the PS60 story's zones (support / resistance found from the 30-minute history, and yours): shaded bands behind it all
+  if (!isFoot && !p.opt && d.story && d.story.draw_zones && store.get("zonesOn", true) && typeof storyZones === "function")
+    storyZones({g, x0, cw, plotW, y, lo, hi, bars, lightScreen: dan}, d.story.zones || []);
   if (stCtx){ studiesBack(stCtx); studiesFront(stCtx); }   // the studies sit BEHIND the candles (labels in the open space right)
   // candles (hollow when the footprint is on, so the cells stay readable)
   const foot = !isDaily && (isFoot || store.get("foot." + p.id, false)) && (d.footprint || []).length;

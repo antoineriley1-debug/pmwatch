@@ -152,7 +152,7 @@ function renderBook(d){
   const bi = document.getElementById("bigIn"), L = d.ladder || {};
   if (bi && document.activeElement !== bi && L.big_shares != null && bi.dataset.sym + ":" + L.big_shares !== d.symbol + ":" + L.big_shares){ bi.value = Math.round(L.big_shares); bi.dataset.sym = d.symbol; }
   const hint = document.getElementById("bigHint"); if (hint){ const txt = L.big_shares != null ? (L.big_default ? "" : d.symbol + " · ") + "huge ≥" + kfmt(L.huge_shares) : ""; if (hint.textContent !== txt) hint.textContent = txt; }
-  if (d.ladder) d.ladder.pace = d.tape && d.tape.pace;     // PACE OF TAPE rides on top of the ladder
+  if (d.ladder){ d.ladder.pace = d.tape && d.tape.pace; d.ladder.story = d.story; }    // PACE OF TAPE and the PS60 STORY line ride on top of the ladder
   const html = ladderHTML(training() ? Object.assign({}, d.ladder, {rows: d.ladder.rows.map(r => Object.assign({}, r, {bid_state: null, ask_state: null, bid_refills: 0, ask_refills: 0, bid_verdict: null, ask_verdict: null}))}) : d.ladder);
   if (P.book.last === html) return;
   P.book.last = html;
@@ -596,11 +596,12 @@ function tapeSpeedHTML(sp, unit){
 function applyBigSet(){ const b = document.querySelector(".pnl[data-p=book] .bigset"); if (b) b.style.display = store.get("bigset", false) === true ? "" : "none"; }
 applyBigSet();
 function applyLadCols(tbl){ if (!tbl) return; const c = store.get("ladcols", {}); const wrap = tbl.closest(".ladder-wrap"); if (wrap){ wrap.style.setProperty("--ladz", String(store.get("ladz", 1))); wrap.style.setProperty("--ladh", String(store.get("ladh", 1))); } tbl.classList.toggle("notrade", c.trade !== true); tbl.classList.toggle("nobars", c.bars === false); tbl.classList.toggle("nowho", c.who === false); tbl.classList.toggle("noflow", c.flow === false); if (tbl._applyCols) tbl._applyCols(); }
-document.getElementById("colsMenu").querySelector("button").addEventListener("click", e => { e.stopPropagation(); const m = document.getElementById("colsMenu"), open = !m.classList.contains("open"); document.querySelectorAll(".menu.open").forEach(x => x.classList.remove("open")); m.classList.toggle("open", open); const c = store.get("ladcols", {}); const rs = m.querySelector("select[data-rows]"); if (rs) rs.value = String(store.get("ladRows", 12)); const lc = m.querySelector("select[data-ladclick]"); if (lc) lc.value = store.get("ladClick", "join"); const hs = m.querySelector("select[data-ladh]"); if (hs) hs.value = String(store.get("ladh", 1)); m.querySelectorAll("input[data-col]").forEach(i => { i.checked = i.dataset.col === "trade" ? c.trade === true : c[i.dataset.col] !== false; }); const z = m.querySelector("select[data-ladz]"); if (z) z.value = String(store.get("ladz", 1)); const bs = m.querySelector("input[data-bigset]"); if (bs) bs.checked = store.get("bigset", false) === true; });
+document.getElementById("colsMenu").querySelector("button").addEventListener("click", e => { e.stopPropagation(); const m = document.getElementById("colsMenu"), open = !m.classList.contains("open"); document.querySelectorAll(".menu.open").forEach(x => x.classList.remove("open")); m.classList.toggle("open", open); const c = store.get("ladcols", {}); const rs = m.querySelector("select[data-rows]"); if (rs) rs.value = String(store.get("ladRows", 12)); const lc = m.querySelector("select[data-ladclick]"); if (lc) lc.value = store.get("ladClick", "join"); const hs = m.querySelector("select[data-ladh]"); if (hs) hs.value = String(store.get("ladh", 1)); m.querySelectorAll("input[data-col]").forEach(i => { i.checked = i.dataset.col === "trade" ? c.trade === true : c[i.dataset.col] !== false; }); const z = m.querySelector("select[data-ladz]"); if (z) z.value = String(store.get("ladz", 1)); const bs = m.querySelector("input[data-bigset]"); if (bs) bs.checked = store.get("bigset", false) === true; const sl = m.querySelector("input[data-storyline]"); if (sl) sl.checked = store.get("storyline", true) !== false; });
 document.getElementById("colsPop").addEventListener("change", e => {
   if (e.target.dataset.rows != null){ store.set("ladRowsAuto", false); post("/api/ladder", {half_rows: +e.target.value}); store.set("ladRows", +e.target.value); P.book.last = null; poll(true); return; }   // your pick: the ladder stops sizing itself
   if (e.target.dataset.ladclick != null){ store.set("ladClick", e.target.value); return; }
   if (e.target.dataset.ladh != null){ store.set("ladh", +e.target.value || 1); applyLadCols(P.book.pc.querySelector("table.lad")); return; }
+  if (e.target.dataset.storyline != null){ store.set("storyline", e.target.checked); P.book.last = null; poll(true); return; }
   if (e.target.dataset.bigset != null){ store.set("bigset", e.target.checked); applyBigSet(); return; }
   if (e.target.dataset.ladz != null){ store.set("ladz", +e.target.value || 1); applyLadCols(P.book.pc.querySelector("table.lad")); P.book.last = null; poll(true); return; } const k = e.target.dataset.col; if (!k) return; const c = store.get("ladcols", {}); c[k] = e.target.checked; store.set("ladcols", c); applyLadCols(P.book.pc.querySelector("table.lad")); });
 function renderLadQty(s){
@@ -1796,7 +1797,7 @@ function render(s){
   renderQuote(d);
   charts.chart.el.classList.toggle("clean", store.get("clean", true));
   drawChart(charts.chart); drawChart(charts.foot); drawChart(charts.chart2); drawChart(charts.chart3); renderFast(d);
-  renderBook(d); renderTape(d); renderSetup(d); renderPS60(d); renderReloads(d); renderConviction(d);
+  renderBook(d); renderTape(d); renderSetup(d); renderPS60(d); renderReloads(d); renderConviction(d); renderStory(d);
   renderTicket(s, d);
   renderWatch(s); renderCalls(s); renderPositions(s); renderOrders(s);
   renderDesk(s); renderTrades(s); renderFlow(s); renderFlowScope(s); renderEquity(s); renderMyAlerts(s); renderUrgency(s); renderBigMoney(curData());
@@ -2651,6 +2652,43 @@ function lvCls(m){ const c = (LVROLE[m.role] || ["", "ex"])[1]; return m.role ==
 function distTxt(d, tick){ if (d == null) return ""; const t = Math.round(Math.abs(d) / (tick || 0.01)); return (d >= 0 ? "+" : "−") + Math.abs(d).toFixed(Math.abs(d) < 1 && tick && tick < 0.01 ? 4 : 2) + (t <= 50 ? ` · ${t}t` : ""); }
 /* PACE OF TAPE: speed against this stock's own normal (×1.0 = normal), who is pushing, the flow behind it, and the
    call at your level. One strip on the ladder and on the T&S, the last-price row glowing harder as the tape runs */
+/* PS60 STORY: one line over the LEVEL II (the story right now), and the whole story in its own window */
+const FLOW_SHORT = {"NOT YET CONFIRMED": "FLOW: NOT YET", DEVELOPING: "FLOW: DEVELOPING", CONFIRMED: "FLOW: CONFIRMED", CONFLICTING: "FLOW: CONFLICTING"};
+const FLOW_CLS = {"NOT YET CONFIRMED": "nyc", DEVELOPING: "dev", CONFIRMED: "conf", CONFLICTING: "cfl"};
+function storyLineHTML(s){
+  if (!s || !s.now) return "";
+  const fl = s.flow && s.focus && s.focus.approach ? s.flow.state : "";
+  return `<div class="storyln t-${esc(s.tone || "neutral")}${s.attention ? " att" : ""}" data-story="1" title="PS60 STORY: ${esc(s.now)} (click for the whole story)">`
+    + (s.ctx && s.ctx.bias ? `<b class="dbias ${s.ctx.bias}" title="${esc(s.ctx.text || "")}">${s.ctx.bias === "bull" ? "▲ DAILY" : "▼ DAILY"}</b>` : "")
+    + (s.attention ? `<b class="hat">HIGH ATTENTION</b>` : "") + (fl ? `<b class="fst ${FLOW_CLS[fl]}">${FLOW_SHORT[fl]}</b>` : "")
+    + `<span class="stx">${esc(s.now)}</span></div>`;
+}
+document.addEventListener("click", e => { if (e.target.closest(".storyln[data-story]") && typeof showPanel === "function") showPanel("story"); });
+function renderStory(d){
+  if (!P.story) return;
+  const s = d && d.story;
+  if (!s){ panelHTML("story", `<div class="dim" style="padding:8px">${d ? "The PS60 story starts with the first price." : NA}</div>`); return; }
+  const c = s.ctx || {}, f = s.focus, fl = s.flow && f && f.approach ? s.flow.state : null;
+  const tm = t => typeof nyHM12 === "function" ? nyHM12(t) : new Date(t * 1000).toLocaleTimeString();
+  const chips = Object.keys(FLOW_CLS).map(k => `<b class="fst ${FLOW_CLS[k]}${k === fl ? " on" : ""}" title="${esc({"NOT YET CONFIRMED": "the PS60 setup is there, the option flow has not shown up yet", DEVELOPING: "option flow on the move's side is starting to show up", CONFIRMED: "option flow is materially behind the move", CONFLICTING: "option flow is against what the tape and price show"}[k])}">${k}</b>`).join("");
+  const where = !f ? "nothing close" : f.on ? `at ${esc(f.name)}` : f.approach ? `approaching ${esc(f.name)} ($${(+f.d).toFixed(2)} away)` : `nearest: ${esc(f.name)}, $${(+f.d).toFixed(2)} away`;
+  const list = (title, rows) => rows.length ? `<div class="sth">${title}</div>` + rows.join("") : "";
+  const html = `<div class="sthead">
+      <div class="sctx ${c.bias === "bull" ? "bull" : c.bias === "bear" ? "bear" : ""}"><b>${c.bias === "bull" ? "DAILY ▲ BULLISH PS60" : c.bias === "bear" ? "DAILY ▼ BEARISH PS60" : "DAILY"}</b> <span>${esc(c.text || "")}</span></div>
+      <div class="satt">${s.attention ? `<b class="hat">HIGH ATTENTION</b>` : `<b class="watch">WATCHING</b>`} <span>${where}</span></div>
+      <div class="snow t-${esc(s.tone || "neutral")}">${esc(s.now || "")}</div>
+      <div class="sflow">${chips}</div>
+      ${s.response ? `<div class="sresp t-${esc(s.response.tone)}">PRICE RESPONSE · ${esc(s.response.text)}</div>` : ""}
+    </div>
+    <div class="sbody">
+      ${list("CONFLUENCE", (s.confluence || []).map(x => `<div class="srow ${x.major ? "major" : ""}">${esc(x.text)}</div>`))}
+      ${list("ZONES", (s.zones || []).map(z => `<div class="srow z-${z.user ? "user" : esc(z.kind)}">${esc(z.name)}</div>`))}
+      ${list("PS60 RELOADS (x.00 / x.50 only)", (s.reloads || []).map(r => `<div class="srow ${r.side === "ask" ? "s" : "b"}">Reload ${r.side === "ask" ? "seller" : "buyer"} ${px(r.price)} · ${esc(r.stage || "")} · ${sz(r.absorbed)} traded into him</div>`))}
+      <div class="sth">THE STORY</div>
+      ${(s.feed || []).map(x => `<div class="sfeed t-${esc(x[2])}"><i>${tm(x[0])}</i>${esc(x[1])}</div>`).join("") || `<div class="dim" style="padding:4px 8px">Nothing yet.</div>`}
+    </div>`;
+  panelHTML("story", html);
+}
 function paceHTML(pc){
   if (!pc || pc.state === "QUIET") return "";
   if (pc.state === "WARMING UP") return `<div class="pacebar s-warm" title="the pace reads this stock against its own last 20 minutes: a few minutes of tape first"><span class="pst">PACE · warming up</span></div>`;
@@ -2692,6 +2730,7 @@ function ladderProHTML(L){
   const up = off.filter(m => m.price > top).sort((a, b) => a.price - b.price).slice(0, 4);
   const dn = off.filter(m => m.price < bot).sort((a, b) => b.price - a.price).slice(0, 4);
   const pill = (m, arrow) => `<span class="lvp ${lvCls(m)}" title="${esc(lvWords(m) + " " + px(m.price) + " · " + distTxt(m.dist, L.tick) + " from the last price")}">${arrow} ${esc(lvWords(m, true))} ${px(m.price)} <i>${distTxt(m.dist, L.tick)}</i></span>`;
+  if (store.get("storyline", true)) h += storyLineHTML(L.story);
   h += paceHTML(L.pace);
   h += `<div class="lvstrip top">${up.map(m => pill(m, "▲")).join("")}${dn.map(m => pill(m, "▼")).join("")}${up.length || dn.length ? "" : `<span class="dim">your lines off the ladder show here</span>`}<span class="sp"></span><button data-lclr="above" title="clear SOLD / BOUGHT / +/− above the ask (after a move down)">CLR ▲</button><button data-lclr="below" title="clear SOLD / BOUGHT / +/− below the bid (after a move up)">CLR ▼</button></div>`;
   h += `<table class="lad lad3 pro" data-cols="ladpro"><tr>

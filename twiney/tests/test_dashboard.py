@@ -62,6 +62,15 @@ class DashboardTests(unittest.TestCase):
             self.post("/api/play", {"symbol": "AAA", "action": "explode"})
         self.assertEqual(ctx.exception.code, 400)
 
+    def test_zone_route_draws_and_removes_your_zone(self):
+        self.assertEqual(self.post("/api/zone", {"symbol": "aaa", "lo": 10.2, "hi": 10.1, "on": True}).status, 200)
+        self.assertEqual(self.engine.syms["AAA"].play["zones"], [[10.1, 10.2]])
+        self.assertEqual(self.post("/api/zone", {"symbol": "AAA", "lo": 10.1, "hi": 10.2, "on": False}).status, 200)
+        self.assertEqual(self.engine.syms["AAA"].play["zones"], [])
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            self.post("/api/zone", {"symbol": "AAA", "lo": 10.1, "hi": 10.1, "on": True})
+        self.assertEqual(ctx.exception.code, 400)
+
     def test_other_websites_cannot_post(self):
         with self.assertRaises(urllib.error.HTTPError) as ctx:
             self.post("/api/autorotate", {"on": False}, {"Origin": "http://evil.example"})

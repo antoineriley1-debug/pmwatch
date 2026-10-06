@@ -107,6 +107,10 @@ class SymbolState:
         from .pace import PaceBook
         self.pacebook = PaceBook()       # PACE OF TAPE: 5-second buckets of the tape (speed against its own normal)
         self.pace = None
+        from .story import Story
+        self.storybook = Story()         # PS60 STORY: the running story, newest first
+        self.story = None
+        self.consumed = deque(maxlen=20) # (t, price, side): reloaders that got cleaned up (the story's "consumed")
         self.rflow_said = {}             # (strike, cp, expiry) -> when REPEAT FLOW was last called on it
         self.l1_volume = None            # IBKR's cumulative day volume (symbols without a tape)
         self.l1_last_raw = None          # IBKR's quote-stream last, kept even while the tape sets the price
@@ -322,6 +326,8 @@ class Engine:
         alert["absorbed_all"] = round(tracker.absorbed_all + tracker.absorbed_total)
         if tracker.back and label.startswith("RELOAD"):
             alert["back"] = dict(tracker.back)
+        if label == "CLEANED UP":
+            st.consumed.append((t, float(tracker.price), alert["side"]))
         if final:
             alert["size_before_gone"] = round(final["size_before_gone"])
             ah = st.absorb_hist.get((alert["side"], tracker.key))
@@ -613,6 +619,105 @@ class Engine:
         self.alerts.appendleft(alert)
         self._rec(dict(alert, ev="alert"))
         self.log(st.symbol, text, t, kind="level")
+        for fn in self.listeners:
+            try:
+                fn(alert)
+            except Exception:
+                pass
+
+    def _ps60_reload(self, price, sym=None):
+        """Does a reload at this price count for PS60? Only at a whole or half dollar (x.00 / x.50), unless that rule
+        is switched off in SETTINGS > PS60 story. The Level II shows every reload either way."""
+        if not (self.cfg.get("story") or {}).get("whole_half_reloads_only", True):
+            return True
+        from .story import qualifies
+        return qualifies(price, tick_size(price, sym) if price else 0.01)
+
+    def _story_tick(self, t):
+        """The PS60 STORY for every stock with a price, once a second, browser open or not."""
+        sc = self.cfg.get("story") or {}
+        if not sc.get("enabled", True) or t - getattr(self, "_story_t", -1e9) < 1.0:
+            return
+        self._story_t = t
+        for sym, st in self.syms.items():
+            if st.price() is None:
+                st.story = None
+                continue
+            try:
+                st.story = self._story(st, t, sc)
+            except Exception:
+                log.exception("story %s", sym)
+                continue
+            if sc.get("alerts", True):
+                for s_ in st.story.get("said") or []:
+                    self._story_alert(st, s_, t, sc)
+
+    def _story(self, st, t, sc):
+        from . import story as story_mod
+        from . import studies
+        last = st.price()
+        tick = tick_size(last, st.symbol)
+        st._any_session = self.connection["state"] == "DEMO"
+        dc = st.__dict__.setdefault("_story_daily", {})
+        if dc.get("k") != (int(t // 15), st.hist_ver):       # the daily bars and their highs / lows: every 15 s
+            dc["k"] = (int(t // 15), st.hist_ver)
+            dc["rows"], dc["live"] = studies.daily_series(st, t)
+            dc["pts"] = story_mod.structure_points(dc["rows"], dc["live"], t)
+        drows, live = dc["rows"], dc["live"]
+        ac = st.__dict__.setdefault("_story_atr", {})
+        if ac.get("k") != (int(t // 60), st.hist_ver, st.play.get("atr")):     # the daily ATR: once a minute
+            ac["k"] = (int(t // 60), st.hist_ver, st.play.get("atr"))
+            ac["v"] = st.play.get("atr") or self._atr(st, st.bar_list(MAX_BARS))
+        atr = ac["v"]
+        ctx = story_mod.daily_context(drows, live, last)
+        points = story_mod.ps60_points(st.play, getattr(st, "sneaky_auto", None)) + dc["pts"]
+        # zones: the 30-minute history changes slowly: found again every 5 minutes, or when new history lands
+        zc = st.__dict__.setdefault("_zone_cache", {})
+        zkey = (int(t // 300), st.study_ver, st.hist_ver)
+        if zc.get("k") != zkey:
+            zc["k"] = zkey
+            zc["v"] = story_mod.detect_zones(studies.m30_series(st, t), last, atr, tick, sc)
+        zones = story_mod.user_zones(st.play) + zc["v"]
+        conf = story_mod.confluence(points, zones, last, atr, tick, sc)
+        prints = list(self.flow.by_symbol.get(st.symbol, ()))
+        fr = story_mod.flow_read(prints, t, sc)
+        reloads = []
+        for tr in st.trackers.values():
+            if not (tr.state == RELOAD or tr.proven) or not self._ps60_reload(tr.price, st.symbol):
+                continue
+            stage = tr.stage(t)
+            if stage not in (ACTIVE, FADING):
+                continue
+            reloads.append({"price": float(tr.price), "side": "bid" if tr.side == BID else "ask", "stage": stage,
+                            "absorbed": round(tr.absorbed_total)})
+        consumed = [{"price": p, "side": sd} for (ct, p, sd) in st.consumed if t - ct <= 60 and self._ps60_reload(p, st.symbol)]
+        cur = int(t // BAR_SECONDS) * BAR_SECONDS
+        mins = [[k] + list(st.bars[k][:5]) for k in sorted(st.bars)[-12:] if k <= cur]
+        se_state = ((getattr(st, "_ps60_cache", None) or (0, {}))[1] or {}).get("state")
+        out = story_mod.build(st.storybook, t, last, tick, atr, st.play, se_state, ctx, points, zones, conf, fr, st.pace,
+                              reloads, consumed, mins, sc)
+        out["feed"] = list(st.storybook.feed)[:30]
+        out["near"] = round(story_mod.near_dist(last, atr, tick, sc), 4)
+        out["atr"] = atr
+        out["draw_zones"] = bool(sc.get("draw_zones", True))
+        return out
+
+    @staticmethod
+    def _story_pane(st):
+        s_ = st.story
+        if not s_:
+            return None
+        return {k: v for k, v in s_.items() if k != "said"}
+
+    def _story_alert(self, st, s_, t, sc):
+        tone = s_.get("tone")
+        alert = {"t": t, "symbol": st.symbol, "label": "PS60 STORY", "price": fmt_price(st.price()),
+                 "side": "bid" if tone == "bear" else "ask", "role": "story", "text": s_["text"],
+                 "words": f"{st.symbol}. {s_['text']}" if sc.get("voice", False) else None}
+        alert["key"] = f"{round(t, 2)}|{st.symbol}|STORY|{s_['topic']}"
+        self.alerts.appendleft(alert)
+        self._rec(dict(alert, ev="alert"))
+        self.log(st.symbol, "STORY: " + s_["text"], t, kind="level")
         for fn in self.listeners:
             try:
                 fn(alert)
@@ -1450,7 +1555,33 @@ class Engine:
                     key = (side, price_key(price))
                     if key not in st.trackers:
                         st.trackers[key] = LevelTracker(symbol, price, side, "extra", self.cfg["reload"], t or self.last_t)
-            self._rec({"ev": "level", "t": t or self.last_t, "sym": symbol, "px": price, "on": True})
+            self._rec({"ev": "level", "t": t or self.last_t, "sym": symbol, "px": price, "on": True, "kind": kind})
+            self._save_plays()
+            return True
+
+    def set_zone(self, symbol, lo, hi, on=True, t=None):
+        """A ZONE you drew on the chart (two prices): part of the PS60 story's HIGH ATTENTION from the moment it is
+        drawn, saved with the play. on=False removes the zone that contains / matches lo..hi."""
+        with self.lock:
+            st = self._st(symbol)
+            if st is None:
+                return False
+            zs = st.play.setdefault("zones", [])
+            try:
+                lo, hi = sorted((round(float(lo), 4), round(float(hi), 4)))
+            except (TypeError, ValueError):
+                return False
+            if on:
+                if lo <= 0 or hi - lo < 1e-9:
+                    return False
+                if not any(abs(z[0] - lo) < 1e-6 and abs(z[1] - hi) < 1e-6 for z in zs):
+                    zs.append([lo, hi])
+            else:
+                keep = [z for z in zs if not (z[0] - 1e-6 <= lo and hi <= z[1] + 1e-6)]
+                if len(keep) == len(zs):
+                    return False
+                st.play["zones"] = keep
+            self._rec({"ev": "zone", "t": t or self.last_t, "sym": symbol, "lo": lo, "hi": hi, "on": bool(on)})
             self._save_plays()
             return True
 
@@ -1714,7 +1845,7 @@ class Engine:
                 tr = st.trackers.get((side, k))
                 if tr is not None and tr.role == "extra":
                     del st.trackers[(side, k)]
-            self._rec({"ev": "level", "t": t or self.last_t, "sym": symbol, "px": price, "on": False})
+            self._rec({"ev": "level", "t": t or self.last_t, "sym": symbol, "px": price, "on": False, "kind": kind})
             self._save_plays()
             return True
 
@@ -1733,7 +1864,7 @@ class Engine:
         if not self.plays_path:
             return
         import json
-        keep = ("symbol", "side", "side_set", "trigger", "second_entry", "target", "stop", "mp", "atr", "extra_levels", "sneaky_levels", "notes", "setup", "active", "watch",
+        keep = ("symbol", "side", "side_set", "trigger", "second_entry", "target", "stop", "mp", "atr", "extra_levels", "sneaky_levels", "zones", "notes", "setup", "active", "watch",
                 "auto", "exchange", "primary_exchange", "currency", "alt", "trade_as", "trade_as_set", "opt_key", "opt_qty")
         def row(p):
             r = {("pivot" if k == "trigger" else k): p[k] for k in keep if k in p}
@@ -2095,6 +2226,7 @@ class Engine:
             if self.connection["state"] == "CONNECTED" and self.opt_sim(t):
                 self.practice_opt_tick(t)          # after hours on paper: the contracts you hold / chart move with the stock
             self._pace_tick(t)
+            self._story_tick(t)
             rc = self.cfg["reload"]
             if self.desk is not None and t - getattr(self, "_recon_t", -1e9) >= 5:
                 self._recon_t = t
@@ -3066,7 +3198,9 @@ class Engine:
                     if not ev.get("keep"):           # a SIDE pick keeps the drawn levels; the old flip cleared the 2nd entry
                         st.play["second_entry"] = None
         elif kind == "level":
-            (self.add_level if ev.get("on", True) else self.remove_level)(ev["sym"], ev.get("px"), t)
+            (self.add_level if ev.get("on", True) else self.remove_level)(ev["sym"], ev.get("px"), t, kind=ev.get("kind", "extra"))
+        elif kind == "zone":
+            self.set_zone(ev["sym"], ev.get("lo"), ev.get("hi"), ev.get("on", True), t)
         elif kind == "play_level":
             self.set_play_level(ev["sym"], ev["role"], ev.get("px"), t, source="replay")
         elif kind == "ui":
@@ -3729,7 +3863,7 @@ class Engine:
             item = {"price": fmt_price(tr.price), "side": "bid" if tr.side == BID else "ask", "kind": kind,
                     "role": tr.role, "refills": tr.refreshes_window(t), "absorbed": round(tr.absorbed_total),
                     "showing": round(tr.displayed), "conviction": tr.conviction(t), "stage": tr.stage(t),
-                    "knows": self._knows(st, tr.side, t)["knows"]}
+                    "knows": self._knows(st, tr.side, t)["knows"], "ps60": self._ps60_reload(tr.price, st.symbol)}
             # at the last price itself: a buyer is holding under price, a seller over it
             at = price and abs(tr.price - price) < 1e-9
             (below if (tr.side == BID if at else (price and tr.price < price)) else above).append(item)
@@ -3784,7 +3918,7 @@ class Engine:
             "pinned": sym in self.pinned,
             "changed": change if change and t - change["t"] < 20 and change.get("prev") else None,
             "play": {k: st.play.get(k) for k in ("side", "trigger", "second_entry", "target", "stop", "mp", "atr", "notes", "setup", "alt",
-                                                  "trade_as", "trade_as_set", "opt_key", "opt_qty", "sneaky_levels")},
+                                                  "trade_as", "trade_as_set", "opt_key", "opt_qty", "sneaky_levels", "zones")},
             "last": fmt_price(st.l1["last"]),
             "prev_close": fmt_price(st.l1.get("close")),
             "bid": fmt_price(bid), "ask": fmt_price(ask),
@@ -3829,6 +3963,7 @@ class Engine:
             "m5": [[k] + [fmt_price(x) for x in st.m5[k][:4]] + [round(st.m5[k][4] or 0), 0, 0] for k in sorted(st.m5)] if full else None,
             "m30": [[k] + [fmt_price(x) for x in st.m30[k][:4]] + [round(st.m30[k][4] or 0), 0, 0] for k in sorted(st.m30)] if full else None,
             "studies": self.studies_for(st, t),
+            "story": self._story_pane(st),
             "footprint": self._footprint(st, t),
             "marks": [[m, fmt_price(v[0]), side, round(v[1])] for (m, _k, side), v in st.marks.items()
                       if m >= max(first_bar, t - 390 * 60)],

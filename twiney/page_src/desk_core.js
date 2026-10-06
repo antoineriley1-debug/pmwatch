@@ -17,7 +17,7 @@ function normalize(l){
   const placed = new Set([].concat(...ZONES.map(z => out.zones[z])).concat(Object.keys(out.floats || {})));
   // a panel new in a build docks itself once (ALERTS beside the watchlist, EQUITY FLOW beside the option flow), so it is
   // not lost behind the PANELS menu; a panel you hid yourself stays hidden
-  const NEW_PANELS = {myalerts: "TL", eqflow: "BC", urgency: "BC", bigmoney: "BC", conviction: "BC", bigtape: "BX", options: "BC", ochart: "BC"};
+  const NEW_PANELS = {myalerts: "TL", eqflow: "BC", urgency: "BC", bigmoney: "BC", conviction: "BC", bigtape: "BX", options: "BC", ochart: "BC", story: "BL"};
   out.seen = Array.isArray(out.seen) ? out.seen : Object.keys(P).filter(id => !(id in NEW_PANELS));
   for (const id of Object.keys(NEW_PANELS)) if (P[id] && !out.seen.includes(id)){ out.seen.push(id); if (!placed.has(id)){ out.zones[NEW_PANELS[id]].push(id); placed.add(id); } }
   out.hidden = Object.keys(P).filter(id => !placed.has(id));
@@ -260,7 +260,7 @@ function mkChart(id, isFoot){
   c.setView = v => { Object.assign(c.view, v); };
   new ResizeObserver(() => drawChart(c)).observe(el);
   if (!isFoot){
-    c.tools.addEventListener("change", e => { if (e.target.dataset.mark){ c.view.levelTool = e.target.value || null; renderTools(c); } if (e.target.dataset.screen){ store.set("screen", e.target.value); if (store.get("wick", null) == null) store.set("wick", e.target.value === "desk" ? 1 : 3); drawChart(c); renderTools(c); } });
+    c.tools.addEventListener("change", e => { if (e.target.dataset.mark){ c.view.levelTool = e.target.value || null; c.view.zoneStart = null; renderTools(c); } if (e.target.dataset.screen){ store.set("screen", e.target.value); if (store.get("wick", null) == null) store.set("wick", e.target.value === "desk" ? 1 : 3); drawChart(c); renderTools(c); } });
     c.tools.addEventListener("input", e => {
       const k = e.target.dataset.indk, top = e.target.dataset.top, cs = e.target.dataset.cs;
       if (e.target.dataset.study){ const on = e.target.checked, nm = e.target.dataset.study;
@@ -317,6 +317,7 @@ function indPopHTML(){
     <h5>BANDS</h5><label><input type="checkbox" data-top="bb" ${store.get("bb", true) ? "checked" : ""}> <i style="display:inline-block;width:14px;height:3px;background:${DAN_BB};vertical-align:middle"></i> Bollinger 20 / 2.0</label>
     <label><input type="checkbox" data-top="extShade" ${store.get("extShade", true) ? "checked" : ""}> shade premarket (orange) and after hours (blue) on the intraday charts</label>
     <label title="the last candle sits at the right edge; the study labels go off the screen to the right (their price tags stay on the scale). The ▶| button on the toolbar does the same"><input type="checkbox" data-top="stEdge" ${store.get("stEdge", false) ? "checked" : ""}> candles to the right edge: study labels off the screen, just the market</label>
+    <label title="support / resistance zones the PS60 story found (counted tests) and the zones you drew: right-click the chart, ZONE"><input type="checkbox" data-top="zonesOn" ${store.get("zonesOn", true) ? "checked" : ""}> PS60 zones (support, resistance, yours)</label>
     <label><input type="checkbox" data-top="datawin" ${store.get("datawin", true) ? "checked" : ""}> data window (the floating OK box: bar values and every line at the cursor)</label>
     <div class="dim" style="font-size:10.5px;margin-top:6px">MAS on the toolbar switches every average at once; these boxes pick the lines.</div>`;
 }
@@ -368,7 +369,7 @@ function renderTools(v){
     + `<span class="menu ind"><button data-ind="1" title="pick the lines you want, set wick and body width">IND</button><div class="pop">${indPopHTML()}</div></span>`
     + `<button data-foot="1" class="${store.get("foot." + v.id, false) ? "on" : ""}" title="footprint on this timeframe">FOOT</button>`
     + `<button data-clean="1" class="${store.get("clean", true) ? "on" : ""}" title="clean chart: candles, volume, VWAP, your levels, your orders">clean</button>`
-    + `<select data-mark="1" class="lvl ${v.view.levelTool ? "on" : ""}" title="mark a level: pick it, click the chart at the price (saved to plays.json)"><option value="">MARK</option><option value="second_entry" ${v.view.levelTool==="second_entry"?"selected":""}>2nd entry</option><option value="trigger" ${v.view.levelTool==="trigger"?"selected":""}>pivot</option><option value="target" ${v.view.levelTool==="target"?"selected":""}>target</option><option value="stop" ${v.view.levelTool==="stop"?"selected":""}>stop</option><option value="extra" ${v.view.levelTool==="extra"?"selected":""}>extra level</option></select>`;
+    + `<select data-mark="1" class="lvl ${v.view.levelTool ? "on" : ""}" title="mark a level: pick it, click the chart at the price (saved to plays.json)"><option value="">MARK</option><option value="second_entry" ${v.view.levelTool==="second_entry"?"selected":""}>2nd entry</option><option value="trigger" ${v.view.levelTool==="trigger"?"selected":""}>pivot</option><option value="target" ${v.view.levelTool==="target"?"selected":""}>target</option><option value="stop" ${v.view.levelTool==="stop"?"selected":""}>stop</option><option value="extra" ${v.view.levelTool==="extra"?"selected":""}>extra level</option><option value="zone" ${v.view.levelTool==="zone"?"selected":""}>zone (2 clicks)</option></select>`;
   v.canvas.classList.toggle("lvltool", !!v.view.levelTool);
 }
 function drawChart(v){ if (!v || !v.data || !v.canvas || v.el.offsetParent === null) return; drawOne(v, v.canvas, v.view, v.isFoot); }
@@ -424,6 +425,24 @@ function studiesBack(ctx){
     g.fillStyle = gs.box.c + "1f"; g.fillRect(xb, y1, plotW - xb, y2 - y1); g.strokeStyle = gs.box.c; g.lineWidth = 2; g.strokeRect(xb, y1, plotW - xb, y2 - y1); g.lineWidth = 1; }
   if (gs) for (const z of gs.zones || []){ const ya = y(z.a), yb = y(z.b); g.fillStyle = z.c; g.fillRect(xs, Math.min(ya, yb), Math.max(1, xe - xs), Math.abs(yb - ya)); }
 }
+/* PS60 STORY zones on the stock chart: support (green), resistance (red), YOUR zones (gold). A soft band with thin
+   dashed edges, and a small tag inside it at the left: what it is and how many times it was tested */
+function storyZones(ctx, zones){
+  const {g, plotW, y, lo, hi} = ctx;
+  for (const z of zones){
+    if (z.hi < lo || z.lo > hi) continue;
+    const y1 = y(Math.min(z.hi, hi)), y2 = y(Math.max(z.lo, lo)), h = Math.max(2, y2 - y1);
+    const col = z.user ? "232,185,49" : z.kind === "resistance" ? "255,77,94" : "38,208,124";
+    g.fillStyle = `rgba(${col},${z.user ? (ctx.lightScreen ? .26 : .16) : (ctx.lightScreen ? .13 : .08)})`; g.fillRect(0, y1, plotW, h);
+    g.strokeStyle = `rgba(${col},${ctx.lightScreen ? .85 : .55})`; g.setLineDash([4, 4]); g.lineWidth = 1;
+    g.beginPath(); g.moveTo(0, Math.round(y1) + .5); g.lineTo(plotW, Math.round(y1) + .5); g.moveTo(0, Math.round(y1 + h) - .5); g.lineTo(plotW, Math.round(y1 + h) - .5); g.stroke();
+    g.setLineDash([]);
+    const tag = z.user ? "YOUR ZONE" : `${z.kind === "resistance" ? "RESISTANCE" : "SUPPORT"} ×${z.held || z.tests}${z.flipped ? " · flipped" : ""}`;
+    g.font = "bold 9px ui-monospace, Menlo, Consolas, monospace"; g.fillStyle = `rgba(${col},${ctx.lightScreen ? .95 : .8})`;
+    if (h >= 9) g.fillText(tag, 6, y1 + Math.min(h - 2, 10));
+  }
+  g.font = "11px ui-monospace, Menlo, Consolas, monospace";
+}
 function studyStyle(S){ const st = (S && S.style) || {};
   return {fs: +st.lbl_size || 9, gap: st.lbl_gap_bars != null ? +st.lbl_gap_bars : 2, back: st.line_back_bars != null ? +st.line_back_bars : 8,
           fwd: st.line_fwd_bars != null ? +st.line_fwd_bars : 3, pct: (+st.lbl_space_pct || 40) / 100, one: st.lbl_color_mode === "one" ? (st.col_label || "#111111") : null}; }
@@ -459,6 +478,8 @@ function studiesFront(ctx){
       const ly = Math.round(it.ly) + .5;
       g.setLineDash(ly === it.yy ? [1, 3] : []); g.lineWidth = 1; g.globalAlpha = L.fade ? 0.45 : 0.75;
       g.beginPath(); g.moveTo(xe, it.yy); g.lineTo(lx0 - 4, ly); g.stroke();
+      // a backing in the chart's own colour: a line running through the label column never cuts the words
+      if (ctx.bg){ g.globalAlpha = 1; g.fillStyle = ctx.bg; g.fillRect(lx0 - 2, ly - Y.fs / 2 - 1, g.measureText(it.text).width + 4, Y.fs + 2); }
       g.globalAlpha = 1; g.fillStyle = Y.one || col; g.fillText(it.text, lx0, ly + Y.fs / 2 - 1);
     }
     g.globalAlpha = 1;

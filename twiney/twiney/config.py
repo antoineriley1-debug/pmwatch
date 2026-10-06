@@ -409,6 +409,32 @@ DEFAULTS = {
         "flow_min_premium": 100000,     # + FLOW: at least this much premium bought at the ask
         "repeat_seconds": 120,          # a call at the same level is not repeated for this long
     },
+    "story": {
+        "enabled": True,                # the PS60 STORY: Daily context + PS60 places + tape + Level II + option flow + price response
+        "alerts": True,                 # put the big moments in CALLS (breaks, reloads consumed, flow confirming / conflicting, retests)
+        "voice": False,                 # say those moments out loud (when voice is on)
+        "whole_half_reloads_only": True,  # only a reload buyer / seller at a whole or half dollar (x.00 / x.50) counts for PS60
+        "draw_zones": True,             # shade the support / resistance zones and your zones on the stock chart
+        "near_ticks": 8,                # HIGH ATTENTION: price within this many ticks of a place ...
+        "near_atr_pct": 12,             # ... or this % of the daily ATR ...
+        "near_pct": 0.15,               # ... or this % of price, whichever is widest
+        "zone_days": 60,                # zones are found in this many days of 30-minute bars
+        "zone_atr_pct": 8,              # a zone is about this % of the daily ATR wide (never thinner than 3 ticks)
+        "zone_min_tests": 3,            # a zone needs at least this many separate tests (rejections, bounces, stalls)
+        "zone_gap_bars": 3,             # tests closer than this many 30-minute bars count as one
+        "zone_reach_atr": 2.5,          # zones further than this many ATRs from price are not shown
+        "confluence_atr_pct": 6,        # places within this % of the ATR of each other are one place
+        "major_score": 6,               # MAJOR confluence: weight at least this (pivot / 2nd entry / your line 3, day / week / month 2, whole dollar 1)
+        "flow_minutes": 20,             # option flow read over the last N minutes
+        "flow_max_dte": 21,             # ... only contracts expiring within this many days (short-term PS60 moves first)
+        "deep_otm_pct": 5.0,            # DEEP OTM: at least this % out of the money (counts 1.5x; near the money counts less)
+        "develop_premium": 50000,       # DEVELOPING: at least this much (weighted) premium bought at the ask on the move's side
+        "confirm_premium": 250000,      # CONFIRMED: at least this much ...
+        "confirm_repeats": 2,           # ... in at least this many prints
+        "response_minutes": 5,          # PRICE RESPONSE: what price did over the last N minutes
+        "retest_minutes": 30,           # a retest is watched for this long after a break
+        "memory_minutes": 120,          # unusual flow with no PS60 trigger is remembered this long
+    },
     "studies": {
         "gas": True,                    # GAS + ATR (new PS60 Gas + ATR)
         "airspace": True,               # AIRSPACE (PS60 MP Airspace)
@@ -745,6 +771,8 @@ def validate_plays(raw):
             "atr": num("atr", False),
             "extra_levels": extra,
             "sneaky_levels": [float(v) for v in (item.get("sneaky_levels") or []) if isinstance(v, (int, float)) and v > 0],
+            "zones": [sorted([float(z[0]), float(z[1])]) for z in (item.get("zones") or [])
+                      if isinstance(z, (list, tuple)) and len(z) == 2 and all(isinstance(v, (int, float)) and v > 0 for v in z)],
             "notes": str(item.get("notes", "")),
             "setup": str(item.get("setup", "") or ""),
             "active": bool(item.get("active", True)),
