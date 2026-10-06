@@ -1942,7 +1942,8 @@ function drawOne(p, cv, v, isFoot){
       g.stroke();
       const last = ser[k0 + bars.length - 1]; if (tags && last != null && isFinite(last) && last >= lo && last <= hi) tags.push([last, col]); };
     const IND = store.get("ind", {}), on = k => IND[k] !== false;      // every line can be hidden one by one
-    if (store.get("mas", true)){
+    // the OPTION CHART has its own switches (MAS / BB on its header), off unless you turn them on
+    if (p.opt ? store.get("och.mas", false) : store.get("mas", true)){
       for (const [n, col, lw] of DAN_SMA) if (on("s" + n)) line(smaSeries(clsAll, n), col, lw, `MA(${n},C)s`);
       for (const [n, col, lw] of DAN_EMA) if (on("e" + n)) line(emaSeries(clsAll, n), col, lw, `MA(${n},C)e`);
       // 34 / 65 / 89 EMA: Daily chart only, never on 1m / 5m / 15m / 60m
@@ -1950,7 +1951,7 @@ function drawOne(p, cv, v, isFoot){
     }
     // the studies read the chart's own MAs at the last candle (CONFLUENCE, NEXT STOP)
     if (!p.opt && d.studies){ p.studyPack = chartPack(clsAll); const e65 = emaSeries(clsAll, 65); p.studyE65 = e65[e65.length - 1]; }
-    if (store.get("bb", true)){ const bb = bbSeries(clsAll, 20, 2.0); const before = p.dataRows; p.dataRows = []; line(bb.up, DAN_BB, 2, "BB(20,2,C)Upr"); line(bb.dn, DAN_BB, 2, "BB(20,2,C)Lwr"); p.dataRows.push(["BB(20,2,C)Bas", DAN_BB, bb.mid[k0 + hk]]); p.dataRows = p.dataRows.concat(before); }
+    if (p.opt ? store.get("och.bb", false) : store.get("bb", true)){ const bb = bbSeries(clsAll, 20, 2.0); const before = p.dataRows; p.dataRows = []; line(bb.up, DAN_BB, 2, "BB(20,2,C)Upr"); line(bb.dn, DAN_BB, 2, "BB(20,2,C)Lwr"); p.dataRows.push(["BB(20,2,C)Bas", DAN_BB, bb.mid[k0 + hk]]); p.dataRows = p.dataRows.concat(before); }
     g.lineWidth = 1;
     // eSignal-style value tags on the price scale, one per line, in the line's colour
     if (tags && tags.length){
