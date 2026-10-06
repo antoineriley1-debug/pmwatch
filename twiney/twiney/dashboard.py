@@ -136,14 +136,18 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                 full = None
                 if "full" in q:   # the page names the symbols it still needs history for; "" = none
                     full = {x.strip().upper() for x in q.get("full", [""])[0].split(",") if x.strip()}
-                key = (tuple(extra), tuple(sorted(full)) if full is not None else None)
+                try:
+                    tv = int(q.get("tv", [""])[0])
+                except ValueError:
+                    tv = None
+                key = (tuple(extra), tuple(sorted(full)) if full is not None else None, tv)
                 now = time.monotonic()
                 with _SNAP_LOCK:
                     hit = _SNAP_CACHE.get(key)
                     if hit and now - hit[0] < 0.2:
                         body = hit[1]
                     else:
-                        snap = engine.snapshot(clock(), extra, full)
+                        snap = engine.snapshot(clock(), extra, full, tv)
                         snap["build"] = BUILD
                         body = json.dumps(snap, default=str)
                         _SNAP_CACHE.clear(); _SNAP_CACHE[key] = (now, body)

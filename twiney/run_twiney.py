@@ -98,6 +98,7 @@ def run_live(cfg, plays, args):
         recorder.write(session_header(plays, cfg, __version__))
         print(f"Recording raw events to {recorder.path}", flush=True)
     engine = Engine(plays, cfg, recorder)
+    engine.study_async = True          # chart studies off the engine lock: the book and the tape never wait on them
     engine.plays_path = args.plays
     engine.grades_path = os.path.join(_rec_dir(cfg), "grades.jsonl")
     engine.jlog_path = os.path.join(_rec_dir(cfg), "desk.log")   # structured JSON lines: connections, orders, fills, errors
@@ -226,6 +227,7 @@ def run_demo(cfg, plays, args):
         recorder.write(session_header(plays, cfg, __version__))
         print(f"Recording the demo to {recorder.path} (replay it or grade its calls for tune.py)", flush=True)
     engine = Engine(plays, cfg, recorder)
+    engine.study_async = True          # chart studies off the engine lock: the book and the tape never wait on them
     engine.plays_path = args.plays if os.path.exists(args.plays) and not args.plays.endswith("plays.example.json") else None
     engine.grades_path = os.path.join(_rec_dir(cfg), "grades.jsonl")
     engine.jlog_path = os.path.join(_rec_dir(cfg), "desk.log")   # structured JSON lines: connections, orders, fills, errors

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261006-1432">
+<meta name="build" content="20261006-1559">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -5737,6 +5737,7 @@ let timer = null, lastGood = Date.now();
 // how long a full cycle takes on THIS machine: the answer from TED, and the time the page needs to draw it. The poll
 // paces itself on it (never piles requests up), and the greying only happens when a real answer is overdue
 const CYCLE = {fetch: 0, draw: 0, bytes: 0, interval: 250, lostAfter: 6000};
+const JOURNAL = {ver: null, trades: []};
 const cycleWords = () => `last answer ${CYCLE.fetch} ms (${Math.round(CYCLE.bytes / 1024)} KB), drawn in ${CYCLE.draw} ms, polling every ${CYCLE.interval} ms`;
 function markLost(){
   const lost = Date.now() - lastGood > CYCLE.lostAfter;
@@ -5756,9 +5757,11 @@ async function poll(now){
     const need = [...new Set(TABS.list.concat(curSym ? [curSym] : []).concat((state && state.symbols) || []))].filter(s => !BARS[s] || (HVER[s] != null && BARS[s].ver !== HVER[s]));
     const ac = new AbortController(), to = setTimeout(() => ac.abort(), 15000);   // a hung request never freezes the desk; a slow one is still an answer
     const t0 = performance.now();
-    const r = await fetch("/api/state?extra=" + encodeURIComponent(extra) + "&full=" + encodeURIComponent(need.join(",")), {cache: "no-store", signal: ac.signal});
+    const r = await fetch("/api/state?extra=" + encodeURIComponent(extra) + "&full=" + encodeURIComponent(need.join(",")) + (JOURNAL.ver != null ? "&tv=" + JOURNAL.ver : ""), {cache: "no-store", signal: ac.signal});
     clearTimeout(to);
     const txt = await r.text(); CYCLE.bytes = txt.length; const s = JSON.parse(txt);
+    // the trade journal only comes when it changed: keep the last one
+    if (s.desk){ if (s.desk.trades == null) s.desk.trades = JOURNAL.trades; else { JOURNAL.trades = s.desk.trades; JOURNAL.ver = s.desk.trades_ver; } }
     CYCLE.fetch = Math.round(performance.now() - t0);
     for (const d of (s.panes || []).concat(Object.values(s.extra || {}))){
       if (!d) continue;

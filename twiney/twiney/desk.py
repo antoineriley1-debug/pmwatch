@@ -49,6 +49,7 @@ class Desk:
         self.journal_path = None
         self.replay_proc = None
         self.trades = []          # closed round trips, each with its PS60 setup / grade / note
+        self.ver = int(time.time() * 1000) % 1_000_000_000   # bumps whenever the journal changes: the page only gets the trades again then
         self._open = {}           # symbol -> the trade being built from fills (saved, so a restart keeps it)
         self._load_trades()
         engine.desk = self
@@ -82,6 +83,7 @@ class Desk:
         except OSError:
             pass
         self.trades = self.trades[-500:]
+        self.ver += 1
         try:   # a position open when the desk closed carries on after the restart
             with open(self.open_path, encoding="utf-8") as fh:
                 self._open = {k: v for k, v in json.load(fh).items() if isinstance(v, dict)}
@@ -92,6 +94,7 @@ class Desk:
         self._seq = len(self.trades) + len(self._open)
 
     def _write_trades(self):
+        self.ver += 1
         os.makedirs(self.dir, exist_ok=True)
         tmp = self.trades_path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as fh:

@@ -708,7 +708,7 @@ def gas(st, t, cfg, drows, live):
 
 def _cont(st, t, cfg, drows, live, y_atr, prev_c):
     """The CONT odds once per symbol per moment (GAS and the Airspace board read the same numbers)."""
-    key = (t, len(drows), len(getattr(st, "m30", {}) or {}))
+    key = (int(t // 60), len(drows), len(getattr(st, "m30", {}) or {}))   # the 30-minute sample: once a minute is plenty
     memo = st.__dict__.setdefault("_cont_memo", {})
     if memo.get("k") != key:
         memo["k"], memo["v"] = key, cont_odds(drows, m30_series(st, t), t, cfg, live, y_atr, prev_c)

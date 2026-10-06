@@ -53,6 +53,12 @@ def options_ny_off(t):
     from .ps60 import ny_offset
     return ny_offset(t)
 
+class _StudyView:
+    """What the chart studies read of a symbol, copied: the maths runs on this, never on the live state."""
+    def price(self):
+        return self._px
+
+
 class SymbolState:
     def __init__(self, play, cfg):
         self.play = play
@@ -239,6 +245,9 @@ class Engine:
         self.plays = [p for p in plays]
         self.recorder = recorder
         self.lock = threading.RLock()
+        self.study_async = False          # True on the desk (live / practice / replay): studies worked out off the lock
+        self._study_thread = None
+        self._study_stop = threading.Event()
         self.syms = {p["symbol"]: SymbolState(p, cfg) for p in plays}
         self.slots = {}  # symbol -> time the slot was assigned
         n = cfg["depth"]["slots"]
@@ -862,7 +871,13 @@ class Engine:
         if not (sc.get("gas") or sc.get("airspace") or sc.get("unvisited")):
             return None
         memo = st.__dict__.setdefault("_studies", {})
+        memo["want"] = t
         if memo.get("v") is not None and t - memo.get("t", -1e9) < 1.0 and memo.get("ver") == (st.study_ver, st.hist_ver):
+            return memo["v"]
+        if self.study_async and memo.get("v") is not None:
+            # live: the studies worker keeps them fresh (about once a second) off the engine lock. The page gets the
+            # last one at once: a refresh never holds the lock for the maths while IBKR's book and prints wait
+            self._study_worker_start()
             return memo["v"]
         from . import studies
         st._any_session = self.connection["state"] == "DEMO"     # practice: today is whatever the practice market traded
@@ -873,6 +888,53 @@ class Engine:
             v = {"error": str(exc)}
         memo.update(v=v, t=t, ver=(st.study_ver, st.hist_ver))
         return v
+
+    def _study_worker_start(self):
+        if self._study_thread is None:
+            self._study_thread = threading.Thread(target=self._study_loop, name="twiney-studies", daemon=True)
+            self._study_thread.start()
+
+    def _study_loop(self):
+        """The chart studies, worked out away from the engine lock: under the lock only a quick copy of the bars is
+        taken (a view), the maths runs on the copy, the answer is swapped in for the next refresh."""
+        from . import studies
+        while not self._study_stop.wait(0.25):
+            t = self.last_t
+            if not t:
+                continue
+            sc = self.cfg.get("studies") or {}
+            for sym in list(self.syms):
+                st = self.syms.get(sym)
+                memo = st.__dict__.get("_studies") if st else None
+                if not memo or t - memo.get("want", -1e9) > 10.0:
+                    continue                      # nobody is looking at this chart
+                ver = (st.study_ver, st.hist_ver)
+                if t - memo.get("t", -1e9) < 1.0 and memo.get("ver") == ver:
+                    continue
+                with self.lock:
+                    view = self._study_view(st)
+                try:
+                    v = studies.compute(view, t, sc)
+                except Exception as exc:
+                    log.exception("studies %s", sym)
+                    v = {"error": str(exc)}
+                memo.update(v=v, t=t, ver=ver)
+
+    def _study_view(self, st):
+        """A copy of what the studies read, taken under the lock (dict copies: well under a millisecond)."""
+        view = st.__dict__.get("_study_view")
+        if view is None:
+            view = st._study_view = _StudyView()
+        view.symbol = st.symbol
+        view.play = dict(st.play)
+        view.bars = {k: list(b) for k, b in st.bars.items()}
+        view.daily = dict(st.daily)
+        view.daily_vol = dict(st.daily_vol)
+        view.m30 = dict(getattr(st, "m30", {}) or {})
+        view.m5x = {k: list(b) for k, b in (getattr(st, "m5x", {}) or {}).items()}
+        view._px = st.price()
+        view._any_session = self.connection["state"] == "DEMO"
+        return view
 
     def on_hist_bar(self, symbol, t0, o, h, l, c, v):
         """Historical 1-minute bar (reqHistoricalData) so the chart has context at startup."""
@@ -4139,8 +4201,9 @@ class Engine:
                 del cache[m]
         return out
 
-    def snapshot(self, t, extra=(), full=None):
-        """``full``: symbols the page wants the whole bar history for (None = every pane, as before)."""
+    def snapshot(self, t, extra=(), full=None, tv=None):
+        """``full``: symbols the page wants the whole bar history for (None = every pane, as before).
+        ``tv``: the journal version the page already holds; the same version = the trades are not sent again."""
         with self.lock:
             ranked = self.ranking(t)
             wants = (lambda s: True) if full is None else (lambda s: s in full)
@@ -4218,7 +4281,9 @@ class Engine:
                          "started": self.desk.started if self.desk else None,
                          "notes": (self.desk.notes if self.desk else self.notes_list)[-30:],
                          "marks": (self.desk.marks if self.desk else self.marks_list)[-60:],
-                         "trades": self.desk.trades[-60:] if self.desk else [],
+                         "trades": (None if self.desk and tv is not None and tv == self.desk.ver else
+                                    self.desk.trades[-60:] if self.desk else []),
+                         "trades_ver": self.desk.ver if self.desk else 0,
                          "open": self.desk.open_view() if self.desk else [],
                          "journal_dir": self.desk.journal_dir() if self.desk else None},
             }
