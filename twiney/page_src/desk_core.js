@@ -462,16 +462,26 @@ function optPctTags(ctx, e){
   if (tg) rows.push({role: "target", at: tg.at, text: pct(tg.pct) + (e.rr ? `  ${e.rr}:1` : ""), col: "#2fd18b"});
   if (sp) rows.push({role: "stop", at: sp.at, text: pct(sp.pct), col: "#ff6b7d"});
   g.font = "bold 9px ui-monospace, Menlo, Consolas, monospace";
+  const tags = [];
   for (const r of rows){
-    const at = drag && drag.role === r.role ? drag.price : r.at;
+    // while you drag a line its tag rides with it (a put on a long play rides the other side's lines: alt_ roles)
+    const dragging = drag && drag.role === (e.alt ? "alt_" + r.role : r.role);
+    const at = dragging ? drag.price : r.at;
     if (at == null) continue;
     // a line off the screen keeps its tag, pinned to the edge it is past, with an arrow
     const off = at > hi ? "▲ " : at < lo ? "▼ " : "", text = off + r.text;
-    const yy = at > hi ? 14 : at < lo ? Math.round(ctx.plotH - 8) : Math.round(y(at)), w = g.measureText(text).width + 8;
+    tags.push({text, col: r.col, yy: at > hi ? 14 : at < lo ? Math.round(ctx.plotH - 8) : Math.round(y(at))});
+  }
+  // never on top of each other: top to bottom, each at least a tag's height under the one above
+  tags.sort((a, b) => a.yy - b.yy);
+  for (let i = 1; i < tags.length; i++) if (tags[i].yy < tags[i - 1].yy + 13) tags[i].yy = tags[i - 1].yy + 13;
+  for (const t of tags){
+    const w = g.measureText(t.text).width + 8, yy = t.yy;
     let x = 4;
     for (let k = 0; k < 6; k++){ const hit = boxes.find(b => yy + 7 > b.t && yy - 7 < b.b && x < b.r && x + w > b.l); if (!hit) break; x = hit.r + 4; }
+    if (x + w > ctx.plotW - 2) x = 4;                 // no room right of the boxes: back to the left edge, never into the scale
     g.globalAlpha = 0.82; g.fillStyle = "rgba(12,16,24,.78)"; g.fillRect(x, yy - 6, w, 12);
-    g.globalAlpha = 1; g.fillStyle = r.col; g.fillText(text, x + 4, yy + 3);
+    g.globalAlpha = 1; g.fillStyle = t.col; g.fillText(t.text, x + 4, yy + 3);
   }
   g.font = "11px ui-monospace, Menlo, Consolas, monospace";
 }

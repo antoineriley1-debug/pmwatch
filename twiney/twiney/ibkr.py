@@ -487,11 +487,10 @@ def pick_chain_class(symbol, rows):
     """The option class the chain shows: the standard one (its trading class is the symbol, 100 shares), else the
     standard-size class with the most strikes, else the class with the most strikes."""
     sym = str(symbol or "").upper()
-    std = [r for r in rows if r[0].upper() == sym and (r[3] or 100) == 100]
-    if std:
-        return max(std, key=lambda r: (len(r[2]), len(r[1])))
-    full = [r for r in rows if (r[3] or 100) == 100]
-    return max(full or rows, key=lambda r: (len(r[2]), len(r[1])))
+    full = [r for r in rows if (r[3] or 100) == 100] or rows
+    # the fullest chain (expiries x strikes) wins: TSLA's standard class over its one-strike odd class, SPXW (dailies)
+    # over SPX (monthlies); on a tie the class named after the symbol
+    return max(full, key=lambda r: (len(r[1]) * len(r[2]), r[0].upper() == sym))
 
 
 def execution_filter():
@@ -568,33 +567,28 @@ def ibapi_app_factory():
             EClient.__init__(self, wrapper=self)
             TwineyWrapper.__init__(self, engine, session)
 
-        def run(self):
-            """IBKR's message loop, with one change: ibapi's own loop ends (and drops the connection) on ANY error in a
+        def connect(self, host, port, client_id):
+            """IBKR's own connect and message loop, untouched (they change between ibapi versions). Only the step that
+            hands one message to TED is guarded: ibapi's loop ends, and drops the connection, on ANY error in a
             handler, which reads as 'connection closed by TWS'. Here one message that fails is logged and said on the
             desk, and the feed keeps running."""
-            import queue
-            from ibapi import comm
-            try:
-                from ibapi.common import BadMessage
-            except ImportError:                      # older / newer layouts
-                BadMessage = ()
-            try:
-                while self.isConnected() or not self.msg_queue.empty():
+            out = EClient.connect(self, host, port, client_id)
+            dec = getattr(self, "decoder", None)
+            if dec is not None and not getattr(dec, "_twiney_guard", False):
+                inner = dec.interpret
+
+                def interpret(*args, **kwargs):
                     try:
-                        text = self.msg_queue.get(block=True, timeout=0.2)
-                    except queue.Empty:
-                        continue
-                    try:
-                        fields = comm.read_fields(text)
-                        self.decoder.interpret(fields)
+                        return inner(*args, **kwargs)
                     except (KeyboardInterrupt, SystemExit):
                         raise
-                    except BadMessage:
-                        log.warning("IBKR sent a message TED could not read")
                     except Exception as exc:
+                        if type(exc).__name__ == "BadMessage":
+                            raise
                         self._handler_failed(exc)
-            finally:
-                self.disconnect()
+                dec.interpret = interpret
+                dec._twiney_guard = True
+            return out
 
         def _handler_failed(self, exc):
             log.exception("an IBKR message failed in TED (the feed keeps running)")
@@ -1227,6 +1221,7 @@ class MarketDataSession:
                 if d_id not in self.dead:
                     self.app.cancelMktDepth(d_id, dc["smart_depth"])
                 self.app.req.pop(d_id, None)
+                self.dead.discard(d_id)
                 new_id = self._rid()
                 self.app.req[new_id] = ("depth", sym)
                 self.depth_ids[sym] = (new_id, _t_id)

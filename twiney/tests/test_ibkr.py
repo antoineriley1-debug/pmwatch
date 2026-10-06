@@ -809,3 +809,53 @@ class OptionChartLineTests(unittest.TestCase):
         tr.set_opt_level(self.KEY, "stop", 3.00, 1, clock())
         self.assertTrue(tr.set_opt_level(self.KEY, "stop", None, 1, clock())["ok"])
         self.assertNotIn(self.KEY, tr.opt_stops)
+
+
+class OptionChartLineEdgeTests(OptionChartLineTests):
+    def test_stop_turned_off_elsewhere_stays_off(self):
+        s, engine, clock, app, rid, tr = self._held()
+        tr.set_opt_level(self.KEY, "stop", 3.00, 1, clock())
+        tr.set_opt_stop(self.KEY, None, "option", clock())
+        tr.watchdog(clock()); tr.watchdog(clock())
+        self.assertNotIn(self.KEY, tr.opt_stops)
+        self.assertNotIn("stop", tr._opt_level_view().get(self.KEY, {}))
+
+    def test_one_stop_per_contract(self):
+        s, engine, clock, app, rid, tr = self._held()
+        tr.set_opt_level(self.KEY, "stop", 3.00, 1, clock())
+        tr.set_opt_stop(self.KEY, 2.00, "option", clock())
+        tr.watchdog(clock())
+        self.assertEqual(tr._opt_level_view()[self.KEY]["stop"], 2.00)
+        self.assertEqual(tr.opt_stops[self.KEY]["price"], 2.00)
+
+    def test_flat_clears_every_line(self):
+        s, engine, clock, app, rid, tr = self._held()
+        tr.set_opt_level(self.KEY, "target", 4.00, 1, clock())
+        tr.set_opt_level(self.KEY, "stop", 3.00, 1, clock())
+        tr.watchdog(clock())
+        app.position("DU1", _Opt(), 0, 0.0)
+        tr.watchdog(clock())
+        self.assertNotIn(self.KEY, tr._opt_level_view())
+        self.assertNotIn(self.KEY, tr.opt_stops)
+
+    def test_second_entry_never_fires_late_or_twice(self):
+        s, engine, clock, app, rid, tr = self._held()
+        tr.set_opt_level(self.KEY, "second_entry", 3.80, 1, clock())
+        tr.gate.arm(False)
+        app.tickPrice(rid, 1, 3.85, None); app.tickPrice(rid, 2, 3.95, None)
+        tr.watchdog(clock())                                          # crossed while disarmed: refused, line off
+        self.assertNotIn("second_entry", tr._opt_level_view().get(self.KEY, {}))
+        tr.gate.arm(True)
+        app.tickPrice(rid, 1, 5.90, None); app.tickPrice(rid, 2, 6.00, None)
+        for _ in range(3):
+            tr.watchdog(clock()); clock.t += 20
+        self.assertEqual(self._orders(app), [])                       # nothing chased at 6.00
+
+    def test_line_drawn_flat_that_the_fill_is_through_is_not_set(self):
+        s, engine, clock, app, rid, tr = self._held()
+        app.position("DU1", _Opt(), 0, 0.0); tr.watchdog(clock())
+        tr.set_opt_level(self.KEY, "stop", 3.60, 1, clock())         # a stop ABOVE where it fills
+        app.position("DU1", _Opt(), 2, 345.0)
+        tr.watchdog(clock()); tr.watchdog(clock())
+        self.assertNotIn(self.KEY, tr.opt_stops)
+        self.assertEqual(self._orders(app), [])

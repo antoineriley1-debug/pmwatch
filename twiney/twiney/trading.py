@@ -1261,6 +1261,7 @@ class Trader:
             now = now or time.time()
             if price in (None, ""):
                 self.opt_stops.pop(key, None)
+                (self.opt_levels.get(key) or {}).pop("stop", None)
                 self._note(now, f"{key}: option stop off", True)
                 return {"ok": True, "stop": None}
             try:
@@ -1278,6 +1279,7 @@ class Trader:
                 return {"ok": False, "reason": f"a stop at {price:g} is already through {'the stock' if on == 'stock' else 'the contract'} ({ref:g}) — it would fire at once"}
             self.opt_stops[key] = {"price": price, "on": on, "t": now}
             self.opt_stop_fired.pop(key, None)
+            (self.opt_levels.get(key) or {}).pop("stop", None)
             self._note(now, f"{key}: STOP {'when ' + p.get('symbol', '') + ' trades ' + ('under' if bull else 'over') if on == 'stock' else 'when the contract trades'} {price:g}", True)
             return {"ok": True, "stop": dict(self.opt_stops[key])}
 
@@ -1318,15 +1320,18 @@ class Trader:
                 if ref is None:
                     return {"ok": False, "reason": f"no quote on {key} yet"}
                 lv[role] = {"price": price, "n": max(1, int(n or 1)), "from": "below" if ref < price else "above", "t": now}
-                self._note(now, f"{key}: 2ND {price:.2f} — {'buy' if held >= 0 else 'sell'} {lv[role]['n']} when it trades "
+                lv["_ref"] = ref
+                self._note(now, f"{key}: 2ND {price:.2f} — {'sell' if held < 0 else 'buy'} {lv[role]['n']} {'more ' if held else ''}when it trades "
                                 f"{'up' if ref < price else 'down'} through it (the contract is {ref:.2f})", True)
             elif role == "stop":
                 if held:
+                    # ONE stop per contract: held, the line IS the option stop (no second copy to drift apart)
                     out = self.set_opt_stop(key, price, "option", now)
                     if not out.get("ok"):
                         return out
-                lv[role] = price
-                if not held:
+                    lv.pop("stop", None)
+                else:
+                    lv["stop"] = price
                     self._note(now, f"{key}: STOP {price:.2f} — goes live when you hold the contract", True)
             else:
                 bid, ask = q.get("bid"), q.get("ask")
@@ -1349,7 +1354,10 @@ class Trader:
             v = {}
             if lv.get("second_entry"):
                 v["second_entry"] = lv["second_entry"]["price"]; v["n"] = lv["second_entry"]["n"]
-            if lv.get("stop"):
+            live = self.opt_stops.get(key)
+            if live and live.get("on") == "option":
+                v["stop"] = live["price"]
+            elif lv.get("stop"):
                 v["stop"] = lv["stop"]
             if lv.get("target"):
                 v["target"] = lv["target"]
@@ -1363,17 +1371,34 @@ class Trader:
             q = self.engine.opt_quotes.get(key) or {}
             p = self.engine.opt_positions.get(key)
             held = int((p or {}).get("qty") or 0)
-            # the STOP drawn before the fill goes live once the contract is held
-            if held and lv.get("stop") and key not in self.opt_stops:
-                self.opt_stops[key] = {"price": lv["stop"], "on": "option", "t": now}
-                self.opt_stop_fired.pop(key, None)
-            if not held and lv.get("stop") and lv.get("_held"):
-                lv.pop("stop", None); lv.pop("target", None)          # flat again: the trade is done, its exits come off
+            bid, ask = q.get("bid"), q.get("ask")
+            was = lv.get("_held", False)
+            if held and not was:
+                # just filled: the STOP and TARGET drawn before the fill go live, unless the fill is already past them
+                touch = bid if held > 0 else ask
+                sp = lv.pop("stop", None)
+                if sp:
+                    if touch and ((sp >= touch) if held > 0 else (sp <= touch)):
+                        self._note(now, f"{key}: your STOP {sp:g} is already through the contract ({touch:g}) — NOT set; draw it again", False)
+                    else:
+                        self.opt_stops[key] = {"price": sp, "on": "option", "t": now}
+                        self.opt_stop_fired.pop(key, None)
+                        self._note(now, f"{key}: STOP {sp:g} live", True)
+                tg = lv.get("target")
+                if tg and touch and ((tg <= touch) if held > 0 else (tg >= touch)):
+                    lv.pop("target", None)
+                    self._note(now, f"{key}: your TARGET {tg:g} is already reached at the fill ({touch:g}) — NOT set; draw it again", False)
+            elif was and not held:
+                # out: the trade is done, every line on the contract comes off (they never carry to the next trade)
+                for r in ("stop", "target", "second_entry"):
+                    lv.pop(r, None)
+                if (self.opt_stops.get(key) or {}).get("on") == "option":
+                    self.opt_stops.pop(key, None)
             lv["_held"] = bool(held)
             # the TARGET: every contract out at the touch
             tgt = lv.get("target")
             if tgt and held:
-                ref = q.get("bid") if held > 0 else q.get("ask")
+                ref = bid if held > 0 else ask
                 if ref and ((ref >= tgt) if held > 0 else (ref <= tgt)) and now - lv.get("_tgt_t", -1e9) > 15.0:
                     lv["_tgt_t"] = now
                     if self._opt_working(key, SELL if held > 0 else BUY) < abs(held):
@@ -1382,22 +1407,30 @@ class Trader:
                                         + (out.get("sent") or f"close refused — {out.get('reason')}"), bool(out.get("ok")))
                         if out.get("ok"):
                             lv.pop("target", None)
-            # the 2ND: a real cross from the side it was on when you drew it
+            # the 2ND: a REAL cross, the quote's mid moving through the line from the side it was on (both sides of the
+            # quote needed: never a stale last). One shot: sent or refused, the line comes off and says so
             se = lv.get("second_entry")
-            ref = self._opt_mid(q)
-            if se and ref is not None:
-                crossed = ref >= se["price"] if se["from"] == "below" else ref <= se["price"]
-                if crossed and now - se.get("_t", -1e9) > 15.0:
-                    se["_t"] = now
-                    if held:
-                        out = self.opt_adjust(key, se["n"], "add", None, now)
-                    else:
-                        usym, exp, strike, right = _o.parse_key(key)
-                        out = self.opt_open(usym, exp, strike, right, BUY, se["n"], None, now)
-                    self._note(now, f"OPTION 2ND {key} traded {ref:g} through {se['price']:g}: "
-                                    + (out.get("sent") or f"NOT sent — {out.get('reason')}"), bool(out.get("ok")))
-                    if out.get("ok"):
-                        lv.pop("second_entry", None)
+            if not (bid and ask and ask >= bid):
+                continue
+            ref, prev = (bid + ask) / 2, lv.get("_ref")
+            lv["_ref"] = ref
+            if not se or prev is None:
+                continue
+            crossed = (prev < se["price"] <= ref) if se["from"] == "below" else (prev > se["price"] >= ref)
+            if not crossed:
+                continue
+            lv.pop("second_entry", None)
+            want = SELL if held < 0 else BUY
+            if any(o.get("action") == want for o in self.engine._pending(key)):
+                self._note(now, f"OPTION 2ND {key} traded {ref:g}: an order on it is already working — not sent twice", False)
+                continue
+            if held:
+                out = self.opt_adjust(key, se["n"], "add", None, now)
+            else:
+                usym, exp, strike, right = _o.parse_key(key)
+                out = self.opt_open(usym, exp, strike, right, BUY, se["n"], None, now)
+            self._note(now, f"OPTION 2ND {key} traded {ref:g} through {se['price']:g}: "
+                            + (out.get("sent") or f"NOT sent — {out.get('reason')} (the line came off: draw it again)"), bool(out.get("ok")))
 
     def _opt_stop_ref(self, key, p, on):
         if on == "stock":

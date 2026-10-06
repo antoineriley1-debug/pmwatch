@@ -2264,7 +2264,7 @@ function optMarks(d){
   const os = (T().opt_stops || {})[d.key];
   if (os && os.on === "option") add(+os.price, "stop", "STOP", {exact: true});
   const pos = d.position; if (pos && pos.per_contract) add(+pos.per_contract, "entry", "YOUR ENTRY", {exact: true});
-  const olv = (T().opt_levels || {})[d.key] || {};
+  var olv = (T().opt_levels || {})[d.key] || {};
   if (olv.second_entry) add(+olv.second_entry, "second_entry", "2ND", {exact: true});
   if (olv.target) add(+olv.target, "target", "TARGET", {exact: true});
   if (olv.stop && !(os && os.on === "option")) add(+olv.stop, "stop", "STOP", {exact: true});
@@ -2272,7 +2272,7 @@ function optMarks(d){
   if (pl && mid != null && spot && delta != null){
     const ownLong = (pl.side || "long") === "long", lines = (d.right === "C") === ownLong ? pl : (pl.alt || {});
     for (const [r, lbl] of [["second_entry", "2ND ENTRY"], ["target", "TARGET"], ["stop", "STOP"], ["trigger", "PIVOT"]]){
-      if (!lines[r] || (r === "stop" && os && os.on === "option")) continue;
+      if (!lines[r] || (r === "stop" && ((os && os.on === "option") || olv.stop))) continue;
       add(mid + delta * (lines[r] - spot), r, lbl, {est: true, at: lines[r], sym: d.underlying});
     }
     for (const sp of (pl.sneaky_levels || [])) add(mid + delta * (sp - spot), "sneaky", "SNEAKY PIVOT", {est: true, at: sp, sym: d.underlying});

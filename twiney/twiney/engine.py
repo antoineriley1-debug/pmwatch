@@ -459,13 +459,17 @@ class Engine:
             if judge:
                 self._auto_levels(st, t)
 
-    def _book_check(self, st, price, t):
+    OFF_EXCHANGE = ("FINRA", "ADF", "TRF", "OTC")      # dark pools / internalisers: they print between the quotes by design
+
+    def _book_check(self, st, price, t, exchange=""):
         """BOOK CHECK: the tape is the truth. Prints landing OUTSIDE the depth book's best bid / ask (more than a tick
         through it), print after print, mean the book is missing levels or out of step (a missed delete, a lost
         update): the LEVEL II would be showing a market that is not there. Then it is said once and IBKR is asked for
         the book again (the adapter re-subscribes when st.resub_depth is set)."""
         book = st.book
         if book is None or not book.synced or t < st.resync_until:
+            return
+        if str(exchange or "").upper() in self.OFF_EXCHANGE:
             return
         b, a = book.best(BID), book.best(ASK)
         if b is None or a is None:
@@ -484,9 +488,24 @@ class Engine:
             _t0, o0, g0 = win.popleft()
             cnt[0] -= o0; cnt[1] -= g0
         out, ins = cnt
-        nb = st.tight_since is not None and st.tight_last - st.tight_since >= 5.0 and is_rth(t)
-        if ((len(win) >= 20 and (out >= 0.3 * len(win) or ins >= 0.8 * len(win))) or nb) and t - getattr(st, "book_bad_t", -1e9) > 60.0:
+        prints_bad = len(win) >= 20 and (out >= 0.3 * len(win) or ins >= 0.8 * len(win))
+        # the quote tighter than the book: asked again ONCE. If it stays that way the depth feed simply lacks the venue
+        # at the inside (a subscription), and the quote stands in for the inside (bbo) without asking again and again
+        nb = (st.tight_since is not None and st.tight_last - st.tight_since >= 5.0 and is_rth(t)
+              and not st.__dict__.get("_nb_asked"))
+        if (prints_bad or nb) and t - getattr(st, "book_bad_t", -1e9) > 60.0:
             st.book_bad_t = t
+            n = st.__dict__.get("_book_asks", 0)
+            if n >= 3:                      # asked three times: it is the feed, not a glitch. Say so once, stop asking
+                if not st.__dict__.get("_book_gave_up"):
+                    st._book_gave_up = True
+                    self._message("warn", f"{st.symbol}: IBKR's depth keeps missing levels at the inside — the quote is used for the best "
+                                          f"bid / offer; check your depth subscriptions (Nasdaq TotalView, NYSE / Cboe depth)", t, st.symbol)
+                win.clear(); cnt[0] = cnt[1] = 0
+                return
+            st._book_asks = n + 1
+            if nb and not prints_bad:
+                st._nb_asked = True
             st.resub_depth = True
             lb, la = st.l1["bid"], st.l1["ask"]
             why = (f"{out} of the last {len(win)} prints outside its {fmt_price(b)} x {fmt_price(a)}" if len(win) >= 20 and out >= 0.3 * len(win) else
@@ -528,7 +547,7 @@ class Engine:
                        "ex": exchange, "cond": conditions})
             self.data_t = t
             bid, ask = st.bbo()
-            self._book_check(st, price, t)
+            self._book_check(st, price, t, exchange)
             rec = st.tape.add(t, price, size, bid, ask, exchange, side=st.aggressor(price, t))
             st.pacebook.add(t, price, size, rec["side"])
             st.tape_t = t
@@ -891,7 +910,7 @@ class Engine:
         return v
 
     def _study_worker_start(self):
-        if self._study_thread is None:
+        if self._study_thread is None or not self._study_thread.is_alive():
             self._study_thread = threading.Thread(target=self._study_loop, name="twiney-studies", daemon=True)
             self._study_thread.start()
 
@@ -905,21 +924,24 @@ class Engine:
                 continue
             sc = self.cfg.get("studies") or {}
             for sym in list(self.syms):
-                st = self.syms.get(sym)
-                memo = st.__dict__.get("_studies") if st else None
-                if not memo or t - memo.get("want", -1e9) > 10.0:
-                    continue                      # nobody is looking at this chart
-                ver = (st.study_ver, st.hist_ver)
-                if t - memo.get("t", -1e9) < 1.0 and memo.get("ver") == ver:
-                    continue
-                with self.lock:
-                    view = self._study_view(st)
                 try:
-                    v = studies.compute(view, t, sc)
-                except Exception as exc:
-                    log.exception("studies %s", sym)
-                    v = {"error": str(exc)}
-                memo.update(v=v, t=t, ver=ver)
+                    st = self.syms.get(sym)
+                    memo = st.__dict__.get("_studies") if st else None
+                    if not memo or t - memo.get("want", -1e9) > 10.0:
+                        continue                      # nobody is looking at this chart
+                    ver = (st.study_ver, st.hist_ver)
+                    if t - memo.get("t", -1e9) < 1.0 and memo.get("ver") == ver:
+                        continue
+                    with self.lock:
+                        view = self._study_view(st)
+                    try:
+                        v = studies.compute(view, t, sc)
+                    except Exception as exc:
+                        log.exception("studies %s", sym)
+                        v = {"error": str(exc)}
+                    memo.update(v=v, t=t, ver=ver)
+                except Exception:                     # one symbol never stops the worker
+                    log.exception("studies worker %s", sym)
 
     def _study_view(self, st):
         """A copy of what the studies read, taken under the lock (dict copies: well under a millisecond)."""
@@ -1455,7 +1477,8 @@ class Engine:
             entry, basis = val(lines["second_entry"]), "at the 2nd entry"
         else:
             entry, basis = mid, "now"
-        out = {"key": key, "label": label, "held": held, "entry": round(entry, 2), "basis": basis, "lines": {}}
+        out = {"key": key, "label": label, "held": held, "entry": round(entry, 2), "basis": basis, "lines": {},
+               "alt": lines is not play}          # the contract rides the OTHER side's lines (a put on a long play)
         for role in ("second_entry", "stop", "target"):
             S = lines.get(role)
             if S:
@@ -4252,6 +4275,7 @@ class Engine:
     def snapshot(self, t, extra=(), full=None, tv=None):
         """``full``: symbols the page wants the whole bar history for (None = every pane, as before).
         ``tv``: the journal version the page already holds; the same version = the trades are not sent again."""
+        jver = self.desk.ver if self.desk else 0      # read BEFORE the trades: a trade closing in between is sent next time
         with self.lock:
             ranked = self.ranking(t)
             wants = (lambda s: True) if full is None else (lambda s: s in full)
@@ -4290,7 +4314,7 @@ class Engine:
                 "connection": dict(self.connection),
                 "feeds": self._feeds(t),
                 "chart_rth": bool(self.cfg["chart"].get("regular_hours_only", True)),
-                "studies_on": {k: bool((self.cfg.get("studies") or {}).get(k)) for k in ("gas", "airspace", "unvisited", "air_board", "gas_readout", "whole_numbers")},
+                "studies_on": {k: bool((self.cfg.get("studies") or {}).get(k)) for k in ("gas", "airspace", "unvisited", "air_board", "gas_readout", "whole_numbers", "atr_zones")},
                 "slots": self.cfg["depth"]["slots"],
                 "auto_rotate": self.auto_rotate,
                 "ranking": ranking,
@@ -4329,9 +4353,9 @@ class Engine:
                          "started": self.desk.started if self.desk else None,
                          "notes": (self.desk.notes if self.desk else self.notes_list)[-30:],
                          "marks": (self.desk.marks if self.desk else self.marks_list)[-60:],
-                         "trades": (None if self.desk and tv is not None and tv == self.desk.ver else
+                         "trades_ver": jver,
+                         "trades": (None if self.desk and tv is not None and tv == jver else
                                     self.desk.trades[-60:] if self.desk else []),
-                         "trades_ver": self.desk.ver if self.desk else 0,
                          "open": self.desk.open_view() if self.desk else [],
                          "journal_dir": self.desk.journal_dir() if self.desk else None},
             }
