@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261006-1244">
+<meta name="build" content="20261006-1342">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -1985,7 +1985,7 @@ function wireChart(p, cv, v, saveView, isFoot){
         return;
       }
     }
-    const start = {offset: v.offset, yLo: v.yLo, yHi: v.yHi, y: v.chartY ? v.chartY.slice() : null, h: v.chartH || 1, cw: v.cw};
+    const start = {offset: v.offset, eat: v.eat || 0, yLo: v.yLo, yHi: v.yHi, y: v.chartY ? v.chartY.slice() : null, h: v.chartH || 1, cw: v.cw};
     let moved = false;
     cv.classList.add("pan");
     const move = ev => {
@@ -1996,7 +1996,14 @@ function wireChart(p, cv, v, saveView, isFoot){
         v.yLo = c - (c - lo) * f; v.yHi = c + (hi - c) * f; }
       else if (onTime){ v.cw = Math.max(isFoot ? 34 : 2, Math.min(isFoot ? 120 : 60, start.cw * Math.exp(dx / 150))); }                     // pull right = wider bars, left = more bars
       else {
-        v.offset = Math.max(minOff(), start.offset + dx / v.cw);
+        // one continuous drag: pushed left = empty space; at the live edge, dragging RIGHT first slides the study
+        // labels' room off the screen (bar by bar, until the current bar sits at the right edge), then on into history
+        const S = Math.max(0, v.stSpace || 0), eat0 = Math.min(S, start.eat || 0);
+        const v0 = start.offset < 0 ? start.offset : start.offset > 0 ? S + start.offset : eat0;
+        const vp = Math.max(minOff(), v0 + dx / v.cw);
+        if (vp < 0){ v.offset = vp; v.eat = 0; }
+        else if (vp <= S){ v.offset = 0; v.eat = vp; }
+        else { v.offset = vp - S; v.eat = S; }
         v.follow = v.offset < 0.5; v.rightT = null;
         if (start.y && !onAxis){ const [lo, hi] = start.y; const per = (hi - lo) / start.h; v.yLo = lo + dy * per; v.yHi = hi + dy * per; }
       }
@@ -2006,7 +2013,7 @@ function wireChart(p, cv, v, saveView, isFoot){
       if (moved){ saveView(); return; }
       // a plain click: the LIVE button jumps to the newest candle, the AUTO SCALE tag hands the price scale back
       const cx = ev.clientX - r.left, cy = ev.clientY - r.top, hit = b => b && cx >= b[0] && cx <= b[0] + b[2] && cy >= b[1] && cy <= b[1] + b[3];
-      if (hit(v.liveBtn)){ v.offset = restOffset(); v.follow = true; v.rightT = null; saveView(); drawChart(p); }
+      if (hit(v.liveBtn)){ v.offset = restOffset(); v.eat = 0; v.follow = true; v.rightT = null; saveView(); drawChart(p); }
       else if (hit(v.autoBtn) || (onAxis && v.yLo != null)){ v.yLo = v.yHi = null; v.autoY = null; saveView(); drawChart(p); } };
     window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
   });
@@ -2027,7 +2034,7 @@ function wireChart(p, cv, v, saveView, isFoot){
     const r = cv.getBoundingClientRect(), onAxis = (e.clientX - r.left) > r.width - 86, onTime = !onAxis && (e.clientY - r.top) > r.height - 18;
     if (onAxis){ v.yLo = v.yHi = null; v.autoY = null; }
     else if (onTime){ v.cw = isFoot ? 64 : 11; }
-    else { v.cw = isFoot ? 64 : 11; v.offset = restOffset(); v.yLo = v.yHi = null; v.autoY = null; v.follow = true; v.rightT = null; }
+    else { v.cw = isFoot ? 64 : 11; v.offset = restOffset(); v.eat = 0; v.yLo = v.yHi = null; v.autoY = null; v.follow = true; v.rightT = null; }
     saveView(); drawChart(p); });
   // keyboard, while the mouse is over the chart: arrows pan a bar (shift: 10), up / down zoom, Home = live edge, End = oldest
   cv.addEventListener("mouseenter", () => { p._hot = true; }); cv.addEventListener("mouseleave", () => { p._hot = false; });
@@ -2038,7 +2045,7 @@ function wireChart(p, cv, v, saveView, isFoot){
     else if (e.key === "ArrowRight"){ v.offset = Math.max(minOff(), v.offset - step); v.follow = v.offset < 0.5; v.rightT = null; }
     else if (e.key === "ArrowUp"){ v.cw = Math.min(isFoot ? 120 : 60, v.cw * 1.2); }
     else if (e.key === "ArrowDown"){ v.cw = Math.max(isFoot ? 34 : 2, v.cw / 1.2); }
-    else if (e.key === "Home"){ v.offset = restOffset(); v.follow = true; v.rightT = null; }
+    else if (e.key === "Home"){ v.offset = restOffset(); v.eat = 0; v.follow = true; v.rightT = null; }
     else if (e.key === "End"){ v.offset = 1e9; v.follow = false; v.rightT = null; }
     else return false;
     saveView(); drawChart(p); return true;
@@ -2567,7 +2574,9 @@ function drawOne(p, cv, v, isFoot){
     let wmax = 0; for (const L of studyLineList(d.studies)) if (L.l) wmax = Math.max(wmax, g.measureText(L.l).width);
     // the open space right of the last candle: the lines' run past it, the gap, the widest label (up to your % of the chart)
     stSpace = wmax ? Math.ceil((Math.min(wmax, plotW * Y.pct) + 10) / cw) + Y.fwd + Math.max(1, Y.gap) + 1 : 0;
+    v.stSpace = stSpace;                                       // the labels' full room (the drag eats into it; kept while in history)
   }
+  if (off <= 0 && v.eat) stSpace = Math.max(0, stSpace - Math.round(v.eat));
   const space = Math.min(Math.max(off < 0 ? -off : 0, stSpace), n - 5);
   if (off < 0) off = 0;
   const bars = all.slice(Math.max(0, all.length - off - (n - space)), all.length - off);
