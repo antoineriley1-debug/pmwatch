@@ -62,6 +62,8 @@ class SymbolState:
         self.l1 = {k: None for k in L1_FIELDS}
         self.l1_t = None
         self.q_t = None          # last time IBKR's quote stream moved the bid / ask
+        self.tight_since = None  # since when the NBBO has been tighter than the depth book's inside (None = it isn't)
+        self.tight_last = 0.0
         self.depth_active = False
         self.contract = None     # IBKR contract details once resolved: min_tick, con_id, long_name
         self.depth_since = None
@@ -170,10 +172,30 @@ class SymbolState:
             if (lb and la and lb < la and self.q_t is not None and self.depth_t is not None
                     and self.q_t - self.depth_t > 5.0 and (b, a) != (lb, la)):
                 return lb, la
+            # IBKR's consolidated quote (the NBBO) tighter than the depth book for more than a second: the book is
+            # missing the venue that holds the inside. The NBBO is the inside, the book still gives the rest
+            if self.tight_since is not None and self.tight_last - self.tight_since >= 1.0 and lb and la:
+                return max(b, lb), min(a, la)
             return b, a
         return self.l1["bid"], self.l1["ask"]
 
+    def inside_check(self, t):
+        """Is the NBBO tighter than the depth book's inside, and since when (a lagging quote is not: one second)."""
+        bk, lb, la = self.book, self.l1["bid"], self.l1["ask"]
+        tight = False
+        if bk is not None and bk.synced and lb and la and lb < la and self.q_t is not None and t - self.q_t < 30.0:
+            b, a = bk.best(BID), bk.best(ASK)
+            if b is not None and a is not None and lb < a and la > b:      # never a quote crossing the book
+                tight = lb > b + 1e-9 or la < a - 1e-9
+        if tight:
+            if self.tight_since is None:
+                self.tight_since = t
+            self.tight_last = t
+        else:
+            self.tight_since = None
+
     def note_quote(self, t):
+        self.inside_check(t)
         b, a = self.bbo()
         if not self.quotes or self.quotes[-1][1:] != (b, a):
             self.quotes.append((t, b, a))
@@ -452,11 +474,15 @@ class Engine:
             _t0, o0, g0 = win.popleft()
             cnt[0] -= o0; cnt[1] -= g0
         out, ins = cnt
-        if len(win) >= 20 and (out >= 0.3 * len(win) or ins >= 0.8 * len(win)) and t - getattr(st, "book_bad_t", -1e9) > 60.0:
+        nb = st.tight_since is not None and st.tight_last - st.tight_since >= 5.0 and is_rth(t)
+        if ((len(win) >= 20 and (out >= 0.3 * len(win) or ins >= 0.8 * len(win))) or nb) and t - getattr(st, "book_bad_t", -1e9) > 60.0:
             st.book_bad_t = t
             st.resub_depth = True
-            why = (f"{out} of the last {len(win)} prints outside its {fmt_price(b)} x {fmt_price(a)}" if out >= 0.3 * len(win) else
-                   f"its {fmt_price(b)} x {fmt_price(a)} is {round((a - b) / tk)} ticks wide and {ins} of the last {len(win)} prints traded inside it")
+            lb, la = st.l1["bid"], st.l1["ask"]
+            why = (f"{out} of the last {len(win)} prints outside its {fmt_price(b)} x {fmt_price(a)}" if len(win) >= 20 and out >= 0.3 * len(win) else
+                   f"its {fmt_price(b)} x {fmt_price(a)} is {round((a - b) / tk)} ticks wide and {ins} of the last {len(win)} prints traded inside it"
+                   if len(win) >= 20 and ins >= 0.8 * len(win) else
+                   f"its {fmt_price(b)} x {fmt_price(a)} is wider than the quote {fmt_price(lb)} x {fmt_price(la)} for {round(st.tight_last - st.tight_since)} s")
             self._message("warn", f"{st.symbol}: LEVEL II out of step with the tape ({why}) — asking IBKR for the book again", t, st.symbol)
             win.clear(); cnt[0] = cnt[1] = 0
 

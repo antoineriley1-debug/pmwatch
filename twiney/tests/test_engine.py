@@ -658,3 +658,37 @@ class BookCheckTests(unittest.TestCase):
             e.on_print("AAA", 10.05 + (k % 3) * 0.01, 100, "ARCA", t0 + 1 + k * 0.5)
         self.assertTrue(st.resub_depth)
         self.assertTrue(any("ticks wide" in m["text"] for m in e.messages))
+
+    def _nbbo_setup(self):
+        import datetime as _dt
+        from zoneinfo import ZoneInfo
+        t0 = _dt.datetime(2026, 10, 6, 9, 47, tzinfo=ZoneInfo("America/New_York")).timestamp()
+        e = connected_engine()
+        e.apply_slot("AAA", True, t0)
+        e.on_depth("AAA", 0, INSERT, BID, 10.00, 500, "", t0)
+        e.on_depth("AAA", 0, INSERT, ASK, 10.10, 500, "", t0)        # the book: 10.00 x 10.10
+        st = e.syms["AAA"]; st.resync_until = 0
+        return e, st, t0
+
+    def test_a_tighter_nbbo_is_the_inside_once_it_holds(self):
+        e, st, t0 = self._nbbo_setup()
+        e.on_l1("AAA", "bid", 10.04, t0 + 0.1)
+        e.on_l1("AAA", "ask", 10.05, t0 + 0.1)                      # the quote: 10.04 x 10.05
+        self.assertEqual(st.bbo(), (10.00, 10.10))                   # a moment: a quote can lag, the book stays
+        e.on_l1("AAA", "bid", 10.04, t0 + 1.5)
+        self.assertEqual(st.bbo(), (10.04, 10.05))                   # held over a second: the NBBO is the inside
+        # a print at 10.05 is a BUY at the offer, not a mid print in a wide book
+        from twiney.tape import BUY
+        self.assertEqual(st.aggressor(10.05, t0 + 1.6), BUY)
+        e.on_l1("AAA", "bid", 10.00, t0 + 2.0)
+        e.on_l1("AAA", "ask", 10.10, t0 + 2.0)                      # quote back in line with the book
+        self.assertEqual(st.bbo(), (10.00, 10.10))
+
+    def test_nbbo_tighter_than_the_book_for_5s_in_rth_asks_again(self):
+        e, st, t0 = self._nbbo_setup()
+        for k in range(8):
+            e.on_l1("AAA", "bid", 10.04, t0 + k)
+            e.on_l1("AAA", "ask", 10.05, t0 + k)
+        e.on_print("AAA", 10.05, 100, "ARCA", t0 + 7.5)
+        self.assertTrue(st.resub_depth)
+        self.assertTrue(any("wider than the quote" in m["text"] for m in e.messages))
