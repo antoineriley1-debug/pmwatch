@@ -1717,7 +1717,10 @@ function drawOne(p, cv, v, isFoot){
   // the studies (stock chart, live): like TradingView, the candles move left and the level lines end a few bars
   // past the last candle, their labels in the open space to the right — never on top of the candles
   let stSpace = 0;
-  if (!isFoot && !p.opt && d.studies && off <= 0 && typeof studyLineList === "function"){
+  // ▶| (candles to the right edge): no room kept for the labels: the last candle at the edge, labels off the screen
+  const edge = store.get("stEdge", false);
+  if (edge && off < 0 && v.follow) off = 0;
+  if (!edge && !isFoot && !p.opt && d.studies && off <= 0 && typeof studyLineList === "function"){
     const Y = studyStyle(d.studies);
     g.font = `bold ${Y.fs}px ui-monospace, Menlo, Consolas, monospace`;
     let wmax = 0; for (const L of studyLineList(d.studies)) if (L.l) wmax = Math.max(wmax, g.measureText(L.l).width);

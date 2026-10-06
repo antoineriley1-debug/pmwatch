@@ -637,8 +637,8 @@ i.tl{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:3p
 /* ===== PRO LADDER ===== */
 table.lad.pro{--se:#3fd0ff;--tg:#26d07c;--sl:#ff4d5e;--pv:#dbe3ee;--sn:#f0a8ff;--stc:#2fe0a8;--stp:#ff7a9a;--hl:#e8b931;--ex:#9aa4b4}
 table.lad.pro td,table.lad.pro th{padding:0 3px}
-table.lad.pro td.lvc{font-size:10px;font-weight:700;letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:110px;text-align:left}
-table.lad.pro td.lvc .rlv{display:inline-block;margin-left:3px;padding:0 4px;border-radius:2px;font-size:9.5px}
+table.lad.pro td.lvc{font-size:calc(10px * var(--ladz,1));font-weight:700;letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:110px;text-align:left}
+table.lad.pro td.lvc .rlv{display:inline-block;margin-left:3px;padding:0 4px;border-radius:2px;font-size:calc(9.5px * var(--ladz,1))}
 table.lad.pro td.lvc .rlv.b{background:#0b7a4b;color:#fff} table.lad.pro td.lvc .rlv.s{background:#b3123a;color:#fff}
 table.lad.pro tr.lvrow td{border-top:1px solid var(--lvc);border-bottom:1px solid var(--lvc);background-image:linear-gradient(var(--lvt),var(--lvt))}
 table.lad.pro tr.lvrow td.lvc{color:var(--lvc);border-left:3px solid var(--lvc)}
@@ -651,17 +651,17 @@ table.lad.pro tr.lvalt td.lvc{border-left-style:dashed}
 table.lad.pro tr.atlv td{animation:atlv 1s ease-in-out infinite alternate}
 @keyframes atlv{from{background-color:transparent}to{background-color:rgba(255,255,255,.10)}}
 table.lad.pro tr.atlv td.lvc b{color:#fff;background:var(--lvc);padding:0 3px;border-radius:2px}
-table.lad.pro td.stk{font-size:10.5px;text-align:center;font-variant-numeric:tabular-nums}
+table.lad.pro td.stk{font-size:calc(10.5px * var(--ladz,1));text-align:center;font-variant-numeric:tabular-nums}
 table.lad.pro td.stk.add.bid{color:#7cf0b4} table.lad.pro td.stk.add.ask{color:#ff9aa8}
 table.lad.pro td.stk.pull{color:#8a90a0;font-style:italic}
 table.lad.pro td.stk.lit.bid{background:#0b7a4b;color:#fff;font-weight:800} table.lad.pro td.stk.lit.ask{background:#b3123a;color:#fff;font-weight:800}
 table.lad.pro td.stk.litp{background:#3a3d44;color:#e2e4ea;font-weight:700}
-table.lad.pro td.vis{position:relative;font-size:10.5px;text-align:center;font-variant-numeric:tabular-nums}
+table.lad.pro td.vis{position:relative;font-size:calc(10.5px * var(--ladz,1));text-align:center;font-variant-numeric:tabular-nums}
 table.lad.pro td.vis .vb{position:absolute;top:2px;bottom:2px;opacity:.35}
 table.lad.pro td.vis.bid .vb{right:0;background:#ff4d5e} table.lad.pro td.vis.ask .vb{left:0;background:#26d07c}
 table.lad.pro td.vis b{position:relative;font-weight:700} table.lad.pro td.vis.bid b{color:#ffb3bb} table.lad.pro td.vis.ask b{color:#9fffcf}
 table.lad.pro td.vis.past{opacity:.45}
-table.lad.pro td.px sup{font-size:8.5px;color:#e8b931;margin-left:2px;font-weight:700}
+table.lad.pro td.px sup{font-size:calc(8.5px * var(--ladz,1));color:#e8b931;margin-left:2px;font-weight:700}
 .lvstrip{position:sticky;z-index:3;display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding:2px 4px;background:#101216;border:1px solid #23262c;font-size:10px}
 .lvstrip.top{top:0} .lvstrip.bot{bottom:0}
 .lvstrip .sp{flex:1} .lvstrip button{font-size:9.5px;padding:0 5px}
@@ -688,11 +688,11 @@ table.lad.pro td.px sup{font-size:8.5px;color:#e8b931;margin-left:2px;font-weigh
 /* the data window: small, top left, out of the candles' way */
 .datawin{top:4px;left:4px;bottom:auto;width:118px}
 /* PRO ladder: smaller, even type so every column reads without widening the panel */
-table.lad.pro{font-size:11px}
-table.lad.pro th{font:600 8.5px var(--sans);letter-spacing:.06em;padding:1px 2px;top:22px !important}
-table.lad.pro td.lvc{font-size:9px;max-width:none}
-table.lad.pro td.lvc .rlv{font-size:8.5px;padding:0 3px}
-table.lad.pro td.stk, table.lad.pro td.vis{font-size:10px}
+table.lad.pro{font-size:calc(11px * var(--ladz,1))}
+table.lad.pro th{font:600 calc(8.5px * var(--ladz,1)) var(--sans);letter-spacing:.06em;padding:1px 2px;top:22px !important}
+table.lad.pro td.lvc{font-size:calc(9px * var(--ladz,1));max-width:none}
+table.lad.pro td.lvc .rlv{font-size:calc(8.5px * var(--ladz,1));padding:0 3px}
+table.lad.pro td.stk, table.lad.pro td.vis{font-size:calc(10px * var(--ladz,1))}
 .lvstrip{height:22px;flex-wrap:nowrap;overflow:hidden;white-space:nowrap}
 .lvp{font-size:9.5px}
 /* the flashes (−300 SOLD, PULLED, +REFILL): a small tag in the corner of the size cell, never over the number */

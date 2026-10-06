@@ -240,6 +240,8 @@ function shortOpenConfirm(what, so, send){
              : "Selling to open is OFF (SETTINGS, Trading, Allow selling to open): this goes through only as a covered call (100 shares each)."), "s", send);
   const m = document.getElementById("modal"); if (m) m.classList.add("shortopen");
 }
+// "NVDA 10/09 225 CALL" / "NVDA 10/09 225C" -> "NVDA 10/09 225 calls"
+function optWords(n){ return String(n || "").replace(/\s?(CALL|C)$/, " calls").replace(/\s?(PUT|P)$/, " puts"); }
 function contractName(l){ return `${l.sym} ${l.expiry.slice(4, 6)}/${l.expiry.slice(6, 8)} ${l.strike % 1 ? l.strike.toFixed(2) : l.strike} ${l.right === "C" ? "CALL" : "PUT"}`; }
 async function pollLink(){
   const l = OC.link; if (!l || l.sym !== curSym || OC.busy) return;
@@ -590,12 +592,16 @@ function tapeSpeedHTML(sp, unit){
     <span class="tst">${sp.trend}${ratio != null && sp.trend !== "QUIET" ? ` <em>${ratio.toFixed(1)}x</em>` : ""}</span>
     <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${bars}</svg></div>`;
 }
+// the BIG ≥ / DEFAULT / huge row on the stock LEVEL II: hidden unless turned on in COLS
+function applyBigSet(){ const b = document.querySelector(".pnl[data-p=book] .bigset"); if (b) b.style.display = store.get("bigset", false) === true ? "" : "none"; }
+applyBigSet();
 function applyLadCols(tbl){ if (!tbl) return; const c = store.get("ladcols", {}); const wrap = tbl.closest(".ladder-wrap"); if (wrap){ wrap.style.setProperty("--ladz", String(store.get("ladz", 1))); wrap.style.setProperty("--ladh", String(store.get("ladh", 1))); } tbl.classList.toggle("notrade", c.trade !== true); tbl.classList.toggle("nobars", c.bars === false); tbl.classList.toggle("nowho", c.who === false); tbl.classList.toggle("noflow", c.flow === false); if (tbl._applyCols) tbl._applyCols(); }
-document.getElementById("colsMenu").querySelector("button").addEventListener("click", e => { e.stopPropagation(); const m = document.getElementById("colsMenu"), open = !m.classList.contains("open"); document.querySelectorAll(".menu.open").forEach(x => x.classList.remove("open")); m.classList.toggle("open", open); const c = store.get("ladcols", {}); const rs = m.querySelector("select[data-rows]"); if (rs) rs.value = String(store.get("ladRows", 12)); const lc = m.querySelector("select[data-ladclick]"); if (lc) lc.value = store.get("ladClick", "join"); const hs = m.querySelector("select[data-ladh]"); if (hs) hs.value = String(store.get("ladh", 1)); m.querySelectorAll("input[data-col]").forEach(i => { i.checked = i.dataset.col === "trade" ? c.trade === true : c[i.dataset.col] !== false; }); const z = m.querySelector("select[data-ladz]"); if (z) z.value = String(store.get("ladz", 1)); });
+document.getElementById("colsMenu").querySelector("button").addEventListener("click", e => { e.stopPropagation(); const m = document.getElementById("colsMenu"), open = !m.classList.contains("open"); document.querySelectorAll(".menu.open").forEach(x => x.classList.remove("open")); m.classList.toggle("open", open); const c = store.get("ladcols", {}); const rs = m.querySelector("select[data-rows]"); if (rs) rs.value = String(store.get("ladRows", 12)); const lc = m.querySelector("select[data-ladclick]"); if (lc) lc.value = store.get("ladClick", "join"); const hs = m.querySelector("select[data-ladh]"); if (hs) hs.value = String(store.get("ladh", 1)); m.querySelectorAll("input[data-col]").forEach(i => { i.checked = i.dataset.col === "trade" ? c.trade === true : c[i.dataset.col] !== false; }); const z = m.querySelector("select[data-ladz]"); if (z) z.value = String(store.get("ladz", 1)); const bs = m.querySelector("input[data-bigset]"); if (bs) bs.checked = store.get("bigset", false) === true; });
 document.getElementById("colsPop").addEventListener("change", e => {
   if (e.target.dataset.rows != null){ store.set("ladRowsAuto", false); post("/api/ladder", {half_rows: +e.target.value}); store.set("ladRows", +e.target.value); P.book.last = null; poll(true); return; }   // your pick: the ladder stops sizing itself
   if (e.target.dataset.ladclick != null){ store.set("ladClick", e.target.value); return; }
   if (e.target.dataset.ladh != null){ store.set("ladh", +e.target.value || 1); applyLadCols(P.book.pc.querySelector("table.lad")); return; }
+  if (e.target.dataset.bigset != null){ store.set("bigset", e.target.checked); applyBigSet(); return; }
   if (e.target.dataset.ladz != null){ store.set("ladz", +e.target.value || 1); applyLadCols(P.book.pc.querySelector("table.lad")); P.book.last = null; poll(true); return; } const k = e.target.dataset.col; if (!k) return; const c = store.get("ladcols", {}); c[k] = e.target.checked; store.set("ladcols", c); applyLadCols(P.book.pc.querySelector("table.lad")); });
 function renderLadQty(s){
   const t = (s && s.trading) || {}, q = document.getElementById("ladQty"), pr = document.getElementById("ladPresets"); if (!q) return;
@@ -2269,10 +2275,10 @@ function optTapeData(t){
 // the stock ladder's column choices (COLS menu) and widths apply to the contract's ladder too
 function sameCols(tb){ if (!tb || tb.dataset.cols2) return; tb.dataset.cols2 = "1"; try { applyLadCols(tb); makeColsResizable(tb); } catch (e) {} }
 function optLadderHTML(d, t){ return ladderHTML(optLadderData(d, t)).replace(/data-act=/g, "data-oact=").replace(/draggable="true"/g, ""); }
-// the contract's tape runs exactly like the stock's: money gauge, SPEED meter, prints that hit the RELOAD buyer / seller glow
+// the contract's tape runs like the stock's: SPEED meter, prints that hit the RELOAD buyer / seller glow
 function optTapeHTML(t){ const tt = optTapeData(t), d = OCH.data;
   const lad = d && d.tape === t ? optLadderData(d, t) : null;
-  return tapeGaugeHTML(tt) + tapeSpeedHTML(optSpeed(t.prints || []), "CT/S") + tapeHTML(tt, lad); }
+  return tapeSpeedHTML(optSpeed(t.prints || []), "CT/S") + tapeHTML(tt, lad); }   // (no bought / sold money bar: just the prints)
 function optSpeed(prints, span = 90, bucket = 3, fast = 10){
   const now = state ? state.now : Date.now() / 1000, nb = span / bucket, series = Array.from({length: nb}, () => [0, 0, 0, 0]);
   let nFast = 0, cFast = 0, nBefore = 0;
@@ -2328,7 +2334,7 @@ function contractMode(which){
 function contractBar(kind){
   const d = OCH.data, l = OC.link, f = v => v == null ? "—" : (+v).toFixed(2);
   const t = d && d.tape;
-  return `<div class="cbar"><span class="lbl">${kind} · CONTRACT</span><b class="${l.right === "C" ? "b" : "s"}">${esc(contractName(l))}</b><span class="dim">bid ${f(d && d.bid)}${t && t.bid_size != null ? " × " + t.bid_size : ""} · ask ${f(d && d.ask)}${t && t.ask_size != null ? " × " + t.ask_size : ""}${kind === "T&S" && t ? ` · vol ${sz(t.volume || 0)}` : ""}</span><span class="cbtns"><button data-pairmode="left" title="the contract's LEVEL II and T&S in the left column; the stock's stay here">CONTRACT ON THE LEFT</button><button data-pin="${kind === "T&S" ? "tape" : "book"}" data-pinv="stock" title="only this window goes back to ${esc(l.sym)} shares; ${kind === "T&S" ? "LEVEL II" : "T&S"} and ORDER ENTRY stay on the contract">${esc(l.sym)} SHARES HERE</button><button data-unlinkall="1" title="LEVEL II, T&S and ORDER ENTRY all back on ${esc(l.sym)} shares">✕ ALL BACK TO SHARES</button></span></div>`;
+  return `<div class="cbar" title="right-click: where the contract windows go / back to the shares"><b class="${l.right === "C" ? "b" : "s"}">${esc(optWords(contractName(l)))}</b></div>`;
 }
 // a window kept on the shares while a contract is picked: a thin strip to bring the contract into it
 /* BOTH BOOKS: with a contract picked, the stock's LEVEL II and T&S stay as they are and the contract's open under
@@ -2398,6 +2404,24 @@ document.addEventListener("click", e => { const b = e.target.closest("button[dat
   unpair(); store.set("oplace.obook", null); store.set("oplace.otape", null);
   if (b.dataset.pairmode !== "switch") autoPair();
   P.book.last = null; P.tape.last = null; renderContractL2(); renderContractTape(); poll(true); }, true);
+// the contract windows' header shows only the contract; where they go / back to the shares sits on a right-click
+document.addEventListener("contextmenu", e => {
+  const h = e.target.closest("#obookHd, #otapeHd, .cbar"); if (!h || !(OC.link && OC.link.sym === curSym)) return;
+  e.preventDefault();
+  const old = document.getElementById("cmenu"); if (old) old.remove();
+  const m = document.createElement("div"); m.id = "cmenu"; m.className = "pop cmenu";
+  const pm = pairMode(), which = h.closest(".pnl[data-p=tape], #otapeHd") || h.id === "otapeHd" ? "tape" : "book";
+  m.innerHTML = `<div class="dim" style="font-size:11px;margin-bottom:4px">${esc(optWords(contractName(OC.link)))}<span class="x" title="close (Esc)">✕</span></div>`
+    // (where they go only matters when TED placed them; windows you keep in your layout stay where you put them)
+    + (Object.keys(PAIRED).length || h.classList.contains("cbar") ? (pm === "left" ? `<button data-pairmode="split">Contract windows UNDER the stock's</button>` : `<button data-pairmode="left">Contract windows in the LEFT column</button>`)
+       + (h.classList.contains("cbar") ? "" : `<button data-pairmode="switch">ONE WINDOW: LEVEL II / T&S flip to the contract</button>`) : "")
+    + (h.classList.contains("cbar") ? `<button data-pin="${which}" data-pinv="stock">Only this window back to ${esc(OC.link.sym)} shares</button>` : "")
+    + `<button data-unlinkall="1">✕ Everything back to ${esc(OC.link.sym)} shares</button>`;
+  m.style.left = Math.min(e.clientX, innerWidth - 280) + "px"; m.style.top = Math.min(e.clientY, innerHeight - 160) + "px";
+  document.body.appendChild(m);
+  m.addEventListener("pointerup", ev => { if (ev.target.closest("button, .x")) setTimeout(() => m.remove(), 0); });
+  setTimeout(() => document.addEventListener("click", function off(ev){ if (!m.contains(ev.target)){ m.remove(); document.removeEventListener("click", off); } }), 0);
+});
 function renderSwitchStrips(){
   for (const [which, pid] of [["book", "book"], ["tape", "tape"]]){
     const pc = P[pid].pc; let el = pc.querySelector(":scope > .cswitch");
@@ -2433,11 +2457,10 @@ function renderContractTape(){
 document.addEventListener("click", e => { if (!e.target.closest("button[data-unlinkall]")) return;
   OC.link = null; TMODE = "stock"; CPIN.book = CPIN.tape = "auto"; unpair(); store.set("cpin", CPIN); P.ticket.last = null; renderContractL2(); renderContractTape(); renderSwitchStrips(); poll(true); toast("Back on the shares", true); });
 function renderOptPanels(){
-  const d = OCH.data, t = d && d.tape, f = v => v == null ? "—" : (+v).toFixed(2), name = d ? esc(d.label) : "";
+  const d = OCH.data, t = d && d.tape, f = v => v == null ? "—" : (+v).toFixed(2), name = d ? esc(optWords(d.label)) : "";
   const none = `<div class="dim" style="padding:8px">Pick a contract: OPTIONS, then click a strike (or 📈). Its book, prints and big prints show here.</div>`;
   const pm = pairMode();
-  const btns = OC.link && OC.link.sym === curSym ? `<span class="ohbtn">${pm === "left" ? `<button data-pairmode="split" title="put the contract's LEVEL II / T&S under the stock's instead">UNDER</button>` : `<button data-pairmode="left" title="put the contract's LEVEL II and T&S together in the left column">LEFT</button>`}<button data-pairmode="switch" title="one window: LEVEL II / T&S flip to the contract instead of showing both">1 WINDOW</button><button data-unlinkall="1" title="close the contract windows; everything back on the shares">✕ SHARES</button></span>` : "";
-  const hd = (id, title, extra) => { const el = document.getElementById(id); if (!el) return; const h = `<b>${title}</b> <span class="${d && d.right === "P" ? "s" : "b"}">${name}</span>${extra || ""}${id !== "obigHd" ? btns : ""}`; if (el.dataset.h !== h){ el.dataset.h = h; el.innerHTML = h; } };
+  const hd = (id, title, extra) => { const el = document.getElementById(id); if (!el) return; const h = d ? (id === "obigHd" ? `<b>${title}</b> <span class="${d.right === "P" ? "s" : "b"}">${name}</span>${extra || ""}` : `<b class="${d.right === "P" ? "s" : "b"}">${name}</b>`) : `<b>${title}</b>`; if (el.dataset.h !== h){ el.dataset.h = h; el.innerHTML = h; } };
   const put = (sel, html) => { const el = document.querySelector(sel); if (el && el.dataset.h !== html){ el.dataset.h = html; el.innerHTML = html; } };
   if (!d || !t){ put(".pnl[data-p=obook] .obook", none); put(".pnl[data-p=otape] .otape", none); put(".obig", none); hd("obookHd", "OPTION LEVEL II"); hd("otapeHd", "OPTION T&S"); hd("obigHd", "OPTION BIG TAPE"); return; }
   // LEVEL II for the contract
@@ -2448,7 +2471,7 @@ function renderOptPanels(){
       <td class="px">${r.price.toFixed(2)}</td>
       <td class="sz s">${r.ask ? `<i style="width:${Math.round(r.ask / mx * 100)}%"></i><span>${sz(r.ask)}</span>` : ""}</td>
       <td class="tr b">${r.bought ? `<i style="width:${Math.round(r.bought / mt * 100)}%"></i><span>${sz(r.bought)}</span>` : ""}</td></tr>`).join("");
-  hd("obookHd", "OPTION LEVEL II", ` <span class="dim">bid ${f(d.bid)} × ${t.bid_size ?? "—"} · ask ${f(d.ask)} × ${t.ask_size ?? "—"}${t.deep_book ? (d.source === "PRACTICE" ? " · practice book" : d.source === "SIM" ? " · SIMULATED book (market closed)" : " · IBKR book (every exchange)") : " · top of book (IBKR's option book is off or refused — see MESSAGES)"}</span>`);
+  hd("obookHd", "OPTION LEVEL II");
   setTimeout(centerObook, 0);
   put(".pnl[data-p=obook] .obook", `<div class="ladder-wrap olw">${optLadderHTML(d, t)}</div>`);
   sameCols(document.querySelector(".pnl[data-p=obook] .obook table"));
@@ -2456,7 +2479,7 @@ function renderOptPanels(){
   // T&S for the contract
   const tm = x => new Date(x * 1000).toLocaleTimeString("en-US", {timeZone: "America/New_York", hour12: false});
   const pr = otapeRows(t);
-  hd("otapeHd", "OPTION T&S", ` <span class="dim">vol ${sz(t.volume || 0)} · <span class="b">bought ${sz(t.bought)}</span> · <span class="s">sold ${sz(t.sold)}</span></span>`);
+  hd("otapeHd", "OPTION T&S");
   put(".pnl[data-p=otape] .otape", `<div class="p-tape">${optTapeHTML(t)}</div>`);
   flyBigOpt(d, t);
   renderContractL2(); renderContractTape();
