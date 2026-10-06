@@ -516,11 +516,12 @@ def _rung_name(m):
     return f"{'' if not whole else whole}{FRAC[part]} ATR"
 
 
-def atr_ladder(dH, dL, used, y_atr, move_up, one_side, cfg):
+def atr_ladder(dH, dL, used, y_atr, move_up, one_side, cfg, last=None):
     """THE ATR LADDER: today's tank cut into quarter-ATR rungs, measured from where the day's move started (the low
     for a move up, the high for a move down; a gap counts, the same true range the GAS readout uses). The slice of
     each rung that price has already EATEN is coloured, getting hotter as the tank empties (green, lime, yellow,
-    orange at 1 ATR, red, pink, purple beyond 1½); what is still left stays a faint outline."""
+    orange at 1 ATR, red, pink, purple beyond 1½); what is still left stays a faint outline. Every rung not eaten
+    yet says how many dollars it is away from the price now."""
     step = float(cfg.get("atr_ladder_step", 0.25)) or 0.25
     top = max(step, float(cfg.get("atr_ladder_max", 2.0)))
     a_on = max(0.0, min(1.0, float(cfg.get("atr_ladder_opacity", 32)) / 100.0))
@@ -553,11 +554,13 @@ def atr_ladder(dH, dL, used, y_atr, move_up, one_side, cfg):
             whole = abs(m - round(m)) < 1e-9
             if spent:
                 lbl = f"{_rung_name(m)} EATEN {b:.2f}"
-            elif not told:                         # the next rung up: how much of the tank is gone, how far to it
-                told = True
-                lbl = f"{_rung_name(m)} {b:.2f} · {round(eaten / y_atr * 100)}% eaten · ${m * y_atr - eaten:.2f} left"
             else:
-                lbl = f"{_rung_name(m)} {b:.2f}"
+                away = f" · ${abs(b - last):.2f} away" if last is not None else ""
+                if not told:                       # the next rung: how much of the tank is gone
+                    told = True
+                    lbl = f"{_rung_name(m)} {b:.2f}{away} · {round(eaten / y_atr * 100)}% eaten"
+                else:
+                    lbl = f"{_rung_name(m)} {b:.2f}{away}"
             lines.append({"p": b, "c": col, "w": 2 if whole else 1, "d": "solid" if whole else "dot", "l": lbl, "lc": LADDER_TXT.get(col, col),
                           "t0": None, "g": "gas", "rung": round(m, 2), "eaten": spent})
             m += step; k += 1
@@ -639,7 +642,7 @@ def gas(st, t, cfg, drows, live):
         lv(dH, K(cfg, "col_hl"), nm("HIGH OF DAY", dH), wlv); lv(dL, K(cfg, "col_hl"), nm("LOW OF DAY", dL), wlv)
 
         def tag(ms, y, spent, m):
-            return f"{ms} Traveled ${s2(m * y_atr)} @ {s2(y)}" if spent else f"{ms} ${s2(m * y_atr)} · {s2(y)}"
+            return f"{ms} Traveled ${s2(m * y_atr)} @ {s2(y)}" if spent else f"{ms} ${s2(m * y_atr)} · {s2(y)} · ${abs(y - last):.2f} away"
         ys = {}
         for m in (1.0, 2.0, 3.0) + ((1.5, 2.5) if cfg["atr_halves"] else ()):
             ms = f"{m:g} ATR"
@@ -652,7 +655,7 @@ def gas(st, t, cfg, drows, live):
                         continue                # the ATR ladder below draws these rungs itself
                     lv(y, K(cfg, "col_atr_spent") if sp else K(cfg, "col_atr_live"), tag(ms, y, sp, m), watr if m == 1.0 else max(1, watr - 1))
         if cfg["atr_zones"]:
-            lad = atr_ladder(dH, dL, used_lad, y_atr, move_up, one, cfg)
+            lad = atr_ladder(dH, dL, used_lad, y_atr, move_up, one, cfg, last)
             zones += lad["zones"]
             lines += lad["lines"]
     if cfg["whole_numbers"]:
