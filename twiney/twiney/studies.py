@@ -18,6 +18,7 @@ ATR is Wilder's (TradingView's ta.atr), so a study's 20 EMA is the chart's 20 EM
 """
 
 import math
+from functools import lru_cache
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
@@ -48,10 +49,13 @@ DEFAULT_COL = _default_cols()
 
 # --------------------------------------------------------------------------------------------- time helpers
 
+@lru_cache(maxsize=262144)
 def ny(t):
+    # the same bar times are converted again and again (every study, every second): remembered (pure, immutable)
     return datetime.fromtimestamp(t, tz=timezone.utc).astimezone(NY)
 
 
+@lru_cache(maxsize=262144)
 def day_key(t):
     d = ny(t)
     return d.year * 10000 + d.month * 100 + d.day
@@ -62,12 +66,14 @@ def ny_secs(t):
     return d.hour * 3600 + d.minute * 60 + d.second
 
 
+@lru_cache(maxsize=262144)
 def session_open(t):
     """Epoch of 9:30 New York on t's New York date."""
     d = ny(t)
     return datetime(d.year, d.month, d.day, 9, 30, tzinfo=NY).timestamp()
 
 
+@lru_cache(maxsize=262144)
 def is_rth(t):
     d = ny(t)
     s = d.hour * 3600 + d.minute * 60 + d.second

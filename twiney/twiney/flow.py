@@ -305,6 +305,7 @@ class FlowBook:
                 otm = [p["otm_pct"] for p in hits if p["otm_pct"] is not None]
                 dtes = [p["dte"] for p in hits if p["dte"] is not None]
                 u = {"symbol": symbol, "cp": cp, "premium": round(prem), "prints": len(hits),
+                     "minutes": len({int(p["t"] // 60) for p in hits}),
                      "otm_pct": round(sum(otm) / len(otm), 1) if otm else None,
                      "dte": round(min(dtes)) if dtes else None, "spot": hits[-1].get("spot"),
                      "strikes": sorted({p["strike"] for p in hits})[:4], "t": now}
@@ -394,7 +395,7 @@ class FlowBook:
         return out
 
     def knows(self, symbol, cp, now, index=False):
-        """SOMEBODY KNOWS: short-dated, out-of-the-money contracts of one side (C or P) getting bought at the ask
+        """SOMEBODY KNOWS SOMETHING: short-dated, out-of-the-money contracts of one side (C or P) getting bought at the ask
         inside the urgency window. Dan's tell when a pivot triggers: conviction that the move is wanted NOW.
 
         Returns {"dollars", "prints", "sweeps", "against", "score", "knows", "top"}:
@@ -417,6 +418,7 @@ class FlowBook:
             dollars = 0.0
             n = sw = 0
             by_strike = {}
+            mins.setdefault(side_cp, set())
             for p in prints:
                 if p["cp"] != side_cp or p["side"] != "ask":
                     continue
@@ -428,10 +430,12 @@ class FlowBook:
                 dollars += prem
                 n += 1
                 sw += 1 if p.get("kind") in ("sweep", "block") else 0
+                mins[side_cp].add(int(p["t"] // 60))
                 row = by_strike.setdefault(p["strike"], [0.0, 0, p.get("dte")])
                 row[0] += prem; row[1] += 1
             return dollars, n, sw, by_strike
 
+        mins = {}
         dollars, n, sw, by_strike = side_sum(cp)
         against, _n2, _s2, _b2 = side_sum("P" if cp == "C" else "C")
         score = min(1.0, dollars / (2.0 * need)) if need > 0 else 0.0
@@ -442,7 +446,9 @@ class FlowBook:
             k = max(by_strike, key=lambda k: by_strike[k][0])
             top = {"strike": k, "dte": by_strike[k][2], "dollars": round(by_strike[k][0]), "prints": by_strike[k][1]}
         return {"dollars": round(dollars), "prints": n, "sweeps": sw, "against": round(against),
-                "score": round(score, 3), "knows": dollars >= need and dollars > against, "top": top,
+                "score": round(score, 3), "minutes": len(mins.get(cp, ())),
+                # somebody KNOWS: the size, more than the other side, and it came again (one print is a guess)
+                "knows": dollars >= need and dollars > against and len(mins.get(cp, ())) >= int(c.get("knows_min_minutes", 2)), "top": top,
                 "window_minutes": win, "max_dte": max_dte}
 
     def context_text(self, symbol, now):

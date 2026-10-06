@@ -35,7 +35,7 @@ class PaceTests(unittest.TestCase):
         p = pace.read(b, t + 15, 100.68, [(100.50, "PDH")], 0.01, CFG, knows=knows)
         self.assertEqual(p["call"], "BREAKOUT WITH SPEED")
         self.assertEqual(p["level"], [100.50, "PDH"])
-        self.assertIn("SOMEBODY KNOWS $640K calls · 6 prints · 2 sweeps · 105 strike, 3d", p["flow"])
+        self.assertIn("SOMEBODY KNOWS SOMETHING $640K calls · 6 prints · 2 sweeps · 105 strike, 3d", p["flow"])
         self.assertIn(p["state"], ("FAST", "SURGE"))
 
     def test_break_without_speed(self):
@@ -70,3 +70,28 @@ class PaceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PaceAuditTests(unittest.TestCase):
+    def test_a_steady_tape_reads_normal_from_the_first_minutes(self):
+        for minutes in (3, 5, 8):
+            b = pace.PaceBook()
+            end = 10_000.0
+            t = end - minutes * 60
+            while t < end:
+                b.add(t, 100.0, 1000.0, "buy" if int(t) % 2 else "sell")
+                t += 1.0
+            p = pace.read(b, end, 100.0, [], 0.01, CFG)
+            if p["state"] != "WARMING UP":
+                self.assertEqual(p["state"], "NORMAL", minutes)
+                self.assertAlmostEqual(p["ratio"], 1.0, delta=0.3)
+
+    def test_quiet_tape_still_sees_a_level_below(self):
+        b, t = build()
+        # nothing printed 25-45 s ago (no price "30 s back"), price now just over support
+        rows = [r for r in b.b if not (t - 60 <= r[0] <= t)]
+        b.b.clear(); b.b.extend(rows)
+        for k in range(15):
+            b.add(t + k, 100.02, 200.0, "sell")
+        p = pace.read(b, t + 15, 100.02, [(100.00, "PDL")], 0.01, CFG)
+        self.assertEqual(p["level"], [100.00, "PDL"])

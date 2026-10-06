@@ -23,6 +23,10 @@ class Tape:
         self.cfg = cfg
         # at least every print of the read window, however busy the tape: keep_prints is the floor, not the cap
         self.prints = deque(maxlen=max(int(cfg["keep_prints"]), 20000))
+        # the BIG TAPE's own memory: every buy / sell print of the last big_tape_minutes BY TIME, however busy the
+        # tape (the count-capped list above held only ~10 minutes of a busy name)
+        self.hist = deque()
+        self._big = None
         self.total_volume = 0.0
 
     def add(self, t, price, size, bid, ask, exchange="", side=None):
@@ -31,6 +35,11 @@ class Tape:
                "large": size >= self.cfg["large_print_shares"]}
         self.prints.append(rec)
         self.total_volume += size
+        if side in (BUY, SELL):
+            self.hist.append(rec)
+            keep = float(self.cfg.get("big_tape_minutes", 30)) * 60.0
+            while self.hist and t - self.hist[0]["t"] > keep:
+                self.hist.popleft()
         return rec
 
     def last(self):
@@ -125,6 +134,9 @@ class Tape:
                     build_prints prints adding up to big_tape_shares or build_dollars — someone working an order there:
                     PAID UP at one price over and over = a buyer building; HIT = a seller unloading
         Each builder: side, price, prints, shares, dollars, first / last age, still (last print inside the window)."""
+        # read on every pane / snapshot: worked out at most once a second (it is a 30-minute view)
+        if self._big is not None and self._big[0] == int(now) and self._big[1] == len(self.hist):
+            return self._big[2]
         c = self.cfg
         mins = float(c.get("big_tape_minutes", 30))
         sh = float(c.get("big_tape_shares", c.get("large_print_shares", 5000)))
@@ -134,7 +146,7 @@ class Tape:
         busd = float(c.get("build_dollars", 500000))
         x_avg = float(c.get("big_tape_x_average", 20))
         cut = now - mins * 60
-        rows = [p for p in self.prints if p["t"] >= cut and p["side"] in ("buy", "sell")]
+        rows = [p for p in self.hist if p["t"] >= cut]
         # the bar scales with the name: a print has to be big in money or shares AND many times this ticker's
         # own average print, so a busy $750 ETF does not flood the big tape with ordinary trades
         avg = (sum(p["size"] for p in rows) / len(rows)) if rows else 0.0
@@ -159,5 +171,7 @@ class Tape:
                          shares=round(g["shares"]), dollars=round(g["dollars"]))
                     for g in runs if g["prints"] >= need and (g["shares"] >= sh or g["dollars"] >= busd) and g["shares"] >= floor]
         builders.sort(key=lambda g: (-g["still"], g["last_age"]))
-        return {"prints": list(reversed(prints))[:60], "builders": builders[:20],
-                "shares": sh, "dollars": usd, "minutes": mins, "window": win, "need": need, "x_average": x_avg, "average": round(avg)}
+        out = {"prints": list(reversed(prints))[:60], "builders": builders[:20],
+               "shares": sh, "dollars": usd, "minutes": mins, "window": win, "need": need, "x_average": x_avg, "average": round(avg)}
+        self._big = (int(now), len(self.hist), out)
+        return out

@@ -502,7 +502,7 @@ function renderTape(d){
   const el = P.tape.pc.querySelector(".p-tape");
   renderContractTape(); renderSwitchStrips(); if (contractMode("tape")){ renderBigTape(d); return; }
   if (!d){ el.innerHTML = `<div class="dim" style="padding:8px">${NA}</div>`; P.tape.last = null; renderBigTape(null); return; }
-  const html = refsHTML(d.refs) + tapeGaugeHTML(d.tape) + tapeSpeedHTML(d.tape.speed) + paceHTML(d.tape.pace) + tapeHTML(d.tape, d.ladder); if (P.tape.last !== html){ P.tape.last = html;
+  const html = refsHTML(d.refs, d.story && d.story.edge) + tapeGaugeHTML(d.tape) + tapeSpeedHTML(d.tape.speed) + paceHTML(d.tape.pace) + tapeHTML(d.tape, d.ladder); if (P.tape.last !== html){ P.tape.last = html;
     const keep = el.scrollTop; el.innerHTML = html; el.scrollTop = keep; makeColsResizable(el.querySelector("table")); }
   renderBigTape(d); flyBigPrints(d);
 }
@@ -856,7 +856,7 @@ function renderReloads(d){
       <span class="k">SINCE RELOAD</span><span class="v">${l.refill_age != null ? ago(l.refill_age) + " ago" : NA}${l.since_refill ? ` · ${sz(l.since_refill)} traded through, not put back` : ""}</span>` : (stageSlug(stg) === "gone" ? `<span class="k">CONVICTION</span><span class="v"><span class="stg gone">${stg}</span> <span class="dim">${esc(stageWords(stg, l.side))}</span></span>` : "");
     const real = l.real ? `<span class="k">SIZE HERE</span><span class="v"><span class="rf ${l.real.label}">${l.real.label}</span> <span class="dim">${Math.round(l.real.pct * 100)}% of what left traded</span></span>` : "";
     const kn = l.knows, knows = kn && live ? (kn.knows ? `<span class="knowsline">⚡ ${esc(kn.words)}</span>` : kn.dollars > 0 ? `<span class="knowsline some">${esc(kn.words)}</span>` : "") : "";
-    return `<div class="rl ${who} ${gone ? "gone" : ""} ${stg ? "st-" + stageSlug(stg) : ""} ${kn && kn.knows && live ? "knows" : ""}"><span class="t">${head}${kn && kn.knows && live ? ` <span class="knows" title="${esc(kn.words)}">⚡ SOMEBODY KNOWS</span>` : ""}</span>${trust}${real}${knows}
+    return `<div class="rl ${who} ${gone ? "gone" : ""} ${stg ? "st-" + stageSlug(stg) : ""} ${kn && kn.knows && live ? "knows" : ""}"><span class="t">${head}${kn && kn.knows && live ? ` <span class="knows" title="${esc(kn.words)}">⚡ SOMEBODY KNOWS SOMETHING</span>` : ""}</span>${trust}${real}${knows}
       <span class="k">PRICE</span><span class="v">$${px(l.price)} <span class="dim">${esc((l.role || "").split("+")[0] === "auto" ? "big level" : "your " + (l.role || "").split("+")[0].replace("trigger", "pivot").replace("_", " "))}</span></span>
       <span class="k">RELOADS</span><span class="v">${l.refreshes != null ? l.refreshes : NA}</span>
       <span class="k">SHARES OBSERVED</span><span class="v">${l.absorbed_total != null ? sz(l.absorbed_total) : NA}</span>
@@ -1293,7 +1293,9 @@ P.ticket.el.addEventListener("change", e => {
   if (e.target.id === "tkTpl"){ post("/api/trade/bracket_template", {name: e.target.value}).then(out => { toast(out.ok ? "Bracket: " + out.template : "Not set: " + (out.reason || ""), out.ok); poll(true); }); }
   if (e.target.id === "tkScale") post("/api/trade/scale", {on: e.target.checked});
 });
-P.ticket.el.addEventListener("keydown", e => { e.stopPropagation(); if (e.key === "Enter" && e.target.tagName === "INPUT") transmit(); });
+// Enter sends the ticket only from the ticket's own boxes (qty / price / stop); Enter in STOP, TRAIL, the simple box
+// or the scale plan never fires an order
+P.ticket.el.addEventListener("keydown", e => { e.stopPropagation(); if (e.key === "Enter" && e.target.tagName === "INPUT" && /^(tkQty|tkPx|tkAux)$/.test(e.target.id || "")) transmit(); });
 P.positions.el.addEventListener("click", async e => {
   const c = e.target.closest("button[data-close]"); if (c){ if (!confirm("CLOSE the whole " + c.dataset.close + " position?")) return; flatten(c.dataset.close); return; }
   const ad = e.target.closest("button[data-add]"); if (ad){ let n = ad.dataset.n; if (n === "ask"){ n = prompt("Add how many shares to " + ad.dataset.add + "?"); if (!n) return; } if (!canTrade()) return toast("Can't trade: " + whyNot(), false);
@@ -2547,7 +2549,11 @@ document.addEventListener("click", async e => {
     return done(await post("/api/trade/adjust", {symbol: d.symbol, shares: n, mode: "close"}), act === "CLOSE" ? "CLOSED" : `${act.slice(1)}% OUT`);
   }
   const n = Math.max(1, Math.round(+(document.getElementById("qbQty") || {}).value || x.n));
-  const closing = q && ((long && act === "SELL") || (!long && act === "BUY"));
+  const against = q && ((long && act === "SELL") || (!long && act === "BUY"));
+  // more than you hold the other way is not a close: it closes and opens the other side. Never silently cut down,
+  // never sent without you saying so (even with ONE-CLICK on)
+  const closing = against && n <= q;
+  if (against && n > q && !confirm(`You hold ${q} ${long ? "long" : "short"}. ${act} ${n} closes the ${q} and opens ${n - q} ${long ? "SHORT" : "LONG"}. Send it?`)) return;
   if (!canTrade() && !closing){ toast(whyNot() + (/ARM/i.test(whyNot()) ? "" : " — click ARM"), false); return; }
   if (x.opt){
     const send = async () => done(closing ? await post("/api/trade/opt_adjust", {key: x.key, contracts: Math.min(n, q), mode: "close", price: null})
@@ -2655,13 +2661,20 @@ function distTxt(d, tick){ if (d == null) return ""; const t = Math.round(Math.a
 /* PACE OF TAPE: speed against this stock's own normal (×1.0 = normal), who is pushing, the flow behind it, and the
    call at your level. One strip on the ladder and on the T&S, the last-price row glowing harder as the tape runs */
 /* VWAP and the daily 50-day: on the T&S and the LEVEL II, always, with how far price is from each (live) */
-function refsHTML(r){
-  if (!r || !(r.vwap || r.sma50)) return "";
+// THE EDGE chip: how many of the seven reads agree with the move right now (click: the PS60 STORY panel)
+function edgeChip(eg){
+  if (!eg) return "";
+  const cls = eg.label === "HIGH PROBABILITY" ? "hp" : eg.label === "BUILDING" ? "bd" : "lo";
+  const tip = eg.checks.map(c => `${c.ok === true ? "✓" : c.ok === 0.5 ? "½" : c.ok === false ? "✗" : "·"} ${c.k}: ${c.why}`).join("\n");
+  return `<b class="edge ${cls} ${eg.side === "LONG" ? "lg" : "sh"}" data-story="1" title="${esc("THE EDGE " + eg.side + ": " + eg.label + "\n" + tip)}">EDGE ${eg.score % 1 ? eg.score.toFixed(1) : eg.score}/${eg.of} ${eg.side}${eg.label === "HIGH PROBABILITY" ? " · HIGH PROBABILITY" : ""}</b>`;
+}
+function refsHTML(r, eg){
+  if (!r || !(r.vwap || r.sma50)) return eg ? `<div class="refstrip">${edgeChip(eg)}</div>` : "";
   const one = (cls, name, v, dst, tip) => v ? `<span class="rf ${cls}" title="${esc(tip)}"><b>${name}</b> ${px(v)}${dst != null ? ` <i class="${dst >= 0 ? "up" : "dn"}">${dst >= 0 ? "▲ +" : "▼ −"}${Math.abs(dst).toFixed(2)}</i>` : ""}</span>` : "";
   return `<div class="refstrip">`
     + one("vw", r.vwap_label === "PM VWAP" ? "PM VWAP" : "VWAP", r.vwap, r.vwap_dist, r.vwap_label === "PM VWAP" ? "premarket VWAP: the real one starts at 9:30" : "VWAP from the 9:30 open (the desk VWAP): above it buyers own the day, below it sellers do. ▲/▼ = how far price is above / below it")
     + one("d50", "50-DAY", r.sma50, r.sma50_dist, "the daily 50-day simple moving average (today's bar included, like the daily chart). ▲/▼ = how far price is above / below it")
-    + `</div>`;
+    + edgeChip(eg) + `</div>`;
 }
 /* PS60 STORY: one line over the LEVEL II (the story right now), and the whole story in its own window */
 const FLOW_SHORT = {"NOT YET CONFIRMED": "FLOW: NOT YET", DEVELOPING: "FLOW: DEVELOPING", CONFIRMED: "FLOW: CONFIRMED", CONFLICTING: "FLOW: CONFLICTING"};
@@ -2674,7 +2687,7 @@ function storyLineHTML(s){
     + (s.attention ? `<b class="hat">HIGH ATTENTION</b>` : "") + (fl ? `<b class="fst ${FLOW_CLS[fl]}">${FLOW_SHORT[fl]}</b>` : "")
     + `<span class="stx">${esc(s.now)}</span></div>`;
 }
-document.addEventListener("click", e => { if (e.target.closest(".storyln[data-story]") && typeof showPanel === "function") showPanel("story"); });
+document.addEventListener("click", e => { if (e.target.closest(".storyln[data-story], .edge[data-story]") && typeof showPanel === "function") showPanel("story"); });
 function renderStory(d){
   if (!P.story) return;
   const s = d && d.story;
@@ -2690,6 +2703,7 @@ function renderStory(d){
       <div class="snow t-${esc(s.tone || "neutral")}">${esc(s.now || "")}</div>
       <div class="sflow">${chips}</div>
       ${s.response ? `<div class="sresp t-${esc(s.response.tone)}">PRICE RESPONSE · ${esc(s.response.text)}</div>` : ""}
+      ${s.edge ? `<div class="sedge">${edgeChip(s.edge)}<div class="echecks">${s.edge.checks.map(c => `<span class="ec ${c.ok === true ? "y" : c.ok === 0.5 ? "h" : c.ok === false ? "n" : "u"}" title="${esc(c.why)}"><i></i>${esc(c.k)}<em>${esc(c.why)}</em></span>`).join("")}</div></div>` : ""}
     </div>
     <div class="sbody">
       ${list("CONFLUENCE", (s.confluence || []).map(x => `<div class="srow ${x.major ? "major" : ""}">${esc(x.text)}</div>`))}
@@ -2701,12 +2715,15 @@ function renderStory(d){
   panelHTML("story", html);
 }
 function paceHTML(pc){
-  if (!pc || pc.state === "QUIET") return "";
-  if (pc.state === "WARMING UP") return `<div class="pacebar s-warm" title="the pace reads this stock against its own last 20 minutes: a few minutes of tape first"><span class="pst">PACE · warming up</span></div>`;
+  if (!pc) return "";
+  // SOMEBODY KNOWS SOMETHING stays up even on a quiet tape: the flow tag never disappears because the stock is slow
+  const kn0 = pc.knows ? `<span class="pkn ${pc.knows.cp === "C" ? "c" : "p"}" title="SOMEBODY KNOWS SOMETHING: short-dated, out-of-the-money ${pc.knows.cp === "C" ? "calls" : "puts"} bought at the ask, again and again">⚡ ${esc(pc.knows.text)}</span>` : "";
+  if (pc.state === "QUIET") return kn0 ? `<div class="pacebar s-warm">${kn0}</div>` : "";
+  if (pc.state === "WARMING UP") return `<div class="pacebar s-warm" title="the pace reads this stock against its own last 20 minutes: a few minutes of tape first"><span class="pst">PACE · warming up</span>${kn0}</div>`;
   const st = pc.state, cls = {SURGE: "surge", FAST: "fast", NORMAL: "norm", SLOW: "slow", "DRYING UP": "dry"}[st] || "norm";
   const b = pc.buy_pct, acc = pc.accel === "SPEEDING UP" ? "▲" : pc.accel === "SLOWING" ? "▼" : "";
   const tip = `PACE OF TAPE: ${sz(pc.sps)} shares/s now vs ${sz(pc.norm_sps || 0)} normal (the median 15 s of the last 20 min) = ×${pc.ratio} · faster than ${pc.pct}% of the last 20 min${b != null ? ` · buyers ${b}% / sellers ${100 - b}% of the aggressive shares` : ""}${pc.accel ? " · " + pc.accel : ""}`;
-  const kn = pc.knows ? `<span class="pkn ${pc.knows.cp === "C" ? "c" : "p"}" title="SOMEBODY KNOWS: short-dated, out-of-the-money ${pc.knows.cp === "C" ? "calls" : "puts"} bought at the ask, again and again">⚡ ${esc(pc.knows.text)}</span>` : "";
+  const kn = pc.knows ? `<span class="pkn ${pc.knows.cp === "C" ? "c" : "p"}" title="SOMEBODY KNOWS SOMETHING: short-dated, out-of-the-money ${pc.knows.cp === "C" ? "calls" : "puts"} bought at the ask, again and again">⚡ ${esc(pc.knows.text)}</span>` : "";
   let h = `<div class="pacebar s-${cls}" title="${esc(tip)}"><span class="pst">${st}</span><span class="pg"><i style="width:${Math.max(3, pc.pct || 0)}%"></i></span><span class="prt">×${pc.ratio}</span><span class="pacc">${acc}</span>${b != null ? `<span class="pbs" title="buyers ${b}% / sellers ${100 - b}%"><i class="b" style="width:${b}%"></i><i class="s" style="width:${100 - b}%"></i></span>` : ""}${kn}</div>`;
   if (pc.call && pc.level){
     const good = /WITH SPEED|PRESSING|SPEED \+ FLOW/.test(pc.call) && !/WITHOUT/.test(pc.call), warn = /STALLING|WITHOUT/.test(pc.call);
@@ -2742,7 +2759,7 @@ function ladderProHTML(L){
   const dn = off.filter(m => m.price < bot).sort((a, b) => b.price - a.price).slice(0, 4);
   const pill = (m, arrow) => `<span class="lvp ${lvCls(m)}" title="${esc(lvWords(m) + " " + px(m.price) + " · " + distTxt(m.dist, L.tick) + " from the last price")}">${arrow} ${esc(lvWords(m, true))} ${px(m.price)} <i>${distTxt(m.dist, L.tick)}</i></span>`;
   if (store.get("storyline", true)) h += storyLineHTML(L.story);
-  h += refsHTML(L.refs);
+  h += refsHTML(L.refs, L.story && L.story.edge);
   h += paceHTML(L.pace);
   h += `<div class="lvstrip top">${up.map(m => pill(m, "▲")).join("")}${dn.map(m => pill(m, "▼")).join("")}${up.length || dn.length ? "" : `<span class="dim">your lines off the ladder show here</span>`}<span class="sp"></span><button data-lclr="above" title="clear SOLD / BOUGHT / +/− above the ask (after a move down)">CLR ▲</button><button data-lclr="below" title="clear SOLD / BOUGHT / +/− below the bid (after a move up)">CLR ▼</button></div>`;
   h += `<table class="lad lad3 pro" data-cols="ladpro"><tr>
@@ -2762,7 +2779,9 @@ function ladderProHTML(L){
     const rel = pb ? "BUYER ↻" + (r.bid_refills || "") : pa ? "SELLER ↻" + (r.ask_refills || "") : "";
     const at = r.last && lv.length;
     const cls = [r.gap ? "gap" : "", r.best_bid ? "best-bid" : "", r.best_ask ? "best-ask" : "", r.last ? "lastpx" : "", pb ? "rl-bid" : "", pa ? "rl-ask" : "",
-      stg ? "cv-" + stageSlug(stg) : "", lv.length ? "lvrow lv-" + lvCls(lv[0]) : "", at ? "atlv" : "", lv.some(m => m.alt) ? "lvalt" : ""].join(" ");
+      stg ? "cv-" + stageSlug(stg) : "", lv.length ? "lvrow lv-" + lvCls(lv[0]) : "", at ? "atlv" : "", lv.some(m => m.alt) ? "lvalt" : "",
+      // the VWAP and the daily 50-day row GLOW, whatever else sits on it
+      lv.some(m => m.role === "vwap") ? "g-vw" : "", lv.some(m => m.role === "sma50") ? "g-d50" : ""].join(" ");
     const rb = pb ? reloadMoney(r, "bid") : null, ra = pa ? reloadMoney(r, "ask") : null;
     const goneB = !pb && /CLEANED UP|PULLED/.test(r.bid_stage || "") ? `<span class="gone">${r.bid_stage === "PULLED" ? "PULLED" : "CLEANED"}</span>` : "";
     const goneA = !pa && /CLEANED UP|PULLED/.test(r.ask_stage || "") ? `<span class="gone">${r.ask_stage === "PULLED" ? "PULLED" : "CLEANED"}</span>` : "";

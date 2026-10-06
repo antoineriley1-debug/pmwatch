@@ -61,9 +61,19 @@ def flow_gate(prints, side, price, daily_closes, now, cfg):
         rows.sort(key=lambda p: p["t"])
         return rows
 
-    mine, theirs = gather(cp), gather(other)
+    # R3: only short-term contracts are the same trade. Expiry, out-of-the-money and repeats are all judged on this
+    # one subset (a $1K weekly can never lend its expiry to $1M of contracts two months out)
+    short = lambda rows: [p for p in rows if p.get("dte") is not None and p["dte"] <= dte_max]
+    mine_all, theirs = gather(cp), short(gather(other))
+    mine = short(mine_all)
     out = {"side": side, "cp": cp, "rules": [], "lanes": {}, "gate": False, "state": "FLOW_DEAD",
            "cluster": None, "opposing": round(sum(p["premium"] for p in theirs)), "hedge": False}
+    if not mine and mine_all:
+        far = sum(p["premium"] for p in mine_all)
+        out["lanes"]["L5_FLOW_SIDE"] = (R, f"only {_k(far)} of {'calls' if cp == 'C' else 'puts'} more than {dte_max:.0f} days out (or no expiry) — months out is not the same trade (R3)")
+        out["lanes"]["L6_FLOW_QUALITY"] = (Y, "months out: somebody positioning, not the short-term bet (R3)")
+        out.update(dte_lane=R, premium_ok=far >= prem_min, otm_ok=False, repeats_ok=False, sweep=False)
+        return out
     if not mine:
         out["lanes"]["L5_FLOW_SIDE"] = (R, f"no {'call' if cp == 'C' else 'put'} flow bought at the ask on this name — no flow, no dough")
         out["lanes"]["L6_FLOW_QUALITY"] = (R, "nothing to judge")
@@ -79,7 +89,8 @@ def flow_gate(prints, side, price, daily_closes, now, cfg):
     for p in mine:
         series.setdefault(p.get("expiry") or "?", []).append(p)
     best_series = max(series.values(), key=lambda rows: sum(x["premium"] for x in rows))
-    repeats = len(best_series)
+    # R5 repeat buyers: separate MINUTES inside the fresh window (one order split into two prints is one buyer)
+    repeats = len({int(x["t"] // 60) for x in best_series if now - x["t"] <= fresh})
     sweeps = sum(1 for p in mine if p.get("kind") in ("sweep", "block", "split", "multi"))
     sweep_urgent = any(p.get("kind") in ("sweep", "split", "multi") for p in mine)
     with_dte = [p for p in mine if p.get("dte") is not None]

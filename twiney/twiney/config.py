@@ -43,7 +43,7 @@ DEFAULTS = {
         # rotation leans toward symbols with a live reloader: a symbol's distance is cut by this fraction x its best
         # level's conviction (0 = distance only, 0.5 = a fully ACTIVE reloader reads as half as far away)
         "conviction_weight": 0.5,
-        # ...and toward a symbol where SOMEBODY KNOWS (short-dated out-of-the-money flow at the ask): distance cut by this
+        # ...and toward a symbol where SOMEBODY KNOWS SOMETHING (short-dated out-of-the-money flow at the ask): distance cut by this
         # fraction x the flow score
         "flow_weight": 0.3,
     },
@@ -207,6 +207,7 @@ DEFAULTS = {
         # drag it where you want it. 0 = off
         "auto_stop_dollars": 1.0,
         "sim_options_after_hours": True,
+        "outside_rth": True,            # stock limit / stop-limit orders work in the premarket and after hours too (IBKR outsideRth)
         "sim_options_force": False,
         # when an auto-entry trade goes flat (stopped out, target, flatten) its 2nd entry, stop and target lines go
         "clear_lines_when_flat": True,
@@ -335,6 +336,7 @@ DEFAULTS = {
         "urgency_min_dollars": 250000,
         "urgency_max_dte": 7,
         "urgency_min_otm_pct": 0.5,
+        "knows_min_minutes": 2,         # SOMEBODY KNOWS SOMETHING needs prints in at least this many separate minutes (one print is a guess)
         "urgency_cooldown_minutes": 15,
     },
     "demo": {
@@ -426,13 +428,14 @@ DEFAULTS = {
         "confluence_atr_pct": 6,        # places within this % of the ATR of each other are one place
         "major_score": 6,               # MAJOR confluence: weight at least this (pivot / 2nd entry / your line 3, day / week / month 2, whole dollar 1)
         "flow_minutes": 20,             # option flow read over the last N minutes
-        "flow_max_dte": 21,             # ... only contracts expiring within this many days (short-term PS60 moves first)
+        "flow_max_dte": 7,              # ... only contracts expiring within this many days (same week: the same rule as SOMEBODY KNOWS SOMETHING)
         "deep_otm_pct": 5.0,            # DEEP OTM: at least this % out of the money (counts 1.5x; near the money counts less)
         "develop_premium": 50000,       # DEVELOPING: at least this much (weighted) premium bought at the ask on the move's side
         "confirm_premium": 250000,      # CONFIRMED: at least this much ...
-        "confirm_repeats": 2,           # ... in at least this many prints
+        "confirm_repeats": 2,           # ... in at least this many separate minutes (one order split in two is one buyer)
         "response_minutes": 5,          # PRICE RESPONSE: what price did over the last N minutes
         "retest_minutes": 30,           # a retest is watched for this long after a break
+        "mp_min_atr": 0.5,              # ROOM: the measured potential to the next supply (above the 50) / demand (below) is THIN under this many ATRs
         "memory_minutes": 120,          # unusual flow with no PS60 trigger is remembered this long
     },
     "studies": {

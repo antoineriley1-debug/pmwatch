@@ -30,6 +30,7 @@ class PaceBook:
 
     def __init__(self):
         self.b = deque(maxlen=int(WINDOW // BUCKET) + 8)    # [t0, buy, sell, other, prints, first px, last px]
+        self.first_t = None                                   # the first bucket this book ever saw (warm-up)
 
     def add(self, t, price, size, side):
         t0 = (t // BUCKET) * BUCKET
@@ -42,6 +43,8 @@ class PaceBook:
         else:
             r = [t0, 0.0, 0.0, 0.0, 0, price, price]
             self.b.append(r)
+            if self.first_t is None:
+                self.first_t = t0
         r[1 if side == "buy" else 2 if side == "sell" else 3] += size
         r[4] += 1
         r[6] = price
@@ -57,7 +60,7 @@ def _win(rows, start, end):
 
 
 def knows_txt(k):
-    """SOMEBODY KNOWS in one line: $640K calls · 6 prints · 2 sweeps · 160 strike, 3d."""
+    """SOMEBODY KNOWS SOMETHING in one line: $640K calls · 6 prints · 2 sweeps · 160 strike, 3d."""
     if not k or not k.get("dollars"):
         return None
     top = k.get("top") or {}
@@ -68,7 +71,7 @@ def knows_txt(k):
 
 def read(book, now, last, levels, tick, cfg, flow=None, knows=None):
     """The pace right now. levels = [(price, name)], flow = recent option prints [(t, cp, side, premium)],
-    knows = {"C": ..., "P": ...}: the SOMEBODY KNOWS read for calls and puts (short-dated, out of the money, bought at
+    knows = {"C": ..., "P": ...}: the SOMEBODY KNOWS SOMETHING read for calls and puts (short-dated, out of the money, bought at
     the ask, again and again)."""
     rows = [r for r in book.b if now - r[0] < WINDOW + 2 * BUCKET]
     out = {"state": "QUIET", "ratio": None, "pct": None, "heat": 0.0, "buy_pct": None, "accel": "", "sps": 0, "pps": 0.0,
@@ -89,7 +92,10 @@ def read(book, now, last, levels, tick, cfg, flow=None, knows=None):
     # the stock's normal: every full 15-second slice of the last 20 minutes before that
     slices = []
     t = w0
-    while t - 15.0 >= now - WINDOW:
+    # only time the book has actually watched counts: before the first print it saw is not "zero volume"
+    # (otherwise the first minutes after a start read every tape as FAST)
+    start = max(now - WINDOW, book.first_t if book.first_t is not None else now - WINDOW)
+    while t - 15.0 >= start:
         slices.append(_win(rows, t - 15.0, t)[0] / 15.0)
         t -= 15.0
     active = [x for x in slices if x > 0]
@@ -116,8 +122,9 @@ def read(book, now, last, levels, tick, cfg, flow=None, knows=None):
     levels = levels or []
     # where price is against the levels
     near = max(c["near_ticks"] * tick, last * c["near_pct"] / 100.0)
-    past = [r for r in rows if cur0 - 35.0 <= r[0] < cur0 - 25.0]
-    then = past[0][5] if past else None                 # the price ~30 s ago
+    # the price ~30 s ago: the last print of the bucket ending 25-30 s ago (or the nearest one before it, up to 45 s)
+    past = [r for r in rows if cur0 - 45.0 <= r[0] <= cur0 - 30.0]
+    then = max(past, key=lambda r: r[0])[6] if past else None
     broke = None
     if then is not None:
         for p, nm in levels:
@@ -138,7 +145,7 @@ def read(book, now, last, levels, tick, cfg, flow=None, knows=None):
                         against_usd += prem
         kn = knows.get("C" if up else "P")
         if kn and kn.get("knows"):
-            flow_txt = "+ SOMEBODY KNOWS " + knows_txt(kn)
+            flow_txt = "+ SOMEBODY KNOWS SOMETHING " + knows_txt(kn)
             flow_usd = max(flow_usd, kn.get("dollars") or 0)
         elif flow_usd >= c["flow_min_premium"]:
             flow_txt = f"+ FLOW {_k(flow_usd)} {'calls' if up else 'puts'}"
@@ -148,7 +155,7 @@ def read(book, now, last, levels, tick, cfg, flow=None, knows=None):
         what = ("BREAKOUT" if up else "BREAKDOWN") + (" WITH SPEED" if fast else " WITHOUT SPEED")
         out.update(call=what, level=[broke[1], broke[2]], flow=flow_txt,
                    words=(f"{'Breakout' if up else 'Breakdown'} through {broke[2]} with speed, {ratio:.1f} times its normal pace"
-                          + (f", and somebody knows: {_k(flow_usd)} of short dated {'calls' if up else 'puts'} hammered" if flow_txt and "KNOWS" in flow_txt
+                          + (f", and somebody knows something: {_k(flow_usd)} of short dated {'calls' if up else 'puts'} hammered" if flow_txt and "KNOWS" in flow_txt
                              else f", and {_k(flow_usd)} of {'calls' if up else 'puts'} behind it" if flow_txt and flow_txt.startswith("+") else "")
                           if fast else f"{broke[2]} broke without speed. Careful, that one can come back"))
         return out
@@ -159,13 +166,14 @@ def read(book, now, last, levels, tick, cfg, flow=None, knows=None):
         if (cp == "C" and buy_pct >= c["aggress_pct"]) or (cp == "P" and 100 - buy_pct >= c["aggress_pct"]):
             what = "calls" if cp == "C" else "puts"
             out.update(call="SPEED + FLOW", level=[last, "calls hammered" if cp == "C" else "puts hammered"],
-                       flow="+ SOMEBODY KNOWS " + out["knows"]["text"],
+                       flow="+ SOMEBODY KNOWS SOMETHING " + out["knows"]["text"],
                        words=f"Tape speeding up, {ratio:.1f} times normal, {'buyers' if cp == 'C' else 'sellers'} in control, and short dated {what} are being hammered")
             # a level close ahead still gets its own read below only when this did not fire
             return out
     # approaching a level: the nearest one in the direction price is travelling
-    going_up = then is None or last >= then
-    ahead = [(p, nm) for p, nm in levels if (p >= last if going_up else p <= last) and abs(p - last) <= near]
+    # with no price 30 s back (a quiet tape), a level within reach on EITHER side counts (never assume up)
+    going_up = None if then is None else last >= then
+    ahead = [(p, nm) for p, nm in levels if abs(p - last) <= near and (going_up is None or (p >= last if going_up else p <= last))]
     if ahead:
         p, nm = min(ahead, key=lambda x: abs(x[0] - last))
         if ratio <= c["stall_ratio"] or accel == "SLOWING":

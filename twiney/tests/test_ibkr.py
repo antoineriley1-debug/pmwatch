@@ -48,9 +48,9 @@ class Clock:
         return self.t
 
 
-def fake_order(action, qty, order_type, price, tif="DAY", parent_id=None, transmit=True, aux=None, oca=None):
+def fake_order(action, qty, order_type, price, tif="DAY", parent_id=None, transmit=True, aux=None, oca=None, outside_rth=False):
     return {"action": action, "qty": qty, "type": order_type, "price": price, "tif": tif,
-            "parent": parent_id, "transmit": transmit, "aux": aux, "oca": oca}
+            "parent": parent_id, "transmit": transmit, "aux": aux, "oca": oca, "outside_rth": outside_rth}
 
 
 def make_session(**trading):
@@ -519,7 +519,10 @@ class OptionPositionTests(unittest.TestCase):
         out = tr.opt_adjust("TSLA 20261003 240C", 0, "close", None, clock())
         self.assertTrue(out["ok"], out)
         order = [c for c in app.calls if c[0] == "placeOrder"][-1][3]
-        self.assertEqual((order["action"], order["qty"]), ("SELL", 5))
+        # 5 held, the SELL 2 above still working: the close takes the other 3 (never 5 on top of the 2: that is short 2)
+        self.assertEqual((order["action"], order["qty"]), ("SELL", 3))
+        out = tr.opt_adjust("TSLA 20261003 240C", 0, "close", None, clock())
+        self.assertFalse(out["ok"]); self.assertIn("already being closed", out["reason"])
         # the fill lands in the journal, the position leaving clears the row
         class Ex: execId, side, shares, price, time = "e1", "SLD", 5, 3.40, ""
         app.execDetails(1, _Opt(), Ex())

@@ -1350,7 +1350,7 @@ function flowDot(r){
   const f = r.flow; if (!f) return "";
   return `<span class="fdot ${f.c >= f.p ? "c" : "p"} ${f.hot ? "hot" : ""}" title="${esc(flowTitle(f))}">${f.urgent ? "⚡" : "●"}${f.n > 1 ? `<u>${f.n}</u>` : ""}</span>`;
 }
-// SOMEBODY KNOWS: short-dated out-of-the-money flow at the ask agreeing with the level (calls for a buyer, puts for a seller)
+// SOMEBODY KNOWS SOMETHING: short-dated out-of-the-money flow at the ask agreeing with the level (calls for a buyer, puts for a seller)
 function knowsTag(kn){
   if (!kn) return "";
   if (kn.knows) return `<span class="knows" title="${esc(kn.words)}">⚡</span>`;
@@ -1564,8 +1564,12 @@ function tapeHTML(t, lad){
   const who = r => r.side === "buy" ? "paid up: traded at the ask" : r.side === "sell" ? "hit: traded at the bid" : "between the quotes";
   const rl = {};
   for (const x of ((lad && lad.rows) || [])){ if (x.bid_state === "RELOAD" || x.bid_proven) rl[x.price + "|sell"] = "b"; if (x.ask_state === "RELOAD" || x.ask_proven) rl[x.price + "|buy"] = "s"; }
-  const rows = t.recent.map(r => { const g = rl[(+r.price) + "|" + r.side]; return `<tr class="${r.at?"atlvl":""} ${r.side}${g ? " rlhit " + g : ""}" title="${who(r)}${g ? (g === "b" ? " · sold into the RELOAD BUYER at this price" : " · bought from the RELOAD SELLER at this price") : ""}${r.exchange ? " · " + esc(r.exchange) : ""} · ${ago(r.age)} ago">
-    <td class="${r.side}">${px(r.price)}${r.at?` <span class="tag">${esc(r.at)}</span>`:""}</td>
+  // a print AT the VWAP or the daily 50-day (within half a cent) glows like their rows on the ladder
+  const rf = (lad && lad.refs) || {}, near = (a, b) => a != null && b != null && Math.abs(a - b) < 0.0051;
+  const rows = t.recent.map(r => { const g = rl[(+r.price) + "|" + r.side];
+    const gv = near(+r.price, rf.vwap), g5 = near(+r.price, rf.sma50);
+    return `<tr class="${r.at?"atlvl":""} ${r.side}${g ? " rlhit " + g : ""}${gv ? " g-vw" : ""}${g5 ? " g-d50" : ""}" title="${who(r)}${g ? (g === "b" ? " · sold into the RELOAD BUYER at this price" : " · bought from the RELOAD SELLER at this price") : ""}${gv ? " · AT THE VWAP" : ""}${g5 ? " · AT THE DAILY 50-DAY" : ""}${r.exchange ? " · " + esc(r.exchange) : ""} · ${ago(r.age)} ago">
+    <td class="${r.side}">${px(r.price)}${r.at?` <span class="tag">${esc(r.at)}</span>`:""}${gv ? ` <span class="gtag vw">VWAP</span>` : ""}${g5 ? ` <span class="gtag d50">50D</span>` : ""}</td>
     <td class="${r.side} ${r.large?"large":""}">${sz(r.size)}</td></tr>`; }).join("")
     || `<tr><td colspan="2" class="dim">no prints yet</td></tr>`;
   return `<table class="t tape2" data-cols="tape2"><tr><th data-w="1.1">PRICE</th><th data-w="0.9" title="green = paid the ask (buyer in a rush) · red = hit the bid (seller getting out) · bold = big">SIZE</th></tr>${rows}</table>`;

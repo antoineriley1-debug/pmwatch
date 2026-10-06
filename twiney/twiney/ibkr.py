@@ -510,7 +510,7 @@ def make_option_contract(symbol, expiry, strike, right, mult=100, exchange="SMAR
     return c
 
 
-def make_order(action, qty, order_type, price, tif="DAY", parent_id=None, transmit=True, aux=None, oca=None):
+def make_order(action, qty, order_type, price, tif="DAY", parent_id=None, transmit=True, aux=None, oca=None, outside_rth=False):
     from ibapi.order import Order
     o = Order()
     o.action = action
@@ -528,6 +528,8 @@ def make_order(action, qty, order_type, price, tif="DAY", parent_id=None, transm
         o.ocaType = 2         # reduce: a fill of one exit of the pair (target / its stop) reduces the other by the same shares
     o.tif = tif
     o.transmit = transmit
+    if outside_rth:
+        o.outsideRth = True     # works (and triggers, for a stop-limit) in the premarket / after hours too
     if parent_id is not None:
         o.parentId = parent_id
     # IBKR 10.x rejects orders that still carry the legacy defaults for these
@@ -783,6 +785,11 @@ class MarketDataSession:
             return perm_id
         return (self.perm_ids.get(order_id) or f"id{order_id}") if mine else f"x{order_id}"
 
+    def _ext_hours(self, order_type):
+        """Stock limit / stop-limit orders carry IBKR's outsideRth (SETTINGS > Trading: Work orders outside regular
+        hours): otherwise a premarket entry, flatten or stop just sits in TWS until 9:30 while the desk says SENT."""
+        return order_type in ("LMT", "STP LMT") and bool(self.cfg.get("trading", {}).get("outside_rth", True))
+
     def send_order(self, symbol, action, qty, price, order_type, parent, role, tif, now, aux=None, oca=None,
                    transmit=True, reducing=False):
         with self._lock:
@@ -800,6 +807,8 @@ class MarketDataSession:
                 extra["aux"] = aux
             if oca:
                 extra["oca"] = f"twiney{parent}-{oca}"
+            if self._ext_hours(order_type):
+                extra["outside_rth"] = True
             order = self.order_factory(action, qty, order_type, price, tif, parent, transmit=transmit, **extra)
             self.order_roles[oid] = role
             self.my_orders[oid] = {"symbol": symbol, "parent": parent, "action": action, "qty": qty,
@@ -834,6 +843,8 @@ class MarketDataSession:
                 self.app.cancelOrder(int(oid), cancel_arg())
                 return True
             extra = {"oca": info.get("oca")} if info.get("oca") else {}
+            if not info.get("opt") and self._ext_hours(info["type"]):
+                extra["outside_rth"] = True      # a moved order keeps working outside regular hours
             info["_prev"], info["_mod_t"] = (info.get("aux"), info["price"], info["qty"]), now
             if info["type"] == "STP LMT":
                 if price is None:

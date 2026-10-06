@@ -60,6 +60,7 @@ class SymbolState:
         self.daily_vol = {}     # day start -> shares traded (daily bars from IBKR carry volume)
         self.l1 = {k: None for k in L1_FIELDS}
         self.l1_t = None
+        self.q_t = None          # last time IBKR's quote stream moved the bid / ask
         self.depth_active = False
         self.contract = None     # IBKR contract details once resolved: min_tick, con_id, long_name
         self.depth_since = None
@@ -161,7 +162,14 @@ class SymbolState:
 
     def bbo(self):
         if self.book is not None and self.book.synced:
-            return self.book.best(BID), self.book.best(ASK)
+            b, a = self.book.best(BID), self.book.best(ASK)
+            # a depth book that went quiet while the quote stream moved on is a frozen book: the quote is the truth
+            # (otherwise every print after a silent depth stall is read on the wrong side)
+            lb, la = self.l1["bid"], self.l1["ask"]
+            if (lb and la and lb < la and self.q_t is not None and self.depth_t is not None
+                    and self.q_t - self.depth_t > 5.0 and (b, a) != (lb, la)):
+                return lb, la
+            return b, a
         return self.l1["bid"], self.l1["ask"]
 
     def note_quote(self, t):
@@ -176,10 +184,17 @@ class SymbolState:
         bid, ask = self.bbo()
         locked = lambda b, a: b is not None and a is not None and b >= a
         if locked(bid, ask):
-            # a locked / crossed quote says nothing: read the print against the last CLEAN quote, whatever it says
-            for qt, b, a in reversed(self.quotes):
-                if not locked(b, a):
-                    return classify(price, b, a)
+            # a locked / crossed quote says nothing: read the print against the last CLEAN quote of the last 10 s
+            # (older is not the market any more), skipping half-updated quotes that lived under 50 ms
+            q = list(self.quotes)
+            for i in range(len(q) - 1, -1, -1):
+                qt, b, a = q[i]
+                if t - qt > 10.0:
+                    break
+                lived = (q[i + 1][0] if i + 1 < len(q) else t) - qt
+                if lived < 0.05 or locked(b, a):
+                    continue
+                return classify(price, b, a)
             return MID
         side = classify(price, bid, ask)
         if side != MID:
@@ -373,6 +388,7 @@ class Engine:
             if field == "last" and value:
                 self._check_price_alerts(symbol, value, t)
             if field in ("bid", "ask"):
+                st.q_t = t
                 st.note_quote(t)
             tape_dead = st.tape_t is None or t - st.tape_t >= 10
             if field == "last" and value and (not st.depth_active or tape_dead):
@@ -577,9 +593,14 @@ class Engine:
             st._user_levels_cache = self._user_levels(st.play)
             memo = st.__dict__.get("_studies") or {}
             levels = self._pace_levels(st, memo.get("v")) if pc.get("use_levels", True) else []
-            flow = [(m["t"], m["cp"], m.get("side"), m.get("prem") or 0.0) for m in st.flow_marks]
+            # "+ FLOW" behind a break: the same prints as everywhere else: short-dated (story.flow_max_dte) and out of
+            # the money. Far-dated or in-the-money size is not the bet on this move
+            mx = float((self.cfg.get("story") or {}).get("flow_max_dte", 7))
+            flow = [(m["t"], m["cp"], m.get("side"), m.get("prem") or 0.0) for m in st.flow_marks
+                    if m.get("dte") is not None and m["dte"] <= mx and m.get("spot")
+                    and ((m["strike"] - m["spot"]) if m["cp"] == "C" else (m["spot"] - m["strike"])) / m["spot"] * 100.0 >= 0.5]
             try:
-                knows = {"C": self._knows(st, BID, t), "P": self._knows(st, ASK, t)}    # SOMEBODY KNOWS: calls / puts
+                knows = {"C": self._knows(st, BID, t), "P": self._knows(st, ASK, t)}    # SOMEBODY KNOWS SOMETHING: calls / puts
                 p = pace_mod.read(st.pacebook, t, last, levels, tick_size(last, sym), pc, flow, knows)
             except Exception:
                 log.exception("pace %s", sym)
@@ -591,7 +612,9 @@ class Engine:
                 said = st.__dict__.setdefault("_pace_said", {})
                 if call.startswith(("BREAKOUT", "BREAKDOWN")):
                     # one call per break of a level; the only second call allowed is the upgrade to WITH SPEED
-                    key = ("BREAK", round(p["level"][0], 4))
+                    # one call per break of a level PER DIRECTION (a breakout that comes straight back down is a new
+                    # call: the failed break); the only second call allowed is WITHOUT -> WITH speed, same direction
+                    key = ("BREAK", "up" if call.startswith("BREAKOUT") else "down", round(p["level"][0], 4))
                     prev = said.get(key)
                     fresh = prev is None or t - prev[0] >= rep_s
                     upgrade = prev is not None and not fresh and "WITHOUT" in prev[1] and "WITHOUT" not in call
@@ -713,7 +736,18 @@ class Engine:
             ac["v"] = st.play.get("atr") or self._atr(st, st.bar_list(MAX_BARS))
         atr = ac["v"]
         ctx = story_mod.daily_context(drows, live, last)
-        points = story_mod.ps60_points(st.play, getattr(st, "sneaky_auto", None)) + dc["pts"] + story_mod.ma_points(ctx)
+        # Dan's MA pack on the daily and the 60-minute (the chart's numbers): once a minute is plenty, they barely move
+        mc = st.__dict__.setdefault("_story_mas", {})
+        if mc.get("k") != (int(t // 60), st.hist_ver, st.study_ver):
+            mc["k"] = (int(t // 60), st.hist_ver, st.study_ver)
+            try:
+                h60 = studies.h60_from_m30(studies.m30_series(st, t))
+                mc["v"] = story_mod.ma_stack_points(studies.ma_pack([r[4] for r in drows], use_bb=False),
+                                                    studies.ma_pack([r[4] for r in h60], use_bb=False) if len(h60) >= 5 else [])
+            except Exception:
+                log.exception("story MAs %s", st.symbol)
+                mc["v"] = []
+        points = story_mod.ps60_points(st.play, getattr(st, "sneaky_auto", None)) + dc["pts"] + story_mod.ma_points(ctx) + mc["v"]
         # zones: the 30-minute history changes slowly: found again every 5 minutes, or when new history lands
         zc = st.__dict__.setdefault("_zone_cache", {})
         zkey = (int(t // 300), st.study_ver, st.hist_ver)
@@ -723,7 +757,7 @@ class Engine:
         zones = story_mod.user_zones(st.play) + zc["v"]
         conf = story_mod.confluence(points, zones, last, atr, tick, sc)
         prints = list(self.flow.by_symbol.get(st.symbol, ()))
-        fr = story_mod.flow_read(prints, t, sc)
+        fr = story_mod.flow_read(prints, t, sc, [r[4] for r in drows[-5:]])
         reloads = []
         for tr in st.trackers.values():
             if not (tr.state == RELOAD or tr.proven) or not self._ps60_reload(tr.price, st.symbol):
@@ -1423,13 +1457,17 @@ class Engine:
             self.flow_status["last_print"] = t
             if st is not None:
                 self._trap_flow_watch(st, p, t)
-            self._urgency(p, t, st)
+            # urgency and the ladder marks run on the PRINT's own time: a batch of earlier prints arriving at once
+            # (startup, a reconnect) is filed where it happened and never called as if it were happening now
+            pt = min(t, p.get("t") or t)
+            fresh = t - pt <= float(self.cfg.get("flow", {}).get("urgency_window_minutes", 10)) * 60.0
+            self._urgency(p, pt, st, live=fresh)
             if st is not None:
-                self._flow_mark(st, p, t)
+                self._flow_mark(st, p, pt, live=fresh)
             self._check_flow_alerts(p, t)
             self._flow_scan(p, t, st)
-            if st is None and self.flow_alerts != "all":
-                return
+            if (st is None and self.flow_alerts != "all") or not fresh:
+                return                       # a late batch of earlier prints is filed, never called as if it were now
             u = self.flow.check(p["symbol"], t)
             if u is None:
                 return
@@ -1452,8 +1490,10 @@ class Engine:
                 except Exception:
                     pass
             otm = u.get("otm_pct")
+            again = u.get("minutes", 1) >= 2       # "they keep scooping" only when it came again in another minute
             words = (f"unusual {what} buying, {narrative.say_dollars(u['premium'])}"
-                     + (f", {round(otm)} percent out of the money. They keep scooping up the {what}." if otm is not None and otm > 0 else
+                     + (f", {round(otm)} percent out of the money. " + (f"They keep scooping up the {what}." if again else f"One order, {u['prints']} prints. Watch if it comes again.")
+                        if otm is not None and otm > 0 else
                         f", {abs(round(otm))} percent in the money. That is a hedge or stock replacement, not the dough." if otm is not None and otm <= -3 else
                         f", right at the money." if otm is not None else "."))
             if st is not None:
@@ -2185,7 +2225,7 @@ class Engine:
         return max((tr.conviction(t) for tr in st.trackers.values()), default=0.0)
 
     def _knows(self, st, side, t):
-        """SOMEBODY KNOWS for a level side: a reload BUYER (bid) is confirmed by short-dated out-of-the-money CALLS
+        """SOMEBODY KNOWS SOMETHING for a level side: a reload BUYER (bid) is confirmed by short-dated out-of-the-money CALLS
         bought at the ask; a reload SELLER (ask) by PUTS. Cached for the tick so twenty rows cost one read."""
         cp = "C" if side == BID else "P"
         cache = st.__dict__.setdefault("_knows_cache", {})
@@ -2211,7 +2251,7 @@ class Engine:
             top = k["top"] or {}
             strike = f" {narrative.px(top['strike'])} strike" if top.get("strike") is not None else ""
             dte = f", {round(top['dte'])} day{'s' if round(top['dte']) != 1 else ''} out" if top.get("dte") is not None else ""
-            return (f"SOMEBODY KNOWS: {money(k['dollars'])} of short-dated out-of-the-money {what} bought at the ask in {k['window_minutes']} min"
+            return (f"SOMEBODY KNOWS SOMETHING: {money(k['dollars'])} of short-dated out-of-the-money {what} bought at the ask in {k['window_minutes']} min"
                     f" ({k['prints']} prints{', ' + str(k['sweeps']) + ' sweeps' if k['sweeps'] else ''}){strike}{dte}. The flow agrees with the reload {who}.")
         if k["dollars"] > 0:
             return (f"some short-dated {what} coming in ({money(k['dollars'])} in {k['prints']} prints), not enough yet" +
@@ -2219,7 +2259,7 @@ class Engine:
         return f"no short-dated out-of-the-money {what} at the ask in the last {k['window_minutes']} min"
 
     def best_knows(self, st, t):
-        """The strongest SOMEBODY KNOWS score on this symbol, either side, 0..1."""
+        """The strongest SOMEBODY KNOWS SOMETHING score on this symbol, either side, 0..1."""
         return max(self._knows(st, BID, t)["score"], self._knows(st, ASK, t)["score"])
 
     def _rotation_ranking(self, t):
@@ -2902,7 +2942,7 @@ class Engine:
 
     # ---- option flow on the ladder -----------------------------------------------
 
-    def _flow_mark(self, st, p, t):
+    def _flow_mark(self, st, p, t, live=True):
         """A big option print on a watched name: remember where the stock was when it hit, so the ladder shows
         it on that row. The same strike bought again and again, expiring soon, is what to look for: it gets
         marked hot and called out once."""
@@ -2929,6 +2969,8 @@ class Engine:
         if len(same) >= lc.get("flow_repeat_prints", 2) and short:
             for x in same:
                 x["hot"] = True
+            if not live:
+                return
             cool = lc.get("flow_repeat_cooldown_minutes", 15) * 60.0
             if t - st.rflow_said.get(key, -1e9) >= cool:
                 st.rflow_said[key] = t
@@ -3004,7 +3046,7 @@ class Engine:
             except Exception:
                 pass
 
-    def _urgency(self, p, t, st):
+    def _urgency(self, p, t, st, live=True):
         """Every print bought at the ask on a short-dated, out-of-the-money contract counts toward that contract's
         urgency. Enough of them fast enough, with size, and it is called URGENT FLOW (watchlist names; every name
         when flow alerts are on for all)."""
@@ -3033,7 +3075,7 @@ class Engine:
             self.urgent_keys.add(key)
         else:
             self.urgent_keys.discard(key)
-        if not hot or (st is None and self.flow_alerts != "all"):
+        if not hot or not live or (st is None and self.flow_alerts != "all"):
             return
         cool = fc.get("urgency_cooldown_minutes", 15) * 60.0
         if t - self.urg_said.get(key, -1e9) < cool:
@@ -3514,9 +3556,12 @@ class Engine:
         keys = sorted(set(keys), reverse=True)
         self._prune_memory(st, t)
         sums = st.mem_sums
+        # the tape, visits, PULL / STACK and big-size memory are filed under the default tick key (the print's own
+        # price); the rows use the instrument's tick: translate, so a non-default IBKR tick never blanks the columns
+        dk = {k: price_key(round(k * tk, 4)) for k in keys}
         clr = getattr(st, "mem_clear", None) or {}
-        sold = {k: max(0.0, sums.get((k, "sell"), 0.0) - (clr.get((k, "sell")) or (0, 0.0))[1]) for k in keys}
-        bought = {k: max(0.0, sums.get((k, "buy"), 0.0) - (clr.get((k, "buy")) or (0, 0.0))[1]) for k in keys}
+        sold = {k: max(0.0, sums.get((dk[k], "sell"), 0.0) - (clr.get((dk[k], "sell")) or (0, 0.0))[1]) for k in keys}
+        bought = {k: max(0.0, sums.get((dk[k], "buy"), 0.0) - (clr.get((dk[k], "buy")) or (0, 0.0))[1]) for k in keys}
         vis = getattr(st, "visits", None) or {}
         vopen = getattr(st, "visit_open", None) or set()
         lc = self.cfg.get("ladder", {})
@@ -3557,27 +3602,27 @@ class Engine:
                 "flow": flow_rows.get(k),
                 "best_bid": k == bb, "best_ask": k == ba, "last": k == lk,
             }
-            v = vis.get(k)
+            v = vis.get(dk[k])
             if v is not None:
                 row["vs"], row["vb"] = round(v["s"]), round(v["b"])
                 row["vn"] = sum(1 for x in v["ts"] if t - x <= MEMORY_SECONDS)
-                row["vopen"] = k in vopen
+                row["vopen"] = dk[k] in vopen
             for side, sd in (("b", BID), ("a", ASK)):
-                ps = st.pulls.pullstack(sd, k, t, sw)
+                ps = st.pulls.pullstack(sd, dk[k], t, sw)
                 if ps is not None:
                     row["ps_" + side] = ps
             if k in lvmap:
                 row["lv"] = lvmap[k]
             for side in ("bid", "ask"):
                 sd = BID if side == "bid" else ASK
-                rec = st.big[sd].get(k)
+                rec = st.big[sd].get(dk[k])
                 if rec is not None and rec[2]:
                     row[side + "_big"] = {"times": rec[0], "huge": row[side] >= big_bar * huge_x}
                 # REAL / MIXED / FAKE: of the size that has left this price, how much traded vs vanished
-                real = st.pulls.at(sd, k)
+                real = st.pulls.at(sd, dk[k])
                 if real is not None:
                     row[side + "_real"] = real
-                story = st.pulls.story(sd, k)
+                story = st.pulls.story(sd, dk[k])
                 if story is not None:
                     row[side + "_story"] = story
                 tr = trk.get((side, k))
@@ -3599,7 +3644,7 @@ class Engine:
                     row[side + "_slug"] = SLUG.get(row[side + "_stage"])
                     row[side + "_since_refill"] = round(tr.vol_since_refill) if tr.proven else 0
                     row[side + "_refill_age"] = round(t - tr.last_refill_t) if tr.proven and tr.last_refill_t is not None else None
-                    # SOMEBODY KNOWS: short-dated out-of-the-money flow agreeing with this level (calls for a buyer, puts for a seller)
+                    # SOMEBODY KNOWS SOMETHING: short-dated out-of-the-money flow agreeing with this level (calls for a buyer, puts for a seller)
                     if tr.proven or tr.role != "auto":
                         kn = self._knows(st, sd, t)
                         if kn["dollars"] > 0:

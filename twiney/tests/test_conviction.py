@@ -387,27 +387,33 @@ class KnowsTests(unittest.TestCase):
         self.assertFalse(k["knows"])
         self.assertEqual(k["dollars"], 0)
 
+    def test_one_burst_in_one_minute_is_not_somebody_knows_something(self):
+        self.put(15.5); self.put(15.6); self.put(15.7)          # one order split in three: a guess, not a repeat
+        k = self.e._knows(self.e.syms["AAA"], ASK, 16.0)
+        self.assertFalse(k["knows"])
+        self.assertEqual(k["minutes"], 1)
+
     def test_short_dated_otm_puts_at_the_ask_confirm_a_reload_seller(self):
         prove_seller(self.e)
-        self.put(15.5); self.put(15.6); self.put(15.7)          # $180K of 3-day 5%-OTM puts, at the ask
-        k = self.e._knows(self.e.syms["AAA"], ASK, 16.0)
+        self.put(15.5); self.put(61.0); self.put(62.0)          # $180K of 3-day 5%-OTM puts, at the ask, two separate minutes
+        k = self.e._knows(self.e.syms["AAA"], ASK, 62.5)
         self.assertTrue(k["knows"])
         self.assertEqual(k["prints"], 3)
         self.assertEqual(k["sweeps"], 3)
         self.assertEqual(k["top"]["strike"], 9.50)
         self.assertIn("SOMEBODY KNOWS", k["words"])
-        r = next(r for r in self.e._memory_ladder(self.e.syms["AAA"], 16.0, self.e._user_levels(self.e.syms["AAA"].play))["rows"] if abs(float(r["price"]) - 10.00) < 1e-9)
+        r = next(r for r in self.e._memory_ladder(self.e.syms["AAA"], 62.5, self.e._user_levels(self.e.syms["AAA"].play))["rows"] if abs(float(r["price"]) - 10.00) < 1e-9)
         self.assertTrue(r["ask_knows"]["knows"])
-        rl = self.e._reloaders(self.e.syms["AAA"], 16.0, 9.995)
+        rl = self.e._reloaders(self.e.syms["AAA"], 62.5, 9.995)
         self.assertTrue(rl["above"][0]["knows"])
 
     def test_calls_do_not_confirm_a_seller(self):
         prove_seller(self.e)
-        self.put(15.5, strike=10.50, cp="C"); self.put(15.6, strike=10.50, cp="C"); self.put(15.7, strike=10.50, cp="C")
-        k = self.e._knows(self.e.syms["AAA"], ASK, 16.0)
+        self.put(15.5, strike=10.50, cp="C"); self.put(61.0, strike=10.50, cp="C"); self.put(62.0, strike=10.50, cp="C")
+        k = self.e._knows(self.e.syms["AAA"], ASK, 62.5)
         self.assertFalse(k["knows"])
         self.assertEqual(k["against"], 180000)
-        kb = self.e._knows(self.e.syms["AAA"], BID, 16.0)      # ...they would confirm a buyer
+        kb = self.e._knows(self.e.syms["AAA"], BID, 62.5)      # ...they would confirm a buyer
         self.assertTrue(kb["knows"])
 
     def test_long_dated_or_at_the_bid_does_not_count(self):
@@ -433,8 +439,8 @@ class KnowsTests(unittest.TestCase):
 
     def test_pane_levels_carry_knows(self):
         prove_seller(self.e)
-        self.put(15.5); self.put(15.6); self.put(15.7)
-        pane = self.e._pane("AAA", 0, 16.0, [], full=False)
+        self.put(15.5); self.put(61.0); self.put(62.0)
+        pane = self.e._pane("AAA", 0, 62.5, [], full=False)
         lv = next(l for l in pane["levels"] if l["side"] == "ask" and abs(float(l["price"]) - 10.00) < 1e-9)
         self.assertTrue(lv["knows"]["knows"])
         self.assertEqual(lv["knows"]["cp"], "P")

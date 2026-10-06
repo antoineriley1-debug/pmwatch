@@ -28,7 +28,8 @@ def daily_rows(closes, start=None, rng=1.0):
 
 
 def prints(cp, usd, n, now, otm=3.0, dte=3, side="ask", age=60):
-    return [{"t": now - age - k, "cp": cp, "side": side, "premium": usd / n, "otm_pct": otm, "dte": dte} for k in range(n)]
+    # one print a minute: separate buyers (prints in the same minute are one order)
+    return [{"t": now - age - 61 * k, "cp": cp, "side": side, "premium": usd / n, "otm_pct": otm, "dte": dte} for k in range(n)]
 
 
 class QualifyTests(unittest.TestCase):
@@ -88,7 +89,7 @@ class ZoneTests(unittest.TestCase):
         res = [x for x in z if x["kind"] == "resistance" and x["lo"] > 144]
         self.assertTrue(res)
         self.assertEqual(res[0]["held"], 4)
-        self.assertIn("RESISTANCE ZONE", res[0]["name"])
+        self.assertIn("SUPPLY ZONE", res[0]["name"])
         self.assertIn("FOUR PRIOR REJECTIONS", res[0]["name"])
         self.assertLessEqual(res[0]["lo"], 145.05)
         self.assertGreaterEqual(res[0]["hi"], 145.11)
@@ -119,7 +120,7 @@ class FlowTests(unittest.TestCase):
         self.assertIn("OTM calls", dev["text"])
         conf = story.flow_state(story.flow_read(prints("C", 400_000, 4, now), now, CFG), True, CFG)
         self.assertEqual(conf["state"], "CONFIRMED")
-        self.assertIn("Option flow confirming", conf["text"])
+        self.assertIn("The dough is here: flow confirming", conf["text"])
         bad = story.flow_state(story.flow_read(prints("P", 300_000, 3, now), now, CFG), True, CFG)
         self.assertEqual(bad["state"], "CONFLICTING")
         self.assertIn("puts", bad["text"])
@@ -140,12 +141,12 @@ class ResponseTests(unittest.TestCase):
         now = 10_000.0
         fr = story.flow_read(prints("P", 300_000, 3, now), now, CFG)
         r = story.response(self.mins([100.0, 100.02, 100.05, 100.04, 100.06, 100.08]), fr, None, 0.10, CFG)
-        self.assertEqual(r["text"], "Bearish flow present, but price is not responding lower")
+        self.assertEqual(r["text"], "Puts coming in, but it's not breaking down: no follow-through")
 
     def test_selling_absorbed(self):
         fr = story.flow_read([], 10_000.0, CFG)
         r = story.response(self.mins([100.0] * 6), fr, {"buy_pct": 25, "ratio": 1.8}, 0.10, CFG)
-        self.assertEqual(r["text"], "Selling pressure being absorbed. Downside confirmation weakening")
+        self.assertEqual(r["text"], "Sellers hitting it and it won't go down: they're getting absorbed")
 
 
 class StoryRunTests(unittest.TestCase):
@@ -165,32 +166,32 @@ class StoryRunTests(unittest.TestCase):
         t = ny_t(2026, 10, 5, 10, 0)
         out = self.run_one(sb, t, 144.10, pace={"state": "FAST", "buy_pct": 70, "ratio": 1.8})
         self.assertFalse(out["attention"])
-        self.assertIn("approaching", out["now"])
+        self.assertIn("Coming into PS60 Second Entry", out["now"])
         self.assertIn("Buyers stepping up", out["now"])
-        self.assertIn("No confirming call flow yet", out["now"])
+        self.assertIn("No call flow yet: no flow, no dough", out["now"])
         # at 145: the reload seller on the whole dollar, calls coming in
         flow = prints("C", 120_000, 2, t + 60)
         out = self.run_one(sb, t + 60, 144.98, reloads=[{"price": 145.0, "side": "ask", "stage": "RELOADING", "absorbed": 8000}],
                            flow=flow, pace={"state": "FAST", "buy_pct": 72, "ratio": 1.7})
         self.assertTrue(out["attention"])
-        self.assertIn("Major PS60 confluence around 145.00", out["now"])
-        self.assertIn("Reload seller defending the whole dollar 145.00", out["now"])
-        self.assertIn("Buyers continue attacking 145.00. Seller absorbing", out["now"])
-        self.assertIn("Option confirmation developing", out["now"])
-        self.assertTrue(any("Reload seller confirmed at the institutional whole dollar level 145.00" in s["text"] for s in out["said"]))
+        self.assertIn("major PS60 confluence around 145.00", out["now"])
+        self.assertIn("Reload seller sitting on the whole dollar 145.00", out["now"])
+        self.assertIn("Buyers keep lifting 145.00 and the seller keeps reloading", out["now"])
+        self.assertIn("The flow is starting, not confirmed yet", out["now"])
+        self.assertTrue(any("Reload seller on the whole dollar 145.00: supply sitting on it" in s["text"] for s in out["said"]))
         # consumed: through 145 and the prior-day high, calls building
         flow = prints("C", 500_000, 5, t + 120)
         out = self.run_one(sb, t + 120, 145.12, consumed=[{"price": 145.0, "side": "ask"}], flow=flow,
                            pace={"state": "SURGE", "buy_pct": 80, "ratio": 3.0},
                            mins=[[t - 300 + 60 * k, c, c, c, c, 1] for k, c in enumerate((144.60, 144.75, 144.90, 145.0, 145.05, 145.12))])
-        self.assertIn("Reload seller consumed at 145.00", out["now"])
-        self.assertIn("Option flow confirming", out["now"])
+        self.assertIn("Reload seller CLEANED UP at 145.00", out["now"])
+        self.assertIn("The dough is here: flow confirming", out["now"])
         self.assertEqual(out["tone"], "bull")
         # pull back to the level and hold it
         self.run_one(sb, t + 400, 145.05, flow=flow)
         out = self.run_one(sb, t + 500, 145.40, flow=flow)
         feed = [f[1] for f in sb.feed]
-        self.assertTrue(any(x.startswith("Retest holding above") and "Buyers remain in control" in x for x in feed), feed)
+        self.assertTrue(any(x.startswith("Held the retest of") and "second entry back through the high" in x for x in feed), feed)
         self.assertTrue(any("Daily above the 50-day" in x for x in feed))
 
     def test_unusual_flow_is_remembered_then_aligned_with_the_second_entry(self):
@@ -210,7 +211,7 @@ class StoryRunTests(unittest.TestCase):
         self.run_one(sb, t + 60, 145.20)
         self.run_one(sb, t + 200, 145.05)
         out = self.run_one(sb, t + 260, 144.80)
-        self.assertTrue(any("failed breakout" in s["text"] for s in out["said"]), [f[1] for f in sb.feed])
+        self.assertTrue(any("failed break" in s["text"] for s in out["said"]), [f[1] for f in sb.feed])
 
 
 class EngineTests(unittest.TestCase):
@@ -243,7 +244,7 @@ class MovingAverageTests(unittest.TestCase):
     def test_option_flow_at_the_200_day_is_called_and_a_reclaim_is_named(self):
         sb = story.Story()
         t = ny_t(2026, 10, 5, 10, 0)
-        ctx = {"bias": "bear", "text": "Daily below the 50-day.", "sma50": 160.0, "sma200": 150.0}
+        ctx = {"bias": "bull", "text": "Daily above the 50-day.", "sma50": 140.0, "sma200": 150.0}
         pts = story.ma_points(ctx)
 
         def one(tt, last, flow=()):
@@ -252,7 +253,7 @@ class MovingAverageTests(unittest.TestCase):
                                [[tt - 300, last, last, last, last, 1], [tt - 60, last, last, last, last, 1]], CFG)
         out = one(t, 149.90, prints("C", 300_000, 3, t))
         self.assertTrue(out["attention"])
-        self.assertTrue(any("at the daily 200-day 150.00" in s["text"] and "Option flow confirming" in s["text"] for s in out["said"]),
+        self.assertTrue(any("at the daily 200-day 150.00" in s["text"] and "flow confirming" in s["text"] for s in out["said"]),
                         [f[1] for f in sb.feed])
         out = one(t + 60, 150.20, prints("C", 300_000, 3, t + 60))
         self.assertIn("Daily 200-day reclaimed", out["now"])
@@ -280,3 +281,60 @@ class RefsTests(unittest.TestCase):
         self.assertAlmostEqual(refs["sma50"], (sum(r[4] for r in rows[-49:]) + 10.5) / 50, places=3)
         marks = e._ladder_marks(st, t930 + 90, [], 10.5)
         self.assertEqual({m["role"] for m in marks} & {"vwap", "sma50"}, {"vwap", "sma50"})
+
+
+class EdgeTests(unittest.TestCase):
+    def test_moving_averages_join_a_pivot_but_never_make_a_place_alone(self):
+        mas = story.ma_stack_points([("EMA 20", 145.02), ("SMA 50", 120.0)], [("EMA 200", 144.97), ("BB upper", 145.0)])
+        self.assertEqual([m["name"] for m in mas], ["daily 20 EMA", "60m 200 EMA"])   # daily 50 SMA is its own place; no BB
+        self.assertEqual(story.confluence(mas, [], 144.7, 3.0, 0.01, CFG), [])
+        c = story.confluence(mas + [{"p": 145.0, "name": "PS60 pivot", "kind": "pivot"}], [], 144.7, 3.0, 0.01, CFG)
+        self.assertEqual(len(c), 1)
+        self.assertEqual(sorted(c[0]["mas"]), ["60m 200 EMA", "daily 20 EMA"])
+        self.assertTrue(c[0]["major"])                           # pivot 3 + MAs 2 (capped) + whole dollar 1
+
+    def test_everything_agreeing_is_high_probability_and_conflicting_flow_never_is(self):
+        foc = {"name": "PS60 pivot", "p": 145.0, "lo": 145.0, "hi": 145.0, "kind": "pivot", "d": 0.05,
+               "conf": {"major": True, "ps60": True, "members": ["PS60 pivot", "prior-day high", "60m 20 EMA"], "mas": ["60m 20 EMA"]}}
+        ctx = {"bias": "bull", "sma200": 120.0}
+        pace = {"state": "FAST", "buy_pct": 75}
+        good = story.edge_read(True, ctx, foc, "SECOND_ENTRY", pace, [{"price": 144.5, "side": "bid", "stage": "RELOADING"}], [],
+                               {"state": "CONFIRMED"}, {"tone": "bull", "text": "Price responding higher"}, 145.05, 0.3)
+        self.assertEqual(good["label"], "HIGH PROBABILITY")
+        self.assertEqual(good["score"], 7)                    # (no ROOM read given: seven checks)
+        bad = story.edge_read(True, ctx, foc, "SECOND_ENTRY", pace, [{"price": 145.0, "side": "ask", "stage": "RELOADING"}], [],
+                              {"state": "CONFLICTING"}, {"tone": "warn", "text": "x"}, 145.05, 0.3)
+        self.assertNotEqual(bad["label"], "HIGH PROBABILITY")
+        self.assertEqual({c["k"] for c in bad["checks"] if c["ok"] is False}, {"LEVEL II", "FLOW", "PRICE"})
+
+
+class RoomTests(unittest.TestCase):
+    def test_above_the_50_supply_to_supply_room_to_the_next_ma(self):
+        ctx = {"bias": "bull"}
+        foc = {"name": "PS60 pivot", "p": 145.0, "lo": 145.0, "hi": 145.0, "kind": "pivot"}
+        pts = [{"p": 145.0, "name": "PS60 pivot", "kind": "pivot"}, {"p": 147.10, "name": "60m 200 EMA", "kind": "hma"},
+               {"p": 148.0, "name": "prior-week high", "kind": "pwh"}, {"p": 143.0, "name": "daily 20 EMA", "kind": "dma"}]
+        r = story.room_read(True, ctx, foc, pts, [], 145.05, 0.3, 3.0, CFG)
+        self.assertEqual((r["frame"], r["to"], r["name"]), ("supply to supply", 147.10, "60m 200 EMA"))
+        self.assertAlmostEqual(r["dollars"], 2.05)
+        self.assertFalse(r["thin"])
+        self.assertIn("Supply to supply: MP $2.05 of airspace to the next supply, 60m 200 EMA 147.10 (0.68 ATR)", r["text"])
+        thin = story.room_read(True, ctx, foc, pts + [{"p": 145.9, "name": "daily 10 SMA", "kind": "dma"}], [], 145.05, 0.3, 3.0, CFG)
+        self.assertTrue(thin["thin"])
+
+    def test_below_the_50_demand_to_demand(self):
+        r = story.room_read(False, {"bias": "bear"}, None, [{"p": 98.0, "name": "prior-day low", "kind": "pdl"}], [], 100.0, 0.2, 2.0, CFG)
+        self.assertEqual((r["frame"], r["to"]), ("demand to demand", 98.0))
+        self.assertIn("Demand to demand: MP $2.00 of airspace to the next demand, prior-day low 98.00", r["text"])
+
+
+class DirectionTests(unittest.TestCase):
+    def test_calls_on_a_pullback_to_the_50_day_in_a_bullish_daily_are_with_the_move(self):
+        sb = story.Story()
+        t = ny_t(2026, 10, 5, 10, 0)
+        ctx = {"bias": "bull", "text": "Daily above the 50-day.", "sma50": 150.0, "sma200": 120.0}
+        pts = story.ma_points(ctx)
+        fr = story.flow_read(prints("C", 600_000, 4, t), t, CFG)
+        out = story.build(sb, t, 150.10, 0.01, 3.0, {"side": "long"}, None, ctx, pts, [], [], fr, None, [], [],
+                          [[t - 300, 150.1, 150.1, 150.1, 150.1, 1], [t - 60, 150.1, 150.1, 150.1, 150.1, 1]], CFG)
+        self.assertEqual(out["flow"]["state"], "CONFIRMED")

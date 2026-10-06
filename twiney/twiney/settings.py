@@ -84,7 +84,7 @@ LABELS = {
     "stale_multiple": "NOT RELOADING = traded through × what he puts back per reload",
     "active_floor": "RELOADING at conviction ≥", "fading_floor": "STILL THERE at conviction ≥ (NOT RELOADING under)", "gone_show_seconds": "CLEANED UP / PULLED mark stays (s)",
     "requote_seconds": "Re-quote window (s)", "real_min_shares": "REAL / FAKE needs shares left", "real_memory_seconds": "REAL / FAKE memory (s)",
-    "conviction_weight": "Rotation: pull a live reloader closer (0-1)", "flow_weight": "Rotation: pull SOMEBODY KNOWS flow closer (0-1)",
+    "conviction_weight": "Rotation: pull a live reloader closer (0-1)", "flow_weight": "Rotation: pull SOMEBODY KNOWS SOMETHING flow closer (0-1)",
 }
 
 

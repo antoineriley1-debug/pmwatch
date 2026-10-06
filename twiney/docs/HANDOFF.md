@@ -229,3 +229,16 @@ VWAP / 50-DAY strip on top of the LEVEL II and the T&S (price ▲/▼ distance).
 The daily 50-day and 200-day are also PS60 STORY places: option flow at either is always called.
 GAS / AIRSPACE boards drag by their title bar (kept per chart; double-click the title bar to put it back).
 Whole-number lines are off by default (studies.whole_numbers).
+
+### Audit pass (orders, tape, flow) and THE EDGE
+- THE EDGE (story.edge_read): DAILY · PS60 · LOCATION (major confluence incl. Dan's MA pack on the daily and 60m) ·
+  TAPE · LEVEL II (x.00/x.50 reloaders) · FLOW · ROOM (MP to the next supply above the 50 / demand below, vs ATR) ·
+  PRICE. Counts agreement; all but one = HIGH PROBABILITY. Chip on the LEVEL II / T&S strip, checklist in PS60 STORY.
+- Flow reads share one meaning of "the same trade": ask side, short-dated, out of the money, separate minutes.
+  SOMEBODY KNOWS SOMETHING needs 2+ minutes. Story drops ITM / hedges. Urgency / marks use the print's own time.
+- Orders: closes can't flip a position; FLATTEN re-prices working closes/partials instead of cancelling them;
+  the stop line is re-sent if its order vanishes; reverse gets a stop; breakeven at the fill; exits movable under
+  the lock; practice OCA by group; outsideRth on stock LMT / STP LMT (trading.outside_rth); see tests/test_order_audit.py.
+- Tape: frozen-depth fallback to the quote; 10 s limit on the last clean quote; pace warm-up from the first print;
+  break calls per direction; BIG TAPE by time; ladder keys translated to the print's tick.
+- Audio check (practice, 60 min): every spoken flow call matched its prints (62/62).

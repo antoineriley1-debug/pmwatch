@@ -501,8 +501,11 @@ class SimBroker:
                 child["status"] = "Submitted"
                 self._report(child, now)
         # an exit fill reduces the other order of its pair (OCA, reduce): the target's stop, or the stop's target
-        if o["parent"] in self.orders and o.get("oca"):
-            for sib in self.orders[o["parent"]]["children"]:
+        # (the chart lines' stop and target have no parent: the OCA group alone pairs them, like at IBKR)
+        if o.get("oca"):
+            sibs = self.orders[o["parent"]]["children"] if o["parent"] in self.orders else \
+                [k for k, x in self.orders.items() if x.get("oca") == o["oca"] and x.get("symbol") == o.get("symbol")]
+            for sib in sibs:
                 s = self.orders.get(sib)
                 if not (s and s is not o and s.get("oca") == o["oca"] and s["status"] in ("Submitted", "PreSubmitted")):
                     continue
@@ -708,8 +711,10 @@ class Trader:
             try:
                 aux = snap(round(float(aux), 4), symbol=symbol)
             except (TypeError, ValueError):
+                self.nonces.pop(nonce, None) if nonce else None
                 return {"ok": False, "reason": "a stop-limit needs a stop price"}
             if aux <= 0:
+                self.nonces.pop(nonce, None) if nonce else None
                 return {"ok": False, "reason": "stop price must be positive"}
         else:
             aux = None
@@ -719,7 +724,11 @@ class Trader:
         pos0 = int(self.broker.position(symbol))
         closing = bool(pos0) and order_type == "LMT" and action == (SELL if pos0 > 0 else BUY) and qty <= abs(pos0)
         if closing:
-            reason = self.gate.check_reduce(action, qty, price, now)
+            # never more than is left to close: closes already working count (two SELL 100s on a 100 long would flip it short)
+            _p, free, why = self._can_reduce_by(symbol, now)
+            reason = None if qty <= free else (why or f"only {free} of {abs(pos0)} shares are left to close") + " — nothing sent"
+            if not reason:
+                reason = self.gate.check_reduce(action, qty, price, now)
         else:
             reason = self.gate.check(action, qty, price if order_type != "MKT" else (self.engine.syms[symbol].price() or 0), now, order_type)
         if not reason and order_type in ("LMT", "STP LMT"):
@@ -797,6 +806,8 @@ class Trader:
             reason = (f"your stop {money(play['stop'])} is on the wrong side of a {action} at {money(ref)} — "
                       f"the order would go out with no stop. Fix the stop first")
             self._note(now, f"BLOCKED {action} {qty} {symbol} @ {money(price)}: {reason}", False)
+            if nonce:
+                self.nonces.pop(nonce, None)
             return {"ok": False, "reason": reason}
         tpl = self.bracket_templates().get(self.bracket_template) if self.bracket_template != "PLAY" else None
         legs = (template_legs(tpl, action, qty, ref, self.cfg["stop_limit_ticks"], symbol) if tpl
@@ -818,6 +829,8 @@ class Trader:
                 self.families[parent_id] = fam
         except Exception as exc:
             self._note(now, f"FAILED {action} {qty} {symbol} @ {money(price)}: {exc}", False)
+            if nonce:
+                self.nonces.pop(nonce, None)                  # a failed send can be retried with the same ticket
             return {"ok": False, "reason": str(exc)}
         what = f"{action} {qty} {symbol} " + (f"@ {money(price)} " if order_type != "MKT" else "") + order_type + (f" stop {money(aux)}" if aux else "") + ("" if tif == "DAY" else " " + tif)
         if legs:
@@ -910,23 +923,17 @@ class Trader:
         """Close the position with a marketable limit (through the spread by a few ticks). Works disarmed, locked
         for the day and over the caps: getting out is never blocked. One flatten at a time per symbol."""
         now = now or time.time()
-        # a ticket close resting away from the market (a SELL above it while long) is not the way out FLATTEN
-        # means: it goes, and the whole position is closed at the market
-        for o in self.engine._pending(symbol):
-            if o.get("role") == "close" and o.get("order_id") is not None and o.get("status") != "PendingCancel":
-                try:
-                    self.broker.cancel(o["order_id"], now)
-                except Exception as exc:
-                    log.warning("cancel close %s: %s", o.get("order_id"), exc)
-        pos, free, why = self._can_reduce_by(symbol, now)
+        pos = int(self.broker.position(symbol))
         if not pos:
             self._note(now, f"{symbol}: already flat", True)
             return {"ok": True, "flat": True}
-        if any(o.get("role") == "flatten" for o in self.engine._pending(symbol)) or not free:
-            reason = "a flatten order is already working" if any(o.get("role") == "flatten" for o in self.engine._pending(symbol)) else why
+        if any(o.get("role") == "flatten" for o in self.engine._pending(symbol)):
+            self._note(now, f"{symbol}: a flatten order is already working", False)
+            return {"ok": False, "reason": "a flatten order is already working"}
+        if self.engine.recently_filled(symbol, self.REDUCING, now):
+            reason = "the last close just filled — the position is updating, try again in a moment"
             self._note(now, f"{symbol}: {reason}", False)
             return {"ok": False, "reason": reason}
-        qty = free if pos > 0 else -free
         st = self.engine.syms.get(symbol)
         bid, ask = st.bbo() if st else (None, None)
         if bid is None or ask is None:
@@ -934,14 +941,35 @@ class Trader:
             return {"ok": False, "reason": "no quote"}
         tk = tick_size(ask)
         slip = self.cfg["flatten_slip_ticks"] * tk
-        action = SELL if qty > 0 else BUY
-        price = snap(bid - slip, -1, symbol) if qty > 0 else snap(ask + slip, +1, symbol)
-        reason = self.gate.check_reduce(action, abs(qty), price, now)
+        action = SELL if pos > 0 else BUY
+        price = snap(bid - slip, -1, symbol) if pos > 0 else snap(ask + slip, +1, symbol)
+        reason = self.gate.check_reduce(action, abs(pos), price, now)
         if reason:            # checked BEFORE the stops are cancelled: a refused flatten leaves them in place
             self._note(now, f"BLOCKED flatten {symbol}: {reason}", False)
             return {"ok": False, "reason": reason}
-        self.broker.cancel_all(now, symbol)
-        return self._reduce(symbol, action, price, abs(qty), now, "flatten")
+        # closes and partials already working are not cancelled (a cancel is not instant: a fill in between would
+        # flip the position): they are moved to the flatten price, and the flatten takes only the rest. Every other
+        # order (stops, targets, entries) is cancelled. Close + partial + flatten = exactly the position, at the market
+        working = 0
+        for o in self.engine._pending(symbol):
+            if o.get("order_id") is None or o.get("status") == "PendingCancel":
+                continue
+            if o.get("role") in ("close", "partial") and o.get("action") == action:
+                try:
+                    self.broker.modify(o["order_id"], price, now)
+                except Exception as exc:
+                    log.warning("move %s to flatten: %s", o.get("order_id"), exc)
+                working += int(o.get("remaining") if o.get("remaining") is not None else o.get("qty") or 0)
+            else:
+                try:
+                    self.broker.cancel(o["order_id"], now)
+                except Exception as exc:
+                    log.warning("cancel %s for flatten: %s", o.get("order_id"), exc)
+        rest = abs(pos) - working
+        if rest <= 0:
+            self._note(now, f"FLATTEN {symbol}: the working close{'s' if working else ''} moved to {money(price)}", True)
+            return {"ok": True, "sent": f"closes moved to {money(price)}"}
+        return self._reduce(symbol, action, price, rest, now, "flatten")
 
     def partial(self, symbol, shares, price, now=None):
         with self.lock:
@@ -1108,8 +1136,14 @@ class Trader:
         opt = bool(info.get("opt")) or is_option_key(info.get("symbol"))
         price = opt_snap(round(float(price), 4)) if opt else snap(round(float(price), 4), symbol=info.get("symbol"))
         qty = int(info.get("remaining") or info.get("qty") or 0)
-        # an option order is checked in real dollars (price x 100 x contracts), like when it was sent
-        reason = self.gate.check(info.get("action"), qty, price, now, order_type=info.get("type", "LMT"), mult=100 if opt else 1)
+        # moving an EXIT (stop, target, close...) is protective: it goes through the reducing gate, which DISARM and
+        # the day-loss lock never block (tighten your stop under the lock). An entry is checked like a new order;
+        # an option order in real dollars (price x 100 x contracts), like when it was sent
+        role = info.get("role") or ""
+        if role in self.EXIT_ROLES + self.REDUCING or role.startswith("cash_flow") or (role == "option" and not self._opens(info)):
+            reason = self.gate.check_reduce(info.get("action"), qty, price, now)
+        else:
+            reason = self.gate.check(info.get("action"), qty, price, now, order_type=info.get("type", "LMT"), mult=100 if opt else 1)
         if reason:
             self._note(now, f"BLOCKED move of order {oid} to {money(price)}: {reason}", False)
             return {"ok": False, "reason": reason}
@@ -1454,6 +1488,8 @@ class Trader:
             s = self._opt_stop_for(key, p)
             if not s or now - self.opt_stop_fired.get(key, -1e9) < 15.0:
                 continue
+            if self._opt_working(key, SELL if p["qty"] > 0 else BUY) >= abs(int(p["qty"])):
+                continue                          # its close is already working: never a second one on top
             ref = self._opt_stop_ref(key, p, s["on"])
             if ref is None:
                 continue
@@ -1490,6 +1526,10 @@ class Trader:
             self._trail_tick(now or time.time())
         except Exception as exc:
             log.warning("trailing stop: %s", exc)
+        try:
+            self._reverse_stop_tick(now or time.time())
+        except Exception as exc:
+            log.warning("reverse stop: %s", exc)
         try:
             self._guard_exits(now or time.time())
         except Exception as exc:
@@ -1760,10 +1800,16 @@ class Trader:
         last = self.engine.syms[sym].price()
         pend = [o for o in self.engine._pending(sym) if o.get("action") == exit_action and o.get("order_id") is not None]
         lines = (play.get("alt") or {}) if s.get("alt") else play
+        closing = any(o.get("role") in self.REDUCING for o in pend) or self.engine.recently_filled(sym, self.REDUCING, now)
         for role in ("stop", "target"):
             want = lines.get(role)
             if want == s.get(role):
-                continue
+                # the STOP line is on the chart but its order is gone (cancel all, a cancel in TWS): it goes back in.
+                # Never while the position is being closed (a stop on top of a flatten could open the other way)
+                if not (role == "stop" and want is not None and not closing
+                        and not any(o.get("role") == "stop" and o.get("status") != "PendingCancel" for o in pend)):
+                    continue
+                self._note(now, f"{sym}: the STOP line {money(want)} had no order working — it goes back in", False)
             if want is None:
                 self._note(now, f"{sym}: {role} line cleared — the {role} order stays working (cancel it from the orders list)", True)
                 s[role] = None
@@ -1777,7 +1823,7 @@ class Trader:
                     self._note(now, f"{sym}: {role} {money(want)} is already through the price {money(last)} — not sent "
                                     f"(it would fill at once). Move the line", False)
                 continue
-            mine = [o for o in pend if o.get("role") == role]
+            mine = [o for o in pend if o.get("role") == role and o.get("status") != "PendingCancel"]
             try:
                 if mine:
                     for o in mine:
@@ -1787,11 +1833,11 @@ class Trader:
                     tk = tick_size(want)
                     lmt = snap(want - tk * self.cfg["stop_limit_ticks"], -1) if long_ else snap(want + tk * self.cfg["stop_limit_ticks"], +1)
                     self.broker.place(sym, exit_action, abs(pos), lmt, now, "STP LMT", None, "stop", "DAY", aux=want,
-                                      oca=f"auto-{sym}", reducing=True)
+                                      oca=f"auto-{sym}-{int(s['t'])}", reducing=True)
                     self._note(now, f"{sym}: STOP order in at {money(want)} for {abs(pos):,} shares", True)
                 else:
                     self.broker.place(sym, exit_action, abs(pos), want, now, "LMT", None, "target", "DAY",
-                                      oca=f"auto-{sym}", reducing=True)
+                                      oca=f"auto-{sym}-{int(s['t'])}", reducing=True)
                     self._note(now, f"{sym}: TARGET order in at {money(want)} for {abs(pos):,} shares", True)
                 s[role] = want
                 self.engine.log(sym, f"{role.upper()} order {money(want)} ({abs(pos):,} sh)", now, kind="level")
@@ -2096,9 +2142,21 @@ class Trader:
                           "side": play.get("side")}
         return out
 
+    def _opens(self, o):
+        """Does this working order OPEN (or add to) a position? Stock entries and reverses do; an option order does
+        when it buys with no short (or sells with no long) on that contract."""
+        r = o.get("role")
+        if r in ("entry", "reverse"):
+            return True
+        if r == "option":
+            q = int((self.engine.opt_positions.get(o.get("symbol")) or {}).get("qty") or 0)
+            return (o.get("action") == BUY and q >= 0) or (o.get("action") == SELL and q <= 0)
+        return False
+
     def _cancel_entries(self, now):
+        # the day-loss lock: everything that would OPEN risk goes (stock entries, reverses, option opens); exits stay
         for o in self.engine._pending():
-            if o.get("role") == "entry" and o.get("order_id") is not None and o.get("status") != "PendingCancel":
+            if self._opens(o) and o.get("order_id") is not None and o.get("status") != "PendingCancel":
                 try:
                     self.broker.cancel(o["order_id"], now)
                 except Exception as exc:
@@ -2117,12 +2175,22 @@ class Trader:
                 fam["be_done"] = True
                 continue
             if any((self.broker.order_info(c) or {}).get("status") == "Filled" for c in fam["cash"]):
+                # breakeven is where you actually got in (the entry's fill, else your average cost), never the
+                # entry's limit cap; and never a stop through the market (it would fire at once and dump the runner)
+                sym = fam["symbol"]
+                be = (self.broker.order_info(pid) or {}).get("avg_fill") or self._avg_cost(sym) or fam["entry"]
+                be = snap(round(float(be), 4), symbol=sym)
+                pos = int(self.broker.position(sym))
+                st_ = self.engine.syms.get(sym)
+                bid, ask = st_.bbo() if st_ else (None, None)
+                if pos and ((pos > 0 and bid is not None and be >= bid) or (pos < 0 and ask is not None and be <= ask)):
+                    continue                                   # not yet: price is not past breakeven; try again next tick
                 fam["be_done"] = True
                 try:
-                    moved = [sid for sid in live if self.broker.modify(sid, fam["entry"], now)]
+                    moved = [sid for sid in live if self.broker.modify(sid, be, now)]
                     if moved:
-                        self._note(now, f"{fam['symbol']}: cash flow taken — stop moved to breakeven {money(fam['entry'])}", True)
-                        self._stop_line_follows(fam["symbol"], fam["entry"], now)
+                        self._note(now, f"{sym}: cash flow taken — stop moved to breakeven {money(be)}", True)
+                        self._stop_line_follows(sym, be, now)
                 except Exception as exc:
                     self._note(now, f"{fam['symbol']}: could not move the stop to breakeven: {exc}", False)
 
@@ -2185,9 +2253,48 @@ class Trader:
             except Exception as exc:
                 self._note(now, f"FAILED reverse entry {action} {qty} {symbol}: {exc} — the flatten is still working", False)
                 return {"ok": False, "reason": str(exc), "flatten": flat}
-            self._note(now, f"SENT REVERSE {action} {qty} {symbol} @ {money(price)} (after the flatten)", True)
+            # the new position is never left without a stop: your other side's stop if it is on the right side, else
+            # trading.auto_stop_dollars ($1) the right way; it goes in the moment the new position shows (watchdog)
+            play = self.engine.syms[symbol].play if symbol in self.engine.syms else {}
+            new_long = action == BUY
+            alt = play.get("alt") or {}
+            d = float(self.cfg.get("auto_stop_dollars") or 1.0)
+            cand = [x for x in (alt.get("stop"), play.get("stop")) if x and ((x < price) if new_long else (x > price))]
+            stop_px = cand[0] if cand else snap(price - d if new_long else price + d, -1 if new_long else 1, symbol)
+            self.__dict__.setdefault("reverse_stop", {})[symbol] = {"long": new_long, "stop": stop_px, "t": now}
+            self._note(now, f"SENT REVERSE {action} {qty} {symbol} @ {money(price)} (after the flatten) · its stop {money(stop_px)} goes in when it fills", True)
             self.engine._rec({"ev": "reverse", "t": now, "sym": symbol, "from": pos, "action": action, "qty": qty, "px": price, "id": oid})
             return {"ok": True, "id": oid, "flatten": flat, "sent": f"{action} {qty} {symbol} @ {money(price)} (reverse)"}
+
+    def _reverse_stop_tick(self, now):
+        """A REVERSE's new position gets its stop the moment it shows (sized to what is held)."""
+        for sym, r in list(getattr(self, "reverse_stop", {}).items()):
+            pos = int(self.broker.position(sym))
+            if now - r["t"] > 120:
+                del self.reverse_stop[sym]
+                if pos and (pos > 0) == r["long"]:
+                    self._note(now, f"{sym}: could not put the reverse's stop in — put a stop on it", False)
+                continue
+            if not pos or (pos > 0) != r["long"]:
+                continue                                   # the reverse has not filled yet
+            exit_action = SELL if r["long"] else BUY
+            if any(o.get("role") == "stop" and o.get("action") == exit_action and o.get("status") != "PendingCancel"
+                   for o in self.engine._pending(sym)):
+                del self.reverse_stop[sym]
+                continue
+            last = self.engine.syms[sym].price() if sym in self.engine.syms else None
+            stop = r["stop"]
+            if last is not None and ((stop >= last) if r["long"] else (stop <= last)):
+                d = float(self.cfg.get("auto_stop_dollars") or 1.0)
+                stop = snap(last - d if r["long"] else last + d, -1 if r["long"] else 1, sym)
+            tk = tick_size(stop, sym)
+            lmt = snap(stop - tk * self.cfg["stop_limit_ticks"], -1, sym) if r["long"] else snap(stop + tk * self.cfg["stop_limit_ticks"], +1, sym)
+            try:
+                self.broker.place(sym, exit_action, abs(pos), lmt, now, "STP LMT", None, "stop", "DAY", aux=stop, reducing=True)
+                self._note(now, f"{sym}: reverse filled — STOP in at {money(stop)} for {abs(pos):,} shares", True)
+            except Exception as exc:
+                self._note(now, f"{sym}: the reverse's stop failed: {exc}", False)
+            del self.reverse_stop[sym]
 
     def _sell_to_open_why(self, symbol, right, key, short_new):
         """None when this many contracts may be SOLD TO OPEN (written). Off by default (SETTINGS, Trading, Allow
@@ -2246,7 +2353,8 @@ class Trader:
             if price <= 0:
                 return {"ok": False, "reason": "price must be positive"}
             held = int((self.engine.opt_positions.get(key) or {}).get("qty") or 0)
-            short_new = max(0, n - max(0, held)) if action == SELL else 0     # contracts this SELL would open short
+            # sells already working on this contract count: two SELL 2s on 2 calls held would leave you short 2
+            short_new = max(0, n + self._opt_working(key, SELL) - max(0, held)) if action == SELL else 0
             why = self._sell_to_open_why(symbol, right, key, short_new)
             if why:
                 self._note(now, f"BLOCKED SELL {n} {key}: {why}", False)
@@ -2269,6 +2377,12 @@ class Trader:
                               "aux": None, "tif": "DAY", "legs": [], "id": oid, "role": "option"})
             return {"ok": True, "id": oid, "key": key, "sent": f"{action} {n} {key} @ {money(price)}"}
 
+    def _opt_working(self, key, action):
+        """Contracts of ``key`` already working on this side (orders not being cancelled)."""
+        return int(sum((o.get("remaining") if o.get("remaining") is not None else o.get("qty") or 0)
+                       for o in self.engine._pending(key)
+                       if o.get("action") == action and o.get("order_id") is not None and o.get("status") != "PendingCancel"))
+
     def opt_adjust(self, key, contracts, mode, price=None, now=None):
         """Scale an OPTION position you hold: mode "close" takes contracts off (all of them with contracts 0 /
         None), "add" puts more on in the same direction. A LIMIT DAY order on the contract at the touch (bid when
@@ -2284,8 +2398,11 @@ class Trader:
             held = int(abs(p["qty"])) ; long_ = p["qty"] > 0
             n = int(contracts or 0)
             if mode == "close":
-                n = held if n <= 0 else min(n, held)
                 action = SELL if long_ else BUY
+                free = held - self._opt_working(key, action)          # closes already working on it count
+                if free <= 0:
+                    return {"ok": False, "reason": f"{key}: all {held} already being closed"}
+                n = free if n <= 0 else min(n, free)
             elif mode == "add":
                 if n <= 0:
                     return {"ok": False, "reason": "how many contracts?"}
