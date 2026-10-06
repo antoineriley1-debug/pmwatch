@@ -152,7 +152,7 @@ function renderBook(d){
   const bi = document.getElementById("bigIn"), L = d.ladder || {};
   if (bi && document.activeElement !== bi && L.big_shares != null && bi.dataset.sym + ":" + L.big_shares !== d.symbol + ":" + L.big_shares){ bi.value = Math.round(L.big_shares); bi.dataset.sym = d.symbol; }
   const hint = document.getElementById("bigHint"); if (hint){ const txt = L.big_shares != null ? (L.big_default ? "" : d.symbol + " · ") + "huge ≥" + kfmt(L.huge_shares) : ""; if (hint.textContent !== txt) hint.textContent = txt; }
-  if (d.ladder){ d.ladder.pace = d.tape && d.tape.pace; d.ladder.story = d.story; }    // PACE OF TAPE and the PS60 STORY line ride on top of the ladder
+  if (d.ladder){ d.ladder.pace = d.tape && d.tape.pace; d.ladder.story = d.story; d.ladder.refs = d.refs; }    // PACE OF TAPE and the PS60 STORY line ride on top of the ladder
   const html = ladderHTML(training() ? Object.assign({}, d.ladder, {rows: d.ladder.rows.map(r => Object.assign({}, r, {bid_state: null, ask_state: null, bid_refills: 0, ask_refills: 0, bid_verdict: null, ask_verdict: null}))}) : d.ladder);
   if (P.book.last === html) return;
   P.book.last = html;
@@ -502,7 +502,7 @@ function renderTape(d){
   const el = P.tape.pc.querySelector(".p-tape");
   renderContractTape(); renderSwitchStrips(); if (contractMode("tape")){ renderBigTape(d); return; }
   if (!d){ el.innerHTML = `<div class="dim" style="padding:8px">${NA}</div>`; P.tape.last = null; renderBigTape(null); return; }
-  const html = tapeGaugeHTML(d.tape) + tapeSpeedHTML(d.tape.speed) + paceHTML(d.tape.pace) + tapeHTML(d.tape, d.ladder); if (P.tape.last !== html){ P.tape.last = html;
+  const html = refsHTML(d.refs) + tapeGaugeHTML(d.tape) + tapeSpeedHTML(d.tape.speed) + paceHTML(d.tape.pace) + tapeHTML(d.tape, d.ladder); if (P.tape.last !== html){ P.tape.last = html;
     const keep = el.scrollTop; el.innerHTML = html; el.scrollTop = keep; makeColsResizable(el.querySelector("table")); }
   renderBigTape(d); flyBigPrints(d);
 }
@@ -2637,14 +2637,16 @@ function tradeAsBox(sym, se, onPick, onCancel){
      the strips above / below with their distance. */
 const LVROLE = {trigger: ["PIVOT", "pv"], second_entry: ["2ND ENTRY", "se"], target: ["TARGET", "tg"], stop: ["STOP", "sl"], extra: ["LEVEL", "ex"],
   sneaky: ["SNEAKY PIVOT", "sn"], sneaky_auto: ["SNEAKY", "sn"], hod: ["HIGH OF DAY", "hl"], lod: ["LOW OF DAY", "hl"], strike: ["STRIKE", "st"],
-  reload_bid: ["RELOAD BUYER", "rb"], reload_ask: ["RELOAD SELLER", "ra"], entry: ["YOUR ENTRY", "hl"], flow: ["FLOW", "st"]};
-const LVRANK = {entry: 0, stop: 0, second_entry: 1, target: 2, trigger: 3, sneaky: 4, reload_bid: 5, reload_ask: 5, flow: 6, strike: 6, sneaky_auto: 7, extra: 8, hod: 9, lod: 9};
-const LVSHORT = {entry: "ENTRY", trigger: "PIV", second_entry: "2ND", target: "TGT", stop: "STOP", extra: "LVL", sneaky: "SNKY", sneaky_auto: "SNKY·T", hod: "HOD", lod: "LOD"};
+  reload_bid: ["RELOAD BUYER", "rb"], reload_ask: ["RELOAD SELLER", "ra"], entry: ["YOUR ENTRY", "hl"], flow: ["FLOW", "st"],
+  vwap: ["VWAP", "vw"], sma50: ["50-DAY SMA", "d50"]};
+const LVRANK = {entry: 0, stop: 0, second_entry: 1, target: 2, trigger: 3, sneaky: 4, reload_bid: 5, reload_ask: 5, flow: 6, strike: 6, sneaky_auto: 7, extra: 8, vwap: 6, sma50: 6, hod: 9, lod: 9};
+const LVSHORT = {entry: "ENTRY", trigger: "PIV", second_entry: "2ND", target: "TGT", stop: "STOP", extra: "LVL", sneaky: "SNKY", sneaky_auto: "SNKY·T", hod: "HOD", lod: "LOD", sma50: "50D"};
 function lvWords(m, short){
   const base = short && LVSHORT[m.role] ? LVSHORT[m.role] : (LVROLE[m.role] || [m.label])[0];
   if (m.role === "strike") return `${short ? "" : (m.cp === "P" ? "PUTS HIT " : "CALLS HIT ")}${m.label} ${usdK(m.prem)}${!short && m.n > 1 ? " ×" + m.n : ""}${!short && m.dte != null ? " " + Math.round(m.dte) + "d" : ""}${m.hot ? "⚡" : ""}`;
   if (m.role === "flow") return `${short ? "" : "OPTION FLOW "}${usdK(m.prem)}${m.n > 1 ? " ×" + m.n : ""}${short ? "" : m.buyside ? " (paid the ask)" : " (hit the bid)"}`;
   if (m.role === "reload_bid" || m.role === "reload_ask") return short ? `${m.role === "reload_bid" ? "BUYER" : "SELLER"} ↻${m.refills || ""}` : `${base} ↻${m.refills || ""}`;
+  if (m.role === "vwap") return m.label === "PM VWAP" ? (short ? "PMVWAP" : "PREMARKET VWAP") : "VWAP";
   if (m.est) return (short ? "≈" : "≈ ") + base + (short ? "" : ` (when ${m.sym} trades ${px(m.at)})`);
   return base + (m.alt && !short ? " (other side)" : "");
 }
@@ -2652,6 +2654,15 @@ function lvCls(m){ const c = (LVROLE[m.role] || ["", "ex"])[1]; return m.role ==
 function distTxt(d, tick){ if (d == null) return ""; const t = Math.round(Math.abs(d) / (tick || 0.01)); return (d >= 0 ? "+" : "−") + Math.abs(d).toFixed(Math.abs(d) < 1 && tick && tick < 0.01 ? 4 : 2) + (t <= 50 ? ` · ${t}t` : ""); }
 /* PACE OF TAPE: speed against this stock's own normal (×1.0 = normal), who is pushing, the flow behind it, and the
    call at your level. One strip on the ladder and on the T&S, the last-price row glowing harder as the tape runs */
+/* VWAP and the daily 50-day: on the T&S and the LEVEL II, always, with how far price is from each (live) */
+function refsHTML(r){
+  if (!r || !(r.vwap || r.sma50)) return "";
+  const one = (cls, name, v, dst, tip) => v ? `<span class="rf ${cls}" title="${esc(tip)}"><b>${name}</b> ${px(v)}${dst != null ? ` <i class="${dst >= 0 ? "up" : "dn"}">${dst >= 0 ? "▲ +" : "▼ −"}${Math.abs(dst).toFixed(2)}</i>` : ""}</span>` : "";
+  return `<div class="refstrip">`
+    + one("vw", r.vwap_label === "PM VWAP" ? "PM VWAP" : "VWAP", r.vwap, r.vwap_dist, r.vwap_label === "PM VWAP" ? "premarket VWAP: the real one starts at 9:30" : "VWAP from the 9:30 open (the desk VWAP): above it buyers own the day, below it sellers do. ▲/▼ = how far price is above / below it")
+    + one("d50", "50-DAY", r.sma50, r.sma50_dist, "the daily 50-day simple moving average (today's bar included, like the daily chart). ▲/▼ = how far price is above / below it")
+    + `</div>`;
+}
 /* PS60 STORY: one line over the LEVEL II (the story right now), and the whole story in its own window */
 const FLOW_SHORT = {"NOT YET CONFIRMED": "FLOW: NOT YET", DEVELOPING: "FLOW: DEVELOPING", CONFIRMED: "FLOW: CONFIRMED", CONFLICTING: "FLOW: CONFLICTING"};
 const FLOW_CLS = {"NOT YET CONFIRMED": "nyc", DEVELOPING: "dev", CONFIRMED: "conf", CONFLICTING: "cfl"};
@@ -2731,6 +2742,7 @@ function ladderProHTML(L){
   const dn = off.filter(m => m.price < bot).sort((a, b) => b.price - a.price).slice(0, 4);
   const pill = (m, arrow) => `<span class="lvp ${lvCls(m)}" title="${esc(lvWords(m) + " " + px(m.price) + " · " + distTxt(m.dist, L.tick) + " from the last price")}">${arrow} ${esc(lvWords(m, true))} ${px(m.price)} <i>${distTxt(m.dist, L.tick)}</i></span>`;
   if (store.get("storyline", true)) h += storyLineHTML(L.story);
+  h += refsHTML(L.refs);
   h += paceHTML(L.pace);
   h += `<div class="lvstrip top">${up.map(m => pill(m, "▲")).join("")}${dn.map(m => pill(m, "▼")).join("")}${up.length || dn.length ? "" : `<span class="dim">your lines off the ladder show here</span>`}<span class="sp"></span><button data-lclr="above" title="clear SOLD / BOUGHT / +/− above the ask (after a move down)">CLR ▲</button><button data-lclr="below" title="clear SOLD / BOUGHT / +/− below the bid (after a move up)">CLR ▼</button></div>`;
   h += `<table class="lad lad3 pro" data-cols="ladpro"><tr>

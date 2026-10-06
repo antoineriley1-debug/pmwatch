@@ -111,7 +111,9 @@ class GasTests(unittest.TestCase):
 
     def test_prev_day_and_whole_numbers(self):
         drows, live = S.daily_series(self.st, self.t)
-        g = S.gas(self.st, self.t, CFG, drows, live)
+        off = S.gas(self.st, self.t, CFG, drows, live)          # whole numbers are off unless you switch them on
+        self.assertFalse([ln for ln in off["lines"] if ln["l"].startswith("WHOLE ")])
+        g = S.gas(self.st, self.t, dict(CFG, whole_numbers=True), drows, live)
         labels = [ln["l"] for ln in g["lines"]]
         self.assertTrue(any(l.startswith("PDH ") and S.s2(self.rows[-1][2]) in l for l in labels))
         wn = sorted(ln["p"] for ln in g["lines"] if ln["l"].startswith("WHOLE "))

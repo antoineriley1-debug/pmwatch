@@ -633,6 +633,49 @@ class Engine:
         from .story import qualifies
         return qualifies(price, tick_size(price, sym) if price else 0.01)
 
+    def _refs(self, st, t):
+        """The two lines every desk watches, for the LEVEL II and the T&S (updated once a second):
+        VWAP the way prop desks run it: the regular session's volume-weighted average price, starting fresh at 9:30
+        (typical price (high + low + close) / 3 of each minute x its volume, the same as the chart's VWAP line).
+        Before the open it is the premarket's (PM VWAP) until 9:30 starts the real one.
+        The daily 50-day SMA (today's bar included, like the daily chart draws it)."""
+        memo = st.__dict__.setdefault("_refs", {})
+        if memo.get("t") is not None and t - memo["t"] < 1.0:
+            return memo["v"]
+        from . import studies
+        st._any_session = self.connection["state"] == "DEMO"
+        v = {}
+        try:
+            mins = studies.rth_minutes_today(st, t)
+            kind = "VWAP"
+            if not mins:                      # before the open: today's premarket minutes
+                dk = studies.day_key(t)
+                mins = [[m] + list(st.bars[m][:5]) for m in sorted(st.bars) if studies.day_key(m) == dk]
+                kind = "PM VWAP"
+            pv = vol = 0.0
+            for b in mins:
+                if b[5]:
+                    pv += (b[2] + b[3] + b[4]) / 3.0 * b[5]
+                    vol += b[5]
+            if vol > 0:
+                v["vwap"] = round(pv / vol, 4)
+                v["vwap_label"] = kind
+            dc = st.__dict__.get("_story_daily") or {}
+            rows = dc.get("rows")
+            if rows is None:
+                rows, _live = studies.daily_series(st, t)
+            closes = [r[4] for r in rows]
+            if len(closes) >= 50:
+                v["sma50"] = round(sum(closes[-50:]) / 50.0, 4)
+        except Exception:
+            log.exception("refs %s", st.symbol)
+        last = st.price()
+        for k in ("vwap", "sma50"):
+            if v.get(k) and last:
+                v[k + "_dist"] = round(last - v[k], 4)
+        memo.update(t=t, v=v)
+        return v
+
     def _story_tick(self, t):
         """The PS60 STORY for every stock with a price, once a second, browser open or not."""
         sc = self.cfg.get("story") or {}
@@ -670,7 +713,7 @@ class Engine:
             ac["v"] = st.play.get("atr") or self._atr(st, st.bar_list(MAX_BARS))
         atr = ac["v"]
         ctx = story_mod.daily_context(drows, live, last)
-        points = story_mod.ps60_points(st.play, getattr(st, "sneaky_auto", None)) + dc["pts"]
+        points = story_mod.ps60_points(st.play, getattr(st, "sneaky_auto", None)) + dc["pts"] + story_mod.ma_points(ctx)
         # zones: the 30-minute history changes slowly: found again every 5 minutes, or when new history lands
         zc = st.__dict__.setdefault("_zone_cache", {})
         zkey = (int(t // 300), st.study_ver, st.hist_ver)
@@ -3381,6 +3424,11 @@ class Engine:
         for lv in user_levels:
             out.append({"price": float(lv["price"]), "role": lv["role"].replace("alt_", ""), "label": lv["label"].replace("↓ ", "").replace("↑ ", ""),
                         "alt": bool(lv.get("alt"))})
+        refs = self._refs(st, t)
+        if refs.get("vwap"):
+            out.append({"price": refs["vwap"], "role": "vwap", "label": refs["vwap_label"]})
+        if refs.get("sma50"):
+            out.append({"price": refs["sma50"], "role": "sma50", "label": "50-DAY"})
         if st.day_hi:
             out.append({"price": st.day_hi[0], "role": "hod", "label": "HIGH OF DAY"})
         if st.day_lo:
@@ -3964,6 +4012,7 @@ class Engine:
             "m30": [[k] + [fmt_price(x) for x in st.m30[k][:4]] + [round(st.m30[k][4] or 0), 0, 0] for k in sorted(st.m30)] if full else None,
             "studies": self.studies_for(st, t),
             "story": self._story_pane(st),
+            "refs": self._refs(st, t),
             "footprint": self._footprint(st, t),
             "marks": [[m, fmt_price(v[0]), side, round(v[1])] for (m, _k, side), v in st.marks.items()
                       if m >= max(first_bar, t - 390 * 60)],

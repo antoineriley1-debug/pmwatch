@@ -2012,11 +2012,17 @@ function drawOne(p, cv, v, isFoot){
     const eo = etOffset(d.bars[d.bars.length - 1][0]);
     let day = null, pv = 0, vol = 0, k = 0;
     const firstT = bars[0][0], lastT = bars[bars.length - 1][0] + span;
+    // the prop-desk VWAP: it starts at 9:30 (the premarket's only until the open, and the practice market's whole day),
+    // the same number the LEVEL II and the T&S show
+    const demo = typeof state !== "undefined" && state && state.connection && state.connection.state === "DEMO";
+    const rthDays = new Set();
+    if (!demo) for (const b of d.bars){ const sec = ((b[0] + eo) % 86400 + 86400) % 86400; if (sec >= 34200 && sec < 57600) rthDays.add(Math.floor((b[0] + eo) / 86400)); }
     g.strokeStyle = "#e8a0ff"; g.lineWidth = 1.4; g.setLineDash([]); g.beginPath();
     let started = false, lastVw = null;
     for (const b of d.bars){
       const dd = Math.floor((b[0] + eo) / 86400);
       if (dd !== day){ day = dd; pv = 0; vol = 0; started = false; }
+      if (rthDays.has(dd)){ const sec = ((b[0] + eo) % 86400 + 86400) % 86400; if (sec < 34200 || sec >= 57600){ started = false; continue; } }
       pv += (b[2] + b[3] + b[4]) / 3 * b[5]; vol += b[5];
       if (!vol || b[0] < firstT || b[0] >= lastT) continue;
       const vw = pv / vol, x = xOf(b[0]);

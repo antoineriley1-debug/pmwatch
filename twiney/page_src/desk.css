@@ -837,3 +837,10 @@ tr.pglow.s td.px{box-shadow:inset 0 0 calc(var(--heat,0)*16px) rgba(255,77,94,ca
 .sfeed{font:11px/1.35 var(--sans);padding:3px 8px 3px 6px;border-left:3px solid transparent;color:#cfd6df} .sfeed i{font:normal 10px var(--mono);color:#7d8590;margin-right:6px}
 .sfeed.t-bull{border-left-color:var(--buy)} .sfeed.t-bear{border-left-color:var(--sell)} .sfeed.t-warn{border-left-color:#e8b931;color:#f0d68a}
 .dbias{flex:0 0 auto;font:800 9px var(--sans);letter-spacing:.06em;padding:1px 4px;border-radius:2px} .dbias.bull{color:var(--buy);border:1px solid var(--buy)} .dbias.bear{color:var(--sell);border:1px solid var(--sell)}
+.stbd .sth{cursor:move;user-select:none} .stbd.dragging{opacity:.85;box-shadow:0 4px 16px rgba(0,0,0,.5)} .stbd.moved{max-width:calc(100% - 8px)}
+/* VWAP + 50-DAY on the T&S and the LEVEL II (the same colours as the chart's VWAP and 50 SMA) */
+.refstrip{display:flex;gap:10px;align-items:center;padding:2px 6px;border-bottom:1px solid var(--line);background:#0e1114;font:600 10.5px var(--mono);white-space:nowrap;overflow:hidden}
+.refstrip .rf b{font:800 9px var(--sans);letter-spacing:.06em;margin-right:2px} .refstrip .vw b{color:#e8a0ff} .refstrip .d50 b{color:#1fc6fc}
+.refstrip i{font-style:normal;font-size:9.5px} .refstrip i.up{color:var(--buy)} .refstrip i.dn{color:var(--sell)}
+table.lad.pro tr.lv-vw{--lvc:#e8a0ff;--lvt:rgba(232,160,255,.08)} table.lad.pro tr.lv-d50{--lvc:#1fc6fc;--lvt:rgba(31,198,252,.08)}
+.lvp.vw{--c:#e8a0ff} .lvp.d50{--c:#1fc6fc}

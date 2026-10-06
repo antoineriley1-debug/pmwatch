@@ -544,6 +544,26 @@ function nextStopRows(p, S){
     out.push({t: `DEMAND (buying) ${f(dn)} · ${nm.s} (${nm.n} ${nm.n > 1 ? "levels" : "level"}) · $${f(need)} gas needed${tank}${need < 0.25 * a ? " · THIN" : ""}${sand(dn, false)}${bias}`, bg: "rgba(0,51,46,.9)", fg: "#26a69a"}); }
   return out;
 }
+/* GAS and AIRSPACE move: drag the board by its title bar anywhere on the chart. Where you put it is kept per chart
+   (as a share of the chart, so it stays put when the window changes size). Double-click the title bar: back home */
+const stPosKey = (p, cls) => "stpos." + cls + "." + (p.id || "chart");
+function stPlace(p, b, cls){
+  const pos = store.get(stPosKey(p, cls), null), wrap = b.parentElement; if (!pos || !wrap) return;
+  const W = wrap.clientWidth, H = wrap.clientHeight;
+  const x = Math.max(0, Math.min(W - b.offsetWidth, pos.x * W)), y = Math.max(0, Math.min(H - Math.min(b.offsetHeight, 24), pos.y * H));
+  b.style.right = "auto"; b.style.bottom = "auto"; b.style.left = Math.round(x) + "px"; b.style.top = Math.round(y) + "px"; b.classList.add("moved");
+}
+function stDrag(p, b, cls, e){
+  if (e.button !== 0 || !e.target.closest(".sth") || e.target.closest(".stmin,.stgear,.sthide")) return;
+  e.preventDefault();
+  const wrap = b.parentElement, wr = wrap.getBoundingClientRect(), br = b.getBoundingClientRect(), dx = e.clientX - br.left, dy = e.clientY - br.top;
+  b.classList.add("dragging");
+  const move = ev => { const x = Math.max(0, Math.min(wr.width - b.offsetWidth, ev.clientX - wr.left - dx)), y = Math.max(0, Math.min(wr.height - 24, ev.clientY - wr.top - dy));
+    b.style.right = "auto"; b.style.bottom = "auto"; b.style.left = Math.round(x) + "px"; b.style.top = Math.round(y) + "px"; };
+  const up = () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); b.classList.remove("dragging");
+    store.set(stPosKey(p, cls), {x: b.offsetLeft / Math.max(1, wrap.clientWidth), y: b.offsetTop / Math.max(1, wrap.clientHeight)}); b.classList.add("moved"); };
+  window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
+}
 function renderStudyBoards(p){
   const wrap = p.el && p.el.querySelector(".chart-wrap"); if (!wrap) return;
   const S = (!p.opt && p.data && p.data.studies) || null;
@@ -556,9 +576,12 @@ function renderStudyBoards(p){
         const hide = e.target.closest(".sthide");
         if (hide) post("/api/settings", {changes: {["studies." + hide.dataset.hide]: false}}).then(out => { toast(out.ok ? "Hidden · bring it back in the IND menu or SETTINGS > Chart studies" : "Not saved: " + (out.reason || ""), out.ok); poll(true); });
       });
-      b.addEventListener("mousedown", e => e.stopPropagation()); }
+      b.addEventListener("mousedown", e => { e.stopPropagation(); stDrag(p, b, cls, e); });
+      b.addEventListener("dblclick", e => { if (!e.target.closest(".sth") || e.target.closest(".stmin,.stgear,.sthide")) return;
+        store.set(stPosKey(p, cls), null); b.style.left = b.style.top = b.style.right = b.style.bottom = ""; b.classList.remove("moved"); renderStudyBoards(p); }); }
     b.dataset.key = key;                     // every board starts small: unset = minimized
-    if (b.dataset.h !== html){ b.dataset.h = html; b.innerHTML = html; } };
+    if (b.dataset.h !== html){ b.dataset.h = html; b.innerHTML = html; }
+    stPlace(p, b, cls); };
   const row = r => `<div class="r" style="background:${r.bg};color:${r.fg}">${esc(r.t)}</div>`;
   // AIRSPACE board (top right)
   if (S && S.air && S.air.board && S.air.board.length){
@@ -567,11 +590,11 @@ function renderStudyBoards(p){
       if (r === "CONFLUENCE"){ const c = confluenceRow(p, S); return c ? `<tr><td colspan="3" style="background:${c.bg};color:${c.fg}">${esc(c.t)}</td></tr>` : ""; }
       if (Array.isArray(r)) return `<tr>${r.map(([t, c, bg]) => `<td style="color:${c}${bg ? ";background:" + bg : ""}">${esc(t)}</td>`).join("")}</tr>`;
       return `<tr><td colspan="3" class="${r.big ? "big" : ""}" style="background:${r.bg};color:${r.fg}">${esc(r.t)}</td></tr>`; });
-    const head = `<div class="sth">AIRSPACE${min && S.air.mini ? `<span class="mini">${esc(S.air.mini)}</span>` : ""}<b class="stmin" title="${min ? "open the whole board" : "minimize to one line + OVERALL"}">${min ? "▾" : "▴"}</b><b class="stgear" title="STUDY SETTINGS: colours, labels, lines">⚙</b><b class="sthide" data-hide="air_board" title="hide the AIRSPACE board (the lines stay)">✕</b></div>`;
+    const head = `<div class="sth" title="drag to move · double-click to put it back">AIRSPACE${min && S.air.mini ? `<span class="mini">${esc(S.air.mini)}</span>` : ""}<b class="stmin" title="${min ? "open the whole board" : "minimize to one line + OVERALL"}">${min ? "▾" : "▴"}</b><b class="stgear" title="STUDY SETTINGS: colours, labels, lines">⚙</b><b class="sthide" data-hide="air_board" title="hide the AIRSPACE board (the lines stay)">✕</b></div>`;
     box("air", head + `<div class="stbody"><table>${min ? trs[trs.length - 1] : trs.join("")}</table></div>`, key);
     // never over the data box (its LESS / MORE must stay clickable): sit just right of it when it is up top
     const ab = wrap.querySelector(".stbd.air"), dw = wrap.querySelector(".datawin");
-    if (ab){ const dwOn = dw && dw.style.display !== "none" && dw.offsetTop < 60;
+    if (ab && !store.get(stPosKey(p, "air"), null)){ const dwOn = dw && dw.style.display !== "none" && dw.offsetTop < 60;
       const left = dwOn ? dw.offsetLeft + dw.offsetWidth + 6 : 6;
       if (ab.style.left !== left + "px") ab.style.left = left + "px"; }
   } else box("air", "");
@@ -580,6 +603,6 @@ function renderStudyBoards(p){
     const key = "stmin.gas." + (p.id || "chart"), min = store.get(key, true);     // starts with the tank lines only
     const rws = (S.gas.rows || []).concat(nextStopRows(p, S));
     const se = S.gas.se ? row(S.gas.se) : "";               // the second-entry status rides on top of the tank
-    box("gas", `<div class="sth">GAS<b class="stmin" title="${min ? "day-after, continuation odds, next stop" : "just the tank"}">${min ? "▾" : "▴"}</b><b class="stgear" title="STUDY SETTINGS: colours, labels, lines">⚙</b>${(S.gas.rows || []).length ? `<b class="sthide" data-hide="gas_readout" title="hide the GAS readout (the lines stay)">✕</b>` : ""}</div><div class="stbody">` + se + (min ? rws.slice(0, 2) : rws).map(row).join("") + `</div>`, key);
+    box("gas", `<div class="sth" title="drag to move · double-click to put it back">GAS<b class="stmin" title="${min ? "day-after, continuation odds, next stop" : "just the tank"}">${min ? "▾" : "▴"}</b><b class="stgear" title="STUDY SETTINGS: colours, labels, lines">⚙</b>${(S.gas.rows || []).length ? `<b class="sthide" data-hide="gas_readout" title="hide the GAS readout (the lines stay)">✕</b>` : ""}</div><div class="stbody">` + se + (min ? rws.slice(0, 2) : rws).map(row).join("") + `</div>`, key);
   } else box("gas", "");
 }

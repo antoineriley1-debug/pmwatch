@@ -229,3 +229,54 @@ class EngineTests(unittest.TestCase):
         self.assertTrue(s["attention"])                      # inside your zone: high attention, nothing to switch on
         self.assertTrue(e.set_zone("AAA", 10.05, 10.05, False, 4.0))
         self.assertEqual(e.syms["AAA"].play["zones"], [])
+
+
+class MovingAverageTests(unittest.TestCase):
+    def test_200_day_is_in_the_daily_context(self):
+        rows = daily_rows([100 + 0.1 * i for i in range(220)])
+        ctx = story.daily_context(rows, False, rows[-1][4])
+        self.assertIsNotNone(ctx["sma200"])
+        self.assertIn("above the 200-day", ctx["text"])
+        kinds = [p["kind"] for p in story.ma_points(ctx)]
+        self.assertEqual(kinds, ["d50", "d200"])
+
+    def test_option_flow_at_the_200_day_is_called_and_a_reclaim_is_named(self):
+        sb = story.Story()
+        t = ny_t(2026, 10, 5, 10, 0)
+        ctx = {"bias": "bear", "text": "Daily below the 50-day.", "sma50": 160.0, "sma200": 150.0}
+        pts = story.ma_points(ctx)
+
+        def one(tt, last, flow=()):
+            fr = story.flow_read(list(flow), tt, CFG)
+            return story.build(sb, tt, last, 0.01, 3.0, {"side": "long"}, None, ctx, pts, [], [], fr, None, [], [],
+                               [[tt - 300, last, last, last, last, 1], [tt - 60, last, last, last, last, 1]], CFG)
+        out = one(t, 149.90, prints("C", 300_000, 3, t))
+        self.assertTrue(out["attention"])
+        self.assertTrue(any("at the daily 200-day 150.00" in s["text"] and "Option flow confirming" in s["text"] for s in out["said"]),
+                        [f[1] for f in sb.feed])
+        out = one(t + 60, 150.20, prints("C", 300_000, 3, t + 60))
+        self.assertIn("Daily 200-day reclaimed", out["now"])
+
+
+class RefsTests(unittest.TestCase):
+    def test_vwap_starts_at_930_and_both_lines_reach_the_ladder(self):
+        from helpers import cfg, plays
+        from twiney.engine import Engine
+        e = Engine(plays(), cfg())
+        e.on_connection("CONNECTED", "", 0.0)
+        st = e.syms["AAA"]
+        t930 = ny_t(2026, 10, 5, 9, 30)
+        st.bars[t930 - 600] = [50.0, 50.0, 50.0, 50.0, 99999, 0, 0]     # premarket: not in the desk VWAP
+        st.bars[t930] = [10.0, 10.3, 9.9, 10.2, 1000, 0, 0]              # typical 10.1333
+        st.bars[t930 + 60] = [10.2, 10.6, 10.2, 10.5, 3000, 0, 0]        # typical 10.4333
+        rows = daily_rows([9.0 + 0.02 * i for i in range(60)], start=ny_t(2026, 7, 1, 0))
+        for r in rows:
+            st.daily[r[0]] = r[1:5]
+        e.on_l1("AAA", "last", 10.5, t930 + 90)
+        refs = e._refs(st, t930 + 90)
+        self.assertAlmostEqual(refs["vwap"], ((10.3 + 9.9 + 10.2) / 3 * 1000 + (10.6 + 10.2 + 10.5) / 3 * 3000) / 4000, places=3)
+        self.assertEqual(refs["vwap_label"], "VWAP")
+        # today's live bar (close 10.5) counts, like the daily chart's 50 SMA
+        self.assertAlmostEqual(refs["sma50"], (sum(r[4] for r in rows[-49:]) + 10.5) / 50, places=3)
+        marks = e._ladder_marks(st, t930 + 90, [], 10.5)
+        self.assertEqual({m["role"] for m in marks} & {"vwap", "sma50"}, {"vwap", "sma50"})

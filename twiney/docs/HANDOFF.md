@@ -220,3 +220,12 @@ and every existing call are untouched. Once a second per stock (`Engine._story_t
 
 Page: the story line over the LEVEL II (COLS toggle), the PS60 STORY panel, zones on the stock chart (IND toggle).
 Settings: SETTINGS > PS60 story. Tests: tests/test_story.py.
+
+### VWAP and the daily 50-day on the LEVEL II and T&S
+`Engine._refs` (once a second): VWAP from 9:30 (typical price × volume of each minute, the chart's maths; PM VWAP
+before the open; the practice market's whole day) and the daily 50 SMA (today's bar included). They go to the
+ladder as marks (`vwap`, `sma50`: their row, or the strip above the ladder when off the rows) and as the
+VWAP / 50-DAY strip on top of the LEVEL II and the T&S (price ▲/▼ distance). The chart's VWAP line starts at 9:30 too.
+The daily 50-day and 200-day are also PS60 STORY places: option flow at either is always called.
+GAS / AIRSPACE boards drag by their title bar (kept per chart; double-click the title bar to put it back).
+Whole-number lines are off by default (studies.whole_numbers).

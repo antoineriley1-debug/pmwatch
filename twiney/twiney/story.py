@@ -30,7 +30,8 @@ _NUM = {1: "ONE", 2: "TWO", 3: "THREE", 4: "FOUR", 5: "FIVE", 6: "SIX", 7: "SEVE
 # what each kind of place is called, and how much it weighs in a confluence
 PS60_KINDS = ("pivot", "second", "sneaky", "target")
 WEIGHT = {"pivot": 3, "second": 3, "sneaky": 2, "target": 2, "user": 3, "uzone": 3, "pdh": 2, "pdl": 2, "pwh": 2, "pwl": 2,
-          "mh": 2, "ml": 2, "yh": 3, "yl": 3, "zone": 2, "inst": 1}
+          "mh": 2, "ml": 2, "yh": 3, "yl": 3, "zone": 2, "inst": 1, "d50": 3, "d200": 3}
+MA_KINDS = ("d50", "d200")
 
 
 def num_word(n):
@@ -67,25 +68,27 @@ def daily_context(drows, live, last, n=50):
         return None
     closes = [r[4] for r in drows]
     ma = sum(closes[-n:]) / n if len(closes) >= n else None
+    ma200 = sum(closes[-200:]) / 200 if len(closes) >= 200 else None
     pdh, pdl = done[-1][2], done[-1][3]
     today_h = drows[-1][2] if live else None
     today_l = drows[-1][3] if live else None
-    out = {"sma50": None if ma is None else round(ma, 4), "pdh": pdh, "pdl": pdl, "bias": None, "objective": None, "taken": False}
+    out = {"sma50": None if ma is None else round(ma, 4), "sma200": None if ma200 is None else round(ma200, 4), "pdh": pdh, "pdl": pdl, "bias": None, "objective": None, "taken": False}
     if ma is None:
         out["text"] = f"Daily: not enough history for the 50-day yet ({len(closes)} days). Prior-day high {px(pdh)}, low {px(pdl)}."
         return out
     bull = last >= ma
     out["bias"] = "bull" if bull else "bear"
+    two = "" if ma200 is None else f", {'above' if last >= ma200 else 'below'} the 200-day ({px(ma200)})"
     if bull:
         out["objective"] = [pdh, "prior-day high"]
         out["taken"] = bool((today_h is not None and today_h > pdh) or last > pdh)
-        out["text"] = (f"Daily above the 50-day ({px(ma)}): bullish PS60. "
+        out["text"] = (f"Daily above the 50-day ({px(ma)}){two}: bullish PS60. "
                        + (f"Prior-day high {px(pdh)} taken: upside progressing." if out["taken"]
                           else f"Objective: take the prior-day high {px(pdh)}."))
     else:
         out["objective"] = [pdl, "prior-day low"]
         out["taken"] = bool((today_l is not None and today_l < pdl) or last < pdl)
-        out["text"] = (f"Daily below the 50-day ({px(ma)}): bearish PS60. "
+        out["text"] = (f"Daily below the 50-day ({px(ma)}){two}: bearish PS60. "
                        + (f"Prior-day low {px(pdl)} taken: downside progressing." if out["taken"]
                           else f"Objective: take the prior-day low {px(pdl)}."))
     return out
@@ -117,6 +120,16 @@ def ps60_points(play, sneaky_auto=None):
             add(p, "Sneaky Pivot", "sneaky")
     for p in play.get("extra_levels") or []:
         add(p, "your line", "user")
+    return out
+
+
+def ma_points(ctx):
+    """The daily 50-day and 200-day as places: the big money watches them, so the option flow is read against them."""
+    out = []
+    if ctx and ctx.get("sma50"):
+        out.append({"p": ctx["sma50"], "name": "daily 50-day", "kind": "d50"})
+    if ctx and ctx.get("sma200"):
+        out.append({"p": ctx["sma200"], "name": "daily 200-day", "kind": "d200"})
     return out
 
 
@@ -576,7 +589,9 @@ def build(sb, t, last, tick, atr, play, se_state, ctx, points, zones, conf, fr, 
     fresh_break = bool(br and t - br["t"] <= 120 and br["state"] == "broke")
     parts = []
     if fresh_break:
-        verb = ("cleared" if br["dir"] == "up" else "lost") if foc["kind"] in ("pdh", "pwh", "mh", "yh", "pdl", "pwl", "ml", "yl") else ("breaking" if br["dir"] == "up" else "breaking down")
+        verb = (("reclaimed" if br["dir"] == "up" else "lost") if foc["kind"] in MA_KINDS
+                else ("cleared" if br["dir"] == "up" else "lost") if foc["kind"] in ("pdh", "pwh", "mh", "yh", "pdl", "pwl", "ml", "yl")
+                else ("breaking" if br["dir"] == "up" else "breaking down"))
         head = f"{where} {verb}"
         tone = "bull" if br["dir"] == "up" else "bear"
     elif br and br["state"] in ("broke", "retest", "held") and t - br["t"] <= float(cfg.get("retest_minutes", 30)) * 60:
@@ -639,6 +654,12 @@ def build(sb, t, last, tick, atr, play, se_state, ctx, points, zones, conf, fr, 
     sb.said["att"] = (bool(foc["on"]), t)
     if not loud_now and (first_on or t - sb.said.get("focus", (None, -1e9))[1] >= 60):
         note("focus", (head.split(" ")[-1] if foc["on"] else "near", foc["name"]), parts[0] + (f". {tw}" if tw and not foc["on"] else "") + ".", "neutral", repeat=900)
+    ma = foc if foc["kind"] in MA_KINDS else next((m for m in points if m["kind"] in MA_KINDS and foc["lo"] - near <= m["p"] <= foc["hi"] + near), None)
+    if ma and fs["state"] != "NOT YET CONFIRMED":
+        # the 50 / 200 day with the option flow: the moment the money shows up at the line the big money watches
+        note("maflow:" + ma["kind"], fs["state"] + fs["cp"],
+             f"{ftext[0].upper() + ftext[1:]} at the {ma['name']} {px(ma['p'])} ({'price testing it' if foc['on'] else 'price approaching'})",
+             "warn" if fs["state"] == "CONFLICTING" else ("bull" if up else "bear"), repeat=900, loud=True)
     note("flow", (fs["state"], fs["cp"]), f"{ftext[0].upper() + ftext[1:]}{loc}.", "warn" if fs["state"] == "CONFLICTING" else
          ("bull" if up else "bear") if fs["state"] in ("CONFIRMED", "DEVELOPING") else "neutral",
          repeat=600, loud=fs["state"] in ("CONFIRMED", "CONFLICTING"))

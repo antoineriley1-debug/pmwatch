@@ -495,7 +495,7 @@ DEFAULTS = {
         "premarket": True,              # premarket high / low (locked at 9:30)
         "after_hours": False,           # the last completed after-hours high / low
         "old_supply_demand": True,      # last finished month's high (old supply) / low (old demand)
-        "whole_numbers": True,          # whole-number lines
+        "whole_numbers": False,         # whole-number lines
         "whole_above": 3,               # whole numbers above price
         "whole_below": 3,               # whole numbers below price
         "whole_step": 0.0,              # whole-number step (0 = auto: $5 over 200, $1 over 80, else $0.50)
