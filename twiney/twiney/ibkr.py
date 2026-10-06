@@ -550,6 +550,45 @@ def ibapi_app_factory():
             EClient.__init__(self, wrapper=self)
             TwineyWrapper.__init__(self, engine, session)
 
+        def run(self):
+            """IBKR's message loop, with one change: ibapi's own loop ends (and drops the connection) on ANY error in a
+            handler, which reads as 'connection closed by TWS'. Here one message that fails is logged and said on the
+            desk, and the feed keeps running."""
+            import queue
+            from ibapi import comm
+            try:
+                from ibapi.common import BadMessage
+            except ImportError:                      # older / newer layouts
+                BadMessage = ()
+            try:
+                while self.isConnected() or not self.msg_queue.empty():
+                    try:
+                        text = self.msg_queue.get(block=True, timeout=0.2)
+                    except queue.Empty:
+                        continue
+                    try:
+                        fields = comm.read_fields(text)
+                        self.decoder.interpret(fields)
+                    except (KeyboardInterrupt, SystemExit):
+                        raise
+                    except BadMessage:
+                        log.warning("IBKR sent a message TED could not read")
+                    except Exception as exc:
+                        self._handler_failed(exc)
+            finally:
+                self.disconnect()
+
+        def _handler_failed(self, exc):
+            log.exception("an IBKR message failed in TED (the feed keeps running)")
+            now = self.clock()
+            if now - getattr(self, "_fail_said", -1e9) > 30.0:
+                self._fail_said = now
+                try:
+                    self.engine._message("warn", f"TED could not handle one IBKR message ({type(exc).__name__}: {exc}) — "
+                                                 f"the feed keeps running; details in the console / desk.log", now)
+                except Exception:
+                    pass
+
     return TwineyApp
 
 
