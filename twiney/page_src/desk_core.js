@@ -317,6 +317,7 @@ function indPopHTML(){
     <h5>BANDS</h5><label><input type="checkbox" data-top="bb" ${store.get("bb", true) ? "checked" : ""}> <i style="display:inline-block;width:14px;height:3px;background:${DAN_BB};vertical-align:middle"></i> Bollinger 20 / 2.0</label>
     <label><input type="checkbox" data-top="extShade" ${store.get("extShade", true) ? "checked" : ""}> shade premarket (orange) and after hours (blue) on the intraday charts</label>
     <label title="the last candle sits at the right edge; the study labels go off the screen to the right (their price tags stay on the scale). The ▶| button on the toolbar does the same"><input type="checkbox" data-top="stEdge" ${store.get("stEdge", false) ? "checked" : ""}> candles to the right edge: study labels off the screen, just the market</label>
+    <label title="the option contract you trade, read at your 2ND / STOP / TARGET lines: what it does there, in %"><input type="checkbox" data-top="optPct" ${store.get("optPct", true) ? "checked" : ""}> contract % at my lines</label>
     <label title="the zones you drew: right-click the chart, ZONE"><input type="checkbox" data-top="zonesOn" ${store.get("zonesOn", true) ? "checked" : ""}> Your zones</label>
     <label><input type="checkbox" data-top="datawin" ${store.get("datawin", true) ? "checked" : ""}> data window (the floating OK box: bar values and every line at the cursor)</label>
     <div class="dim" style="font-size:10.5px;margin-top:6px">MAS on the toolbar switches every average at once; these boxes pick the lines.</div>`;
@@ -440,6 +441,37 @@ function storyZones(ctx, zones){
     const tag = "YOUR ZONE";
     g.font = "bold 9px ui-monospace, Menlo, Consolas, monospace"; g.fillStyle = `rgba(${col},${ctx.lightScreen ? .95 : .8})`;
     if (h >= 9) g.fillText(tag, 6, y1 + Math.min(h - 2, 10));
+  }
+  g.font = "11px ui-monospace, Menlo, Consolas, monospace";
+}
+/* THE CONTRACT AT YOUR LINES: one small tag on each of your 2ND / STOP / TARGET lines, at the left of the chart,
+   in % of the contract (never dollars): what the contract does if the stock gets there. Quiet colours, no boxes
+   around the chart; hide them with IND, "contract % at my lines" */
+function optPctTags(ctx, e){
+  const {g, y, lo, hi, canvas, drag} = ctx;
+  if (!e || !e.lines) return;
+  // the boxes floating over the chart (data window, AIRSPACE / GAS boards...): a tag never sits under one
+  const cr = canvas.getBoundingClientRect(), wrap = canvas.parentElement;
+  const boxes = wrap ? [...wrap.querySelectorAll(".datawin, .stbd, [class*=board]")].filter(el => el.offsetParent && el !== canvas)
+    .map(el => { const r = el.getBoundingClientRect(); return {l: r.left - cr.left, r: r.right - cr.left, t: r.top - cr.top, b: r.bottom - cr.top}; })
+    .filter(b => b.r > b.l && b.b > b.t) : [];
+  const pct = v => (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(Math.round(v)) + "%";
+  const rows = [];
+  const se = e.lines.second_entry, tg = e.lines.target, sp = e.lines.stop;
+  if (se) rows.push({role: "second_entry", at: se.at, text: e.held > 0 ? `${e.label} in ${e.entry.toFixed(2)}` : `${e.label} in ≈${se.v.toFixed(2)}`, col: "#b9c3d6"});
+  if (tg) rows.push({role: "target", at: tg.at, text: pct(tg.pct) + (e.rr ? `  ${e.rr}:1` : ""), col: "#2fd18b"});
+  if (sp) rows.push({role: "stop", at: sp.at, text: pct(sp.pct), col: "#ff6b7d"});
+  g.font = "bold 9px ui-monospace, Menlo, Consolas, monospace";
+  for (const r of rows){
+    const at = drag && drag.role === r.role ? drag.price : r.at;
+    if (at == null) continue;
+    // a line off the screen keeps its tag, pinned to the edge it is past, with an arrow
+    const off = at > hi ? "▲ " : at < lo ? "▼ " : "", text = off + r.text;
+    const yy = at > hi ? 14 : at < lo ? Math.round(ctx.plotH - 8) : Math.round(y(at)), w = g.measureText(text).width + 8;
+    let x = 4;
+    for (let k = 0; k < 6; k++){ const hit = boxes.find(b => yy + 7 > b.t && yy - 7 < b.b && x < b.r && x + w > b.l); if (!hit) break; x = hit.r + 4; }
+    g.globalAlpha = 0.82; g.fillStyle = "rgba(12,16,24,.78)"; g.fillRect(x, yy - 6, w, 12);
+    g.globalAlpha = 1; g.fillStyle = r.col; g.fillText(text, x + 4, yy + 3);
   }
   g.font = "11px ui-monospace, Menlo, Consolas, monospace";
 }

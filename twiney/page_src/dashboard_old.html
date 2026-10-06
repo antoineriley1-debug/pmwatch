@@ -2355,6 +2355,9 @@ function drawOne(p, cv, v, isFoot){
     const t = v.seChip.text, tw = g.measureText(t).width + 12, tx = Math.max(4, Math.min(plotW - tw - 4, v.seChip.x - tw)), ty = v.seChip.y - 20 < 2 ? v.seChip.y + 18 : v.seChip.y - 20;
     g.fillStyle = "rgba(17,22,31,.95)"; g.fillRect(tx, ty, tw, 16); g.fillStyle = "#dbe3ee"; g.fillText(t, tx + 6, ty + 12);
   }
+  // the contract you trade, read at your lines in % (IND: contract % at my lines)
+  if (!isFoot && !p.opt && d.opt_est && store.get("optPct", true) && typeof optPctTags === "function")
+    optPctTags({g, plotW, plotH, y, lo, hi, canvas: p.canvas, drag: p.dragLevel}, d.opt_est);
   // crosshair with price / time readout
   p.dataPrice = (v.cross && v.cross[1] < plotH && v.cross[0] < plotW) ? hi - (v.cross[1] - 8) / (plotH - 8) * (hi - lo) : null;
   if (!isFoot && typeof renderDataWin === "function") renderDataWin(p);

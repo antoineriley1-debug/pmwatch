@@ -692,3 +692,25 @@ class BookCheckTests(unittest.TestCase):
         e.on_print("AAA", 10.05, 100, "ARCA", t0 + 7.5)
         self.assertTrue(st.resub_depth)
         self.assertTrue(any("wider than the quote" in m["text"] for m in e.messages))
+
+
+class ContractAtLinesTests(unittest.TestCase):
+    def test_percent_at_the_lines_from_delta_and_gamma(self):
+        e = connected_engine()
+        st = e.syms["AAA"]
+        st.l1["last"] = 100.0; st.l1["bid"] = 99.99; st.l1["ask"] = 100.01
+        st.play.update(side="long", second_entry=101.0, stop=99.0, target=104.0, trade_as="option", opt_key="AAA 20261009 100C")
+        k = "AAA 20261009 100C"
+        e.on_opt_quote(k, "bid", 1.95, 1.0); e.on_opt_quote(k, "ask", 2.05, 1.0)
+        e.on_opt_greeks(k, {"delta": 0.5, "gamma": 0.1}, 1.0)
+        est = e._opt_est(st, 1.0)
+        # in at 101: 2 + 0.5 + 0.05 = 2.55; target 104: 2 + 2 + 0.8 = 4.80 (+88%); stop 99: 2 - 0.5 + 0.05 = 1.55 (-39%)
+        self.assertEqual(est["entry"], 2.55)
+        self.assertEqual(est["lines"]["target"]["v"], 4.8)
+        self.assertEqual(est["lines"]["target"]["pct"], 88)
+        self.assertEqual(est["lines"]["stop"]["pct"], -39)
+        self.assertEqual(est["rr"], 2.3)
+
+    def test_nothing_without_a_contract(self):
+        e = connected_engine()
+        self.assertIsNone(e._opt_est(e.syms["AAA"], 1.0))

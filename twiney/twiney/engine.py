@@ -245,6 +245,7 @@ class Engine:
         self.plays = [p for p in plays]
         self.recorder = recorder
         self.lock = threading.RLock()
+        self.och_seen = {}                # underlying -> (the contract on the OPTION CHART, when the page last asked)
         self.study_async = False          # True on the desk (live / practice / replay): studies worked out off the lock
         self._study_thread = None
         self._study_stop = threading.Event()
@@ -1387,6 +1388,7 @@ class Engine:
             out = [[m] + [round(x, 4) for x in bars[m]] for m in sorted(bars)]
             q = self.opt_quotes.get(key) or {}
             pos = self.opt_positions.get(key)
+            self.och_seen[sym] = (key, t)          # the contract on the OPTION CHART: the stock chart shows it at your lines
             return {"key": key, "available": True, "symbol": key, "underlying": sym, "expiry": exp, "strike": strike,
                     "right": right, "label": f"{sym} {exp[4:6]}/{exp[6:8]} {strike:g}{right}", "spot": spot,
                     "bars": out, "bid": q.get("bid"), "ask": q.get("ask"), "last": q.get("last"),
@@ -1418,6 +1420,51 @@ class Engine:
         with self.lock:
             self.opt_chain[str(symbol).upper()] = {"expiries": sorted(set(expiries)), "strikes": sorted(set(float(x) for x in strikes)),
                                                    "mult": float(mult or 100), "con_id": con_id, "source": source, "t": t}
+
+    def _opt_est(self, st, t):
+        """THE CONTRACT AT YOUR LINES, in %: what the contract you trade should be worth when the stock is at your 2nd
+        entry, stop and target (today's delta and gamma: mid + delta x move + half gamma x move squared), and the % it
+        makes or loses from your entry (your fill when you hold it, else the 2nd entry's estimate, else the mid now).
+        The contract: the one the stock chart's lines trade, else the one on the OPTION CHART for this stock."""
+        play = st.play or {}
+        key = play.get("opt_key") if play.get("trade_as") == "option" else None
+        seen = self.och_seen.get(st.symbol)
+        if not key and seen and t - seen[1] < 30.0:
+            key = seen[0]
+        if not key:
+            return None
+        try:
+            usym, exp, strike, right = options.parse_key(key)
+        except (ValueError, IndexError):
+            return None
+        q = self.opt_quotes.get(key) or {}
+        b, a = q.get("bid"), q.get("ask")
+        mid = (b + a) / 2 if b and a and a >= b else q.get("last")
+        delta, gamma, spot = q.get("delta"), q.get("gamma") or 0.0, st.price()
+        label = f"{exp[4:6]}/{exp[6:8]} {strike:g}{right}"
+        if not mid or delta is None or not spot:
+            return {"key": key, "label": label, "wait": True}
+        val = lambda S: max(0.01, mid + delta * (S - spot) + 0.5 * gamma * (S - spot) ** 2)
+        own_long = play.get("side", "long") == "long"
+        lines = play if (right == "C") == own_long else (play.get("alt") or {})
+        pos = self.opt_positions.get(key)
+        held = int((pos or {}).get("qty") or 0)
+        if held > 0 and pos.get("avg_cost"):
+            entry, basis = pos["avg_cost"] / (pos.get("mult") or 100), "your fill"
+        elif lines.get("second_entry"):
+            entry, basis = val(lines["second_entry"]), "at the 2nd entry"
+        else:
+            entry, basis = mid, "now"
+        out = {"key": key, "label": label, "held": held, "entry": round(entry, 2), "basis": basis, "lines": {}}
+        for role in ("second_entry", "stop", "target"):
+            S = lines.get(role)
+            if S:
+                v = val(S)
+                out["lines"][role] = {"at": S, "v": round(v, 2), "pct": round((v - entry) / entry * 100, 0)}
+        tg, sp = out["lines"].get("target"), out["lines"].get("stop")
+        if tg and sp and sp["pct"] < 0:
+            out["rr"] = round(tg["pct"] / -sp["pct"], 1)
+        return out
 
     def option_chain(self, symbol, expiry=None, right="C", t=None, width=10):
         """What the OPTION CHAIN panel shows: the chain, the watched expiry / right, the strikes around the spot
@@ -4173,6 +4220,7 @@ class Engine:
             "m5": [[k] + [fmt_price(x) for x in st.m5[k][:4]] + [round(st.m5[k][4] or 0), 0, 0] for k in sorted(st.m5)] if full else None,
             "m30": [[k] + [fmt_price(x) for x in st.m30[k][:4]] + [round(st.m30[k][4] or 0), 0, 0] for k in sorted(st.m30)] if full else None,
             "studies": self.studies_for(st, t),
+            "opt_est": self._opt_est(st, t),
             "story": self._story_pane(st),
             "refs": self._refs(st, t),
             "footprint": self._footprint(st, t),
