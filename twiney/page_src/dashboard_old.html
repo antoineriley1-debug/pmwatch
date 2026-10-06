@@ -1134,6 +1134,7 @@ function wireChart(p, cv, v, saveView, isFoot){
           const d = p.dragLevel; p.dragLevel = null;
           if (Math.abs(d.price - d.from) < 1e-6) return;
           let out;
+          if (p.opt && typeof optLevel === "function"){ await optLevel(d.role, d.price, ((T().opt_levels || {})[OCH.key] || {}).n || OCH.n); return; }
           if (d.role === "extra"){ await post("/api/level", {symbol: p.data.symbol, price: d.from, on: false, role: "extra"});
             out = await post("/api/level", {symbol: p.data.symbol, price: d.price, on: true, role: "extra"}); }
           else out = await post("/api/level", {symbol: p.data.symbol, price: d.price, role: d.role});

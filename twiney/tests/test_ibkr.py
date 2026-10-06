@@ -735,3 +735,77 @@ class RegularSessionDayRangeTests(unittest.TestCase):
         e.on_print(sym, 10.00, 100, "ARCA", rth)
         e.on_print(sym, 9.80, 100, "ARCA", rth + 60)
         self.assertEqual(e.syms[sym].day_lo[0], 9.80)
+
+
+class OptionChainClassTests(unittest.TestCase):
+    def test_the_standard_class_wins_over_an_odd_one_that_comes_last(self):
+        s, engine, clock = make_session()
+        app = FakeApp(engine, s)
+        app.req[77] = ("chain", "AAA")
+        app.securityDefinitionOptionParameter(77, "SMART", 1, "AAA", "100", ["20261009", "20261016"], [370.0, 375.0, 380.0, 385.0, 390.0])
+        app.securityDefinitionOptionParameter(77, "CBOE", 1, "AAA", "100", ["20261009"], [380.0])
+        app.securityDefinitionOptionParameter(77, "SMART", 1, "2AAA", "100", ["20261016"], [311.0])   # an odd class, last
+        self.assertNotIn("AAA", engine.opt_chain)                    # nothing until IBKR says the answer is complete
+        app.securityDefinitionOptionParameterEnd(77)
+        ch = engine.opt_chain["AAA"]
+        self.assertEqual(ch["strikes"], [370.0, 375.0, 380.0, 385.0, 390.0])
+        self.assertEqual(ch["expiries"], ["20261009", "20261016"])
+
+    def test_no_class_named_after_the_symbol_takes_the_one_with_most_strikes(self):
+        from twiney.ibkr import pick_chain_class
+        rows = [("X1", ["a"], [1.0], 100, 1), ("X2", ["a", "b"], [1.0, 2.0, 3.0], 100, 1), ("X3", ["a"], [1.0, 2.0, 3.0, 4.0], 10, 1)]
+        self.assertEqual(pick_chain_class("AAA", rows)[0], "X2")
+
+
+class OptionChartLineTests(unittest.TestCase):
+    """Right-click the OPTION CHART: 2ND, STOP and TARGET at the contract's own price, like the stock chart."""
+    KEY = "TSLA 20261003 240C"
+
+    def _held(self):
+        s, engine, clock = make_session(max_dollars_per_order=20000)
+        s.step(clock()); app = s.app; app.nextValidId(50)
+        app.position("DU1", _Opt(), 4, 312.0)
+        rid = s.opt_ids[self.KEY]
+        app.tickPrice(rid, 1, 3.40, None); app.tickPrice(rid, 2, 3.50, None)
+        tr = engine.trader; tr.gate.set_accounts(["DU1"]); tr.gate.arm(True)
+        return s, engine, clock, app, rid, tr
+
+    def _orders(self, app):
+        return [c for c in app.calls if c[0] == "placeOrder" and isinstance(c[2], _Opt)]
+
+    def test_target_takes_every_contract_out_once(self):
+        s, engine, clock, app, rid, tr = self._held()
+        self.assertTrue(tr.set_opt_level(self.KEY, "target", 4.00, 1, clock())["ok"])
+        self.assertFalse(tr.set_opt_level(self.KEY, "target", 3.30, 1, clock())["ok"])     # already through it
+        tr.watchdog(clock()); self.assertEqual(self._orders(app), [])
+        app.tickPrice(rid, 1, 4.00, None); app.tickPrice(rid, 2, 4.10, None)
+        tr.watchdog(clock())
+        o = self._orders(app)
+        self.assertEqual(len(o), 1); self.assertEqual((o[0][3]["action"], o[0][3]["qty"]), ("SELL", 4))
+        tr.watchdog(clock()); self.assertEqual(len(self._orders(app)), 1)
+        self.assertNotIn("target", tr._opt_level_view().get(self.KEY, {}))
+
+    def test_stop_on_the_contract(self):
+        s, engine, clock, app, rid, tr = self._held()
+        self.assertTrue(tr.set_opt_level(self.KEY, "stop", 3.00, 1, clock())["ok"])
+        self.assertEqual(tr.opt_stops[self.KEY]["on"], "option")
+        app.tickPrice(rid, 1, 2.95, None); app.tickPrice(rid, 2, 3.05, None)
+        tr.watchdog(clock())
+        o = self._orders(app)
+        self.assertEqual(len(o), 1); self.assertEqual((o[0][3]["action"], o[0][3]["qty"]), ("SELL", 4))
+
+    def test_second_entry_adds_when_the_contract_trades_through_it(self):
+        s, engine, clock, app, rid, tr = self._held()
+        self.assertTrue(tr.set_opt_level(self.KEY, "second_entry", 3.80, 2, clock())["ok"])
+        tr.watchdog(clock()); self.assertEqual(self._orders(app), [])
+        app.tickPrice(rid, 1, 3.80, None); app.tickPrice(rid, 2, 3.90, None)
+        tr.watchdog(clock())
+        o = self._orders(app)
+        self.assertEqual(len(o), 1); self.assertEqual((o[0][3]["action"], o[0][3]["qty"]), ("BUY", 2))
+        self.assertNotIn("second_entry", tr._opt_level_view().get(self.KEY, {}))
+
+    def test_line_off(self):
+        s, engine, clock, app, rid, tr = self._held()
+        tr.set_opt_level(self.KEY, "stop", 3.00, 1, clock())
+        self.assertTrue(tr.set_opt_level(self.KEY, "stop", None, 1, clock())["ok"])
+        self.assertNotIn(self.KEY, tr.opt_stops)

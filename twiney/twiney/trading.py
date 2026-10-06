@@ -638,6 +638,8 @@ class Trader:
         self.scale_plans = {}          # symbol -> SCALE PLAN on the position (rungs from the average entry)
         self.trails = {}               # symbol -> {"dist", "best", "side"}: a trailing stop riding the STOP line
         self.opt_stops = {}            # option key -> {"price", "on": "stock" | "option"}: a stop you set on a contract
+        self.opt_levels = {}           # option key -> lines drawn on the OPTION CHART at the contract's own price:
+                                       #   {"second_entry": {"price", "n", "from"}, "target": price, "stop": price}
         self.opt_stop_fired = {}       # option key -> t it fired (no double sends while the close works)
         self.opt_link = {}             # symbol -> what the chart's lines did on the linked contract (OPTIONS mode)
         self.families = {}   # entry order id -> {"symbol", "entry", "stop", "cash": [...], "be_done"}
@@ -1279,6 +1281,124 @@ class Trader:
             self._note(now, f"{key}: STOP {'when ' + p.get('symbol', '') + ' trades ' + ('under' if bull else 'over') if on == 'stock' else 'when the contract trades'} {price:g}", True)
             return {"ok": True, "stop": dict(self.opt_stops[key])}
 
+    # ---- lines on the OPTION CHART: 2nd entry, stop and target at the contract's own price ---------------------------
+    def set_opt_level(self, key, role, price, n=1, now=None):
+        """Right-click the OPTION CHART: the same trade lines as the stock chart, read on the contract's price.
+        2ND: buy ``n`` contracts (more, if you hold it) when the contract trades through the price from the side it is
+        on now. STOP: out of every contract when its bid (ask on a short) reaches the price. TARGET: out of every
+        contract when its bid reaches the price (ask on a short). ``price`` None takes the line off."""
+        from . import options as _o
+        with self.lock:
+            now = now or time.time()
+            if role not in ("second_entry", "stop", "target"):
+                return {"ok": False, "reason": f"bad line {role}"}
+            try:
+                _o.parse_key(str(key))
+            except (ValueError, IndexError):
+                return {"ok": False, "reason": "pick a contract first"}
+            lv = self.opt_levels.setdefault(key, {})
+            names = {"second_entry": "2ND", "stop": "STOP", "target": "TARGET"}
+            if price in (None, ""):
+                lv.pop(role, None)
+                if role == "stop" and (self.opt_stops.get(key) or {}).get("on") == "option":
+                    self.opt_stops.pop(key, None)
+                self._note(now, f"{key}: {names[role]} off", True)
+                return {"ok": True}
+            try:
+                price = opt_snap(float(price))
+            except (TypeError, ValueError):
+                return {"ok": False, "reason": "price must be a number"}
+            if price <= 0:
+                return {"ok": False, "reason": "price must be positive"}
+            q = self.engine.opt_quotes.get(key) or {}
+            p = self.engine.opt_positions.get(key)
+            held = int((p or {}).get("qty") or 0)
+            ref = self._opt_mid(q)
+            if role == "second_entry":
+                if ref is None:
+                    return {"ok": False, "reason": f"no quote on {key} yet"}
+                lv[role] = {"price": price, "n": max(1, int(n or 1)), "from": "below" if ref < price else "above", "t": now}
+                self._note(now, f"{key}: 2ND {price:.2f} — {'buy' if held >= 0 else 'sell'} {lv[role]['n']} when it trades "
+                                f"{'up' if ref < price else 'down'} through it (the contract is {ref:.2f})", True)
+            elif role == "stop":
+                if held:
+                    out = self.set_opt_stop(key, price, "option", now)
+                    if not out.get("ok"):
+                        return out
+                lv[role] = price
+                if not held:
+                    self._note(now, f"{key}: STOP {price:.2f} — goes live when you hold the contract", True)
+            else:
+                bid, ask = q.get("bid"), q.get("ask")
+                if held > 0 and bid and price <= bid or held < 0 and ask and price >= ask:
+                    return {"ok": False, "reason": f"a target at {price:.2f} is already reached (the contract is {bid if held > 0 else ask}) — it would close at once"}
+                lv[role] = price
+                self._note(now, f"{key}: TARGET {price:.2f} — out of every contract when it trades there", True)
+            return {"ok": True, "levels": self._opt_level_view().get(key)}
+
+    @staticmethod
+    def _opt_mid(q):
+        b, a = q.get("bid"), q.get("ask")
+        if b and a and a >= b:
+            return round((b + a) / 2, 4)
+        return q.get("last") or b or a
+
+    def _opt_level_view(self):
+        out = {}
+        for key, lv in list(self.opt_levels.items()):
+            v = {}
+            if lv.get("second_entry"):
+                v["second_entry"] = lv["second_entry"]["price"]; v["n"] = lv["second_entry"]["n"]
+            if lv.get("stop"):
+                v["stop"] = lv["stop"]
+            if lv.get("target"):
+                v["target"] = lv["target"]
+            if v:
+                out[key] = v
+        return out
+
+    def _opt_level_tick(self, now):
+        from . import options as _o
+        for key, lv in list(self.opt_levels.items()):
+            q = self.engine.opt_quotes.get(key) or {}
+            p = self.engine.opt_positions.get(key)
+            held = int((p or {}).get("qty") or 0)
+            # the STOP drawn before the fill goes live once the contract is held
+            if held and lv.get("stop") and key not in self.opt_stops:
+                self.opt_stops[key] = {"price": lv["stop"], "on": "option", "t": now}
+                self.opt_stop_fired.pop(key, None)
+            if not held and lv.get("stop") and lv.get("_held"):
+                lv.pop("stop", None); lv.pop("target", None)          # flat again: the trade is done, its exits come off
+            lv["_held"] = bool(held)
+            # the TARGET: every contract out at the touch
+            tgt = lv.get("target")
+            if tgt and held:
+                ref = q.get("bid") if held > 0 else q.get("ask")
+                if ref and ((ref >= tgt) if held > 0 else (ref <= tgt)) and now - lv.get("_tgt_t", -1e9) > 15.0:
+                    lv["_tgt_t"] = now
+                    if self._opt_working(key, SELL if held > 0 else BUY) < abs(held):
+                        out = self.opt_adjust(key, 0, "close", None, now)
+                        self._note(now, f"OPTION TARGET {key} traded {ref:g}, your target {tgt:g}: "
+                                        + (out.get("sent") or f"close refused — {out.get('reason')}"), bool(out.get("ok")))
+                        if out.get("ok"):
+                            lv.pop("target", None)
+            # the 2ND: a real cross from the side it was on when you drew it
+            se = lv.get("second_entry")
+            ref = self._opt_mid(q)
+            if se and ref is not None:
+                crossed = ref >= se["price"] if se["from"] == "below" else ref <= se["price"]
+                if crossed and now - se.get("_t", -1e9) > 15.0:
+                    se["_t"] = now
+                    if held:
+                        out = self.opt_adjust(key, se["n"], "add", None, now)
+                    else:
+                        usym, exp, strike, right = _o.parse_key(key)
+                        out = self.opt_open(usym, exp, strike, right, BUY, se["n"], None, now)
+                    self._note(now, f"OPTION 2ND {key} traded {ref:g} through {se['price']:g}: "
+                                    + (out.get("sent") or f"NOT sent — {out.get('reason')}"), bool(out.get("ok")))
+                    if out.get("ok"):
+                        lv.pop("second_entry", None)
+
     def _opt_stop_ref(self, key, p, on):
         if on == "stock":
             st = self.engine.syms.get(p.get("symbol"))
@@ -1542,6 +1662,10 @@ class Trader:
             self._opt_link_tick(now or time.time())
         except Exception as exc:
             log.warning("option lines: %s", exc)
+        try:
+            self._opt_level_tick(now or time.time())
+        except Exception as exc:
+            log.warning("option chart lines: %s", exc)
         try:
             self._opt_stop_tick(now or time.time())
         except Exception as exc:
@@ -2636,7 +2760,7 @@ class Trader:
                  bracket_template=self.bracket_template, bracket_templates=list(self.bracket_templates().keys()),
                  scale_plans={sym: self._plan_view(sym, pl, time.time()) for sym, pl in self.scale_plans.items()},
                  trails={sym: dict(tr) for sym, tr in self.trails.items()},
-                 opt_stops=self._opt_stop_view(), opt_links=self._opt_link_view(),
+                 opt_stops=self._opt_stop_view(), opt_links=self._opt_link_view(), opt_levels=self._opt_level_view(),
                  allow_sell_to_open=bool(self.cfg.get("allow_sell_to_open", False)),
                  scale_templates={k: v for k, v in (self.cfg["scale_plan"].get("templates") or {}).items()},
                  qty_presets=list(self.cfg.get("qty_presets") or [25, 50, 100, 200, 500, 1000]),

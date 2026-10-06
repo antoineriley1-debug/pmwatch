@@ -276,10 +276,17 @@ class TwineyWrapper:
         kind, sym = self.req.get(reqId, (None, None))
         if kind != "chain" or exchange != "SMART":
             return
-        self.engine.on_opt_chain(sym, list(expirations), [num(x) for x in strikes], num(multiplier) or 100, underlyingConId, self.clock())
+        # IBKR sends ONE ROW PER OPTION CLASS (TSLA has its standard class and odd ones: an adjusted class after a
+        # split, a single strike and expiry). They are gathered here and the chain is picked at the End
+        self.__dict__.setdefault("_chain_rows", {}).setdefault(reqId, []).append(
+            (str(tradingClass or ""), list(expirations), [num(x) for x in strikes], num(multiplier) or 100, underlyingConId))
 
     def securityDefinitionOptionParameterEnd(self, reqId):
-        self.req.pop(reqId, None)
+        kind, sym = self.req.pop(reqId, (None, None))
+        rows = self.__dict__.get("_chain_rows", {}).pop(reqId, [])
+        if kind == "chain" and rows:
+            cls, exps, strikes, mult, con_id = pick_chain_class(sym, rows)
+            self.engine.on_opt_chain(sym, exps, strikes, mult, con_id, self.clock())
 
     # L1 -------------------------------------------------------------------
     def tickPrice(self, reqId, tickType, price, attrib):
@@ -474,6 +481,17 @@ class TwineyWrapper:
         if IRREGULAR_PRINT.intersection(conds.replace(" ", "")):
             return        # not a regular last sale: it never traded at the market you see
         self.engine.on_print(sym, num(price), num(size), exchange or "", self.clock(), conds)
+
+
+def pick_chain_class(symbol, rows):
+    """The option class the chain shows: the standard one (its trading class is the symbol, 100 shares), else the
+    standard-size class with the most strikes, else the class with the most strikes."""
+    sym = str(symbol or "").upper()
+    std = [r for r in rows if r[0].upper() == sym and (r[3] or 100) == 100]
+    if std:
+        return max(std, key=lambda r: (len(r[2]), len(r[1])))
+    full = [r for r in rows if (r[3] or 100) == 100]
+    return max(full or rows, key=lambda r: (len(r[2]), len(r[1])))
 
 
 def execution_filter():

@@ -619,6 +619,8 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                     out = tr.set_trade_as(sym, str(body.get("mode", "stock")), body.get("opt_key"), body.get("opt_qty"), now)
                 elif action == "opt_stop":
                     out = tr.set_opt_stop(str(body.get("key", "")), body.get("price"), str(body.get("on", "stock")), now)
+                elif action == "opt_level":
+                    out = tr.set_opt_level(str(body.get("key", "")), str(body.get("role", "")), body.get("price"), body.get("n") or 1, now)
                 elif action == "trail":
                     out = tr.set_trail(sym, body.get("dollars"), bool(body.get("on", True)), now)
                 elif action == "scale_fire":

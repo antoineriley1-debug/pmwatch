@@ -2091,7 +2091,7 @@ async function pollOch(){
   try { const r = await fetch(`/api/options/bars?key=${encodeURIComponent(OCH.key)}`); const d = await r.json(); if (d.key !== OCH.key) return;
     OCH.data = d;
     const pos = d.position;
-    ochart.data = {symbol: d.label || d.key, bars: d.bars || [], last: d.last, bid: d.bid, ask: d.ask, play: null, user_levels: [], levels: [],
+    ochart.data = {symbol: d.label || d.key, bars: d.bars || [], last: d.last, bid: d.bid, ask: d.ask, play: null, user_levels: optUserLevels(d.key), levels: [],
       orders: (d.orders || []).map(o => ({id: o.order_id, price: o.lmt, action: o.action, qty: o.remaining ?? o.qty, role: "entry"})),
       position: pos ? {qty: pos.qty, avg_cost: pos.per_contract} : null, showEntry: true, mult: (pos && pos.mult) || 100, unit: "ct",
       trap: null, daytrap: null, reloaders: null, bigmoney: null, marks: [], events: [], lines: [], daily: [], flow: null, footprint: null};
@@ -2137,6 +2137,23 @@ async function ochOrder(action, price, n, now){
   const ref = price != null ? price : (action === "BUY" ? d.ask : d.bid);
   confirmBox(`${action} ${k} ${d.label}${price != null ? " @ " + price.toFixed(2) : " now"}`, `${price != null ? "limit " + price.toFixed(2) + " — rests until price gets there" : (action === "BUY" ? "at the ask" : "at the bid") + ", fills now"} · about $${sz(Math.round((ref || 0) * 100 * k))}${closing ? " · takes your contracts down" : ""}`, action === "BUY" ? "b" : "s", send);
 }
+/* the lines you drew on the OPTION CHART (2ND, STOP, TARGET at the contract's own price): drawn and dragged like
+   the stock chart's lines */
+function optUserLevels(key){
+  const lv = (T().opt_levels || {})[key] || {}, os = (T().opt_stops || {})[key], out = [];
+  if (lv.second_entry) out.push({role: "second_entry", price: lv.second_entry, label: `2ND ${lv.n || 1} ct`});
+  const stop = os && os.on === "option" ? +os.price : lv.stop; if (stop) out.push({role: "stop", price: stop, label: "STOP"});
+  if (lv.target) out.push({role: "target", price: lv.target, label: "TARGET"});
+  return out;
+}
+function optLevel(role, price, n){
+  const d = OCH.data; if (!d) return Promise.resolve({ok: false});
+  const names = {second_entry: "2ND", stop: "STOP", target: "TARGET"};
+  return post("/api/trade/opt_level", {key: d.key, role, price, n}).then(out => {
+    toast(out.ok ? (price == null ? `${d.label}: ${names[role]} off` : `${d.label}: ${names[role]} ${(+price).toFixed(2)}` + (role === "second_entry" ? ` — buys ${n} when it trades there` : role === "target" ? " — out of every contract there" : " — out of every contract there"))
+                 : "Not set: " + (out.reason || ""), out.ok);
+    poll(true); setTimeout(pollOch, 300); return out; });
+}
 function optChartMenu(p, x, y, price){
   const old = document.getElementById("cmenu"); if (old) old.remove();
   const d = OCH.data; if (!d) return;
@@ -2148,6 +2165,12 @@ function optChartMenu(p, x, y, price){
     <button class="bsell" data-do="sell">SELL ${n} limit @ ${price.toFixed(2)}</button>
     ${q ? `<button class="bflat" data-do="all">${long ? "SELL" : "BUY"} ALL ${q} @ ${price.toFixed(2)}</button>` : ""}
     ${(d.orders || []).length ? `<button data-do="cxl">Cancel my orders on it (${d.orders.length})</button>` : ""}
+    <div class="lvl2" title="the same trade lines as the stock chart, on the CONTRACT's price. 2ND buys ${n} when it trades there (more, if you hold it); STOP and TARGET take every contract out there">
+      <div><b class="${long || !q ? "b" : "s"}">THIS CONTRACT</b>${[["second_entry", "2ND"], ["stop", "STOP"], ["target", "TARGET"]].map(([r, l]) => `<button data-do="olvl" data-role="${r}" class="blvl ${r === "second_entry" ? "se" : ""}">${l}</button>`).join("")}</div>
+      <div class="dim">at ${price.toFixed(2)}${q ? "" : " · STOP and TARGET go live once you hold it"}</div></div>
+    ${(() => { const v = p.view, per = v && v.chartY ? (v.chartY[1] - v.chartY[0]) / ((v.chartH || 1) - 8) : 0.02;
+      const lv = optUserLevels(d.key).find(l => Math.abs(l.price - price) <= Math.max(per * 6, 0.02));
+      return lv ? `<button data-do="olvloff" data-role="${lv.role}">✕ Remove ${esc(lv.label)} ${lv.price.toFixed(2)}</button>` : ""; })()}
     <div class="dim" style="font-size:10.5px;margin-top:4px">contracts: pick 1 / 2 / 5 / 10 on the chart's header</div>`;
   m.style.left = Math.min(x, window.innerWidth - 230) + "px"; m.style.top = Math.min(y, window.innerHeight - 160) + "px";
   document.body.appendChild(m);
@@ -2158,6 +2181,8 @@ function optChartMenu(p, x, y, price){
     else if (b.dataset.do === "sell") ochOrder("SELL", price, n);
     else if (b.dataset.do === "all") ochOrder(long ? "SELL" : "BUY", price, q);
     else if (b.dataset.do === "cxl") for (const o of d.orders) await cancelMine(o.order_id);
+    else if (b.dataset.do === "olvl") optLevel(b.dataset.role, price, n);
+    else if (b.dataset.do === "olvloff") optLevel(b.dataset.role, null, n);
   });
   const away = ev => { if (!m.isConnected){ document.removeEventListener("mousedown", away, true); return; } if (!m.contains(ev.target)) m.remove(); };
   setTimeout(() => document.addEventListener("mousedown", away, true), 0);
@@ -2239,6 +2264,10 @@ function optMarks(d){
   const os = (T().opt_stops || {})[d.key];
   if (os && os.on === "option") add(+os.price, "stop", "STOP", {exact: true});
   const pos = d.position; if (pos && pos.per_contract) add(+pos.per_contract, "entry", "YOUR ENTRY", {exact: true});
+  const olv = (T().opt_levels || {})[d.key] || {};
+  if (olv.second_entry) add(+olv.second_entry, "second_entry", "2ND", {exact: true});
+  if (olv.target) add(+olv.target, "target", "TARGET", {exact: true});
+  if (olv.stop && !(os && os.on === "option")) add(+olv.stop, "stop", "STOP", {exact: true});
   const pane = paneFor(d.underlying), pl = pane && pane.play;
   if (pl && mid != null && spot && delta != null){
     const ownLong = (pl.side || "long") === "long", lines = (d.right === "C") === ownLong ? pl : (pl.alt || {});
