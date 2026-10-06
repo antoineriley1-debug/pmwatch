@@ -62,8 +62,8 @@ def px(p):
 
 
 def wall(side):
-    """A resting seller is a wall of supply (resistance); a buyer is demand (support)."""
-    return "supply / resistance" if side == "ask" else "demand / support"
+    """A resting seller is a wall of supply; a buyer is demand."""
+    return "supply" if side == "ask" else "demand"
 
 
 def play_context(play, side, role):
@@ -183,14 +183,14 @@ def trap_lines(trap, reloaders, play, price):
         why = f" A seller reloading at {px(held[0]['price'])} absorbed them — that's the trap." if held else ""
         out.append(f"TRAPPED LONGS{' (heavy)' if L['heavy'] else ''}: {shares(L['shares'])} shares paid up between "
                    f"{px(L['low'])} and {px(L['high'])} in the last {trap['window_minutes']} min and price is now "
-                   f"below them.{why} If support gives way they bail — that's fuel for the drop"
+                   f"below them.{why} If the demand under them gives way they bail — that's fuel for the drop"
                    + (", which is what your short wants." if not long_ else ". Your long is fighting them."))
     if S:
         held = [r for r in (reloaders or {}).get("below", []) if r["side"] == "bid"]
         why = f" A buyer reloading at {px(held[0]['price'])} absorbed them — that's the trap." if held else ""
         out.append(f"TRAPPED SHORTS{' (heavy)' if S['heavy'] else ''}: {shares(S['shares'])} shares hit out between "
                    f"{px(S['low'])} and {px(S['high'])} in the last {trap['window_minutes']} min and price is now "
-                   f"above them.{why} If resistance breaks they have to cover — that's fuel for the squeeze"
+                   f"above them.{why} If the supply over them breaks they have to cover — that's fuel for the squeeze"
                    + (", which is what your long wants." if long_ else ". Your short is fighting them."))
     return out
 
@@ -286,7 +286,7 @@ def story(play, price, levels, bars, tape, now, recent_alerts, min_shares=1000, 
             continue
         touches, side_now = level_tests(bars, level)
         if touches >= 2 and side_now in ("below", "above"):
-            kind = "Resistance" if side_now == "below" else "Support"
+            kind = "Supply" if side_now == "below" else "Demand"
             lines.append(f"{kind} at {role_name(role)} {px(level)} is holding: tested {touches}x, price is still "
                          f"{side_now} it.")
 

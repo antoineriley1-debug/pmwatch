@@ -21,7 +21,7 @@ class NarrativeTests(unittest.TestCase):
         self.assertEqual(tone, "reload")
         self.assertIn("RELOAD SELLER at 10.00", head)
         self.assertIn("6,200", head)
-        self.assertIn("resistance is holding", head)
+        self.assertIn("supply is holding", head)
         self.assertTrue(any("supply sitting on your pivot" in l for l in lines))
 
     def test_fresh_verdict_wins(self):
@@ -33,7 +33,7 @@ class NarrativeTests(unittest.TestCase):
     def test_level_holding(self):
         bars = [[i * 60, 9.95, 10.00, 9.94, 9.97, 100, 0, 0] for i in range(5)]
         _, _, lines = narrative.story(PLAY, 9.97, [], bars, None, 400.0, [])
-        self.assertTrue(any("Resistance at your pivot 10.00 is holding: tested 5x" in l for l in lines), lines)
+        self.assertTrue(any("Supply at your pivot 10.00 is holding: tested 5x" in l for l in lines), lines)
 
 
 if __name__ == "__main__":

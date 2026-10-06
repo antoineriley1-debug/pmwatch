@@ -1,7 +1,7 @@
 import decimal
 import unittest
 
-from helpers import ASK, INSERT, cfg, plays
+from helpers import ASK, BID, INSERT, cfg, plays
 from twiney.engine import Engine
 from twiney.ibkr import MarketDataSession, TwineyWrapper, num, parse_error_args
 from twiney.trading import IbkrBroker, Trader, TradingGate
@@ -151,13 +151,48 @@ class SessionTests(unittest.TestCase):
         self.assertEqual(names(app).count("reqTickByTickData"), 3)
         d_id, t_id = s.depth_ids["AAA"]
         req = [c for c in app.calls if c[0] == "reqMktDepth" and c[1] == d_id][0]
-        self.assertEqual(req[3:5], (10, True))  # rows requested, smart depth
+        self.assertEqual(req[3:5], (40, True))  # rows requested (every exchange takes a row with SMART depth), smart depth
         tbt = [c for c in app.calls if c[0] == "reqTickByTickData" and c[1] == t_id][0]
         self.assertEqual(tbt[3], "AllLast")
         app.updateMktDepthL2(d_id, 0, "NSDQ", INSERT, ASK, 10.0, decimal.Decimal("800"), True)
         self.assertEqual(engine.syms["AAA"].book.size_at(ASK, 10.0), 800)
         app.tickByTickAllLast(t_id, 1, 1712345678, 10.0, decimal.Decimal("100"), None, "ARCA", "")
         self.assertEqual(engine.syms["AAA"].tape.last()["size"], 100)
+
+    def test_a_book_out_of_step_with_the_tape_is_asked_for_again(self):
+        s, engine, clock, app = self.connect()
+        for sym, px in (("AAA", 10.0), ("BBB", 55.0), ("CCC", 21.0), ("DDD", 5.5)):
+            app.tickPrice(s.l1_ids[sym], 4, px, None)
+        s.step(clock())
+        d_id, t_id = s.depth_ids["AAA"]
+        # a stale book: best bid 9.90 x best ask 9.95 while the tape trades 10.05 (above its ask)
+        app.updateMktDepthL2(d_id, 0, "NSDQ", INSERT, BID, 9.90, decimal.Decimal("500"), True)
+        app.updateMktDepthL2(d_id, 0, "NSDQ", INSERT, ASK, 9.95, decimal.Decimal("500"), True)
+        st = engine.syms["AAA"]
+        st.resync_until = 0
+        t0 = clock()
+        for k in range(25):
+            engine.on_print("AAA", 10.05, 100, "ARCA", t0 + k * 0.5)
+        self.assertTrue(st.resub_depth)
+        before = names(app).count("reqMktDepth")
+        s.step(clock())
+        self.assertEqual(names(app).count("reqMktDepth"), before + 1)
+        self.assertNotEqual(s.depth_ids["AAA"][0], d_id)            # a fresh request id
+        self.assertFalse(st.resub_depth)
+        self.assertTrue(any("out of step with the tape" in m["text"] for m in engine.messages))
+
+    def test_a_healthy_book_is_left_alone(self):
+        s, engine, clock, app = self.connect()
+        for sym, px in (("AAA", 10.0), ("BBB", 55.0), ("CCC", 21.0), ("DDD", 5.5)):
+            app.tickPrice(s.l1_ids[sym], 4, px, None)
+        s.step(clock())
+        d_id, _t = s.depth_ids["AAA"]
+        app.updateMktDepthL2(d_id, 0, "NSDQ", INSERT, BID, 10.04, decimal.Decimal("500"), True)
+        app.updateMktDepthL2(d_id, 0, "NSDQ", INSERT, ASK, 10.05, decimal.Decimal("500"), True)
+        st = engine.syms["AAA"]; st.resync_until = 0
+        for k in range(40):
+            engine.on_print("AAA", 10.05 if k % 2 else 10.04, 100, "ARCA", clock() + k * 0.5)
+        self.assertFalse(getattr(st, "resub_depth", False))
 
     def test_rotation_cancels_old_depth_and_tape(self):
         s, engine, clock, app = self.connect()

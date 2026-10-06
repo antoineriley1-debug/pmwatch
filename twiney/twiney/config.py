@@ -26,8 +26,10 @@ DEFAULTS = {
     "depth": {
         # IBKR caps simultaneous market-depth subscriptions; TWINEY uses three.
         "slots": 3,
-        # rows requested from IBKR (extra rows make "out of view" detection honest)
-        "rows_requested": 10,
+        # rows requested from IBKR per side. With SMART depth EVERY exchange quoting a price takes its own row, so a
+        # busy name (TSLA: 6-10 venues on the inside) needs many rows to show more than 2-3 prices. 40 rows = about
+        # 10+ real prices each side on a liquid stock
+        "rows_requested": 40,
         # rows shown per side on the dashboard
         "rows_displayed": 5,
         "smart_depth": True,
@@ -416,15 +418,10 @@ DEFAULTS = {
         "alerts": True,                 # put the big moments in CALLS (breaks, reloads consumed, flow confirming / conflicting, retests)
         "voice": False,                 # say those moments out loud (when voice is on)
         "whole_half_reloads_only": True,  # only a reload buyer / seller at a whole or half dollar (x.00 / x.50) counts for PS60
-        "draw_zones": True,             # shade the support / resistance zones and your zones on the stock chart
+        "draw_zones": True,             # shade the zones you drew on the stock chart (right-click the chart, ZONE)
         "near_ticks": 8,                # HIGH ATTENTION: price within this many ticks of a place ...
         "near_atr_pct": 12,             # ... or this % of the daily ATR ...
         "near_pct": 0.15,               # ... or this % of price, whichever is widest
-        "zone_days": 60,                # zones are found in this many days of 30-minute bars
-        "zone_atr_pct": 8,              # a zone is about this % of the daily ATR wide (never thinner than 3 ticks)
-        "zone_min_tests": 3,            # a zone needs at least this many separate tests (rejections, bounces, stalls)
-        "zone_gap_bars": 3,             # tests closer than this many 30-minute bars count as one
-        "zone_reach_atr": 2.5,          # zones further than this many ATRs from price are not shown
         "confluence_atr_pct": 6,        # places within this % of the ATR of each other are one place
         "major_score": 6,               # MAJOR confluence: weight at least this (pivot / 2nd entry / your line 3, day / week / month 2, whole dollar 1)
         "flow_minutes": 20,             # option flow read over the last N minutes
@@ -490,7 +487,11 @@ DEFAULTS = {
         "atr_smoothing": "RMA",         # RMA (Wilder, TradingView's ATR), EMA, SMA or WMA
         "gas_readout": True,            # the gas tank readout (bottom right)
         "atr_levels": True,             # 1 / 2 / 3 ATR levels off today's range
-        "atr_zones": True,              # ATR eaten zone colours
+        "atr_zones": True,              # THE ATR LADDER: quarter-ATR rungs, the part price has eaten coloured hotter as the tank empties
+        "atr_ladder_step": 0.25,        # ATR ladder: one rung every this many ATRs
+        "atr_ladder_max": 2.0,          # ATR ladder: rungs up to this many ATRs
+        "atr_ladder_opacity": 32,       # ATR ladder: how strong the part price HAS eaten is coloured (0-100)
+        "atr_ladder_left_opacity": 4,   # ATR ladder: how faint the part price has NOT eaten yet is (0-100)
         "atr_one_side": True,           # the ATR ladder only on the side the day is moving
         "atr_halves": False,            # 1.5 / 2.5 ATR too
         "open_line": True,              # today's 9:30 open (locked)

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261006-1342">
+<meta name="build" content="20261006-1422">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -3613,7 +3613,7 @@ function indPopHTML(){
   const sbox = (k, label) => `<label><input type="checkbox" data-study="${k}" ${SO[k] ? "checked" : ""}> ${label}</label>`;
   return `<h5>STUDIES · STOCK CHART</h5>${sbox("gas", "GAS + ATR (tank, ATR levels, PDH / PDL, PMH / PML, box, 2nd entry)")}${sbox("airspace", "AIRSPACE (Bounce / Reject, MP, MT supply / demand)")}${sbox("unvisited", "UNVISITED HIGHS / LOWS")}
     <button data-stset="1" class="stset" title="colours, label size, how far right the labels sit, line widths and lengths, and every input of the three scripts">⚙ STUDY SETTINGS</button>
-    <div style="margin-left:14px">${sbox("gas_readout", "GAS readout panel (bottom right)")}${sbox("air_board", "AIRSPACE board panel (top left)")}${sbox("whole_numbers", "whole-number lines (WHOLE 147.00 ...)")}</div>
+    <div style="margin-left:14px">${sbox("gas_readout", "GAS readout panel (bottom right)")}${sbox("atr_zones", "ATR ladder (¼ ATR rungs, coloured as price eats the tank)")}${sbox("air_board", "AIRSPACE board panel (top left)")}${sbox("whole_numbers", "whole-number lines (WHOLE 147.00 ...)")}</div>
     <div class="dim" style="font-size:10.5px;margin-bottom:4px">Every piece of each is in SETTINGS &gt; Chart studies.</div>
     <h5>SCREEN</h5>
     <div class="row"><span class="dim" style="width:64px">CUSTOM</span><input type="color" data-cs="screenColor" value="${store.get("screenColor", "#dfe9f3")}" title="your own screen colour (pick CUSTOM on the toolbar)"><span class="dim" style="font-size:10px">pick CUSTOM on the toolbar to use it</span></div>
@@ -3632,7 +3632,7 @@ function indPopHTML(){
     <h5>BANDS</h5><label><input type="checkbox" data-top="bb" ${store.get("bb", true) ? "checked" : ""}> <i style="display:inline-block;width:14px;height:3px;background:${DAN_BB};vertical-align:middle"></i> Bollinger 20 / 2.0</label>
     <label><input type="checkbox" data-top="extShade" ${store.get("extShade", true) ? "checked" : ""}> shade premarket (orange) and after hours (blue) on the intraday charts</label>
     <label title="the last candle sits at the right edge; the study labels go off the screen to the right (their price tags stay on the scale). The ▶| button on the toolbar does the same"><input type="checkbox" data-top="stEdge" ${store.get("stEdge", false) ? "checked" : ""}> candles to the right edge: study labels off the screen, just the market</label>
-    <label title="support / resistance zones the PS60 story found (counted tests) and the zones you drew: right-click the chart, ZONE"><input type="checkbox" data-top="zonesOn" ${store.get("zonesOn", true) ? "checked" : ""}> PS60 zones (support, resistance, yours)</label>
+    <label title="the zones you drew: right-click the chart, ZONE"><input type="checkbox" data-top="zonesOn" ${store.get("zonesOn", true) ? "checked" : ""}> Your zones</label>
     <label><input type="checkbox" data-top="datawin" ${store.get("datawin", true) ? "checked" : ""}> data window (the floating OK box: bar values and every line at the cursor)</label>
     <div class="dim" style="font-size:10.5px;margin-top:6px">MAS on the toolbar switches every average at once; these boxes pick the lines.</div>`;
 }
@@ -3740,19 +3740,19 @@ function studiesBack(ctx){
     g.fillStyle = gs.box.c + "1f"; g.fillRect(xb, y1, plotW - xb, y2 - y1); g.strokeStyle = gs.box.c; g.lineWidth = 2; g.strokeRect(xb, y1, plotW - xb, y2 - y1); g.lineWidth = 1; }
   if (gs) for (const z of gs.zones || []){ const ya = y(z.a), yb = y(z.b); g.fillStyle = z.c; g.fillRect(xs, Math.min(ya, yb), Math.max(1, xe - xs), Math.abs(yb - ya)); }
 }
-/* PS60 STORY zones on the stock chart: support (green), resistance (red), YOUR zones (gold). A soft band with thin
-   dashed edges, and a small tag inside it at the left: what it is and how many times it was tested */
+/* YOUR zones on the stock chart (gold): a soft band with thin dashed edges and a small tag inside it at the left.
+   Only the zones you drew: no automatic support / resistance */
 function storyZones(ctx, zones){
   const {g, plotW, y, lo, hi} = ctx;
   for (const z of zones){
-    if (z.hi < lo || z.lo > hi) continue;
+    if (!z.user || z.hi < lo || z.lo > hi) continue;
     const y1 = y(Math.min(z.hi, hi)), y2 = y(Math.max(z.lo, lo)), h = Math.max(2, y2 - y1);
-    const col = z.user ? "232,185,49" : z.kind === "resistance" ? "255,77,94" : "38,208,124";
-    g.fillStyle = `rgba(${col},${z.user ? (ctx.lightScreen ? .26 : .16) : (ctx.lightScreen ? .13 : .08)})`; g.fillRect(0, y1, plotW, h);
+    const col = "232,185,49";
+    g.fillStyle = `rgba(${col},${ctx.lightScreen ? .26 : .16})`; g.fillRect(0, y1, plotW, h);
     g.strokeStyle = `rgba(${col},${ctx.lightScreen ? .85 : .55})`; g.setLineDash([4, 4]); g.lineWidth = 1;
     g.beginPath(); g.moveTo(0, Math.round(y1) + .5); g.lineTo(plotW, Math.round(y1) + .5); g.moveTo(0, Math.round(y1 + h) - .5); g.lineTo(plotW, Math.round(y1 + h) - .5); g.stroke();
     g.setLineDash([]);
-    const tag = z.user ? "YOUR ZONE" : `${z.kind === "resistance" ? "RESISTANCE" : "SUPPORT"} ×${z.held || z.tests}${z.flipped ? " · flipped" : ""}`;
+    const tag = "YOUR ZONE";
     g.font = "bold 9px ui-monospace, Menlo, Consolas, monospace"; g.fillStyle = `rgba(${col},${ctx.lightScreen ? .95 : .8})`;
     if (h >= 9) g.fillText(tag, 6, y1 + Math.min(h - 2, 10));
   }
@@ -3795,7 +3795,7 @@ function studiesFront(ctx){
       g.beginPath(); g.moveTo(xe, it.yy); g.lineTo(lx0 - 4, ly); g.stroke();
       // a backing in the chart's own colour: a line running through the label column never cuts the words
       if (ctx.bg){ g.globalAlpha = 1; g.fillStyle = ctx.bg; g.fillRect(lx0 - 2, ly - Y.fs / 2 - 1, g.measureText(it.text).width + 4, Y.fs + 2); }
-      g.globalAlpha = 1; g.fillStyle = Y.one || col; g.fillText(it.text, lx0, ly + Y.fs / 2 - 1);
+      g.globalAlpha = 1; g.fillStyle = Y.one || L.lc || col; g.fillText(it.text, lx0, ly + Y.fs / 2 - 1);
     }
     g.globalAlpha = 1;
     // the price-scale tag, like the scripts' price-scale plots (not for whole numbers, box edges, today's high / low)

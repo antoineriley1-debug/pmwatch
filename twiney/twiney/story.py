@@ -7,8 +7,7 @@ board and every call the desk already makes stay exactly as they are. This layer
     DAILY CONTEXT  -> above the daily 50-day: the bullish PS60 framework, the prior-day high is the objective;
                       below it: the bearish framework, the prior-day low is the objective
     LOCATIONS      -> the PS60 levels (pivot, 2nd entry, sneaky pivots, target) + prior-day / prior-week / month /
-                      52-week highs and lows + support / resistance ZONES found from the 30-minute history
-                      (counted tests) + your own lines and zones
+                      52-week highs and lows + your own lines and zones (no automatic support / resistance)
     CONFLUENCE     -> locations that sit together are one place, not four: "MAJOR PS60 CONFLUENCE around $145.00"
     HIGH ATTENTION -> price close to any of them: everything below is read against THAT place
     RELOADS        -> only a reload buyer / seller at a whole or half dollar (x.00 / x.50) counts for PS60
@@ -30,8 +29,8 @@ _NUM = {1: "ONE", 2: "TWO", 3: "THREE", 4: "FOUR", 5: "FIVE", 6: "SIX", 7: "SEVE
 # what each kind of place is called, and how much it weighs in a confluence
 PS60_KINDS = ("pivot", "second", "sneaky", "target")
 WEIGHT = {"pivot": 3, "second": 3, "sneaky": 2, "target": 2, "user": 3, "uzone": 3, "pdh": 2, "pdl": 2, "pwh": 2, "pwl": 2,
-          "mh": 2, "ml": 2, "yh": 3, "yl": 3, "zone": 2, "inst": 1, "d50": 3, "d200": 3, "dma": 2, "hma": 1}
-JOIN_ONLY = ("inst", "zone", "uzone", "dma", "hma")      # these make a place stronger; they never make one alone
+          "mh": 2, "ml": 2, "yh": 3, "yl": 3, "inst": 1, "d50": 3, "d200": 3, "dma": 2, "hma": 1}
+JOIN_ONLY = ("inst", "uzone", "dma", "hma")      # these make a place stronger; they never make one alone
 MA_PACK_KINDS = ("dma", "hma")
 MA_KINDS = ("d50", "d200")
 
@@ -177,99 +176,6 @@ def structure_points(drows, live, t):
     return out
 
 
-def zone_width(last, atr, tick, cfg):
-    """How wide a zone is: a slice of the daily ATR, never thinner than a few ticks or a sliver of the price."""
-    return max((atr or 0.0) * float(cfg.get("zone_atr_pct", 8)) / 100.0, last * 0.0005, 3 * tick)
-
-
-def detect_zones(rows, last, atr, tick, cfg):
-    """Support / resistance ZONES from the 30-minute bars: swing highs and lows that cluster together, then every
-    separate time price came into the zone and turned (a rejection from below, a bounce from above), stalled in it,
-    or broke through it. rows: [t0, o, h, l, c, v] oldest first."""
-    days = int(cfg.get("zone_days", 60))
-    rows = rows[-days * 13:]
-    if len(rows) < 30 or not last:
-        return []
-    w = zone_width(last, atr, tick, cfg)
-    piv = []
-    n = len(rows)
-    for i in range(2, n - 2):
-        h, lo = rows[i][2], rows[i][3]
-        if all(h >= rows[j][2] for j in range(i - 2, i + 3)):
-            piv.append(h)
-        if all(lo <= rows[j][3] for j in range(i - 2, i + 3)):
-            piv.append(lo)
-    if not piv:
-        return []
-    piv.sort()
-    clusters, cur = [], [piv[0]]
-    for p in piv[1:]:
-        if p - cur[-1] <= w and p - cur[0] <= 2.5 * w:
-            cur.append(p)
-        else:
-            clusters.append(cur)
-            cur = [p]
-    clusters.append(cur)
-    reach = max((atr or 0) * float(cfg.get("zone_reach_atr", 2.5)), last * 0.04)
-    gap = int(cfg.get("zone_gap_bars", 3))
-    out = []
-    for c in clusters:
-        if len(c) < 2:
-            continue
-        lo, hi = min(c) - w / 4.0, max(c) + w / 4.0
-        if min(abs(last - lo), abs(last - hi)) > reach and not (lo <= last <= hi):
-            continue
-        rej = bounce = brk = stall = 0
-        last_touch = -10 ** 9
-        first_t = last_t = None
-        for i, r in enumerate(rows):
-            h, l, cl, op = r[2], r[3], r[4], r[1]
-            if h < lo or l > hi:
-                continue
-            fresh = i - last_touch > gap
-            last_touch = i
-            if not fresh:
-                continue
-            first_t = first_t or r[0]
-            last_t = r[0]
-            came_from_below = op < lo or (i and rows[i - 1][4] < lo)
-            came_from_above = op > hi or (i and rows[i - 1][4] > hi)
-            if came_from_below and cl < lo:
-                rej += 1
-            elif came_from_above and cl > hi:
-                bounce += 1
-            elif (came_from_below and cl > hi) or (came_from_above and cl < lo):
-                brk += 1
-            else:
-                stall += 1
-        kind = "resistance" if last < lo else "support" if last > hi else ("resistance" if rej >= bounce else "support")
-        held = rej if kind == "resistance" else bounce
-        # a zone is where price TURNED: at least zone_min_tests separate rejections (or bounces). Chop that only
-        # stalls there is not support or resistance
-        if held < int(cfg.get("zone_min_tests", 3)):
-            continue
-        tests = held + stall
-        flipped = brk > 0 and ((kind == "support" and rej > 0) or (kind == "resistance" and bounce > 0))
-        what = "REJECTIONS" if kind == "resistance" else "BOUNCES"
-        word = "SUPPLY" if kind == "resistance" else "DEMAND"            # Dan's words: supply over price, demand under it
-        name = f"{word} ZONE {px(lo)}–{px(hi)} — {num_word(held)} PRIOR {what}"
-        if flipped:
-            name += " · BROKE AND RETESTED"
-        out.append({"lo": round(lo, 4), "hi": round(hi, 4), "kind": kind, "tests": tests, "held": held, "stalls": stall,
-                    "breaks": brk, "flipped": flipped, "name": name, "short": f"{word.lower()} zone {px(lo)}–{px(hi)}",
-                    "t0": first_t, "t1": last_t})
-    # zones that overlap are one area: the one price turned at most often stands for it
-    keep = []
-    for z in sorted(out, key=lambda z: (-z["held"], z["lo"])):
-        if all(z["hi"] + w / 2 < k["lo"] or z["lo"] - w / 2 > k["hi"] for k in keep):
-            keep.append(z)
-    out = keep
-    above = sorted([z for z in out if z["lo"] > last], key=lambda z: z["lo"])[:3]
-    below = sorted([z for z in out if z["hi"] < last], key=lambda z: -z["hi"])[:3]
-    inside = [z for z in out if z["lo"] <= last <= z["hi"]][:1]
-    return inside + above + below
-
-
 def user_zones(play):
     out = []
     for z in play.get("zones") or []:
@@ -310,8 +216,7 @@ def confluence(points, zones, last, atr, tick, cfg):
                 break
         for z in zones:
             if z["lo"] - tol <= center <= z["hi"] + tol:
-                mem.append({"p": center, "name": z["short"] + (f" ({z['held']} {'rejections' if z['kind'] == 'resistance' else 'bounces'})"
-                                                                if z.get("held") else ""), "kind": "uzone" if z.get("user") else "zone", "zone": z})
+                mem.append({"p": center, "name": z["short"], "kind": "uzone", "zone": z})
         names = {m["name"] for m in mem if m["kind"] != "inst"}
         anchor = any(m["kind"] not in JOIN_ONLY for m in mem)
         if not anchor or len(names) < 2:
@@ -321,7 +226,7 @@ def confluence(points, zones, last, atr, tick, cfg):
             min(2, sum(WEIGHT.get(m["kind"], 1) for m in mem if m["kind"] in MA_PACK_KINDS))
         major = score >= int(cfg.get("major_score", 6))
         at = round(center * 2) / 2 if any(m["kind"] == "inst" for m in mem) else center
-        names = " · ".join(f"{m['name']} {px(m['p'])}" if m["kind"] not in ("zone", "uzone") else m["name"] for m in mem)
+        names = " · ".join(f"{m['name']} {px(m['p'])}" if m["kind"] != "uzone" else m["name"] for m in mem)
         ps60 = any(m["kind"] in PS60_KINDS for m in mem)
         out.append({"p": round(at, 4), "lo": min(m["p"] for m in mem), "hi": max(m["p"] for m in mem), "major": major, "score": score,
                     "members": [m["name"] for m in mem], "ps60": ps60, "mas": [m["name"] for m in mem if m["kind"] in MA_PACK_KINDS + MA_KINDS],
@@ -349,7 +254,7 @@ def attention(points, zones, conf, last, near):
         cands.append({"name": p["name"], "p": p["p"], "lo": p["p"], "hi": p["p"], "kind": p["kind"], "d": abs(p["p"] - last)})
     for z in zones:
         d = 0.0 if z["lo"] <= last <= z["hi"] else min(abs(last - z["lo"]), abs(last - z["hi"]))
-        cands.append({"name": z["short"], "p": (z["lo"] + z["hi"]) / 2, "lo": z["lo"], "hi": z["hi"], "kind": "uzone" if z.get("user") else "zone",
+        cands.append({"name": z["short"], "p": (z["lo"] + z["hi"]) / 2, "lo": z["lo"], "hi": z["hi"], "kind": "uzone",
                       "d": d, "zone": z})
     if not cands:
         return None
@@ -478,7 +383,7 @@ def tape_words(pace, up):
 
 def room_read(up, ctx, foc, points, zones, last, near, atr, cfg):
     """MEASURED POTENTIAL, Dan's way: price travels from one level to the next. Above the 50-day it is SUPPLY TO
-    SUPPLY: the room up to the next supply overhead (a moving average, a prior high, a resistance zone). Below it,
+    SUPPLY: the room up to the next supply overhead (a moving average, a prior high, your zone). Below it,
     DEMAND TO DEMAND: the room down to the next demand underneath. The room past the place being tested is the MP;
     measured against the daily ATR (THIN under mp_min_atr of an ATR)."""
     if up is None or last is None:
@@ -635,7 +540,7 @@ def build(sb, t, last, tick, atr, play, se_state, ctx, points, zones, conf, fr, 
              repeat=4 * 3600)
     # breaks and retests of every place (not only the nearest): who got through, who came back
     places = [(p["name"], p["p"], p["p"], p["kind"]) for p in points if p["kind"] not in ("inst",) + MA_PACK_KINDS] + \
-             [(z["short"], z["lo"], z["hi"], "uzone" if z.get("user") else "zone") for z in zones]
+             [(z["short"], z["lo"], z["hi"], "uzone") for z in zones]
     held, failed = {"up": [], "down": []}, {"up": [], "down": []}
     band = max(tick / 2, 0.25 * near)         # a break is a real move through the place, not a one-tick wiggle
     for name, lo, hi, kind in places:
@@ -720,7 +625,7 @@ def build(sb, t, last, tick, atr, play, se_state, ctx, points, zones, conf, fr, 
 
     if not foc or not foc["approach"]:
         sb.said["att"] = (False, t)
-        out["now"] = (f"Watching. Nearest: {foc['name']} {px(foc['p']) if foc['kind'] not in ('zone', 'uzone') else ''}".rstrip()
+        out["now"] = (f"Watching. Nearest: {foc['name']} {px(foc['p']) if foc['kind'] != 'uzone' else ''}".rstrip()
                       + f", ${foc['d']:.2f} away." if foc else (ctx or {}).get("text") or "Waiting for price to come to a PS60 place.")
         out["tone"] = "neutral"
         if resp:
@@ -730,7 +635,7 @@ def build(sb, t, last, tick, atr, play, se_state, ctx, points, zones, conf, fr, 
     out["attention"] = bool(foc["on"])
     cf = foc.get("conf") if foc.get("conf") and foc["conf"].get("major") else None
     where = cf["text"].split(":")[0] if cf else foc["name"]
-    lvl = None if cf or foc["kind"] in ("zone", "uzone") else foc["p"]
+    lvl = None if cf or foc["kind"] == "uzone" else foc["p"]
     at = f" at {px(lvl)}" if lvl is not None else ""
     br = sb.breaks.get(foc["name"])
     fresh_break = bool(br and t - br["t"] <= 120 and br["state"] == "broke")

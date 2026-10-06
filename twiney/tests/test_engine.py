@@ -642,3 +642,19 @@ class ReloaderReturnTests(unittest.TestCase):
         self._reload(e, got, t + 1.0)
         self.assertEqual(got[-1]["label"], "RELOAD SELLER DETECTED"); self.assertEqual(got[-1]["episodes"], 0)
         self.assertNotIn("back", got[-1])
+
+
+class BookCheckTests(unittest.TestCase):
+    def test_a_wide_book_with_prints_in_its_gap_in_regular_hours_is_re_asked(self):
+        import datetime as _dt
+        from zoneinfo import ZoneInfo
+        t0 = _dt.datetime(2026, 10, 6, 9, 47, tzinfo=ZoneInfo("America/New_York")).timestamp()
+        e = connected_engine()
+        e.apply_slot("AAA", True, t0)
+        e.on_depth("AAA", 0, INSERT, BID, 10.01, 500, "", t0)
+        e.on_depth("AAA", 0, INSERT, ASK, 10.11, 500, "", t0)        # 10 ticks wide: the inside levels are missing
+        st = e.syms["AAA"]; st.resync_until = 0
+        for k in range(25):
+            e.on_print("AAA", 10.05 + (k % 3) * 0.01, 100, "ARCA", t0 + 1 + k * 0.5)
+        self.assertTrue(st.resub_depth)
+        self.assertTrue(any("ticks wide" in m["text"] for m in e.messages))

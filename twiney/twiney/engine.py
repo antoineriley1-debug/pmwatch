@@ -12,6 +12,7 @@ import time
 from collections import deque
 
 from . import narrative, ps60
+from .studies import is_rth
 
 from .book import ASK, BID, Book
 from .conviction import ACTIVE, FADING, GONE, SLUG, STALE, PullBook, stage_words
@@ -426,6 +427,39 @@ class Engine:
             if judge:
                 self._auto_levels(st, t)
 
+    def _book_check(self, st, price, t):
+        """BOOK CHECK: the tape is the truth. Prints landing OUTSIDE the depth book's best bid / ask (more than a tick
+        through it), print after print, mean the book is missing levels or out of step (a missed delete, a lost
+        update): the LEVEL II would be showing a market that is not there. Then it is said once and IBKR is asked for
+        the book again (the adapter re-subscribes when st.resub_depth is set)."""
+        book = st.book
+        if book is None or not book.synced or t < st.resync_until:
+            return
+        b, a = book.best(BID), book.best(ASK)
+        if b is None or a is None:
+            return
+        tk = tick_size(price, st.symbol)
+        win = st.__dict__.setdefault("_bookchk", deque())
+        outside = price > a + tk + 1e-9 or price < b - tk - 1e-9
+        # in regular hours a liquid name trades AT its bid / ask: a book many ticks wide with the prints landing in
+        # the gap is a book missing its inside levels (after hours a wide market is normal: not judged)
+        gap = (a - b) > 3 * tk + 1e-9 and b + tk / 2 < price < a - tk / 2 and is_rth(t)
+        # running counts: a busy tape puts thousands of prints in 30 s, so nothing here walks the window
+        cnt = st.__dict__.setdefault("_bookcnt", [0, 0])
+        win.append((t, outside, gap))
+        cnt[0] += outside; cnt[1] += gap
+        while win and t - win[0][0] > 30.0:
+            _t0, o0, g0 = win.popleft()
+            cnt[0] -= o0; cnt[1] -= g0
+        out, ins = cnt
+        if len(win) >= 20 and (out >= 0.3 * len(win) or ins >= 0.8 * len(win)) and t - getattr(st, "book_bad_t", -1e9) > 60.0:
+            st.book_bad_t = t
+            st.resub_depth = True
+            why = (f"{out} of the last {len(win)} prints outside its {fmt_price(b)} x {fmt_price(a)}" if out >= 0.3 * len(win) else
+                   f"its {fmt_price(b)} x {fmt_price(a)} is {round((a - b) / tk)} ticks wide and {ins} of the last {len(win)} prints traded inside it")
+            self._message("warn", f"{st.symbol}: LEVEL II out of step with the tape ({why}) — asking IBKR for the book again", t, st.symbol)
+            win.clear(); cnt[0] = cnt[1] = 0
+
     def on_depth_reset(self, symbol, t, reason="317"):
         with self.lock:
             st = self._st(symbol)
@@ -458,6 +492,7 @@ class Engine:
                        "ex": exchange, "cond": conditions})
             self.data_t = t
             bid, ask = st.bbo()
+            self._book_check(st, price, t)
             rec = st.tape.add(t, price, size, bid, ask, exchange, side=st.aggressor(price, t))
             st.pacebook.add(t, price, size, rec["side"])
             st.tape_t = t
@@ -748,13 +783,7 @@ class Engine:
                 log.exception("story MAs %s", st.symbol)
                 mc["v"] = []
         points = story_mod.ps60_points(st.play, getattr(st, "sneaky_auto", None)) + dc["pts"] + story_mod.ma_points(ctx) + mc["v"]
-        # zones: the 30-minute history changes slowly: found again every 5 minutes, or when new history lands
-        zc = st.__dict__.setdefault("_zone_cache", {})
-        zkey = (int(t // 300), st.study_ver, st.hist_ver)
-        if zc.get("k") != zkey:
-            zc["k"] = zkey
-            zc["v"] = story_mod.detect_zones(studies.m30_series(st, t), last, atr, tick, sc)
-        zones = story_mod.user_zones(st.play) + zc["v"]
+        zones = story_mod.user_zones(st.play)                 # your zones only: no automatic support / resistance
         conf = story_mod.confluence(points, zones, last, atr, tick, sc)
         prints = list(self.flow.by_symbol.get(st.symbol, ()))
         fr = story_mod.flow_read(prints, t, sc, [r[4] for r in drows[-5:]])

@@ -1162,6 +1162,19 @@ class MarketDataSession:
         if self.app is None or not self.ready:
             return
         dc = self.cfg["depth"]
+        # BOOK CHECK: a book the engine found out of step with the tape is asked for again, fresh
+        for sym, (d_id, _t_id) in list(self.depth_ids.items()):
+            st = self.engine.syms.get(sym)
+            if st is not None and getattr(st, "resub_depth", False):
+                st.resub_depth = False
+                if d_id not in self.dead:
+                    self.app.cancelMktDepth(d_id, dc["smart_depth"])
+                self.app.req.pop(d_id, None)
+                new_id = self._rid()
+                self.app.req[new_id] = ("depth", sym)
+                self.depth_ids[sym] = (new_id, _t_id)
+                self.engine.on_depth_reset(sym, self.clock(), reason="book out of step with the tape")
+                self.app.reqMktDepth(new_id, self.contract_factory(self.plays[sym]), dc["rows_requested"], dc["smart_depth"], [])
         wanted = set(self.engine.slots)
         for sym in [s for s in self.depth_ids if s not in wanted]:
             d_id, t_id = self.depth_ids.pop(sym)

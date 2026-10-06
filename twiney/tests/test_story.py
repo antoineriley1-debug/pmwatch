@@ -75,24 +75,12 @@ class DailyTests(unittest.TestCase):
 
 
 class ZoneTests(unittest.TestCase):
-    def test_four_rejections_make_a_resistance_zone(self):
-        rows, t = [], 1_000_000.0
-        price = 140.0
-        # 4 separate runs up into 145 that turn back, with quiet bars between them
-        for run in range(4):
-            for k in range(6):
-                rows.append([t, price, price + 0.3, price - 0.3, price, 1000]); t += 1800
-            rows.append([t, 144.6, 145.05 + 0.02 * run, 144.5, 144.6, 1000]); t += 1800
-            for k in range(6):
-                rows.append([t, 143.5, 143.8, 143.2, 143.5, 1000]); t += 1800
-        z = story.detect_zones(rows, 143.4, 3.0, 0.01, CFG)
-        res = [x for x in z if x["kind"] == "resistance" and x["lo"] > 144]
-        self.assertTrue(res)
-        self.assertEqual(res[0]["held"], 4)
-        self.assertIn("SUPPLY ZONE", res[0]["name"])
-        self.assertIn("FOUR PRIOR REJECTIONS", res[0]["name"])
-        self.assertLessEqual(res[0]["lo"], 145.05)
-        self.assertGreaterEqual(res[0]["hi"], 145.11)
+    def test_no_automatic_support_resistance_zones(self):
+        self.assertFalse(hasattr(story, "detect_zones"))      # Twiney: support / resistance and flips are not his strategy
+        z = story.user_zones({"zones": [[145.2, 144.9]]})
+        self.assertEqual(len(z), 1)
+        self.assertEqual((z[0]["lo"], z[0]["hi"]), (144.9, 145.2))
+        self.assertTrue(z[0]["user"])
 
 
 class ConfluenceTests(unittest.TestCase):
