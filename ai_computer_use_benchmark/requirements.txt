@@ -1,0 +1,7 @@
+anthropic>=1.0
+mss>=9.0
+Pillow>=10.0
+pyautogui>=0.9.54
+pynput>=1.7
+# Optional: precise OCR grounding of button labels (also install the Tesseract binary)
+pytesseract>=0.3.10
