@@ -12,10 +12,17 @@ same levels, so the ladder, the calls, the voice and the story all name the same
 """
 
 
+from collections import deque
+
+# levels that drift a little all day (VWAP, the 50-day, AIRSPACE's reject / bounce): one level whatever their price
+MOVING = {"VWAP", "D50", "HOD", "LOD", "DREJ", "DBNC", "WREJ", "WBNC", "MREJ", "MBNC", "REJ", "BNC"}
+
+
 class LevelWatch:
     def __init__(self):
         self.s = {}        # level key -> {"side": "above"/"below", "touch": {"t", "from"} | None, "cross": t | None}
         self.said = {}     # (kind, level key) -> t
+        self.path = deque()   # (t, price) for the last ~20 s: which way price is travelling
 
     def update(self, t, price, levels, tick, atr, cfg):
         """levels: [{"price", "name", "say", "code"}]. Returns the events that happened on this read."""
@@ -26,10 +33,26 @@ class LevelWatch:
         away = max(float(cfg.get("away_ticks", 8)) * tick, atr * float(cfg.get("away_atr_pct", 10)) / 100.0)
         hold = float(cfg.get("hold_seconds", 60))
         quiet = float(cfg.get("repeat_seconds", 300))
+        near = max(float(cfg.get("near_ticks", 6)) * tick, atr * float(cfg.get("near_atr_pct", 8)) / 100.0, zone * 1.5)
+        self.path.append((t, price))
+        while self.path and t - self.path[0][0] > 20.0:
+            self.path.popleft()
+        move = price - self.path[0][1] if len(self.path) > 1 else 0.0
         out, live = [], set()
+        # a level is WHAT it is (VWAP, yesterday's high, your 2nd entry), not its exact price: VWAP and the daily
+        # reject / bounce move a little every second and are still the same level
+        ident = lambda L: ((L["code"],) if L.get("code") in MOVING else (L.get("code") or "", L["name"] if L.get("code") in (None, "", "YOURS") else "",
+                                                                            round(float(L["price"]), 2)))
+
+        def emit(kind, L, frm):
+            key = (kind, ident(L))
+            if t - self.said.get(key, -1e9) >= quiet:
+                self.said[key] = t
+                out.append({"kind": kind, "price": float(L["price"]), "name": L["name"], "say": L.get("say") or L["name"],
+                            "code": L.get("code"), "from": frm, "t": t})
         for L in levels:
             p = float(L["price"])
-            k = round(p, 4)
+            k = ident(L)
             live.add(k)
             s = self.s.setdefault(k, {"side": None, "touch": None, "cross": None})
             d = price - p
@@ -38,9 +61,13 @@ class LevelWatch:
             if tch and t - tch["t"] > float(cfg.get("touch_minutes", 15)) * 60:
                 tch = s["touch"] = None; s["cross"] = None
             ev = None
+            # COMING INTO it: a few ticks away and travelling toward it
+            if side_now != "at" and tch is None and abs(d) <= near and abs(move) >= tick and (move > 0) == (d < 0):
+                emit("COMING INTO", L, "below" if d < 0 else "above")
             if side_now == "at":
                 if tch is None and s["side"] in ("above", "below"):
                     s["touch"] = {"t": t, "from": s["side"]}
+                    emit("AT", L, s["side"])
                 s["cross"] = None if tch is None or s["cross"] is None else s["cross"]
             elif tch:
                 frm = tch["from"]
@@ -55,11 +82,7 @@ class LevelWatch:
                         ev = "BUYERS TOOK" if side_now == "above" else "SELLERS TOOK"
                 if ev:
                     s["touch"] = None; s["cross"] = None; s["side"] = side_now
-                    key = (ev, k)
-                    if t - self.said.get(key, -1e9) >= quiet:
-                        self.said[key] = t
-                        out.append({"kind": ev, "price": p, "name": L["name"], "say": L.get("say") or L["name"],
-                                    "code": L.get("code"), "from": frm, "t": t})
+                    emit(ev, L, frm)
             if side_now != "at" and s["touch"] is None:
                 s["side"] = side_now
         for k in [k for k in self.s if k not in live]:      # levels that went away (a new day, a level you removed)

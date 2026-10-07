@@ -777,7 +777,8 @@ class KeyLevelSystemTests(unittest.TestCase):
         for i, p in enumerate([10.10, 10.15, 10.19, 10.20, 10.15, 10.08]):
             st.l1["last"] = p
             e._level_watch(st, t + 2 + i, p, 0.01)
-        a = [x for x in e.alerts if x.get("role") == "level"]
-        self.assertEqual(a[0]["label"], "REJECTED")
+        a = [x for x in e.alerts if x.get("role") == "level" and x["price"] == 10.2]
+        self.assertEqual([x["label"] for x in a][::-1], ["COMING INTO", "AT", "REJECTED"])
+        self.assertIn("Coming into yesterday's high", a[-1]["words"])
         self.assertIn("Rejected at yesterday's high", a[0]["words"])
         self.assertTrue(any("Rejected at yesterday's high" in f[1] for f in st.storybook.feed))

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261007-2033">
+<meta name="build" content="20261007-2054">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -1198,18 +1198,11 @@ table.lad.clean td.sz.rl.stale .rlb{background:#5c5236;color:#ddd}
 table.lad.clean td.px{text-align:center;white-space:nowrap}
 table.lad.clean td.px .kts{margin-left:4px}
 table.lad.clean .kt{display:inline-block;font-size:calc(8.5px * var(--ladz,1));font-weight:800;padding:0 3px;margin-left:2px;border-radius:3px;line-height:1.35;vertical-align:1px}
-table.lad.clean .kt.res{background:rgba(255,77,94,.20);color:#ff8a96;border:1px solid rgba(255,77,94,.55)}
-table.lad.clean .kt.sup{background:rgba(38,208,124,.18);color:#5fe0a0;border:1px solid rgba(38,208,124,.5)}
-table.lad.clean .kt.mine{background:rgba(232,185,49,.2);color:#e8b931;border:1px solid rgba(232,185,49,.6)}
-table.lad.clean tr.keyrow td.px{background:rgba(120,140,170,.10)}
-table.lad.clean tr.keyhot td{animation:keyhot 1.1s ease-in-out infinite alternate}
 @keyframes keyhot{from{background:rgba(255,200,60,.05)}to{background:rgba(255,200,60,.22)}}
 table.lad.clean tr.best-bid td.bsz{box-shadow:inset 0 0 0 1px rgba(38,208,124,.7)}
 table.lad.clean tr.best-ask td.asz{box-shadow:inset 0 0 0 1px rgba(255,77,94,.7)}
 table.lad.clean tr.lastpx td.px{background:#e8b931;color:#111;font-weight:800}
 .legend.lgc{display:flex;justify-content:space-between;gap:8px;font-size:10.5px;padding:3px 6px;flex-wrap:wrap}
-table.lad.clean tr.lv-se td.px{box-shadow:inset 3px 0 0 var(--se,#5aa9d6)} table.lad.clean tr.lv-tg td.px{box-shadow:inset 3px 0 0 var(--tg,#3fb56f)}
-table.lad.clean tr.lv-sl td.px{box-shadow:inset 3px 0 0 #d9534f} table.lad.clean tr.lv-pv td.px{box-shadow:inset 3px 0 0 #e8b931}
 .kstrip{display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding:3px 6px;font-size:calc(10px * var(--ladz,1));color:#9aa6b8;position:sticky;z-index:3;background:var(--panel,#10141c)}
 .kstrip.up{top:0;border-bottom:1px solid rgba(255,255,255,.08)} .kstrip.dn{bottom:0;border-top:1px solid rgba(255,255,255,.08)}
 .kstrip .kp{display:inline-flex;gap:4px;align-items:baseline;padding:0 5px;border-radius:3px;white-space:nowrap}
@@ -1217,7 +1210,15 @@ table.lad.clean tr.lv-sl td.px{box-shadow:inset 3px 0 0 #d9534f} table.lad.clean
 .kstrip .kp.res{background:rgba(255,77,94,.14);color:#ff8a96;border:1px solid rgba(255,77,94,.4)}
 .kstrip .kp.sup{background:rgba(38,208,124,.12);color:#5fe0a0;border:1px solid rgba(38,208,124,.4)}
 .kstrip .kp.mine{background:rgba(232,185,49,.14);color:#e8b931;border:1px solid rgba(232,185,49,.5)}
-table.lad.clean tr.gap td{border-top:2px dashed rgba(150,165,190,.45)}
+/* levels on the CLEAN ladder: the price cell outlined, nothing across the row */
+table.lad.clean tr.keyrow td.px{outline:1.5px solid var(--klc);outline-offset:-2px;border-radius:3px}
+table.lad.clean tr.keyrow.kl-near td.px{outline-width:2.5px;animation:klnear .9s ease-in-out infinite alternate}
+table.lad.clean tr.keyrow.kl-at td.px{outline-width:3px;background:var(--klf);color:#fff;font-weight:800;animation:klnear .5s ease-in-out infinite alternate}
+@keyframes klnear{from{outline-color:var(--klc);box-shadow:0 0 0 0 transparent}to{outline-color:#fff;box-shadow:0 0 10px 2px var(--klc)}}
+table.lad.clean tr.keyhot td.px{box-shadow:0 0 12px 3px var(--klc)}
+table.lad.clean tr.lastpx.keyrow td.px{background:#e8b931;color:#111}
+table.lad.clean .kt{color:var(--kc);border:1px solid var(--kc);background:color-mix(in srgb, var(--kc) 22%, transparent)}
+table.lad.clean tr.lastpx .kt{background:#111}
 
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
@@ -2385,15 +2386,18 @@ function ladderTightHTML(L){
            PH / PL prior daily highs and lows, and your own lines)
    ASK / right = the same for the sellers waiting and the buyers LIFTING the offer.
    A row lights up when urgency hits a key level. Click a size to trade there, as on every ladder */
+// each level in the colour it has on the chart (your lines in theirs)
+const MYLINE_COL = {trigger: "#d6d6d3", second_entry: "#5aa9d6", target: "#3fb56f", stop: "#d9534f", extra: "#9aa4b4", sneaky: "#f0a8ff", sneaky_auto: "#f0a8ff"};
 function cleanTags(r, price){
-  const out = [], up = price != null && r.price > price;
+  const out = [];
   for (const m of (r.lv || [])){
     const sh = m.role === "key" ? m.short : m.role === "vwap" ? "VW" : m.role === "sma50" ? "50D" : m.role === "hod" ? "HOD" : m.role === "lod" ? "LOD" : null;
-    if (sh && !out.some(o => o.t === sh)) out.push({t: sh, n: m.label || sh, k: m.role});
+    if (sh && !out.some(o => o.t === sh)) out.push({t: sh, n: m.label || sh, c: m.color || "#9aa4b4"});
+    else if (!sh && MYLINE_COL[m.role] && typeof LVROLE !== "undefined" && LVROLE[m.role]) out.push({t: (LVSHORT && LVSHORT[m.role]) || LVROLE[m.role][0], n: m.label || LVROLE[m.role][0], c: MYLINE_COL[m.role], mine: true});
   }
-  for (const t of (r.tags || [])) out.push({t: (LTAG[t] || t.slice(0, 3)), n: t, k: "mine"});
-  return out.map(o => `<span class="kt ${o.k === "mine" ? "mine" : up ? "res" : "sup"}" title="${esc(o.n)}">${esc(o.t)}</span>`).join("");
+  return out;
 }
+function tagsHTML(tags){ return tags.map(o => `<span class="kt" style="--kc:${o.c}" title="${esc(o.n)}">${esc(o.t)}</span>`).join(""); }
 function ladderCleanHTML(L){
   const on = canTrade(), last = L.last != null ? +L.last : null;
   const big = +L.big_shares || 0, mx = Math.max(1, +L.max_size || 1, ...L.rows.map(r => Math.max(r.bid || 0, r.ask || 0)));
@@ -2411,30 +2415,27 @@ function ladderCleanHTML(L){
   };
   const urg = (r, side) => { const n = r[side] || 0; if (!n) return `<td class="ug ${side}"></td>`;
     const w = Math.max(8, Math.round(100 * n / um)); return `<td class="ug ${side} on" title="${sz(n)} shares ${side === "u_s" ? "hit the bid" : "lifted the offer"} here in the last few seconds"><i style="width:${w}%"></i><span>${kfmt(n)}</span></td>`; };
-  // every level OFF the rows still shows: above the ladder (nearest first) and below it, with how far it is
-  const top = +L.rows[0].price, bot = +L.rows[L.rows.length - 1].price, tk = +L.tick || 0.01;
-  const off = (L.marks || []).filter(m => (m.role === "key" || (typeof LVROLE !== "undefined" && LVROLE[m.role] && !/^reload|flow|strike/.test(m.role))) && (m.price > top || m.price < bot));
-  const pill = (m, up) => { const d = m.price - (last != null ? last : m.price), t = Math.round(Math.abs(d) / tk);
-    const nm = typeof lvWords === "function" ? lvWords(m, true) : (m.short || m.label);
-    return `<span class="kp ${m.role === "key" ? (up ? "res" : "sup") : "mine"}" title="${esc((m.label || nm) + " " + px(m.price))}"><b>${esc(nm)}</b> ${px(m.price)} <i>${d >= 0 ? "+" : "−"}${Math.abs(d).toFixed(2)}${t <= 99 ? " · " + t + "t" : ""}</i></span>`; };
-  const above = off.filter(m => m.price > top).sort((a, b) => a.price - b.price).slice(0, 6);
-  const below = off.filter(m => m.price < bot).sort((a, b) => b.price - a.price).slice(0, 6);
-  let h = `<div class="kstrip up">${above.length ? "▲ " + above.map(m => pill(m, true)).join("") : `<span class="dim">no levels above</span>`}</div>`;
-  h += `<table class="lad clean" data-cols="ladc"><tr>
+  const tk = +L.tick || 0.01, near = Math.max(3, +(store.get("lvNearTicks", 6)));
+  let h = `<table class="lad clean" data-cols="ladc"><tr>
     <th data-w="46" data-min="16" title="sellers HITTING the bid here in the last few seconds">HIT</th>
     <th class="szh" data-w="56" data-min="24" title="buyers WAITING to buy here (passive). Bright = big / stacking · faded = being pulled · R = reload buyer. Click: BUY here">BID</th>
     <th class="pxh" data-w="74" data-min="40">PRICE</th>
     <th class="szh" data-w="56" data-min="24" title="sellers WAITING to sell here (passive). Bright = big / stacking · faded = being pulled · R = reload seller. Click: SELL here">ASK</th>
     <th data-w="46" data-min="16" title="buyers LIFTING the offer here in the last few seconds">LIFT</th></tr>`;
   for (const r of L.rows){
-    const tags = cleanTags(r, last), hot = tags && ((r.u_s || 0) + (r.u_b || 0)) > 0;
-    // YOUR lines (pivot, 2nd entry, stop, target, levels) colour their row like the PRO ladder's
+    const tl = cleanTags(r, last), tags = tl.length ? tagsHTML(tl) : "", hot = tags && ((r.u_s || 0) + (r.u_b || 0)) > 0;
+    // a LEVEL is shown by outlining its price, nothing across the row. Price coming into it (within a few ticks) lights
+    // the outline and pulses it; price ON it fills it. Red = above price (supply), green = below (demand), gold = your line
     const mine = (r.lv || []).map(m => typeof LVROLE !== "undefined" && LVROLE[m.role] ? "lv-" + LVROLE[m.role][1] : "").filter(Boolean);
-    const cls = [r.gap ? "gap" : "", r.best_bid ? "best-bid" : "", r.best_ask ? "best-ask" : "", r.last ? "lastpx" : "", tags ? "keyrow" : "", hot ? "keyhot" : "", ...new Set(mine),
+    const dt = tags && last != null ? Math.round(Math.abs(r.price - last) / tk) : null;
+    // the outline takes the colour of the level on the chart (your line first, if one is there)
+    const lead = tl.find(o => o.mine) || tl[0], lvk = lead ? "klc" : "";
+    const appr = dt == null ? "" : dt <= 1 ? "kl-at" : dt <= near ? "kl-near" : "";
+    const cls = [r.best_bid ? "best-bid" : "", r.best_ask ? "best-ask" : "", r.last ? "lastpx" : "", tags ? "keyrow " + lvk : "", appr, hot ? "keyhot" : "", ...new Set(mine),
       (r.bid_state === "RELOAD" || r.bid_proven) ? "rl-bid" : "", (r.ask_state === "RELOAD" || r.ask_proven) ? "rl-ask" : ""].join(" ");
-    h += `<tr class="${cls}" data-price="${r.price}">${urg(r, "u_s")}${passive(r, "bid")}<td class="px">${px(r.price)}${tags ? `<span class="kts">${tags}</span>` : ""}</td>${passive(r, "ask")}${urg(r, "u_b")}</tr>`;
+    h += `<tr class="${cls}" data-price="${r.price}"${lead ? ` style="--klc:${lead.c};--klf:${lead.c}55"` : ""}>${urg(r, "u_s")}${passive(r, "bid")}<td class="px">${px(r.price)}${tags ? `<span class="kts">${tags}</span>` : ""}</td>${passive(r, "ask")}${urg(r, "u_b")}</tr>`;
   }
-  h += `</table><div class="kstrip dn">${below.length ? "▼ " + below.map(m => pill(m, false)).join("") : `<span class="dim">no levels below</span>`}</div><div class="legend lgc"><span><b class="sell">HIT</b> sellers now · <b class="buy">BID</b> buyers waiting · <b class="sell">ASK</b> sellers waiting · <b class="buy">LIFT</b> buyers now</span><span class="dim">bright = stacked · faded = pulled · R = reload${on ? " · click a size to trade" : ""}</span></div>`;
+  h += `</table><div class="legend lgc"><span><b class="sell">HIT</b> sellers now · <b class="buy">BID</b> buyers waiting · <b class="sell">ASK</b> sellers waiting · <b class="buy">LIFT</b> buyers now</span><span class="dim">bright = stacked · faded = pulled · R = reload${on ? " · click a size to trade" : ""}</span></div>`;
   return h;
 }
 function ladderHTML(L){

@@ -6,12 +6,15 @@ CFG = {"zone_ticks": 3, "zone_atr_pct": 0, "away_ticks": 8, "away_atr_pct": 0, "
 L = [{"price": 100.00, "name": "PRIOR DAY HIGH", "say": "yesterday's high", "code": "PDH"}]
 
 
-def run(path, t0=0.0, step=1.0, lw=None):
+REACT = ("REJECTED", "BOUNCED", "BUYERS TOOK", "SELLERS TOOK")
+
+
+def run(path, t0=0.0, step=1.0, lw=None, everything=False):
     lw = lw or LevelWatch()
     out = []
     for i, p in enumerate(path):
         out += lw.update(t0 + i * step, p, L, 0.01, 2.0, CFG)
-    return out, lw
+    return (out if everything else [e for e in out if e["kind"] in REACT]), lw
 
 
 class LevelWatchTests(unittest.TestCase):
@@ -47,3 +50,14 @@ class LevelWatchTests(unittest.TestCase):
     def test_far_away_price_does_nothing(self):
         ev, _ = run([95.0, 95.5, 96.0, 95.2])
         self.assertEqual(ev, [])
+
+
+class ApproachTests(unittest.TestCase):
+    def test_coming_into_then_at_then_rejected(self):
+        ev, _ = run([99.80, 99.88, 99.95, 99.99, 100.00, 99.92, 99.85], everything=True)
+        self.assertEqual([e["kind"] for e in ev], ["COMING INTO", "AT", "REJECTED"])
+        self.assertEqual(ev[0]["from"], "below")
+
+    def test_moving_away_is_not_coming_into(self):
+        ev, _ = run([99.95, 99.93, 99.91, 99.90], everything=True)
+        self.assertNotIn("COMING INTO", [e["kind"] for e in ev])

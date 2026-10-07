@@ -1521,15 +1521,18 @@ function ladderTightHTML(L){
            PH / PL prior daily highs and lows, and your own lines)
    ASK / right = the same for the sellers waiting and the buyers LIFTING the offer.
    A row lights up when urgency hits a key level. Click a size to trade there, as on every ladder */
+// each level in the colour it has on the chart (your lines in theirs)
+const MYLINE_COL = {trigger: "#dbe3ee", second_entry: "#3fd0ff", target: "#26d07c", stop: "#ff4d5e", extra: "#9aa4b4", sneaky: "#f0a8ff", sneaky_auto: "#f0a8ff"};
 function cleanTags(r, price){
-  const out = [], up = price != null && r.price > price;
+  const out = [];
   for (const m of (r.lv || [])){
     const sh = m.role === "key" ? m.short : m.role === "vwap" ? "VW" : m.role === "sma50" ? "50D" : m.role === "hod" ? "HOD" : m.role === "lod" ? "LOD" : null;
-    if (sh && !out.some(o => o.t === sh)) out.push({t: sh, n: m.label || sh, k: m.role});
+    if (sh && !out.some(o => o.t === sh)) out.push({t: sh, n: m.label || sh, c: m.color || "#9aa4b4"});
+    else if (!sh && MYLINE_COL[m.role] && typeof LVROLE !== "undefined" && LVROLE[m.role]) out.push({t: (LVSHORT && LVSHORT[m.role]) || LVROLE[m.role][0], n: m.label || LVROLE[m.role][0], c: MYLINE_COL[m.role], mine: true});
   }
-  for (const t of (r.tags || [])) out.push({t: (LTAG[t] || t.slice(0, 3)), n: t, k: "mine"});
-  return out.map(o => `<span class="kt ${o.k === "mine" ? "mine" : up ? "res" : "sup"}" title="${esc(o.n)}">${esc(o.t)}</span>`).join("");
+  return out;
 }
+function tagsHTML(tags){ return tags.map(o => `<span class="kt" style="--kc:${o.c}" title="${esc(o.n)}">${esc(o.t)}</span>`).join(""); }
 function ladderCleanHTML(L){
   const on = canTrade(), last = L.last != null ? +L.last : null;
   const big = +L.big_shares || 0, mx = Math.max(1, +L.max_size || 1, ...L.rows.map(r => Math.max(r.bid || 0, r.ask || 0)));
@@ -1547,30 +1550,27 @@ function ladderCleanHTML(L){
   };
   const urg = (r, side) => { const n = r[side] || 0; if (!n) return `<td class="ug ${side}"></td>`;
     const w = Math.max(8, Math.round(100 * n / um)); return `<td class="ug ${side} on" title="${sz(n)} shares ${side === "u_s" ? "hit the bid" : "lifted the offer"} here in the last few seconds"><i style="width:${w}%"></i><span>${kfmt(n)}</span></td>`; };
-  // every level OFF the rows still shows: above the ladder (nearest first) and below it, with how far it is
-  const top = +L.rows[0].price, bot = +L.rows[L.rows.length - 1].price, tk = +L.tick || 0.01;
-  const off = (L.marks || []).filter(m => (m.role === "key" || (typeof LVROLE !== "undefined" && LVROLE[m.role] && !/^reload|flow|strike/.test(m.role))) && (m.price > top || m.price < bot));
-  const pill = (m, up) => { const d = m.price - (last != null ? last : m.price), t = Math.round(Math.abs(d) / tk);
-    const nm = typeof lvWords === "function" ? lvWords(m, true) : (m.short || m.label);
-    return `<span class="kp ${m.role === "key" ? (up ? "res" : "sup") : "mine"}" title="${esc((m.label || nm) + " " + px(m.price))}"><b>${esc(nm)}</b> ${px(m.price)} <i>${d >= 0 ? "+" : "−"}${Math.abs(d).toFixed(2)}${t <= 99 ? " · " + t + "t" : ""}</i></span>`; };
-  const above = off.filter(m => m.price > top).sort((a, b) => a.price - b.price).slice(0, 6);
-  const below = off.filter(m => m.price < bot).sort((a, b) => b.price - a.price).slice(0, 6);
-  let h = `<div class="kstrip up">${above.length ? "▲ " + above.map(m => pill(m, true)).join("") : `<span class="dim">no levels above</span>`}</div>`;
-  h += `<table class="lad clean" data-cols="ladc"><tr>
+  const tk = +L.tick || 0.01, near = Math.max(3, +(store.get("lvNearTicks", 6)));
+  let h = `<table class="lad clean" data-cols="ladc"><tr>
     <th data-w="46" data-min="16" title="sellers HITTING the bid here in the last few seconds">HIT</th>
     <th class="szh" data-w="56" data-min="24" title="buyers WAITING to buy here (passive). Bright = big / stacking · faded = being pulled · R = reload buyer. Click: BUY here">BID</th>
     <th class="pxh" data-w="74" data-min="40">PRICE</th>
     <th class="szh" data-w="56" data-min="24" title="sellers WAITING to sell here (passive). Bright = big / stacking · faded = being pulled · R = reload seller. Click: SELL here">ASK</th>
     <th data-w="46" data-min="16" title="buyers LIFTING the offer here in the last few seconds">LIFT</th></tr>`;
   for (const r of L.rows){
-    const tags = cleanTags(r, last), hot = tags && ((r.u_s || 0) + (r.u_b || 0)) > 0;
-    // YOUR lines (pivot, 2nd entry, stop, target, levels) colour their row like the PRO ladder's
+    const tl = cleanTags(r, last), tags = tl.length ? tagsHTML(tl) : "", hot = tags && ((r.u_s || 0) + (r.u_b || 0)) > 0;
+    // a LEVEL is shown by outlining its price, nothing across the row. Price coming into it (within a few ticks) lights
+    // the outline and pulses it; price ON it fills it. Red = above price (supply), green = below (demand), gold = your line
     const mine = (r.lv || []).map(m => typeof LVROLE !== "undefined" && LVROLE[m.role] ? "lv-" + LVROLE[m.role][1] : "").filter(Boolean);
-    const cls = [r.gap ? "gap" : "", r.best_bid ? "best-bid" : "", r.best_ask ? "best-ask" : "", r.last ? "lastpx" : "", tags ? "keyrow" : "", hot ? "keyhot" : "", ...new Set(mine),
+    const dt = tags && last != null ? Math.round(Math.abs(r.price - last) / tk) : null;
+    // the outline takes the colour of the level on the chart (your line first, if one is there)
+    const lead = tl.find(o => o.mine) || tl[0], lvk = lead ? "klc" : "";
+    const appr = dt == null ? "" : dt <= 1 ? "kl-at" : dt <= near ? "kl-near" : "";
+    const cls = [r.best_bid ? "best-bid" : "", r.best_ask ? "best-ask" : "", r.last ? "lastpx" : "", tags ? "keyrow " + lvk : "", appr, hot ? "keyhot" : "", ...new Set(mine),
       (r.bid_state === "RELOAD" || r.bid_proven) ? "rl-bid" : "", (r.ask_state === "RELOAD" || r.ask_proven) ? "rl-ask" : ""].join(" ");
-    h += `<tr class="${cls}" data-price="${r.price}">${urg(r, "u_s")}${passive(r, "bid")}<td class="px">${px(r.price)}${tags ? `<span class="kts">${tags}</span>` : ""}</td>${passive(r, "ask")}${urg(r, "u_b")}</tr>`;
+    h += `<tr class="${cls}" data-price="${r.price}"${lead ? ` style="--klc:${lead.c};--klf:${lead.c}55"` : ""}>${urg(r, "u_s")}${passive(r, "bid")}<td class="px">${px(r.price)}${tags ? `<span class="kts">${tags}</span>` : ""}</td>${passive(r, "ask")}${urg(r, "u_b")}</tr>`;
   }
-  h += `</table><div class="kstrip dn">${below.length ? "▼ " + below.map(m => pill(m, false)).join("") : `<span class="dim">no levels below</span>`}</div><div class="legend lgc"><span><b class="sell">HIT</b> sellers now · <b class="buy">BID</b> buyers waiting · <b class="sell">ASK</b> sellers waiting · <b class="buy">LIFT</b> buyers now</span><span class="dim">bright = stacked · faded = pulled · R = reload${on ? " · click a size to trade" : ""}</span></div>`;
+  h += `</table><div class="legend lgc"><span><b class="sell">HIT</b> sellers now · <b class="buy">BID</b> buyers waiting · <b class="sell">ASK</b> sellers waiting · <b class="buy">LIFT</b> buyers now</span><span class="dim">bright = stacked · faded = pulled · R = reload${on ? " · click a size to trade" : ""}</span></div>`;
   return h;
 }
 function ladderHTML(L){

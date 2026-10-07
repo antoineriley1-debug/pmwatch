@@ -697,6 +697,25 @@ class Engine:
                  "OPEN": ("OPN", "TODAY'S OPEN", "today's open"), "VWAP": ("VW", "VWAP", "VWAP"), "D50": ("50D", "50-DAY", "the 50 day"),
                  "HOD": ("HOD", "HIGH OF DAY", "the high of day"), "LOD": ("LOD", "LOW OF DAY", "the low of day")}
 
+    # the colour each level has ON THE CHART (SETTINGS > Chart studies), so the ladder reads like the chart
+    KEY_COLOR_KEYS = {"PDH": "col_pd", "PDL": "col_pd", "PDO": "col_pd", "PDC": "col_pdc", "PMH": "col_pm", "PML": "col_pm",
+                      "PMC": "col_pm", "AHH": "col_ah", "AHL": "col_ah", "AHC": "col_ah", "OPEN": "col_open", "HOD": "col_hl",
+                      "LOD": "col_hl", "OSUP": "col_old_supply", "ODEM": "col_old_demand", "EARNH": "col_earnings",
+                      "EARNL": "col_earnings", "BOX": "col_box", "PH": "col_uv_high", "PL": "col_uv_low"}
+    KEY_FIXED = {"VWAP": "#e8a0ff", "D50": "#1fc6fc", "ZONE": "#e8b931"}       # the chart's VWAP line, its 50 SMA, your zones
+
+    def _key_color(self, code, sc):
+        from . import studies
+        if code in self.KEY_FIXED:
+            return self.KEY_FIXED[code]
+        if code in self.KEY_COLOR_KEYS:
+            return studies.K(sc, self.KEY_COLOR_KEYS[code])
+        if code.endswith("REJ"):
+            return studies.K(sc, "col_reject")
+        if code.endswith("BNC"):
+            return studies.K(sc, "col_bounce")
+        return "#9aa4b4"
+
     def key_levels(self, st, t):
         """The levels that matter today, from the DAILY chart and the session, worked out once a second:
         prior day open / high / low / close, the premarket and after-hours high / low / close (1-minute bars, locked),
@@ -708,11 +727,14 @@ class Engine:
         from . import studies
         out = []
 
+        sc = self.cfg.get("studies") or {}
+
         def add(code, price, name=None, say=None, short=None):
             if price is None or price <= 0:
                 return
             sh, nm, sy = self.KEY_NAMES.get(code, (short or code, name or code, say or (name or code).lower()))
-            out.append({"price": round(float(price), 4), "code": code, "short": short or sh, "name": name or nm, "say": say or sy})
+            out.append({"price": round(float(price), 4), "code": code, "short": short or sh, "name": name or nm, "say": say or sy,
+                        "color": self._key_color(code, sc)})
         try:
             done = [k for k in sorted(st.daily) if studies.day_key(k + 43200) < studies.day_key(t)]
             if done:
@@ -802,30 +824,88 @@ class Engine:
         for ev in lw.update(t, last, lv, tick, atr, lc):
             self._level_alert(st, ev, t)
 
+    def _level_context(self, st, p, t, from_below):
+        """What the rest of the desk sees at a level, in a few words each: the TAPE (who is stepping up, how fast),
+        the BOOK at that price (size stacking or pulled, a reload buyer / seller), and the OPTION FLOW (short-dated
+        calls / puts being hit, SOMEBODY KNOWS SOMETHING). Returns (spoken words, short text)."""
+        words, short = [], []
+        pc = st.pace or {}
+        bp = pc.get("buy_pct")
+        if bp is not None:
+            if bp >= 60:
+                words.append(f"buyers stepping up, {bp} percent at the offer"); short.append(f"buyers {bp}%")
+            elif bp <= 40:
+                words.append(f"sellers stepping up, {100 - bp} percent at the bid"); short.append(f"sellers {100 - bp}%")
+            else:
+                words.append("two sided tape"); short.append(f"two-sided {bp}%")
+        if pc.get("ratio"):
+            fast = pc["ratio"] >= 1.5 or pc.get("accel") == "SPEEDING UP"
+            slow = pc["ratio"] <= 0.8 or pc.get("accel") == "SLOWING"
+            if fast:
+                words.append(f"tape speeding up, {pc['ratio']:.1f} times normal")
+            elif slow:
+                words.append("tape drying up")
+            short.append(f"pace x{pc['ratio']}")
+        # the book at that price: the side price runs into (an offer over a level it comes up to, a bid under one it
+        # comes down to)
+        tk = tick_size(p, st.symbol)
+        side = ASK if from_below else BID
+        who = "seller" if side == ASK else "buyer"
+        size = st.book.size_at(side, p, band_ticks=1) if st.book else 0
+        ps = st.pulls.pullstack(side, price_key(p), t, float(self.cfg.get("ladder", {}).get("stack_seconds", 60)))
+        rl = next((tr for tr in st.trackers.values() if tr.side == side and (tr.state == RELOAD or tr.proven) and abs(tr.price - p) <= 3 * tk), None)
+        if rl:
+            words.append(f"a reload {who} at {fmt_price(rl.price)}, refilled {rl.refreshes_window(t)} times")
+            short.append(f"reload {who} {fmt_price(rl.price)}")
+        elif ps and ps[0] >= max(ps[1], 1) and ps[0] >= 300:
+            words.append(f"{who}s stacking {narrative.shares(ps[0])} shares there"); short.append(f"{who}s stacking {ps[0]:,}")
+        elif ps and ps[1] > ps[0] and ps[1] >= 300:
+            words.append(f"the {who}s pulled {narrative.shares(ps[1])} shares there"); short.append(f"{who}s pulled {ps[1]:,}")
+        elif size:
+            short.append(f"{size:,.0f} showing")
+        # the option flow behind it
+        kc, kp = self._knows(st, BID, t), self._knows(st, ASK, t)
+        k = kc if kc.get("knows") else kp if kp.get("knows") else None
+        if k:
+            words.append(f"and somebody knows something: {'calls' if k is kc else 'puts'} being hit, {narrative.say_dollars(k.get('dollars') or 0)}")
+            short.append(f"KNOWS {'calls' if k is kc else 'puts'} {narrative.say_dollars(k.get('dollars') or 0)}")
+        else:
+            mx = float((self.cfg.get("story") or {}).get("flow_max_dte", 7))
+            cutoff = t - 15 * 60
+            calls = sum(m.get("prem") or 0 for m in st.flow_marks if m["t"] >= cutoff and m.get("side") == "ask" and m.get("cp") == "C"
+                        and m.get("dte") is not None and m["dte"] <= mx)
+            puts = sum(m.get("prem") or 0 for m in st.flow_marks if m["t"] >= cutoff and m.get("side") == "ask" and m.get("cp") == "P"
+                       and m.get("dte") is not None and m["dte"] <= mx)
+            if max(calls, puts) >= 100000:
+                big = "calls" if calls >= puts else "puts"
+                words.append(f"{big} flow behind it, {narrative.say_dollars(max(calls, puts))} in 15 minutes")
+                short.append(f"{big} {narrative.say_dollars(max(calls, puts))}")
+        return ", ".join(words), " · ".join(short)
+
     def _level_alert(self, st, ev, t):
         kind, p = ev["kind"], ev["price"]
-        p_ = st.pace or {}
-        up = kind in ("BOUNCED", "BUYERS TOOK")
-        # who was there: a reload buyer / seller at that level on the side that did the work
-        side = BID if up else ASK
-        rl = next((tr for tr in st.trackers.values() if tr.side == side and (tr.state == RELOAD or tr.proven)
-                   and abs(tr.price - p) <= 3 * tick_size(p, st.symbol)), None)
-        who = (f", the reload {'buyer' if side == BID else 'seller'} at {fmt_price(rl.price)} did it" if rl else "")
-        tape = (f", tape {p_['ratio']}x its pace" if p_.get("ratio") else "") + (f", buyers {p_['buy_pct']}%" if p_.get("buy_pct") is not None else "")
-        words = {"REJECTED": f"Rejected at {ev['say']}, {fmt_price(p)}. Sellers are defending it, pulling off",
-                 "BOUNCED": f"Bounced off {ev['say']}, {fmt_price(p)}. Buyers are defending it, pulling off",
-                 "BUYERS TOOK": f"Buyers took {ev['say']}, {fmt_price(p)}. Holding over it",
-                 "SELLERS TOOK": f"Sellers took {ev['say']}, {fmt_price(p)}. Holding under it"}[kind] + who
-        text = f"{kind} {ev['name']} {fmt_price(p)}{who}{tape}"
+        from_below = ev.get("from") == "below"
+        up = kind in ("BOUNCED", "BUYERS TOOK") or (kind in ("COMING INTO", "AT") and from_below)
+        ctx_w, ctx_s = self._level_context(st, p, t, from_below)
+        nm = ev["say"]
+        head = {"COMING INTO": f"Coming into {nm}, {fmt_price(p)}, from {'below' if from_below else 'above'}",
+                "AT": f"At {nm}, {fmt_price(p)}",
+                "REJECTED": f"Rejected at {nm}, {fmt_price(p)}. Sellers defending it, pulling off",
+                "BOUNCED": f"Bounced off {nm}, {fmt_price(p)}. Buyers defending it, pulling off",
+                "BUYERS TOOK": f"Buyers took {nm}, {fmt_price(p)}. Holding over it",
+                "SELLERS TOOK": f"Sellers took {nm}, {fmt_price(p)}. Holding under it"}[kind]
+        words = head + (". " + ctx_w[0].upper() + ctx_w[1:] if ctx_w else "")
+        text = f"{kind} {ev['name']} {fmt_price(p)}" + (f" · {ctx_s}" if ctx_s else "")
         voice = (self.cfg.get("levels") or {}).get("voice", True)
-        alert = {"t": t, "symbol": st.symbol, "label": kind, "price": fmt_price(p), "side": "bid" if up else "ask",
+        alert = {"t": t, "symbol": st.symbol, "label": kind, "price": fmt_price(p), "side": "bid" if not up else "ask",
                  "role": "level", "text": text, "words": f"{st.symbol}. {words}" if voice else None, "code": ev.get("code")}
         alert["key"] = f"{round(t, 2)}|{st.symbol}|{kind}|{p}"
         self.alerts.appendleft(alert)
         self._rec(dict(alert, ev="alert"))
         self.log(st.symbol, text, t, kind="level")
         try:
-            st.storybook.say("level", (kind, round(p, 4)), words + ".", "good" if up else "bad", t, repeat=300.0)
+            tone = "good" if kind in ("BOUNCED", "BUYERS TOOK") else "bad" if kind in ("REJECTED", "SELLERS TOOK") else "info"
+            st.storybook.say("level", (kind, round(p, 4)), words + ".", tone, t, repeat=300.0)
         except Exception:
             pass
         for fn in self.listeners:
@@ -3843,19 +3923,20 @@ class Engine:
             out.append({"price": float(lv["price"]), "role": lv["role"].replace("alt_", ""), "label": lv["label"].replace("↓ ", "").replace("↑ ", ""),
                         "alt": bool(lv.get("alt"))})
         refs = self._refs(st, t)
+        sc = self.cfg.get("studies") or {}
         if refs.get("vwap"):
-            out.append({"price": refs["vwap"], "role": "vwap", "label": refs["vwap_label"]})
+            out.append({"price": refs["vwap"], "role": "vwap", "label": refs["vwap_label"], "color": self._key_color("VWAP", sc)})
         if refs.get("sma50"):
-            out.append({"price": refs["sma50"], "role": "sma50", "label": "50-DAY"})
+            out.append({"price": refs["sma50"], "role": "sma50", "label": "50-DAY", "color": self._key_color("D50", sc)})
         if st.day_hi:
-            out.append({"price": st.day_hi[0], "role": "hod", "label": "HIGH OF DAY"})
+            out.append({"price": st.day_hi[0], "role": "hod", "label": "HIGH OF DAY", "color": self._key_color("HOD", sc)})
         if st.day_lo:
-            out.append({"price": st.day_lo[0], "role": "lod", "label": "LOW OF DAY"})
+            out.append({"price": st.day_lo[0], "role": "lod", "label": "LOW OF DAY", "color": self._key_color("LOD", sc)})
         # the KEY LEVELS from the daily chart and the session (VWAP / 50-day / HOD / LOD are above already)
         for L in self.key_levels(st, t):
             if L["code"] in ("VWAP", "D50", "HOD", "LOD"):
                 continue
-            out.append({"price": L["price"], "role": "key", "code": L["code"], "label": L["name"], "short": L["short"]})
+            out.append({"price": L["price"], "role": "key", "code": L["code"], "label": L["name"], "short": L["short"], "color": L["color"]})
         lc = self.cfg.get("ladder", {})
         keep = lc.get("flow_window_minutes", 60) * 60.0
         agg = {}
@@ -3925,9 +4006,6 @@ class Engine:
             k = price_key(lv["price"], tk)
             tags.setdefault(k, []).append(lv["label"])
         marks = self._ladder_marks(st, t, user_levels, st.price())
-        _sv = ((st.__dict__.get("_studies") or {}).get("v")) or {}
-        _atr = ((_sv.get("gas") or {}).get("y_atr")) or 0.0
-        reach = int(min(1500, max(80, 1.5 * _atr / tk))) if tk else 80
         lvmap = {}
         for m in marks:
             k = price_key(m["price"], tk)
@@ -3935,10 +4013,7 @@ class Engine:
             # YOUR lines (pivot, 2nd entry, stop, target, your levels) get their own row past a gap so you see them
             # come: they only change when you draw. Marks that come and go (flow strikes, reloaders, auto sneaky
             # pivots, HOD / LOD) do NOT add rows (that made the ladder grow, shrink and jump): the strip lists them
-            # YOUR lines and the KEY LEVELS (prior day, premarket, after hours, open, VWAP, 50-day, daily reject /
-            # bounce, prior highs / lows) get a row within reach (1.5 daily ATR): trade them from the ladder. They are
-            # set for the day, so the ladder does not jump; further out, the strips above / below list them
-            if k not in keys and abs(k - ck) <= reach and (m["role"] in self.LADDER_ROW_ROLES or m["role"] in ("key", "vwap", "sma50")):
+            if k not in keys and abs(k - ck) <= 80 and m["role"] in self.LADDER_ROW_ROLES:
                 keys.append(k)
         keys = sorted(set(keys), reverse=True)
         self._prune_memory(st, t)
