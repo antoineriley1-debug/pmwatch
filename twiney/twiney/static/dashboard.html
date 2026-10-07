@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261007-1846">
+<meta name="build" content="20261007-1945">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -1175,6 +1175,42 @@ table.tape2 tr.g-d50 td{animation:gd50 2s ease-in-out infinite;background-color:
 .gtag.vw{background:#b48ed6;color:#111} .gtag.d50{background:#1fc6fc;color:#111}
 .refstrip .rf.vw{text-shadow:0 0 6px rgba(232,160,255,.7)} .refstrip .rf.d50{text-shadow:0 0 6px rgba(31,198,252,.7)}
 
+/* THE CLEAN LADDER */
+table.lad.clean td{padding:0 4px;height:calc(18px * var(--ladh,1));position:relative}
+table.lad.clean td.ug{position:relative;font-size:calc(10px * var(--ladz,1));color:#e6edf6}
+table.lad.clean td.ug i{position:absolute;top:2px;bottom:2px;opacity:.85;border-radius:2px}
+table.lad.clean td.ug.u_s i{right:0;background:linear-gradient(90deg,rgba(255,77,94,.25),#d9534f)}
+table.lad.clean td.ug.u_b i{left:0;background:linear-gradient(90deg,#3fb56f,rgba(38,208,124,.25))}
+table.lad.clean td.ug span{position:relative;font-weight:700}
+table.lad.clean td.ug.u_s{text-align:right}
+table.lad.clean td.sz{position:relative}
+table.lad.clean td.sz .pb{position:absolute;top:3px;bottom:3px;border-radius:2px;opacity:.22}
+table.lad.clean td.bsz .pb{right:0;background:#3fb56f}
+table.lad.clean td.asz .pb{left:0;background:#d9534f}
+table.lad.clean td.sz .szn{position:relative;color:#c9d4e3}
+table.lad.clean td.sz.stk .pb{opacity:.55}
+table.lad.clean td.sz.stk .szn{color:#fff;font-weight:800}
+table.lad.clean td.sz.pul .pb{opacity:.10}
+table.lad.clean td.sz.pul .szn{color:#7d7f85;text-decoration:line-through}
+table.lad.clean td.sz .rlb{position:relative;display:inline-block;font-size:calc(9px * var(--ladz,1));font-weight:800;padding:0 3px;margin:0 3px;border-radius:3px;background:#e8b931;color:#111}
+table.lad.clean td.sz.rl.fading .rlb{background:#b08a2a}
+table.lad.clean td.sz.rl.stale .rlb{background:#5c5236;color:#ddd}
+table.lad.clean td.px{text-align:center;white-space:nowrap}
+table.lad.clean td.px .kts{margin-left:4px}
+table.lad.clean .kt{display:inline-block;font-size:calc(8.5px * var(--ladz,1));font-weight:800;padding:0 3px;margin-left:2px;border-radius:3px;line-height:1.35;vertical-align:1px}
+table.lad.clean .kt.res{background:rgba(255,77,94,.20);color:#ff8a96;border:1px solid rgba(255,77,94,.55)}
+table.lad.clean .kt.sup{background:rgba(38,208,124,.18);color:#5fe0a0;border:1px solid rgba(38,208,124,.5)}
+table.lad.clean .kt.mine{background:rgba(232,185,49,.2);color:#e8b931;border:1px solid rgba(232,185,49,.6)}
+table.lad.clean tr.keyrow td.px{background:rgba(120,140,170,.10)}
+table.lad.clean tr.keyhot td{animation:keyhot 1.1s ease-in-out infinite alternate}
+@keyframes keyhot{from{background:rgba(255,200,60,.05)}to{background:rgba(255,200,60,.22)}}
+table.lad.clean tr.best-bid td.bsz{box-shadow:inset 0 0 0 1px rgba(38,208,124,.7)}
+table.lad.clean tr.best-ask td.asz{box-shadow:inset 0 0 0 1px rgba(255,77,94,.7)}
+table.lad.clean tr.lastpx td.px{background:#e8b931;color:#111;font-weight:800}
+.legend.lgc{display:flex;justify-content:space-between;gap:8px;font-size:10.5px;padding:3px 6px;flex-wrap:wrap}
+table.lad.clean tr.lv-se td.px{box-shadow:inset 3px 0 0 var(--se,#5aa9d6)} table.lad.clean tr.lv-tg td.px{box-shadow:inset 3px 0 0 var(--tg,#3fb56f)}
+table.lad.clean tr.lv-sl td.px{box-shadow:inset 3px 0 0 #d9534f} table.lad.clean tr.lv-pv td.px{box-shadow:inset 3px 0 0 #e8b931}
+
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
   --buy:#3fb56f;--sell:#d9534f;--gold:#e3a83a;--cyan:#5aa9d6;--violet:#a48bd6;--warn:#d9a441;
@@ -2333,9 +2369,61 @@ function ladderTightHTML(L){
   h += `</table>`;
   return h;
 }
+/* THE CLEAN LADDER: only what the auction is doing.
+   left  = sellers HITTING the bid at that price in the last few seconds (urgency)
+   BID   = buyers WAITING there (passive): brighter when the size is big / stacking, faded when it is being pulled,
+           R3 = a reload buyer (refilled 3 times)
+   PRICE = with the KEY LEVEL on it (PDH, PDL, PDC, PDO, PMH, PML, OPN, VW, 50D, DR / DB daily reject / bounce,
+           PH / PL prior daily highs and lows, and your own lines)
+   ASK / right = the same for the sellers waiting and the buyers LIFTING the offer.
+   A row lights up when urgency hits a key level. Click a size to trade there, as on every ladder */
+function cleanTags(r, price){
+  const out = [], up = price != null && r.price > price;
+  for (const m of (r.lv || [])){
+    const sh = m.role === "key" ? m.short : m.role === "vwap" ? "VW" : m.role === "sma50" ? "50D" : m.role === "hod" ? "HOD" : m.role === "lod" ? "LOD" : null;
+    if (sh && !out.some(o => o.t === sh)) out.push({t: sh, n: m.label || sh, k: m.role});
+  }
+  for (const t of (r.tags || [])) out.push({t: (LTAG[t] || t.slice(0, 3)), n: t, k: "mine"});
+  return out.map(o => `<span class="kt ${o.k === "mine" ? "mine" : up ? "res" : "sup"}" title="${esc(o.n)}">${esc(o.t)}</span>`).join("");
+}
+function ladderCleanHTML(L){
+  const on = canTrade(), last = L.last != null ? +L.last : null;
+  const big = +L.big_shares || 0, mx = Math.max(1, +L.max_size || 1, ...L.rows.map(r => Math.max(r.bid || 0, r.ask || 0)));
+  const um = Math.max(1, ...L.rows.map(r => Math.max(r.u_s || 0, r.u_b || 0)));
+  const chips = (r, side) => (r.mine || []).filter(o => o.id != null && (o.action === "BUY") === (side === "b")).map(o =>
+    `<span class="chip ${side} ${o.status === "PreSubmitted" ? "wait" : ""}" data-id="${o.id}" draggable="true" title="${esc(o.role)} order — click to cancel, drag to move">${sz(o.qty)}</span>`).join(" ");
+  const passive = (r, side) => {
+    const n = r[side] || 0, ps = r["ps_" + (side === "bid" ? "b" : "a")], st = r[side + "_state"], rl = st === "RELOAD" || r[side + "_proven"];
+    const stacked = n && ((big && n >= big) || (ps && ps[0] >= Math.max(ps[1], n * 0.5)));
+    const pulled = ps && ps[1] > ps[0] && ps[1] >= Math.max(1, big * 0.5);
+    const w = n ? Math.max(6, Math.round(100 * n / mx)) : 0, s = side === "bid" ? "b" : "s";
+    const cls = ["sz", "click", side === "bid" ? "bsz" : "asz", stacked ? "stk" : "", pulled ? "pul" : "", rl ? "rl " + stageSlug(r[side + "_stage"] || "RELOADING") : ""].join(" ");
+    const badge = rl ? `<span class="rlb" title="RELOAD ${side === "bid" ? "BUYER" : "SELLER"}: refilled ${r[side + "_refills"] || 0} times">R${r[side + "_refills"] || ""}</span>` : "";
+    return `<td class="${cls}" data-act="${side === "bid" ? "BUY" : "SELL"}" data-px="${r.price}"${szTitle(r, side)}>${w ? `<i class="pb" style="width:${w}%"></i>` : ""}${side === "bid" ? badge : ""}<span class="szn">${n ? kfmt(n) : ""}</span>${side === "ask" ? badge : ""}${chips(r, s) ? `<span class="mine">${chips(r, s)}</span>` : ""}</td>`;
+  };
+  const urg = (r, side) => { const n = r[side] || 0; if (!n) return `<td class="ug ${side}"></td>`;
+    const w = Math.max(8, Math.round(100 * n / um)); return `<td class="ug ${side} on" title="${sz(n)} shares ${side === "u_s" ? "hit the bid" : "lifted the offer"} here in the last few seconds"><i style="width:${w}%"></i><span>${kfmt(n)}</span></td>`; };
+  let h = `<table class="lad clean" data-cols="ladc"><tr>
+    <th data-w="46" data-min="16" title="sellers HITTING the bid here in the last few seconds">HIT</th>
+    <th class="szh" data-w="56" data-min="24" title="buyers WAITING to buy here (passive). Bright = big / stacking · faded = being pulled · R = reload buyer. Click: BUY here">BID</th>
+    <th class="pxh" data-w="74" data-min="40">PRICE</th>
+    <th class="szh" data-w="56" data-min="24" title="sellers WAITING to sell here (passive). Bright = big / stacking · faded = being pulled · R = reload seller. Click: SELL here">ASK</th>
+    <th data-w="46" data-min="16" title="buyers LIFTING the offer here in the last few seconds">LIFT</th></tr>`;
+  for (const r of L.rows){
+    const tags = cleanTags(r, last), hot = tags && ((r.u_s || 0) + (r.u_b || 0)) > 0;
+    // YOUR lines (pivot, 2nd entry, stop, target, levels) colour their row like the PRO ladder's
+    const mine = (r.lv || []).map(m => typeof LVROLE !== "undefined" && LVROLE[m.role] ? "lv-" + LVROLE[m.role][1] : "").filter(Boolean);
+    const cls = [r.gap ? "gap" : "", r.best_bid ? "best-bid" : "", r.best_ask ? "best-ask" : "", r.last ? "lastpx" : "", tags ? "keyrow" : "", hot ? "keyhot" : "", ...new Set(mine),
+      (r.bid_state === "RELOAD" || r.bid_proven) ? "rl-bid" : "", (r.ask_state === "RELOAD" || r.ask_proven) ? "rl-ask" : ""].join(" ");
+    h += `<tr class="${cls}" data-price="${r.price}">${urg(r, "u_s")}${passive(r, "bid")}<td class="px">${px(r.price)}${tags ? `<span class="kts">${tags}</span>` : ""}</td>${passive(r, "ask")}${urg(r, "u_b")}</tr>`;
+  }
+  h += `</table><div class="legend lgc"><span><b class="sell">HIT</b> sellers now · <b class="buy">BID</b> buyers waiting · <b class="sell">ASK</b> sellers waiting · <b class="buy">LIFT</b> buyers now</span><span class="dim">bright = stacked · faded = pulled · R = reload${on ? " · click a size to trade" : ""}</span></div>`;
+  return h;
+}
 function ladderHTML(L){
   if (!L || !L.rows.length) return `<div class="empty">Waiting for the book…</div>`;
-  const mode = store.get("ladMode", "pro");
+  const mode = store.get("ladMode", "clean");
+  if (mode === "clean") return ladderCleanHTML(L);
   if (mode === "pro") return ladderProHTML(L);
   if (mode === "simple") return ladderSimpleHTML(L);
   if (mode === "tight") return ladderTightHTML(L);
@@ -4380,6 +4468,8 @@ document.addEventListener("mouseover", e => {
   else if (LADHOVER.sym && !(e.target.closest && e.target.closest(".ladder-wrap"))) LADHOVER.sym = null;
 });
 function eatMarks(wrap, d, host){
+  // the CLEAN ladder shows a pull as a faded, crossed-out size: no floating badges over its rows
+  if (!host && store.get("ladMode", "clean") === "clean"){ wrap.querySelectorAll(".eatbar").forEach(x => x.remove()); return; }
   const rows = (d.ladder && d.ladder.rows) || [], now = Date.now(), sym = d.symbol;
   const touch = {bid: null, ask: null};
   for (const r of rows){
@@ -4584,10 +4674,10 @@ async function setLadQty(n){ n = Math.max(1, Math.round(+n || 0)); if (!n) retur
 document.getElementById("ladQty").addEventListener("change", e => setLadQty(e.target.value));
 document.getElementById("ladQty").addEventListener("keydown", e => { e.stopPropagation(); if (e.key === "Enter"){ setLadQty(e.target.value); e.target.blur(); } });
 document.getElementById("ladPresets").addEventListener("click", e => { const b = e.target.closest("button[data-qp]"); if (b) setLadQty(b.dataset.qp); });
-(function(){ const b = document.getElementById("ladMode"); if (!b) return; const MODES = ["pro", "simple", "tight", "wide"];
-  if (!store.get("ladPro1", false)){ store.set("ladPro1", true); store.set("ladMode", "pro"); }      // the PRO ladder arrives as the default once
-  const paint = () => { b.textContent = store.get("ladMode", "pro").toUpperCase(); }; paint();
-  b.addEventListener("click", () => { const m = store.get("ladMode", "pro"); store.set("ladMode", MODES[(MODES.indexOf(m) + 1) % MODES.length]); paint(); P.book.last = null; poll(true); }); })();
+(function(){ const b = document.getElementById("ladMode"); if (!b) return; const MODES = ["clean", "pro", "simple", "tight", "wide"];
+  if (!store.get("ladClean1", false)){ store.set("ladClean1", true); store.set("ladMode", "clean"); }   // the CLEAN ladder arrives as the default once
+  const paint = () => { b.textContent = store.get("ladMode", "clean").toUpperCase(); }; paint();
+  b.addEventListener("click", () => { const m = store.get("ladMode", "clean"); store.set("ladMode", MODES[(MODES.indexOf(m) + 1) % MODES.length]); paint(); P.book.last = null; poll(true); }); })();
 /* PIN BOX: the tape and the ladder move too fast to hover. Click a print, a reload $ cell, a FLOW tag or a price
    and what you would have read on hover stays in a small box at the bottom of that panel until the next click. */
 function pinBox(panel){ let b = panel.pc.querySelector(".pinbox"); if (!b){ b = document.createElement("div"); b.className = "pinbox"; b.innerHTML = `<span class="txt"></span><button class="x" title="clear">✕</button>`; panel.pc.appendChild(b); b.querySelector(".x").addEventListener("click", () => { b.classList.remove("on"); b.querySelector(".txt").textContent = ""; }); } return b; }
@@ -5493,6 +5583,8 @@ function speakNew(s){
     const isFlow = FLOW_ROLES.has(a.role) || /^UNUSUAL|REPEAT FLOW|FLOW/.test(a.label || "");
     if (isFlow){ const fw = flowWords(a); if (fw && voiceFlow() && (mine || !solo())) items.push(fw); continue; }
     if (a.role === "trap"){ if (a.words && mine) items.push(a.words); continue; }   // trapped crowd: the tab you are on
+    // the KEY LEVELS (rejected / bounced / took) and the PACE at them (pushing / stalling / breakout): the tab you are on
+    if (a.role === "level" || a.role === "pace"){ if (a.words && mine && store.get("voiceLevels", true)) items.push(a.words); continue; }
     if (!mine) continue;                                         // background tabs never speak
     const w = reloadWords(a); if (w) items.push(w);
   }
@@ -6263,6 +6355,7 @@ function optVisits(d, t, step){
     for (const j of [...open]) if (Math.abs(j - k) >= 3) open.delete(j);
     let v = out[p];
     if (!open.has(k)){ if (!v) v = out[p] = {s: 0, b: 0, ts: []}; else { v.s = 0; v.b = 0; } v.ts.push(tt); open.add(k); }
+    if (!v) v = out[p] = {s: 0, b: 0, ts: [tt]};      // another price on the same step is already open: this one starts its own row
     if (sd === "sell") v.s += n; else if (sd === "buy") v.b += n;
     v.open = true; v.k = k;
   }

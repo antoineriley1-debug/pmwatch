@@ -179,7 +179,7 @@ def read(book, now, last, levels, tick, cfg, flow=None, knows=None):
         if ratio <= c["stall_ratio"] or accel == "SLOWING":
             out.update(call="STALLING INTO", level=[p, nm], words=f"Stalling into {nm}. The tape is drying up")
         elif ratio >= 1.3 and accel == "SPEEDING UP":
-            out.update(call="PRESSING", level=[p, nm], words=f"Pressing {nm}. The tape is speeding up into it")
+            out.update(call="PRESSING", level=[p, nm], words=f"Pushing into {nm}. The tape is speeding up into it")
     return out
 
 

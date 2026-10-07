@@ -679,19 +679,140 @@ class Engine:
             if kind != "m5x":            # the chart's longer history changed: the page fetches it again
                 st.hist_ver += 1
 
-    def _pace_levels(st, sc_v):
-        """The prices the PACE reads against: your lines on the chart and the studies' levels (not whole numbers,
-        not today's high / low: those move with price)."""
+    def _pace_levels(self, st, sc_v, t=None):
+        """The prices the PACE reads against: your lines on the chart and the KEY LEVELS (the same list the ladder,
+        the level watch, the voice and the story use: one system, one name per price)."""
         out = [(float(lv["price"]), lv["label"]) for lv in st._user_levels_cache if lv.get("price")]
-        for g in ("gas", "air", "uv"):
-            for L in ((sc_v or {}).get(g) or {}).get("lines") or []:
-                import re as _re
-                nm = _re.sub(r"\s+[\d.]+(\s*/\s*[\d.]+)*\s*$", "", (L.get("l") or "").split(" @ ")[0]).strip()   # the name, not its price
-                if L.get("p") is None or nm.startswith(("WHOLE", "HIGH OF DAY", "LOW OF DAY", "BOX EDGE", "TIGHT", "1st push", "pivot")):
-                    continue
-                out.append((float(L["p"]), nm[:28]))
+        for L in self.key_levels(st, t if t is not None else self.last_t):
+            if L["code"] not in ("HOD", "LOD"):           # today's high / low move with price: not a level to break
+                out.append((L["price"], L["name"]))
         return out
-    _pace_levels = staticmethod(_pace_levels)
+
+    # the KEY LEVELS: short tag for the ladder, the name on the screen, the words the voice says
+    KEY_NAMES = {"PDH": ("PDH", "PRIOR DAY HIGH", "yesterday's high"), "PDL": ("PDL", "PRIOR DAY LOW", "yesterday's low"),
+                 "PDC": ("PDC", "PRIOR DAY CLOSE", "yesterday's close"), "PDO": ("PDO", "PRIOR DAY OPEN", "yesterday's open"),
+                 "PMH": ("PMH", "PREMARKET HIGH", "the premarket high"), "PML": ("PML", "PREMARKET LOW", "the premarket low"),
+                 "PMC": ("PMC", "PREMARKET CLOSE", "the premarket close"), "AHH": ("AHH", "AFTER-HOURS HIGH", "the after hours high"),
+                 "AHL": ("AHL", "AFTER-HOURS LOW", "the after hours low"), "AHC": ("AHC", "AFTER-HOURS CLOSE", "the after hours close"),
+                 "OPEN": ("OPN", "TODAY'S OPEN", "today's open"), "VWAP": ("VW", "VWAP", "VWAP"), "D50": ("50D", "50-DAY", "the 50 day"),
+                 "HOD": ("HOD", "HIGH OF DAY", "the high of day"), "LOD": ("LOD", "LOW OF DAY", "the low of day")}
+
+    def key_levels(self, st, t):
+        """The levels that matter today, from the DAILY chart and the session, worked out once a second:
+        prior day open / high / low / close, the premarket and after-hours high / low / close (1-minute bars, locked),
+        today's open, VWAP, the 50-day, high / low of day, the DAILY reject and bounce (AIRSPACE) and the prior daily
+        highs and lows price has not been back to (prior resistance / support). Levels a tick apart are one level."""
+        memo = st.__dict__.setdefault("_keylv", {})
+        if memo.get("t") is not None and t - memo["t"] < 1.0:
+            return memo["v"]
+        from . import studies
+        out = []
+
+        def add(code, price, name=None, say=None, short=None):
+            if price is None or price <= 0:
+                return
+            sh, nm, sy = self.KEY_NAMES.get(code, (short or code, name or code, say or (name or code).lower()))
+            out.append({"price": round(float(price), 4), "code": code, "short": short or sh, "name": name or nm, "say": say or sy})
+        try:
+            done = [k for k in sorted(st.daily) if studies.day_key(k + 43200) < studies.day_key(t)]
+            if done:
+                o, h, l, c = st.daily[done[-1]][:4]
+                add("PDO", o); add("PDH", h); add("PDL", l); add("PDC", c)
+            sess = studies.session_levels(st, t)
+            add("PMH", sess.get("pmh")); add("PML", sess.get("pml")); add("PMC", sess.get("pmc"))
+            add("AHH", sess.get("ahh")); add("AHL", sess.get("ahl")); add("AHC", sess.get("ahc"))
+            add("OPEN", sess.get("open"))
+            refs = self._refs(st, t)
+            add("VWAP", refs.get("vwap")); add("D50", refs.get("sma50"))
+            if st.day_hi:
+                add("HOD", st.day_hi[0])
+            if st.day_lo:
+                add("LOD", st.day_lo[0])
+            sv = ((st.__dict__.get("_studies") or {}).get("v")) or {}
+            for L in (sv.get("air") or {}).get("lines") or []:
+                lab = str(L.get("l") or "")
+                if L.get("p") is not None and lab.startswith(("REJECT Daily", "BOUNCE Daily")):
+                    rej = lab.startswith("REJECT")
+                    add("DREJ" if rej else "DBNC", L["p"], name="DAILY REJECT" if rej else "DAILY BOUNCE",
+                        say="the daily reject" if rej else "the daily bounce", short="DR" if rej else "DB")
+            for L in (sv.get("uv") or {}).get("lines") or []:
+                lab = str(L.get("l") or "")
+                if L.get("p") is None or " @ " not in lab:
+                    continue
+                hi = " high @" in lab
+                day = lab.split(" ")[0]
+                add("PH" if hi else "PL", L["p"], name=f"PRIOR {'HIGH' if hi else 'LOW'} {day}",
+                    say=f"the prior {'high' if hi else 'low'} from {day}", short="PH" if hi else "PL")
+            for L in (sv.get("gas") or {}).get("lines") or []:
+                lab = str(L.get("l") or "")
+                if L.get("p") is not None and lab.startswith(("old supply", "old demand")):
+                    sup = lab.startswith("old supply")
+                    add("OSUP" if sup else "ODEM", L["p"], name="LAST MONTH HIGH" if sup else "LAST MONTH LOW",
+                        say="last month's high" if sup else "last month's low", short="MH" if sup else "ML")
+        except Exception:
+            log.exception("key levels %s", st.symbol)
+        # one level per price (a tick apart): the names join, the first (most important) leads
+        tk = tick_size(st.price() or 1.0, st.symbol)
+        merged = []
+        for L in out:
+            same = next((m for m in merged if abs(m["price"] - L["price"]) < tk * 1.01), None)
+            if same:
+                if L["short"] not in same["short"].split("/"):
+                    same["short"] += "/" + L["short"]; same["name"] += " / " + L["name"]; same["say"] += " and " + L["say"]
+            else:
+                merged.append(dict(L))
+        memo.update(t=t, v=merged)
+        return merged
+
+    def _level_watch(self, st, t, last, tick):
+        """REJECTED / BOUNCED / BUYERS TOOK / SELLERS TOOK at the key levels and your lines: a call, the voice, the
+        story feed and the log, all with the tape and the reloaders read at that same level."""
+        lc = self.cfg.get("levels") or {}
+        if not lc.get("enabled", True):
+            return
+        from .levelwatch import LevelWatch
+        lw = st.__dict__.get("_lw") or LevelWatch()
+        st._lw = lw
+        lv = [{"price": L["price"], "name": L["name"], "say": L["say"], "code": L["code"]} for L in self.key_levels(st, t)
+              if L["code"] not in ("HOD", "LOD")]
+        lv += [{"price": float(u["price"]), "name": u["label"], "say": "your " + u["label"].lower(), "code": "YOURS"}
+               for u in (st._user_levels_cache or []) if u.get("price")]
+        sv = ((st.__dict__.get("_studies") or {}).get("v")) or {}
+        atr = ((sv.get("gas") or {}).get("y_atr")) or None
+        for ev in lw.update(t, last, lv, tick, atr, lc):
+            self._level_alert(st, ev, t)
+
+    def _level_alert(self, st, ev, t):
+        kind, p = ev["kind"], ev["price"]
+        p_ = st.pace or {}
+        up = kind in ("BOUNCED", "BUYERS TOOK")
+        # who was there: a reload buyer / seller at that level on the side that did the work
+        side = BID if up else ASK
+        rl = next((tr for tr in st.trackers.values() if tr.side == side and (tr.state == RELOAD or tr.proven)
+                   and abs(tr.price - p) <= 3 * tick_size(p, st.symbol)), None)
+        who = (f", the reload {'buyer' if side == BID else 'seller'} at {fmt_price(rl.price)} did it" if rl else "")
+        tape = (f", tape {p_['ratio']}x its pace" if p_.get("ratio") else "") + (f", buyers {p_['buy_pct']}%" if p_.get("buy_pct") is not None else "")
+        words = {"REJECTED": f"Rejected at {ev['say']}, {fmt_price(p)}. Sellers are defending it, pulling off",
+                 "BOUNCED": f"Bounced off {ev['say']}, {fmt_price(p)}. Buyers are defending it, pulling off",
+                 "BUYERS TOOK": f"Buyers took {ev['say']}, {fmt_price(p)}. Holding over it",
+                 "SELLERS TOOK": f"Sellers took {ev['say']}, {fmt_price(p)}. Holding under it"}[kind] + who
+        text = f"{kind} {ev['name']} {fmt_price(p)}{who}{tape}"
+        voice = (self.cfg.get("levels") or {}).get("voice", True)
+        alert = {"t": t, "symbol": st.symbol, "label": kind, "price": fmt_price(p), "side": "bid" if up else "ask",
+                 "role": "level", "text": text, "words": f"{st.symbol}. {words}" if voice else None, "code": ev.get("code")}
+        alert["key"] = f"{round(t, 2)}|{st.symbol}|{kind}|{p}"
+        self.alerts.appendleft(alert)
+        self._rec(dict(alert, ev="alert"))
+        self.log(st.symbol, text, t, kind="level")
+        try:
+            st.storybook.say("level", (kind, round(p, 4)), words + ".", "good" if up else "bad", t, repeat=300.0)
+        except Exception:
+            pass
+        for fn in self.listeners:
+            try:
+                fn(alert)
+            except Exception:
+                pass
 
     def _pace_tick(self, t):
         """PACE OF TAPE for every stock, twice a second, browser open or not: speed against its own normal, and the
@@ -708,7 +829,7 @@ class Engine:
                 continue
             st._user_levels_cache = self._user_levels(st.play)
             memo = st.__dict__.get("_studies") or {}
-            levels = self._pace_levels(st, memo.get("v")) if pc.get("use_levels", True) else []
+            levels = self._pace_levels(st, memo.get("v"), t) if pc.get("use_levels", True) else []
             # "+ FLOW" behind a break: the same prints as everywhere else: short-dated (story.flow_max_dte) and out of
             # the money. Far-dated or in-the-money size is not the bet on this move
             mx = float((self.cfg.get("story") or {}).get("flow_max_dte", 7))
@@ -722,6 +843,10 @@ class Engine:
                 log.exception("pace %s", sym)
                 continue
             st.pace = p
+            try:
+                self._level_watch(st, t, last, tick_size(last, sym))
+            except Exception:
+                log.exception("level watch %s", sym)
             call = p.get("call")
             if call and p.get("level") and pc.get("alerts", True):
                 rep_s = float(pc.get("repeat_seconds", 120))
@@ -3706,6 +3831,11 @@ class Engine:
             out.append({"price": st.day_hi[0], "role": "hod", "label": "HIGH OF DAY"})
         if st.day_lo:
             out.append({"price": st.day_lo[0], "role": "lod", "label": "LOW OF DAY"})
+        # the KEY LEVELS from the daily chart and the session (VWAP / 50-day / HOD / LOD are above already)
+        for L in self.key_levels(st, t):
+            if L["code"] in ("VWAP", "D50", "HOD", "LOD"):
+                continue
+            out.append({"price": L["price"], "role": "key", "code": L["code"], "label": L["name"], "short": L["short"]})
         lc = self.cfg.get("ladder", {})
         keep = lc.get("flow_window_minutes", 60) * 60.0
         agg = {}
@@ -3791,6 +3921,13 @@ class Engine:
         # price); the rows use the instrument's tick: translate, so a non-default IBKR tick never blanks the columns
         dk = {k: price_key(round(k * tk, 4)) for k in keys}
         clr = getattr(st, "mem_clear", None) or {}
+        # URGENCY: what hit the bid / lifted the offer at each price in the last few seconds (the clean ladder's bars)
+        u_win = float(self.cfg.get("ladder", {}).get("urgency_seconds", 15))
+        urg = {}
+        for it in reversed(st.memory):
+            if t - it[0] > u_win:
+                break
+            urg[(it[1], it[3])] = urg.get((it[1], it[3]), 0.0) + it[4]
         sold = {k: max(0.0, sums.get((dk[k], "sell"), 0.0) - (clr.get((dk[k], "sell")) or (0, 0.0))[1]) for k in keys}
         bought = {k: max(0.0, sums.get((dk[k], "buy"), 0.0) - (clr.get((dk[k], "buy")) or (0, 0.0))[1]) for k in keys}
         vis = getattr(st, "visits", None) or {}
@@ -3832,6 +3969,7 @@ class Engine:
                 "mine": mine.get(k, []),
                 "flow": flow_rows.get(k),
                 "best_bid": k == bb, "best_ask": k == ba, "last": k == lk,
+                "u_s": round(urg.get((dk[k], "sell"), 0.0)), "u_b": round(urg.get((dk[k], "buy"), 0.0)),
             }
             v = vis.get(dk[k])
             if v is not None:

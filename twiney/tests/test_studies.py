@@ -133,6 +133,20 @@ class GasTests(unittest.TestCase):
         self.assertEqual((s["pmh"], s["pml"]), (98, 94.5))
         self.assertEqual(s["open"], 100.0)
 
+    def test_premarket_close_from_the_one_minute_bars_and_locked_after_the_open(self):
+        self.st.m5x = {nyt(*self.today, 9, 25): [97, 97.5, 96.8, 97.2, 100]}
+        bars = dict(self.st.bars)
+        bars[nyt(*self.today, 9, 28)] = [97.3, 97.4, 97.0, 97.1, 50.0, 0, 0]
+        bars[nyt(*self.today, 9, 29)] = [97.1, 97.6, 97.05, 97.45, 50.0, 0, 0]
+        self.st.bars = bars
+        s = S.session_levels(self.st, self.t)
+        self.assertEqual(s["pmc"], 97.45)                     # the 9:29 one-minute close, not the 9:25 five-minute one
+        self.assertEqual(s["pmh"], 97.6)
+        # later in the day the premarket numbers do not move
+        bars[nyt(*self.today, 11, 0)] = [90.0, 99.0, 89.0, 95.0, 50.0, 0, 0]
+        s2 = S.session_levels(self.st, nyt(*self.today, 11, 1))
+        self.assertEqual((s2["pmh"], s2["pml"], s2["pmc"]), (s["pmh"], s["pml"], s["pmc"]))
+
     def test_second_entry_from_your_pivot(self):
         st = self.st
         st.play = {"side": "long", "trigger": 101.0}

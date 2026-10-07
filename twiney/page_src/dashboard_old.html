@@ -1513,9 +1513,61 @@ function ladderTightHTML(L){
   h += `</table>`;
   return h;
 }
+/* THE CLEAN LADDER: only what the auction is doing.
+   left  = sellers HITTING the bid at that price in the last few seconds (urgency)
+   BID   = buyers WAITING there (passive): brighter when the size is big / stacking, faded when it is being pulled,
+           R3 = a reload buyer (refilled 3 times)
+   PRICE = with the KEY LEVEL on it (PDH, PDL, PDC, PDO, PMH, PML, OPN, VW, 50D, DR / DB daily reject / bounce,
+           PH / PL prior daily highs and lows, and your own lines)
+   ASK / right = the same for the sellers waiting and the buyers LIFTING the offer.
+   A row lights up when urgency hits a key level. Click a size to trade there, as on every ladder */
+function cleanTags(r, price){
+  const out = [], up = price != null && r.price > price;
+  for (const m of (r.lv || [])){
+    const sh = m.role === "key" ? m.short : m.role === "vwap" ? "VW" : m.role === "sma50" ? "50D" : m.role === "hod" ? "HOD" : m.role === "lod" ? "LOD" : null;
+    if (sh && !out.some(o => o.t === sh)) out.push({t: sh, n: m.label || sh, k: m.role});
+  }
+  for (const t of (r.tags || [])) out.push({t: (LTAG[t] || t.slice(0, 3)), n: t, k: "mine"});
+  return out.map(o => `<span class="kt ${o.k === "mine" ? "mine" : up ? "res" : "sup"}" title="${esc(o.n)}">${esc(o.t)}</span>`).join("");
+}
+function ladderCleanHTML(L){
+  const on = canTrade(), last = L.last != null ? +L.last : null;
+  const big = +L.big_shares || 0, mx = Math.max(1, +L.max_size || 1, ...L.rows.map(r => Math.max(r.bid || 0, r.ask || 0)));
+  const um = Math.max(1, ...L.rows.map(r => Math.max(r.u_s || 0, r.u_b || 0)));
+  const chips = (r, side) => (r.mine || []).filter(o => o.id != null && (o.action === "BUY") === (side === "b")).map(o =>
+    `<span class="chip ${side} ${o.status === "PreSubmitted" ? "wait" : ""}" data-id="${o.id}" draggable="true" title="${esc(o.role)} order — click to cancel, drag to move">${sz(o.qty)}</span>`).join(" ");
+  const passive = (r, side) => {
+    const n = r[side] || 0, ps = r["ps_" + (side === "bid" ? "b" : "a")], st = r[side + "_state"], rl = st === "RELOAD" || r[side + "_proven"];
+    const stacked = n && ((big && n >= big) || (ps && ps[0] >= Math.max(ps[1], n * 0.5)));
+    const pulled = ps && ps[1] > ps[0] && ps[1] >= Math.max(1, big * 0.5);
+    const w = n ? Math.max(6, Math.round(100 * n / mx)) : 0, s = side === "bid" ? "b" : "s";
+    const cls = ["sz", "click", side === "bid" ? "bsz" : "asz", stacked ? "stk" : "", pulled ? "pul" : "", rl ? "rl " + stageSlug(r[side + "_stage"] || "RELOADING") : ""].join(" ");
+    const badge = rl ? `<span class="rlb" title="RELOAD ${side === "bid" ? "BUYER" : "SELLER"}: refilled ${r[side + "_refills"] || 0} times">R${r[side + "_refills"] || ""}</span>` : "";
+    return `<td class="${cls}" data-act="${side === "bid" ? "BUY" : "SELL"}" data-px="${r.price}"${szTitle(r, side)}>${w ? `<i class="pb" style="width:${w}%"></i>` : ""}${side === "bid" ? badge : ""}<span class="szn">${n ? kfmt(n) : ""}</span>${side === "ask" ? badge : ""}${chips(r, s) ? `<span class="mine">${chips(r, s)}</span>` : ""}</td>`;
+  };
+  const urg = (r, side) => { const n = r[side] || 0; if (!n) return `<td class="ug ${side}"></td>`;
+    const w = Math.max(8, Math.round(100 * n / um)); return `<td class="ug ${side} on" title="${sz(n)} shares ${side === "u_s" ? "hit the bid" : "lifted the offer"} here in the last few seconds"><i style="width:${w}%"></i><span>${kfmt(n)}</span></td>`; };
+  let h = `<table class="lad clean" data-cols="ladc"><tr>
+    <th data-w="46" data-min="16" title="sellers HITTING the bid here in the last few seconds">HIT</th>
+    <th class="szh" data-w="56" data-min="24" title="buyers WAITING to buy here (passive). Bright = big / stacking · faded = being pulled · R = reload buyer. Click: BUY here">BID</th>
+    <th class="pxh" data-w="74" data-min="40">PRICE</th>
+    <th class="szh" data-w="56" data-min="24" title="sellers WAITING to sell here (passive). Bright = big / stacking · faded = being pulled · R = reload seller. Click: SELL here">ASK</th>
+    <th data-w="46" data-min="16" title="buyers LIFTING the offer here in the last few seconds">LIFT</th></tr>`;
+  for (const r of L.rows){
+    const tags = cleanTags(r, last), hot = tags && ((r.u_s || 0) + (r.u_b || 0)) > 0;
+    // YOUR lines (pivot, 2nd entry, stop, target, levels) colour their row like the PRO ladder's
+    const mine = (r.lv || []).map(m => typeof LVROLE !== "undefined" && LVROLE[m.role] ? "lv-" + LVROLE[m.role][1] : "").filter(Boolean);
+    const cls = [r.gap ? "gap" : "", r.best_bid ? "best-bid" : "", r.best_ask ? "best-ask" : "", r.last ? "lastpx" : "", tags ? "keyrow" : "", hot ? "keyhot" : "", ...new Set(mine),
+      (r.bid_state === "RELOAD" || r.bid_proven) ? "rl-bid" : "", (r.ask_state === "RELOAD" || r.ask_proven) ? "rl-ask" : ""].join(" ");
+    h += `<tr class="${cls}" data-price="${r.price}">${urg(r, "u_s")}${passive(r, "bid")}<td class="px">${px(r.price)}${tags ? `<span class="kts">${tags}</span>` : ""}</td>${passive(r, "ask")}${urg(r, "u_b")}</tr>`;
+  }
+  h += `</table><div class="legend lgc"><span><b class="sell">HIT</b> sellers now · <b class="buy">BID</b> buyers waiting · <b class="sell">ASK</b> sellers waiting · <b class="buy">LIFT</b> buyers now</span><span class="dim">bright = stacked · faded = pulled · R = reload${on ? " · click a size to trade" : ""}</span></div>`;
+  return h;
+}
 function ladderHTML(L){
   if (!L || !L.rows.length) return `<div class="empty">Waiting for the book…</div>`;
-  const mode = store.get("ladMode", "pro");
+  const mode = store.get("ladMode", "clean");
+  if (mode === "clean") return ladderCleanHTML(L);
   if (mode === "pro") return ladderProHTML(L);
   if (mode === "simple") return ladderSimpleHTML(L);
   if (mode === "tight") return ladderTightHTML(L);

@@ -756,3 +756,28 @@ class DayRangeFromHistoryTests(unittest.TestCase):
         self.assertEqual(st.day_hi[0], 777.7)
         marks = {m["role"]: m["price"] for m in e._ladder_marks(st, t_now + 2, [], 777.45)}
         self.assertEqual((marks["hod"], marks["lod"]), (777.7, 773.61))
+
+
+class KeyLevelSystemTests(unittest.TestCase):
+    def test_key_levels_and_a_reject_at_yesterdays_high_go_everywhere(self):
+        import datetime as _dt
+        from zoneinfo import ZoneInfo
+        ny = ZoneInfo("America/New_York")
+        t = _dt.datetime(2026, 10, 7, 11, 0, tzinfo=ny).timestamp()
+        e = connected_engine(); e._clock(t)
+        st = e.syms["AAA"]
+        yday = _dt.datetime(2026, 10, 6, 0, 0, tzinfo=ny).timestamp()
+        st.daily[yday] = [9.80, 10.20, 9.70, 10.05]
+        st.l1["last"] = 10.10
+        kl = {L["code"]: L["price"] for L in e.key_levels(st, t)}
+        self.assertEqual((kl["PDO"], kl["PDH"], kl["PDL"], kl["PDC"]), (9.80, 10.20, 9.70, 10.05))
+        marks = [m for m in e._ladder_marks(st, t, [], 10.10) if m["role"] == "key"]
+        self.assertIn("PDH", [m["short"] for m in marks])
+        st._user_levels_cache = []
+        for i, p in enumerate([10.10, 10.15, 10.19, 10.20, 10.15, 10.08]):
+            st.l1["last"] = p
+            e._level_watch(st, t + 2 + i, p, 0.01)
+        a = [x for x in e.alerts if x.get("role") == "level"]
+        self.assertEqual(a[0]["label"], "REJECTED")
+        self.assertIn("Rejected at yesterday's high", a[0]["words"])
+        self.assertTrue(any("Rejected at yesterday's high" in f[1] for f in st.storybook.feed))

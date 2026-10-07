@@ -702,7 +702,7 @@ class StudyHistoryTests(unittest.TestCase):
         sym = study[0][2]
         self.assertIn((sym, "1 Y", "30 mins", 1, False), sizes)
         self.assertIn((sym, "3 D", "5 mins", 0, True), sizes)        # premarket / after hours, kept up to date
-        self.assertIn((sym, "2 M", "5 mins", 1, False), sizes)
+        self.assertIn((sym, "2 M", "5 mins", 0 if not s.cfg["chart"]["regular_hours_only"] else 1, False), sizes)
         self.assertEqual(len(study), 3 * len(s.l1_ids))
 
     def test_study_bars_reach_the_engine_and_the_live_update(self):

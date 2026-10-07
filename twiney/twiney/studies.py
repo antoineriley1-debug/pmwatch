@@ -318,22 +318,31 @@ def session_levels(st, t):
     """Locked premarket high / low (4:00-9:30 today), the last COMPLETED after-hours session's high / low
     (16:00-20:00) and today's 9:30 open, from the 5-minute extended-hours bars plus today's live minutes."""
     dk = day_key(t)
+    # the 5-minute extended-hours bars AND the 1-minute bars (the same trades: highs and lows agree, either may hold
+    # minutes the other is missing); the 1-minute bar, starting later, sets the close
     bars = [[k] + list(st.m5x[k][:4]) for k in sorted(getattr(st, "m5x", {}) or {})]
-    bars += [[m, b[0], b[1], b[2], b[3]] for m, b in sorted(st.bars.items()) if day_key(m) == dk]
-    pm_h = pm_l = open_ = open_t = None
+    bars += [[m, b[0], b[1], b[2], b[3]] for m, b in sorted(st.bars.items()) if m >= t - 5 * 86400]
+    pm_h = pm_l = pm_c = pm_ct = open_ = open_t = None
     ah = {}
-    for b in bars:
+    # the 1-minute bars win where both exist (5-minute bars of the same minutes add nothing, the 1-minute close is
+    # exact); bars are walked oldest first, so the last one before 9:30 / 20:00 sets the close
+    for b in sorted(bars, key=lambda x: x[0]):
         k, s = day_key(b[0]), ny_secs(b[0])
         if k == dk and 4 * 3600 <= s < 34200:
             pm_h = b[2] if pm_h is None else max(pm_h, b[2])
             pm_l = b[3] if pm_l is None else min(pm_l, b[3])
+            if pm_ct is None or b[0] >= pm_ct:
+                pm_c, pm_ct = b[4], b[0]
         if k == dk and 34200 <= s < 57600 and (open_t is None or b[0] < open_t):
             open_, open_t = b[1], b[0]
         if 57600 <= s < 72000 and k < dk:
-            a = ah.setdefault(k, [b[2], b[3]])
+            a = ah.setdefault(k, [b[2], b[3], b[4], b[0]])
             a[0] = max(a[0], b[2]); a[1] = min(a[1], b[3])
-    ah_h, ah_l = (ah[max(ah)][0], ah[max(ah)][1]) if ah else (None, None)
-    return {"pmh": pm_h, "pml": pm_l, "ahh": ah_h, "ahl": ah_l, "open": open_, "open_t": open_t}
+            if b[0] >= a[3]:
+                a[2], a[3] = b[4], b[0]
+    last_ah = ah[max(ah)] if ah else None
+    return {"pmh": pm_h, "pml": pm_l, "pmc": pm_c, "ahh": last_ah[0] if last_ah else None, "ahl": last_ah[1] if last_ah else None,
+            "ahc": last_ah[2] if last_ah else None, "open": open_, "open_t": open_t}
 
 
 def cont_odds(drows, m30, t, cfg, today_live, y_atr, prev_c):
@@ -624,8 +633,10 @@ def gas(st, t, cfg, drows, live):
     sess = session_levels(st, t)
     if cfg["premarket"]:
         lv(sess["pmh"], K(cfg, "col_pm"), nm("PMH", sess["pmh"]), wlv, "dash"); lv(sess["pml"], K(cfg, "col_pm"), nm("PML", sess["pml"]), wlv, "dash")
+        lv(sess["pmc"], K(cfg, "col_pm"), nm("PM CLOSE", sess["pmc"]), wlv, "dot")
     if cfg["after_hours"]:
         lv(sess["ahh"], K(cfg, "col_ah"), nm("AHH", sess["ahh"]), wlv, "dash"); lv(sess["ahl"], K(cfg, "col_ah"), nm("AHL", sess["ahl"]), wlv, "dash")
+        lv(sess["ahc"], K(cfg, "col_ah"), nm("AH CLOSE", sess["ahc"]), wlv, "dot")
     if cfg["open_line"] and sess["open"] is not None:
         lv(sess["open"], K(cfg, "col_open"), nm("TODAY'S OPEN", sess["open"]), wlv, "solid", t0=sess["open_t"])
     er = earnings_range(drows, cfg)

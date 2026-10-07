@@ -410,6 +410,8 @@ document.addEventListener("mouseover", e => {
   else if (LADHOVER.sym && !(e.target.closest && e.target.closest(".ladder-wrap"))) LADHOVER.sym = null;
 });
 function eatMarks(wrap, d, host){
+  // the CLEAN ladder shows a pull as a faded, crossed-out size: no floating badges over its rows
+  if (!host && store.get("ladMode", "clean") === "clean"){ wrap.querySelectorAll(".eatbar").forEach(x => x.remove()); return; }
   const rows = (d.ladder && d.ladder.rows) || [], now = Date.now(), sym = d.symbol;
   const touch = {bid: null, ask: null};
   for (const r of rows){
@@ -614,10 +616,10 @@ async function setLadQty(n){ n = Math.max(1, Math.round(+n || 0)); if (!n) retur
 document.getElementById("ladQty").addEventListener("change", e => setLadQty(e.target.value));
 document.getElementById("ladQty").addEventListener("keydown", e => { e.stopPropagation(); if (e.key === "Enter"){ setLadQty(e.target.value); e.target.blur(); } });
 document.getElementById("ladPresets").addEventListener("click", e => { const b = e.target.closest("button[data-qp]"); if (b) setLadQty(b.dataset.qp); });
-(function(){ const b = document.getElementById("ladMode"); if (!b) return; const MODES = ["pro", "simple", "tight", "wide"];
-  if (!store.get("ladPro1", false)){ store.set("ladPro1", true); store.set("ladMode", "pro"); }      // the PRO ladder arrives as the default once
-  const paint = () => { b.textContent = store.get("ladMode", "pro").toUpperCase(); }; paint();
-  b.addEventListener("click", () => { const m = store.get("ladMode", "pro"); store.set("ladMode", MODES[(MODES.indexOf(m) + 1) % MODES.length]); paint(); P.book.last = null; poll(true); }); })();
+(function(){ const b = document.getElementById("ladMode"); if (!b) return; const MODES = ["clean", "pro", "simple", "tight", "wide"];
+  if (!store.get("ladClean1", false)){ store.set("ladClean1", true); store.set("ladMode", "clean"); }   // the CLEAN ladder arrives as the default once
+  const paint = () => { b.textContent = store.get("ladMode", "clean").toUpperCase(); }; paint();
+  b.addEventListener("click", () => { const m = store.get("ladMode", "clean"); store.set("ladMode", MODES[(MODES.indexOf(m) + 1) % MODES.length]); paint(); P.book.last = null; poll(true); }); })();
 /* PIN BOX: the tape and the ladder move too fast to hover. Click a print, a reload $ cell, a FLOW tag or a price
    and what you would have read on hover stays in a small box at the bottom of that panel until the next click. */
 function pinBox(panel){ let b = panel.pc.querySelector(".pinbox"); if (!b){ b = document.createElement("div"); b.className = "pinbox"; b.innerHTML = `<span class="txt"></span><button class="x" title="clear">✕</button>`; panel.pc.appendChild(b); b.querySelector(".x").addEventListener("click", () => { b.classList.remove("on"); b.querySelector(".txt").textContent = ""; }); } return b; }
@@ -1523,6 +1525,8 @@ function speakNew(s){
     const isFlow = FLOW_ROLES.has(a.role) || /^UNUSUAL|REPEAT FLOW|FLOW/.test(a.label || "");
     if (isFlow){ const fw = flowWords(a); if (fw && voiceFlow() && (mine || !solo())) items.push(fw); continue; }
     if (a.role === "trap"){ if (a.words && mine) items.push(a.words); continue; }   // trapped crowd: the tab you are on
+    // the KEY LEVELS (rejected / bounced / took) and the PACE at them (pushing / stalling / breakout): the tab you are on
+    if (a.role === "level" || a.role === "pace"){ if (a.words && mine && store.get("voiceLevels", true)) items.push(a.words); continue; }
     if (!mine) continue;                                         // background tabs never speak
     const w = reloadWords(a); if (w) items.push(w);
   }
@@ -2293,6 +2297,7 @@ function optVisits(d, t, step){
     for (const j of [...open]) if (Math.abs(j - k) >= 3) open.delete(j);
     let v = out[p];
     if (!open.has(k)){ if (!v) v = out[p] = {s: 0, b: 0, ts: []}; else { v.s = 0; v.b = 0; } v.ts.push(tt); open.add(k); }
+    if (!v) v = out[p] = {s: 0, b: 0, ts: [tt]};      // another price on the same step is already open: this one starts its own row
     if (sd === "sell") v.s += n; else if (sd === "buy") v.b += n;
     v.open = true; v.k = k;
   }

@@ -261,7 +261,10 @@ DEFAULTS = {
     "chart": {
         # load the last days of 1-minute bars from IBKR at startup (chart context + 60-minute candles)
         "history": True,
-        "regular_hours_only": True,
+        # False: the 1-minute history and the intraday charts include the premarket and after hours (the premarket
+        # high / low / close are then measured off the 1-minute bars). VWAP still starts at 9:30, high / low of day
+        # and the daily candle stay the regular session
+        "regular_hours_only": False,
     },
     "voice": {
         # spoken call-outs: big size showing up at a price, and big size pulled / hit
@@ -413,6 +416,17 @@ DEFAULTS = {
         "flow_min_premium": 100000,     # + FLOW: at least this much premium bought at the ask
         "repeat_seconds": 120,          # a call at the same level is not repeated for this long
     },
+    "levels": {
+        "enabled": True,                # KEY LEVELS WATCH: REJECTED / BOUNCED / BUYERS TOOK / SELLERS TOOK at the daily and session levels
+        "voice": True,                  # say them (the ticker you are on)
+        "zone_ticks": 3,                # AT a level: within this many ticks ...
+        "zone_atr_pct": 3,              # ... or this % of the daily ATR, whichever is wider
+        "away_ticks": 8,                # REJECTED / BOUNCED: back the way it came at least this many ticks ...
+        "away_atr_pct": 10,             # ... or this % of the ATR
+        "hold_seconds": 60,             # TOOK: through it and held for this long
+        "repeat_seconds": 300,          # the same call at the same level not again for this long
+        "touch_minutes": 15,            # a touch that does nothing for this long is forgotten
+    },
     "story": {
         "enabled": True,                # the PS60 STORY: Daily context + PS60 places + tape + Level II + option flow + price response
         "alerts": True,                 # put the big moments in CALLS (breaks, reloads consumed, flow confirming / conflicting, retests)
@@ -496,8 +510,8 @@ DEFAULTS = {
         "atr_halves": False,            # 1.5 / 2.5 ATR too
         "open_line": True,              # today's 9:30 open (locked)
         "prev_day": True,               # prev day high / low / close
-        "premarket": True,              # premarket high / low (locked at 9:30)
-        "after_hours": False,           # the last completed after-hours high / low
+        "premarket": True,              # premarket high / low / close (locked at 9:30, from the 1-minute bars)
+        "after_hours": True,            # the last completed after-hours high / low / close
         "old_supply_demand": True,      # last finished month's high (old supply) / low (old demand)
         "whole_numbers": False,         # whole-number lines
         "whole_above": 3,               # whole numbers above price

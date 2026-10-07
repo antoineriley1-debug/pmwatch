@@ -865,3 +865,39 @@ table.tape2 tr.g-d50 td{animation:gd50 2s ease-in-out infinite;background-color:
 .gtag{font:800 8.5px var(--sans);letter-spacing:.04em;padding:0 3px;border-radius:2px;margin-left:3px;vertical-align:1px}
 .gtag.vw{background:#e8a0ff;color:#111} .gtag.d50{background:#1fc6fc;color:#111}
 .refstrip .rf.vw{text-shadow:0 0 6px rgba(232,160,255,.7)} .refstrip .rf.d50{text-shadow:0 0 6px rgba(31,198,252,.7)}
+
+/* THE CLEAN LADDER */
+table.lad.clean td{padding:0 4px;height:calc(18px * var(--ladh,1));position:relative}
+table.lad.clean td.ug{position:relative;font-size:calc(10px * var(--ladz,1));color:#e6edf6}
+table.lad.clean td.ug i{position:absolute;top:2px;bottom:2px;opacity:.85;border-radius:2px}
+table.lad.clean td.ug.u_s i{right:0;background:linear-gradient(90deg,rgba(255,77,94,.25),#ff4d5e)}
+table.lad.clean td.ug.u_b i{left:0;background:linear-gradient(90deg,#26d07c,rgba(38,208,124,.25))}
+table.lad.clean td.ug span{position:relative;font-weight:700}
+table.lad.clean td.ug.u_s{text-align:right}
+table.lad.clean td.sz{position:relative}
+table.lad.clean td.sz .pb{position:absolute;top:3px;bottom:3px;border-radius:2px;opacity:.22}
+table.lad.clean td.bsz .pb{right:0;background:#26d07c}
+table.lad.clean td.asz .pb{left:0;background:#ff4d5e}
+table.lad.clean td.sz .szn{position:relative;color:#c9d4e3}
+table.lad.clean td.sz.stk .pb{opacity:.55}
+table.lad.clean td.sz.stk .szn{color:#fff;font-weight:800}
+table.lad.clean td.sz.pul .pb{opacity:.10}
+table.lad.clean td.sz.pul .szn{color:#7b889e;text-decoration:line-through}
+table.lad.clean td.sz .rlb{position:relative;display:inline-block;font-size:calc(9px * var(--ladz,1));font-weight:800;padding:0 3px;margin:0 3px;border-radius:3px;background:#e8b931;color:#111}
+table.lad.clean td.sz.rl.fading .rlb{background:#b08a2a}
+table.lad.clean td.sz.rl.stale .rlb{background:#5c5236;color:#ddd}
+table.lad.clean td.px{text-align:center;white-space:nowrap}
+table.lad.clean td.px .kts{margin-left:4px}
+table.lad.clean .kt{display:inline-block;font-size:calc(8.5px * var(--ladz,1));font-weight:800;padding:0 3px;margin-left:2px;border-radius:3px;line-height:1.35;vertical-align:1px}
+table.lad.clean .kt.res{background:rgba(255,77,94,.20);color:#ff8a96;border:1px solid rgba(255,77,94,.55)}
+table.lad.clean .kt.sup{background:rgba(38,208,124,.18);color:#5fe0a0;border:1px solid rgba(38,208,124,.5)}
+table.lad.clean .kt.mine{background:rgba(232,185,49,.2);color:#e8b931;border:1px solid rgba(232,185,49,.6)}
+table.lad.clean tr.keyrow td.px{background:rgba(120,140,170,.10)}
+table.lad.clean tr.keyhot td{animation:keyhot 1.1s ease-in-out infinite alternate}
+@keyframes keyhot{from{background:rgba(255,200,60,.05)}to{background:rgba(255,200,60,.22)}}
+table.lad.clean tr.best-bid td.bsz{box-shadow:inset 0 0 0 1px rgba(38,208,124,.7)}
+table.lad.clean tr.best-ask td.asz{box-shadow:inset 0 0 0 1px rgba(255,77,94,.7)}
+table.lad.clean tr.lastpx td.px{background:#e8b931;color:#111;font-weight:800}
+.legend.lgc{display:flex;justify-content:space-between;gap:8px;font-size:10.5px;padding:3px 6px;flex-wrap:wrap}
+table.lad.clean tr.lv-se td.px{box-shadow:inset 3px 0 0 var(--se,#3fd0ff)} table.lad.clean tr.lv-tg td.px{box-shadow:inset 3px 0 0 var(--tg,#26d07c)}
+table.lad.clean tr.lv-sl td.px{box-shadow:inset 3px 0 0 #ff4d5e} table.lad.clean tr.lv-pv td.px{box-shadow:inset 3px 0 0 #e8b931}
