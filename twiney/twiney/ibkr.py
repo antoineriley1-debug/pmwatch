@@ -333,6 +333,23 @@ class TwineyWrapper:
             self.engine.on_l1(sym, field, v, self.clock())
 
     # depth ----------------------------------------------------------------
+    NASDAQ_DEPTH = ("ISLAND", "NASDAQ", "NSDQ")
+
+    def mktDepthExchanges(self, depthMktDataDescriptions):
+        """The LEVEL II venues IBKR gives THIS login for stocks. Nasdaq (TotalView) missing = the subscription is not
+        reaching this login (a paper account must share the live account's market data)."""
+        ex = sorted({str(getattr(d, "exchange", "") or "").upper() for d in (depthMktDataDescriptions or [])
+                     if str(getattr(d, "secType", "") or "").upper() in ("STK", "")} - {""})
+        self.engine.depth_venues = ex
+        if not ex:
+            return
+        nas = any(e in self.NASDAQ_DEPTH for e in ex)
+        msg = f"LEVEL II venues IBKR gives this login: {', '.join(ex)}"
+        if not nas:
+            msg += (" — NO NASDAQ (TotalView): the Level II misses Nasdaq's book. On a PAPER login: Client Portal, Settings, "
+                    "Paper Trading Account, share the live account's market data (takes up to a day), and log TWS in again")
+        self.engine._message("info" if nas else "warn", msg, self.clock())
+
     def updateMktDepth(self, reqId, position, operation, side, price, size):
         self.updateMktDepthL2(reqId, position, "", operation, side, price, size, False)
 
@@ -729,6 +746,10 @@ class MarketDataSession:
             self.app.reqMarketDataType(mdt)
             self.engine.on_connection("CONNECTED", "", self.clock(), market_data_type=mdt)
             self.subscribe_l1()
+            try:
+                self.app.reqMktDepthExchanges()      # which LEVEL II venues this login gets (said on the desk)
+            except Exception:
+                pass
             if self.cfg["account"]["show"] or self.cfg["trading"]["enabled"]:
                 self.engine.clear_positions()   # IBKR re-sends every open position right after this
                 self.app.reqPositions()  # streams position updates

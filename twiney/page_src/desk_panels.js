@@ -1784,12 +1784,54 @@ function renderStatus(s){
 
 /* ---------- the frame: one snapshot in, each panel decides if it changes */
 let focusAsked = 0;
+/* STREAMING: the ticker on screen is pushed by TED the moment its LEVEL II, T&S or quote changes (Server-Sent
+   Events), drawn on the next frame. The regular refresh still carries everything else; whichever is newer wins */
+const STREAM = {es: null, sym: null, last: null, pend: false, chartT: 0, n: 0, t: 0};
+function streamTo(sym){
+  if (STREAM.sym === sym && STREAM.es && STREAM.es.readyState !== 2) return;
+  if (STREAM.es) STREAM.es.close();
+  STREAM.es = null; STREAM.sym = sym; STREAM.last = null;
+  if (!sym || typeof EventSource === "undefined") return;
+  const es = new EventSource("/api/stream?sym=" + encodeURIComponent(sym));
+  STREAM.es = es;
+  es.onmessage = e => {
+    let m; try { m = JSON.parse(e.data); } catch (x){ return; }
+    if (m.symbol !== curSym) return;
+    STREAM.last = m; STREAM.n++; STREAM.t = Date.now();
+    if (!STREAM.pend){ STREAM.pend = true; requestAnimationFrame(streamDraw); }
+  };
+}
+// put the newest pushed book / prints / quote / candle onto the pane (only if newer than what it already has)
+function streamApply(d, m){
+  if (!d || !m || d.symbol !== m.symbol || (d.sv != null && m.sv <= d.sv)) return false;
+  d.last = m.last; d.bid = m.bid; d.ask = m.ask; d.spread = m.spread; d.ladder = m.ladder; d.sv = m.sv;
+  if (d.tape) d.tape.recent = m.recent;
+  const c = BARS[m.symbol], b = m.bar;
+  if (b && c && c.bars){
+    const k = c.bars.length - 1;
+    if (k >= 0 && c.bars[k][0] === b[0]) c.bars[k] = b; else if (k < 0 || b[0] > c.bars[k][0]) c.bars.push(b);
+    if (d.bars !== c.bars) d.bars = c.bars;
+  }
+  return true;
+}
+function streamDraw(){
+  STREAM.pend = false;
+  const d = curData();
+  if (!streamApply(d, STREAM.last)) return;
+  try {
+    renderQuote(d); renderBook(d); renderTape(d); renderFast(d);
+    const now = performance.now();
+    if (now - STREAM.chartT > 120){ STREAM.chartT = now; drawChart(charts.chart); }     // the candle: ~8 a second is plenty
+  } catch (e){ console.error("TED stream draw", e); }
+}
 function render(s){
   state = s;
   // the ticker on screen owns a ladder: after a TED restart (or any drift) claim it again
   if (curSym && s.focus !== curSym && (s.symbols || []).includes(curSym) && Date.now() - focusAsked > 3000){ focusAsked = Date.now(); post("/api/play", {symbol: curSym, action: "focus"}); }
   if (!TABS.list.length && s.symbols && s.symbols.length){ TABS.list = (PREFS.tabs || []).filter(x => s.symbols.includes(x)); if (!TABS.list.length) TABS.list = [s.focus || s.symbols[0]]; TABS.active = (PREFS.active && TABS.list.includes(PREFS.active)) ? PREFS.active : TABS.list[0]; curSym = TABS.active; renderTabs(); }
   const d = dataFor(s, curSym);
+  streamTo(curSym);
+  if (d && STREAM.last) streamApply(d, STREAM.last);       // a pushed update newer than this refresh stays on screen
   for (const c of Object.values(charts)){
     if (c.sym !== curSym){ if (c.sym) VIEWS[c.sym] = VIEWS[c.sym] || {}, VIEWS[c.sym][c.id] = Object.assign({}, c.view); c.sym = curSym; Object.assign(c.view, viewFor(curSym || "_", c.id), {cross: null, rightT: null}); }
     c.data = d;
@@ -1814,7 +1856,8 @@ let timer = null, lastGood = Date.now();
 // paces itself on it (never piles requests up), and the greying only happens when a real answer is overdue
 const CYCLE = {fetch: 0, draw: 0, bytes: 0, interval: 250, lostAfter: 6000};
 const JOURNAL = {ver: null, trades: []};
-const cycleWords = () => `last answer ${CYCLE.fetch} ms (${Math.round(CYCLE.bytes / 1024)} KB), drawn in ${CYCLE.draw} ms, polling every ${CYCLE.interval} ms`;
+const cycleWords = () => `last answer ${CYCLE.fetch} ms (${Math.round(CYCLE.bytes / 1024)} KB), drawn in ${CYCLE.draw} ms, polling every ${CYCLE.interval} ms` +
+  (STREAM.es && STREAM.es.readyState === 1 ? ` · LIVE STREAM on ${STREAM.sym}: ${STREAM.n} pushes, last ${STREAM.t ? Math.max(0, Date.now() - STREAM.t) + " ms ago" : "—"}` : " · live stream off");
 function markLost(){
   const lost = Date.now() - lastGood > CYCLE.lostAfter;
   document.body.classList.toggle("stale", lost);

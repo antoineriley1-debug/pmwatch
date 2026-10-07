@@ -120,7 +120,10 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
             self.send_header("Content-Length", str(len(data)))
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
-            self.wfile.write(data)
+            try:
+                self.wfile.write(data)
+            except (BrokenPipeError, ConnectionResetError):
+                pass                    # the page went away mid-answer (closed / reloaded): nothing to say
 
         def do_GET(self):
             if not self._local():
@@ -130,6 +133,37 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
             if path in ("/", "/index.html"):
                 with open(STATIC, "rb") as fh:
                     self._send(200, fh.read(), "text/html; charset=utf-8")
+            elif path == "/api/stream":
+                # STREAMING: the ticker on screen, pushed the moment its book, tape or quote changes (Server-Sent
+                # Events). Checked every 40 ms, at most ~25 sends a second; the regular refresh carries the rest
+                q = parse_qs(urlparse(self.path).query)
+                sym = (q.get("sym", [""])[0] or "").strip().upper()
+                if engine.stream_ver(sym) is None:
+                    self._send(404, "unknown symbol", "text/plain")
+                    return
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("X-Accel-Buffering", "no")
+                self.end_headers()
+                seen, beat = None, time.monotonic()
+                try:
+                    while True:
+                        v = engine.stream_ver(sym)
+                        if v is None:
+                            return
+                        if v != seen:
+                            seen = v
+                            fp = engine.fast_pane(sym, clock())
+                            if fp is not None:
+                                self.wfile.write(b"data: " + json.dumps(fp, default=str, separators=(",", ":")).encode("utf-8") + b"\n\n")
+                                self.wfile.flush()
+                                beat = time.monotonic()
+                        elif time.monotonic() - beat > 10.0:
+                            self.wfile.write(b": alive\n\n"); self.wfile.flush(); beat = time.monotonic()
+                        time.sleep(0.04)
+                except (BrokenPipeError, ConnectionResetError, OSError):
+                    return
             elif path == "/api/state":
                 q = parse_qs(urlparse(self.path).query, keep_blank_values=True)
                 extra = [x.strip().upper() for x in (q.get("extra", [""])[0]).split(",") if x.strip()][:12]

@@ -859,3 +859,24 @@ class OptionChartLineEdgeTests(OptionChartLineTests):
         tr.watchdog(clock()); tr.watchdog(clock())
         self.assertNotIn(self.KEY, tr.opt_stops)
         self.assertEqual(self._orders(app), [])
+
+
+class DepthVenueTests(unittest.TestCase):
+    def _d(self, ex, st="STK"):
+        from types import SimpleNamespace
+        return SimpleNamespace(exchange=ex, secType=st, listingExch="", serviceDataType="Deep", aggGroup=1)
+
+    def test_missing_nasdaq_is_said(self):
+        s, engine, clock = make_session()
+        s.step(clock()); app = s.app; app.nextValidId(50)
+        self.assertIn("reqMktDepthExchanges", names(app))
+        app.mktDepthExchanges([self._d("ARCA"), self._d("IEX"), self._d("CBOE", "OPT")])
+        self.assertEqual(engine.depth_venues, ["ARCA", "IEX"])
+        self.assertTrue(any("NO NASDAQ" in m["text"] for m in engine.messages))
+
+    def test_nasdaq_present(self):
+        s, engine, clock = make_session()
+        s.step(clock()); app = s.app; app.nextValidId(50)
+        app.mktDepthExchanges([self._d("ARCA"), self._d("ISLAND")])
+        self.assertFalse(any("NO NASDAQ" in m["text"] for m in engine.messages))
+        self.assertTrue(any("ISLAND" in m["text"] for m in engine.messages))

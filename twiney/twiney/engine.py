@@ -68,6 +68,7 @@ class SymbolState:
         self.l1 = {k: None for k in L1_FIELDS}
         self.l1_t = None
         self.q_t = None          # last time IBKR's quote stream moved the bid / ask
+        self.sv = 0              # STREAM: bumps on every print / book change / quote: the page's live channel sends then
         self.tight_since = None  # since when the NBBO has been tighter than the depth book's inside (None = it isn't)
         self.tight_last = 0.0
         self.depth_active = False
@@ -418,6 +419,7 @@ class Engine:
                 return
             st.l1[field] = value      # None = IBKR says there is no bid / offer right now
             st.l1_t = t
+            st.sv += 1
             if field == "last" and value:
                 self._check_price_alerts(symbol, value, t)
             if field in ("bid", "ask"):
@@ -443,6 +445,7 @@ class Engine:
             if st.book is None:
                 return  # stale update for a slot that was already released
             st.book.apply(position, operation, side, price, size, market_maker)
+            st.sv += 1
             st.depth_t = t
             st.note_quote(t)
             self._voice_sizes(st, side, t)
@@ -571,6 +574,7 @@ class Engine:
             bid, ask = st.bbo()
             self._book_check(st, price, t, exchange)
             rec = st.tape.add(t, price, size, bid, ask, exchange, side=st.aggressor(price, t))
+            st.sv += 1
             st.pacebook.add(t, price, size, rec["side"])
             st.tape_t = t
             st.l1["last"] = price
@@ -4191,6 +4195,37 @@ class Engine:
         above.sort(key=lambda x: x["price"])
         return {"below": below[:3], "above": above[:3]}
 
+    def fast_pane(self, sym, t=None):
+        """STREAMING: what the LEVEL II, the T&S, the quote and the live candle need, the moment it changes. The same
+        code as the full pane builds them (same numbers); everything slower stays on the regular refresh."""
+        t = t if t is not None else self.last_t
+        with self.lock:
+            st = self.syms.get(str(sym or "").upper())
+            if st is None:
+                return None
+            bid, ask = st.bbo()
+            user_levels = self._user_levels(st.play)
+
+            def at_level(price):
+                for lv in user_levels:
+                    if lv["role"] in ("trigger", "second_entry", "extra") and price_key(price) == price_key(lv["price"]):
+                        return lv["label"]
+                return None
+            m = max(st.bars) if st.bars else None
+            bar = [m] + [round(x, 4) for x in st.bars[m]] if m is not None else None      # the same row the chart gets
+            return {"symbol": st.symbol, "sv": st.sv, "now": t,
+                    "last": fmt_price(st.l1["last"]), "bid": fmt_price(bid), "ask": fmt_price(ask),
+                    "spread": fmt_price(ask - bid) if bid and ask else None,
+                    "ladder": self._memory_ladder(st, t, user_levels),
+                    "recent": [{"age": round(t - p["t"], 1), "price": fmt_price(p["price"]), "size": round(p["size"]),
+                                "side": p["side"], "large": p["large"], "exchange": p["exchange"], "at": at_level(p["price"])}
+                               for p in st.tape.recent(14)],
+                    "bar": bar}
+
+    def stream_ver(self, sym):
+        st = self.syms.get(str(sym or "").upper())
+        return st.sv if st is not None else None
+
     def _pane(self, sym, i, t, order, full=True):
         st = self.syms[sym]
         rows = self.cfg["depth"]["rows_displayed"]
@@ -4233,6 +4268,7 @@ class Engine:
         ps = self._ps60(st, t, bars, st.price())
         return {
             "slot": i,
+            "sv": st.sv,
             "ps60": ps,
             "symbol": sym,
             "pinned": sym in self.pinned,
