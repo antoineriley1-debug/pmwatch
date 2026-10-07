@@ -1268,6 +1268,8 @@ class Trader:
                 price = round(float(price), 4)
             except (TypeError, ValueError):
                 return {"ok": False, "reason": "stop price must be a number"}
+            if price <= 0:
+                return {"ok": False, "reason": "a stop at 0 never fires: pick a price above 0"}
             p = self.engine.opt_positions.get(key)
             if p is None:
                 return {"ok": False, "reason": f"no position in {key}"}

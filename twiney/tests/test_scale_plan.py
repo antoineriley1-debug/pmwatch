@@ -444,7 +444,8 @@ class OptionStopTests(unittest.TestCase):
         self.assertFalse(tr.set_opt_stop(self.kp, 9.90, "stock", T + 1)["ok"])           # under the stock on a put: through it
         self.assertTrue(tr.set_opt_stop(self.kp, 10.25, "stock", T + 1)["ok"])
         c_bid = e.opt_quotes[self.kc]["bid"]
-        self.assertTrue(tr.set_opt_stop(self.kc, round(c_bid - 0.10, 2), "option", T + 1)["ok"])
+        self.assertFalse(tr.set_opt_stop(self.kc, 0, "option", T + 1)["ok"])                 # a stop at 0 never fires
+        self.assertTrue(tr.set_opt_stop(self.kc, max(0.01, round(c_bid * 0.6, 2)), "option", T + 1)["ok"])
         e.on_l1("AAA", "last", 10.30, T + 2); e.practice_opt_tick(T + 2.6); tr.watchdog(T + 3); e.practice_opt_tick(T + 4)
         self.assertEqual(self.held(self.kp), 0)                                          # stock over 10.25: the put is out
         self.assertEqual(self.held(self.kc), 1)                                          # the call gained: its stop holds

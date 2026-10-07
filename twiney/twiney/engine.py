@@ -459,6 +459,21 @@ class Engine:
             if judge:
                 self._auto_levels(st, t)
 
+    def _clock_check(self, t, xt):
+        """This PC's clock against IBKR's: over the last ~300 prints the smallest (arrival - IBKR time) is the clock
+        difference (plus a little network time). More than 1.5 s either way is said once every 10 minutes: candles
+        still follow IBKR's time, but the chart's clock, countdowns and 'ago' read this PC's."""
+        win = self.__dict__.setdefault("_skew", deque(maxlen=300))
+        win.append(t - xt)
+        if len(win) < 50:
+            return
+        off = min(win)                     # IBKR time is whole seconds: the smallest gap is the true difference
+        self.clock_offset = round(off, 2)
+        if (off > 1.5 or off < -1.5) and t - getattr(self, "_skew_said", -1e9) > 600:
+            self._skew_said = t
+            self._message("warn", f"This PC's clock is about {abs(off):.1f} s {'ahead of' if off > 0 else 'behind'} IBKR's — "
+                                  f"candles follow IBKR's time; sync the PC clock (Windows: Settings, Time & language, Sync now)", t)
+
     OFF_EXCHANGE = ("FINRA", "ADF", "TRF", "OTC")      # dark pools / internalisers: they print between the quotes by design
 
     def _book_check(self, st, price, t, exchange=""):
@@ -537,14 +552,21 @@ class Engine:
                 tr.on_resync()
             self._message("warn", f"{symbol}: depth book reset ({reason}); resyncing", t, symbol)
 
-    def on_print(self, symbol, price, size, exchange, t, conditions=""):
+    def on_print(self, symbol, price, size, exchange, t, conditions="", xt=None):
+        """One trade from IBKR's tape. ``t`` is when it reached this PC; ``xt`` is IBKR's own time for it (whole
+        seconds). The candles are cut on IBKR's time, so a minute's candle holds exactly IBKR's minute even when this
+        PC's clock is a little off or the print arrives a moment after the minute turned."""
         with self.lock:
             st = self._st(symbol)
             if st is None or price is None or price <= 0 or not size or size <= 0:
                 return
             self._clock(t)
             self._rec({"ev": "print", "t": t, "sym": symbol, "px": price, "sz": size,
-                       "ex": exchange, "cond": conditions})
+                       "ex": exchange, "cond": conditions, "xt": xt})
+            bt = t
+            if xt and abs(t - xt) < 120.0:
+                bt = xt + 0.5                       # IBKR's second (the middle of it): the candle IBKR puts it in
+                self._clock_check(t, xt)
             self.data_t = t
             bid, ask = st.bbo()
             self._book_check(st, price, t, exchange)
@@ -553,11 +575,11 @@ class Engine:
             st.tape_t = t
             st.l1["last"] = price
             st.pulls.on_print(rec["side"], price, size)
-            st.bar_update(t, price, size, rec["side"])
+            st.bar_update(bt, price, size, rec["side"])
             self._check_price_alerts(symbol, price, t)
             k = price_key(price)
             if rec["side"] in ("buy", "sell"):
-                fmin = int(t // BAR_SECONDS) * BAR_SECONDS
+                fmin = int(bt // BAR_SECONDS) * BAR_SECONDS
                 st.__dict__.get("_foot_cache", {}).pop(fmin, None)   # a print into a minute rebuilds its footprint
                 fm = st.foot.setdefault(fmin, {})
                 cell = fm.setdefault(k, [price, 0.0, 0.0])
@@ -778,6 +800,9 @@ class Engine:
             if rows is None:
                 rows, _live = studies.daily_series(st, t)
             closes = [r[4] for r in rows]
+            px_now = st.price()
+            if closes and px_now and studies.day_key(rows[-1][0] + 43200) == studies.day_key(t):
+                closes[-1] = px_now                    # today's close IS the price now (the cached rows are up to 15 s old)
             if len(closes) >= 50:
                 v["sma50"] = round(sum(closes[-50:]) / 50.0, 4)
         except Exception:
@@ -959,6 +984,20 @@ class Engine:
         view._any_session = self.connection["state"] == "DEMO"
         return view
 
+    def _day_range_from_history(self, st, t0, h, l):
+        """HIGH / LOW OF DAY with the whole day in it: IBKR's minute history for today's regular session counts, not
+        only the prints since TED started watching this ticker (opened at 2 pm, the low is still the day's low)."""
+        now = self.last_t or t0
+        dk = ps60.ny_day(t0)
+        if dk != ps60.ny_day(now) or not (self.connection["state"] == "DEMO" or ps60.is_rth(t0)):
+            return
+        if st.day_key != dk:
+            st.day_key, st.day_sums, st.day_hi, st.day_lo = dk, {}, None, None
+        if h and (st.day_hi is None or h > st.day_hi[0]):
+            st.day_hi = (h, t0 + 30)
+        if l and l > 0 and (st.day_lo is None or l < st.day_lo[0]):
+            st.day_lo = (l, t0 + 30)
+
     def on_hist_bar(self, symbol, t0, o, h, l, c, v):
         """Historical 1-minute bar (reqHistoricalData) so the chart has context at startup."""
         with self.lock:
@@ -966,6 +1005,7 @@ class Engine:
             if st is None:
                 return
             self._rec({"ev": "hbar", "t": self.last_t or t0, "sym": symbol, "t0": t0, "o": o, "h": h, "l": l, "c": c, "v": v})
+            self._day_range_from_history(st, t0, h, l)
             m = int(t0 // BAR_SECONDS) * BAR_SECONDS
             live = st.bars.get(m)
             if live is not None:
@@ -3429,7 +3469,7 @@ class Engine:
         elif kind == "reset":
             self.on_depth_reset(ev["sym"], t, ev.get("reason", "317"))
         elif kind == "print":
-            self.on_print(ev["sym"], ev["px"], ev["sz"], ev.get("ex", ""), t, ev.get("cond", ""))
+            self.on_print(ev["sym"], ev["px"], ev["sz"], ev.get("ex", ""), t, ev.get("cond", ""), ev.get("xt"))
         elif kind == "slot":
             self.apply_slot(ev["sym"], ev["on"], t, ev.get("reason", ""))
         elif kind == "conn":

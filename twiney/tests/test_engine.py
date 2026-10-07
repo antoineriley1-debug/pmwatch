@@ -714,3 +714,45 @@ class ContractAtLinesTests(unittest.TestCase):
     def test_nothing_without_a_contract(self):
         e = connected_engine()
         self.assertIsNone(e._opt_est(e.syms["AAA"], 1.0))
+
+
+class ExchangeTimeCandleTests(unittest.TestCase):
+    def test_candle_follows_ibkr_time_not_arrival(self):
+        e = connected_engine()
+        m = 1_791_300_000 - 1_791_300_000 % 60            # a minute boundary
+        e.on_print("AAA", 10.00, 100, "ARCA", m + 0.3, "", xt=m - 1)     # IBKR: 10:30:59, here at 10:31:00.3
+        st = e.syms["AAA"]
+        self.assertIn(m - 60, st.bars)
+        self.assertNotIn(m, st.bars)
+        e.on_print("AAA", 10.05, 100, "ARCA", m + 1.2, "", xt=m)         # IBKR: 10:31:00
+        self.assertIn(m, st.bars)
+        self.assertEqual(st.bars[m - 60][3], 10.00)
+
+    def test_pc_clock_off_is_said(self):
+        e = connected_engine()
+        base = 1_791_300_000
+        for i in range(60):
+            e.on_print("AAA", 10.0, 100, "ARCA", base + i + 3.2, "", xt=base + i)   # PC 3 s ahead
+        self.assertAlmostEqual(e.clock_offset, 3.2, places=1)
+        self.assertTrue(any("clock is about 3.2 s ahead" in m["text"] for m in e.messages))
+
+
+class DayRangeFromHistoryTests(unittest.TestCase):
+    def test_low_of_day_counts_the_history_before_ted_watched(self):
+        import datetime as _dt
+        from zoneinfo import ZoneInfo
+        ny = ZoneInfo("America/New_York")
+        t_open = _dt.datetime(2026, 10, 7, 9, 30, tzinfo=ny).timestamp()
+        t_now = _dt.datetime(2026, 10, 7, 14, 28, tzinfo=ny).timestamp()
+        e = connected_engine()
+        e._clock(t_now)
+        e.on_hist_bar("AAA", t_open - 600, 772.0, 772.5, 771.0, 772.2, 1000)      # premarket: never the day's low
+        e.on_hist_bar("AAA", t_open, 775.72, 775.9, 773.61, 774.0, 1000)
+        e.on_hist_bar("AAA", t_open + 3600, 776.0, 777.7, 775.9, 777.5, 1000)
+        e.on_print("AAA", 777.22, 100, "ARCA", t_now, "", xt=int(t_now))
+        e.on_print("AAA", 777.45, 100, "ARCA", t_now + 1, "", xt=int(t_now) + 1)
+        st = e.syms["AAA"]
+        self.assertEqual(st.day_lo[0], 773.61)
+        self.assertEqual(st.day_hi[0], 777.7)
+        marks = {m["role"]: m["price"] for m in e._ladder_marks(st, t_now + 2, [], 777.45)}
+        self.assertEqual((marks["hod"], marks["lod"]), (777.7, 773.61))

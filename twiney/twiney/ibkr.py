@@ -480,7 +480,9 @@ class TwineyWrapper:
         conds = specialConditions or ""
         if IRREGULAR_PRINT.intersection(conds.replace(" ", "")):
             return        # not a regular last sale: it never traded at the market you see
-        self.engine.on_print(sym, num(price), num(size), exchange or "", self.clock(), conds)
+        xt = num(time_)
+        self.engine.on_print(sym, num(price), num(size), exchange or "", self.clock(), conds,
+                             xt if xt and xt > 1e9 else None)
 
 
 def pick_chain_class(symbol, rows):
