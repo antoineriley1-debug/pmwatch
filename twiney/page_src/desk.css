@@ -901,3 +901,11 @@ table.lad.clean tr.lastpx td.px{background:#e8b931;color:#111;font-weight:800}
 .legend.lgc{display:flex;justify-content:space-between;gap:8px;font-size:10.5px;padding:3px 6px;flex-wrap:wrap}
 table.lad.clean tr.lv-se td.px{box-shadow:inset 3px 0 0 var(--se,#3fd0ff)} table.lad.clean tr.lv-tg td.px{box-shadow:inset 3px 0 0 var(--tg,#26d07c)}
 table.lad.clean tr.lv-sl td.px{box-shadow:inset 3px 0 0 #ff4d5e} table.lad.clean tr.lv-pv td.px{box-shadow:inset 3px 0 0 #e8b931}
+.kstrip{display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding:3px 6px;font-size:calc(10px * var(--ladz,1));color:#9aa6b8;position:sticky;z-index:3;background:var(--panel,#10141c)}
+.kstrip.up{top:0;border-bottom:1px solid rgba(255,255,255,.08)} .kstrip.dn{bottom:0;border-top:1px solid rgba(255,255,255,.08)}
+.kstrip .kp{display:inline-flex;gap:4px;align-items:baseline;padding:0 5px;border-radius:3px;white-space:nowrap}
+.kstrip .kp b{font-weight:800} .kstrip .kp i{font-style:normal;opacity:.8}
+.kstrip .kp.res{background:rgba(255,77,94,.14);color:#ff8a96;border:1px solid rgba(255,77,94,.4)}
+.kstrip .kp.sup{background:rgba(38,208,124,.12);color:#5fe0a0;border:1px solid rgba(38,208,124,.4)}
+.kstrip .kp.mine{background:rgba(232,185,49,.14);color:#e8b931;border:1px solid rgba(232,185,49,.5)}
+table.lad.clean tr.gap td{border-top:2px dashed rgba(150,165,190,.45)}

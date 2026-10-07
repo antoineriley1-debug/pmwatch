@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261007-1945">
+<meta name="build" content="20261007-2033">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -1210,6 +1210,14 @@ table.lad.clean tr.lastpx td.px{background:#e8b931;color:#111;font-weight:800}
 .legend.lgc{display:flex;justify-content:space-between;gap:8px;font-size:10.5px;padding:3px 6px;flex-wrap:wrap}
 table.lad.clean tr.lv-se td.px{box-shadow:inset 3px 0 0 var(--se,#5aa9d6)} table.lad.clean tr.lv-tg td.px{box-shadow:inset 3px 0 0 var(--tg,#3fb56f)}
 table.lad.clean tr.lv-sl td.px{box-shadow:inset 3px 0 0 #d9534f} table.lad.clean tr.lv-pv td.px{box-shadow:inset 3px 0 0 #e8b931}
+.kstrip{display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding:3px 6px;font-size:calc(10px * var(--ladz,1));color:#9aa6b8;position:sticky;z-index:3;background:var(--panel,#10141c)}
+.kstrip.up{top:0;border-bottom:1px solid rgba(255,255,255,.08)} .kstrip.dn{bottom:0;border-top:1px solid rgba(255,255,255,.08)}
+.kstrip .kp{display:inline-flex;gap:4px;align-items:baseline;padding:0 5px;border-radius:3px;white-space:nowrap}
+.kstrip .kp b{font-weight:800} .kstrip .kp i{font-style:normal;opacity:.8}
+.kstrip .kp.res{background:rgba(255,77,94,.14);color:#ff8a96;border:1px solid rgba(255,77,94,.4)}
+.kstrip .kp.sup{background:rgba(38,208,124,.12);color:#5fe0a0;border:1px solid rgba(38,208,124,.4)}
+.kstrip .kp.mine{background:rgba(232,185,49,.14);color:#e8b931;border:1px solid rgba(232,185,49,.5)}
+table.lad.clean tr.gap td{border-top:2px dashed rgba(150,165,190,.45)}
 
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
@@ -2403,7 +2411,16 @@ function ladderCleanHTML(L){
   };
   const urg = (r, side) => { const n = r[side] || 0; if (!n) return `<td class="ug ${side}"></td>`;
     const w = Math.max(8, Math.round(100 * n / um)); return `<td class="ug ${side} on" title="${sz(n)} shares ${side === "u_s" ? "hit the bid" : "lifted the offer"} here in the last few seconds"><i style="width:${w}%"></i><span>${kfmt(n)}</span></td>`; };
-  let h = `<table class="lad clean" data-cols="ladc"><tr>
+  // every level OFF the rows still shows: above the ladder (nearest first) and below it, with how far it is
+  const top = +L.rows[0].price, bot = +L.rows[L.rows.length - 1].price, tk = +L.tick || 0.01;
+  const off = (L.marks || []).filter(m => (m.role === "key" || (typeof LVROLE !== "undefined" && LVROLE[m.role] && !/^reload|flow|strike/.test(m.role))) && (m.price > top || m.price < bot));
+  const pill = (m, up) => { const d = m.price - (last != null ? last : m.price), t = Math.round(Math.abs(d) / tk);
+    const nm = typeof lvWords === "function" ? lvWords(m, true) : (m.short || m.label);
+    return `<span class="kp ${m.role === "key" ? (up ? "res" : "sup") : "mine"}" title="${esc((m.label || nm) + " " + px(m.price))}"><b>${esc(nm)}</b> ${px(m.price)} <i>${d >= 0 ? "+" : "−"}${Math.abs(d).toFixed(2)}${t <= 99 ? " · " + t + "t" : ""}</i></span>`; };
+  const above = off.filter(m => m.price > top).sort((a, b) => a.price - b.price).slice(0, 6);
+  const below = off.filter(m => m.price < bot).sort((a, b) => b.price - a.price).slice(0, 6);
+  let h = `<div class="kstrip up">${above.length ? "▲ " + above.map(m => pill(m, true)).join("") : `<span class="dim">no levels above</span>`}</div>`;
+  h += `<table class="lad clean" data-cols="ladc"><tr>
     <th data-w="46" data-min="16" title="sellers HITTING the bid here in the last few seconds">HIT</th>
     <th class="szh" data-w="56" data-min="24" title="buyers WAITING to buy here (passive). Bright = big / stacking · faded = being pulled · R = reload buyer. Click: BUY here">BID</th>
     <th class="pxh" data-w="74" data-min="40">PRICE</th>
@@ -2417,7 +2434,7 @@ function ladderCleanHTML(L){
       (r.bid_state === "RELOAD" || r.bid_proven) ? "rl-bid" : "", (r.ask_state === "RELOAD" || r.ask_proven) ? "rl-ask" : ""].join(" ");
     h += `<tr class="${cls}" data-price="${r.price}">${urg(r, "u_s")}${passive(r, "bid")}<td class="px">${px(r.price)}${tags ? `<span class="kts">${tags}</span>` : ""}</td>${passive(r, "ask")}${urg(r, "u_b")}</tr>`;
   }
-  h += `</table><div class="legend lgc"><span><b class="sell">HIT</b> sellers now · <b class="buy">BID</b> buyers waiting · <b class="sell">ASK</b> sellers waiting · <b class="buy">LIFT</b> buyers now</span><span class="dim">bright = stacked · faded = pulled · R = reload${on ? " · click a size to trade" : ""}</span></div>`;
+  h += `</table><div class="kstrip dn">${below.length ? "▼ " + below.map(m => pill(m, false)).join("") : `<span class="dim">no levels below</span>`}</div><div class="legend lgc"><span><b class="sell">HIT</b> sellers now · <b class="buy">BID</b> buyers waiting · <b class="sell">ASK</b> sellers waiting · <b class="buy">LIFT</b> buyers now</span><span class="dim">bright = stacked · faded = pulled · R = reload${on ? " · click a size to trade" : ""}</span></div>`;
   return h;
 }
 function ladderHTML(L){
@@ -6783,8 +6800,8 @@ function tradeAsBox(sym, se, onPick, onCancel){
 const LVROLE = {trigger: ["PIVOT", "pv"], second_entry: ["2ND ENTRY", "se"], target: ["TARGET", "tg"], stop: ["STOP", "sl"], extra: ["LEVEL", "ex"],
   sneaky: ["SNEAKY PIVOT", "sn"], sneaky_auto: ["SNEAKY", "sn"], hod: ["HIGH OF DAY", "hl"], lod: ["LOW OF DAY", "hl"], strike: ["STRIKE", "st"],
   reload_bid: ["RELOAD BUYER", "rb"], reload_ask: ["RELOAD SELLER", "ra"], entry: ["YOUR ENTRY", "hl"], flow: ["FLOW", "st"],
-  vwap: ["VWAP", "vw"], sma50: ["50-DAY SMA", "d50"]};
-const LVRANK = {entry: 0, stop: 0, second_entry: 1, target: 2, trigger: 3, sneaky: 4, reload_bid: 5, reload_ask: 5, flow: 6, strike: 6, sneaky_auto: 7, extra: 8, vwap: 6, sma50: 6, hod: 9, lod: 9};
+  vwap: ["VWAP", "vw"], sma50: ["50-DAY SMA", "d50"], key: ["KEY LEVEL", "key"]};
+const LVRANK = {key: 5, entry: 0, stop: 0, second_entry: 1, target: 2, trigger: 3, sneaky: 4, reload_bid: 5, reload_ask: 5, flow: 6, strike: 6, sneaky_auto: 7, extra: 8, vwap: 6, sma50: 6, hod: 9, lod: 9};
 const LVSHORT = {entry: "ENTRY", trigger: "PIV", second_entry: "2ND", target: "TGT", stop: "STOP", extra: "LVL", sneaky: "SNKY", sneaky_auto: "SNKY·T", hod: "HOD", lod: "LOD", sma50: "50D"};
 function lvWords(m, short){
   const base = short && LVSHORT[m.role] ? LVSHORT[m.role] : (LVROLE[m.role] || [m.label])[0];
@@ -6792,6 +6809,7 @@ function lvWords(m, short){
   if (m.role === "flow") return `${short ? "" : "OPTION FLOW "}${usdK(m.prem)}${m.n > 1 ? " ×" + m.n : ""}${short ? "" : m.buyside ? " (paid the ask)" : " (hit the bid)"}`;
   if (m.role === "reload_bid" || m.role === "reload_ask") return short ? `${m.role === "reload_bid" ? "BUYER" : "SELLER"} ↻${m.refills || ""}` : `${base} ↻${m.refills || ""}`;
   if (m.role === "vwap") return m.label === "PM VWAP" ? (short ? "PMVWAP" : "PREMARKET VWAP") : "VWAP";
+  if (m.role === "key") return short ? m.short : m.label;
   if (m.est) return (short ? "≈" : "≈ ") + base + (short ? "" : ` (when ${m.sym} trades ${px(m.at)})`);
   return base + (m.alt && !short ? " (other side)" : "");
 }

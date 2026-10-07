@@ -731,10 +731,30 @@ class Engine:
             sv = ((st.__dict__.get("_studies") or {}).get("v")) or {}
             for L in (sv.get("air") or {}).get("lines") or []:
                 lab = str(L.get("l") or "")
-                if L.get("p") is not None and lab.startswith(("REJECT Daily", "BOUNCE Daily")):
+                if L.get("p") is not None and lab.startswith(("REJECT ", "BOUNCE ")):
                     rej = lab.startswith("REJECT")
-                    add("DREJ" if rej else "DBNC", L["p"], name="DAILY REJECT" if rej else "DAILY BOUNCE",
-                        say="the daily reject" if rej else "the daily bounce", short="DR" if rej else "DB")
+                    tf = lab.split(" ")[1] if len(lab.split(" ")) > 1 else ""
+                    tf = tf if tf in ("Daily", "Weekly", "Monthly") else ""
+                    w = (tf + " " if tf else "") + ("reject" if rej else "bounce")
+                    add(("D" if tf == "Daily" else tf[:1].upper() if tf else "") + ("REJ" if rej else "BNC"), L["p"], name=w.upper(),
+                        say="the " + w.lower(), short=(tf[:1].upper() if tf else "") + ("R" if rej else "B"))
+            for L in (sv.get("gas") or {}).get("lines") or []:
+                lab = str(L.get("l") or "")
+                if L.get("p") is None:
+                    continue
+                if lab.startswith(("EARN H", "EARN L")):
+                    hi = lab.startswith("EARN H")
+                    add("EARNH" if hi else "EARNL", L["p"], name="EARNINGS HIGH" if hi else "EARNINGS LOW",
+                        say="the earnings high" if hi else "the earnings low", short="EH" if hi else "EL")
+                elif lab.startswith(("BOX EDGE", "TIGHT BOX EDGE")):
+                    add("BOX", L["p"], name="BOX EDGE", say="the box edge", short="BX")
+            for z in (st.play or {}).get("zones") or []:
+                try:
+                    zl, zh = sorted((float(z[0]), float(z[1])))
+                except (TypeError, ValueError, IndexError):
+                    continue
+                add("ZONE", zh, name=f"YOUR ZONE TOP {zl:.2f}-{zh:.2f}", say="the top of your zone", short="Z▲")
+                add("ZONE", zl, name=f"YOUR ZONE BOTTOM {zl:.2f}-{zh:.2f}", say="the bottom of your zone", short="Z▼")
             for L in (sv.get("uv") or {}).get("lines") or []:
                 lab = str(L.get("l") or "")
                 if L.get("p") is None or " @ " not in lab:
@@ -3905,6 +3925,9 @@ class Engine:
             k = price_key(lv["price"], tk)
             tags.setdefault(k, []).append(lv["label"])
         marks = self._ladder_marks(st, t, user_levels, st.price())
+        _sv = ((st.__dict__.get("_studies") or {}).get("v")) or {}
+        _atr = ((_sv.get("gas") or {}).get("y_atr")) or 0.0
+        reach = int(min(1500, max(80, 1.5 * _atr / tk))) if tk else 80
         lvmap = {}
         for m in marks:
             k = price_key(m["price"], tk)
@@ -3912,7 +3935,10 @@ class Engine:
             # YOUR lines (pivot, 2nd entry, stop, target, your levels) get their own row past a gap so you see them
             # come: they only change when you draw. Marks that come and go (flow strikes, reloaders, auto sneaky
             # pivots, HOD / LOD) do NOT add rows (that made the ladder grow, shrink and jump): the strip lists them
-            if k not in keys and abs(k - ck) <= 80 and m["role"] in self.LADDER_ROW_ROLES:
+            # YOUR lines and the KEY LEVELS (prior day, premarket, after hours, open, VWAP, 50-day, daily reject /
+            # bounce, prior highs / lows) get a row within reach (1.5 daily ATR): trade them from the ladder. They are
+            # set for the day, so the ladder does not jump; further out, the strips above / below list them
+            if k not in keys and abs(k - ck) <= reach and (m["role"] in self.LADDER_ROW_ROLES or m["role"] in ("key", "vwap", "sma50")):
                 keys.append(k)
         keys = sorted(set(keys), reverse=True)
         self._prune_memory(st, t)

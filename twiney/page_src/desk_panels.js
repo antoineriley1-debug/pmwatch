@@ -2725,8 +2725,8 @@ function tradeAsBox(sym, se, onPick, onCancel){
 const LVROLE = {trigger: ["PIVOT", "pv"], second_entry: ["2ND ENTRY", "se"], target: ["TARGET", "tg"], stop: ["STOP", "sl"], extra: ["LEVEL", "ex"],
   sneaky: ["SNEAKY PIVOT", "sn"], sneaky_auto: ["SNEAKY", "sn"], hod: ["HIGH OF DAY", "hl"], lod: ["LOW OF DAY", "hl"], strike: ["STRIKE", "st"],
   reload_bid: ["RELOAD BUYER", "rb"], reload_ask: ["RELOAD SELLER", "ra"], entry: ["YOUR ENTRY", "hl"], flow: ["FLOW", "st"],
-  vwap: ["VWAP", "vw"], sma50: ["50-DAY SMA", "d50"]};
-const LVRANK = {entry: 0, stop: 0, second_entry: 1, target: 2, trigger: 3, sneaky: 4, reload_bid: 5, reload_ask: 5, flow: 6, strike: 6, sneaky_auto: 7, extra: 8, vwap: 6, sma50: 6, hod: 9, lod: 9};
+  vwap: ["VWAP", "vw"], sma50: ["50-DAY SMA", "d50"], key: ["KEY LEVEL", "key"]};
+const LVRANK = {key: 5, entry: 0, stop: 0, second_entry: 1, target: 2, trigger: 3, sneaky: 4, reload_bid: 5, reload_ask: 5, flow: 6, strike: 6, sneaky_auto: 7, extra: 8, vwap: 6, sma50: 6, hod: 9, lod: 9};
 const LVSHORT = {entry: "ENTRY", trigger: "PIV", second_entry: "2ND", target: "TGT", stop: "STOP", extra: "LVL", sneaky: "SNKY", sneaky_auto: "SNKY·T", hod: "HOD", lod: "LOD", sma50: "50D"};
 function lvWords(m, short){
   const base = short && LVSHORT[m.role] ? LVSHORT[m.role] : (LVROLE[m.role] || [m.label])[0];
@@ -2734,6 +2734,7 @@ function lvWords(m, short){
   if (m.role === "flow") return `${short ? "" : "OPTION FLOW "}${usdK(m.prem)}${m.n > 1 ? " ×" + m.n : ""}${short ? "" : m.buyside ? " (paid the ask)" : " (hit the bid)"}`;
   if (m.role === "reload_bid" || m.role === "reload_ask") return short ? `${m.role === "reload_bid" ? "BUYER" : "SELLER"} ↻${m.refills || ""}` : `${base} ↻${m.refills || ""}`;
   if (m.role === "vwap") return m.label === "PM VWAP" ? (short ? "PMVWAP" : "PREMARKET VWAP") : "VWAP";
+  if (m.role === "key") return short ? m.short : m.label;
   if (m.est) return (short ? "≈" : "≈ ") + base + (short ? "" : ` (when ${m.sym} trades ${px(m.at)})`);
   return base + (m.alt && !short ? " (other side)" : "");
 }
