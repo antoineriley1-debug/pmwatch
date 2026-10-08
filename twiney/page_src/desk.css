@@ -947,3 +947,14 @@ table.lad.clean td.sz.rl.rl-live .szn{color:#fff;font-weight:800}
 .p-tape .t.tape2 tr.rlhit.s td{background:rgba(255,77,94,.32);box-shadow:inset 0 0 0 1px #ffa0a8,inset 0 0 10px rgba(255,77,94,.55)}
 .p-tape .t.tape2 tr.rlhit td{color:#fff;font-weight:800}
 .p-tape .t.tape2 .rltag{display:inline-block;font:800 9px var(--sans);padding:0 3px;margin-right:4px;border-radius:2px;background:#e8b931;color:#111;vertical-align:1px}
+
+/* RELOAD BASKET: the R$ pill on the Level II bar and its little reload-only Level II */
+#rlBasket .rbk-pill{font:700 10px var(--mono);padding:1px 6px;border-radius:9px;white-space:nowrap} #rlBasket .rbk-pill b{font-weight:800} #rlBasket .rbk-pill .b{color:var(--buy)} #rlBasket .rbk-pill .s{color:var(--sell)}
+.rbk-pop{min-width:290px;padding:5px 6px !important;font:11px var(--mono)}
+.rbk-pop .rbk-h{display:flex;justify-content:space-between;font-weight:800;color:#fff;margin-bottom:3px;letter-spacing:.04em}
+.rbk-t{width:100%;border-collapse:collapse} .rbk-t th{font-size:9px;color:var(--dim);font-weight:700;padding:1px 4px;text-align:center}
+.rbk-t td{padding:1px 5px;text-align:right;white-space:nowrap;border-top:1px solid #1b222c} .rbk-t td.px{text-align:center;color:#fff;font-weight:700;background:#141a22}
+.rbk-t td.b{color:var(--buy)} .rbk-t td.s{color:var(--sell);text-align:left} .rbk-t td.usd{font-weight:800}
+.rbk-t td.gone{opacity:.45} .rbk-t td i{display:block;font-style:normal;font-size:9px;color:#fff;opacity:.85}
+.rbk-t td.b.here{background:#14532f;box-shadow:inset 0 0 0 1px #37e08c} .rbk-t td.s.here{background:#5a1820;box-shadow:inset 0 0 0 1px #ff6b7a}
+.rbk-t tr.atpx td.px{background:#e8b931;color:#111} .rbk-t tr.tot td{border-top:1px solid #3a4656;font-weight:800;padding-top:3px}

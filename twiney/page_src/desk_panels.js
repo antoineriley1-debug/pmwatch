@@ -39,7 +39,8 @@ const CS_DEF = [
   ["TRADING", [["check", "levels", "Your levels (pivot, 2nd entry, stop, target)", true], ["check", "orders", "Working order lines", true],
     ["check", "chip", "2nd entry order chip", true], ["check", "bigmoney", "Big option money (30 days) at its strikes", false],
     ["check", "trapped", "Trapped crowd's exit (their average price)", false], ["check", "trapband", "Trapped buyers / sellers band (last 10 min)", false],
-    ["check", "stopRisk", "Stop $ label: what you lose if the stop is hit (shares or contracts)", true], ["range", "stopRiskPx", "Stop $ label size (px)", 10, 8, 16, true]]],
+    ["check", "stopRisk", "Stop $ label: what you lose if the stop is hit (shares or contracts)", true], ["range", "stopRiskPx", "Stop $ label size (px)", 10, 8, 16, true],
+    ["range", "flyMax", "Prints that fly to T&S at once (big + reload fills)", 4, 1, 12, true]]],
   ["INDICATORS", [["check", "vwap", "VWAP", true, true], ["check", "mas", "Moving averages", true, true], ["check", "matags", "MA price tags", true, true],
     ["check", "bb", "Bollinger bands", true, true]]],
 ];
@@ -174,7 +175,7 @@ function renderBook(d){
   // a fresh RELOAD call flashes its row so the eye lands on it
   const fresh = (state.alerts || []).filter(a => a.symbol === d.symbol && /^RELOAD/.test(a.label) && state.now - a.t < 6);
   for (const a of fresh){ const row = wrap.querySelector(`tr[data-price="${a.price}"]`); if (row && !row.classList.contains("flash")) row.classList.add("flash"); }
-  rlBanner(wrap, d);
+  rlBanner(wrap, d); renderRlBasket(d);
 }
 /* OPTION CHAIN: expiries and strikes from IBKR (the practice desk makes its own), quotes and Greeks for the strikes
    around the spot, BUY / SELL to open from the row. Polled on its own (not in the big state payload) while the
@@ -476,6 +477,33 @@ function levelStory(r, side){
   return parts.filter(Boolean).join(" · ");
 }
 /* the banner over the ladder: every proven reload buyer / seller on this symbol, where he is, and a click to jump there */
+/* THE RELOAD BASKET: minimized, the dollars the reload buyers bought and the reload sellers sold today; open, their
+   own small Level II: each price, what was bought (buyers' side) or sold (sellers' side) there, in shares and dollars,
+   whether he is still there (glowing, with what he shows) or gone (dim). */
+function renderRlBasket(d){
+  const box = document.getElementById("rlBasket"); if (!box) return;
+  const bk = (d && d.reload_basket) || {rows: [], buy_usd: 0, sell_usd: 0}, pill = box.querySelector(".rbk-pill"), pop = box.querySelector(".rbk-pop");
+  const ph = bk.rows.length ? `R$ <b class="b">▲ ${usdK(bk.buy_usd)}</b> <b class="s">▼ ${usdK(bk.sell_usd)}</b>` : "R$ —";
+  if (pill.dataset.h !== ph){ pill.dataset.h = ph; pill.innerHTML = ph; }
+  if (!box.classList.contains("open")) return;
+  const bs = bk.rows.filter(r => r.side === "bid").reduce((a, r) => a + r.shares, 0), ss = bk.rows.filter(r => r.side === "ask").reduce((a, r) => a + r.shares, 0);
+  const prices = [...new Set(bk.rows.map(r => r.price))].sort((a, b) => b - a);
+  const cell = (r, side) => r ? `<td class="${side} ${r.here ? "here" : "gone"}" title="${side === "b" ? "reload BUYER" : "reload SELLER"} ${px(r.price)} · refilled ${r.refills}× · ${r.here ? `showing ${sz(r.showing)} now` : "not there now"}">${sz(r.shares)}${r.here ? `<i>+${kfmt(r.showing)} now</i>` : ""}</td>` : `<td class="${side}"></td>`;
+  const usd = (r, side) => `<td class="${side} usd ${r ? (r.here ? "here" : "gone") : ""}">${r ? usdK(r.usd) : ""}</td>`;
+  const h = `<div class="rbk-h">RELOAD BASKET · ${esc(d.symbol)}<span class="dim">today</span></div>` + (prices.length ? `<table class="rbk-t"><tr><th>BUYER $</th><th>BOUGHT</th><th>PRICE</th><th>SOLD</th><th>SELLER $</th></tr>` +
+    prices.map(p0 => { const b = bk.rows.find(r => r.price === p0 && r.side === "bid"), a = bk.rows.find(r => r.price === p0 && r.side === "ask");
+      const last = d.last != null && Math.abs(+d.last - p0) < 0.0051;
+      return `<tr class="${last ? "atpx" : ""}">${usd(b, "b")}${cell(b, "b")}<td class="px">${px(p0)}</td>${cell(a, "s")}${usd(a, "s")}</tr>`; }).join("") +
+    `<tr class="tot"><td class="b usd">${usdK(bk.buy_usd)}</td><td class="b">${sz(bs)}</td><td class="px">TOTAL</td><td class="s">${sz(ss)}</td><td class="s usd">${usdK(bk.sell_usd)}</td></tr></table>`
+    : `<div class="dim" style="padding:6px">No reload buyers or sellers yet today.</div>`);
+  if (pop.dataset.h !== h){ pop.dataset.h = h; pop.innerHTML = h; }
+}
+document.addEventListener("click", e => {
+  const b = e.target.closest("#rlBasket .rbk-pill"); if (!b) return;
+  e.stopPropagation(); const m = b.closest(".menu"), open = !m.classList.contains("open");
+  document.querySelectorAll(".menu.open").forEach(x => x.classList.remove("open")); m.classList.toggle("open", open);
+  if (open){ m.querySelector(".rbk-pop").dataset.h = ""; renderRlBasket(curData()); if (typeof placePop === "function") placePop(m); }
+}, true);
 function rlBanner(wrap, d){
   const ban = document.getElementById("rlBan"); if (!ban) return;
   const rows = (d.ladder && d.ladder.rows) || [];
@@ -536,7 +564,7 @@ function flyBigPrints(d){
   let n = 0;
   for (const r of (d.tape.recent || [])){
     const rlk = rlAt[(+r.price) + "|" + r.side];
-    if (r.age > 2 || n >= 4 || (r.size < big && !rlk)) continue;
+    if (r.age > 2 || n >= Math.max(1, +store.get("flyMax", 4) || 4) || (r.size < big && !rlk)) continue;
     const key = `${d.symbol}|${r.price}|${r.size}|${r.exchange}|${Math.round((state.now - r.age) * 2)}`;
     if (FLOWN.has(key)) continue; FLOWN.set(key, now); n++;
     const row = P.book.el.querySelector(`.ladder-wrap tr[data-price="${r.price}"]`), dst = P.tape.el.querySelector(".tape2");

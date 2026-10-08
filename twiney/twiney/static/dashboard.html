@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261008-0559">
+<meta name="build" content="20261008-0611">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -1260,6 +1260,17 @@ table.lad.clean td.sz.rl.rl-live .szn{color:#fff;font-weight:800}
 .p-tape .t.tape2 tr.rlhit td{color:#fff;font-weight:800}
 .p-tape .t.tape2 .rltag{display:inline-block;font:800 9px var(--sans);padding:0 3px;margin-right:4px;border-radius:2px;background:#e8b931;color:#111;vertical-align:1px}
 
+/* RELOAD BASKET: the R$ pill on the Level II bar and its little reload-only Level II */
+#rlBasket .rbk-pill{font:700 10px var(--mono);padding:1px 6px;border-radius:9px;white-space:nowrap} #rlBasket .rbk-pill b{font-weight:800} #rlBasket .rbk-pill .b{color:var(--buy)} #rlBasket .rbk-pill .s{color:var(--sell)}
+.rbk-pop{min-width:290px;padding:5px 6px !important;font:11px var(--mono)}
+.rbk-pop .rbk-h{display:flex;justify-content:space-between;font-weight:800;color:#fff;margin-bottom:3px;letter-spacing:.04em}
+.rbk-t{width:100%;border-collapse:collapse} .rbk-t th{font-size:9px;color:var(--dim);font-weight:700;padding:1px 4px;text-align:center}
+.rbk-t td{padding:1px 5px;text-align:right;white-space:nowrap;border-top:1px solid #1b222c} .rbk-t td.px{text-align:center;color:#fff;font-weight:700;background:#141a22}
+.rbk-t td.b{color:var(--buy)} .rbk-t td.s{color:var(--sell);text-align:left} .rbk-t td.usd{font-weight:800}
+.rbk-t td.gone{opacity:.45} .rbk-t td i{display:block;font-style:normal;font-size:9px;color:#fff;opacity:.85}
+.rbk-t td.b.here{background:#14532f;box-shadow:inset 0 0 0 1px #37e08c} .rbk-t td.s.here{background:#5a1820;box-shadow:inset 0 0 0 1px #ff6b7a}
+.rbk-t tr.atpx td.px{background:#e8b931;color:#111} .rbk-t tr.tot td{border-top:1px solid #3a4656;font-weight:800;padding-top:3px}
+
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
   --buy:#3fb56f;--sell:#d9534f;--gold:#e3a83a;--cyan:#5aa9d6;--violet:#a48bd6;--warn:#d9a441;
@@ -1636,7 +1647,7 @@ body.resizing .zbody{pointer-events:none}
   <div class="pnl" data-p="ochart"><div class="ochead" id="ochHead"></div><div class="pc nos"><div class="chart-wrap"><canvas></canvas></div></div></div>
   <div class="pnl" data-p="chart"><div class="qs"></div><div class="fast" id="fastStock"></div><div class="optpos" id="optPosStrip"></div><div class="cvstrip" id="cvStrip"></div><div class="pc nos"><div class="chart-wrap"><div class="chart-tools"></div><canvas></canvas></div></div></div>
   <div class="pnl" data-p="foot"><div class="pc nos"><div class="chart-wrap"><div class="chart-tools"><span class="dim" style="font-size:10.5px;background:rgba(17,22,31,.85);padding:1px 6px">5m FOOTPRINT · SELLERS HIT BID × BUYERS PAID UP</span></div><canvas></canvas></div></div></div>
-  <div class="pnl" data-p="book"><div class="ladstat" id="ladStat"></div><div class="ladbar"><span class="bigset"><span>BIG ≥</span><input id="bigIn" type="number" min="100" step="500" title="shares that count as big on this symbol's ladder. Highlighted when showing; ×N = how many separate times it has shown up at that price today"><span class="dim">sh</span><button id="bigReset" title="back to the config default">DEFAULT</button><span class="dim" id="bigHint"></span></span><span class="qtybox" title="shares per ladder click (the ticket follows)"><span>QTY</span><input id="ladQty" type="number" min="1" step="1"><span id="ladPresets"></span></span><span class="spacer"></span><button id="ladMode" title="SIMPLE: bid · price · ask — size drains as it gets attacked, reloaders solid with ↻N, option money as an edge mark. TIGHT: adds HIT / PAID and CALLS / PUTS columns. WIDE: everything spelled out">SIMPLE</button><span class="menu" id="colsMenu"><button title="columns">COLS</button><div class="pop" id="colsPop"><h5>LEVEL II COLUMNS</h5><button class="howto" data-howto="1" style="margin-bottom:4px">HOW TO READ IT</button><label><input type="checkbox" data-col="trade" checked> BUY / SELL buttons</label><label><input type="checkbox" data-col="bars" checked> flow bars (sold into bid / bought at ask)</label><label><input type="checkbox" data-col="who" checked> reload tags</label><label><input type="checkbox" data-col="flow" checked> option flow marks (where the stock was when big flow hit)</label><label><input type="checkbox" data-col="center" checked> auto-centre on price</label><label><input type="checkbox" data-storyline> PS60 story line over the ladder</label><label><input type="checkbox" data-bigset> show the BIG size setting (BIG ≥ · DEFAULT · huge)</label><label>Click a size <select data-ladclick><option value="join">JOIN: bid side = BUY there, ask side = SELL there</option><option value="hit">HIT: bid side = SELL into it, ask side = BUY from it</option></select></label><label>Rows above / below <select data-rows><option value="8">8</option><option value="12" selected>12</option><option value="20">20</option><option value="30">30</option></select></label><label>Row height <select data-ladh><option value="1">normal</option><option value="0.85">tight</option><option value="1.2">tall</option></select></label><label style="margin-top:6px">Text size <select data-ladz><option value="0.75">tiny</option><option value="0.88">small</option><option value="1">normal</option><option value="1.2">bigger</option><option value="1.4">biggest (widen the LEVEL II pane)</option></select></label><div class="dim" style="font-size:10.5px;margin-top:6px">Drag the grip at the right edge of any header to resize. Double-click a grip to reset.</div></div></span></div><div class="rlban" id="rlBan"></div><div class="pc"><div class="ladder-wrap"></div></div></div>
+  <div class="pnl" data-p="book"><div class="ladstat" id="ladStat"></div><div class="ladbar"><span class="bigset"><span>BIG ≥</span><input id="bigIn" type="number" min="100" step="500" title="shares that count as big on this symbol's ladder. Highlighted when showing; ×N = how many separate times it has shown up at that price today"><span class="dim">sh</span><button id="bigReset" title="back to the config default">DEFAULT</button><span class="dim" id="bigHint"></span></span><span class="qtybox" title="shares per ladder click (the ticket follows)"><span>QTY</span><input id="ladQty" type="number" min="1" step="1"><span id="ladPresets"></span></span><span class="spacer"></span><span class="menu rbk" id="rlBasket"><button class="rbk-pill" title="RELOAD BASKET: the dollars the reload buyers bought and the reload sellers sold today on this stock. Click: their own little Level II, price by price">R$ —</button><div class="pop rbk-pop"></div></span><button id="ladMode" title="SIMPLE: bid · price · ask — size drains as it gets attacked, reloaders solid with ↻N, option money as an edge mark. TIGHT: adds HIT / PAID and CALLS / PUTS columns. WIDE: everything spelled out">SIMPLE</button><span class="menu" id="colsMenu"><button title="columns">COLS</button><div class="pop" id="colsPop"><h5>LEVEL II COLUMNS</h5><button class="howto" data-howto="1" style="margin-bottom:4px">HOW TO READ IT</button><label><input type="checkbox" data-col="trade" checked> BUY / SELL buttons</label><label><input type="checkbox" data-col="bars" checked> flow bars (sold into bid / bought at ask)</label><label><input type="checkbox" data-col="who" checked> reload tags</label><label><input type="checkbox" data-col="flow" checked> option flow marks (where the stock was when big flow hit)</label><label><input type="checkbox" data-col="center" checked> auto-centre on price</label><label><input type="checkbox" data-storyline> PS60 story line over the ladder</label><label><input type="checkbox" data-bigset> show the BIG size setting (BIG ≥ · DEFAULT · huge)</label><label>Click a size <select data-ladclick><option value="join">JOIN: bid side = BUY there, ask side = SELL there</option><option value="hit">HIT: bid side = SELL into it, ask side = BUY from it</option></select></label><label>Rows above / below <select data-rows><option value="8">8</option><option value="12" selected>12</option><option value="20">20</option><option value="30">30</option></select></label><label>Row height <select data-ladh><option value="1">normal</option><option value="0.85">tight</option><option value="1.2">tall</option></select></label><label style="margin-top:6px">Text size <select data-ladz><option value="0.75">tiny</option><option value="0.88">small</option><option value="1">normal</option><option value="1.2">bigger</option><option value="1.4">biggest (widen the LEVEL II pane)</option></select></label><div class="dim" style="font-size:10.5px;margin-top:6px">Drag the grip at the right edge of any header to resize. Double-click a grip to reset.</div></div></span></div><div class="rlban" id="rlBan"></div><div class="pc"><div class="ladder-wrap"></div></div></div>
   <div class="pnl" data-p="tape"><div class="pc"><div class="p-tape"></div></div></div>
   <div class="pnl" data-p="bigtape"><div class="pc"><div class="p-bigtape"><div class="bt-hd"><span class="btflt" title="show only prints and builders at least this big: shares and dollars (blank = the configured bar)">MIN <input id="btMinSh" type="text" inputmode="numeric" placeholder="sh"> <input id="btMinUsd" type="text" inputmode="numeric" placeholder="$"></span><span class="menu" id="btMenu"><button title="columns">COLS</button><div class="pop" id="btPop"><h5>BIG TAPE COLUMNS</h5><label><input type="checkbox" data-btc="who"> who (PAID UP / HIT)</label><label><input type="checkbox" data-btc="times" checked> how many times</label><label><input type="checkbox" data-btc="shares" checked> shares</label><label><input type="checkbox" data-btc="usd"> dollars</label><label><input type="checkbox" data-btc="age" checked> LIVE / seconds</label><label><input type="checkbox" data-btc="blocks" checked> BLOCKS (single big prints)</label></div></span></div><div class="bt-body"></div></div></div></div>
   <div class="pnl" data-p="setup"><div class="pc"></div></div>
@@ -4392,7 +4403,8 @@ const CS_DEF = [
   ["TRADING", [["check", "levels", "Your levels (pivot, 2nd entry, stop, target)", true], ["check", "orders", "Working order lines", true],
     ["check", "chip", "2nd entry order chip", true], ["check", "bigmoney", "Big option money (30 days) at its strikes", false],
     ["check", "trapped", "Trapped crowd's exit (their average price)", false], ["check", "trapband", "Trapped buyers / sellers band (last 10 min)", false],
-    ["check", "stopRisk", "Stop $ label: what you lose if the stop is hit (shares or contracts)", true], ["range", "stopRiskPx", "Stop $ label size (px)", 10, 8, 16, true]]],
+    ["check", "stopRisk", "Stop $ label: what you lose if the stop is hit (shares or contracts)", true], ["range", "stopRiskPx", "Stop $ label size (px)", 10, 8, 16, true],
+    ["range", "flyMax", "Prints that fly to T&S at once (big + reload fills)", 4, 1, 12, true]]],
   ["INDICATORS", [["check", "vwap", "VWAP", true, true], ["check", "mas", "Moving averages", true, true], ["check", "matags", "MA price tags", true, true],
     ["check", "bb", "Bollinger bands", true, true]]],
 ];
@@ -4527,7 +4539,7 @@ function renderBook(d){
   // a fresh RELOAD call flashes its row so the eye lands on it
   const fresh = (state.alerts || []).filter(a => a.symbol === d.symbol && /^RELOAD/.test(a.label) && state.now - a.t < 6);
   for (const a of fresh){ const row = wrap.querySelector(`tr[data-price="${a.price}"]`); if (row && !row.classList.contains("flash")) row.classList.add("flash"); }
-  rlBanner(wrap, d);
+  rlBanner(wrap, d); renderRlBasket(d);
 }
 /* OPTION CHAIN: expiries and strikes from IBKR (the practice desk makes its own), quotes and Greeks for the strikes
    around the spot, BUY / SELL to open from the row. Polled on its own (not in the big state payload) while the
@@ -4829,6 +4841,33 @@ function levelStory(r, side){
   return parts.filter(Boolean).join(" · ");
 }
 /* the banner over the ladder: every proven reload buyer / seller on this symbol, where he is, and a click to jump there */
+/* THE RELOAD BASKET: minimized, the dollars the reload buyers bought and the reload sellers sold today; open, their
+   own small Level II: each price, what was bought (buyers' side) or sold (sellers' side) there, in shares and dollars,
+   whether he is still there (glowing, with what he shows) or gone (dim). */
+function renderRlBasket(d){
+  const box = document.getElementById("rlBasket"); if (!box) return;
+  const bk = (d && d.reload_basket) || {rows: [], buy_usd: 0, sell_usd: 0}, pill = box.querySelector(".rbk-pill"), pop = box.querySelector(".rbk-pop");
+  const ph = bk.rows.length ? `R$ <b class="b">▲ ${usdK(bk.buy_usd)}</b> <b class="s">▼ ${usdK(bk.sell_usd)}</b>` : "R$ —";
+  if (pill.dataset.h !== ph){ pill.dataset.h = ph; pill.innerHTML = ph; }
+  if (!box.classList.contains("open")) return;
+  const bs = bk.rows.filter(r => r.side === "bid").reduce((a, r) => a + r.shares, 0), ss = bk.rows.filter(r => r.side === "ask").reduce((a, r) => a + r.shares, 0);
+  const prices = [...new Set(bk.rows.map(r => r.price))].sort((a, b) => b - a);
+  const cell = (r, side) => r ? `<td class="${side} ${r.here ? "here" : "gone"}" title="${side === "b" ? "reload BUYER" : "reload SELLER"} ${px(r.price)} · refilled ${r.refills}× · ${r.here ? `showing ${sz(r.showing)} now` : "not there now"}">${sz(r.shares)}${r.here ? `<i>+${kfmt(r.showing)} now</i>` : ""}</td>` : `<td class="${side}"></td>`;
+  const usd = (r, side) => `<td class="${side} usd ${r ? (r.here ? "here" : "gone") : ""}">${r ? usdK(r.usd) : ""}</td>`;
+  const h = `<div class="rbk-h">RELOAD BASKET · ${esc(d.symbol)}<span class="dim">today</span></div>` + (prices.length ? `<table class="rbk-t"><tr><th>BUYER $</th><th>BOUGHT</th><th>PRICE</th><th>SOLD</th><th>SELLER $</th></tr>` +
+    prices.map(p0 => { const b = bk.rows.find(r => r.price === p0 && r.side === "bid"), a = bk.rows.find(r => r.price === p0 && r.side === "ask");
+      const last = d.last != null && Math.abs(+d.last - p0) < 0.0051;
+      return `<tr class="${last ? "atpx" : ""}">${usd(b, "b")}${cell(b, "b")}<td class="px">${px(p0)}</td>${cell(a, "s")}${usd(a, "s")}</tr>`; }).join("") +
+    `<tr class="tot"><td class="b usd">${usdK(bk.buy_usd)}</td><td class="b">${sz(bs)}</td><td class="px">TOTAL</td><td class="s">${sz(ss)}</td><td class="s usd">${usdK(bk.sell_usd)}</td></tr></table>`
+    : `<div class="dim" style="padding:6px">No reload buyers or sellers yet today.</div>`);
+  if (pop.dataset.h !== h){ pop.dataset.h = h; pop.innerHTML = h; }
+}
+document.addEventListener("click", e => {
+  const b = e.target.closest("#rlBasket .rbk-pill"); if (!b) return;
+  e.stopPropagation(); const m = b.closest(".menu"), open = !m.classList.contains("open");
+  document.querySelectorAll(".menu.open").forEach(x => x.classList.remove("open")); m.classList.toggle("open", open);
+  if (open){ m.querySelector(".rbk-pop").dataset.h = ""; renderRlBasket(curData()); if (typeof placePop === "function") placePop(m); }
+}, true);
 function rlBanner(wrap, d){
   const ban = document.getElementById("rlBan"); if (!ban) return;
   const rows = (d.ladder && d.ladder.rows) || [];
@@ -4889,7 +4928,7 @@ function flyBigPrints(d){
   let n = 0;
   for (const r of (d.tape.recent || [])){
     const rlk = rlAt[(+r.price) + "|" + r.side];
-    if (r.age > 2 || n >= 4 || (r.size < big && !rlk)) continue;
+    if (r.age > 2 || n >= Math.max(1, +store.get("flyMax", 4) || 4) || (r.size < big && !rlk)) continue;
     const key = `${d.symbol}|${r.price}|${r.size}|${r.exchange}|${Math.round((state.now - r.age) * 2)}`;
     if (FLOWN.has(key)) continue; FLOWN.set(key, now); n++;
     const row = P.book.el.querySelector(`.ladder-wrap tr[data-price="${r.price}"]`), dst = P.tape.el.querySelector(".tape2");

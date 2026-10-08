@@ -4425,6 +4425,35 @@ class Engine:
                 "builders": [dict(g, price=fmt_price(g["price"]), biggest=round(g["biggest"])) for g in b["builders"]],
                 "shares": b["shares"], "dollars": b["dollars"], "minutes": b["minutes"], "window": b["window"], "need": b["need"]}
 
+    def _reload_basket(self, st, t):
+        """THE RELOAD BASKET: every reload buyer and seller of the session on this stock, by price: the shares he
+        bought (a buyer) or sold (a seller) at that price over every visit, the dollars, how often he refilled, what he
+        shows now and whether he is there. One that leaves stays in the basket for the day."""
+        from . import studies
+        day = studies.day_key(t)
+        bk = st.__dict__.get("_rl_basket")
+        if bk is None or bk.get("day") != day:
+            bk = st.__dict__["_rl_basket"] = {"day": day, "rows": {}}
+        rows = bk["rows"]
+        for tr in list(st.trackers.values()):
+            if not (tr.state == RELOAD or tr.proven):
+                continue
+            key = ("bid" if tr.side == BID else "ask", price_key(tr.price))
+            sh = float(tr.absorbed_all + tr.absorbed_total)
+            r = rows.setdefault(key, {"side": key[0], "price": float(tr.price), "shares": 0.0, "refills": 0, "first": t})
+            r["shares"] = max(r["shares"], sh)
+            r["refills"] = max(r["refills"], int(max(tr.refreshes_window(t), tr.proven_refills if tr.proven else 0)))
+            r["showing"], r["seen"], r["stage"] = round(tr.displayed), t, tr.stage(t)
+        out = []
+        for (side, _k), r in rows.items():
+            here = t - r.get("seen", 0) < 2.0 and (r.get("showing") or 0) > 0
+            out.append({"side": side, "price": fmt_price(r["price"]), "shares": round(r["shares"]),
+                        "usd": round(r["shares"] * r["price"]), "refills": r["refills"], "showing": r.get("showing", 0) if here else 0,
+                        "here": here, "stage": r.get("stage"), "first": r["first"]})
+        out.sort(key=lambda x: -x["price"])
+        return {"rows": out, "buy_usd": sum(x["usd"] for x in out if x["side"] == "bid"),
+                "sell_usd": sum(x["usd"] for x in out if x["side"] == "ask")}
+
     def _reloaders(self, st, t, price):
         """Nearest confirmed / likely reloaders on each side of the market."""
         below, above = [], []
@@ -4548,6 +4577,7 @@ class Engine:
             "levels": levels,
             "trap": trap,
             "reloaders": reloaders,
+            "reload_basket": self._reload_basket(st, t),
             "user_levels": user_levels,
             "log": self.symbol_log(sym),
             "bigmoney": self.bigmoney.for_symbol(sym, st.price(), t, lambda d: self._close_on(st, d)) if self.bigmoney is not None else [],

@@ -1220,7 +1220,9 @@ def airspace(st, t, cfg, drows, live, g):
 def mt_label(m, side):
     d = ny(m["t0"] + 43200)
     # the date, high / low, price and how many trading days since it formed
-    return f"{MONTHS[d.month - 1]} {d.day} {side} @ {m['p']:.2f}" + (f"  {m['age']}d" if m.get("age") is not None else "")
+    # like the script: "Aug 20 high · 3x @ 123.45" (how many times it was tested), and how many days ago it formed
+    return (f"{MONTHS[d.month - 1]} {d.day} {side}" + (f" · {m['n']}x" if m.get("n") else "") + f" @ {m['p']:.2f}"
+            + (f"  {m['age']}d" if m.get("age") is not None else ""))
 
 
 # --------------------------------------------------------------------------------------------- UNVISITED HIGHS / LOWS

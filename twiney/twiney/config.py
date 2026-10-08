@@ -506,7 +506,7 @@ DEFAULTS = {
         "atr_levels": True,             # 1 / 2 / 3 ATR levels off today's range
         "atr_zones": True,              # THE ATR LADDER: quarter-ATR rungs, the part price has eaten coloured hotter as the tank empties
         "atr_ladder_step": 0.25,        # ATR ladder: one rung every this many ATRs
-        "atr_ladder_max": 2.0,          # ATR ladder: rungs up to this many ATRs
+        "atr_ladder_max": 3.0,          # ATR ladder: rungs up to this many ATRs (3 ATR like the GAS script)
         "atr_ladder_opacity": 32,       # ATR ladder: how strong the part price HAS eaten is coloured (0-100)
         "atr_ladder_left_opacity": 4,   # ATR ladder: how faint the part price has NOT eaten yet is (0-100)
         "atr_one_side": True,           # the ATR ladder only on the side the day is moving
