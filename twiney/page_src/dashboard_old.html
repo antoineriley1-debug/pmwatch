@@ -1996,15 +1996,6 @@ function drawOne(p, cv, v, isFoot){
       g.fillText(px(pr), plotW + 4, yy + 4);
     }
     g.setLineDash([]); g.font = "11px ui-monospace, Menlo, Consolas, monospace";
-    // eSignal-style session separators: a dotted line where each New York session opens
-    if (!isDaily && bars.length && CS("sessions")){
-      g.strokeStyle = C.dots ? "#333333" : C.axis; g.setLineDash([2, 4]);
-      for (let k = 1; k < bars.length; k++){
-        const eo = etOffset(bars[k][0]), a = Math.floor((bars[k - 1][0] + eo) / 86400), b = Math.floor((bars[k][0] + eo) / 86400);
-        if (a !== b){ const xx = x0 + k * cw; g.beginPath(); g.moveTo(xx, 0); g.lineTo(xx, plotH); g.stroke(); }
-      }
-      g.setLineDash([]);
-    }
     g.strokeStyle = C.axis; g.beginPath(); g.moveTo(plotW + .5, 0); g.lineTo(plotW + .5, plotH); g.stroke();
   }
 

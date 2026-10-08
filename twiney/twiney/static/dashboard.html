@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261008-1831">
+<meta name="build" content="20261008-2000">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -3014,15 +3014,6 @@ function drawOne(p, cv, v, isFoot){
       g.fillText(px(pr), plotW + 4, yy + 4);
     }
     g.setLineDash([]); g.font = "11px ui-monospace, Menlo, Consolas, monospace";
-    // eSignal-style session separators: a dotted line where each New York session opens
-    if (!isDaily && bars.length && CS("sessions")){
-      g.strokeStyle = C.dots ? "#333333" : C.axis; g.setLineDash([2, 4]);
-      for (let k = 1; k < bars.length; k++){
-        const eo = etOffset(bars[k][0]), a = Math.floor((bars[k - 1][0] + eo) / 86400), b = Math.floor((bars[k][0] + eo) / 86400);
-        if (a !== b){ const xx = x0 + k * cw; g.beginPath(); g.moveTo(xx, 0); g.lineTo(xx, plotH); g.stroke(); }
-      }
-      g.setLineDash([]);
-    }
     g.strokeStyle = C.axis; g.beginPath(); g.moveTo(plotW + .5, 0); g.lineTo(plotW + .5, plotH); g.stroke();
   }
 
@@ -4547,7 +4538,7 @@ const CS_DEF = [
     ["check", "lastLine", "Last price line", true], ["select", "lastStyle", "Last price line style", "dotted", ["dotted", "dashed", "solid"]],
     ["check", "lastLabel", "Last price label", true], ["check", "countdown", "Bar close countdown", true]]],
   ["CANVAS", [
-    ["color", "bgCol", "Background (light screens)", ""], ["check", "gridH", "Horizontal grid lines", true], ["check", "sessions", "Session separators", true],
+    ["color", "bgCol", "Background (light screens)", ""], ["check", "gridH", "Horizontal grid lines", true],
     ["select", "cross", "Crosshair", "auto", ["auto", "solid", "dashed", "dotted", "off"]], ["color", "crossCol", "Crosshair colour", ""],
     ["check", "crossSync", "Crosshair synced on every chart (same time)", true]]],
   ["TRADING", [["check", "levels", "Your levels (pivot, 2nd entry, stop, target)", true], ["check", "orders", "Working order lines", true],

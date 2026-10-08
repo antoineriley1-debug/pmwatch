@@ -33,7 +33,7 @@ const CS_DEF = [
     ["check", "lastLine", "Last price line", true], ["select", "lastStyle", "Last price line style", "dotted", ["dotted", "dashed", "solid"]],
     ["check", "lastLabel", "Last price label", true], ["check", "countdown", "Bar close countdown", true]]],
   ["CANVAS", [
-    ["color", "bgCol", "Background (light screens)", ""], ["check", "gridH", "Horizontal grid lines", true], ["check", "sessions", "Session separators", true],
+    ["color", "bgCol", "Background (light screens)", ""], ["check", "gridH", "Horizontal grid lines", true],
     ["select", "cross", "Crosshair", "auto", ["auto", "solid", "dashed", "dotted", "off"]], ["color", "crossCol", "Crosshair colour", ""],
     ["check", "crossSync", "Crosshair synced on every chart (same time)", true]]],
   ["TRADING", [["check", "levels", "Your levels (pivot, 2nd entry, stop, target)", true], ["check", "orders", "Working order lines", true],
