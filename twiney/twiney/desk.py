@@ -134,6 +134,8 @@ class Desk:
                 "exit_qty": 0.0, "exit_cost": 0.0, "setup": play.get("setup") or "",
                 "grade": "", "note": "", "pnl": None, "pnl_pct": None, "execs": [], "plan": plan,
                 "rec": self.current_recording(),
+                # the stock's price as you got in: an option trade's plan and R are read on the stock chart's lines
+                "u_entry": (st.price() if st is not None else None),
                 "flow": self.engine.flow.context_text(under, t) if getattr(self.engine, "flow", None) else ""}
 
     def on_fill(self, fill, t):
@@ -212,9 +214,21 @@ class Desk:
         tr["minutes"] = round((t - (tr.get("opened") or t)) / 60.0, 1)
         # the RESULT: win / loss (a scratch is within a tenth of a percent), and R against the stop you planned
         tr["result"] = "SCRATCH" if tr["pnl_pct"] is not None and abs(tr["pnl_pct"]) < 0.1 else ("WIN" if tr["pnl"] > 0 else "LOSS")
-        stop = (tr.get("plan") or {}).get("stop")
+        plan = tr.get("plan") or {}
+        stop, target = plan.get("stop"), plan.get("target")
+        bull = long_ if not tr.get("opt") else ((tr["symbol"].split(" ")[2].endswith("C")) == long_)
+        st_u = getattr(self.engine, "syms", {}).get(tr.get("underlying") or "")
+        tr["u_exit"] = st_u.price() if st_u is not None else None
+        # the PLAN's reward to risk as you got in: target distance / stop distance, from your entry (the stock's price
+        # at entry for an option: its lines are on the stock chart)
+        ref = entry if not tr.get("opt") else tr.get("u_entry")
+        if stop and target and ref and abs(ref - stop) > 1e-9:
+            tr["plan_rr"] = round(abs(target - ref) / abs(ref - stop), 2)
         if stop and not tr.get("opt") and abs(entry - stop) > 1e-9:
             tr["r"] = round((exit_ - entry) * (1 if long_ else -1) / abs(entry - stop), 2)
+        elif stop and tr.get("opt") and tr.get("u_entry") and tr.get("u_exit") and abs(tr["u_entry"] - stop) > 1e-9:
+            # an option's R: how far the STOCK went for you, against the stock stop you planned
+            tr["r"] = round((tr["u_exit"] - tr["u_entry"]) * (1 if bull else -1) / abs(tr["u_entry"] - stop), 2)
         self._fill_story(tr, t)
         self.trades.append({k: v for k, v in tr.items() if k not in ("qty", "entry_cost", "exit_cost", "exit_qty", "entry_qty", "legs")})
         self.engine._rec({"ev": "trade", "t": t, "trade": self.trades[-1]})
@@ -310,7 +324,9 @@ class Desk:
              f"- {tr['symbol']} · {tr['side'].upper()} {tr.get('shares', 0):g} {unit}" + (f" (× {mult:g})" if tr.get("opt") else ""),
              f"- In {when(tr.get('opened'))} @ {tr.get('entry')} · out {when(tr.get('closed'))} @ {tr.get('exit')} · {tr.get('minutes', '—')} min",
              f"- Setup: {tr.get('setup') or '—'} · grade: {tr.get('grade') or '—'}",
-             f"- Plan: " + (" · ".join(f"{k.replace('_', ' ').replace('trigger', 'pivot')} {v}" for k, v in plan.items()) or "—"),
+             f"- Plan: " + (" · ".join(f"{k.replace('_', ' ').replace('trigger', 'pivot')} {v}" for k, v in plan.items()) or "—")
+             + (f" · reward to risk {tr['plan_rr']:g} : 1" if tr.get("plan_rr") is not None else "")
+             + (f" · stock {tr['u_entry']} → {tr['u_exit']}" if tr.get("opt") and tr.get("u_entry") and tr.get("u_exit") else ""),
              f"- Option flow at entry: {tr.get('flow') or '—'}",
              f"- Recording: {tr.get('rec') or '—'}", "",
              "## Note", "", tr.get("note") or "_—_", "",
