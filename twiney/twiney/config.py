@@ -468,6 +468,8 @@ DEFAULTS = {
         "similarity": 0.8,              # 0-1: how closely it holds to the voice
         "speed": 1.05,                  # 0.7-1.2: speaking speed
         "base_url": "https://api.elevenlabs.io",
+        # The voice says a stock's name, never its ticker: about 590 built in (AAPL = Apple, NVDA = Nvidia, SPY = the S&P), else IBKR's company name. Your own names here win: AAPL=Apple, BRK B=Berkshire
+        "names": "",
     },
     # INSTITUTIONAL FOOTPRINTS: a fund's large order sliced by an execution algo (VWAP / % of volume), read off the tape
     "inst": {

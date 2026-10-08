@@ -2794,8 +2794,22 @@ function voicePump(){
 }
 // HOW A CALL IS SAID: prices as dollars ("337.19" → "$337.19": three hundred thirty-seven dollars nineteen),
 // $2.1M as "2.1 million dollars", VWAP as one word ("vee-wap"), never spelled out letter by letter
+// THE NAME DIRECTORY: "Apple", never "A-A-P-L" (the desk sends each stock's spoken name: yours from SETTINGS > Voice,
+// the built-in directory, else IBKR's company name). Only the stocks on the desk, whole capitalised words, longest first.
+let _nameRx = null, _nameKey = "";
+function sayNames(text){
+  const N = (typeof state !== "undefined" && state && state.names) || {};
+  const key = JSON.stringify(N);
+  if (key !== _nameKey){
+    _nameKey = key;
+    const syms = Object.keys(N).filter(k => N[k] && N[k] !== k).sort((a, b) => b.length - a.length);
+    _nameRx = syms.length ? new RegExp("(^|[^A-Za-z0-9.&'-])(" + syms.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/ /g, "[ .]")).join("|") + ")(?![A-Za-z0-9&-])", "g") : null;
+  }
+  if (!_nameRx) return text;
+  return text.replace(_nameRx, (m, pre, sym) => pre + (N[sym] || N[sym.replace(".", " ")] || N[sym.replace(" ", ".")] || sym));
+}
 function spokenText(text){
-  return String(text || "")
+  return sayNames(String(text || ""))
     .replace(/×/g, " times ")
     .replace(/\$\s?(\d+(?:\.\d+)?)\s?([MK])\b/gi, (m, n, u) => n + (u.toUpperCase() === "M" ? " million" : " thousand") + " dollars")
     .replace(/(^|[^\d.$\wx])(\d{1,5}\.\d{1,2})(?![\d%x]|\s*(?:times|percent|million|thousand|to 1|R\b|ATR|seconds?|s\b))/gi, (m, pre, n) => pre + "$" + (/\.\d$/.test(n) ? n + "0" : n))

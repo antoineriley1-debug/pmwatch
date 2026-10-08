@@ -353,6 +353,12 @@ class Engine:
     def _st(self, symbol):
         return self.syms.get(symbol)
 
+    def _spoken_names(self):
+        """What the voice calls each stock on the desk: your names (SETTINGS > Voice), the name directory, else IBKR's company name."""
+        from .names import parse_user, spoken
+        user = parse_user((self.cfg.get("speech") or {}).get("names", ""))
+        return {sym: spoken(sym, (st.contract or {}).get("long_name", ""), user) for sym, st in list(self.syms.items())}
+
     def _emit(self, st, tracker, label, t):
         final = label in ("CLEANED UP", "PULLED") and tracker.verdict_info
         if label.startswith("RELOAD") and tracker.back:
@@ -5091,6 +5097,7 @@ class Engine:
                 "connection": dict(self.connection),
                 "feeds": self._feeds(t),
                 "chart_rth": bool(self.cfg["chart"].get("regular_hours_only", True)),
+                "names": self._spoken_names(),
                 "studies_on": {k: bool((self.cfg.get("studies") or {}).get(k)) for k in ("gas", "airspace", "unvisited", "air_board", "gas_readout", "whole_numbers", "atr_zones")},
                 "slots": self.cfg["depth"]["slots"],
                 "auto_rotate": self.auto_rotate,
