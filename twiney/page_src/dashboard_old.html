@@ -2008,7 +2008,7 @@ function drawOne(p, cv, v, isFoot){
   }
 
   // your levels: band + line + label
-  v.edgeTags = [];
+  v.edgeTags = []; v.myLv = [];
   const tickOf = v => v >= 1 ? 0.01 : 0.0001;
   const exitOrders = (d.orders || []).filter(o => o.role && o.role !== "entry" && o.role !== "flatten" && o.role !== "close");
   const bracketOn = !!(d.position && d.position.qty && exitOrders.length);
@@ -2029,6 +2029,7 @@ function drawOne(p, cv, v, isFoot){
     g.fillStyle = _lum > 140 ? "#0a0d12" : "#ffffff"; g.font = "bold 11px ui-monospace, Menlo, Consolas, monospace";
     const _p = px(lp), _room = Math.max(0, 11 - _p.length);   // 12 characters fit the tag: label + space + price
     g.fillText(`${_room ? l.label.slice(0, _room) + " " : ""}${_p}`, plotW + 3, yy + 4); g.font = "11px ui-monospace, Menlo, Consolas, monospace";
+    v.myLv.push({yy, col, dash, lw, txt: `${_room ? l.label.slice(0, _room) + " " : ""}${_p}`, dark: _lum > 140});
     if (l.role === "second_entry" && !isFoot) v.seChipY = yy;     // its order-status chip is drawn on top, after the candles
   }
 
@@ -2557,6 +2558,15 @@ function drawOne(p, cv, v, isFoot){
         g.fillStyle = dan ? "#ff0000" : "#243044"; g.fillRect(lx, H - 17, tw, 17); g.fillStyle = "#dbe3ee"; g.fillText(tt, lx + 5, H - 4);
       }
     }
+  }
+  // YOUR LINES ON TOP: pivot / 2nd entry / stop / target are drawn again last, over every study line and label,
+  // so a level you just marked is never hidden behind ATR, AIRSPACE or a prior-day tag
+  for (const m of (v.myLv || [])){
+    g.strokeStyle = m.col; g.lineWidth = Math.max(1.5, m.lw); g.setLineDash(m.dash);
+    g.beginPath(); g.moveTo(0, m.yy); g.lineTo(plotW, m.yy); g.stroke(); g.setLineDash([]);
+    g.fillStyle = m.col; g.fillRect(plotW, m.yy - 8, labelW, 16);
+    g.fillStyle = m.dark ? "#0a0d12" : "#ffffff"; g.font = "bold 11px ui-monospace, Menlo, Consolas, monospace";
+    g.fillText(m.txt, plotW + 3, m.yy + 4); g.font = "11px ui-monospace, Menlo, Consolas, monospace";
   }
   // crosshair with price / time readout
   p.dataPrice = (v.cross && v.cross[1] < plotH && v.cross[0] < plotW) ? hi - (v.cross[1] - 8) / (plotH - 8) * (hi - lo) : null;

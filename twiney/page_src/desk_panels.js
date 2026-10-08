@@ -1607,6 +1607,7 @@ function speakNew(s){
     spoken.add("a" + a.key);
     if (training()) continue;                                    // training mode says nothing
     const mine = a.symbol === TABS.active;
+    if (a.role === "alert"){ if (a.words) items.push(a.words.includes(a.symbol) ? a.words : `${a.symbol}. ${a.words}`); continue; }   // YOUR alerts: always said, any ticker
     if (a.role === "conviction"){ if (a.words && (mine || !solo())) items.push(a.words); continue; }   // READY TO GO / AGAINST YOU
     const isFlow = FLOW_ROLES.has(a.role) || /^UNUSUAL|REPEAT FLOW|FLOW/.test(a.label || "");
     if (isFlow){ const fw = flowWords(a); if (fw && voiceFlow() && (mine || !solo())) items.push(fw); continue; }
@@ -2721,7 +2722,7 @@ document.addEventListener("click", e => { const r = e.target.closest(".obook tr[
 /* ---------- FAST: in and out of the stock from the chart, one click. Getting out never asks */
 /* THE ORDER BAR on top of the stock chart: BUY · SELL · CLOSE POSITION · SELL 25 / 50 / 75 / 100 %. All limits.
    STOCK trades the shares; OPTION trades the contract on the OPTION CHART (in contracts). Getting out never asks. */
-const QB = {mode: store.get("qb.mode", "stock")};
+const QB = {mode: "stock"};     // every launch starts on STOCK: OPT only when you pick it (or hold / link a contract)
 function qbTarget(d){
   const k = d && linkedContract(d.symbol);
   if (QB.mode === "option" && k){
