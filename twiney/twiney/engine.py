@@ -1162,6 +1162,10 @@ class Engine:
                      "words": f"{st.symbol}. Flip at {narrative.px(price)}. {'Seller' if who == 'seller' else 'Buyer'} losing, {'buyers' if who == 'seller' else 'sellers'} taking over.",
                      "key": f"{round(t, 2)}|{st.symbol}|FLIP|{price}"}
             self.alerts.appendleft(alert); self._rec(dict(alert, ev="alert")); self.log(st.symbol, text, t, kind="level")
+            try:        # the PS60 STORY: the next chapter after a reloader is exhausted
+                st.storybook.say("flip", (side, round(price, 4)), alert["text"] + ".", "good" if who == "seller" else "bad", t, repeat=300.0)
+            except Exception:
+                pass
             for fn in self.listeners:
                 try:
                     fn(alert)
@@ -4506,6 +4510,10 @@ class Engine:
                  "role": "breaktrap", "text": text, "words": f"{st.symbol}. {words}" if bc.get("voice", True) else None,
                  "key": f"{round(t, 2)}|{st.symbol}|{label}"}
         self.alerts.appendleft(alert); self._rec(dict(alert, ev="alert")); self.log(st.symbol, text, t, kind="level")
+        try:            # the PS60 STORY carries it too: who got caught at which level
+            st.storybook.say("breaktrap", (kind, round(b["level"], 4)), text, "bad" if b["up"] == (kind == "TRAPPED") else "good", t, repeat=600.0)
+        except Exception:
+            pass
         for fn in self.listeners:
             try:
                 fn(alert)

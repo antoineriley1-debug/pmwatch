@@ -1659,6 +1659,7 @@ function speakNew(s){
     if (a.role === "conviction"){ if (a.words && (mine || !solo())) items.push(a.words); continue; }   // READY TO GO / AGAINST YOU
     const isFlow = FLOW_ROLES.has(a.role) || /^UNUSUAL|REPEAT FLOW|FLOW/.test(a.label || "");
     if (isFlow){ const fw = flowWords(a); if (fw && voiceFlow() && (mine || !solo())) items.push(fw); continue; }
+    if (a.role === "flip"){ if (a.words && mine) items.push(a.words); continue; }   // FLIP at a level: the tab you are on
     if (a.role === "trap" || a.role === "breaktrap"){ if (a.words && mine) items.push(a.words); continue; }   // trapped crowd / BREAK TRAPS: the tab you are on
     if (a.role === "inst"){ if (a.words && mine && store.get("voiceInst", true)) items.push(a.words); continue; }   // a program / fund footprint
     if (a.role === "dark"){ if (a.words && mine && store.get("voiceDark", true)) items.push(a.words); continue; }   // a large order

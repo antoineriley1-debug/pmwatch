@@ -207,3 +207,47 @@ class RowFieldTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TiedTogetherTests(unittest.TestCase):
+    """One system: the same reload tracker feeds the ladder, the FLIP, the PS60 SEQUENCE and the STORY; a FLIP and a
+    trapped break reach the CALLS and the PS60 STORY feed like every other call."""
+    def test_flip_goes_to_calls_and_the_story(self):
+        e = make()
+        st = e.syms["AAA"]
+        e.set_play_level("AAA", "trigger", 10.00, T0)
+        tr = st.trackers[(ASK, 1000)]
+        tr.proven = True; tr.last_refill_t = T0; tr.confirmed_at = T0
+        e.on_depth("AAA", 0, UPDATE, BID, 10.00, 4000, "", T0 + 30)
+        e.on_depth("AAA", 0, DELETE, ASK, 10.00, 0, "", T0 + 30)
+        tr.displayed = 0
+        for k in range(6):
+            e.tick(T0 + 30 + k)
+        self.assertTrue(any(a["role"] == "flip" for a in e.alerts))
+        self.assertTrue(any("FLIP at 10.00" in f[1] for f in st.storybook.feed), list(st.storybook.feed)[:3])
+
+    def test_the_same_tracker_feeds_ladder_sequence_and_flip(self):
+        e = make()
+        st = e.syms["AAA"]
+        e.set_play_level("AAA", "trigger", 10.00, T0)
+        tr = st.trackers[(ASK, 1000)]
+        tr.proven = True; tr.last_refill_t = T0 + 1; tr.confirmed_at = T0; tr.refill_seq = 4
+        r, _ = row(e, T0 + 2, 10.00)
+        seq = e._sequence(st, T0 + 2, e._ps60(st, T0 + 2, st.bar_list(500), st.price()))
+        self.assertEqual(r["ask_stage"], tr.stage(T0 + 2))                    # the ladder reads the tracker
+        self.assertEqual(seq["verdict"], tr.stage(T0 + 2))                     # the PIVOT verdict is the same tracker
+        self.assertEqual(seq["verdict_side"], "ask")                           # long: the reload seller at the pivot
+
+
+class BreakTrapStoryTests(unittest.TestCase):
+    def test_trapped_break_goes_to_the_story(self):
+        e = make()
+        st = e.syms["AAA"]; st._bt_levels = [("PREMARKET HIGH", "the premarket high", 10.00)]
+        t = T0 + 1
+        e.on_print("AAA", 9.99, 100, "NASDAQ", t)
+        e.on_l1("AAA", "bid", 10.00, t); e.on_l1("AAA", "ask", 10.01, t)
+        for i in range(6):
+            e.on_print("AAA", 10.01, 400, "NASDAQ", t + 1 + i)
+        e.on_l1("AAA", "bid", 9.65, t + 10); e.on_l1("AAA", "ask", 9.66, t + 10)
+        e.on_print("AAA", 9.65, 300, "NASDAQ", t + 10)
+        self.assertTrue(any("TRAPPED LONGS" in f[1] for f in st.storybook.feed))

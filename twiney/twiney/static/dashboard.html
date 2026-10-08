@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261008-1743">
+<meta name="build" content="20261008-1831">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -6173,6 +6173,7 @@ function speakNew(s){
     if (a.role === "conviction"){ if (a.words && (mine || !solo())) items.push(a.words); continue; }   // READY TO GO / AGAINST YOU
     const isFlow = FLOW_ROLES.has(a.role) || /^UNUSUAL|REPEAT FLOW|FLOW/.test(a.label || "");
     if (isFlow){ const fw = flowWords(a); if (fw && voiceFlow() && (mine || !solo())) items.push(fw); continue; }
+    if (a.role === "flip"){ if (a.words && mine) items.push(a.words); continue; }   // FLIP at a level: the tab you are on
     if (a.role === "trap" || a.role === "breaktrap"){ if (a.words && mine) items.push(a.words); continue; }   // trapped crowd / BREAK TRAPS: the tab you are on
     if (a.role === "inst"){ if (a.words && mine && store.get("voiceInst", true)) items.push(a.words); continue; }   // a program / fund footprint
     if (a.role === "dark"){ if (a.words && mine && store.get("voiceDark", true)) items.push(a.words); continue; }   // a large order
