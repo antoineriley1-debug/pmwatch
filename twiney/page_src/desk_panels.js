@@ -1841,7 +1841,10 @@ function render(s){
   const d = dataFor(s, curSym);
   // the top chart switched to another stock: the option chart (and its Level II / T&S, ORDER ENTRY) goes blank
   // instead of showing a contract on a different stock
-  if (curSym && OCH.key && OCH.key.split(" ")[0] !== curSym) unloadContract(true);
+  if (curSym && OCH.key && OCH.key.split(" ")[0] !== curSym){ unloadContract(true); OCH.dismissed = null; }
+  if (curSym !== OCH.symSeen){ OCH.symSeen = curSym; OCH.dismissed = null; }
+  // back on a stock you are in a contract on (or whose lines trade one): it comes back on the option chart
+  if (curSym && !OCH.key){ const c = contractFor(curSym, s); if (c && c.key !== OCH.dismissed) loadContract(c); }
   streamTo(curSym);
   if (d && STREAM.last) streamApply(d, STREAM.last);       // a pushed update newer than this refresh stays on screen
   for (const c of Object.values(charts)){
@@ -2138,8 +2141,27 @@ function relinkLines(key){
 }
 /* take the loaded contract off the OPTION CHART (its Level II / T&S and ORDER ENTRY follow). Nothing is sold or
    cancelled: a contract you hold stays in POSITIONS, its stop and lines stay on */
+/* the contract that belongs on the option chart for a stock when you come back to it: the one your stock chart's
+   lines trade (CHART LINES TRADE THIS), else the one you are IN (several: the one traded last). None = blank */
+function contractFor(sym, s){
+  if (!sym || !s) return null;
+  const d = dataFor(s, sym), pl = d && d.play;
+  const held = ((s.account || {}).opt_positions || []).filter(p => p.symbol === sym && p.qty);
+  if (pl && pl.trade_as === "option" && pl.opt_key) return held.find(p => p.key === pl.opt_key) || {key: pl.opt_key};
+  if (!held.length) return null;
+  const lastFill = k => Math.max(0, ...((s.account || {}).fills || []).filter(f => f.symbol === k).map(f => f.t || 0));
+  return held.slice().sort((a, b) => lastFill(b.key) - lastFill(a.key))[0];
+}
+function loadContract(p){
+  let exp = p.expiry, strike = p.strike, right = p.right;
+  if (exp == null){ const m = String(p.key).split(" "); exp = m[1]; strike = parseFloat(m[2]); right = (m[2] || "").slice(-1); }
+  OC.link = {sym: String(p.key).split(" ")[0], expiry: exp, strike, right, key: p.key, bid: p.bid, ask: p.ask, n: (OC.link && OC.link.n) || 1};
+  P.ticket.last = null; chartOption(p.key, false); renderContractL2(); renderContractTape();
+  const bd = P.options && P.options.pc.querySelector(".oc-body"); if (bd) bd.dataset.h = "";
+}
 function unloadContract(quiet){
   const name = OC.link ? contractName(OC.link) : "contract";
+  if (!quiet && OCH.key) OCH.dismissed = OCH.key;          // taken off by hand: it stays off until you come back to the stock
   OC.link = null; OC.sel = null; OCH.key = null; OCH.data = null;
   if (ochart){ ochart.data = null; drawChart(ochart); }
   renderOchHead(); if (typeof renderOptPanels === "function") renderOptPanels(); renderContractL2(); renderContractTape();
