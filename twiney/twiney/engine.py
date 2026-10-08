@@ -1092,7 +1092,7 @@ class Engine:
         if mc.get("k") != (int(t // 60), st.hist_ver, st.study_ver):
             mc["k"] = (int(t // 60), st.hist_ver, st.study_ver)
             try:
-                h60 = studies.h60_from_m30(studies.m30_series(st, t))
+                h60 = studies.h60_series(st, t, self.cfg.get("studies") or {})
                 mc["v"] = story_mod.ma_stack_points(studies.ma_pack([r[4] for r in drows], use_bb=False),
                                                     studies.ma_pack([r[4] for r in h60], use_bb=False) if len(h60) >= 5 else [])
             except Exception:

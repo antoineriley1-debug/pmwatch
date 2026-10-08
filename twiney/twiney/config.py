@@ -534,6 +534,7 @@ DEFAULTS = {
         "se_min_retrace_x": 0.3,        # 2nd entry: and at least this x ATR
         "se_near_x": 0.15,              # 2nd entry: NEAR within this x ATR
         "se_hour_reset": True,          # 2nd entry: miss the 60, need a new second
+        "h60_on_hour": True,            # 60-minute candles on the hour (9:00, 10:00 ...) with premarket / after hours, like your TradingView 1h chart (off: from 9:30, regular hours)
         "cont_odds": True,              # continuation odds (similar days, 30-minute sample)
         "cont_tol": 0.15,               # similar day = within this x ATR of today
         "cont_t1": 1.0,                 # odds target #1 (x ATR)

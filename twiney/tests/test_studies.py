@@ -289,3 +289,26 @@ class AtrLadderTests(unittest.TestCase):
         self.assertEqual(round(lad["lines"][3]["p"], 2), 48.0)            # 1 ATR under the high
         self.assertTrue(lad["lines"][2]["eaten"])                         # 1.5 of 2.0 = ¾ eaten
         self.assertEqual(lad["lines"][3]["l"], "1 ATR 48.00 · $0.60 away · 75% eaten")
+
+
+class H60OnTheHourTests(unittest.TestCase):
+    """60-minute candles like the user's TradingView 1h (extended hours): they start on the clock hour and the premarket
+    is inside them (9:00-10:00 holds 9:00-9:30 premarket AND the 9:30 open)."""
+    def test_on_the_hour_with_premarket(self):
+        from types import SimpleNamespace
+        from twiney import studies as S
+        import calendar
+        base = calendar.timegm((2026, 10, 6, 12, 0, 0)) # 8:00 New York (EDT = UTC-4)
+        m5 = {}
+        for i in range(36):                              # 8:00 .. 10:55 every 5 minutes
+            t0 = base + i * 300
+            m5[t0] = [100 + i, 100.5 + i, 99.5 + i, 100.2 + i, 1000]
+        st = SimpleNamespace(m5=m5, bars={}, m30={})
+        h = S.h60_series(st, base + 36 * 300, {"h60_on_hour": True})
+        self.assertEqual([(r[0] - base) // 3600 for r in h], [0, 1, 2])        # 8:00, 9:00, 10:00
+        nine = h[1]
+        self.assertEqual(nine[1], 112)                                          # opens at 9:00 (premarket)
+        self.assertEqual(nine[4], 123.2)                                        # closes at the 9:55 bar
+        self.assertEqual(nine[5], 12000)                                        # 12 five-minute bars in it
+        off = S.h60_series(st, base + 36 * 300, {"h60_on_hour": False})        # the old way: no 5-minute history used
+        self.assertIsInstance(off, list)

@@ -276,6 +276,32 @@ def h60_from_m30(rows):
     return out
 
 
+def h60_series(st, t, cfg=None):
+    """THE 60-MINUTE CANDLES the studies read. On the hour (9:00, 10:00 ...) with the premarket and after hours inside
+    them, the way TradingView draws 1h on an extended-hours chart: built from the 2-month 5-minute history (the chart's
+    session) plus today's minute bars after it. With studies.h60_on_hour off (or no 5-minute history yet): the
+    regular-session 60s from 9:30. Rows [t0, o, h, l, c, v]."""
+    on_hour = True if cfg is None else bool(cfg.get("h60_on_hour", True))
+    m5 = getattr(st, "m5", {}) or {}
+    if not on_hour or not m5:
+        return h60_from_m30(m30_series(st, t))
+    rows = [[k] + list(m5[k][:5]) for k in sorted(m5) if k <= t]
+    after = rows[-1][0] + 300 if rows else 0
+    for m in sorted(getattr(st, "bars", {}) or {}):
+        if after <= m <= t:
+            b = st.bars[m]
+            rows.append([m, b[0], b[1], b[2], b[3], b[4]])
+    out = []
+    for b in rows:
+        t0 = math.floor(b[0] / 3600) * 3600
+        if out and out[-1][0] == t0:
+            w = out[-1]
+            w[2] = max(w[2], b[2]); w[3] = min(w[3], b[3]); w[4] = b[4]; w[5] = (w[5] or 0) + (b[5] or 0)
+        else:
+            out.append([t0, b[1], b[2], b[3], b[4], b[5]])
+    return out
+
+
 def ma_pack(closes, highs=None, lows=None, use_bb=True):
     """Dan's pack at the last bar: EMA 5/10/20/34/50/65/89/100/150/200, SMA 5/10/20/50/100/150/200, BB 20 / 2."""
     out = []
@@ -462,8 +488,8 @@ def second_entry(st, t, cfg, y_atr, piv, side, tb):
     floor_r = float(cfg["se_min_retrace_x"]) * y_atr if y_atr else 0.0
     pct = float(cfg["se_retrace_pct"])
     for b in mins:
-        o = session_open(b[0])
-        hk = math.floor((b[0] - o) / 3600)
+        hk = (math.floor(b[0] / 3600) if cfg.get("h60_on_hour", True)
+              else math.floor((b[0] - session_open(b[0])) / 3600))          # the 60 turns over on the hour, like the chart
         if cfg["se_hour_reset"] and hour is not None and hk != hour:
             ext, pulled = None, False
         hour = hk
@@ -494,7 +520,7 @@ def second_entry(st, t, cfg, y_atr, piv, side, tb):
                     pulled = True
     last = st.price()
     # Rule 2: the 60-minute candle building over / under the one before it
-    h60 = h60_from_m30(m30_series(st, t))
+    h60 = h60_series(st, t, cfg)
     conf60 = 0
     if len(h60) >= 2 and last is not None:
         p = h60[-2]
@@ -801,7 +827,7 @@ def next_stop_levels(drows, live, st, t, cfg, y_atr, used, is_today, sess, dH, d
         v = ema(cs, n)[-1] if cs else None
         if v is not None:
             out.append([v, f"EMA{n} D"])
-    h60 = h60_from_m30(m30_series(st, t))
+    h60 = h60_series(st, t, cfg)
     hc = [b[4] for b in h60]
     for n in (4, 9, 10, 13, 20, 50, 65, 100, 200):
         v = ema(hc, n)[-1] if hc else None
@@ -1209,7 +1235,7 @@ def airspace(st, t, cfg, drows, live, g):
     mini = (("●UP " if up_go else "○UP ") + ("—" if mp_up is None else f"${mp_up:.2f}") + "  " +
             ("●DN " if dn_go else "○DN ") + ("—" if mp_dn is None else f"${mp_dn:.2f}") + "  · " + gas_pct)
     # 60-minute pack for the confluence row on a Daily chart (the intraday charts use their own MAs)
-    h60 = h60_from_m30(m30_series(st, t))
+    h60 = h60_series(st, t, cfg)
     pack60 = [[_tag(n), v] for n, v in ma_pack([b[4] for b in h60], use_bb=bool(cfg["air_bb"]))] if h60 else []
     return {"lines": lines, "board": board, "bounce": [bounce, b_src.strip(), _tag(bounce_n)] if bounce is not None else None,
             "reject": [reject, src(sup_w).strip(), _tag(reject_n)] if reject is not None else None, "pack60": pack60,
