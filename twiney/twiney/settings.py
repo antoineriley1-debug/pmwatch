@@ -59,7 +59,6 @@ CHOICES = {
     "ibkr.port": [(7497, "7497 · TWS paper"), (7496, "7496 · TWS live"), (4002, "4002 · Gateway paper"), (4001, "4001 · Gateway live")],
     "ibkr.market_data_type": [(1, "1 · live"), (2, "2 · frozen"), (3, "3 · delayed"), (4, "4 · delayed frozen")],
     "quantdata.method": [("POST", "POST"), ("GET", "GET")],
-    "ladder.money_columns": [("traded", "traded · $ sold / bought this visit"), ("resting", "resting · $ showing on the bid / ask")],
     "speech.engine": [("auto", "auto · my ElevenLabs voice when the key + voice are in"), ("cloud", "ElevenLabs · always the voice below"), ("browser", "browser · this computer's voice")],
     "quantdata.scope": [("all", "whole market"), ("watchlist", "watchlist only")],
     "flow.alerts": [("watchlist", "watchlist only"), ("all", "every ticker")],

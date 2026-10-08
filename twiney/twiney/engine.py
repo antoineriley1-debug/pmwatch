@@ -565,6 +565,14 @@ class Engine:
             st = self._st(symbol)
             if st is None or price is None or price <= 0 or not size or size <= 0:
                 return
+            # a confirmed trade counts ONCE: a print re-delivered (a reconnect, a restarted feed) is ignored
+            pg = st.__dict__.get("_pguard")
+            if pg is None:
+                from .ladderbasket import PrintGuard
+                pg = st._pguard = PrintGuard()
+            if not pg.first_time(t, xt, price, size, exchange):
+                self.dup_prints = getattr(self, "dup_prints", 0) + 1
+                return
             self._clock(t)
             self._rec({"ev": "print", "t": t, "sym": symbol, "px": price, "sz": size,
                        "ex": exchange, "cond": conditions, "xt": xt})
@@ -1124,6 +1132,41 @@ class Engine:
                 self._level_watch(st, t, last, tick_size(last, sym))
             except Exception:
                 log.exception("level watch %s", sym)
+            try:
+                self._flip_watch(st, t)
+            except Exception:
+                log.exception("flip watch %s", sym)
+
+    def _flip_watch(self, st, t):
+        """FLIP (ladderbasket.FlipWatch): a defender's refill died and the other side's size took the price."""
+        lc = self.cfg.get("ladder") or {}
+        if st.book is None:
+            return
+        from .ladderbasket import FlipWatch, flip_words
+        fw = st.__dict__.get("_flipw")
+        if fw is None:
+            fw = st._flipw = FlipWatch()
+        trs = [("bid" if tr.side == BID else "ask", tr.price, tr.stage(t), tr.last_refill_t, tr.refill_seq,
+                tr.proven or tr.gone_t is not None) for tr in st.trackers.values()]
+        new = fw.update(t, trs, lambda side, p: st.book.size_at(BID if side == "bid" else ASK, p), lc)
+        if not lc.get("basket_flip_alerts", True):
+            return
+        for side, price in new:
+            if t - fw.said.get((side, price), -1e9) < 300:
+                continue
+            fw.said[(side, price)] = t
+            who = "seller" if side == "ask" else "buyer"
+            text = flip_words(fmt_price(price), who)
+            alert = {"t": t, "symbol": st.symbol, "label": "FLIP", "price": fmt_price(price), "side": side,
+                     "role": "flip", "text": f"FLIP at {narrative.px(price)}: {who} losing, {'buyers' if who == 'seller' else 'sellers'} taking over",
+                     "words": f"{st.symbol}. Flip at {narrative.px(price)}. {'Seller' if who == 'seller' else 'Buyer'} losing, {'buyers' if who == 'seller' else 'sellers'} taking over.",
+                     "key": f"{round(t, 2)}|{st.symbol}|FLIP|{price}"}
+            self.alerts.appendleft(alert); self._rec(dict(alert, ev="alert")); self.log(st.symbol, text, t, kind="level")
+            for fn in self.listeners:
+                try:
+                    fn(alert)
+                except Exception:
+                    pass
 
     def _pace_tick(self, t):
         """PACE OF TAPE for every stock, twice a second, browser open or not: speed against its own normal, and the
@@ -2689,6 +2732,11 @@ class Engine:
             self.connection.update(state=state, since=t, detail=detail)
             if state == "CONNECTED":
                 self.connection["ever_connected"] = True
+                if prev != "CONNECTED":
+                    for _st in self.syms.values():          # a new connection: identical prints count from the 1st again
+                        pg = _st.__dict__.get("_pguard")
+                        if pg is not None:
+                            pg.new_connection()
             if market_data_type is not None:
                 self.connection["market_data_type"] = market_data_type
             if state in ("DISCONNECTED", "DATA_LOST"):
@@ -4285,6 +4333,7 @@ class Engine:
         ba = price_key(ask, tk) if ask else None
         last = st.l1["last"]
         lk = price_key(last, tk) if last else None
+        fw = st.__dict__.get("_flipw")
         rows, prev = [], None
         max_size = max_traded = 0.0
         big_bar = self.big_shares_for(st); huge_x = self.cfg.get("ladder", {}).get("huge_multiple", 3.0)
@@ -4307,6 +4356,10 @@ class Engine:
             bk = (st.__dict__.get("basket") or {}).get(dk[k])
             if bk is not None:
                 row["bk"] = [round(bk[0]), round(bk[1]), round(bk[2]), bk[3]]
+            if fw is not None and fw.flips:
+                fl = fw.at(price)
+                if fl:
+                    row["flip"] = fl
             v = vis.get(dk[k])
             if v is not None:
                 row["vs"], row["vb"] = round(v["s"]), round(v["b"])
@@ -4334,6 +4387,8 @@ class Engine:
                 if tr is not None:
                     # a proven reload keeps the refills that proved it, even after they age out of the window
                     row[side + "_refills"] = max(tr.refreshes_window(t), tr.proven_refills if tr.proven else 0)
+                    row[side + "_rseq"] = tr.refill_seq                    # the BASKET pulses once per new refill
+                    row[side + "_rf"] = sum(1 for x in tr.refresh_times if t - x <= 60)   # refills in the last minute: the glow
                     row[side + "_state"] = tr._display_state(t)
                     row[side + "_proven"] = tr.proven
                     row[side + "_absorbed"] = round(tr.absorbed_total)
@@ -4361,6 +4416,8 @@ class Engine:
                 # the long memory: a level that absorbed real size here earlier today, whether or not anyone is
                 # tracking it now. Only when nothing proven is lit on this row (the live read wins)
                 ah = st.absorb_hist.get((side, k))
+                if ah is not None:
+                    row[side + "_abs"] = round(ah[1])                     # the BASKET's absorbed = the absorbed-here mark
                 if ah is not None and ah[4] and ah[1] >= self.cfg["reload"]["min_absorbed_shares"] and not (tr is not None and tr.proven):
                     row[side + "_was"] = {"shares": round(ah[1]), "age": round(t - ah[2]), "verdict": ah[3]}
             max_size = max(max_size, row["bid"], row["ask"])
@@ -4371,8 +4428,17 @@ class Engine:
                 "memory_minutes": MEMORY_SECONDS // 60, "big_shares": big_bar, "big_default": st.big_shares is None,
                 "huge_shares": big_bar * huge_x, "marks": marks, "last": last, "tick": tk,
                 "visit_away": int(lc.get("visit_away_ticks", 3)), "stack_seconds": int(sw),
-                "basket": {k: lc.get(k) for k in ("basket", "basket_animate", "basket_pulse", "basket_speed", "basket_min_shares",
-                                                  "basket_max_drops", "money_columns", "pulled_gray", "level_labels")}}
+                "basket": dict({k: v for k, v in lc.items() if k.startswith("basket_")}, norm=self._basket_norm(st, t))}
+
+    def _basket_norm(self, st, t):
+        """A price's NORMAL volume today (the median of every traded price's total): a full basket is
+        ``basket_full_x`` times it. Kept for a few seconds."""
+        memo = st.__dict__.setdefault("_bknorm", [None, 0.0])
+        if memo[0] is not None and t - memo[0] < 5:
+            return memo[1]
+        vals = sorted(v[0] for v in (st.__dict__.get("basket") or {}).values() if v[0] > 0)
+        memo[0], memo[1] = t, (vals[len(vals) // 2] if vals else 0.0)
+        return round(memo[1])
 
     BREAK_CODES = ("PMH", "PML", "PDH", "PDL", "PDC", "PDO", "AHH", "AHL", "OPEN")
 
@@ -4466,6 +4532,24 @@ class Engine:
         bc = self.cfg.get("breaktrap") or {}
         v = bt.view(t, st.price(), int(bc.get("show", 3)), float(bc.get("retrace_dollars", 0.30)))
         return v or None
+
+    def _sequence(self, st, t, ps):
+        """The PS60 SEQUENCE over the BASKET ladder (ladderbasket.sequence), with the live verdict at the trigger."""
+        if not (self.cfg.get("ladder") or {}).get("basket_sequence", True):
+            return None
+        from .ladderbasket import sequence
+        se = (ps or {}).get("se") if isinstance(ps, dict) else None
+        trig = st.play.get("trigger")
+        if not trig or not se:
+            return None
+        k = price_key(trig)
+
+        def stage_at(side):
+            tr = st.trackers.get((BID if side == "bid" else ASK, k))
+            if tr is None:
+                return None, 0
+            return tr.stage(t), tr.displayed
+        return sequence(st.play, se, stage_at, t)
 
     def _day_trap_pane(self, st, t):
         dt = self._day_trap(st, t, st.price())
@@ -4895,6 +4979,7 @@ class Engine:
             "orderflow": orderflow.pressure(st.tape.prints, t, self.cfg.get("orderflow", {})),
             "daytrap": self._day_trap_pane(st, t),
             "breaktraps": self._break_trap_pane(st, t),
+            "seq": self._sequence(st, t, ps),
             "tape": dict(tape, recent=[
                 {"age": round(t - p["t"], 1), "price": fmt_price(p["price"]), "size": round(p["size"]),
                  "side": p["side"], "large": p["large"], "exchange": p["exchange"], "at": at_level(p["price"])}

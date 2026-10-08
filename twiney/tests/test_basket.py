@@ -7,7 +7,7 @@ from helpers import cfg, plays
 from twiney.engine import Engine
 from twiney.book import INSERT, BID, ASK
 
-T0 = 1791460800.0 + 15 * 3600       # 2026-10-08 11:00 New York
+T0 = 1791460800.0 + 3 * 3600        # 2026-10-08 11:00 New York (mid-session: no day turns in a test)
 
 
 def make():
@@ -77,8 +77,8 @@ class BasketTests(unittest.TestCase):
         e = make()
         L = e.snapshot(T0 + 1)["panes"][0]["ladder"] if e.snapshot(T0 + 1).get("panes") else None
         self.assertIsNotNone(L)
-        self.assertEqual(L["basket"]["basket_speed"], 1.0); self.assertTrue(L["basket"]["basket_animate"])
-        self.assertEqual(L["basket"]["money_columns"], "traded")
+        self.assertEqual(L["basket"]["basket_drop_ms"], 250); self.assertTrue(L["basket"]["basket_animate"])
+        self.assertEqual(L["basket"]["basket_merge_ms"], 50)
 
 
 if __name__ == "__main__":

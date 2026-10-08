@@ -382,15 +382,22 @@ DEFAULTS = {
         # THE BASKET LADDER: money on the outside, shares next in, PRICE + BASKET in the centre. The BASKET is every
         # confirmed trade at that price today (bought + sold + between), a running total that each trade adds to
         # once; a new trade drops into it from its side (sold = from the bid, bought = from the ask) with a pulse
-        "basket": True,                 # the basket column (off: the classic ladder)
-        "basket_animate": True,         # the drop into the basket
-        "basket_pulse": True,           # the pulse on the basket when it fills
-        "basket_speed": 1.0,            # animation speed: 0.5 = half as fast, 2 = twice as fast
-        "basket_min_shares": 1,         # a drop is shown for at least this many shares (the total always counts all)
-        "basket_max_drops": 12,         # at most this many drops on screen at once (the feed is never held up)
-        "money_columns": "traded",      # the outside columns: traded = $ sold / bought this visit · resting = $ showing on the bid / ask
-        "pulled_gray": True,            # size pulled without trading shown in gray in the shares column
-        "level_labels": True,           # the critical level label (your lines, VWAP, key levels, the reloader) on the price
+        "basket_drop_ms": 250,          # animation speed: a drop takes this long (the pulse 150 ms at the default)
+        "basket_merge_ms": 50,          # prints at one price inside this window drop in as ONE bigger drop, one pulse
+        "basket_max_drops": 12,         # drops on screen at most; more are counted, not animated
+        "basket_fast_pps": 25,          # FAST MODE above this many prints a second: only your levels and the PS60 rows animate
+        "basket_full_x": 3,             # a FULL basket = this many times a price's normal volume today (heavy defense)
+        "basket_animate": True,         # the drops
+        "basket_pulse": True,           # the pulse (one per print, one per refill)
+        "basket_glow": True,            # the glow (refill speed)
+        "basket_flip_alerts": True,     # FLIP calls and the FLIP banner
+        "basket_touch_counter": True,   # the small counter on the trigger / second entry rows (resets each touch)
+        "basket_sequence": True,        # the PS60 SEQUENCE over the ladder
+        "basket_manual_pop": True,      # your SECOND ENTRY / TAKE PROFIT / STOP rows pop (display only, never an order)
+        "flip_min_shares": 1000,        # FLIP: at least this much size from the other side at the price ...
+        "flip_hold_seconds": 2,         # ... held this long (a thin print never flips a level) ...
+        "flip_mirror_seconds": 60,      # ... and not the other way at the same price within this long of one ending
+        "flip_dead_seconds": 20,        # ... after the defender's refill died (no refill this long, or NOT RELOADING / CLEANED UP / PULLED)
         # the rows stay still while price moves inside them; they re-centre only when price comes within this many
         # rows of the top or bottom edge (bigger = re-centres sooner)
         "recenter_rows": 4,

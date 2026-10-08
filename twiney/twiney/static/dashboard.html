@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261008-1531">
+<meta name="build" content="20261008-1723">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -1301,21 +1301,69 @@ table.lad .fdl.b{background:#1b7a43;box-shadow:0 0 6px #3fb56f88} table.lad .fdl
 .vtest .vok { color: #26a69a; font-weight: 600; }
 .vtest .vbad { color: #ef5350; font-weight: 600; }
 #voiceBtn.vfail { color: #ef5350; }
-/* THE BASKET LADDER (LAYOUT: BASKET): HIT $ │ BID │ PRICE │ BASKET │ ASK │ LIFT $ */
-table.lad.basket td.mny span{font-size:calc(9.5px * var(--ladz,1))}
-table.lad.basket td.bk{position:relative;text-align:center;font-size:calc(10px * var(--ladz,1));color:#e9d9a6;font-weight:700;border-left:1px solid #2a3140;border-right:1px solid #2a3140;background:#141922}
-table.lad.basket td.bk .bkf{position:absolute;left:50%;top:3px;bottom:3px;transform:translateX(-50%);display:flex;border-radius:2px;overflow:hidden;opacity:.5;background:#6b5a2a}
-table.lad.basket td.bk .bkf .bks{background:#d9534f;height:100%} table.lad.basket td.bk .bkf .bkb{background:#3fb56f;height:100%;margin-left:auto}
-table.lad.basket td.bk span{position:relative}
-table.lad.basket td.bk.bkb span{color:#9ff0c4} table.lad.basket td.bk.bks span{color:#e8a3a3}
-table.lad.basket tr.lastpx td.bk{box-shadow:inset 0 0 0 1px #e8b931}
-table.lad.basket td.sz.pulg .szn{color:#7d7f85;text-decoration:none} table.lad.basket td.sz.pulg .pb{background:#7d7f85;opacity:.18}
-table.lad.basket td.sz .pgv{position:relative;font-style:normal;font-size:calc(8.5px * var(--ladz,1));color:#8a93a3;margin:0 3px}
+/* THE BASKET LADDER (LAYOUT: BASKET): $ BID │ BID │ PRICE + BASKET │ ASK │ $ ASK */
+table.lad.basket2 td.mny{font-size:calc(9.5px * var(--ladz,1));color:#9aa4b4;white-space:nowrap}
+table.lad.basket2 td.mny.bid{text-align:right} table.lad.basket2 td.mny.ask{text-align:left}
+table.lad.basket2 td.bkpx{text-align:left;white-space:nowrap;padding:0 4px;overflow:hidden}
+table.lad.basket2 td.bkpx .pxv{display:inline-block;min-width:48px;text-align:right;font-weight:700}
+table.lad.basket2 tr.lastpx td.bkpx .pxv{color:#111}
+table.lad.basket2 .bkt{position:relative;display:inline-block;width:20px;height:12px;margin:0 5px;vertical-align:-1px;box-sizing:border-box;border:1.5px solid #4a5568}
+table.lad.basket2 .bkt.up{border-top:0;border-radius:0 0 4px 4px}            /* a reload buyer's basket opens upward */
+table.lad.basket2 .bkt.dn{border-bottom:0;border-radius:4px 4px 0 0}         /* a reload seller's is mirrored */
+table.lad.basket2 .bkt .bkfl{position:absolute;left:0;right:0;height:var(--fill,0%)}
+table.lad.basket2 .bkt.up .bkfl{bottom:0} table.lad.basket2 .bkt.dn .bkfl{top:0}
+table.lad.basket2 .bkt.bk-empty{border-color:#39414e}
+table.lad.basket2 .bkt.bk-amber{border-color:#e8b931} table.lad.basket2 .bkt.bk-amber .bkfl{background:#e8b931aa}
+table.lad.basket2 .bkt.bk-green{border-color:#3fb56f} table.lad.basket2 .bkt.bk-green .bkfl{background:#3fb56fcc}
+table.lad.basket2 .bkt.bk-green.glw{box-shadow:0 0 calc(2px + 10px * var(--glow)) calc(2px * var(--glow)) rgba(38,208,124,calc(0.25 + 0.75 * var(--glow)))}
+table.lad.basket2 .bkt.bk-flip{border-color:#d9534f;animation:bkflash .45s steps(2,end) infinite} table.lad.basket2 .bkt.bk-flip .bkfl{background:#d9534f}
+table.lad.basket2 .bkt.bk-gray{border-style:dashed;border-color:#7d7f85} table.lad.basket2 .bkt.bk-gray .bkfl{background:#7d7f8555}
+@keyframes bkflash{0%{opacity:1;box-shadow:0 0 10px 2px #d9534f}50%{opacity:.35;box-shadow:none}}
+table.lad.basket2 .bkn{font-style:normal;font-size:calc(9px * var(--ladz,1));color:#e9d9a6;margin-right:3px}
+table.lad.basket2 .tch{font-style:normal;font-size:calc(8.5px * var(--ladz,1));color:#9ad2ff}
+table.lad.basket2 .bls{margin-left:4px}
+table.lad.basket2 .bl{display:inline-block;font-size:calc(8.5px * var(--ladz,1));font-weight:800;padding:0 3px;margin-left:2px;border-radius:3px;line-height:1.35;border:1px solid}
+table.lad.basket2 .bl.trg{color:#ffd34d;border-color:#ffd34d;background:#3a2f0b}
+table.lad.basket2 .bl.ext{color:#7cc4ff;border-color:#3fa0ff;background:#0f2a44}
+table.lad.basket2 .bl.se{color:#6dffb4;border-color:#3fb56f;background:#0f3322}
+table.lad.basket2 .bl.tp{color:#9ad2ff;border-color:#3fa0ff;background:#0f2a44}
+table.lad.basket2 .bl.sl{color:#e8a3a3;border-color:#d9534f;background:#3a1218}
+table.lad.basket2 .bl.flp{color:#fff;border-color:#d9534f;background:#c4283a}
+table.lad.basket2 .bl.pul{color:#c9d4e3;border-color:#7d7f85;background:#2a3140}
+table.lad.basket2 .bl.lst{color:#111;border-color:#e8b931;background:#e8b931}
+/* your levels pop: bold label and a coloured row outline */
+table.lad.basket2 tr.manual.lvp-se td{box-shadow:inset 0 1.5px 0 #3fb56f,inset 0 -1.5px 0 #3fb56f}
+table.lad.basket2 tr.manual.lvp-tp td{box-shadow:inset 0 1.5px 0 #3fa0ff,inset 0 -1.5px 0 #3fa0ff}
+table.lad.basket2 tr.manual.lvp-sl td{box-shadow:inset 0 1.5px 0 #d9534f,inset 0 -1.5px 0 #d9534f}
+table.lad.basket2 tr.lvp-trg td.bkpx{box-shadow:inset 0 0 0 1.5px #ffd34d}
+table.lad.basket2 tr.newext td.bkpx{background:#0f2a44}
+table.lad.basket2 tr.flipr td{background:rgba(196,40,58,.22)}
+table.lad.basket2 td.sz.struck .szn{text-decoration:line-through;color:#8a93a3}
+table.lad.basket2 td.sz.bold .szn{font-weight:900;color:#fff}
+table.lad.basket2 tr.pullr td{filter:grayscale(.85) brightness(.85)}
+table.lad.basket2 td.sz.pulg .szn{color:#7d7f85} table.lad.basket2 td.sz.pulg .pb{background:#7d7f85;opacity:.18}
+table.lad.basket2 td.sz{white-space:nowrap;overflow:hidden}
+table.lad.basket2 td.sz .pgv{position:relative;font-style:normal;font-size:calc(8px * var(--ladz,1));color:#8a93a3;margin:0 2px;vertical-align:1px}
+table.lad.basket2 th .fastchip{font-style:normal;background:#ff8a00;color:#111;border-radius:3px;padding:0 3px;margin-left:3px}
+table.lad.basket2 th .bkgear{background:none;border:0;color:#9aa4b4;cursor:pointer;padding:0 2px;margin-left:3px}
+.bkseq{display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding:3px 6px;font-size:10px;background:#10151d;border-bottom:1px solid #222b38;position:sticky;top:0;z-index:4}
+.bkseq .st{padding:1px 5px;border-radius:3px;border:1px solid #2a3446;color:#7d7f85;white-space:nowrap}
+.bkseq .st b{margin-right:3px}
+.bkseq .st.done{color:#9aa4b4;border-color:#39465a}
+.bkseq .st.on{color:#111;background:#e8b931;border-color:#e8b931;font-weight:800}
+.bkseq .vd{font-style:normal;padding:0 3px;border-radius:2px;margin-left:2px}
+.bkseq .vd.g{background:#145c34;color:#fff} .bkseq .vd.g2{background:#1d3a28;color:#9ff0c4} .bkseq .vd.a{background:#5c4a12;color:#ffd34d} .bkseq .vd.x{background:#2a3140;color:#c9d4e3}
+.bkseq .sqn{color:#9aa4b4;flex-basis:100%;font-size:9.5px}
+.bkflip{position:sticky;top:0;z-index:5;background:#c4283a;color:#fff;font-weight:800;padding:2px 6px;font-size:11px;letter-spacing:.03em;animation:bkflash 1s steps(2,end) infinite}
 .bkfx{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:6}
-.bkfx .bkdrop{position:absolute;display:flex;align-items:center;justify-content:center;font-style:normal;font-weight:800;font-size:10px;border-radius:3px;will-change:transform,opacity}
-.bkfx .bkdrop.b{color:#062b17;background:#3fb56fcc} .bkfx .bkdrop.s{color:#2b0609;background:#d9534fcc} .bkfx .bkdrop.m{color:#1d1a10;background:#e8b931cc}
-.bkfx .bkpulse{position:absolute;border-radius:3px;will-change:transform,opacity}
-.bkfx .bkpulse.b{box-shadow:0 0 0 2px #37e08c,0 0 10px #3fb56f} .bkfx .bkpulse.s{box-shadow:0 0 0 2px #ff6b7a,0 0 10px #d9534f} .bkfx .bkpulse.m{box-shadow:0 0 0 2px #e8b931,0 0 10px #e8b931}
+.bkfx .bkdrop{position:absolute;font-style:normal;font-weight:800;font-size:9.5px;padding:0 3px;border-radius:3px;will-change:transform,opacity;white-space:nowrap}
+.bkfx .bkdrop.b{color:#062b17;background:#3fb56fdd} .bkfx .bkdrop.s{color:#2b0609;background:#d9534fdd} .bkfx .bkdrop.m{color:#1d1a10;background:#e8b931dd}
+.bkfx .bkpulse{position:absolute;border-radius:4px;will-change:transform,opacity}
+.bkfx .bkpulse.b{box-shadow:0 0 0 2px #37e08c,0 0 8px #3fb56f} .bkfx .bkpulse.s{box-shadow:0 0 0 2px #ff6b7a,0 0 8px #d9534f}
+.bkfx .bkpulse.rf{box-shadow:0 0 0 2px #6dffb4,0 0 12px #3fb56f} .bkfx .bkpulse.r{box-shadow:0 0 0 2px #d9534f,0 0 12px #d9534f} .bkfx .bkpulse.g{box-shadow:0 0 0 2px #9aa4b4,0 0 8px #7d7f85}
+#bkgear{position:fixed;z-index:70;width:250px;background:#10151d;border:1px solid #39465a;border-radius:6px;box-shadow:0 6px 24px #000a;padding:6px 8px;font-size:11px;color:#d6d6d3}
+#bkgear .bkgt{font-weight:800;color:#e8b931;margin-bottom:4px;display:flex} #bkgear .bkgt .x{margin-left:auto;cursor:pointer;color:#9aa4b4}
+#bkgear label{display:flex;align-items:center;gap:6px;padding:2px 0} #bkgear label.rng input{flex:1} #bkgear label.rng i{font-style:normal;color:#9aa4b4;min-width:62px;text-align:right}
 /* BREAK TRAPS: the small floating box */
 .btrap{position:fixed;right:18px;top:120px;z-index:60;width:300px;background:#10151d;border:1px solid #39465a;border-radius:6px;box-shadow:0 6px 24px #000a;font-size:11px;color:#d6d6d3}
 .btrap .bth{display:flex;align-items:center;gap:6px;padding:3px 6px;background:#1f2024;border-radius:6px 6px 0 0;cursor:move;user-select:none}
@@ -4667,7 +4715,8 @@ function renderBook(d){
   const bi = document.getElementById("bigIn"), L = d.ladder || {};
   if (bi && document.activeElement !== bi && L.big_shares != null && bi.dataset.sym + ":" + L.big_shares !== d.symbol + ":" + L.big_shares){ bi.value = Math.round(L.big_shares); bi.dataset.sym = d.symbol; }
   const hint = document.getElementById("bigHint"); if (hint){ const txt = L.big_shares != null ? (L.big_default ? "" : d.symbol + " · ") + "huge ≥" + kfmt(L.huge_shares) : ""; if (hint.textContent !== txt) hint.textContent = txt; }
-  if (d.ladder){ d.ladder.pace = d.tape && d.tape.pace; d.ladder.story = d.story; d.ladder.refs = d.refs; }    // PACE OF TAPE and the PS60 STORY line ride on top of the ladder
+  if (d.ladder){ d.ladder.pace = d.tape && d.tape.pace; d.ladder.story = d.story; d.ladder.refs = d.refs;
+    d.ladder.seq = d.seq; d.ladder.pps = d.tape && d.tape.speed ? d.tape.speed.pps : null; }   // the BASKET ladder's sequence and fast mode    // PACE OF TAPE and the PS60 STORY line ride on top of the ladder
   window._fundLv = {}; for (const x of ((d.inst && d.inst.levels) || [])) window._fundLv[(+x.price).toFixed(2) + (x.side === "bid" ? "b" : "s")] = x;   // FUND score by level
   window._darkLv = {}; for (const x of ((d.dark && d.dark.levels) || [])) if (x.usd >= 200000) window._darkLv[(+x.price).toFixed(2)] = x;   // dark $ by price for the ladder
   const html = ladderHTML(training() ? Object.assign({}, d.ladder, {rows: d.ladder.rows.map(r => Object.assign({}, r, {bid_state: null, ask_state: null, bid_refills: 0, ask_refills: 0, bid_verdict: null, ask_verdict: null}))}) : d.ladder);
@@ -7471,127 +7520,209 @@ function paceHTML(pc){
   }
   return h;
 }
-/* THE BASKET LADDER (an option next to CLEAN: the LAYOUT button on the LEVEL II):
-     HIT $ │ BID │ PRICE │ BASKET │ ASK │ LIFT $
-   money on the outside, shares next in, the price and its BASKET in the centre. The BASKET is every confirmed
-   trade at that price today, the server's own running total (the page never counts: nothing is ever counted twice).
-   A new trade drops into it from its side (sold into the bid from the left, bought from the ask from the right,
-   between from above) and the basket pulses. The drops live in their own layer over the ladder and are skipped,
-   never queued, when there are too many: the feed is never held up. Reload glows, pulled size (gray), the key
-   level labels and every click on the CLEAN ladder work the same here. SETTINGS > Level II: basket_* */
-function bkCfg(L){ return Object.assign({basket: true, basket_animate: true, basket_pulse: true, basket_speed: 1, basket_min_shares: 1,
-  basket_max_drops: 12, money_columns: "traded", pulled_gray: true, level_labels: true}, (L && L.basket) || {}); }
+/* THE BASKET LADDER (LAYOUT: BASKET, an option next to CLEAN). DISPLAY ONLY: nothing here creates, stages or sends
+   an order; the paper order entry is untouched.
+     $ BID │ BID │ PRICE + BASKET │ ASK │ $ ASK
+   money on the outside (size showing × price), shares next in, the price and its BASKET in the centre.
+   BASKET: every row has one (no activity = an empty outline). FILL = shares absorbed at that price (the same number as
+   the all-day "absorbed here" mark) against the price's normal volume today: full = heavy defense. A reload BUYER's
+   basket opens upward, a reload SELLER's is mirrored (opens downward). Colour = the stoplight: AMBER size showing, not
+   proven · GREEN RELOADING (real size) · RED flashing = FLIP · GRAY dashed = PULLED / CLEANED UP. GLOW = refill
+   speed (refills in the last minute): it dims as the refills slow while the basket stays full. One quick PULSE per
+   refill; a drop per print (buys from the ask side, sells from the bid side) — the numbers are the server's, counted
+   first: an animation that is skipped never changes a number. FAST MODE (prints a second over the threshold): only
+   the PS60 rows and your own level rows animate. SETTINGS > Level II (basket_*), or ⚙ on the ladder. */
+function bkCfg(L){ return Object.assign({basket_drop_ms: 250, basket_merge_ms: 50, basket_max_drops: 12, basket_fast_pps: 25, basket_full_x: 3,
+  basket_animate: true, basket_pulse: true, basket_glow: true, basket_flip_alerts: true, basket_touch_counter: true, basket_sequence: true,
+  basket_manual_pop: true, norm: 0}, (L && L.basket) || {}); }
+const BKROLE = {trigger: ["TRIGGER", "trg"], second_entry: ["SECOND ENTRY", "se"], target: ["TAKE PROFIT", "tp"], stop: ["STOP", "sl"]};
+function bkOwner(r){
+  const tb = r.bid_state === "RELOAD" || r.bid_proven || r.bid_stage, ta = r.ask_state === "RELOAD" || r.ask_proven || r.ask_stage;
+  if (tb && !ta) return "bid"; if (ta && !tb) return "ask";
+  if (tb && ta) return (r.bid_abs || 0) >= (r.ask_abs || 0) ? "bid" : "ask";
+  const b = r.bk; if (b && b[0]) return b[2] >= b[1] ? "bid" : "ask";           // sold into the bid = buyers absorbing
+  return r.bid && !r.ask ? "bid" : r.ask && !r.bid ? "ask" : null;
+}
+function bkState(r, side, C){
+  if (C.basket_flip_alerts && r.flip && ((r.flip === "seller") === (side === "ask"))) return "flip";
+  const stg = r[side + "_stage"];
+  if (stg === "PULLED" || stg === "CLEANED UP") return "gray";
+  if (r[side + "_proven"] || stg === "RELOADING" || stg === "STILL THERE" || stg === "NOT RELOADING") return "green";
+  return r.bk && r.bk[0] ? "amber" : "empty";                                    // no trades here yet: an empty outline
+}
 function ladderBasketHTML(L){
-  const C = bkCfg(L);
-  if (!C.basket) return ladderCleanHTML(L);
-  const on = canTrade(), last = L.last != null ? +L.last : null, tk = +L.tick || 0.01;
+  const C = bkCfg(L), last = L.last != null ? +L.last : null, tk = +L.tick || 0.01;
   const big = +L.big_shares || 0, mx = Math.max(1, +L.max_size || 1, ...L.rows.map(r => Math.max(r.bid || 0, r.ask || 0)));
-  const resting = C.money_columns === "resting";
-  const money = r => resting ? [(r.bid || 0) * r.price, (r.ask || 0) * r.price] : [(r.u_s || 0) * r.price, (r.u_b || 0) * r.price];
-  const um = Math.max(1, ...L.rows.map(r => Math.max(...money(r))));
-  const bkm = Math.max(1, ...L.rows.map(r => (r.bk && r.bk[0]) || 0));
+  const norm = Math.max(1, +C.norm || 0), full = Math.max(1, +C.basket_full_x || 3) * norm;
+  const fast = C.basket_animate && L.pps != null && L.pps >= +C.basket_fast_pps;
+  const seq = C.basket_sequence ? L.seq : null;
+  const extreme = seq && seq.extreme != null && seq.step >= 2 ? +seq.extreme : null;
   const chips = (r, side) => (r.mine || []).filter(o => o.id != null && (o.action === "BUY") === (side === "b")).map(o =>
     `<span class="chip ${side} ${o.status === "PreSubmitted" ? "wait" : ""}" data-id="${o.id}" draggable="true" title="${esc(o.role)} order — click to cancel, drag to move">${sz(o.qty)}</span>`).join(" ");
-  const passive = (r, side) => {
-    const n = r[side] || 0, ps = r["ps_" + (side === "bid" ? "b" : "a")], st = r[side + "_state"], rl = st === "RELOAD" || r[side + "_proven"];
-    const stacked = n && ((big && n >= big) || (ps && ps[0] >= Math.max(ps[1], n * 0.5)));
-    const pulled = ps && ps[1] > ps[0] && ps[1] >= Math.max(1, big * 0.5);
-    const w = n ? Math.max(6, Math.round(100 * n / mx)) : 0, s = side === "bid" ? "b" : "s";
-    const atLvl = (side === "bid" ? r.best_bid : r.best_ask) || (last != null && Math.abs(r.price - last) <= tk * 1.01);
-    const live = rl && n > 0 && atLvl, hitting = live && ((side === "bid" ? r.u_s : r.u_b) || 0) > 0;
-    const cls = ["sz", "click", side === "bid" ? "bsz" : "asz", stacked ? "stk" : "", pulled ? (C.pulled_gray ? "pul pulg" : "pul") : "",
-      rl ? "rl " + stageSlug(r[side + "_stage"] || "RELOADING") + (live ? " rl-live" : " rl-idle") + (hitting ? " rl-hit" : "") : ""].join(" ");
-    const badge = rl ? `<span class="rlb" title="RELOAD ${side === "bid" ? "BUYER" : "SELLER"}: refilled ${r[side + "_refills"] || 0} times">R${r[side + "_refills"] || ""}</span>` : "";
-    const pg = pulled && C.pulled_gray ? `<i class="pgv" title="${sz(ps[1])} shares PULLED from ${px(r.price)} without trading (last ${L.stack_seconds || 60}s)">−${kfmt(ps[1])}</i>` : "";
-    return `<td class="${cls}" data-act="${side === "bid" ? "BUY" : "SELL"}" data-px="${r.price}"${szTitle(r, side)}>${w ? `<i class="pb" style="width:${w}%"></i>` : ""}${side === "bid" ? pg + badge : ""}<span class="szn">${n ? kfmt(n) : ""}</span>${side === "ask" ? badge + pg : ""}${chips(r, s) ? `<span class="mine">${chips(r, s)}</span>` : ""}</td>`;
-  };
-  const cash = (r, side) => { const v = money(r)[side === "l" ? 0 : 1]; const cl = side === "l" ? "u_s" : "u_b";
-    if (!v) return `<td class="ug ${cl} mny"></td>`;
-    const w = Math.max(8, Math.round(100 * v / um));
-    const tip = resting ? `${usdK(v)} showing on the ${side === "l" ? "bid" : "ask"} at ${px(r.price)}` : `${usdK(v)} ${side === "l" ? "sold into the bid" : "bought from the ask"} at ${px(r.price)} in the last few seconds (${sz(side === "l" ? r.u_s : r.u_b)} shares)`;
-    return `<td class="ug ${cl} on mny" title="${esc(tip)}"><i style="width:${w}%"></i><span>${usdK(v)}</span></td>`; };
-  const basket = r => { const b = r.bk; if (!b || !b[0]) return `<td class="bk" data-k="${r.price}"></td>`;
-    const [tot, buy, sell] = b, mid = Math.max(0, tot - buy - sell), w = Math.max(6, Math.round(100 * tot / bkm));
-    const bw = tot ? Math.round(100 * buy / tot) : 0, sw = tot ? Math.round(100 * sell / tot) : 0;
-    const tip = `BASKET at ${px(r.price)}: ${sz(tot)} shares traded here today = ${usdK(tot * r.price)} · ${sz(buy)} bought from the ask · ${sz(sell)} sold into the bid${mid ? ` · ${sz(mid)} between` : ""}`;
-    return `<td class="bk${buy > sell * 1.5 ? " bkb" : sell > buy * 1.5 ? " bks" : ""}" data-k="${r.price}" title="${esc(tip)}"><i class="bkf" style="width:${w}%"><i class="bks" style="width:${sw}%"></i><i class="bkb" style="width:${bw}%"></i></i><span>${kfmt(tot)}</span></td>`; };
-  const near = Math.max(3, +(store.get("lvNearTicks", 6)));
-  let h = `<table class="lad clean basket" data-cols="ladb"><tr>
-    <th data-w="52" data-min="18" title="${resting ? "$ showing on the BID at this price" : "$ SOLD into the bid here in the last few seconds (sellers hitting)"}">${resting ? "BID $" : "HIT $"}</th>
-    <th class="szh" data-w="52" data-min="24" title="buyers WAITING to buy here (shares). Bright = big / stacking · gray = being pulled · R = reload buyer. Click: BUY here">BID</th>
-    <th class="pxh" data-w="74" data-min="40">PRICE</th>
-    <th class="bkh" data-w="56" data-min="28" title="BASKET: every confirmed trade at this price today, a running total. Each trade drops in from its side and the basket pulses">BASKET</th>
-    <th class="szh" data-w="52" data-min="24" title="sellers WAITING to sell here (shares). Bright = big / stacking · gray = being pulled · R = reload seller. Click: SELL here">ASK</th>
-    <th data-w="52" data-min="18" title="${resting ? "$ showing on the ASK at this price" : "$ BOUGHT from the ask here in the last few seconds (buyers lifting)"}">${resting ? "ASK $" : "LIFT $"}</th></tr>`;
-  for (const r of L.rows){
-    const tl = C.level_labels ? cleanTags(r, last) : [], tags = tl.length ? tagsHTML(tl) : "", hot = tags && ((r.u_s || 0) + (r.u_b || 0)) > 0;
-    const mine = (r.lv || []).map(m => typeof LVROLE !== "undefined" && LVROLE[m.role] ? "lv-" + LVROLE[m.role][1] : "").filter(Boolean);
-    const dt = tags && last != null ? Math.round(Math.abs(r.price - last) / tk) : null;
-    const lead = tl.find(o => o.mine) || tl[0], lvk = lead ? "klc" : "";
-    const appr = dt == null ? "" : dt <= 1 ? "kl-at" : dt <= near ? "kl-near" : "";
-    const cls = [r.best_bid ? "best-bid" : "", r.best_ask ? "best-ask" : "", r.last ? "lastpx" : "", tags ? "keyrow " + lvk : "", appr, hot ? "keyhot" : "", ...new Set(mine),
-      (r.bid_state === "RELOAD" || r.bid_proven) ? "rl-bid" : "", (r.ask_state === "RELOAD" || r.ask_proven) ? "rl-ask" : ""].join(" ");
-    const star = Math.abs(r.price * 2 - Math.round(r.price * 2)) < 1e-6 ? `<span class="rstar" title="${Math.abs(r.price - Math.round(r.price)) < 1e-6 ? "whole" : "half"} dollar">★</span>` : "";
-    const dkl = (window._darkLv || {})[(+r.price).toFixed(2)];
-    const fl = (window._fundLv || {})[(+r.price).toFixed(2) + "b"] || (window._fundLv || {})[(+r.price).toFixed(2) + "s"];
-    const flc = fl ? `<span class="fdl ${fl.side === "bid" ? "b" : "s"}" title="FUND ${fl.side === "bid" ? "BUYER" : "SELLER"} score ${fl.score}: ${esc(fl.why.join(" · "))}">F${fl.score}</span>` : "";
-    const dkc = flc + (dkl ? `<span class="dkl" title="large orders today at ${px(r.price)}: ${sz(dkl.shares)} shares, ${dkl.prints} prints${dkl.big ? `, ${dkl.big} large` : ""}">L ${usdK(dkl.usd)}</span>` : "");
-    h += `<tr class="${cls}" data-price="${r.price}"${lead ? ` style="--klc:${lead.c};--klf:${lead.c}55"` : ""}>${cash(r, "l")}${passive(r, "bid")}<td class="px">${star}${px(r.price)}${dkc}${tags ? `<span class="kts">${tags}</span>` : ""}</td>${basket(r)}${passive(r, "ask")}${cash(r, "r")}</tr>`;
+  // the PS60 SEQUENCE: four steps, advancing on their own
+  let h = "";
+  if (seq){
+    const names = ["WAITING AT TRIGGER", "BROKE THROUGH", "PULLBACK TO TRIGGER", "SECOND ENTRY"];
+    const vcls = v => v === "RELOADING" ? "g" : v === "STILL THERE" ? "g2" : v === "NOT RELOADING" ? "a" : v ? "x" : "";
+    h += `<div class="bkseq ${seq.side}" title="${esc(seq.note)}">${names.map((n, i) => { const k = i + 1, on = k === seq.step || (k === 4 && seq.lit4), done = k < seq.step;
+      return `<span class="st ${on ? "on" : ""} ${done ? "done" : ""}"><b>${k}</b>${k === 2 ? (seq.side === "short" ? "BROKE · NEW LOW" : "BROKE · NEW HIGH") : n}${on && seq.verdict && (k === 1 || k === 3) ? ` <i class="vd ${vcls(seq.verdict)}">${esc(seq.verdict)}</i>` : ""}</span>`; }).join("")}<span class="sqn">${esc(seq.note)}</span></div>`;
   }
-  h += `</table><div class="legend lgc"><span><b class="sell">${resting ? "BID $" : "HIT $"}</b> ${resting ? "money waiting to buy" : "money selling now"} · <b class="buy">BID</b> / <b class="sell">ASK</b> shares waiting · <b class="gold">BASKET</b> traded here today · <b class="buy">${resting ? "ASK $" : "LIFT $"}</b> ${resting ? "money waiting to sell" : "money buying now"}</span><span class="dim">gray = pulled · R = reload${on ? " · click a size to trade" : ""}</span></div>`;
+  // the FLIP banner
+  const fl = C.basket_flip_alerts ? L.rows.filter(r => r.flip) : [];
+  for (const r of fl) h += `<div class="bkflip">${px(r.price)} FLIP, ${r.flip === "seller" ? "seller losing, buyers taking over" : "buyer losing, sellers taking over"}</div>`;
+  h += `<table class="lad clean basket2${fast ? " fast" : ""}" data-cols="ladb2"><tr>
+    <th data-w="44" data-min="20" title="$ showing on the BID at this price (shares × price)">$ BID</th>
+    <th class="szh" data-w="62" data-min="30" title="buyers waiting (shares). Gray = pulled. R = reload buyer. Click: BUY there">BID</th>
+    <th class="pxh" data-w="160" data-min="110" title="PRICE and its BASKET: fill = shares absorbed here against this price's normal volume today · AMBER showing, not proven · GREEN RELOADING · RED flashing = FLIP · GRAY dashed = PULLED / CLEANED UP · a buyer's basket opens up, a seller's down">PRICE · BASKET${fast ? ` <i class="fastchip" title="FAST MODE: ${L.pps} prints a second. Only the PS60 rows and your levels animate; the numbers still update">FAST</i>` : ""}<button class="bkgear" data-bkgear="1" title="basket settings">⚙</button></th>
+    <th class="szh" data-w="62" data-min="30" title="sellers waiting (shares). Gray = pulled. R = reload seller. Click: SELL there">ASK</th>
+    <th data-w="44" data-min="20" title="$ showing on the ASK at this price (shares × price)">$ ASK</th></tr>`;
+  for (const r of L.rows){
+    const own = bkOwner(r), stt = own ? bkState(r, own, C) : (r.bk && r.bk[0] ? "amber" : "empty");
+    const roles = (r.lv || []).map(m => m.role).filter(x => BKROLE[x]);
+    const manual = C.basket_manual_pop && roles.some(x => x === "second_entry" || x === "target" || x === "stop");
+    const ps60row = roles.includes("trigger") || roles.includes("second_entry");
+    const isExt = extreme != null && Math.abs(r.price - extreme) < tk * 0.5;
+    const flipSide = r.flip ? (r.flip === "seller" ? "ask" : "bid") : null;
+    const pulled = side => { const ps = r["ps_" + (side === "bid" ? "b" : "a")]; return ps && ps[1] > ps[0] && ps[1] >= Math.max(1, big * 0.5) ? ps[1] : 0; };
+    const pb = pulled("bid"), pa = pulled("ask");
+    const rowGray = (r.bid_stage === "PULLED" || r.ask_stage === "PULLED") && !r.flip;
+    const cls = ["bkrow", r.best_bid ? "best-bid" : "", r.best_ask ? "best-ask" : "", r.last ? "lastpx" : "", r.flip && C.basket_flip_alerts ? "flipr" : "", rowGray || pb || pa ? "pullr" : "",
+      ...roles.map(x => "lvp-" + BKROLE[x][1]), manual ? "manual" : "", ps60row ? "ps60r" : "", isExt ? "newext" : "",
+      (r.bid_state === "RELOAD" || r.bid_proven) ? "rl-bid" : "", (r.ask_state === "RELOAD" || r.ask_proven) ? "rl-ask" : ""].join(" ");
+    const cash = side => { const n = r[side] || 0; return `<td class="mny ${side}">${n ? `<span>${usdK(n * r.price)}</span>` : ""}</td>`; };
+    const size = side => {
+      const n = r[side] || 0, stg = r[side + "_stage"], rl = r[side + "_state"] === "RELOAD" || r[side + "_proven"];
+      const pg = side === "bid" ? pb : pa, w = n ? Math.max(6, Math.round(100 * n / mx)) : 0;
+      const atLvl = (side === "bid" ? r.best_bid : r.best_ask) || (last != null && Math.abs(r.price - last) <= tk * 1.01);
+      const live = rl && n > 0 && atLvl, hitting = live && ((side === "bid" ? r.u_s : r.u_b) || 0) > 0;
+      const cl = ["sz", "click", side === "bid" ? "bsz" : "asz", pg ? "pulg" : "", flipSide === side ? "struck" : flipSide && flipSide !== side ? "bold" : "",
+        rl ? "rl " + stageSlug(stg || "RELOADING") + (live ? " rl-live" : " rl-idle") + (hitting ? " rl-hit" : "") : ""].join(" ");
+      const badge = rl ? `<span class="rlb" title="RELOAD ${side === "bid" ? "BUYER" : "SELLER"}: ${esc(stg || "RELOADING")}, refilled ${r[side + "_refills"] || 0} times">R${r[side + "_refills"] || ""}</span>` : "";
+      const pgv = pg ? `<i class="pgv" title="${sz(pg)} shares PULLED from ${px(r.price)} without trading (last ${L.stack_seconds || 60}s)">−${kfmt(pg)}</i>` : "";
+      const s_ = side === "bid" ? "b" : "s";
+      return `<td class="${cl}" data-act="${side === "bid" ? "BUY" : "SELL"}" data-px="${r.price}"${szTitle(r, side)}>${w ? `<i class="pb" style="width:${w}%"></i>` : ""}${side === "bid" ? pgv + badge : ""}<span class="szn">${n ? kfmt(n) : ""}</span>${side === "ask" ? badge + pgv : ""}${chips(r, s_) ? `<span class="mine">${chips(r, s_)}</span>` : ""}</td>`; };
+    // the basket
+    const b = r.bk || [0, 0, 0, 0];
+    const absorbed = own ? (r[own + "_abs"] != null ? r[own + "_abs"] : (own === "bid" ? b[2] : b[1])) : 0;
+    const fill = absorbed ? Math.max(0.06, Math.min(1, absorbed / full)) : 0;
+    const glow = C.basket_glow && stt === "green" ? Math.min(1, (r[own + "_rf"] || 0) / 4) : 0;
+    const tip = `${own === "bid" ? "BUYER'S" : own === "ask" ? "SELLER'S" : ""} BASKET at ${px(r.price)}: ${sz(absorbed)} absorbed (full = ${sz(Math.round(full))}, ${(+C.basket_full_x || 3)}× this price's normal ${sz(norm)}) · ${sz(b[0])} traded here today (${sz(b[1])} bought, ${sz(b[2])} sold)` +
+      (own && r[own + "_stage"] ? ` · ${r[own + "_stage"]}` : "") + (own && r[own + "_rf"] ? ` · ${r[own + "_rf"]} refills in the last minute` : "");
+    const touch = C.basket_touch_counter && ps60row && ((r.vs || 0) + (r.vb || 0)) ? `<i class="tch" title="traded at this level since price last touched it (resets each touch)">·${kfmt((r.vs || 0) + (r.vb || 0))}</i>` : "";
+    // the labels: TRIGGER (with its verdict), NEW HIGH / NEW LOW, LAST, SECOND ENTRY, TAKE PROFIT, STOP, FLIP, PULLED
+    const lab = [];
+    if (roles.includes("trigger") && seq){ const v = seq.verdict; lab.push(`<b class="bl trg">TRIGGER${v ? " · " + esc(v) : ""}</b>`); }
+    else if (roles.includes("trigger")) lab.push(`<b class="bl trg">TRIGGER</b>`);
+    if (isExt) lab.push(`<b class="bl ext">${seq.side === "short" ? "NEW LOW" : "NEW HIGH"}</b>`);
+    for (const x of ["second_entry", "target", "stop"]) if (roles.includes(x)) lab.push(`<b class="bl ${BKROLE[x][1]}">${BKROLE[x][0]}</b>`);
+    if (r.flip && C.basket_flip_alerts) lab.push(`<b class="bl flp">FLIP</b>`);
+    if (r.bid_stage === "PULLED" || r.ask_stage === "PULLED") lab.push(`<b class="bl pul">PULLED</b>`);
+    if (r.last) lab.push(`<b class="bl lst">LAST</b>`);
+    const basket = `<span class="bkt ${own === "ask" ? "dn" : "up"} bk-${stt}${glow ? " glw" : ""}" data-bk="${r.price}" style="--fill:${(fill * 100).toFixed(0)}%;--glow:${glow.toFixed(2)}" title="${esc(tip)}"><i class="bkfl"></i></span>`;
+    const tot = b[0] ? `<i class="bkn">${kfmt(b[0])}</i>` : "";
+    h += `<tr class="${cls}" data-price="${r.price}">${cash("bid")}${size("bid")}<td class="px bkpx"><span class="pxv">${px(r.price)}</span>${basket}${tot}${touch}${lab.length ? `<span class="bls">${lab.join("")}</span>` : ""}</td>${size("ask")}${cash("ask")}</tr>`;
+  }
+  h += `</table><div class="legend lgc"><span><b class="gold">AMBER</b> showing · <b class="buy">GREEN</b> RELOADING · <b class="sell">RED</b> FLIP · <b class="dim">GRAY</b> PULLED / CLEANED UP · basket opens up = buyer, down = seller</span><span class="dim">display only${fast ? " · FAST MODE" : ""}</span></div>`;
   return h;
 }
-/* THE BASKET DROP: after each draw, what the server's basket gained at each price since the last draw drops in from
-   its side and the basket pulses. Keyed by symbol + price on the server's own sequence: a draw that shows the same
-   numbers again animates nothing, a cleared or new-day basket (smaller numbers) starts over without a drop */
-const BKSEEN = new Map(); let BKLIVE = 0;
+/* THE BASKET's motion: after each draw, what is NEW since the last one. Counted first (the numbers on the rows are the
+   server's), animated second: each price's new prints wait one merge window (basket_merge_ms) and drop in as ONE
+   drop with ONE pulse (buys from the ask side, sells from the bid side); a new refill pulses the basket. Drops live
+   in their own layer (CSS transforms, the Web Animations API), never more than basket_max_drops at once: anything
+   beyond is counted, not animated, and the feed is never held up. FAST MODE: only the PS60 rows and your level rows
+   animate; a PULLED change at a level row comes first. */
+const BKSEEN = new Map(); let BKLIVE = 0; const BKQ = new Map(); let BKQT = null;
 function basketFx(wrap, d){
   const L = d.ladder || {}, C = bkCfg(L), host = P.book.pc;
-  if (store.get("ladMode", "clean") !== "basket" || !C.basket) return;
-  // only what is NEW since the last draw drops: a ticker (or a row) not drawn in the last few seconds starts over
-  // silently (coming back to a tab, a row scrolling into view after the ladder re-centres), a cleared or new-day
-  // basket (smaller numbers, or gone) starts over too
+  if (store.get("ladMode", "clean") !== "basket") return;
   const sym = d.symbol, now = Date.now(), lastDraw = BKSEEN.get(sym + "|*"), fresh = !lastDraw || now - lastDraw > 3000;
   BKSEEN.set(sym + "|*", now);
-  const drops = [];
+  const fast = L.pps != null && L.pps >= +C.basket_fast_pps;
   for (const r of (L.rows || [])){
-    const b = r.bk, key = sym + "|" + r.price;
-    if (!b){ BKSEEN.delete(key); continue; }
-    const was = BKSEEN.get(key);
-    BKSEEN.set(key, [b[0], b[1], b[2], b[3], now]);
-    if (fresh || !was || now - was[4] > 3000 || b[3] <= was[3] || b[0] < was[0]) continue;   // nothing new, stale or reset: no drop
-    const dB = Math.max(0, b[1] - was[1]), dS = Math.max(0, b[2] - was[2]), dM = Math.max(0, (b[0] - was[0]) - dB - dS);
-    for (const [n, from] of [[dS, "l"], [dB, "r"], [dM, "t"]]) if (n >= Math.max(1, +C.basket_min_shares || 1)) drops.push({price: r.price, n, from});
+    const key = sym + "|" + r.price, b = r.bk || [0, 0, 0, 0];
+    const roles = (r.lv || []).map(m => m.role);
+    const lvRow = roles.some(x => x === "trigger" || x === "second_entry" || (C.basket_manual_pop && (x === "target" || x === "stop")));
+    const cur = {tot: b[0], buy: b[1], sell: b[2], seq: b[3], rb: r.bid_rseq || 0, ra: r.ask_rseq || 0, pb: (r.ps_b || [0, 0])[1], pa: (r.ps_a || [0, 0])[1], t: now};
+    const was = BKSEEN.get(key); BKSEEN.set(key, cur);
+    if (fresh || !was || now - was.t > 3000) continue;                     // first sight, back on a ticker, scrolled in: no backlog
+    if (fast && !lvRow) continue;                                          // FAST MODE: numbers only, except your levels and the PS60 rows
+    const q = BKQ.get(key) || {sym, price: r.price, buy: 0, sell: 0, mid: 0, refill: 0, pulled: 0, lv: lvRow, t0: now};
+    if (cur.seq > was.seq && cur.tot >= was.tot){
+      const dB = Math.max(0, cur.buy - was.buy), dS = Math.max(0, cur.sell - was.sell);
+      q.buy += dB; q.sell += dS; q.mid += Math.max(0, cur.tot - was.tot - dB - dS);
+    }
+    if (cur.rb > was.rb || cur.ra > was.ra) q.refill += 1;                    // one pulse per refill
+    if (lvRow && (cur.pb > was.pb + 0 || cur.pa > was.pa + 0)) q.pulled += 1;   // a PULLED change at a level row comes first
+    if (q.buy || q.sell || q.mid || q.refill || q.pulled) BKQ.set(key, q);
   }
   if (BKSEEN.size > 6000) for (const k of [...BKSEEN.keys()].slice(0, 3000)) if (!k.endsWith("|*")) BKSEEN.delete(k);
-  if (!drops.length || !C.basket_animate && !C.basket_pulse || document.hidden || !wrap.offsetParent) return;
+  if (BKQ.size && !BKQT) BKQT = setTimeout(() => { BKQT = null; requestAnimationFrame(() => bkFlush(wrap, d.symbol)); }, Math.max(0, +C.basket_merge_ms || 0));
+}
+function bkFlush(wrap, sym){
+  const d = curData(); if (!d || d.symbol !== sym) { BKQ.clear(); return; }
+  const L = d.ladder || {}, C = bkCfg(L), host = P.book.pc, items = [...BKQ.values()]; BKQ.clear();
+  if (document.hidden || !wrap.isConnected || !wrap.offsetParent || !(C.basket_animate || C.basket_pulse)) return;
   let fx = host.querySelector(":scope > .bkfx"); if (!fx){ fx = document.createElement("div"); fx.className = "bkfx"; host.appendChild(fx); }
-  const hr = host.getBoundingClientRect(), wr = wrap.getBoundingClientRect(), dur = Math.max(80, 420 / Math.max(0.1, +C.basket_speed || 1));
-  drops.sort((a, b) => b.n - a.n);
-  for (const dp of drops){
-    if (BKLIVE >= Math.max(1, +C.basket_max_drops || 12)) break;           // too many at once: skip, never queue
-    const cell = wrap.querySelector(`tr[data-price="${dp.price}"] td.bk`); if (!cell) continue;
-    const cr = cell.getBoundingClientRect(); if (cr.bottom < wr.top || cr.top > wr.bottom) continue;   // scrolled out of view
+  const hr = host.getBoundingClientRect(), wr = wrap.getBoundingClientRect();
+  const dur = Math.max(60, +C.basket_drop_ms || 250), pdur = Math.max(40, Math.round(dur * 0.6));
+  // a PULLED change at a level row first, then your level rows, then the biggest
+  items.sort((a, b) => (b.pulled ? 4 : 0) + (b.lv ? 2 : 0) - (a.pulled ? 4 : 0) - (a.lv ? 2 : 0) || (b.buy + b.sell + b.mid) - (a.buy + a.sell + a.mid));
+  for (const q of items){
+    const el0 = wrap.querySelector(`tr[data-price="${q.price}"] .bkt`); if (!el0) continue;
+    const cr = el0.getBoundingClientRect(); if (cr.bottom < wr.top || cr.top > wr.bottom) continue;
     const x = cr.left - hr.left, y = cr.top - hr.top;
-    if (C.basket_animate){
-      const el = document.createElement("i"); el.className = "bkdrop " + (dp.from === "l" ? "s" : dp.from === "r" ? "b" : "m"); el.textContent = "+" + kfmt(dp.n);
-      el.style.left = x + "px"; el.style.top = y + "px"; el.style.width = cr.width + "px"; el.style.height = cr.height + "px";
-      fx.appendChild(el); BKLIVE++;
-      const dx = dp.from === "l" ? -cr.width * 0.9 : dp.from === "r" ? cr.width * 0.9 : 0, dy = dp.from === "t" ? -cr.height * 1.2 : -cr.height * 0.35;
-      const a = el.animate([{transform: `translate(${dx}px,${dy}px)`, opacity: 0}, {opacity: 1, offset: 0.3}, {transform: "translate(0,0)", opacity: 0.95}],
-                           {duration: dur, easing: "cubic-bezier(.3,.8,.4,1)"});
+    const drops = [[q.sell, "s"], [q.buy, "b"], [q.mid, "m"]].filter(z => z[0] > 0);
+    for (const [n, side] of drops){
+      if (!C.basket_animate || BKLIVE >= Math.max(1, +C.basket_max_drops || 12)) break;     // beyond the cap: counted, not animated
+      const el = document.createElement("i"); el.className = "bkdrop " + side; el.textContent = "+" + kfmt(n);
+      el.style.left = (x - 6) + "px"; el.style.top = (y - 1) + "px"; fx.appendChild(el); BKLIVE++;
+      const row = el0.closest("tr"), cell = row && row.querySelector(side === "s" ? "td.bsz" : side === "b" ? "td.asz" : "td.px");
+      const cc = cell ? cell.getBoundingClientRect() : cr;
+      const dx = side === "m" ? 0 : (cc.left + cc.width / 2) - (cr.left + cr.width / 2), dy = side === "m" ? -cr.height * 1.5 : -2;
+      const a = el.animate([{transform: `translate(${dx}px,${dy}px)`, opacity: 0.2}, {opacity: 1, offset: 0.25}, {transform: "translate(0,0)", opacity: 0.9}], {duration: dur, easing: "cubic-bezier(.3,.8,.4,1)"});
       let done = false; const end = () => { if (done) return; done = true; el.remove(); BKLIVE = Math.max(0, BKLIVE - 1); };
-      a.onfinish = a.oncancel = end; setTimeout(end, dur + 250);     // a layer taken away mid-drop never leaves the count stuck
+      a.onfinish = a.oncancel = end; setTimeout(end, dur + 250);
     }
     if (C.basket_pulse){
-      const ring = document.createElement("i"); ring.className = "bkpulse " + (dp.from === "l" ? "s" : dp.from === "r" ? "b" : "m");
-      ring.style.left = x + "px"; ring.style.top = y + "px"; ring.style.width = cr.width + "px"; ring.style.height = cr.height + "px";
+      const kind = q.pulled ? "g" : el0.classList.contains("bk-flip") ? "r" : q.refill ? "rf" : drops.length ? (q.buy >= q.sell ? "b" : "s") : null;
+      if (!kind) continue;
+      const ring = document.createElement("i"); ring.className = "bkpulse " + kind;
+      ring.style.left = (x - 2) + "px"; ring.style.top = (y - 2) + "px"; ring.style.width = (cr.width + 4) + "px"; ring.style.height = (cr.height + 4) + "px";
       fx.appendChild(ring);
-      const a2 = ring.animate([{opacity: 0.9, transform: "scale(1)"}, {opacity: 0, transform: "scale(1.25)"}], {duration: dur * 0.9, delay: C.basket_animate ? dur * 0.85 : 0, easing: "ease-out"});
-      a2.onfinish = a2.oncancel = () => ring.remove(); setTimeout(() => ring.remove(), dur * 2 + 250);
+      const a2 = ring.animate([{opacity: 0.95, transform: "scale(1)"}, {opacity: 0, transform: "scale(1.5)"}], {duration: pdur, delay: drops.length && C.basket_animate ? dur * 0.8 : 0, easing: "ease-out"});
+      a2.onfinish = a2.oncancel = () => ring.remove(); setTimeout(() => ring.remove(), dur + pdur + 300);
     }
   }
 }
+/* ⚙ on the BASKET ladder: the same settings as SETTINGS > Level II, saved for every session */
+function bkGearHTML(C){
+  const tg = (k, t) => `<label><input type="checkbox" data-bkset="${k}" ${C[k] ? "checked" : ""}> ${t}</label>`;
+  return `<div class="bkgpop"><div class="bkgt">BASKET LADDER <span class="x" data-bkgx="1">✕</span></div>
+    <label class="rng">Animation <input type="range" min="80" max="1000" step="10" data-bkset="basket_drop_ms" value="${C.basket_drop_ms}"><i>${C.basket_drop_ms} ms</i></label>
+    <label class="rng">Burst merge <input type="range" min="0" max="500" step="10" data-bkset="basket_merge_ms" value="${C.basket_merge_ms}"><i>${C.basket_merge_ms} ms</i></label>
+    <label class="rng">Max drops <input type="range" min="1" max="40" step="1" data-bkset="basket_max_drops" value="${C.basket_max_drops}"><i>${C.basket_max_drops}</i></label>
+    <label class="rng">Fast mode at <input type="range" min="2" max="200" step="1" data-bkset="basket_fast_pps" value="${C.basket_fast_pps}"><i>${C.basket_fast_pps} prints/s</i></label>
+    ${tg("basket_animate", "Animations")}${tg("basket_pulse", "Pulse")}${tg("basket_glow", "Glow")}${tg("basket_flip_alerts", "Flip alerts")}${tg("basket_touch_counter", "Level-touch counter")}${tg("basket_sequence", "Sequence tracker")}${tg("basket_manual_pop", "Your level rows pop")}
+    <div class="dim">display only · saved for every session</div></div>`;
+}
+document.addEventListener("click", e => {
+  const g = e.target.closest("[data-bkgear]"), x = e.target.closest("[data-bkgx]");
+  if (x){ const p = document.getElementById("bkgear"); if (p) p.remove(); return; }
+  if (!g) return; e.stopPropagation();
+  let p = document.getElementById("bkgear"); if (p){ p.remove(); return; }
+  const d = curData(); if (!d) return;
+  p = document.createElement("div"); p.id = "bkgear"; p.innerHTML = bkGearHTML(bkCfg(d.ladder));
+  const r = g.getBoundingClientRect(); p.style.left = Math.max(8, Math.min(innerWidth - 270, r.left - 120)) + "px"; p.style.top = (r.bottom + 4) + "px";
+  document.body.appendChild(p);
+});
+document.addEventListener("input", e => { const i = e.target.closest("#bkgear input[type=range]"); if (i) i.nextElementSibling.textContent = i.value + (i.dataset.bkset.endsWith("_ms") ? " ms" : i.dataset.bkset === "basket_fast_pps" ? " prints/s" : ""); });
+document.addEventListener("change", async e => {
+  const i = e.target.closest("#bkgear [data-bkset]"); if (!i) return;
+  const k = i.dataset.bkset, v = i.type === "checkbox" ? i.checked : +i.value;
+  const out = await post("/api/settings", {changes: {["ladder." + k]: v}});
+  if (out && out.ok === false) toast("Not saved: " + (out.reason || ""), false);
+  P.book.last = null; poll(true);
+});
 function ladderProHTML(L){
   const rows = L.rows; if (!rows.length) return `<div class="empty">Waiting for the book…</div>`;
   const ms = Math.max(L.max_traded, 1), big = L.big_shares || 5000;

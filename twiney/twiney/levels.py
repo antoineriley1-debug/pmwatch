@@ -68,6 +68,7 @@ class LevelTracker:
         self.episodes = []           # [{start, end, verdict, absorbed, refills}]
         self.absorbed_all = 0.0      # shares absorbed over every finished visit (the live one adds absorbed_total)
         self.back = None             # {"n": visit number, "away": seconds gone, "prior": last verdict} while BACK
+        self.refill_seq = 0          # every refill ever, never reset: the BASKET ladder pulses once per new one
         self._reset_episode()
 
     def _reset_episode(self):
@@ -140,6 +141,7 @@ class LevelTracker:
             if displayed > prev and self.exec_since_refresh > 0:
                 # size came back after executions ate into it: a refresh
                 self.refresh_times.append(now)
+                self.refill_seq += 1
                 self.refill_sizes.append(round(displayed))
                 if self.proven:
                     self.proven_refills += 1
