@@ -218,6 +218,23 @@ def start_watchdog(get_trader, clock=time.time, every=0.5):
             time.sleep(every)
     threading.Thread(target=run, name="twiney-watchdog", daemon=True).start()
 
+    def fast():
+        """Woken by every price update: option stops fire on the tick that crosses them."""
+        while True:
+            tr = get_trader()
+            evt = getattr(getattr(tr, "engine", None), "price_evt", None)
+            if evt is None:
+                time.sleep(every)
+                continue
+            evt.wait(every)
+            evt.clear()
+            try:
+                if any(p.get("qty") for p in list(tr.engine.opt_positions.values())):
+                    tr.fast_stops(clock())
+            except Exception:
+                logging.getLogger("twiney").exception("fast stops failed")
+    threading.Thread(target=fast, name="twiney-fast-stops", daemon=True).start()
+
 
 def run_demo(cfg, plays, args):
     from twiney.sim import DemoFeed

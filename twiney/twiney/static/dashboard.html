@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261008-2258">
+<meta name="build" content="20261008-2328">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -1379,6 +1379,15 @@ table.lad.basket2 th .bkgear{background:none;border:0;color:#9aa4b4;cursor:point
 .btrap .btl.brk .btw{background:#2a3446;color:#cfd8e6} .btrap .btl.trp.up .btw{background:#7a1c26;color:#fff} .btrap .btl.trp.dn .btw{background:#145c34;color:#fff}
 .btrap .btl.ext .btw{background:#e8b931;color:#111} .btrap .btl.hld .btw{background:#1d3a28;color:#9ff0c4}
 .btrap .btr{display:flex;flex-wrap:wrap;gap:8px;color:#c9d4e3;line-height:1.5} .btrap .btr.dim{color:#7d7f85} .btrap .btr.uw b{color:#ff8b96}
+/* OPTION FLOW receipts: the call you clicked, the prints it added up, and one ticker's live read */
+.fref{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:6px 8px;margin:2px 0 6px;border:1px solid var(--gold);border-radius:4px;background:rgba(255,193,7,.08);font:12px var(--sans)}
+.fref b{color:var(--gold);letter-spacing:.06em} .fref .frb{margin-left:auto;display:flex;gap:4px}
+.fref button,.fread button{font:700 10.5px var(--sans);padding:2px 7px;border-radius:3px;border:1px solid #3a3d44;background:#1b1d21;color:#d6d6d3;cursor:pointer}
+.fread{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:5px 8px;margin:2px 0 6px;border:1px solid #2c2f35;border-radius:4px;font:11px var(--sans);color:#a9adb5}
+.fread button.c{border-color:#17a86a;color:#3fe09a} .fread button.p{border-color:#d64541;color:#ff7b74} .fread button.kn{background:rgba(255,193,7,.15)}
+.fread button[disabled]{opacity:.45;cursor:default}
+.fl.said{outline:2px solid var(--gold);outline-offset:-2px;background:rgba(255,193,7,.07)}
+.say .fbtn{font:700 9.5px var(--sans);padding:0 5px;margin:0 6px 0 2px;border-radius:3px;border:1px solid var(--gold);background:transparent;color:var(--gold);cursor:pointer}
 
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
@@ -5548,10 +5557,15 @@ function renderCalls(s){
   const html = `<div class="dim" style="margin-bottom:4px;font-size:11px"><label><input type="checkbox" id="callsAll" ${all ? "checked" : ""}> every symbol</label></div>` + (alerts.length ? alerts.map(a => {
     const age = s.now - a.t;
     const gr = a.key ? `<span class="grade" data-key="${esc(a.key)}"><button data-v="good" class="${a.grade==="good"?"on":""}">GOOD</button><button data-v="bad" class="${a.grade==="bad"?"on":""}">BAD</button></span>` : "";
-    return `<div class="say ${sayClass(a)} ${age < 15 ? "fresh" : ""}"><span class="age">${ago(age)}</span>${gr}<b>${esc(a.symbol)}</b> — ${esc(a.text || a.label)}</div>`;
+    const fb = a.flow && a.flow.ids && a.flow.ids.length ? `<button class="fbtn" data-flowkey="${esc(a.key || "")}" title="open OPTION FLOW on the exact prints this call added up">🔎 FLOW</button>` : "";
+    return `<div class="say ${sayClass(a)} ${age < 15 ? "fresh" : ""}"><span class="age">${ago(age)}</span>${gr}${fb}<b>${esc(a.symbol)}</b> — ${esc(a.text || a.label)}</div>`;
   }).join("") : `<div class="say">No calls for ${esc(curSym || "this symbol")} yet.</div>`);
   const fb = document.getElementById("feedBody"); if (fb.dataset.h !== html){ fb.dataset.h = html; fb.innerHTML = html; }
 }
+document.getElementById("feedBody").addEventListener("click", ev => {
+  const b = ev.target.closest("[data-flowkey]"); if (!b) return;
+  const a = ((state && state.alerts) || []).find(x => x.key === b.dataset.flowkey); if (a && a.flow) showFlowRef(a.flow);
+});
 /* ---------- partial profit + breakeven: on the position row and in the ticket */
 const PP = {};   // symbol -> {open, shares, px}: the partial-profit form, kept while you type
 // getting out / protecting works disarmed and locked (paper / sim account), like the server allows
@@ -6234,14 +6248,51 @@ const PAGE_BUILD = (document.querySelector('meta[name="build"]') || {}).content 
 /* OPTION FLOW: the feed, shaped like FlowAlgo. Green = calls, red = puts; the dot row is the trade type;
    a gold WAYS AWAY tag marks size bought at the ask well out of the money. */
 const kfmt$ = v => v >= 1e6 ? "$" + (v / 1e6).toFixed(v >= 1e7 ? 0 : 1) + "M" : v >= 1e3 ? "$" + Math.round(v / 1e3) + "K" : "$" + Math.round(v);
+// ONE TICKER'S FLOW: a ticker typed in the box (or the panel locked to your stock) loads EVERY print the desk holds for it
+// today, not just the market-wide latest. A call's RECEIPT (🔎 FLOW on the call) shows exactly the prints it added up.
+const FSYM = {sym: "", data: null, at: 0, busy: false};
+let FLOWREF = null, FLOWREF_ALL = false;
+function fetchFlowSym(sym){
+  if (FSYM.busy || (sym === FSYM.sym && Date.now() - FSYM.at < 1500)) return;
+  FSYM.busy = true;
+  fetch("/api/flow/symbol?s=" + encodeURIComponent(sym)).then(r => r.json()).then(j => { FSYM.sym = sym; FSYM.data = j; FSYM.at = Date.now(); })
+    .catch(() => {}).finally(() => { FSYM.busy = false; if (state) renderFlow(state); });
+}
+function showFlowRef(ref){
+  if (!ref || !ref.ids || !ref.ids.length) return;
+  FLOWREF = Object.assign({}, ref, {idset: new Set(ref.ids)}); FLOWREF_ALL = false;
+  const f = document.getElementById("flowFilter"); if (f) f.value = ref.symbol;
+  if (typeof showPanel === "function") showPanel("flow");
+  FSYM.at = 0; if (state) renderFlow(state);
+}
 function renderFlow(s){
   const el = document.getElementById("flowList"); if (!el) return;
   const filt = (document.getElementById("flowFilter").value || "").trim().toUpperCase();
   const onlyU = document.getElementById("flowUnusual").checked, mine = document.getElementById("flowMine").checked;
   const fc = (state && state.flow_cfg) || {otm_pct: 3, min_premium: 250000};
-  const rows = (s.flow || []).filter(p => (!filt || p.symbol.startsWith(filt)) && (!mine || (s.symbols || []).includes(p.symbol)) && (!solo() || p.symbol === curSym))
+  if (FLOWREF && filt !== FLOWREF.symbol) FLOWREF = null;          // you typed another ticker: that call's receipt is closed
+  const one = filt || (solo() ? curSym : "");
+  if (one) fetchFlowSym(one);
+  const full = one && FSYM.sym === one && FSYM.data ? FSYM.data : null;
+  let base = full && full.prints.length ? full.prints : (s.flow || []);
+  if (FLOWREF && !FLOWREF_ALL) base = base.filter(p => FLOWREF.idset.has(p.id));
+  const rows = base.filter(p => (!filt || p.symbol.startsWith(filt)) && (one || !mine || (s.symbols || []).includes(p.symbol)) && (!solo() || p.symbol === curSym))
     .map(p => { const away = p.side === "ask" && p.otm_pct != null && p.otm_pct >= fc.otm_pct && p.premium >= 50000; return Object.assign({away}, p); })
-    .filter(p => !onlyU || p.away).slice(0, 60);
+    .filter(p => FLOWREF || !onlyU || p.away).slice(0, full ? 400 : 60);
+  // the call you clicked: what it said, and the prints it counted (their total is the number you heard)
+  let head = "";
+  if (FLOWREF){
+    const got = (full ? full.prints : (s.flow || [])).filter(p => FLOWREF.idset.has(p.id)), tot = got.reduce((a, p) => a + (p.premium || 0), 0);
+    head = `<div class="fref"><b>THE CALL</b> ${kfmt$(FLOWREF.dollars)} of ${esc(FLOWREF.symbol)} ${FLOWREF.cp === "C" ? "CALLS" : "PUTS"} · ${FLOWREF.prints} print${FLOWREF.prints === 1 ? "" : "s"}${FLOWREF.what ? " · " + esc(FLOWREF.what) : ""}`
+      + (full && got.length < FLOWREF.ids.length ? ` <span class="dim">(${got.length} of ${FLOWREF.ids.length} still in today's memory, ${kfmt$(tot)})</span>` : "")
+      + `<span class="frb"><button data-fref="all">${FLOWREF_ALL ? "ONLY THESE" : "ALL " + esc(FLOWREF.symbol)}</button><button data-fref="x" title="close">✕</button></span></div>`;
+  }
+  // one ticker: the read the voice uses on it right now (short-dated, out of the money, bought at the ask)
+  if (full && full.reads && !FLOWREF){
+    const r = full.reads, b = cp => { const x = r[cp] || {}; return `<button class="${cp === "C" ? "c" : "p"} ${x.knows ? "kn" : ""}" data-fread="${cp}" ${x.ids && x.ids.length ? "" : "disabled"} title="show these prints">${cp === "C" ? "CALLS" : "PUTS"} ${kfmt$(x.dollars || 0)} · ${x.prints || 0}${x.knows ? " · SOMEBODY KNOWS" : ""}</button>`; };
+    const c = r.C || {};
+    head = `<div class="fread"><span>${esc(full.symbol)} · last ${c.window_minutes || 10} min · ${c.max_dte != null ? c.max_dte : 7} days or less · out of the money · bought at the ask</span>${b("C")}${b("P")}</div>`;
+  }
   const src = document.getElementById("flowSrc"), fsim = !!(s.feeds && s.feeds.options && s.feeds.options.label === "SIM");
   const st = s.connection && s.connection.state === "DEMO" ? "PRACTICE FLOW" : fsim ? "SIM · market closed" : "QUANT DATA";
   if (src.textContent !== st){ src.textContent = st; src.classList.toggle("simtag", fsim); src.title = fsim ? s.feeds.options.detail : ""; }
@@ -6261,13 +6312,21 @@ function renderFlow(s){
     const n = again[[p.symbol, p.strike, p.cp, p.expiry].join("|")] || 0, far = p.otm_pct != null && p.otm_pct >= fc.otm_pct;
     const rep = p.side === "ask" && n >= 2 && far ? `AGAIN ×${n} · ${p.otm_pct.toFixed(0)}% OUT` : "";
     const deep = p.otm_pct != null && p.otm_pct <= -3 ? `${Math.abs(p.otm_pct).toFixed(0)}% IN THE MONEY` : "";
-    return `<div class="fl ${cp === "C" ? "c" : "p"} ${p.away ? "away" : ""} ${soon || rep ? "know" : ""}" title="${p.side === "ask" ? "bought at the ask" : p.side === "bid" ? "sold at the bid" : "mid"}${p.otm_pct != null ? ` · ${p.otm_pct > 0 ? p.otm_pct.toFixed(1) + "% out of the money" : Math.abs(p.otm_pct).toFixed(1) + "% in the money"}` : ""}${soon ? " · size this close to expiry: somebody may know something" : ""}${rep ? " · the same far-out strike keeps getting bought with size" : ""}${deep ? " · deep in the money: delta near one, moves dollar for dollar with the stock. That is a hedge or stock replacement, not a bet on a move — not the short-dated out-of-the-money dough we wait for" : ""}">
+    return `<div class="fl ${cp === "C" ? "c" : "p"} ${p.away ? "away" : ""} ${soon || rep ? "know" : ""} ${FLOWREF && FLOWREF.idset.has(p.id) ? "said" : ""}" title="${p.side === "ask" ? "bought at the ask" : p.side === "bid" ? "sold at the bid" : "mid"}${p.otm_pct != null ? ` · ${p.otm_pct > 0 ? p.otm_pct.toFixed(1) + "% out of the money" : Math.abs(p.otm_pct).toFixed(1) + "% in the money"}` : ""}${soon ? " · size this close to expiry: somebody may know something" : ""}${rep ? " · the same far-out strike keeps getting bought with size" : ""}${deep ? " · deep in the money: delta near one, moves dollar for dollar with the stock. That is a hedge or stock replacement, not a bet on a move — not the short-dated out-of-the-money dough we wait for" : ""}">
       <div class="tm">${nyHM12(p.t)}</div>
       <div class="top"><span class="tk">${esc(p.symbol)}</span><span class="prem">${kfmt$(p.premium)}</span><span class="dots ${p.side === "ask" ? "a" : ""}">${p.kind === "sweep" || p.kind === "split" ? "<i></i><i></i>" : p.kind === "block" ? "<i></i>" : ""}</span>${soon ? `<span class="kn">${soon}</span>` : ""}${rep ? `<span class="kn rep">${rep}</span>` : ""}${deep ? `<span class="itm">${deep}</span>` : ""}${p.away && !rep ? `<span class="aw">WAYS AWAY</span>` : ""}${urg ? `<span class="urg" title="this contract is being bought in a hurry: short-dated, out of the money, print after print">⚡ URGENT</span>` : ""}</div>
       <div class="cols"><span><i>EXP</i>${exp(p.expiry)}</span><span><i>STRIKE</i>${strike(p.strike)}</span><span><i>C/P</i>${cp}</span><span><i>SPOT</i>${p.spot != null ? (+p.spot).toFixed(2) : NA}</span><span><i>TYPE</i><span class="ty">${typ(p)}</span></span><span><i>DETAILS</i>${sz(p.size)} @ ${p.price != null ? p.price.toFixed(2) : NA}</span></div></div>`; }).join("")
     : `<div class="dim" style="padding:10px">${(s.flow || []).length ? "Nothing matches the filter." : (s.connection && s.connection.state === "DEMO" ? "Practice flow is warming up." : "No option flow. Add your Quant Data key in SETTINGS, Quant Data, then RESTART NOW.")}</div>`;
-  if (el.dataset.h !== html){ el.dataset.h = html; el.innerHTML = html; }
+  const out = head + html;
+  if (el.dataset.h !== out){ el.dataset.h = out; el.innerHTML = out; }
 }
+document.getElementById("flowList").addEventListener("click", ev => {
+  const a = ev.target.closest("[data-fref]"), r = ev.target.closest("[data-fread]");
+  if (a){ if (a.dataset.fref === "x") FLOWREF = null; else FLOWREF_ALL = !FLOWREF_ALL; renderFlow(state); return; }
+  if (r && FSYM.data && FSYM.data.reads){ const x = FSYM.data.reads[r.dataset.fread] || {};
+    showFlowRef({symbol: FSYM.data.symbol, cp: r.dataset.fread, ids: x.ids || [], dollars: x.dollars, prints: x.prints,
+                 what: `${x.max_dte} days or less, out of the money, bought at the ask, last ${x.window_minutes} min`}); }
+});
 document.getElementById("flowScope").addEventListener("click", async () => {
   const on = !(state && state.flow_scope !== "watchlist");
   const out = await post("/api/flow", {scope: on ? "all" : "watchlist"});

@@ -111,7 +111,8 @@ def flow_gate(prints, side, price, daily_closes, now, cfg):
     out.update(cluster={"dollars": round(dollars), "biggest": round(biggest), "prints": len(mine), "repeats": repeats,
                         "series_expiry": max(series, key=lambda e: sum(x["premium"] for x in series[e])), "sweeps": sweeps,
                         "dte": shortest, "otm_pct": None if otm_w is None else round(otm_w, 1), "last_t": last_t, "first_t": first_t,
-                        "strike": top.get("strike"), "spot": top.get("spot"), "alive": alive},
+                        "strike": top.get("strike"), "spot": top.get("spot"), "alive": alive,
+                        "ids": [p["id"] for p in mine if p.get("id") is not None]},
                hedge=hedge, premium_ok=premium_ok, dte_lane=dte_lane, otm_ok=otm_ok, repeats_ok=repeats_ok, sweep=sweep_urgent)
     what = "calls" if cp == "C" else "puts"
     # L5: the side

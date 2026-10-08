@@ -270,6 +270,11 @@ class FlowBook:
         self.seq = {}                # symbol -> prints seen: the knows cache is good until this moves
 
     def add(self, p):
+        # every print gets a permanent id: a call's RECEIPT lists the ids of the prints it added up, and the OPTION
+        # FLOW panel finds exactly those (Quant Data and the practice feed alike)
+        if p.get("id") is None:
+            self._next_id = getattr(self, "_next_id", 0) + 1
+            p["id"] = self._next_id
         self.recent.appendleft(p)
         self.seq[p["symbol"]] = self.seq.get(p["symbol"], 0) + 1      # bumps whenever this name gets a print
         d = self.by_symbol.get(p["symbol"])
@@ -308,7 +313,7 @@ class FlowBook:
                      "minutes": len({int(p["t"] // 60) for p in hits}),
                      "otm_pct": round(sum(otm) / len(otm), 1) if otm else None,
                      "dte": round(min(dtes)) if dtes else None, "spot": hits[-1].get("spot"),
-                     "strikes": sorted({p["strike"] for p in hits})[:4], "t": now}
+                     "strikes": sorted({p["strike"] for p in hits})[:4], "t": now, "ids": [p["id"] for p in hits if p.get("id") is not None]}
                 self.unusual[key] = u
                 return u
         return None
@@ -347,8 +352,11 @@ class FlowBook:
         fresh = c.get("dough_fresh_minutes", 10) * 60.0
         prints = self._window(symbol, now, win)
 
+        ids = {}
+
         def side(side_cp):
             dollars, n, sw, mins, by_strike, last = 0.0, 0, 0, set(), {}, None
+            got = ids.setdefault(side_cp, [])
             for p in prints:
                 if p["cp"] != side_cp or p["side"] != "ask":
                     continue
@@ -356,6 +364,7 @@ class FlowBook:
                     continue
                 prem = p.get("premium") or 0.0
                 dollars += prem; n += 1
+                got.append(p.get("id"))
                 sw += 1 if p.get("kind") in ("sweep", "block") else 0
                 mins.add(int(p["t"] // 60))
                 last = p["t"] if last is None else max(last, p["t"])
@@ -373,7 +382,9 @@ class FlowBook:
             top = {"strike": sk, "dte": sdte, "dollars": round(sd), "prints": sn}
         age = None if last is None else now - last
         out = {"dollars": round(dollars), "prints": n, "minutes": mins, "sweeps": sw, "against": round(against),
-               "last_age": None if age is None else round(age), "top": top, "need": need, "need_minutes": need_min}
+               "last_age": None if age is None else round(age), "top": top, "need": need, "need_minutes": need_min,
+               "ids": [i for i in ids.get(cp, []) if i is not None],
+               "against_ids": [i for i in ids.get("P" if cp == "C" else "C", []) if i is not None]}
         if n == 0:
             out.update(state="NO FLOW", text=f"no short-dated out-of-the-money {kind} being bought — no flow, no dough" +
                        (f" (the other side has {k(against)})" if against else ""))
@@ -419,6 +430,7 @@ class FlowBook:
             n = sw = 0
             by_strike = {}
             mins.setdefault(side_cp, set())
+            got = ids.setdefault(side_cp, [])
             for p in prints:
                 if p["cp"] != side_cp or p["side"] != "ask":
                     continue
@@ -429,13 +441,14 @@ class FlowBook:
                 prem = p.get("premium") or 0.0
                 dollars += prem
                 n += 1
+                got.append(p.get("id"))
                 sw += 1 if p.get("kind") in ("sweep", "block") else 0
                 mins[side_cp].add(int(p["t"] // 60))
                 row = by_strike.setdefault(p["strike"], [0.0, 0, p.get("dte")])
                 row[0] += prem; row[1] += 1
             return dollars, n, sw, by_strike
 
-        mins = {}
+        mins, ids = {}, {}
         dollars, n, sw, by_strike = side_sum(cp)
         against, _n2, _s2, _b2 = side_sum("P" if cp == "C" else "C")
         score = min(1.0, dollars / (2.0 * need)) if need > 0 else 0.0
@@ -449,7 +462,7 @@ class FlowBook:
                 "score": round(score, 3), "minutes": len(mins.get(cp, ())),
                 # somebody KNOWS: the size, more than the other side, and it came again (one print is a guess)
                 "knows": dollars >= need and dollars > against and len(mins.get(cp, ())) >= int(c.get("knows_min_minutes", 2)), "top": top,
-                "window_minutes": win, "max_dte": max_dte}
+                "window_minutes": win, "max_dte": max_dte, "min_otm": min_otm, "ids": [i for i in ids.get(cp, []) if i is not None]}
 
     def context_text(self, symbol, now):
         s = self.summary(symbol, now)

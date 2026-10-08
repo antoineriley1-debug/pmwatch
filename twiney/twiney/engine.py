@@ -248,6 +248,7 @@ class Engine:
         self.plays = [p for p in plays]
         self.recorder = recorder
         self.lock = threading.RLock()
+        self.price_evt = threading.Event()     # set on every price update: the desk's own stops check at once
         self.och_seen = {}                # underlying -> (the contract on the OPTION CHART, when the page last asked)
         self.study_async = False          # True on the desk (live / practice / replay): studies worked out off the lock
         self._study_thread = None
@@ -410,6 +411,12 @@ class Engine:
     # ---- inputs --------------------------------------------------------------
 
     def on_l1(self, symbol, field, value, t):
+        try:
+            return self._on_l1(symbol, field, value, t)
+        finally:
+            self.price_evt.set()          # after the update is in (the lock is released): stops on it are checked now
+
+    def _on_l1(self, symbol, field, value, t):
         with self.lock:
             st = self._st(symbol)
             if st is None or field not in st.l1:
@@ -564,6 +571,12 @@ class Engine:
             self._message("warn", f"{symbol}: depth book reset ({reason}); resyncing", t, symbol)
 
     def on_print(self, symbol, price, size, exchange, t, conditions="", xt=None):
+        try:
+            return self._on_print(symbol, price, size, exchange, t, conditions, xt)
+        finally:
+            self.price_evt.set()          # after the update is in (the lock is released): stops on it are checked now
+
+    def _on_print(self, symbol, price, size, exchange, t, conditions="", xt=None):
         """One trade from IBKR's tape. ``t`` is when it reached this PC; ``xt`` is IBKR's own time for it (whole
         seconds). The candles are cut on IBKR's time, so a minute's candle holds exactly IBKR's minute even when this
         PC's clock is a little off or the print arrives a moment after the minute turned."""
@@ -911,18 +924,23 @@ class Engine:
         # the option flow behind it
         kc, kp = self._knows(st, BID, t), self._knows(st, ASK, t)
         k = kc if kc.get("knows") else kp if kp.get("knows") else None
+        st._ctx_flow = None                       # the receipt for any flow this context mentions (the level call carries it)
         if k:
             words.append(f"and somebody knows something: {'calls' if k is kc else 'puts'} being hit, {narrative.say_dollars(k.get('dollars') or 0)}")
             short.append(f"KNOWS {'calls' if k is kc else 'puts'} {narrative.say_dollars(k.get('dollars') or 0)}")
+            st._ctx_flow = self._receipt(st.symbol, "C" if k is kc else "P", k.get("ids"),
+                                         f"{k.get('max_dte')} days or less, out of the money, bought at the ask, last {k.get('window_minutes')} min")
         else:
             mx = float((self.cfg.get("story") or {}).get("flow_max_dte", 7))
             cutoff = t - 15 * 60
-            calls = sum(m.get("prem") or 0 for m in st.flow_marks if m["t"] >= cutoff and m.get("side") == "ask" and m.get("cp") == "C"
-                        and m.get("dte") is not None and m["dte"] <= mx)
-            puts = sum(m.get("prem") or 0 for m in st.flow_marks if m["t"] >= cutoff and m.get("side") == "ask" and m.get("cp") == "P"
-                       and m.get("dte") is not None and m["dte"] <= mx)
+            pick = lambda cp: [m for m in st.flow_marks if m["t"] >= cutoff and m.get("side") == "ask" and m.get("cp") == cp
+                               and m.get("dte") is not None and m["dte"] <= mx]
+            cm, pm = pick("C"), pick("P")
+            calls, puts = sum(m.get("prem") or 0 for m in cm), sum(m.get("prem") or 0 for m in pm)
             if max(calls, puts) >= 100000:
                 big = "calls" if calls >= puts else "puts"
+                st._ctx_flow = self._receipt(st.symbol, "C" if calls >= puts else "P", [m.get("id") for m in (cm if calls >= puts else pm)],
+                                             f"{mx:g} days or less, bought at the ask, last 15 min")
                 words.append(f"{big} flow behind it, {narrative.say_dollars(max(calls, puts))} in 15 minutes")
                 short.append(f"{big} {narrative.say_dollars(max(calls, puts))}")
         return ", ".join(words), " · ".join(short)
@@ -1111,6 +1129,8 @@ class Engine:
         alert = {"t": t, "symbol": st.symbol, "label": kind, "price": fmt_price(p), "side": "bid" if not up else "ask",
                  "role": "level", "text": text, "words": f"{st.symbol}. {words}" if voice else None, "code": ev.get("code"),
                  "zone": ev.get("zone"), "last": last}
+        if ctx_w and st.__dict__.get("_ctx_flow") and ("knows" in ctx_w or "flow behind" in ctx_w):
+            alert["flow"] = st._ctx_flow
         alert["key"] = f"{round(t, 2)}|{st.symbol}|{kind}|{p}"
         self.alerts.appendleft(alert)
         self._rec(dict(alert, ev="alert"))
@@ -1237,7 +1257,7 @@ class Engine:
             # "+ FLOW" behind a break: the same prints as everywhere else: short-dated (story.flow_max_dte) and out of
             # the money. Far-dated or in-the-money size is not the bet on this move
             mx = float((self.cfg.get("story") or {}).get("flow_max_dte", 7))
-            flow = [(m["t"], m["cp"], m.get("side"), m.get("prem") or 0.0) for m in st.flow_marks
+            flow = [(m["t"], m["cp"], m.get("side"), m.get("prem") or 0.0, m.get("id")) for m in st.flow_marks
                     if m.get("dte") is not None and m["dte"] <= mx and m.get("spot")
                     and ((m["strike"] - m["spot"]) if m["cp"] == "C" else (m["spot"] - m["strike"])) / m["spot"] * 100.0 >= 0.5]
             try:
@@ -1285,6 +1305,9 @@ class Engine:
         alert = {"t": t, "symbol": st.symbol, "label": call + (" + FLOW" if flow_on else ""),
                  "price": fmt_price(lvl[0]), "side": "ask" if call.startswith(("BREAKOUT", "PRESSING")) or (call == "SPEED + FLOW" and "calls" in lvl[1]) else "bid",
                  "role": "pace", "text": text, "words": f"{st.symbol}. {p['words']}" if (self.cfg.get("pace") or {}).get("voice", True) else None}
+        fr = p.get("flow_ref")
+        if fr and p.get("flow") and fr.get("ids"):
+            alert["flow"] = self._receipt(st.symbol, fr["cp"], fr["ids"], "short-dated, out of the money, bought at the ask")
         alert["key"] = f"{round(t, 2)}|{st.symbol}|{call}|{lvl[0]}"
         self.alerts.appendleft(alert)
         self._rec(dict(alert, ev="alert"))
@@ -1616,6 +1639,12 @@ class Engine:
                 self.opt_positions.pop(key, None)
 
     def on_opt_quote(self, key, field, price, t):
+        try:
+            return self._on_opt_quote(key, field, price, t)
+        finally:
+            self.price_evt.set()          # after the update is in (the lock is released): stops on it are checked now
+
+    def _on_opt_quote(self, key, field, price, t):
         with self.lock:
             if field not in ("bid", "ask", "last"):
                 return
@@ -2248,6 +2277,7 @@ class Engine:
                     f" · strikes {', '.join(narrative.px(s) for s in u['strikes'])}. Somebody paying up for a move that has not started.")
             alert = {"t": t, "symbol": p["symbol"], "label": label, "price": fmt_price(u["spot"]) if u.get("spot") else None,
                      "side": "ask", "role": "flow", "text": text, "premium": u["premium"], "cp": u["cp"],
+                     "flow": self._receipt(p["symbol"], u["cp"], u.get("ids"), f"out of the money, {self.flow.cfg.get('max_dte')} days or less, bought at the ask, last {self.flow.cfg.get('window_minutes')} min"),
                      "otm_pct": u["otm_pct"], "dte": u["dte"]}
             alert["key"] = f"{round(t, 2)}|{p['symbol']}|{label}|{u['premium']}"
             self.alerts.appendleft(alert)
@@ -2581,6 +2611,8 @@ class Engine:
             self._save_plays()
             if role == "second_entry" and price is not None and old is None and source == "chart":
                 self._auto_stop(symbol, st.play, False, price, t)
+            if role == "second_entry" and price is None and old is not None:
+                self._orphan_auto_stop(symbol, st.play, False, t)
             return True
 
     def _auto_stop(self, symbol, lines, alt, se, t):
@@ -2598,7 +2630,26 @@ class Engine:
             self._set_alt_level(symbol, "stop", stop, t, source="auto stop")
         else:
             self.set_play_level(symbol, "stop", stop, t, source="auto stop")
+        lines["auto_stop_px"] = stop          # the stop the DESK drew: it goes with its 2nd entry while you are not in
         self._message("info", f"{symbol}: STOP set ${d:g} from your 2nd entry at {narrative.px(stop)} — drag it to move it", t or self.last_t, symbol)
+
+    def _orphan_auto_stop(self, symbol, lines, alt, t):
+        """Its 2nd entry taken off before any trade: the stop the desk drew with it goes too (one you moved or drew stays)."""
+        px = lines.get("auto_stop_px")
+        lines.pop("auto_stop_px", None)
+        if px is None or lines.get("stop") is None or abs(float(lines["stop"]) - float(px)) > 1e-9:
+            return
+        tr = getattr(self, "trader", None)
+        try:
+            held = bool(tr and int(tr.broker.position(symbol))) or any(int(p.get("qty") or 0) for p in list(self.opt_positions.values()) if p.get("symbol") == symbol)
+        except Exception:
+            held = True
+        if held or self._pending(symbol):
+            return                                # in a trade (or an order working): the stop is protecting it, never touched here
+        if alt:
+            self._set_alt_level(symbol, "stop", None, t, source="2nd entry off")
+        else:
+            self.set_play_level(symbol, "stop", None, t, source="2nd entry off")
 
     def _set_alt_level(self, symbol, role, price, t=None, source="setup"):
         """The OTHER SIDE of a play (the short under a long, the long over a short): its own pivot, 2nd entry, stop and
@@ -2627,6 +2678,8 @@ class Engine:
             self._save_plays()
             if role == "second_entry" and price is not None and old is None and source == "chart" and st.play.get("alt"):
                 self._auto_stop(symbol, st.play["alt"], True, price, t)
+            if role == "second_entry" and price is None and old is not None and st.play.get("alt"):
+                self._orphan_auto_stop(symbol, st.play["alt"], True, t)
             return True
 
     def set_side_level(self, symbol, side, role, price, t=None, source="chart"):
@@ -3230,6 +3283,32 @@ class Engine:
             else:
                 self._say(st, side, k, "pull", t, f"{who} pulled {_k(gone)} from {narrative.px(p)}")
 
+    def symbol_flow(self, sym, t=None):
+        """OPTION FLOW for one ticker: every print the desk holds for it today (newest first), and the reads the voice
+        uses on it right now (SOMEBODY KNOWS SOMETHING for calls and puts, with the prints each one counted)."""
+        sym = str(sym or "").upper().strip()
+        t = t if t is not None else self.last_t
+        with self.lock:
+            prints = list(self.flow.by_symbol.get(sym, ()))
+            reads = {}
+            index = sym in set(self.cfg.get("flow", {}).get("index_symbols", ()))
+            for cp in ("C", "P"):
+                k = self.flow.knows(sym, cp, t, index=index)
+                reads[cp] = {"dollars": k["dollars"], "prints": k["prints"], "sweeps": k["sweeps"], "knows": k["knows"], "ids": k.get("ids") or [],
+                             "window_minutes": k["window_minutes"], "max_dte": k["max_dte"], "min_otm": k.get("min_otm")}
+        prints.sort(key=lambda p: -(p.get("t") or 0))
+        return {"symbol": sym, "prints": prints, "reads": reads, "t": t}
+
+    def _receipt(self, sym, cp, ids, what=None):
+        """A flow call's RECEIPT: the exact option prints it added up (by id), and their total, so the OPTION FLOW panel
+        can show you the same prints and the same dollars the voice said."""
+        want = {i for i in (ids or []) if i is not None}
+        if not want:
+            return None
+        rows = [p for p in self.flow.by_symbol.get(sym, ()) if p.get("id") in want]
+        return {"symbol": sym, "cp": cp, "ids": sorted(want), "dollars": round(sum(p.get("premium") or 0 for p in rows)),
+                "prints": len(rows), "what": what}
+
     def _say(self, st, side, k, kind, t, text):
         vc = self.cfg["voice"]
         key = (side, k, kind)
@@ -3386,8 +3465,11 @@ class Engine:
         else:
             text = f"FLOW AGAINST {st.symbol} {st.play['side']}: {dough['text']}."
             words = f"The flow is against your {st.play['side']}: {narrative.say_dollars(dough['against'])} went into short term {other}."
+        against = dough["state"] == "FLOW AGAINST"
         alert = {"t": t, "symbol": st.symbol, "label": dough["state"] if picked else "FLOW", "price": fmt_price(st.price()), "side": "ask", "role": "flow",
-                 "text": text, "premium": dough["dollars"], "cp": cp, "prints": dough["prints"], "words": words}
+                 "text": text, "premium": dough["dollars"], "cp": cp, "prints": dough["prints"], "words": words,
+                 "flow": self._receipt(st.symbol, ("P" if cp == "C" else "C") if against else cp, dough.get("against_ids") if against else dough.get("ids"),
+                                       "short-dated, out of the money, bought at the ask, last " + str(self.flow.cfg.get("dough_window_minutes", 30)) + " min")}
         alert["key"] = f"{round(t, 2)}|{st.symbol}|{dough['state']}"
         self.alerts.appendleft(alert)
         self._rec(dict(alert, ev="alert"))
@@ -3699,7 +3781,7 @@ class Engine:
             self._fire_user_alert(a, "FLOW ALERT", f"FLOW ALERT: {p['symbol']} option flow - {k(p['premium'])} of {what} bought at the ask, "
                                   f"{narrative.px(p['strike'])} strike{dte}" + (f", stock at {narrative.px(p['spot'])}" if p.get("spot") else ""),
                                   f"option flow, {self._spoken(p['premium'])} of {what}, {narrative.px(p['strike'])} strike{dte}", t,
-                                  premium=p["premium"], cp=p["cp"])
+                                  premium=p["premium"], cp=p["cp"], flow=self._receipt(p["symbol"], p["cp"], [p.get("id")], "this print"))
 
     # ---- equity prints (lit / dark) ---------------------------------------------
 
@@ -3742,7 +3824,7 @@ class Engine:
             st.flow_marks.popleft()
         key = (p["strike"], p["cp"], p.get("expiry") or "")
         m = {"t": t, "spot": spot, "strike": p["strike"], "cp": p["cp"], "exp": p.get("expiry") or "", "dte": p.get("dte"),
-             "prem": prem, "side": p["side"], "kind": p.get("kind", "trade"), "hot": False}
+             "prem": prem, "side": p["side"], "kind": p.get("kind", "trade"), "hot": False, "id": p.get("id")}
         st.flow_marks.append(m)
         # repeat: this strike / expiry, bought (at the ask) this many times inside the repeat window
         short = p.get("dte") is not None and p["dte"] <= lc.get("flow_short_dte", 7)
@@ -3764,7 +3846,8 @@ class Engine:
                          "text": f"REPEAT {what} FLOW: {st.symbol} {narrative.px(p['strike'])} strike expiring in {days} bought at the ask "
                                  f"{len(same)} times in {int(rw / 60)} min, {k(tot)} in all, with the stock at {narrative.px(spot)}. "
                                  f"Short-dated size hitting the same strike: they want a move now.",
-                         "premium": tot, "cp": p["cp"], "strike": p["strike"], "dte": p["dte"], "prints": len(same)}
+                         "premium": tot, "cp": p["cp"], "strike": p["strike"], "dte": p["dte"], "prints": len(same),
+                         "flow": self._receipt(st.symbol, p["cp"], [x.get("id") for x in same], f"the {narrative.px(p['strike'])} strike, bought at the ask, last {int(rw / 60)} min")}
                 alert["key"] = f"{round(t, 2)}|{st.symbol}|REPEAT FLOW|{p['strike']}{p['cp']}"
                 self.alerts.appendleft(alert)
                 self._rec(dict(alert, ev="alert"))
@@ -3792,7 +3875,8 @@ class Engine:
         score = tot / max(1.0, win / 60.0) * (1 + sweeps / n) * (2 if accel else 1)
         return {"symbol": key[0], "strike": key[1], "cp": key[2], "expiry": key[3], "dte": last["dte"], "otm_pct": last["otm"],
                 "spot": last["spot"], "prints": n, "sweeps": sweeps, "dollars": round(tot), "last_t": last["t"], "first_t": rows[0]["t"],
-                "accel": accel, "pace": round(tot / max(1.0, win / 60.0)), "score": score, "key": "|".join(str(k) for k in key)}
+                "accel": accel, "pace": round(tot / max(1.0, win / 60.0)), "score": score, "key": "|".join(str(k) for k in key),
+                "ids": [r["id"] for r in rows if r.get("id") is not None]}
 
     def _flow_scan(self, p, t, st):
         """The option scanner Dan runs on the whole market (URaAZxC23YU): any ticker whose flow passes the board's
@@ -3817,6 +3901,7 @@ class Engine:
         text = board.market_watch_text(sym, side, fg, p.get("spot"))
         alert = {"t": t, "symbol": sym, "label": "FLOW WATCH", "price": fmt_price(p.get("spot")), "side": "ask", "role": "conviction",
                  "text": text, "cp": p.get("cp"), "premium": fg["cluster"]["dollars"], "rules": fg["rules"],
+                 "flow": self._receipt(sym, p.get("cp"), fg["cluster"].get("ids"), "short-term, bought at the ask, today"),
                  "words": f"flow watch. {narrative.say_dollars(fg['cluster']['dollars'])} went into short term {'calls' if side == 'long' else 'puts'}"
                           f"{', ' + board.say_expiry(fg['cluster'].get('dte')) if board.say_expiry(fg['cluster'].get('dte')) else ''}, {fg['cluster']['repeats']} times. Not a play yet, no chart work done."}
         alert["key"] = f"{round(t, 2)}|{sym}|FLOW WATCH|{side}"
@@ -3843,7 +3928,7 @@ class Engine:
         rows = self.urg.setdefault(key, deque())
         while rows and t - rows[0]["t"] > win:
             rows.popleft()
-        rows.append({"t": t, "prem": p.get("premium") or 0.0, "kind": p.get("kind", "trade"), "otm": otm, "dte": p["dte"], "spot": p.get("spot")})
+        rows.append({"t": t, "prem": p.get("premium") or 0.0, "kind": p.get("kind", "trade"), "otm": otm, "dte": p["dte"], "spot": p.get("spot"), "id": p.get("id")})
         # every urgent-type print of the session, for the ticker search (what came in earlier, not just the last 10 min)
         self.urg_hist.append({"t": t, "symbol": p["symbol"], "strike": p["strike"], "cp": p["cp"], "expiry": p.get("expiry") or "",
                               "dte": p["dte"], "otm_pct": round(otm, 2), "premium": round(p.get("premium") or 0.0),
@@ -3874,7 +3959,8 @@ class Engine:
                  f"{self._spoken(u['dollars'])} in {u['prints']} prints" + (", mostly sweeps" if u["sweeps"] * 2 >= u["prints"] else "") + (", speeding up" if u["accel"] else ""))
         alert = {"t": t, "symbol": p["symbol"], "label": "URGENT FLOW", "price": fmt_price(p.get("spot")) if p.get("spot") else None, "side": "ask", "role": "flow",
                  "text": text, "words": words, "premium": u["dollars"], "cp": p["cp"], "strike": p["strike"], "dte": p["dte"], "otm_pct": otm,
-                 "prints": u["prints"], "sweeps": u["sweeps"], "accel": u["accel"]}
+                 "prints": u["prints"], "sweeps": u["sweeps"], "accel": u["accel"],
+                 "flow": self._receipt(p["symbol"], p["cp"], u.get("ids"), f"the {narrative.px(p['strike'])} strike, bought at the ask, last {int(self.cfg.get('flow', {}).get('urgency_window_minutes', 10))} min")}
         alert["key"] = f"{round(t, 2)}|{p['symbol']}|URGENT FLOW|{p['strike']}{p['cp']}"
         self.alerts.appendleft(alert)
         self._rec(dict(alert, ev="alert"))
@@ -4862,6 +4948,9 @@ class Engine:
         alert = {"t": t, "symbol": st.symbol, "label": {"READY_TO_GO": "READY TO GO", "ARMED": "ARMED", "WATCH": "FLOW WATCH", "INVALIDATED": "INVALIDATED"}[state],
                  "price": fmt_price(st.price()), "side": "ask" if st.play.get("side", "long") == "long" else "bid", "role": "conviction",
                  "text": text, "score": b["score"], "rules": b["rules"], "words": board.words(b)}
+        cl = (b.get("flow_gate") or {}).get("cluster") or {}
+        if cl.get("ids"):
+            alert["flow"] = self._receipt(st.symbol, "C" if st.play.get("side", "long") == "long" else "P", cl["ids"], "short-term, bought at the ask, today")
         alert["key"] = f"{round(t, 2)}|{st.symbol}|BOARD|{state}"
         self.alerts.appendleft(alert)
         self._rec(dict(alert, ev="alert"))

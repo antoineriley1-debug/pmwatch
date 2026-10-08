@@ -1067,3 +1067,12 @@ table.lad.basket2 th .bkgear{background:none;border:0;color:#9aa4b4;cursor:point
 .btrap .btl.brk .btw{background:#2a3446;color:#cfd8e6} .btrap .btl.trp.up .btw{background:#7a1c26;color:#fff} .btrap .btl.trp.dn .btw{background:#145c34;color:#fff}
 .btrap .btl.ext .btw{background:#e8b931;color:#111} .btrap .btl.hld .btw{background:#1d3a28;color:#9ff0c4}
 .btrap .btr{display:flex;flex-wrap:wrap;gap:8px;color:#c9d4e3;line-height:1.5} .btrap .btr.dim{color:#7b889e} .btrap .btr.uw b{color:#ff8b96}
+/* OPTION FLOW receipts: the call you clicked, the prints it added up, and one ticker's live read */
+.fref{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:6px 8px;margin:2px 0 6px;border:1px solid var(--gold);border-radius:4px;background:rgba(255,193,7,.08);font:12px var(--sans)}
+.fref b{color:var(--gold);letter-spacing:.06em} .fref .frb{margin-left:auto;display:flex;gap:4px}
+.fref button,.fread button{font:700 10.5px var(--sans);padding:2px 7px;border-radius:3px;border:1px solid #3a3d44;background:#1b1d21;color:#d6d6d3;cursor:pointer}
+.fread{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:5px 8px;margin:2px 0 6px;border:1px solid #2c2f35;border-radius:4px;font:11px var(--sans);color:#a9adb5}
+.fread button.c{border-color:#17a86a;color:#3fe09a} .fread button.p{border-color:#d64541;color:#ff7b74} .fread button.kn{background:rgba(255,193,7,.15)}
+.fread button[disabled]{opacity:.45;cursor:default}
+.fl.said{outline:2px solid var(--gold);outline-offset:-2px;background:rgba(255,193,7,.07)}
+.say .fbtn{font:700 9.5px var(--sans);padding:0 5px;margin:0 6px 0 2px;border-radius:3px;border:1px solid var(--gold);background:transparent;color:var(--gold);cursor:pointer}

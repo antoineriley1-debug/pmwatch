@@ -80,7 +80,7 @@ def read(book, now, last, levels, tick, cfg, flow=None, knows=None):
     for cp in ("C", "P"):                    # the flow tag on the ladder / T&S: who is hammering short-dated options now
         k = knows.get(cp)
         if k and k.get("knows"):
-            out["knows"] = {"cp": cp, "text": knows_txt(k), "score": k.get("score")}
+            out["knows"] = {"cp": cp, "text": knows_txt(k), "score": k.get("score"), "ids": list(k.get("ids") or [])}
             break
     if not rows:
         return out
@@ -134,26 +134,34 @@ def read(book, now, last, levels, tick, cfg, flow=None, knows=None):
             elif then > p >= last and p - last >= through:
                 broke = ("down", p, nm) if broke is None or p < broke[1] else broke
     flow_txt, flow_usd, against_usd = None, 0.0, 0.0
+    flow_ids, against_ids = [], []
     if broke:
         up = broke[0] == "up"
         same = (buy_pct or 0) >= c["aggress_pct"] if up else (buy_pct is not None and 100 - buy_pct >= c["aggress_pct"])
         if flow:
-            for ft, cp, side, prem in flow:
+            for row in flow:
+                ft, cp, side, prem = row[:4]
+                pid = row[4] if len(row) > 4 else None
                 if now - ft <= c["flow_minutes"] * 60 and side == "ask":
                     if (cp == "C") == up:
-                        flow_usd += prem
+                        flow_usd += prem; flow_ids.append(pid)
                     else:
-                        against_usd += prem
+                        against_usd += prem; against_ids.append(pid)
         kn = knows.get("C" if up else "P")
         if kn and kn.get("knows"):
             flow_txt = "+ SOMEBODY KNOWS SOMETHING " + knows_txt(kn)
-            flow_usd = max(flow_usd, kn.get("dollars") or 0)
+            if (kn.get("dollars") or 0) >= flow_usd:          # the number said is the knows read's: its prints are the receipt
+                flow_usd, flow_ids = kn.get("dollars") or 0, list(kn.get("ids") or [])
         elif flow_usd >= c["flow_min_premium"]:
             flow_txt = f"+ FLOW {_k(flow_usd)} {'calls' if up else 'puts'}"
         elif against_usd >= c["flow_min_premium"]:
             flow_txt = f"flow against: {_k(against_usd)} {'puts' if up else 'calls'}"
         fast = ratio >= c["break_ratio"] and same
         what = ("BREAKOUT" if up else "BREAKDOWN") + (" WITH SPEED" if fast else " WITHOUT SPEED")
+        if flow_txt and flow_txt.startswith("+"):
+            out["flow_ref"] = {"cp": "C" if up else "P", "ids": [i for i in flow_ids if i is not None]}
+        elif flow_txt:
+            out["flow_ref"] = {"cp": "P" if up else "C", "ids": [i for i in against_ids if i is not None]}
         out.update(call=what, level=[broke[1], broke[2]], flow=flow_txt,
                    words=(f"{'Breakout' if up else 'Breakdown'} through {broke[2]} with speed, {ratio:.1f} times its normal pace"
                           + (f", and somebody knows something: {_k(flow_usd)} of short dated {'calls' if up else 'puts'} hammered" if flow_txt and "KNOWS" in flow_txt
@@ -166,6 +174,7 @@ def read(book, now, last, levels, tick, cfg, flow=None, knows=None):
         cp = out["knows"]["cp"]
         if (cp == "C" and buy_pct >= c["aggress_pct"]) or (cp == "P" and 100 - buy_pct >= c["aggress_pct"]):
             what = "calls" if cp == "C" else "puts"
+            out["flow_ref"] = {"cp": cp, "ids": list(out["knows"].get("ids") or [])}
             out.update(call="SPEED + FLOW", level=[last, "calls hammered" if cp == "C" else "puts hammered"],
                        flow="+ SOMEBODY KNOWS SOMETHING " + out["knows"]["text"],
                        words=(f"Tape speeding up, {ratio:.1f} times normal" if accel == "SPEEDING UP" else f"Tape running {ratio:.1f} times normal")

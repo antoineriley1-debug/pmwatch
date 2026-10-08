@@ -1691,6 +1691,15 @@ class Trader:
         with self.lock:
             return self._watchdog_unlocked(now)
 
+    def fast_stops(self, now=None):
+        """The desk's own stops (an option stopped on the STOCK's price or its own), checked the moment a price
+        comes in, not on the half-second clock. Stock stops are real stop orders at the broker: they need no help."""
+        with self.lock:
+            try:
+                self._opt_stop_tick(now or time.time())
+            except Exception as exc:
+                log.warning("option stop: %s", exc)
+
     def _watchdog_unlocked(self, now=None):
         """Called on every dashboard snapshot: breakeven stops after cash flow; exits never bigger than the
         position; daily-loss lock."""
@@ -1730,6 +1739,10 @@ class Trader:
             self._opt_stop_tick(now or time.time())
         except Exception as exc:
             log.warning("option stop: %s", exc)
+        try:
+            self._flat_lines_tick(now or time.time())
+        except Exception as exc:
+            log.warning("flat lines: %s", exc)
         try:
             self._expiry_tick(now or time.time())
         except Exception as exc:
@@ -1945,6 +1958,87 @@ class Trader:
         msg = f"{sym} went through your 2nd entry {money(se)} — NO ENTRY: {why or 'no order was working'}"
         self._note(now, msg, False)
         self.engine.log(sym, msg, now, kind="level")
+
+    EXIT_ROLES = ("stop", "target", "flatten", "close", "partial", "cash_flow", "runner", "trail", "breakeven")
+
+    def _flat_lines_tick(self, now):
+        """TRADE OVER, however it was opened (ticket, ladder, chart, right-click, order bar, auto, a stock or an option
+        on it): held, then flat for a few seconds with no entry still working, its 2nd entry, stop and target come off
+        the chart. Only the lines that were there while you held it: a new 2nd entry you draw after the stop-out
+        stays, and lines drawn as a plan before any trade stay. The pivot always stays."""
+        self._flat_contracts_tick(now)                     # a contract's own stop / lines: always, it is the same trade
+        if not self.cfg.get("clear_lines_when_flat", True):
+            return
+        fw = self.__dict__.setdefault("flat_watch", {})
+        for play in list(self.engine.plays):
+            sym = play["symbol"]
+            try:
+                pos = int(self.broker.position(sym))
+            except Exception:
+                continue
+            opt = any(int(p.get("qty") or 0) for p in list(self.engine.opt_positions.values()) if p.get("symbol") == sym)
+            w = fw.setdefault(sym, {"held": False, "flat_t": None, "lines": {}})
+            if pos or opt:
+                w["held"], w["flat_t"] = True, None
+                # what was on the chart while the trade was on (the last seen value of each line, both sides)
+                for alt in (False, True):
+                    src = (play.get("alt") or {}) if alt else play
+                    for r in ("second_entry", "stop", "target"):
+                        if src.get(r) is not None:
+                            w["lines"][(alt, r)] = src.get(r)
+                continue
+            if not w["held"]:
+                continue                                   # never in a trade: the lines are a plan, they stay
+            if w["flat_t"] is None:
+                w["flat_t"] = now
+                continue
+            entry_working = any(o.get("role") not in self.EXIT_ROLES for o in self.engine._pending(sym))
+            if now - w["flat_t"] < 5.0 or entry_working:
+                continue                                   # the report can trail the fill; a reverse / new entry is still on
+            had, w["held"], w["flat_t"], w["lines"] = w["lines"], False, None, {}
+            gone = []
+            for (alt, r), v in had.items():
+                src = (play.get("alt") or {}) if alt else play
+                cur = src.get(r)
+                if cur is not None and abs(float(cur) - float(v)) < 1e-9:    # still the trade's line, not a new drawing
+                    self.engine.set_play_level(sym, r, None, now, source="trade over", alt=alt)
+                    gone.append(r)
+            if gone:
+                self.auto_seen[sym] = None; self.auto_seen[sym + "|alt"] = None
+                self._note(now, f"{sym}: flat — the trade's {', '.join(sorted(set(gone)))} are off the chart", True)
+                self.engine.log(sym, f"trade over (flat) — {', '.join(sorted(set(gone)))} cleared", now, kind="level")
+
+    def _flat_contracts_tick(self, now):
+        """A CONTRACT out (stopped, target, closed by hand, expired): its own stop (on the stock's price or its own) and
+        its option-chart lines come off, so nothing is left showing, and nothing carries into the next trade in it."""
+        cw = self.__dict__.setdefault("flat_contracts", {})
+        keys = set(self.opt_stops) | {k for k, lv in self.opt_levels.items() if any(lv.get(r) for r in ("stop", "target", "second_entry"))} | set(cw)
+        for key in keys:
+            held = int((self.engine.opt_positions.get(key) or {}).get("qty") or 0)
+            w = cw.setdefault(key, {"held": False, "flat_t": None})
+            if held:
+                w["held"], w["flat_t"] = True, None
+                continue
+            if not w["held"]:
+                if key not in self.opt_stops and key not in self.opt_levels:
+                    cw.pop(key, None)
+                continue                                   # never held: a plan (lines drawn before buying) stays
+            if w["flat_t"] is None:
+                w["flat_t"] = now
+                continue
+            if now - w["flat_t"] < 3.0 or self._opt_working(key, BUY) or self._opt_working(key, SELL):
+                continue
+            cw.pop(key, None)
+            gone = []
+            if self.opt_stops.pop(key, None):
+                gone.append("stop")
+            lv = self.opt_levels.get(key) or {}
+            for r in ("stop", "target", "second_entry"):
+                if lv.pop(r, None) is not None:
+                    gone.append(r)
+            self.opt_stop_fired.pop(key, None)
+            if gone:
+                self._note(now, f"{key}: out — its {', '.join(sorted(set(gone)))} are off", True)
 
     def _clear_trade_lines(self, play, now, alt=False, how=None):
         """The trade is over (stopped out, target hit, flattened): its 2nd entry, stop and target come off the

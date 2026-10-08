@@ -186,6 +186,9 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                         body = json.dumps(snap, default=str)
                         _SNAP_CACHE.clear(); _SNAP_CACHE[key] = (now, body)
                 self._send(200, body, "application/json")
+            elif path == "/api/flow/symbol":
+                q = parse_qs(urlparse(self.path).query, keep_blank_values=True)
+                self._send(200, json.dumps(engine.symbol_flow(q.get("s", [""])[0], clock()), default=str), "application/json")
             elif path == "/api/options/chain":
                 q = parse_qs(urlparse(self.path).query, keep_blank_values=True)
                 sym = str(q.get("symbol", [""])[0]).upper()
