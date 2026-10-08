@@ -1839,6 +1839,9 @@ function render(s){
   if (curSym && s.focus !== curSym && (s.symbols || []).includes(curSym) && Date.now() - focusAsked > 3000){ focusAsked = Date.now(); post("/api/play", {symbol: curSym, action: "focus"}); }
   if (!TABS.list.length && s.symbols && s.symbols.length){ TABS.list = (PREFS.tabs || []).filter(x => s.symbols.includes(x)); if (!TABS.list.length) TABS.list = [s.focus || s.symbols[0]]; TABS.active = (PREFS.active && TABS.list.includes(PREFS.active)) ? PREFS.active : TABS.list[0]; curSym = TABS.active; renderTabs(); }
   const d = dataFor(s, curSym);
+  // the top chart switched to another stock: the option chart (and its Level II / T&S, ORDER ENTRY) goes blank
+  // instead of showing a contract on a different stock
+  if (curSym && OCH.key && OCH.key.split(" ")[0] !== curSym) unloadContract(true);
   streamTo(curSym);
   if (d && STREAM.last) streamApply(d, STREAM.last);       // a pushed update newer than this refresh stays on screen
   for (const c of Object.values(charts)){
@@ -2135,14 +2138,14 @@ function relinkLines(key){
 }
 /* take the loaded contract off the OPTION CHART (its Level II / T&S and ORDER ENTRY follow). Nothing is sold or
    cancelled: a contract you hold stays in POSITIONS, its stop and lines stay on */
-function unloadContract(){
+function unloadContract(quiet){
   const name = OC.link ? contractName(OC.link) : "contract";
   OC.link = null; OC.sel = null; OCH.key = null; OCH.data = null;
   if (ochart){ ochart.data = null; drawChart(ochart); }
   renderOchHead(); if (typeof renderOptPanels === "function") renderOptPanels(); renderContractL2(); renderContractTape();
   P.ticket.last = null; poll(true);
   const bd = P.options && P.options.pc.querySelector(".oc-body"); if (bd) bd.dataset.h = ""; renderChain();
-  toast(`${name} taken off the option chart`, true);
+  if (!quiet) toast(`${name} taken off the option chart`, true);
 }
 function chartOption(key, show){ if (!key) return; if (OCH.key !== key) relinkLines(key); if (OCH.key !== key){ OCH.key = key; OCH.data = null; if (ochart){ ochart.data = null; ochart.view.offset = restOffset(); ochart.view.follow = true; ochart.view.yLo = ochart.view.yHi = null; } }
   if (show) showPanel("ochart"); pollOch(); }
