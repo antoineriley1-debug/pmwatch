@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261008-0146">
+<meta name="build" content="20261008-0219">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -6243,13 +6243,19 @@ function unloadContract(quiet){
   const name = OC.link ? contractName(OC.link) : "contract";
   if (!quiet && OCH.key) OCH.dismissed = OCH.key;          // taken off by hand: it stays off until you come back to the stock
   OC.link = null; OC.sel = null; OCH.key = null; OCH.data = null;
-  if (ochart){ ochart.data = null; drawChart(ochart); }
+  if (ochart){ ochart.data = null; blankOchart(); }
   renderOchHead(); if (typeof renderOptPanels === "function") renderOptPanels(); renderContractL2(); renderContractTape();
   P.ticket.last = null; poll(true);
   const bd = P.options && P.options.pc.querySelector(".oc-body"); if (bd) bd.dataset.h = ""; renderChain();
   if (!quiet) toast(`${name} taken off the option chart`, true);
 }
-function chartOption(key, show){ if (!key) return; if (OCH.key !== key) relinkLines(key); if (OCH.key !== key){ OCH.key = key; OCH.data = null; if (ochart){ ochart.data = null; ochart.view.offset = restOffset(); ochart.view.follow = true; ochart.view.yLo = ochart.view.yHi = null; } }
+/* no contract: wipe the picture, not just the data, and say how to load one */
+function blankOchart(){ const cv = ochart && ochart.canvas; if (!cv) return; const W = cv.clientWidth, H = cv.clientHeight, dpr = window.devicePixelRatio || 1;
+  if (W && H){ cv.width = W * dpr; cv.height = H * dpr; }
+  ochart.dataBar = null; const dw = cv.parentElement && cv.parentElement.querySelector(".datawin"); if (dw) dw.style.display = "none";
+  const g = cv.getContext("2d"); g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, cv.width, cv.height);
+  if (W && H){ g.setTransform(dpr, 0, 0, dpr, 0, 0); g.fillStyle = "#6b7685"; g.font = "13px system-ui, sans-serif"; g.textAlign = "center"; g.fillText("No contract — pick one from the OPTION CHAIN", W / 2, H / 2); } }
+function chartOption(key, show){ if (!key) return; if (OCH.key !== key) relinkLines(key); if (OCH.key !== key){ OCH.key = key; OCH.data = null; if (ochart){ ochart.data = null; blankOchart(); ochart.view.offset = restOffset(); ochart.view.follow = true; ochart.view.yLo = ochart.view.yHi = null; } }
   if (show) showPanel("ochart"); pollOch(); }
 async function pollOch(){
   if (OCH.busy || !ochart) return;
