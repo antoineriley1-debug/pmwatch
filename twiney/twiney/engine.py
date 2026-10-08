@@ -839,12 +839,13 @@ class Engine:
             else:
                 words.append("two sided tape"); short.append(f"two-sided {bp}%")
         if pc.get("ratio"):
-            fast = pc["ratio"] >= 1.5 or pc.get("accel") == "SPEEDING UP"
-            slow = pc["ratio"] <= 0.8 or pc.get("accel") == "SLOWING"
+            fast = pc["ratio"] >= 1.5 or (pc.get("accel") == "SPEEDING UP" and pc["ratio"] >= 1.2)
             if fast:
                 words.append(f"tape speeding up, {pc['ratio']:.1f} times normal")
-            elif slow:
+            elif pc.get("state") == "DRYING UP":            # really dry: a third of its normal pace or less
                 words.append("tape drying up")
+            elif pc.get("state") == "SLOW":
+                words.append("tape slowing")
             short.append(f"pace x{pc['ratio']}")
         # the book at that price: the side price runs into (an offer over a level it comes up to, a bid under one it
         # comes down to)
@@ -955,15 +956,21 @@ class Engine:
                     # one call per break of a level; the only second call allowed is the upgrade to WITH SPEED
                     # one call per break of a level PER DIRECTION (a breakout that comes straight back down is a new
                     # call: the failed break); the only second call allowed is WITHOUT -> WITH speed, same direction
-                    key = ("BREAK", "up" if call.startswith("BREAKOUT") else "down", round(p["level"][0], 4))
+                    # a level is its NAME (VWAP moves a cent every few seconds and is still VWAP)
+                    nm = p["level"][1]
+                    key = ("BREAK", "up" if call.startswith("BREAKOUT") else "down", nm)
                     prev = said.get(key)
                     fresh = prev is None or t - prev[0] >= rep_s
                     upgrade = prev is not None and not fresh and "WITHOUT" in prev[1] and "WITHOUT" not in call
-                    if fresh or upgrade:
+                    # chop: price see-sawing over a level is one "broke without speed", not one every few seconds
+                    chop = "WITHOUT" in call and t - (said.get(("CHOP", nm)) or (-1e9,))[0] < rep_s
+                    if (fresh or upgrade) and not chop:
+                        if "WITHOUT" in call:
+                            said[("CHOP", nm)] = (t, call)
                         said[key] = (t, call)
                         self._pace_alert(st, p, t)
                 else:
-                    key = (call, round(p["level"][0], 4)) if call != "SPEED + FLOW" else (call, p["level"][1])
+                    key = (call, p["level"][1])
                     if t - (said.get(key) or (-1e9,))[0] >= rep_s:
                         said[key] = (t, call)
                         self._pace_alert(st, p, t)

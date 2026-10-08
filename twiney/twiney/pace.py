@@ -126,11 +126,12 @@ def read(book, now, last, levels, tick, cfg, flow=None, knows=None):
     past = [r for r in rows if cur0 - 45.0 <= r[0] <= cur0 - 30.0]
     then = max(past, key=lambda r: r[0])[6] if past else None
     broke = None
+    through = float(c.get("break_ticks", 3)) * tick      # a break is a few ticks through the level, not a one-tick poke
     if then is not None:
         for p, nm in levels:
-            if then < p <= last and last - p >= tick:
+            if then < p <= last and last - p >= through:
                 broke = ("up", p, nm) if broke is None or p > broke[1] else broke
-            elif then > p >= last and p - last >= tick:
+            elif then > p >= last and p - last >= through:
                 broke = ("down", p, nm) if broke is None or p < broke[1] else broke
     flow_txt, flow_usd, against_usd = None, 0.0, 0.0
     if broke:
@@ -176,8 +177,10 @@ def read(book, now, last, levels, tick, cfg, flow=None, knows=None):
     ahead = [(p, nm) for p, nm in levels if abs(p - last) <= near and (going_up is None or (p >= last if going_up else p <= last))]
     if ahead:
         p, nm = min(ahead, key=lambda x: abs(x[0] - last))
-        if ratio <= c["stall_ratio"] or accel == "SLOWING":
-            out.update(call="STALLING INTO", level=[p, nm], words=f"Stalling into {nm}. The tape is drying up")
+        pressing = state != "DRYING UP" and buy_pct is not None and ((buy_pct >= c["aggress_pct"]) if p >= last else (100 - buy_pct >= c["aggress_pct"]))
+        if ratio <= c["stall_ratio"] and accel != "SPEEDING UP" and not pressing:
+            out.update(call="STALLING INTO", level=[p, nm],
+                       words=f"Stalling into {nm}. " + ("The tape is drying up" if state == "DRYING UP" else "The tape is slowing"))
         elif ratio >= 1.3 and accel == "SPEEDING UP":
             out.update(call="PRESSING", level=[p, nm], words=f"Pushing into {nm}. The tape is speeding up into it")
     return out

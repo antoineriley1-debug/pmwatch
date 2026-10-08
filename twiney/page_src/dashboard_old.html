@@ -2622,18 +2622,34 @@ function pickVoice(){
   } catch (e) { voicePick = null; }
 }
 if ("speechSynthesis" in window){ pickVoice(); speechSynthesis.addEventListener("voiceschanged", pickVoice); }
+const VQ = []; VQ.busy = false;
+const VOICE_STALE_MS = 5000;
+function voicePump(){
+  if (VQ.busy) return;
+  while (VQ.length && Date.now() - VQ[0].t > VOICE_STALE_MS) VQ.shift();
+  const it = VQ.shift(); if (!it) return;
+  VQ.busy = true;
+  const done = () => { if (it.u._done) return; it.u._done = true; VQ.busy = false; voicePump(); };
+  it.u.onend = done; const oe = it.u.onerror; it.u.onerror = ev => { oe && oe(ev); done(); };
+  setTimeout(() => { if (!it.u._done && !speechSynthesis.speaking && !speechSynthesis.pending) done(); }, 15000);   // a voice that never ends
+  speechSynthesis.speak(it.u);
+}
 function say(text, force){
   if (!force && !store.get("voice", true)) return;
   if (!("speechSynthesis" in window)){ if (force) toast("This browser has no speech. Use Chrome or Edge.", false); return; }
   try {
     if (!voicePick) pickVoice();
-    if (force) speechSynthesis.cancel();                 // a click: say it now, drop any backlog
+    if (force){ speechSynthesis.cancel(); VQ.length = 0; VQ.busy = false; }   // a click: say it now, drop any backlog
     if (speechSynthesis.paused) speechSynthesis.resume();
     const u = new SpeechSynthesisUtterance(text.replace(/×/g, " times ").replace(/\$/g, "").replace(/\bk\b/g, " thousand"));
     if (voicePick) u.voice = voicePick;
     u.rate = 1.1; u.pitch = 1; u.volume = 1;
     u.onerror = ev => { if (force) toast("Voice error: " + (ev.error || "unknown") + ". Windows: Settings → Time & language → Speech → add a voice.", false); };
-    speechSynthesis.speak(u);
+    if (force){ speechSynthesis.speak(u); return; }
+    // the calls wait their turn here, not in the browser: one that waited too long is dropped (the market moved on;
+    // "coming into VWAP" said ten seconds late is wrong)
+    VQ.push({u, t: Date.now()}); while (VQ.length > 2) VQ.shift();    // a backlog keeps the newest two
+    voicePump();
     if (force && !speechSynthesis.getVoices().length) toast("No voices installed in this browser yet. Windows: Settings → Time & language → Speech → Manage voices.", false);
   } catch (e) { if (force) toast("Voice failed: " + e.message, false); }
 }

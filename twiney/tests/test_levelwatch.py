@@ -61,3 +61,27 @@ class ApproachTests(unittest.TestCase):
     def test_moving_away_is_not_coming_into(self):
         ev, _ = run([99.95, 99.93, 99.91, 99.90], everything=True)
         self.assertNotIn("COMING INTO", [e["kind"] for e in ev])
+
+
+class ComingIntoNeedsARealMove(unittest.TestCase):
+    """The AMD video: VWAP 13 cents under, price dipped a tick and broke out. That is not coming into VWAP."""
+    VW = [{"price": 33.11, "name": "VWAP", "say": "VWAP", "code": "VWAP"}]
+
+    def go(self, path, levels=None):
+        lw, out = LevelWatch(), []
+        for i, p in enumerate(path):
+            out += lw.update(float(i), p, levels or self.VW, 0.01, 0.8, CFG)
+        return [e["kind"] for e in out]
+
+    def test_one_tick_dip_is_not_coming_into(self):
+        self.assertNotIn("COMING INTO", self.go([33.18, 33.18, 33.17, 33.17]))
+
+    def test_a_real_move_down_into_it_is(self):
+        self.assertIn("COMING INTO", self.go([33.22, 33.20, 33.18, 33.16]))
+
+    def test_a_level_in_between_comes_first(self):
+        lv = self.VW + [{"price": 33.14, "name": "PRIOR DAY HIGH", "say": "yesterday's high", "code": "PDH"}]
+        lw, out = LevelWatch(), []
+        for i, p in enumerate([33.22, 33.20, 33.18, 33.16]):
+            out += lw.update(float(i), p, lv, 0.01, 0.8, CFG)
+        self.assertEqual([e["name"] for e in out if e["kind"] == "COMING INTO"], ["PRIOR DAY HIGH"])

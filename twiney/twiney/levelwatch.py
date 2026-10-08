@@ -38,6 +38,10 @@ class LevelWatch:
         while self.path and t - self.path[0][0] > 20.0:
             self.path.popleft()
         move = price - self.path[0][1] if len(self.path) > 1 else 0.0
+        # the last 5 s: still heading that way (a dip that already turned around is not "coming into" anything)
+        p5 = next((px for tt, px in self.path if t - tt <= 5.0), price)
+        move5 = price - p5
+        travel = max(3 * tick, zone)
         out, live = [], set()
         # a level is WHAT it is (VWAP, yesterday's high, your 2nd entry), not its exact price: VWAP and the daily
         # reject / bounce move a little every second and are still the same level
@@ -62,7 +66,9 @@ class LevelWatch:
                 tch = s["touch"] = None; s["cross"] = None
             ev = None
             # COMING INTO it: a few ticks away and travelling toward it
-            if side_now != "at" and tch is None and abs(d) <= near and abs(move) >= tick and (move > 0) == (d < 0):
+            toward = abs(move) >= travel and (move > 0) == (d < 0) and (move5 * (1 if d < 0 else -1)) >= -tick * 0.5
+            between = any(abs(float(o["price"]) - p) > tick * 0.5 and min(price, p) < float(o["price"]) < max(price, p) for o in levels)
+            if side_now != "at" and tch is None and abs(d) <= near and toward and not between:
                 emit("COMING INTO", L, "below" if d < 0 else "above")
             if side_now == "at":
                 if tch is None and s["side"] in ("above", "below"):

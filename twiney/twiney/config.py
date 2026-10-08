@@ -408,6 +408,7 @@ DEFAULTS = {
         "slow_ratio": 0.6,              # SLOW: at most this x its normal pace
         "dry_ratio": 0.35,              # DRYING UP: at most this x its normal pace
         "stall_ratio": 0.8,             # STALLING INTO a level: within reach and the tape at most this x normal (or slowing)
+        "break_ticks": 3,               # a BREAK: price at least this many ticks through the level
         "break_ratio": 1.8,             # BREAKOUT WITH SPEED: the tape at least this x normal through the level
         "aggress_pct": 60,              # ... and at least this % of the aggressive shares on the break's side
         "near_ticks": 5,                # within reach of a level: this many ticks ...

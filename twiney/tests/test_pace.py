@@ -95,3 +95,21 @@ class PaceAuditTests(unittest.TestCase):
             b.add(t + k, 100.02, 200.0, "sell")
         p = pace.read(b, t + 15, 100.02, [(100.00, "PDL")], 0.01, CFG)
         self.assertEqual(p["level"], [100.00, "PDL"])
+
+
+class NotDryingUpOnABreakout(unittest.TestCase):
+    def test_buyers_lifting_into_a_level_is_not_stalling(self):
+        b, t = build()
+        for k in range(15):                                   # a little under normal, every print lifting the offer
+            b.add(t + k, 100.40 + 0.005 * k, 700.0, "buy")
+        p = pace.read(b, t + 15, 100.47, [(100.50, "HIGH OF DAY")], 0.01, CFG)
+        self.assertNotEqual(p["call"], "STALLING INTO")
+
+    def test_slowing_is_not_called_drying_up(self):
+        b, t = build()
+        for k in range(15):
+            b.add(t + k, 100.47, 600.0, "buy" if k % 2 else "sell")
+        p = pace.read(b, t + 15, 100.47, [(100.50, "REJECT 20E")], 0.01, CFG)
+        self.assertEqual(p["call"], "STALLING INTO")
+        self.assertIn("slowing", p["words"])
+        self.assertNotIn("drying", p["words"])

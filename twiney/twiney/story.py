@@ -376,7 +376,9 @@ def tape_words(pace, up):
         return "Buyers stepping up" if up is not False else "Buyers pushing back"
     if fast and bp is not None and bp <= 40:
         return "Sellers stepping up" if up is not True else "Sellers pushing back"
-    if st in ("SLOW", "DRYING UP") or acc == "SLOWING":
+    if st == "DRYING UP":
+        return "Tape drying up"
+    if st == "SLOW":
         return "Tape slowing"
     return None
 
