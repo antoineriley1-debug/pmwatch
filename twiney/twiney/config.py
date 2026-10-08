@@ -17,6 +17,16 @@ DEFAULTS = {
         "market_data_type": 1,
         "reconnect_initial_seconds": 2.0,
         "reconnect_max_seconds": 60.0,
+        # IBKR's limit on market data lines open at once (100 on most accounts). TWS's own windows (watchlists,
+        # charts) use lines too, so the desk keeps `lines_reserve` free for them and never asks for more
+        "max_lines": 100,
+        "lines_reserve": 15,
+        # option chain: quote only this many strikes nearest the price (each one is a data line)
+        "chain_quote_rows": 10,
+        # Time & Sales refused (too many feeds, another session): ask again this often
+        "tape_retry_seconds": 20.0,
+        # on DELAYED data because another login took the live data: try live again this often
+        "live_retry_seconds": 60.0,
     },
     "dashboard": {
         "host": "127.0.0.1",

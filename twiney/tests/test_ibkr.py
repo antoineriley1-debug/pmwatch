@@ -880,3 +880,91 @@ class DepthVenueTests(unittest.TestCase):
         app.mktDepthExchanges([self._d("ARCA"), self._d("ISLAND")])
         self.assertFalse(any("NO NASDAQ" in m["text"] for m in engine.messages))
         self.assertTrue(any("ISLAND" in m["text"] for m in engine.messages))
+
+
+class LineLimitTests(unittest.TestCase):
+    """IBKR allows 100 market data lines at once. The desk stays under its budget, never leaves an old stock's chain
+    quotes open, asks again for a refused Time & Sales feed, and goes back to LIVE by itself when another login
+    that took the live data (10197) logs out."""
+
+    def connect(self):
+        s, engine, clock = make_session()
+        s.step(clock()); app = s.app; app.nextValidId(1)
+        for sym, px in (("AAA", 10.0), ("BBB", 55.0), ("CCC", 21.0), ("DDD", 5.5)):
+            app.tickPrice(s.l1_ids[sym], 4, px, None)             # prices in: the ladders take their depth slots
+        return s, engine, clock, app
+
+    def _keys(self, sym, n, base=100):
+        return [f"{sym} 20261009 {base + i}C" for i in range(n)]
+
+    def setUp(self):
+        import twiney.ibkr as ib
+        self._mk = ib.make_option_contract
+        ib.make_option_contract = lambda *a: a                      # no ibapi here
+        self.addCleanup(setattr, ib, "make_option_contract", self._mk)
+
+    def test_switching_chains_drops_the_old_stocks_quotes(self):
+        s, engine, clock, app = self.connect()
+        s.watch_option_quotes("AAPL", self._keys("AAPL", 30))
+        self.assertEqual(len(s.opt_ids), 10)                             # only the 10 nearest the price
+        s.watch_option_quotes("TSLA", self._keys("TSLA", 10))
+        self.assertEqual(sorted({k.split()[0] for k in s.opt_ids}), ["TSLA"])
+        self.assertEqual(names(app).count("cancelMktData"), 10)
+
+    def test_never_over_the_line_budget(self):
+        s, engine, clock, app = self.connect()
+        s.cfg["ibkr"]["chain_quote_rows"] = 200
+        s.watch_option_quotes("AAPL", self._keys("AAPL", 200))
+        self.assertEqual(s.lines_used(), s.lines_budget())
+        self.assertLessEqual(s.lines_used(), 85)
+        self.assertTrue(any("line limit" in m["text"] for m in engine.messages))
+
+    def test_held_and_charted_contracts_keep_their_quotes(self):
+        s, engine, clock, app = self.connect()
+        app.position("DU1", _Opt(), 2, 312.0)
+        held = "TSLA 20261003 240C"
+        self.assertIn(held, engine.opt_positions)
+        s.subscribe_opt(held)
+        s.watch_option_quotes("AAPL", self._keys("AAPL", 5))
+        s.watch_option_quotes("MSFT", self._keys("MSFT", 5))
+        self.assertIn(held, s.opt_ids)
+        for k in ("AAPL 20261009 100C", "AAPL 20261009 101C", "AAPL 20261009 102C"):
+            s.chart_option(k)
+        self.assertNotIn("AAPL 20261009 100C", s.opt_ids)                # only the last two charts keep quotes
+        self.assertIn("AAPL 20261009 101C", s.opt_ids); self.assertIn("AAPL 20261009 102C", s.opt_ids)
+
+    def test_refused_time_and_sales_is_asked_for_again(self):
+        s, engine, clock, app = self.connect()
+        s.step(clock())
+        sym = sorted(s.depth_ids)[0]
+        d_id, t_id = s.depth_ids[sym]
+        app.error(t_id, 10190, "Max number of tick-by-tick requests has been reached.", "")
+        self.assertTrue(any("NO TIME & SALES" in m["text"] for m in engine.messages))
+        n = names(app).count("reqTickByTickData")
+        clock.t += 5; s.step(clock())
+        self.assertEqual(names(app).count("reqTickByTickData"), n)        # not yet
+        clock.t += 20; s.step(clock())
+        self.assertEqual(names(app).count("reqTickByTickData"), n + 1)
+        self.assertNotEqual(s.depth_ids[sym][1], t_id)
+
+    def test_10197_goes_back_to_live_by_itself(self):
+        s, engine, clock, app = self.connect()
+        s.step(clock())
+        self.assertTrue(s.depth_ids)
+        rid = s.l1_ids["AAA"]
+        app.error(rid, 10197, "No market data during competing live session", "")
+        self.assertIn("other login", engine.data_problem)
+        self.assertEqual(engine.connection["market_data_type"], 3)
+        clock.t += 61; s.step(clock())
+        self.assertEqual(app.calls.count(("reqMarketDataType", 1)), 2)   # tried live again
+        app.error(s.l1_ids["AAA"], 10197, "No market data during competing live session", "")   # still on
+        self.assertEqual(app.calls.count(("reqMarketDataType", 3)), 2)   # quietly back to delayed
+        clock.t += 61; s.step(clock())
+        self.assertEqual(app.calls.count(("reqMarketDataType", 1)), 3)
+        n_tape = names(app).count("reqTickByTickData")
+        app.marketDataType(s.l1_ids["AAA"], 1)                             # the other login is gone
+        self.assertEqual(engine.data_problem, "")
+        self.assertFalse(s._delayed_fallback)
+        self.assertTrue(any("LIVE DATA BACK" in m["text"] for m in engine.messages))
+        s.step(clock())
+        self.assertGreater(names(app).count("reqTickByTickData"), n_tape)  # books and Time & Sales asked again

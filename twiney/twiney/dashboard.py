@@ -194,7 +194,9 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                 if sess is not None and sym and ch.get("available") is False and ch.get("source") is None and hasattr(sess, "request_chain"):
                     sess.request_chain(sym)                 # live: ask IBKR once; the next poll has it
                 if sess is not None and ch.get("available") and ch.get("source") == "IBKR" and hasattr(sess, "watch_option_quotes"):
-                    sess.watch_option_quotes(sym, [r["key"] for r in ch["rows"]], ch.get("mult") or 100)
+                    spot = ch.get("spot")             # nearest the price first; no price yet = no quotes yet
+                    near = sorted(ch["rows"], key=lambda r: abs(r["strike"] - spot)) if spot else []
+                    sess.watch_option_quotes(sym, [r["key"] for r in near], ch.get("mult") or 100)
                 self._send(200, json.dumps(ch, default=str), "application/json")
                 return
             elif path == "/api/options/bars":
