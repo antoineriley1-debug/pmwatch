@@ -156,6 +156,7 @@ function renderBook(d){
   if (bi && document.activeElement !== bi && L.big_shares != null && bi.dataset.sym + ":" + L.big_shares !== d.symbol + ":" + L.big_shares){ bi.value = Math.round(L.big_shares); bi.dataset.sym = d.symbol; }
   const hint = document.getElementById("bigHint"); if (hint){ const txt = L.big_shares != null ? (L.big_default ? "" : d.symbol + " · ") + "huge ≥" + kfmt(L.huge_shares) : ""; if (hint.textContent !== txt) hint.textContent = txt; }
   if (d.ladder){ d.ladder.pace = d.tape && d.tape.pace; d.ladder.story = d.story; d.ladder.refs = d.refs; }    // PACE OF TAPE and the PS60 STORY line ride on top of the ladder
+  window._darkLv = {}; for (const x of ((d.dark && d.dark.levels) || [])) if (x.usd >= 200000) window._darkLv[(+x.price).toFixed(2)] = x;   // dark $ by price for the ladder
   const html = ladderHTML(training() ? Object.assign({}, d.ladder, {rows: d.ladder.rows.map(r => Object.assign({}, r, {bid_state: null, ask_state: null, bid_refills: 0, ask_refills: 0, bid_verdict: null, ask_verdict: null}))}) : d.ladder);
   if (P.book.last === html) return;
   P.book.last = html;
@@ -539,10 +540,25 @@ function renderTape(d){
   const el = P.tape.pc.querySelector(".p-tape");
   renderContractTape(); renderSwitchStrips(); if (contractMode("tape")){ renderBigTape(d); return; }
   if (!d){ el.innerHTML = `<div class="dim" style="padding:8px">${NA}</div>`; P.tape.last = null; renderBigTape(null); return; }
-  const html = refsHTML(d.refs, d.story && d.story.edge) + tapeGaugeHTML(d.tape) + tapeSpeedHTML(d.tape.speed) + paceHTML(d.tape.pace) + tapeHTML(d.tape, d.ladder); if (P.tape.last !== html){ P.tape.last = html;
+  const html = refsHTML(d.refs, d.story && d.story.edge) + tapeGaugeHTML(d.tape) + darkStripHTML(d.dark) + tapeSpeedHTML(d.tape.speed) + paceHTML(d.tape.pace) + tapeHTML(d.tape, d.ladder); if (P.tape.last !== html){ P.tape.last = html;
     const keep = el.scrollTop; el.innerHTML = html; el.scrollTop = keep; makeColsResizable(el.querySelector("table")); }
   renderBigTape(d); flyBigPrints(d);
 }
+/* DARK POOL on the T&S: today's off-exchange dollars and their share of the volume, the last large dark print.
+   Click: every large dark print (size, $, against the quote and VWAP) and the prices dark money keeps printing at */
+function darkStripHTML(dk){
+  if (!dk || !dk.usd) return `<div class="dkstrip dim" data-dk="1">DARK · no off-exchange prints yet</div>`;
+  const open = store.get("darkOpen", false), b = (dk.big || [])[0];
+  const vv = v => v == null ? "" : Math.abs(v) < 0.005 ? "at VWAP" : `${(Math.abs(v) * 100).toFixed(0)}¢ ${v > 0 ? "over" : "under"} VWAP`;
+  let h = `<div class="dkstrip" data-dk="1" title="off-exchange prints (dark pools / FINRA TRF): where funds route size. Click for the list"><b>DARK</b> ${usdK(dk.usd)}${dk.pct != null ? ` · ${dk.pct}% of volume` : ""}${b ? ` · last big <b>${kfmt(b.size)} @ ${px(b.price)}</b> ${usdK(b.usd)}${b.vs_vwap != null ? " · " + vv(b.vs_vwap) : ""} · ${ago(b.age)} ago` : ""}<span class="dkcar">${open ? "▴" : "▾"}</span></div>`;
+  if (open){
+    h += `<div class="dkbox"><table class="dkt"><tr><th>AGO</th><th>SIZE</th><th>PRICE</th><th>$</th><th>QUOTE</th><th>VWAP</th></tr>` +
+      ((dk.big || []).slice(0, 10).map(r => `<tr><td>${ago(r.age)}</td><td><b>${sz(r.size)}</b></td><td>${px(r.price)}</td><td><b>${usdK(r.usd)}</b></td><td class="dim">${esc(r.at || "")}</td><td class="${r.vs_vwap > 0.004 ? "s" : r.vs_vwap < -0.004 ? "b" : "dim"}">${r.vs_vwap == null ? "" : (r.vs_vwap >= 0 ? "+" : "−") + (Math.abs(r.vs_vwap) * 100).toFixed(0) + "¢"}</td></tr>`).join("") || `<tr><td colspan="6" class="dim">no large dark prints yet</td></tr>`) + `</table>` +
+      `<div class="dkh">WHERE DARK MONEY KEEPS PRINTING</div><table class="dkt">` + (dk.levels || []).slice(0, 6).map(x => `<tr><td>${px(x.price)}</td><td><b>${usdK(x.usd)}</b></td><td>${sz(x.shares)} sh</td><td class="dim">${x.prints} prints${x.big ? ` · ${x.big} large` : ""}</td></tr>`).join("") + `</table></div>`;
+  }
+  return h;
+}
+document.addEventListener("click", e => { if (!e.target.closest(".dkstrip[data-dk]")) return; store.set("darkOpen", !store.get("darkOpen", false)); if (P.tape) P.tape.last = null; const d0 = curData(); if (d0) renderTape(d0); });
 /* THE MONEY GAUGE: the last minute's dollars paid at the ask (buyers in a rush) against dollars hit at the bid */
 function tapeGaugeHTML(t){
   const u = t.usd_60 || {buy: 0, sell: 0}, tot = u.buy + u.sell;
@@ -1569,6 +1585,7 @@ function speakNew(s){
     const isFlow = FLOW_ROLES.has(a.role) || /^UNUSUAL|REPEAT FLOW|FLOW/.test(a.label || "");
     if (isFlow){ const fw = flowWords(a); if (fw && voiceFlow() && (mine || !solo())) items.push(fw); continue; }
     if (a.role === "trap"){ if (a.words && mine) items.push(a.words); continue; }   // trapped crowd: the tab you are on
+    if (a.role === "dark"){ if (a.words && mine && store.get("voiceDark", true)) items.push(a.words); continue; }   // a big dark pool print
     // the KEY LEVELS (rejected / bounced / took) and the PACE at them (pushing / stalling / breakout): the tab you are on
     if (a.role === "level" || a.role === "pace"){ if (a.words && mine && store.get("voiceLevels", true)) items.push(a.words); continue; }
     if (!mine) continue;                                         // background tabs never speak

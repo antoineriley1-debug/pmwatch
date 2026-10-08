@@ -417,6 +417,14 @@ DEFAULTS = {
         "flow_min_premium": 100000,     # + FLOW: at least this much premium bought at the ask
         "repeat_seconds": 120,          # a call at the same level is not repeated for this long
     },
+    # DARK POOL: trades printed off the exchanges (FINRA / TRF / ADF / OTC), where funds route much of their size
+    "dark": {
+        "enabled": True,                # track off-exchange prints (T&S tag, DARK strip, ladder D$ at prices)
+        "big_shares": 10000,            # a LARGE dark print: at least this many shares ...
+        "big_usd": 200000,              # ... or this many dollars
+        "alert_usd": 1000000,           # call it out (alert + voice on the tab you are on) from this many dollars
+        "voice": True,                  # say the big ones
+    },
     "levels": {
         "enabled": True,                # KEY LEVELS WATCH: REJECTED / BOUNCED / BUYERS TOOK / SELLERS TOOK at the daily and session levels
         "voice": True,                  # say them (the ticker you are on)

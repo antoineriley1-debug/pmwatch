@@ -21,6 +21,7 @@ from .levels import BUILDING, GONE_PENDING, RELOAD, LevelTracker, WATCHING
 from .prices import fmt_price, price_key, tick_size
 from .ranking import allocate, distances, rank
 from .tape import MID, Tape, classify
+from .dark import DarkBook, is_dark
 
 log = logging.getLogger("twiney.engine")
 
@@ -122,6 +123,7 @@ class SymbolState:
         self.storybook = Story()         # PS60 STORY: the running story, newest first
         self.story = None
         self.consumed = deque(maxlen=20) # (t, price, side): reloaders that got cleaned up (the story's "consumed")
+        self.dark = DarkBook()           # DARK POOL prints: large off-exchange trades and where dark volume keeps printing
         self.rflow_said = {}             # (strike, cp, expiry) -> when REPEAT FLOW was last called on it
         self.l1_volume = None            # IBKR's cumulative day volume (symbols without a tape)
         self.l1_last_raw = None          # IBKR's quote-stream last, kept even while the tape sets the price
@@ -574,6 +576,7 @@ class Engine:
             bid, ask = st.bbo()
             self._book_check(st, price, t, exchange)
             rec = st.tape.add(t, price, size, bid, ask, exchange, side=st.aggressor(price, t))
+            self._dark_print(st, t, price, size, exchange, bid, ask)
             st.sv += 1
             st.pacebook.add(t, price, size, rec["side"])
             st.tape_t = t
@@ -882,6 +885,44 @@ class Engine:
                 words.append(f"{big} flow behind it, {narrative.say_dollars(max(calls, puts))} in 15 minutes")
                 short.append(f"{big} {narrative.say_dollars(max(calls, puts))}")
         return ", ".join(words), " · ".join(short)
+
+    def _dark_print(self, st, t, price, size, exchange, bid, ask):
+        """DARK POOL: every print counts toward the day's volume; an off-exchange one goes into the dark book, and a
+        very large one is called (the tab you are on says it)."""
+        dc = self.cfg.get("dark") or {}
+        if not dc.get("enabled", True):
+            return
+        db = st.dark
+        if db.day is None or t - st.__dict__.get("_dark_dk_t", -1e9) > 60.0:
+            st.__dict__["_dark_dk_t"] = t
+            from . import studies
+            dk = studies.day_key(t)
+            if dk != db.day:
+                db.reset(dk)
+        db.count(size)
+        if not is_dark(exchange):
+            return
+        vw = ((st.__dict__.get("_refs") or {}).get("v") or {}).get("vwap")
+        rec = db.add(t, price, size, exchange, bid, ask, vw, dc)
+        if rec is None or rec["usd"] < float(dc.get("alert_usd", 1000000)):
+            return
+        vv = rec["vs_vwap"]
+        vtxt = "" if vv is None else f" · {abs(vv) * 100:.0f}¢ {'over' if vv > 0 else 'under'} VWAP" if abs(vv) >= 0.005 else " · at VWAP"
+        usd = rec["usd"]; m = f"${usd / 1e6:.1f}M" if usd >= 1e6 else f"${usd / 1e3:.0f}K"
+        text = f"DARK POOL {m} · {int(size):,} @ {fmt_price(price)}" + (f" · {rec['at']}" if rec["at"] else "") + vtxt
+        words = (f"{st.symbol}. Dark pool, {usd / 1e6:.1f} million dollars, {int(size):,} shares at {fmt_price(price)}"
+                 + ("" if vv is None else f", {abs(vv) * 100:.0f} cents {'over' if vv > 0 else 'under'} VWAP" if abs(vv) >= 0.005 else ", at VWAP"))
+        alert = {"t": t, "symbol": st.symbol, "label": "DARK POOL", "price": fmt_price(price), "side": "mid", "role": "dark",
+                 "text": text, "words": words if dc.get("voice", True) else None, "usd": round(usd), "shares": int(size)}
+        alert["key"] = f"{round(t, 2)}|{st.symbol}|DARK|{price}|{int(size)}"
+        self.alerts.appendleft(alert)
+        self._rec(dict(alert, ev="alert"))
+        self.log(st.symbol, text, t, kind="level")
+        for fn in self.listeners:
+            try:
+                fn(alert)
+            except Exception:
+                pass
 
     def _level_alert(self, st, ev, t):
         kind, p = ev["kind"], ev["price"]
@@ -4579,6 +4620,7 @@ class Engine:
             "trap": trap,
             "reloaders": reloaders,
             "reload_basket": self._reload_basket(st, t),
+            "dark": st.dark.view(t, st.price()),
             "user_levels": user_levels,
             "log": self.symbol_log(sym),
             "bigmoney": self.bigmoney.for_symbol(sym, st.price(), t, lambda d: self._close_on(st, d)) if self.bigmoney is not None else [],

@@ -30,6 +30,7 @@ SECTIONS = [
     ("trap", "Trapped traders", "Aggressive prints now underwater."),
     ("depth", "Market depth", "IBKR depth subscriptions and rotation."),
     ("chart", "Chart history", "History loaded at startup."),
+    ("dark", "Dark pool", "Off-exchange prints (FINRA / TRF / ADF): the big ones called and listed, dark dollars by price on the ladder, the dark share of the day's volume."),
     ("levels", "Key levels", "The daily chart's and the session's levels (prior day open / high / low / close, premarket and after-hours high / low / close, today's open, daily reject / bounce, prior highs and lows): what price does there, REJECTED / BOUNCED / BUYERS TOOK / SELLERS TOOK, called and said."),
     ("pace", "Pace of tape", "How fast each stock trades against its own normal, and the calls at your levels: stalling, pressing, breakout with speed (+ flow)."),
     ("story", "PS60 story", "The Daily chart, your PS60 places, zones, the tape, reload buyers / sellers, option flow and price response told as one running story."),

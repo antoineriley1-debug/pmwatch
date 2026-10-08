@@ -1658,7 +1658,9 @@ function ladderCleanHTML(L){
       (r.bid_state === "RELOAD" || r.bid_proven) ? "rl-bid" : "", (r.ask_state === "RELOAD" || r.ask_proven) ? "rl-ask" : ""].join(" ");
     // a whole / half dollar gets a gold star: emphasis only (the reloaders get the glow)
     const star = Math.abs(r.price * 2 - Math.round(r.price * 2)) < 1e-6 ? `<span class="rstar" title="${Math.abs(r.price - Math.round(r.price)) < 1e-6 ? "whole" : "half"} dollar">★</span>` : "";
-    h += `<tr class="${cls}" data-price="${r.price}"${lead ? ` style="--klc:${lead.c};--klf:${lead.c}55"` : ""}>${urg(r, "u_s")}${passive(r, "bid")}<td class="px">${star}${px(r.price)}${tags ? `<span class="kts">${tags}</span>` : ""}</td>${passive(r, "ask")}${urg(r, "u_b")}</tr>`;
+    const dkl = (window._darkLv || {})[(+r.price).toFixed(2)];
+    const dkc = dkl ? `<span class="dkl" title="dark pool today at ${px(r.price)}: ${sz(dkl.shares)} shares, ${dkl.prints} prints${dkl.big ? `, ${dkl.big} large` : ""}">D ${usdK(dkl.usd)}</span>` : "";
+    h += `<tr class="${cls}" data-price="${r.price}"${lead ? ` style="--klc:${lead.c};--klf:${lead.c}55"` : ""}>${urg(r, "u_s")}${passive(r, "bid")}<td class="px">${star}${px(r.price)}${dkc}${tags ? `<span class="kts">${tags}</span>` : ""}</td>${passive(r, "ask")}${urg(r, "u_b")}</tr>`;
   }
   h += `</table><div class="legend lgc"><span><b class="sell">HIT</b> sellers now · <b class="buy">BID</b> buyers waiting · <b class="sell">ASK</b> sellers waiting · <b class="buy">LIFT</b> buyers now</span><span class="dim">bright = stacked · faded = pulled · R = reload${on ? " · click a size to trade" : ""}</span></div>`;
   return h;
@@ -1725,10 +1727,11 @@ function tapeHTML(t, lad){
   for (const x of ((lad && lad.rows) || [])){ if (x.bid_state === "RELOAD" || x.bid_proven) rl[x.price + "|sell"] = "b"; if (x.ask_state === "RELOAD" || x.ask_proven) rl[x.price + "|buy"] = "s"; }
   // a print AT the VWAP or the daily 50-day (within half a cent) glows like their rows on the ladder
   const rf = (lad && lad.refs) || {}, near = (a, b) => a != null && b != null && Math.abs(a - b) < 0.0051;
-  const rows = t.recent.map(r => { const g = rl[(+r.price) + "|" + r.side];
+  const isDk = ex => /^(FINRA|ADF|TRF|OTC|DARK)/i.test(String(ex || ""));
+  const rows = t.recent.map(r => { const g = rl[(+r.price) + "|" + r.side], dk = isDk(r.exchange), dkBig = dk && (r.size >= 10000 || r.size * r.price >= 200000);
     const gv = near(+r.price, rf.vwap), g5 = near(+r.price, rf.sma50);
-    return `<tr class="${r.at?"atlvl":""} ${r.side}${g ? " rlhit " + g : ""}${gv ? " g-vw" : ""}${g5 ? " g-d50" : ""}" title="${who(r)}${g ? (g === "b" ? " · sold into the RELOAD BUYER at this price" : " · bought from the RELOAD SELLER at this price") : ""}${gv ? " · AT THE VWAP" : ""}${g5 ? " · AT THE DAILY 50-DAY" : ""}${r.exchange ? " · " + esc(r.exchange) : ""} · ${ago(r.age)} ago">
-    <td class="${r.side}">${g ? `<span class="rltag">R</span>` : ""}${px(r.price)}${r.at?` <span class="tag">${esc(r.at)}</span>`:""}${gv ? ` <span class="gtag vw">VWAP</span>` : ""}${g5 ? ` <span class="gtag d50">50D</span>` : ""}</td>
+    return `<tr class="${r.at?"atlvl":""} ${r.side}${g ? " rlhit " + g : ""}${dk ? " dk" : ""}${dkBig ? " dkbig" : ""}${gv ? " g-vw" : ""}${g5 ? " g-d50" : ""}" title="${who(r)}${g ? (g === "b" ? " · sold into the RELOAD BUYER at this price" : " · bought from the RELOAD SELLER at this price") : ""}${gv ? " · AT THE VWAP" : ""}${g5 ? " · AT THE DAILY 50-DAY" : ""}${r.exchange ? " · " + esc(r.exchange) : ""} · ${ago(r.age)} ago">
+    <td class="${r.side}">${dk ? `<span class="dktag" title="off-exchange (dark pool / ${esc(r.exchange)})">D</span>` : ""}${g ? `<span class="rltag">R</span>` : ""}${px(r.price)}${r.at?` <span class="tag">${esc(r.at)}</span>`:""}${gv ? ` <span class="gtag vw">VWAP</span>` : ""}${g5 ? ` <span class="gtag d50">50D</span>` : ""}</td>
     <td class="${r.side} ${r.large?"large":""}">${sz(r.size)}</td></tr>`; }).join("")
     || `<tr><td colspan="2" class="dim">no prints yet</td></tr>`;
   return `<table class="t tape2" data-cols="tape2"><tr><th data-w="1.1">PRICE</th><th data-w="0.9" title="green = paid the ask (buyer in a rush) · red = hit the bid (seller getting out) · bold = big">SIZE</th></tr>${rows}</table>`;

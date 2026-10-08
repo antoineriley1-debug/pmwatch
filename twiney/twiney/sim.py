@@ -766,6 +766,19 @@ class DemoFeed:
 
     # ---- one step ------------------------------------------------------------------
 
+    def _dark(self, sym, s, t, dt):
+        """DARK POOL prints, the way they show up on a real tape: a steady trickle of small off-exchange prints at the
+        middle of the quote (internalised retail, algos' child orders), and now and then a block."""
+        if not (s.bids and s.asks):
+            return
+        rng = self.rng
+        mid = (s.bids[0][0] + s.asks[0][0]) / 2.0
+        px_ = round(mid, 4) if mid < 1 else round(mid * 200) / 200.0 if rng.random() < 0.5 else round(mid, 2)
+        if rng.random() < 0.6 * dt:
+            self.engine.on_print(sym, px_, int(rng.choice((100, 100, 200, 300, 500, 1000))), "FINRA", t)
+        if rng.random() < 0.006 * dt:
+            self.engine.on_print(sym, round(mid, 2), int(rng.choice((10000, 15000, 25000, 40000, 60000))), "FINRA", t)
+
     def step(self, t):
         dt = 0.25 if self.t is None else max(0.05, min(1.0, t - self.t))
         self.t = t
@@ -789,6 +802,7 @@ class DemoFeed:
             self._participants(sym, s, t)
             self._flow(sym, s, t, dt, slotted)
             self._basket(sym, s, t, slotted)
+            self._dark(sym, s, t, dt)
             self._close_spread(s)
             # tape heat: every tick the price moves adds heat (in that direction); it cools off in a few seconds
             if s.bids and s.asks:
