@@ -146,7 +146,53 @@ function chartTypeKey(e){
   if (!(c.el.matches(":hover") || c.view.cross || c.el.classList.contains("typing"))) return false;
   e.preventDefault(); openTyper(e.key); return true;
 }
+/* BREAK TRAPS: a small floating box (drag it by its title; − folds it, ✕ hides it until the next trap). When price
+   takes out a key level and comes back, how many got caught, on which side, their average (where they get out), how
+   far underwater, and what was resting at the level when it broke. The ticker you are on. */
+const BTX = {hidden: false, lastKey: ""};
+function btBox(){
+  let w = document.getElementById("btrap"); if (w) return w;
+  w = document.createElement("div"); w.id = "btrap"; w.className = "btrap"; w.hidden = true;
+  w.innerHTML = `<div class="bth" title="drag to move"><b>TRAPS</b><span class="bts"></span><button class="btmin" title="fold">−</button><button class="btx" title="hide until the next trap">✕</button></div><div class="btb"></div>`;
+  document.body.appendChild(w);
+  const pos = store.get("btrap.pos", null); if (pos){ w.style.left = pos[0] + "px"; w.style.top = pos[1] + "px"; }
+  if (store.get("btrap.min", false)) w.classList.add("min");
+  const hd = w.querySelector(".bth");
+  hd.addEventListener("mousedown", e => { if (e.target.closest("button")) return; e.preventDefault();
+    const r = w.getBoundingClientRect(), x0 = e.clientX, y0 = e.clientY;
+    const mv = ev => { const l = Math.max(0, Math.min(innerWidth - r.width, r.left + ev.clientX - x0)), tp = Math.max(0, Math.min(innerHeight - 24, r.top + ev.clientY - y0));
+      w.style.left = l + "px"; w.style.top = tp + "px"; w.style.right = "auto"; w.style.bottom = "auto"; };
+    const up = () => { removeEventListener("mousemove", mv); removeEventListener("mouseup", up); store.set("btrap.pos", [parseInt(w.style.left) || 0, parseInt(w.style.top) || 0]); };
+    addEventListener("mousemove", mv); addEventListener("mouseup", up); });
+  w.querySelector(".btmin").addEventListener("click", () => { w.classList.toggle("min"); store.set("btrap.min", w.classList.contains("min")); });
+  w.querySelector(".btx").addEventListener("click", () => { BTX.hidden = true; w.hidden = true; });
+  return w;
+}
+function renderBreakTraps(d){
+  const list = (d && d.breaktraps) || [], w = btBox();
+  // a NEW trap (or a new break) on this ticker brings the box back even after ✕
+  const key = d ? d.symbol + "|" + list.filter(b => b.state === "TRAPPED").map(b => b.name + b.level).join(",") : "";
+  if (key !== BTX.lastKey){ if (list.some(b => b.state === "TRAPPED")) BTX.hidden = false; BTX.lastKey = key; }
+  if (!list.length || BTX.hidden){ if (!w.hidden) w.hidden = true; return; }
+  const last = d.last != null ? +d.last : null;
+  const st = {BROKE: ["BROKE", "brk"], TRAPPED: ["TRAPPED", "trp"], "AT EXIT": ["AT THEIR EXIT", "ext"], RECLAIMED: ["BREAK HELD", "hld"]};
+  const ago = s => s == null ? "" : s < 60 ? s + "s" : Math.round(s / 60) + "m";
+  const h = list.map(b => {
+    const [word, cls] = st[b.state] || [b.state, ""], who = b.up ? "LONGS" : "SHORTS", act = b.up ? "buy" : "sell";
+    const head = `<div class="btl ${cls} ${b.up ? "up" : "dn"}"><b class="btn" title="${esc(b.name)}">${esc(String(b.name).replace(/PREMARKET /g, "PM ").replace(/PRIOR DAY /g, "PD ").replace(/AFTER-HOURS /g, "AH ").replace(/ OF DAY/g, " OF DAY"))}</b><span class="btp">${px(b.level)} ${b.up ? "▲" : "▼"}</span><span class="btw">${b.state === "TRAPPED" || b.state === "AT EXIT" ? word + " " + who : word}</span><i>${ago(b.age)}</i></div>`;
+    const caught = b.shares ? `<div class="btr"><span><b>${(b.prints || 0).toLocaleString()}</b> ${act} orders</span><span><b>${kfmt(b.shares)}</b> sh</span><span>${usdK(b.usd)}</span><span>avg <b>${b.avg != null ? px(b.avg) : "—"}</b></span></div>` : `<div class="btr dim">no ${act} orders at it yet</div>`;
+    const rest = b.resting ? `<div class="btr dim" title="shares showing on the ${b.up ? "offer" : "bid"} at ${px(b.level)} when price broke through it">${kfmt(b.resting)} sh resting on the ${b.up ? "offer" : "bid"} at the break</div>` : "";
+    const now = (b.state === "TRAPPED" || b.state === "AT EXIT") && b.under != null
+      ? `<div class="btr ${b.under > 0 ? "uw" : ""}"><span>now ${last != null ? px(last) : ""}</span>${b.under > 0 ? `<span><b>${(b.under * 100).toFixed(0)}¢ under</b></span><span>${usdK(b.at_risk)} at risk</span>` : "<span>back at even</span>"}</div><div class="btr out">they get out at <b>${px(b.avg)}</b></div>`
+      : b.state === "RECLAIMED" ? `<div class="btr dim">new ${b.up ? "high" : "low"} past ${px(b.extreme)}: nobody trapped</div>`
+      : `<div class="btr dim">trapped if price comes back ${b.up ? "under" : "over"} ${px(b.trap_at)} without a new ${b.up ? "high" : "low"} (now ${b.up ? "high" : "low"} ${px(b.extreme)})</div>`;
+    return `<div class="bti">${head}${caught}${rest}${now}</div>`; }).join("");
+  const sym = `${esc(d.symbol)}`;
+  if (w.dataset.h !== sym + h){ w.dataset.h = sym + h; w.querySelector(".bts").textContent = d.symbol; w.querySelector(".btb").innerHTML = h; }
+  if (w.hidden) w.hidden = false;
+}
 function renderBook(d){
+  try { renderBreakTraps(d); } catch (e) {}
   const wrap = P.book.pc.querySelector(".ladder-wrap");
   renderLadStat(d, state); renderLadQty(state);
   autoPair(); renderContractL2(); renderSwitchStrips(); if (contractMode("book")) return;
@@ -159,11 +205,12 @@ function renderBook(d){
   window._fundLv = {}; for (const x of ((d.inst && d.inst.levels) || [])) window._fundLv[(+x.price).toFixed(2) + (x.side === "bid" ? "b" : "s")] = x;   // FUND score by level
   window._darkLv = {}; for (const x of ((d.dark && d.dark.levels) || [])) if (x.usd >= 200000) window._darkLv[(+x.price).toFixed(2)] = x;   // dark $ by price for the ladder
   const html = ladderHTML(training() ? Object.assign({}, d.ladder, {rows: d.ladder.rows.map(r => Object.assign({}, r, {bid_state: null, ask_state: null, bid_refills: 0, ask_refills: 0, bid_verdict: null, ask_verdict: null}))}) : d.ladder);
-  if (P.book.last === html) return;
+  if (P.book.last === html){ try { basketFx(wrap, d); } catch (e) {} return; }   // nothing redrawn: the basket clock still ticks
   P.book.last = html;
   const keep = wrap.scrollTop;
   wrap.innerHTML = html; applyLadCols(wrap.querySelector("table")); makeColsResizable(wrap.querySelector("table")); if (hoverPx != null) ladderHighlight(hoverPx);
   eatMarks(wrap, d); avgRow(wrap, d); fitLadderRows(wrap);
+  try { basketFx(wrap, d); } catch (e) {}                 // the BASKET drop: cosmetic, never stops the ladder
   const cur = wrap.querySelector("tr.lastpx") || wrap.querySelector("tr.best-ask");
   // a STILL ladder: the view holds where it is while price trades inside its middle; it re-centres only when price
   // gets into the top or bottom fifth (or a new symbol opens). Re-centring on every print made every row jump
@@ -421,7 +468,7 @@ document.addEventListener("mouseover", e => {
 });
 function eatMarks(wrap, d, host){
   // the CLEAN ladder shows a pull as a faded, crossed-out size: no floating badges over its rows
-  if (!host && store.get("ladMode", "clean") === "clean"){ wrap.querySelectorAll(".eatbar").forEach(x => x.remove()); return; }
+  if (!host && ["clean", "basket"].includes(store.get("ladMode", "clean"))){ wrap.querySelectorAll(".eatbar").forEach(x => x.remove()); return; }
   const rows = (d.ladder && d.ladder.rows) || [], now = Date.now(), sym = d.symbol;
   const touch = {bid: null, ask: null};
   for (const r of rows){
@@ -698,7 +745,7 @@ async function setLadQty(n){ n = Math.max(1, Math.round(+n || 0)); if (!n) retur
 document.getElementById("ladQty").addEventListener("change", e => setLadQty(e.target.value));
 document.getElementById("ladQty").addEventListener("keydown", e => { e.stopPropagation(); if (e.key === "Enter"){ setLadQty(e.target.value); e.target.blur(); } });
 document.getElementById("ladPresets").addEventListener("click", e => { const b = e.target.closest("button[data-qp]"); if (b) setLadQty(b.dataset.qp); });
-(function(){ const b = document.getElementById("ladMode"); if (!b) return; const MODES = ["clean", "pro", "simple", "tight", "wide"];
+(function(){ const b = document.getElementById("ladMode"); if (!b) return; const MODES = ["clean", "basket", "pro", "simple", "tight", "wide"];
   if (!store.get("ladClean1", false)){ store.set("ladClean1", true); store.set("ladMode", "clean"); }   // the CLEAN ladder arrives as the default once
   const paint = () => { b.textContent = store.get("ladMode", "clean").toUpperCase(); }; paint();
   b.addEventListener("click", () => { const m = store.get("ladMode", "clean"); store.set("ladMode", MODES[(MODES.indexOf(m) + 1) % MODES.length]); paint(); P.book.last = null; poll(true); }); })();
@@ -1611,7 +1658,7 @@ function speakNew(s){
     if (a.role === "conviction"){ if (a.words && (mine || !solo())) items.push(a.words); continue; }   // READY TO GO / AGAINST YOU
     const isFlow = FLOW_ROLES.has(a.role) || /^UNUSUAL|REPEAT FLOW|FLOW/.test(a.label || "");
     if (isFlow){ const fw = flowWords(a); if (fw && voiceFlow() && (mine || !solo())) items.push(fw); continue; }
-    if (a.role === "trap"){ if (a.words && mine) items.push(a.words); continue; }   // trapped crowd: the tab you are on
+    if (a.role === "trap" || a.role === "breaktrap"){ if (a.words && mine) items.push(a.words); continue; }   // trapped crowd / BREAK TRAPS: the tab you are on
     if (a.role === "inst"){ if (a.words && mine && store.get("voiceInst", true)) items.push(a.words); continue; }   // a program / fund footprint
     if (a.role === "dark"){ if (a.words && mine && store.get("voiceDark", true)) items.push(a.words); continue; }   // a large order
     // the KEY LEVELS (rejected / bounced / took) and the PACE at them (pushing / stalling / breakout): the tab you are on
@@ -2957,6 +3004,126 @@ function paceHTML(pc){
     h += `<div class="pcall ${good ? "good" : warn ? "warn" : ""}">${esc(pc.call)} · ${lvl}${pc.flow ? ` <b>${esc(pc.flow)}</b>` : ""}</div>`;
   }
   return h;
+}
+/* THE BASKET LADDER (an option next to CLEAN: the LAYOUT button on the LEVEL II):
+     HIT $ │ BID │ PRICE │ BASKET │ ASK │ LIFT $
+   money on the outside, shares next in, the price and its BASKET in the centre. The BASKET is every confirmed
+   trade at that price today, the server's own running total (the page never counts: nothing is ever counted twice).
+   A new trade drops into it from its side (sold into the bid from the left, bought from the ask from the right,
+   between from above) and the basket pulses. The drops live in their own layer over the ladder and are skipped,
+   never queued, when there are too many: the feed is never held up. Reload glows, pulled size (gray), the key
+   level labels and every click on the CLEAN ladder work the same here. SETTINGS > Level II: basket_* */
+function bkCfg(L){ return Object.assign({basket: true, basket_animate: true, basket_pulse: true, basket_speed: 1, basket_min_shares: 1,
+  basket_max_drops: 12, money_columns: "traded", pulled_gray: true, level_labels: true}, (L && L.basket) || {}); }
+function ladderBasketHTML(L){
+  const C = bkCfg(L);
+  if (!C.basket) return ladderCleanHTML(L);
+  const on = canTrade(), last = L.last != null ? +L.last : null, tk = +L.tick || 0.01;
+  const big = +L.big_shares || 0, mx = Math.max(1, +L.max_size || 1, ...L.rows.map(r => Math.max(r.bid || 0, r.ask || 0)));
+  const resting = C.money_columns === "resting";
+  const money = r => resting ? [(r.bid || 0) * r.price, (r.ask || 0) * r.price] : [(r.u_s || 0) * r.price, (r.u_b || 0) * r.price];
+  const um = Math.max(1, ...L.rows.map(r => Math.max(...money(r))));
+  const bkm = Math.max(1, ...L.rows.map(r => (r.bk && r.bk[0]) || 0));
+  const chips = (r, side) => (r.mine || []).filter(o => o.id != null && (o.action === "BUY") === (side === "b")).map(o =>
+    `<span class="chip ${side} ${o.status === "PreSubmitted" ? "wait" : ""}" data-id="${o.id}" draggable="true" title="${esc(o.role)} order — click to cancel, drag to move">${sz(o.qty)}</span>`).join(" ");
+  const passive = (r, side) => {
+    const n = r[side] || 0, ps = r["ps_" + (side === "bid" ? "b" : "a")], st = r[side + "_state"], rl = st === "RELOAD" || r[side + "_proven"];
+    const stacked = n && ((big && n >= big) || (ps && ps[0] >= Math.max(ps[1], n * 0.5)));
+    const pulled = ps && ps[1] > ps[0] && ps[1] >= Math.max(1, big * 0.5);
+    const w = n ? Math.max(6, Math.round(100 * n / mx)) : 0, s = side === "bid" ? "b" : "s";
+    const atLvl = (side === "bid" ? r.best_bid : r.best_ask) || (last != null && Math.abs(r.price - last) <= tk * 1.01);
+    const live = rl && n > 0 && atLvl, hitting = live && ((side === "bid" ? r.u_s : r.u_b) || 0) > 0;
+    const cls = ["sz", "click", side === "bid" ? "bsz" : "asz", stacked ? "stk" : "", pulled ? (C.pulled_gray ? "pul pulg" : "pul") : "",
+      rl ? "rl " + stageSlug(r[side + "_stage"] || "RELOADING") + (live ? " rl-live" : " rl-idle") + (hitting ? " rl-hit" : "") : ""].join(" ");
+    const badge = rl ? `<span class="rlb" title="RELOAD ${side === "bid" ? "BUYER" : "SELLER"}: refilled ${r[side + "_refills"] || 0} times">R${r[side + "_refills"] || ""}</span>` : "";
+    const pg = pulled && C.pulled_gray ? `<i class="pgv" title="${sz(ps[1])} shares PULLED from ${px(r.price)} without trading (last ${L.stack_seconds || 60}s)">−${kfmt(ps[1])}</i>` : "";
+    return `<td class="${cls}" data-act="${side === "bid" ? "BUY" : "SELL"}" data-px="${r.price}"${szTitle(r, side)}>${w ? `<i class="pb" style="width:${w}%"></i>` : ""}${side === "bid" ? pg + badge : ""}<span class="szn">${n ? kfmt(n) : ""}</span>${side === "ask" ? badge + pg : ""}${chips(r, s) ? `<span class="mine">${chips(r, s)}</span>` : ""}</td>`;
+  };
+  const cash = (r, side) => { const v = money(r)[side === "l" ? 0 : 1]; const cl = side === "l" ? "u_s" : "u_b";
+    if (!v) return `<td class="ug ${cl} mny"></td>`;
+    const w = Math.max(8, Math.round(100 * v / um));
+    const tip = resting ? `${usdK(v)} showing on the ${side === "l" ? "bid" : "ask"} at ${px(r.price)}` : `${usdK(v)} ${side === "l" ? "sold into the bid" : "bought from the ask"} at ${px(r.price)} in the last few seconds (${sz(side === "l" ? r.u_s : r.u_b)} shares)`;
+    return `<td class="ug ${cl} on mny" title="${esc(tip)}"><i style="width:${w}%"></i><span>${usdK(v)}</span></td>`; };
+  const basket = r => { const b = r.bk; if (!b || !b[0]) return `<td class="bk" data-k="${r.price}"></td>`;
+    const [tot, buy, sell] = b, mid = Math.max(0, tot - buy - sell), w = Math.max(6, Math.round(100 * tot / bkm));
+    const bw = tot ? Math.round(100 * buy / tot) : 0, sw = tot ? Math.round(100 * sell / tot) : 0;
+    const tip = `BASKET at ${px(r.price)}: ${sz(tot)} shares traded here today = ${usdK(tot * r.price)} · ${sz(buy)} bought from the ask · ${sz(sell)} sold into the bid${mid ? ` · ${sz(mid)} between` : ""}`;
+    return `<td class="bk${buy > sell * 1.5 ? " bkb" : sell > buy * 1.5 ? " bks" : ""}" data-k="${r.price}" title="${esc(tip)}"><i class="bkf" style="width:${w}%"><i class="bks" style="width:${sw}%"></i><i class="bkb" style="width:${bw}%"></i></i><span>${kfmt(tot)}</span></td>`; };
+  const near = Math.max(3, +(store.get("lvNearTicks", 6)));
+  let h = `<table class="lad clean basket" data-cols="ladb"><tr>
+    <th data-w="52" data-min="18" title="${resting ? "$ showing on the BID at this price" : "$ SOLD into the bid here in the last few seconds (sellers hitting)"}">${resting ? "BID $" : "HIT $"}</th>
+    <th class="szh" data-w="52" data-min="24" title="buyers WAITING to buy here (shares). Bright = big / stacking · gray = being pulled · R = reload buyer. Click: BUY here">BID</th>
+    <th class="pxh" data-w="74" data-min="40">PRICE</th>
+    <th class="bkh" data-w="56" data-min="28" title="BASKET: every confirmed trade at this price today, a running total. Each trade drops in from its side and the basket pulses">BASKET</th>
+    <th class="szh" data-w="52" data-min="24" title="sellers WAITING to sell here (shares). Bright = big / stacking · gray = being pulled · R = reload seller. Click: SELL here">ASK</th>
+    <th data-w="52" data-min="18" title="${resting ? "$ showing on the ASK at this price" : "$ BOUGHT from the ask here in the last few seconds (buyers lifting)"}">${resting ? "ASK $" : "LIFT $"}</th></tr>`;
+  for (const r of L.rows){
+    const tl = C.level_labels ? cleanTags(r, last) : [], tags = tl.length ? tagsHTML(tl) : "", hot = tags && ((r.u_s || 0) + (r.u_b || 0)) > 0;
+    const mine = (r.lv || []).map(m => typeof LVROLE !== "undefined" && LVROLE[m.role] ? "lv-" + LVROLE[m.role][1] : "").filter(Boolean);
+    const dt = tags && last != null ? Math.round(Math.abs(r.price - last) / tk) : null;
+    const lead = tl.find(o => o.mine) || tl[0], lvk = lead ? "klc" : "";
+    const appr = dt == null ? "" : dt <= 1 ? "kl-at" : dt <= near ? "kl-near" : "";
+    const cls = [r.best_bid ? "best-bid" : "", r.best_ask ? "best-ask" : "", r.last ? "lastpx" : "", tags ? "keyrow " + lvk : "", appr, hot ? "keyhot" : "", ...new Set(mine),
+      (r.bid_state === "RELOAD" || r.bid_proven) ? "rl-bid" : "", (r.ask_state === "RELOAD" || r.ask_proven) ? "rl-ask" : ""].join(" ");
+    const star = Math.abs(r.price * 2 - Math.round(r.price * 2)) < 1e-6 ? `<span class="rstar" title="${Math.abs(r.price - Math.round(r.price)) < 1e-6 ? "whole" : "half"} dollar">★</span>` : "";
+    const dkl = (window._darkLv || {})[(+r.price).toFixed(2)];
+    const fl = (window._fundLv || {})[(+r.price).toFixed(2) + "b"] || (window._fundLv || {})[(+r.price).toFixed(2) + "s"];
+    const flc = fl ? `<span class="fdl ${fl.side === "bid" ? "b" : "s"}" title="FUND ${fl.side === "bid" ? "BUYER" : "SELLER"} score ${fl.score}: ${esc(fl.why.join(" · "))}">F${fl.score}</span>` : "";
+    const dkc = flc + (dkl ? `<span class="dkl" title="large orders today at ${px(r.price)}: ${sz(dkl.shares)} shares, ${dkl.prints} prints${dkl.big ? `, ${dkl.big} large` : ""}">L ${usdK(dkl.usd)}</span>` : "");
+    h += `<tr class="${cls}" data-price="${r.price}"${lead ? ` style="--klc:${lead.c};--klf:${lead.c}55"` : ""}>${cash(r, "l")}${passive(r, "bid")}<td class="px">${star}${px(r.price)}${dkc}${tags ? `<span class="kts">${tags}</span>` : ""}</td>${basket(r)}${passive(r, "ask")}${cash(r, "r")}</tr>`;
+  }
+  h += `</table><div class="legend lgc"><span><b class="sell">${resting ? "BID $" : "HIT $"}</b> ${resting ? "money waiting to buy" : "money selling now"} · <b class="buy">BID</b> / <b class="sell">ASK</b> shares waiting · <b class="gold">BASKET</b> traded here today · <b class="buy">${resting ? "ASK $" : "LIFT $"}</b> ${resting ? "money waiting to sell" : "money buying now"}</span><span class="dim">gray = pulled · R = reload${on ? " · click a size to trade" : ""}</span></div>`;
+  return h;
+}
+/* THE BASKET DROP: after each draw, what the server's basket gained at each price since the last draw drops in from
+   its side and the basket pulses. Keyed by symbol + price on the server's own sequence: a draw that shows the same
+   numbers again animates nothing, a cleared or new-day basket (smaller numbers) starts over without a drop */
+const BKSEEN = new Map(); let BKLIVE = 0;
+function basketFx(wrap, d){
+  const L = d.ladder || {}, C = bkCfg(L), host = P.book.pc;
+  if (store.get("ladMode", "clean") !== "basket" || !C.basket) return;
+  // only what is NEW since the last draw drops: a ticker (or a row) not drawn in the last few seconds starts over
+  // silently (coming back to a tab, a row scrolling into view after the ladder re-centres), a cleared or new-day
+  // basket (smaller numbers, or gone) starts over too
+  const sym = d.symbol, now = Date.now(), lastDraw = BKSEEN.get(sym + "|*"), fresh = !lastDraw || now - lastDraw > 3000;
+  BKSEEN.set(sym + "|*", now);
+  const drops = [];
+  for (const r of (L.rows || [])){
+    const b = r.bk, key = sym + "|" + r.price;
+    if (!b){ BKSEEN.delete(key); continue; }
+    const was = BKSEEN.get(key);
+    BKSEEN.set(key, [b[0], b[1], b[2], b[3], now]);
+    if (fresh || !was || now - was[4] > 3000 || b[3] <= was[3] || b[0] < was[0]) continue;   // nothing new, stale or reset: no drop
+    const dB = Math.max(0, b[1] - was[1]), dS = Math.max(0, b[2] - was[2]), dM = Math.max(0, (b[0] - was[0]) - dB - dS);
+    for (const [n, from] of [[dS, "l"], [dB, "r"], [dM, "t"]]) if (n >= Math.max(1, +C.basket_min_shares || 1)) drops.push({price: r.price, n, from});
+  }
+  if (BKSEEN.size > 6000) for (const k of [...BKSEEN.keys()].slice(0, 3000)) if (!k.endsWith("|*")) BKSEEN.delete(k);
+  if (!drops.length || !C.basket_animate && !C.basket_pulse || document.hidden || !wrap.offsetParent) return;
+  let fx = host.querySelector(":scope > .bkfx"); if (!fx){ fx = document.createElement("div"); fx.className = "bkfx"; host.appendChild(fx); }
+  const hr = host.getBoundingClientRect(), wr = wrap.getBoundingClientRect(), dur = Math.max(80, 420 / Math.max(0.1, +C.basket_speed || 1));
+  drops.sort((a, b) => b.n - a.n);
+  for (const dp of drops){
+    if (BKLIVE >= Math.max(1, +C.basket_max_drops || 12)) break;           // too many at once: skip, never queue
+    const cell = wrap.querySelector(`tr[data-price="${dp.price}"] td.bk`); if (!cell) continue;
+    const cr = cell.getBoundingClientRect(); if (cr.bottom < wr.top || cr.top > wr.bottom) continue;   // scrolled out of view
+    const x = cr.left - hr.left, y = cr.top - hr.top;
+    if (C.basket_animate){
+      const el = document.createElement("i"); el.className = "bkdrop " + (dp.from === "l" ? "s" : dp.from === "r" ? "b" : "m"); el.textContent = "+" + kfmt(dp.n);
+      el.style.left = x + "px"; el.style.top = y + "px"; el.style.width = cr.width + "px"; el.style.height = cr.height + "px";
+      fx.appendChild(el); BKLIVE++;
+      const dx = dp.from === "l" ? -cr.width * 0.9 : dp.from === "r" ? cr.width * 0.9 : 0, dy = dp.from === "t" ? -cr.height * 1.2 : -cr.height * 0.35;
+      const a = el.animate([{transform: `translate(${dx}px,${dy}px)`, opacity: 0}, {opacity: 1, offset: 0.3}, {transform: "translate(0,0)", opacity: 0.95}],
+                           {duration: dur, easing: "cubic-bezier(.3,.8,.4,1)"});
+      a.onfinish = a.oncancel = () => { el.remove(); BKLIVE = Math.max(0, BKLIVE - 1); };
+    }
+    if (C.basket_pulse){
+      const ring = document.createElement("i"); ring.className = "bkpulse " + (dp.from === "l" ? "s" : dp.from === "r" ? "b" : "m");
+      ring.style.left = x + "px"; ring.style.top = y + "px"; ring.style.width = cr.width + "px"; ring.style.height = cr.height + "px";
+      fx.appendChild(ring);
+      const a2 = ring.animate([{opacity: 0.9, transform: "scale(1)"}, {opacity: 0, transform: "scale(1.25)"}], {duration: dur * 0.9, delay: C.basket_animate ? dur * 0.85 : 0, easing: "ease-out"});
+      a2.onfinish = a2.oncancel = () => ring.remove();
+    }
+  }
 }
 function ladderProHTML(L){
   const rows = L.rows; if (!rows.length) return `<div class="empty">Waiting for the book…</div>`;

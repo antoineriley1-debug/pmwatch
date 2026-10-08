@@ -121,6 +121,16 @@ DEFAULTS = {
         "build_prints": 5,              # a builder needs at least this many prints
         "build_dollars": 2000000,       # ... adding up to big_tape_shares, or this much money
     },
+    "breaktrap": {
+        "enabled": True,                # BREAK TRAPS: who got caught when price took out a key level and came back (the TRAPS box)
+        "voice": True,                  # say TRAPPED / BREAK HELD / AT THEIR EXIT (the ticker you are on)
+        "retrace_dollars": 0.30,        # TRAPPED: price back through the broken level by this much, no new extreme since
+        "hod_min_age_seconds": 120,     # a high / low of day counts as a level once it has stood this long (not every tick of a run)
+        "min_shares": 1000,             # call it (alert + voice) only when at least this many shares are caught (the box shows every one)
+        "memory_minutes": 60,           # a break is forgotten after this long
+        "max_breaks": 6,                # breaks kept per ticker
+        "show": 3,                      # breaks shown in the box
+    },
     "trap": {
         # aggressive prints (paid the offer / hit the bid) this far back that are now
         # underwater count as trapped
@@ -367,6 +377,18 @@ DEFAULTS = {
         "min_prints": 8,     # fewer prints than this in the long window: QUIET, no label
     },
     "ladder": {
+        # THE BASKET LADDER: money on the outside, shares next in, PRICE + BASKET in the centre. The BASKET is every
+        # confirmed trade at that price today (bought + sold + between), a running total that each trade adds to
+        # once; a new trade drops into it from its side (sold = from the bid, bought = from the ask) with a pulse
+        "basket": True,                 # the basket column (off: the classic ladder)
+        "basket_animate": True,         # the drop into the basket
+        "basket_pulse": True,           # the pulse on the basket when it fills
+        "basket_speed": 1.0,            # animation speed: 0.5 = half as fast, 2 = twice as fast
+        "basket_min_shares": 1,         # a drop is shown for at least this many shares (the total always counts all)
+        "basket_max_drops": 12,         # at most this many drops on screen at once (the feed is never held up)
+        "money_columns": "traded",      # the outside columns: traded = $ sold / bought this visit · resting = $ showing on the bid / ask
+        "pulled_gray": True,            # size pulled without trading shown in gray in the shares column
+        "level_labels": True,           # the critical level label (your lines, VWAP, key levels, the reloader) on the price
         # the rows stay still while price moves inside them; they re-centre only when price comes within this many
         # rows of the top or bottom edge (bigger = re-centres sooner)
         "recenter_rows": 4,

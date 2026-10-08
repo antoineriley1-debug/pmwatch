@@ -582,7 +582,7 @@ i.tl{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:3p
 .haltbadge{background:#ff2d55;color:#fff;font:800 10px var(--sans);letter-spacing:.1em;padding:1px 6px;border-radius:3px;animation:livepulse 1s infinite}
 .ochead button.risksz{color:var(--gold);border-color:var(--gold)}
 
-.pnl[data-p="book"].cmode .ladstat,.pnl[data-p="book"].cmode .ladbar,.pnl[data-p="book"].cmode .rlban,.pnl[data-p="book"].cmode .ladder-wrap,.pnl[data-p="book"].cmode .eatbar{display:none !important}
+.pnl[data-p="book"].cmode .ladstat,.pnl[data-p="book"].cmode .ladbar,.pnl[data-p="book"].cmode .rlban,.pnl[data-p="book"].cmode .ladder-wrap,.pnl[data-p="book"].cmode .eatbar,.pnl[data-p="book"].cmode .bkfx{display:none !important}
 .pnl[data-p="tape"].cmode .p-tape{display:none !important}
 .cbook,.ctape{display:none} .cmode .cbook,.cmode .ctape{display:flex;flex-direction:column;height:100%}
 .cbook .obook.cb,.ctape .otape.cb{flex:1;overflow:auto;min-height:0}
@@ -989,3 +989,33 @@ table.lad .fdl.b{background:#1b7a43;box-shadow:0 0 6px #26d07c88} table.lad .fdl
 .vtest .vok { color: #26a69a; font-weight: 600; }
 .vtest .vbad { color: #ef5350; font-weight: 600; }
 #voiceBtn.vfail { color: #ef5350; }
+/* THE BASKET LADDER (LAYOUT: BASKET): HIT $ │ BID │ PRICE │ BASKET │ ASK │ LIFT $ */
+table.lad.basket td.mny span{font-size:calc(9.5px * var(--ladz,1))}
+table.lad.basket td.bk{position:relative;text-align:center;font-size:calc(10px * var(--ladz,1));color:#e9d9a6;font-weight:700;border-left:1px solid #2a3140;border-right:1px solid #2a3140;background:#141922}
+table.lad.basket td.bk .bkf{position:absolute;left:50%;top:3px;bottom:3px;transform:translateX(-50%);display:flex;border-radius:2px;overflow:hidden;opacity:.5;background:#6b5a2a}
+table.lad.basket td.bk .bkf .bks{background:#ff4d5e;height:100%} table.lad.basket td.bk .bkf .bkb{background:#26d07c;height:100%;margin-left:auto}
+table.lad.basket td.bk span{position:relative}
+table.lad.basket td.bk.bkb span{color:#9ff0c4} table.lad.basket td.bk.bks span{color:#ffb3bb}
+table.lad.basket tr.lastpx td.bk{box-shadow:inset 0 0 0 1px #e8b931}
+table.lad.basket td.sz.pulg .szn{color:#7b889e;text-decoration:none} table.lad.basket td.sz.pulg .pb{background:#7b889e;opacity:.18}
+table.lad.basket td.sz .pgv{position:relative;font-style:normal;font-size:calc(8.5px * var(--ladz,1));color:#8a93a3;margin:0 3px}
+.bkfx{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:6}
+.bkfx .bkdrop{position:absolute;display:flex;align-items:center;justify-content:center;font-style:normal;font-weight:800;font-size:10px;border-radius:3px;will-change:transform,opacity}
+.bkfx .bkdrop.b{color:#062b17;background:#26d07ccc} .bkfx .bkdrop.s{color:#2b0609;background:#ff4d5ecc} .bkfx .bkdrop.m{color:#1d1a10;background:#e8b931cc}
+.bkfx .bkpulse{position:absolute;border-radius:3px;will-change:transform,opacity}
+.bkfx .bkpulse.b{box-shadow:0 0 0 2px #37e08c,0 0 10px #26d07c} .bkfx .bkpulse.s{box-shadow:0 0 0 2px #ff6b7a,0 0 10px #ff4d5e} .bkfx .bkpulse.m{box-shadow:0 0 0 2px #e8b931,0 0 10px #e8b931}
+/* BREAK TRAPS: the small floating box */
+.btrap{position:fixed;right:18px;top:120px;z-index:60;width:300px;background:#10151d;border:1px solid #39465a;border-radius:6px;box-shadow:0 6px 24px #000a;font-size:11px;color:#dbe3ee}
+.btrap .bth{display:flex;align-items:center;gap:6px;padding:3px 6px;background:#1a2230;border-radius:6px 6px 0 0;cursor:move;user-select:none}
+.btrap .bth b{color:#e8b931;letter-spacing:.08em} .btrap .bth .bts{flex:1;color:#9aa4b4}
+.btrap .bth button{background:none;border:0;color:#9aa4b4;cursor:pointer;padding:0 3px;font-size:12px}
+.btrap.min .btb{display:none}
+.btrap .btb{padding:4px 6px;max-height:300px;overflow:auto}
+.btrap .bti{padding:3px 0;border-bottom:1px solid #222b38} .btrap .bti:last-child{border-bottom:0}
+.btrap .btl{display:flex;gap:5px;align-items:baseline;white-space:nowrap} .btrap .btl i{margin-left:auto;color:#7b889e;font-style:normal}
+.btrap .btl .btn{overflow:hidden;text-overflow:ellipsis;min-width:0;flex:0 1 auto} .btrap .btl .btp{color:#9aa4b4;flex:none} .btrap .btl .btw{flex:none}
+.btrap .btr.out{color:#e8b931} .btrap .btr.out b{color:#ffd34d}
+.btrap .btl .btw{font-weight:800;padding:0 4px;border-radius:3px}
+.btrap .btl.brk .btw{background:#2a3446;color:#cfd8e6} .btrap .btl.trp.up .btw{background:#7a1c26;color:#fff} .btrap .btl.trp.dn .btw{background:#145c34;color:#fff}
+.btrap .btl.ext .btw{background:#e8b931;color:#111} .btrap .btl.hld .btw{background:#1d3a28;color:#9ff0c4}
+.btrap .btr{display:flex;flex-wrap:wrap;gap:8px;color:#c9d4e3;line-height:1.5} .btrap .btr.dim{color:#7b889e} .btrap .btr.uw b{color:#ff8b96}

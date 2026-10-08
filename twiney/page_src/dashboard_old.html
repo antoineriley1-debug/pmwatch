@@ -1671,6 +1671,7 @@ function ladderHTML(L){
   if (!L || !L.rows.length) return `<div class="empty">Waiting for the book…</div>`;
   const mode = store.get("ladMode", "clean");
   if (mode === "clean") return ladderCleanHTML(L);
+  if (mode === "basket") return ladderBasketHTML(L);
   if (mode === "pro") return ladderProHTML(L);
   if (mode === "simple") return ladderSimpleHTML(L);
   if (mode === "tight") return ladderTightHTML(L);

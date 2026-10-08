@@ -594,6 +594,19 @@ class Engine:
                 if len(st.foot) > 240:
                     del st.foot[min(st.foot)]
             self._visit(st, k, rec["side"], size, t)
+            # THE BASKET: every confirmed trade at this price today, added ONCE, here, as it arrives:
+            # [total, bought, sold, sequence]. The page shows these numbers (never its own count) and animates the new part
+            bday = ps60.ny_day(t)
+            if st.__dict__.get("basket_day") != bday:
+                st.basket_day, st.basket = bday, {}
+            bk = st.__dict__.setdefault("basket", {}).get(k)
+            if bk is None:
+                bk = st.basket[k] = [0.0, 0.0, 0.0, 0]
+            bk[0] += size; bk[3] += 1
+            if rec["side"] == "buy":
+                bk[1] += size
+            elif rec["side"] == "sell":
+                bk[2] += size
             item = (t, k, price, rec["side"], size)
             st.memory.append(item)
             key = (k, rec["side"])
@@ -608,6 +621,7 @@ class Engine:
                     st.day_sums[key] = [size, price * size, price]
                 else:
                     ds[0] += size; ds[1] += price * size
+            self._break_trap(st, t, price, size, rec["side"], dk)
             # high / low of day = the REGULAR session only (9:30-4:00 New York), like the daily candle on every
             # chart package: a premarket print never sets the day's low
             if self.connection["state"] == "DEMO" or ps60.is_rth(t):
@@ -1120,6 +1134,10 @@ class Engine:
                 log.exception("pace %s", sym)
                 continue
             st.pace = p
+            try:
+                self._break_trap_levels(st, t)
+            except Exception:
+                log.exception("break trap levels %s", sym)
             try:
                 self._level_watch(st, t, last, tick_size(last, sym))
             except Exception:
@@ -4108,6 +4126,9 @@ class Engine:
                     clear[key] = [t, v]
             for k in [k for k in (getattr(st, "visits", None) or {}) if hit(k)]:
                 del st.visits[k]
+            bks = st.__dict__.get("basket") or {}
+            for k in [k for k in bks if hit(k)]:
+                del bks[k]
             for sd in (BID, ASK):
                 st.pulls.clear_ps(sd, lambda k: not hit(k))
             return True
@@ -4269,6 +4290,9 @@ class Engine:
                 "best_bid": k == bb, "best_ask": k == ba, "last": k == lk,
                 "u_s": round(urg.get((dk[k], "sell"), 0.0)), "u_b": round(urg.get((dk[k], "buy"), 0.0)),
             }
+            bk = (st.__dict__.get("basket") or {}).get(dk[k])
+            if bk is not None:
+                row["bk"] = [round(bk[0]), round(bk[1]), round(bk[2]), bk[3]]
             v = vis.get(dk[k])
             if v is not None:
                 row["vs"], row["vb"] = round(v["s"]), round(v["b"])
@@ -4332,7 +4356,100 @@ class Engine:
         return {"rows": rows, "max_size": round(max_size), "max_traded": round(max_traded),
                 "memory_minutes": MEMORY_SECONDS // 60, "big_shares": big_bar, "big_default": st.big_shares is None,
                 "huge_shares": big_bar * huge_x, "marks": marks, "last": last, "tick": tk,
-                "visit_away": int(lc.get("visit_away_ticks", 3)), "stack_seconds": int(sw)}
+                "visit_away": int(lc.get("visit_away_ticks", 3)), "stack_seconds": int(sw),
+                "basket": {k: lc.get(k) for k in ("basket", "basket_animate", "basket_pulse", "basket_speed", "basket_min_shares",
+                                                  "basket_max_drops", "money_columns", "pulled_gray", "level_labels")}}
+
+    BREAK_CODES = ("PMH", "PML", "PDH", "PDL", "PDC", "PDO", "AHH", "AHL", "OPEN")
+
+    def _break_trap(self, st, t, price, size, side, day):
+        """BREAK TRAPS (breaktrap.py): every print checks the key levels it may have taken out, counts the breakout
+        crowd, and calls it when they get trapped (price back through the level), released (new extreme) or back
+        at their exit."""
+        bc = self.cfg.get("breaktrap") or {}
+        if not bc.get("enabled", True):
+            return
+        from .breaktrap import BreakTraps
+        bt = st.__dict__.get("_bt")
+        if bt is None:
+            bt = st._bt = BreakTraps()
+        rth = self.connection["state"] == "DEMO" or ps60.is_rth(t)
+        if bt.day == day and rth:                   # a desk started mid-session knows the day's high / low already
+            if bt.hi is None and st.day_hi:
+                bt.hi = [st.day_hi[0], st.day_hi[1]]
+            if bt.lo is None and st.day_lo:
+                bt.lo = [st.day_lo[0], st.day_lo[1]]
+        tk = tick_size(price, st.symbol)
+
+        def resting(up, lv):
+            sd = ASK if up else BID
+            k = price_key(lv)
+            vals = [st.book.size_at(sd, lv) if st.book else 0, st.pulls.prev[sd].get(k, 0.0)]
+            ad = st.pulls.added[sd].get(k)
+            if ad and t - ad[2] <= 120:
+                vals.append(ad[1])
+            return max(v or 0 for v in vals)
+        levels = st.__dict__.get("_bt_levels") or []
+        evs = bt.update(t, price, size, side, tk, levels, rth, day, bc, resting)
+        for kind, b in evs:
+            if kind != "BROKE":
+                self._break_trap_alert(st, kind, b, price, t)
+
+    def _break_trap_alert(self, st, kind, b, price, t):
+        bc = self.cfg.get("breaktrap") or {}
+        if kind == "TRAPPED" and b["shares"] < float(bc.get("min_shares", 1000)):
+            b["quiet"] = True                       # too few caught to call: the box still shows it
+            return
+        if b.get("quiet"):
+            return
+        who = "longs" if b["up"] else "shorts"
+        avg = b["usd"] / b["shares"] if b["shares"] else b["level"]
+        under = (avg - price) if b["up"] else (price - avg)
+        if kind == "TRAPPED":
+            label = f"TRAPPED {who.upper()} · {b['name']}"
+            text = (f"TRAPPED {who.upper()} at {b['name']} {fmt_price(b['level'])}: {b['prints']:,} {'buy' if b['up'] else 'sell'} orders, "
+                    f"{narrative.shares(b['shares'])} shares, {narrative.dollars(b['usd'])} {'bought at or over' if b['up'] else 'sold at or under'} it, "
+                    f"average {fmt_price(avg)}; price {fmt_price(price)}, {under:.2f} under them. They get out at {fmt_price(avg)}.")
+            words = (f"Trapped {who} at {b['say']}. {narrative.shares(b['shares'])} shares, {b['prints']} orders, average {fmt_price(avg)}. "
+                     f"Price {fmt_price(price)}. They get out at {fmt_price(avg)}.")
+        elif kind == "RECLAIMED":
+            label = f"BREAK HELD · {b['name']}"
+            text = f"BREAK HELD at {b['name']} {fmt_price(b['level'])}: new {'high' if b['up'] else 'low'} {fmt_price(price)} — the trapped {who} are out of it."
+            words = f"{b['say'].capitalize()} break held. New {'high' if b['up'] else 'low'}, the trapped {who} are out."
+        else:
+            label = f"AT TRAPPED {who.upper()}' EXIT · {b['name']}"
+            text = f"AT THE TRAPPED {who.upper()}' EXIT {fmt_price(avg)} ({b['name']} {fmt_price(b['level'])}): {narrative.shares(b['shares'])} shares {'sell' if b['up'] else 'cover'} here to get out."
+            words = f"Back at the trapped {who}' exit, {fmt_price(avg)}. Watch for their {'selling' if b['up'] else 'covering'}."
+        alert = {"t": t, "symbol": st.symbol, "label": label, "price": fmt_price(b["level"]), "side": "bid" if b["up"] else "ask",
+                 "role": "breaktrap", "text": text, "words": f"{st.symbol}. {words}" if bc.get("voice", True) else None,
+                 "key": f"{round(t, 2)}|{st.symbol}|{label}"}
+        self.alerts.appendleft(alert); self._rec(dict(alert, ev="alert")); self.log(st.symbol, text, t, kind="level")
+        for fn in self.listeners:
+            try:
+                fn(alert)
+            except Exception:
+                pass
+
+    def _break_trap_levels(self, st, t):
+        """The key levels a break is watched at (refreshed on the pace clock, read on every print)."""
+        from . import studies as _stu
+        pm_live = self.connection["state"] != "DEMO" and _stu.ny_secs(t) < 34200     # premarket high / low still forming
+        out = []
+        for L in self.key_levels(st, t):
+            codes = str(L.get("code") or "").split("/")
+            if pm_live and any(c in ("PMH", "PML") for c in codes):
+                continue
+            if any(c in self.BREAK_CODES for c in codes):
+                out.append((L["name"], L["say"], float(L["price"])))
+        st._bt_levels = out
+
+    def _break_trap_pane(self, st, t):
+        bt = st.__dict__.get("_bt")
+        if bt is None or not (self.cfg.get("breaktrap") or {}).get("enabled", True):
+            return None
+        bc = self.cfg.get("breaktrap") or {}
+        v = bt.view(t, st.price(), int(bc.get("show", 3)), float(bc.get("retrace_dollars", 0.30)))
+        return v or None
 
     def _day_trap_pane(self, st, t):
         dt = self._day_trap(st, t, st.price())
@@ -4761,6 +4878,7 @@ class Engine:
             "bigtape": self._big_tape(st, t),
             "orderflow": orderflow.pressure(st.tape.prints, t, self.cfg.get("orderflow", {})),
             "daytrap": self._day_trap_pane(st, t),
+            "breaktraps": self._break_trap_pane(st, t),
             "tape": dict(tape, recent=[
                 {"age": round(t - p["t"], 1), "price": fmt_price(p["price"]), "size": round(p["size"]),
                  "side": p["side"], "large": p["large"], "exchange": p["exchange"], "at": at_level(p["price"])}
