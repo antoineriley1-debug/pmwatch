@@ -30,6 +30,7 @@ SECTIONS = [
     ("trap", "Trapped traders", "Aggressive prints now underwater."),
     ("depth", "Market depth", "IBKR depth subscriptions and rotation."),
     ("chart", "Chart history", "History loaded at startup."),
+    ("inst", "Institutional footprints", "A fund's order sliced by an execution algo: a steady buy / sell PROGRAM (VWAP / % of volume), fund-style reloaders (the same refill size), a side walking the price, volume against its normal for the time of day."),
     ("dark", "Dark pool", "Off-exchange prints (FINRA / TRF / ADF): the big ones called and listed, dark dollars by price on the ladder, the dark share of the day's volume."),
     ("levels", "Key levels", "The daily chart's and the session's levels (prior day open / high / low / close, premarket and after-hours high / low / close, today's open, daily reject / bounce, prior highs and lows): what price does there, REJECTED / BOUNCED / BUYERS TOOK / SELLERS TOOK, called and said."),
     ("pace", "Pace of tape", "How fast each stock trades against its own normal, and the calls at your levels: stalling, pressing, breakout with speed (+ flow)."),

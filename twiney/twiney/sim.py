@@ -127,7 +127,8 @@ def _r100(x):
 class _Sym:
     __slots__ = ("play", "tk", "asks", "bids", "last", "vol", "regime", "regime_until", "script", "big",
                  "big_home", "parts", "level_cooldown", "hidden_next", "prev", "l1", "base", "mid0", "beta", "sym", "eff", "owed",
-                 "hot", "hot_dir", "mom", "spent", "now", "last_mid", "episode", "ep_next", "thin", "ep_script")
+                 "hot", "hot_dir", "mom", "spent", "now", "last_mid", "episode", "ep_next", "thin", "ep_script",
+                 "program", "program_next")
 
     def __init__(self, play, mid, t):
         self.play = play
@@ -157,6 +158,8 @@ class _Sym:
         self.episode = None          # (name, stage index) while an exhaustion / capitulation / squeeze plays out
         self.ep_next = None          # first episode time is drawn from the feed's own (seeded) random
         self.ep_script = None
+        self.program = None
+        self.program_next = None
         self.thin = 1.0              # the book on the side being hit (pulled bids in a flush, pulled offers in a squeeze)
         self.prev = {ASK: [], BID: []}
         self.l1 = {}
@@ -642,7 +645,7 @@ class DemoFeed:
         base = int(base * r ** 0.6 / 100) * 100 or 100
         reserve = {"hold": rng.randint(30000, 120000), "clean": rng.randint(3000, 18000), "pull": rng.randint(4000, 12000)}[mode]
         reserve = int(reserve * r ** 0.8)
-        return {"side": side, "price": price, "mode": mode, "base": base, "reserve": reserve, "hit": 0, "refills": 0,
+        return {"side": side, "price": price, "mode": mode, "base": base, "reserve": reserve, "hit": 0, "refills": 0, "iceberg": iceberg,
                 "refill_at": None, "done": None, "started": t, "pivot": pivot,
                 "hold_after": rng.randint(4, 10), "pull_after": rng.randint(2, 6)}
 
@@ -728,7 +731,8 @@ class DemoFeed:
                 if lv["mode"] == "pull" and lv["refills"] >= lv["pull_after"]:
                     lv["done"] = "pull"
                 else:
-                    refill = min(lv["reserve"], _r100(lv["base"] * rng.uniform(0.5, 1.4)))
+                    # an iceberg shows the same display size every time (the fund-style fingerprint); others vary
+                    refill = min(lv["reserve"], lv["base"] if lv.get("iceberg") else _r100(lv["base"] * rng.uniform(0.5, 1.4)))
                     lv["reserve"] -= refill
                     rows[idx][1] = refill
             if idx is not None and rows[idx][1] <= 0 and lv["refill_at"] is None and lv["reserve"] <= 0:
@@ -766,6 +770,32 @@ class DemoFeed:
 
     # ---- one step ------------------------------------------------------------------
 
+    def _program(self, sym, s, t, dt, slotted=True):
+        """A FUND'S VWAP ALGO: now and then one stock gets a parent order worked for 40-90 minutes, a small child order
+        of the same size every few seconds on one side, a share of the tape kept steady (the INST read's program)."""
+        rng = self.rng
+        pg = getattr(s, "program", None)
+        if pg is None:
+            if getattr(s, "program_next", None) is None:
+                s.program_next = t + rng.uniform(60, 900)
+            if t < s.program_next:
+                return
+            if any(o is not s and getattr(o, "program", None) for o in self.state.values()):
+                s.program_next = t + rng.uniform(300, 900)     # one fund at a time on the desk
+                return
+            # a percentage-of-volume algo: each child is a steady share (6-12 %) of what traded since the last one
+            s.program = pg = {"buy": rng.random() < 0.55, "pov": rng.uniform(0.06, 0.12), "every": rng.uniform(2.5, 6.0),
+                              "end": t + rng.uniform(2400, 5400), "next": t, "vol0": s.vol}
+        if t >= pg["end"]:
+            s.program = None
+            s.program_next = t + rng.uniform(1800, 5400)
+            return
+        if t >= pg["next"]:
+            pg["next"] = t + pg["every"] * rng.uniform(0.7, 1.3)
+            traded = max(0.0, s.vol - pg["vol0"]); pg["vol0"] = s.vol
+            child = max(100, int(traded * pg["pov"] / (1 - pg["pov"]) / 100) * 100)
+            self._market(sym, s, pg["buy"], child, t, slotted)
+
     def _dark(self, sym, s, t, dt):
         """DARK POOL prints, the way they show up on a real tape: a steady trickle of small off-exchange prints at the
         middle of the quote (internalised retail, algos' child orders), and now and then a block."""
@@ -776,7 +806,7 @@ class DemoFeed:
         px_ = round(mid, 4) if mid < 1 else round(mid * 200) / 200.0 if rng.random() < 0.5 else round(mid, 2)
         if rng.random() < 0.6 * dt:
             self.engine.on_print(sym, px_, int(rng.choice((100, 100, 200, 300, 500, 1000))), "FINRA", t)
-        if rng.random() < 0.006 * dt:
+        if rng.random() < 0.0008 * dt:
             self.engine.on_print(sym, round(mid, 2), int(rng.choice((10000, 15000, 25000, 40000, 60000))), "FINRA", t)
 
     def step(self, t):
@@ -803,6 +833,7 @@ class DemoFeed:
             self._flow(sym, s, t, dt, slotted)
             self._basket(sym, s, t, slotted)
             self._dark(sym, s, t, dt)
+            self._program(sym, s, t, dt, slotted)
             self._close_spread(s)
             # tape heat: every tick the price moves adds heat (in that direction); it cools off in a few seconds
             if s.bids and s.asks:

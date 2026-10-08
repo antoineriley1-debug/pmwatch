@@ -886,6 +886,90 @@ class Engine:
                 short.append(f"{big} {narrative.say_dollars(max(calls, puts))}")
         return ", ".join(words), " · ".join(short)
 
+    def _inst_view(self, st, t):
+        """INSTITUTIONAL FOOTPRINTS (inst.py): the program read, this slot's volume against its normal for the time of
+        day, fund-style reloaders (same refill size) and a side walking the price. Once every few seconds; the new
+        ones are called."""
+        ic = self.cfg.get("inst") or {}
+        if not ic.get("enabled", True):
+            return None
+        memo = st.__dict__.setdefault("_inst", {})
+        if memo.get("t") is not None and t - memo["t"] < float(ic.get("every_seconds", 5)):
+            return memo.get("v")
+        memo["t"] = t
+        from . import inst
+        from .ps60 import ny_offset
+        try:
+            off = ny_offset(t)
+            dk = int((t + off) // 86400)
+            if memo.get("curve_k") != (dk, len(getattr(st, "m5", {}) or {})):
+                memo["curve_k"] = (dk, len(getattr(st, "m5", {}) or {}))
+                memo["curve"] = inst.volume_curve(getattr(st, "m5", {}) or {}, t, off)
+            curve = memo.get("curve") or {}
+            slots = inst.today_slots(st.bars, t, off, getattr(st, "_any_session", False))
+            cur = inst.slot_of(t, off)
+            memo["slots"] = slots
+            vw = ((st.__dict__.get("_refs") or {}).get("v") or {}).get("vwap")
+            # the market's own one-sided flow (QQQ / SPY when on the desk, else the other stocks): taken out first
+            idx = [o for s2, o in self.syms.items() if s2 in ("QQQ", "SPY") and s2 != st.symbol]
+            pool = idx or [o for s2, o in self.syms.items() if s2 != st.symbol]
+            mkt = inst.market_shares([(o.__dict__.get("_inst") or {}).get("slots") or [] for o in pool])
+            prog = inst.program(slots, cur, vw, ic, mkt)
+            tod = None
+            done = [r for r in slots if r[0] < cur]
+            if done and curve.get(done[-1][0]):
+                tod = {"x": round(done[-1][1] / curve[done[-1][0]], 2), "at": inst.hm(done[-1][0])}
+            fund = inst.fund_reloads(list(st.trackers.values()), t, ic)
+            bk = (st.__dict__.get("_rl_basket") or {}).get("rows") or {}
+            walk = inst.walking([{"side": r["side"], "price": r["price"], "usd": round(r["shares"] * r["price"]), "first": r["first"]}
+                                 for r in bk.values()], t, ic)
+            v = {"program": prog, "tod": tod, "fund": fund[:6], "walk": walk}
+        except Exception:
+            log.exception("inst %s", st.symbol)
+            v = None
+        memo["v"] = v
+        if v:
+            self._inst_calls(st, v, t, ic)
+        return v
+
+    def _inst_calls(self, st, v, t, ic):
+        said = st.__dict__.setdefault("_inst_said", {})
+        rep = float(ic.get("repeat_seconds", 1200))
+        calls = []
+        pg = v.get("program")
+        if pg and pg["score"] >= float(ic.get("call_score", 70)):
+            vv = pg.get("vs_vwap")
+            vw = "" if vv is None else (f", {'buying' if pg['side'] == 'BUY' else 'selling'} {abs(vv) * 100:.0f} cents {'under' if vv < 0 else 'over'} VWAP" if abs(vv) >= 0.005 else ", at VWAP")
+            what = "STEADY BUYING" if pg["side"] == "BUY" else "STEADY SELLING"
+            calls.append((("PROG", pg["side"]), what,
+                          f"{what} (program-like) · net {'buying' if pg['side'] == 'BUY' else 'selling'} in {pg['won']} of {pg['slots']} 5-min slots · ~{pg['part']}% of volume · since {pg['since']} · net {'bought' if pg['side'] == 'BUY' else 'sold'} ≈${pg['usd']:,}",
+                          f"{st.symbol}. Steady {'buying' if pg['side'] == 'BUY' else 'selling'} against the market: {pg['won']} of the last {pg['slots']} five minute slots, about {pg['part']:.0f} percent of volume{vw}."))
+        for f in v.get("fund") or []:
+            who = "BUYER" if f["side"] == "bid" else "SELLER"
+            calls.append((("FUND", f["side"], round(f["price"], 2)), f"FUND-STYLE {who}",
+                          f"FUND-STYLE {who} {fmt_price(f['price'])} · {f['size']:,} at a time × {f['refills']} refills · ${f['usd']:,}",
+                          f"{st.symbol}. Fund style {who.lower()} at {fmt_price(f['price'])}: {f['size']:,} at a time, {f['refills']} refills."))
+        wk = v.get("walk")
+        if wk:
+            calls.append((("WALK", wk["side"], wk["steps"][-1]), f"{wk['side']} WALKING {wk['dir'].upper()}",
+                          f"{wk['side']} WALKING {wk['dir'].upper()} · " + " → ".join(fmt_price(p) for p in wk["steps"]),
+                          f"{st.symbol}. {wk['side'].capitalize()} walking {wk['dir']}: " + ", ".join(fmt_price(p) for p in wk["steps"][-3:]) + "."))
+        for key, label, text, words in calls:
+            if t - said.get(key, -1e9) < rep:
+                continue
+            said[key] = t
+            alert = {"t": t, "symbol": st.symbol, "label": label, "price": fmt_price(st.price() or 0), "side": "bid" if "BUY" in label else "ask",
+                     "role": "inst", "text": text, "words": words if ic.get("voice", True) else None}
+            alert["key"] = f"{round(t, 2)}|{st.symbol}|{label}"
+            self.alerts.appendleft(alert)
+            self._rec(dict(alert, ev="alert"))
+            self.log(st.symbol, text, t, kind="level")
+            for fn in self.listeners:
+                try:
+                    fn(alert)
+                except Exception:
+                    pass
+
     def _dark_print(self, st, t, price, size, exchange, bid, ask):
         """DARK POOL: every print counts toward the day's volume; an off-exchange one goes into the dark book, and a
         very large one is called (the tab you are on says it)."""
@@ -904,10 +988,16 @@ class Engine:
             return
         vw = ((st.__dict__.get("_refs") or {}).get("v") or {}).get("vwap")
         rec = db.add(t, price, size, exchange, bid, ask, vw, dc)
-        if rec is None or rec["usd"] < float(dc.get("alert_usd", 1000000)):
+        if rec is None or rec["usd"] < float(dc.get("alert_usd", 2000000)):
             return
+        # not a stream of calls: one every couple of minutes per stock, unless this one is at least twice the last called
+        lastc = st.__dict__.get("_dark_called")
+        if lastc and t - lastc[0] < float(dc.get("call_gap_seconds", 120)) and rec["usd"] < 2 * lastc[1]:
+            return
+        st.__dict__["_dark_called"] = (t, rec["usd"])
         vv = rec["vs_vwap"]
-        vtxt = "" if vv is None else f" · {abs(vv) * 100:.0f}¢ {'over' if vv > 0 else 'under'} VWAP" if abs(vv) >= 0.005 else " · at VWAP"
+        amt = (lambda x: f"${x:.2f}" if x >= 1 else f"{x * 100:.0f}¢")(abs(vv)) if vv is not None else ""
+        vtxt = "" if vv is None else f" · {amt} {'over' if vv > 0 else 'under'} VWAP" if abs(vv) >= 0.005 else " · at VWAP"
         usd = rec["usd"]; m = f"${usd / 1e6:.1f}M" if usd >= 1e6 else f"${usd / 1e3:.0f}K"
         text = f"DARK POOL {m} · {int(size):,} @ {fmt_price(price)}" + (f" · {rec['at']}" if rec["at"] else "") + vtxt
         words = (f"{st.symbol}. Dark pool, {usd / 1e6:.1f} million dollars, {int(size):,} shares at {fmt_price(price)}"
@@ -4621,6 +4711,7 @@ class Engine:
             "reloaders": reloaders,
             "reload_basket": self._reload_basket(st, t),
             "dark": st.dark.view(t, st.price()),
+            "inst": self._inst_view(st, t),
             "user_levels": user_levels,
             "log": self.symbol_log(sym),
             "bigmoney": self.bigmoney.for_symbol(sym, st.price(), t, lambda d: self._close_on(st, d)) if self.bigmoney is not None else [],

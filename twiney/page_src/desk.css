@@ -971,3 +971,9 @@ table.lad .rstar{color:#ffcc33;font-size:calc(9px * var(--ladz,1));margin-right:
 .dkt{width:100%;border-collapse:collapse} .dkt th{font-size:9px;color:var(--dim);text-align:left;padding:0 3px} .dkt td{padding:1px 3px;white-space:nowrap}
 .dkt td.b{color:var(--buy)} .dkt td.s{color:var(--sell)} .dkh{font-size:9px;color:#b39dff;letter-spacing:.06em;margin:5px 0 1px}
 table.lad .dkl{display:inline-block;margin-left:4px;font:800 calc(8.5px * var(--ladz,1)) var(--mono);padding:0 3px;border-radius:2px;background:#4527a0;color:#fff;vertical-align:1px}
+
+/* INST: the institutional footprint strip on the T&S */
+.instrip{font:11px var(--mono);padding:2px 6px;border-bottom:1px solid #202124;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#cfd8e3}
+.instrip .ih{color:#e8b931;letter-spacing:.06em;margin-right:4px} .instrip .b{color:var(--buy)} .instrip .s{color:var(--sell)} .instrip .sc{font-size:9px;padding:0 3px;border-radius:2px;background:#2c3644;color:#fff}
+.instrip .hot{color:#ffb347} .instrip .cold{color:#7b889e} .instrip .dkcar{float:right;color:var(--dim)}
+.inbox{background:#16130a;border-bottom-color:#3a3214} .inbox .dkh{color:#e8b931}

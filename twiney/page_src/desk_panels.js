@@ -540,7 +540,7 @@ function renderTape(d){
   const el = P.tape.pc.querySelector(".p-tape");
   renderContractTape(); renderSwitchStrips(); if (contractMode("tape")){ renderBigTape(d); return; }
   if (!d){ el.innerHTML = `<div class="dim" style="padding:8px">${NA}</div>`; P.tape.last = null; renderBigTape(null); return; }
-  const html = refsHTML(d.refs, d.story && d.story.edge) + tapeGaugeHTML(d.tape) + darkStripHTML(d.dark) + tapeSpeedHTML(d.tape.speed) + paceHTML(d.tape.pace) + tapeHTML(d.tape, d.ladder); if (P.tape.last !== html){ P.tape.last = html;
+  const html = refsHTML(d.refs, d.story && d.story.edge) + tapeGaugeHTML(d.tape) + darkStripHTML(d.dark) + instStripHTML(d.inst) + tapeSpeedHTML(d.tape.speed) + paceHTML(d.tape.pace) + tapeHTML(d.tape, d.ladder); if (P.tape.last !== html){ P.tape.last = html;
     const keep = el.scrollTop; el.innerHTML = html; el.scrollTop = keep; makeColsResizable(el.querySelector("table")); }
   renderBigTape(d); flyBigPrints(d);
 }
@@ -558,6 +558,27 @@ function darkStripHTML(dk){
   }
   return h;
 }
+/* INST: the institutional footprint read on the T&S. The program (side, how many 5-min slots it won, its share of the
+   volume, since when, the dollars, where it fills against VWAP), the pace for the time of day; click for the
+   fund-style reloaders (same refill size) and a side walking the price */
+function instStripHTML(ic){
+  if (!ic) return "";
+  const pg = ic.program, tod = ic.tod, open = store.get("instOpen", false);
+  const vv = v => v == null ? "" : Math.abs(v) < 0.005 ? " · at VWAP" : ` · ${(Math.abs(v) * 100).toFixed(0)}¢ ${v < 0 ? "under" : "over"} VWAP`;
+  const todTxt = tod ? `<span class="${tod.x >= 1.5 ? "hot" : tod.x <= 0.6 ? "cold" : ""}">pace ×${tod.x} for ${tod.at}</span>` : "";
+  const main = pg ? `<b class="${pg.side === "BUY" ? "b" : "s"}" title="steady one-sided flow against the market, slot after slot, at a steady share of the volume: the way a VWAP / % of volume algo works a fund's order (or several buyers / sellers pressing)">STEADY ${pg.side === "BUY" ? "BUYING" : "SELLING"}</b> <span class="sc">${pg.score}</span> · ${pg.won}/${pg.slots} slots · ~${pg.part}% of vol · since ${pg.since} · net ${pg.side === "BUY" ? "bought" : "sold"} ≈${usdK(pg.usd)}${vv(pg.vs_vwap)}`
+    : `<span class="dim">no steady one-sided flow</span>`;
+  const extra = ((ic.fund || []).length ? ` · <b>${ic.fund.length}</b> fund-style` : "") + (ic.walk ? ` · <b class="${ic.walk.side === "BUYER" ? "b" : "s"}">${ic.walk.side.toLowerCase()} walking ${ic.walk.dir}</b>` : "");
+  let h = `<div class="instrip" data-inst="1" title="institutional footprints: a fund's order sliced by an execution algo. Click for the details"><b class="ih">INST</b> ${main}${extra}${todTxt ? " · " + todTxt : ""}<span class="dkcar">${open ? "▴" : "▾"}</span></div>`;
+  if (open){
+    const f = ic.fund || [];
+    h += `<div class="dkbox inbox">` + (f.length ? `<div class="dkh">FUND-STYLE RELOADS · the same size, again and again</div><table class="dkt">` + f.map(x => `<tr><td class="${x.side === "bid" ? "b" : "s"}">${x.side === "bid" ? "BUYER" : "SELLER"}</td><td>${px(x.price)}</td><td><b>${sz(x.size)}</b> × ${x.refills}</td><td><b>${usdK(x.usd)}</b></td><td class="dim">${x.here ? "there now" : "gone"}</td></tr>`).join("") + `</table>` : `<div class="dim">no fund-style reloaders yet</div>`) +
+      (ic.walk ? `<div class="dkh">WALKING</div><div>${ic.walk.side} walking ${ic.walk.dir}: ${ic.walk.steps.map(px).join(" → ")} · ${usdK(ic.walk.usd)}</div>` : "") +
+      (pg ? `<div class="dkh">STEADY ${pg.side === "BUY" ? "BUYING" : "SELLING"} · program-like</div><div>${pg.side === "BUY" ? "Buyers" : "Sellers"} won ${pg.won} of the last ${pg.slots} five-minute slots (${pg.agree}%), net ~${pg.part}% of all volume, ${sz(pg.shares)} shares since ${pg.since}${vv(pg.vs_vwap)}. Steady, scaled to the volume: the way a VWAP / % of volume algo works a fund's order.</div>` : "") + `</div>`;
+  }
+  return h;
+}
+document.addEventListener("click", e => { if (!e.target.closest(".instrip[data-inst]")) return; store.set("instOpen", !store.get("instOpen", false)); if (P.tape) P.tape.last = null; const d0 = curData(); if (d0) renderTape(d0); });
 document.addEventListener("click", e => { if (!e.target.closest(".dkstrip[data-dk]")) return; store.set("darkOpen", !store.get("darkOpen", false)); if (P.tape) P.tape.last = null; const d0 = curData(); if (d0) renderTape(d0); });
 /* THE MONEY GAUGE: the last minute's dollars paid at the ask (buyers in a rush) against dollars hit at the bid */
 function tapeGaugeHTML(t){
@@ -1585,6 +1606,7 @@ function speakNew(s){
     const isFlow = FLOW_ROLES.has(a.role) || /^UNUSUAL|REPEAT FLOW|FLOW/.test(a.label || "");
     if (isFlow){ const fw = flowWords(a); if (fw && voiceFlow() && (mine || !solo())) items.push(fw); continue; }
     if (a.role === "trap"){ if (a.words && mine) items.push(a.words); continue; }   // trapped crowd: the tab you are on
+    if (a.role === "inst"){ if (a.words && mine && store.get("voiceInst", true)) items.push(a.words); continue; }   // a program / fund footprint
     if (a.role === "dark"){ if (a.words && mine && store.get("voiceDark", true)) items.push(a.words); continue; }   // a big dark pool print
     // the KEY LEVELS (rejected / bounced / took) and the PACE at them (pushing / stalling / breakout): the tab you are on
     if (a.role === "level" || a.role === "pace"){ if (a.words && mine && store.get("voiceLevels", true)) items.push(a.words); continue; }

@@ -417,12 +417,30 @@ DEFAULTS = {
         "flow_min_premium": 100000,     # + FLOW: at least this much premium bought at the ask
         "repeat_seconds": 120,          # a call at the same level is not repeated for this long
     },
+    # INSTITUTIONAL FOOTPRINTS: a fund's large order sliced by an execution algo (VWAP / % of volume), read off the tape
+    "inst": {
+        "enabled": True,                # the INST strip, calls and voice
+        "voice": True,                  # say new programs / fund-style reloaders / walking (the tab you are on)
+        "min_slots": 8,                 # STEADY BUYING / SELLING: at least this many 5-minute slots today (40 min) before reading one
+        "window_slots": 18,             # ... read over the last this many slots (90 minutes)
+        "agree": 0.7,                   # ... the same side won at least this share of them
+        "min_part": 0.06,               # ... and its net imbalance is at least this share of all volume
+        "steady": 0.45,                 # ... at a steady share of each slot's volume in at least this share of them
+        "call_score": 75,               # call it from this score (0-100)
+        "same_size_min_refills": 4,     # FUND-STYLE RELOAD: at least this many refills ...
+        "same_size_share": 0.6,         # ... and this share of them showing the same size
+        "walk_minutes": 20,             # WALKING: the same side's reloads within this many minutes ...
+        "walk_steps": 3,                # ... stepping one way at least this many prices
+        "repeat_seconds": 1200,         # the same call is not repeated for this long
+        "every_seconds": 5,             # read every this many seconds
+    },
     # DARK POOL: trades printed off the exchanges (FINRA / TRF / ADF / OTC), where funds route much of their size
     "dark": {
         "enabled": True,                # track off-exchange prints (T&S tag, DARK strip, ladder D$ at prices)
         "big_shares": 10000,            # a LARGE dark print: at least this many shares ...
         "big_usd": 200000,              # ... or this many dollars
-        "alert_usd": 1000000,           # call it out (alert + voice on the tab you are on) from this many dollars
+        "alert_usd": 2000000,           # call it out (alert + voice on the tab you are on) from this many dollars
+        "call_gap_seconds": 120,        # ... at most one call per stock this often, unless a print is twice the last one called
         "voice": True,                  # say the big ones
     },
     "levels": {
