@@ -670,8 +670,8 @@ function tapeSpeedHTML(sp, unit){
       bars += `<rect x="${x}" y="${y.toFixed(1)}" width="${w}" height="${h.toFixed(1)}" fill="${c}"/>`;
     });
   });
-  const ratio = sp.base_pps > 0 ? sp.pps / sp.base_pps : null;
-  return `<div class="tspeed ${cls}" title="Prints per second over the last 10 s, against the minute before it. Bars: the last 90 s, ${sp.bucket} s each (green paid up, red hit, grey between). A tape that speeds up with price is the move; one that dries up into a level is the wait to see who holds it.">
+  const ratio = sp.ratio != null ? sp.ratio : sp.base_pps > 0 ? sp.pps / sp.base_pps : null;
+  return `<div class="tspeed ${cls}" title="${sp.ratio != null ? "PACE: SPEEDING UP / SLOWING = the last seconds against the ones before; x = this stock's pace against its own normal (the same read the voice uses)." : "Prints per second over the last 10 s, against the minute before it."} Bars: the last 90 s, ${sp.bucket} s each (green paid up, red hit, grey between). A tape that speeds up with price is the move; one that dries up into a level is the wait to see who holds it.">
     <span class="tsv"><b>${sp.pps.toFixed(1)}</b><i>PRINTS/S</i></span><span class="tsv"><b>${sz(sp.sps)}</b><i>${unit || "SH/S"}</i></span>
     <span class="tst">${sp.trend}${ratio != null && sp.trend !== "QUIET" ? ` <em>${ratio.toFixed(1)}x</em>` : ""}</span>
     <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${bars}</svg></div>`;
@@ -1614,7 +1614,11 @@ function speakNew(s){
     if (a.role === "inst"){ if (a.words && mine && store.get("voiceInst", true)) items.push(a.words); continue; }   // a program / fund footprint
     if (a.role === "dark"){ if (a.words && mine && store.get("voiceDark", true)) items.push(a.words); continue; }   // a large order
     // the KEY LEVELS (rejected / bounced / took) and the PACE at them (pushing / stalling / breakout): the tab you are on
-    if (a.role === "level" || a.role === "pace"){ if (a.words && mine && store.get("voiceLevels", true)) items.push(a.words); continue; }
+    if (a.role === "level" || a.role === "pace"){
+      // AT / COMING INTO said only while it is still true: price that already left the level is not "at" it
+      if ((a.label === "AT" || a.label === "COMING INTO") && a.zone){ const d = dataFor(s, a.symbol), lp = d && +d.last;
+        if (lp && Math.abs(lp - +a.price) > (a.label === "AT" ? 1.5 : 3) * a.zone) continue; }
+      if (a.words && mine && store.get("voiceLevels", true)) items.push(a.words); continue; }
     if (!mine) continue;                                         // background tabs never speak
     const w = reloadWords(a); if (w) items.push(w);
   }

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261008-1411">
+<meta name="build" content="20261008-1423">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -3575,7 +3575,7 @@ function spokenText(text){
   return String(text || "")
     .replace(/×/g, " times ")
     .replace(/\$\s?(\d+(?:\.\d+)?)\s?([MK])\b/gi, (m, n, u) => n + (u.toUpperCase() === "M" ? " million" : " thousand") + " dollars")
-    .replace(/(^|[^\d.$\w])(\d{1,5}\.\d{2})(?![\d%])/g, "$1$$$2")
+    .replace(/(^|[^\d.$\wx])(\d{1,5}\.\d{1,2})(?![\d%x]|\s*(?:times|percent|million|thousand|to 1|R\b|ATR|seconds?|s\b))/gi, (m, pre, n) => pre + "$" + (/\.\d$/.test(n) ? n + "0" : n))
     .replace(/\bPM VWAP\b/g, "premarket V-WAP").replace(/\bVWAP\b/gi, "V-WAP")
     .replace(/(\d)k\b/g, "$1 thousand").replace(/\bk\b/g, " thousand")
     .replace(/[★·]/g, " ").replace(/\s+/g, " ").trim();
@@ -5095,8 +5095,8 @@ function tapeSpeedHTML(sp, unit){
       bars += `<rect x="${x}" y="${y.toFixed(1)}" width="${w}" height="${h.toFixed(1)}" fill="${c}"/>`;
     });
   });
-  const ratio = sp.base_pps > 0 ? sp.pps / sp.base_pps : null;
-  return `<div class="tspeed ${cls}" title="Prints per second over the last 10 s, against the minute before it. Bars: the last 90 s, ${sp.bucket} s each (green paid up, red hit, grey between). A tape that speeds up with price is the move; one that dries up into a level is the wait to see who holds it.">
+  const ratio = sp.ratio != null ? sp.ratio : sp.base_pps > 0 ? sp.pps / sp.base_pps : null;
+  return `<div class="tspeed ${cls}" title="${sp.ratio != null ? "PACE: SPEEDING UP / SLOWING = the last seconds against the ones before; x = this stock's pace against its own normal (the same read the voice uses)." : "Prints per second over the last 10 s, against the minute before it."} Bars: the last 90 s, ${sp.bucket} s each (green paid up, red hit, grey between). A tape that speeds up with price is the move; one that dries up into a level is the wait to see who holds it.">
     <span class="tsv"><b>${sp.pps.toFixed(1)}</b><i>PRINTS/S</i></span><span class="tsv"><b>${sz(sp.sps)}</b><i>${unit || "SH/S"}</i></span>
     <span class="tst">${sp.trend}${ratio != null && sp.trend !== "QUIET" ? ` <em>${ratio.toFixed(1)}x</em>` : ""}</span>
     <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${bars}</svg></div>`;
@@ -6039,7 +6039,11 @@ function speakNew(s){
     if (a.role === "inst"){ if (a.words && mine && store.get("voiceInst", true)) items.push(a.words); continue; }   // a program / fund footprint
     if (a.role === "dark"){ if (a.words && mine && store.get("voiceDark", true)) items.push(a.words); continue; }   // a large order
     // the KEY LEVELS (rejected / bounced / took) and the PACE at them (pushing / stalling / breakout): the tab you are on
-    if (a.role === "level" || a.role === "pace"){ if (a.words && mine && store.get("voiceLevels", true)) items.push(a.words); continue; }
+    if (a.role === "level" || a.role === "pace"){
+      // AT / COMING INTO said only while it is still true: price that already left the level is not "at" it
+      if ((a.label === "AT" || a.label === "COMING INTO") && a.zone){ const d = dataFor(s, a.symbol), lp = d && +d.last;
+        if (lp && Math.abs(lp - +a.price) > (a.label === "AT" ? 1.5 : 3) * a.zone) continue; }
+      if (a.words && mine && store.get("voiceLevels", true)) items.push(a.words); continue; }
     if (!mine) continue;                                         // background tabs never speak
     const w = reloadWords(a); if (w) items.push(w);
   }

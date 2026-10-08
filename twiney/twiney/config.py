@@ -429,9 +429,9 @@ DEFAULTS = {
     },
     # THE DESK'S VOICE: the browser's own voice, or a cloud voice (ElevenLabs) that never changes: every call in it
     "speech": {
-        "engine": "browser",            # browser = the computer's own voice · cloud = the voice below (ElevenLabs)
+        "engine": "auto",               # auto = your ElevenLabs voice whenever a key and voice are in (else the browser's) · cloud · browser
         "api_key": "",                  # the voice service's API key (kept in your config only, never in recordings)
-        "voice_id": "",                 # the voice's ID (ElevenLabs: Voices > the voice > copy ID)
+        "voice_id": "",                 # the voice's ID (ElevenLabs: My Voices > the voice > copy ID), or its exact name (dan)
         "model": "eleven_turbo_v2_5",   # the voice model (turbo: fast enough for live calls)
         "stability": 0.5,               # 0-1: steadier delivery (higher) or more expressive (lower)
         "similarity": 0.8,              # 0-1: how closely it holds to the voice
@@ -471,8 +471,10 @@ DEFAULTS = {
         "voice": True,                  # say them (the ticker you are on)
         "near_ticks": 6,                # COMING INTO a level: within this many ticks and travelling toward it ...
         "near_atr_pct": 8,              # ... or this % of the daily ATR (the ladder lights the level's price from here too)
-        "zone_ticks": 3,                # AT a level: within this many ticks ...
-        "zone_atr_pct": 3,              # ... or this % of the daily ATR, whichever is wider
+        "zone_ticks": 2,                # AT a level: within this many ticks ...
+        "zone_atr_pct": 1,              # ... or this % of the daily ATR, whichever is wider (said exactly: on it, or N cents under / over)
+        "test_ticks": 4,                # TESTED a level without printing on it: came within this many ticks ...
+        "test_atr_pct": 3,              # ... or this % of the ATR, then turned back = BOUNCED (from above) / REJECTED (from below)
         "away_ticks": 8,                # REJECTED / BOUNCED: back the way it came at least this many ticks ...
         "away_atr_pct": 10,             # ... or this % of the ATR
         "hold_seconds": 60,             # TOOK: through it and held for this long

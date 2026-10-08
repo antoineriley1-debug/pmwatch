@@ -168,7 +168,8 @@ def read(book, now, last, levels, tick, cfg, flow=None, knows=None):
             what = "calls" if cp == "C" else "puts"
             out.update(call="SPEED + FLOW", level=[last, "calls hammered" if cp == "C" else "puts hammered"],
                        flow="+ SOMEBODY KNOWS SOMETHING " + out["knows"]["text"],
-                       words=f"Tape speeding up, {ratio:.1f} times normal, {'buyers' if cp == 'C' else 'sellers'} in control, and short dated {what} are being hammered")
+                       words=(f"Tape speeding up, {ratio:.1f} times normal" if accel == "SPEEDING UP" else f"Tape running {ratio:.1f} times normal")
+                             + f", {'buyers' if cp == 'C' else 'sellers'} in control, and short dated {what} are being hammered")
             # a level close ahead still gets its own read below only when this did not fire
             return out
     # approaching a level: the nearest one in the direction price is travelling

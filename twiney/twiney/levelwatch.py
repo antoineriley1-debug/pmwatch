@@ -30,6 +30,10 @@ class LevelWatch:
             return []
         atr = atr or 0.0
         zone = max(float(cfg.get("zone_ticks", 3)) * tick, atr * float(cfg.get("zone_atr_pct", 3)) / 100.0)
+        # TESTED: price came down into it (or up into it) close enough to count as a test, even if it never printed
+        # right on it. A test that turns back is a BOUNCE (from above) or a REJECTION (from below); AT is only said
+        # within `zone` (on it, exactly)
+        test = max(zone, float(cfg.get("test_ticks", 4)) * tick, atr * float(cfg.get("test_atr_pct", 3)) / 100.0)
         away = max(float(cfg.get("away_ticks", 8)) * tick, atr * float(cfg.get("away_atr_pct", 10)) / 100.0)
         hold = float(cfg.get("hold_seconds", 60))
         quiet = float(cfg.get("repeat_seconds", 300))
@@ -53,7 +57,7 @@ class LevelWatch:
             if t - self.said.get(key, -1e9) >= quiet:
                 self.said[key] = t
                 out.append({"kind": kind, "price": float(L["price"]), "name": L["name"], "say": L.get("say") or L["name"],
-                            "code": L.get("code"), "from": frm, "t": t})
+                            "code": L.get("code"), "from": frm, "t": t, "last": price, "zone": zone})
         for L in levels:
             p = float(L["price"])
             k = ident(L)
@@ -70,9 +74,15 @@ class LevelWatch:
             between = any(abs(float(o["price"]) - p) > tick * 0.5 and min(price, p) < float(o["price"]) < max(price, p) for o in levels)
             if side_now != "at" and tch is None and abs(d) <= near and toward and not between:
                 emit("COMING INTO", L, "below" if d < 0 else "above")
+            # a test without printing on it: within `test` of it, from the side it was on, still not through
+            if tch is None and side_now != "at" and s["side"] == side_now and abs(d) <= test:
+                s["touch"] = tch = {"t": t, "from": side_now, "near": True}
             if side_now == "at":
-                if tch is None and s["side"] in ("above", "below"):
-                    s["touch"] = {"t": t, "from": s["side"]}
+                if (tch is None or tch.get("near")) and s["side"] in ("above", "below"):
+                    if tch is None:
+                        s["touch"] = {"t": t, "from": s["side"]}
+                    else:
+                        tch.pop("near", None)
                     emit("AT", L, s["side"])
                 s["cross"] = None if tch is None or s["cross"] is None else s["cross"]
             elif tch:

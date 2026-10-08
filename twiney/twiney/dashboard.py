@@ -285,15 +285,15 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                 from . import tts
                 sc = engine.cfg.get("speech") or {}
                 cache = os.path.join(os.path.dirname(os.path.abspath(engine.cfg.get("recording", {}).get("dir") or "recordings")), "voice_cache")
-                out = {"engine": sc.get("engine") or "browser", "key_set": bool(sc.get("api_key")), "voice_set": bool(sc.get("voice_id"))}
-                if out["engine"] != "cloud":
-                    out.update(ok=False, reason="SETTINGS > Voice: Engine is set to the browser voice. Pick cloud (ElevenLabs).")
-                elif not out["key_set"] or not out["voice_set"]:
+                out = {"engine": sc.get("engine") or "auto", "key_set": bool(str(sc.get("api_key") or "").strip()), "voice_set": bool(str(sc.get("voice_id") or "").strip())}
+                if not out["key_set"] or not out["voice_set"]:
                     out.update(ok=False, reason="SETTINGS > Voice: " + " and ".join(x for x, ok in (("the API key", out["key_set"]), ("the voice ID", out["voice_set"])) if not ok) + " missing.")
                 else:
                     try:
                         audio = tts.speak(engine.cfg, "Voice check. The desk is live.", cache, fresh=True)
-                        out.update(ok=True, bytes=len(audio), reason="ElevenLabs answered: your cloud voice is working.")
+                        out.update(ok=True, bytes=len(audio), voice_id=tts.voice_id(engine.cfg),
+                                   reason="ElevenLabs answered: your voice is working and says every call."
+                                   if tts.ready(engine.cfg) else "ElevenLabs answered, BUT Engine is set to browser: set Engine to auto or ElevenLabs to hear this voice on the calls.")
                     except tts.TTSError as e:
                         out.update(ok=False, reason=str(e))
                 self._send(200, json.dumps(out), "application/json")

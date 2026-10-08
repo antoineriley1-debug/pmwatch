@@ -818,8 +818,10 @@ class Engine:
         from .levelwatch import LevelWatch
         lw = st.__dict__.get("_lw") or LevelWatch()
         st._lw = lw
+        from . import studies as _stu
+        pm_live = _stu.ny_secs(t) < 34200            # premarket still running: its high / low move with price, not levels yet
         lv = [{"price": L["price"], "name": L["name"], "say": L["say"], "code": L["code"]} for L in self.key_levels(st, t)
-              if L["code"] not in ("HOD", "LOD")]
+              if L["code"] not in ("HOD", "LOD") and not (pm_live and any(c in ("PMH", "PML", "PMC") for c in str(L["code"]).split("/")))]
         lv += [{"price": float(u["price"]), "name": u["label"], "say": "your " + u["label"].lower(), "code": "YOURS"}
                for u in (st._user_levels_cache or []) if u.get("price")]
         sv = ((st.__dict__.get("_studies") or {}).get("v")) or {}
@@ -842,9 +844,13 @@ class Engine:
             else:
                 words.append("two sided tape"); short.append(f"two-sided {bp}%")
         if pc.get("ratio"):
-            fast = pc["ratio"] >= 1.5 or (pc.get("accel") == "SPEEDING UP" and pc["ratio"] >= 1.2)
+            # ONE speed read (PACE): "speeding up" only when it IS accelerating right now; fast but easing off says so
+            acc = pc.get("accel")
+            fast = pc["ratio"] >= 1.5 or (acc == "SPEEDING UP" and pc["ratio"] >= 1.2)
             if fast:
-                words.append(f"tape speeding up, {pc['ratio']:.1f} times normal")
+                words.append(f"tape speeding up, {pc['ratio']:.1f} times normal" if acc == "SPEEDING UP"
+                             else f"tape fast but slowing, {pc['ratio']:.1f} times normal" if acc == "SLOWING"
+                             else f"tape running fast, {pc['ratio']:.1f} times normal")
             elif pc.get("state") == "DRYING UP":            # really dry: a third of its normal pace or less
                 words.append("tape drying up")
             elif pc.get("state") == "SLOW":
@@ -1041,23 +1047,35 @@ class Engine:
             except Exception:
                 pass
 
+    @staticmethod
+    def _cents(d):
+        c = int(round(d * 100))
+        return f"{c} cents" if c < 100 else f"{d:.2f} dollars"
+
     def _level_alert(self, st, ev, t):
         kind, p = ev["kind"], ev["price"]
         from_below = ev.get("from") == "below"
         up = kind in ("BOUNCED", "BUYERS TOOK") or (kind in ("COMING INTO", "AT") and from_below)
         ctx_w, ctx_s = self._level_context(st, p, t, from_below)
         nm = ev["say"]
-        head = {"COMING INTO": f"Coming into {nm}, {fmt_price(p)}, from {'below' if from_below else 'above'}",
-                "AT": f"At {nm}, {fmt_price(p)}",
+        last = ev.get("last")
+        tk = tick_size(p, st.symbol)
+        gap = (last - p) if last is not None else 0.0
+        # AT: said exactly — on it, or how far under / over it price really is
+        at_words = (f"At {nm}, {fmt_price(p)}" if abs(gap) < tk * 0.5
+                    else f"Testing {nm}, {fmt_price(p)}. Price {fmt_price(last)}, {self._cents(abs(gap))} {'under' if gap < 0 else 'over'} it")
+        head = {"COMING INTO": f"Coming into {nm}, {fmt_price(p)}, from {'below' if from_below else 'above'}" + (f". Price {fmt_price(last)}" if last is not None else ""),
+                "AT": at_words,
                 "REJECTED": f"Rejected at {nm}, {fmt_price(p)}. Sellers defending it, pulling off",
                 "BOUNCED": f"Bounced off {nm}, {fmt_price(p)}. Buyers defending it, pulling off",
                 "BUYERS TOOK": f"Buyers took {nm}, {fmt_price(p)}. Holding over it",
                 "SELLERS TOOK": f"Sellers took {nm}, {fmt_price(p)}. Holding under it"}[kind]
         words = head + (". " + ctx_w[0].upper() + ctx_w[1:] if ctx_w else "")
-        text = f"{kind} {ev['name']} {fmt_price(p)}" + (f" · {ctx_s}" if ctx_s else "")
+        text = f"{kind} {ev['name']} {fmt_price(p)}" + (f" · price {fmt_price(last)}" if last is not None and abs(gap) >= tk * 0.5 else "") + (f" · {ctx_s}" if ctx_s else "")
         voice = (self.cfg.get("levels") or {}).get("voice", True)
         alert = {"t": t, "symbol": st.symbol, "label": kind, "price": fmt_price(p), "side": "bid" if not up else "ask",
-                 "role": "level", "text": text, "words": f"{st.symbol}. {words}" if voice else None, "code": ev.get("code")}
+                 "role": "level", "text": text, "words": f"{st.symbol}. {words}" if voice else None, "code": ev.get("code"),
+                 "zone": ev.get("zone"), "last": last}
         alert["key"] = f"{round(t, 2)}|{st.symbol}|{kind}|{p}"
         self.alerts.appendleft(alert)
         self._rec(dict(alert, ev="alert"))
@@ -2675,8 +2693,8 @@ class Engine:
         """Which voice the desk speaks in, and how the cloud voice did last (VOICE button)."""
         from . import tts
         sc = self.cfg.get("speech") or {}
-        cloud = sc.get("engine") == "cloud" and bool(sc.get("api_key")) and bool(sc.get("voice_id"))
-        return {"engine": "cloud" if cloud else "browser", "wanted": sc.get("engine") or "browser",
+        cloud = tts.ready(self.cfg)
+        return {"engine": "cloud" if cloud else "browser", "wanted": sc.get("engine") or "auto",
                 "ok": tts.STATUS["ok"] if cloud else None, "error": tts.STATUS["error"] if cloud else ""}
 
     def desk_alert(self, symbol, label, text, words, t, side=None, price=None):
@@ -4694,6 +4712,12 @@ class Engine:
         tape = st.tape.stats(t)
         tape["speed"] = st.tape.speed(t)
         tape["pace"] = st.pace
+        pc = st.pace or {}
+        if pc.get("state") not in (None, "QUIET", "WARMING UP"):
+            # the T&S SPEED box says what the voice says: one read (PACE: this stock against its own normal, and
+            # the last seconds against the ones before), never a second count that can disagree
+            tape["speed"]["trend"] = pc.get("accel") or "STEADY"
+            tape["speed"]["ratio"] = pc.get("ratio")
         user_levels = self._user_levels(st.play)
         bars = st.bar_list(MAX_BARS)
         first_bar = bars[0][0] if bars else t

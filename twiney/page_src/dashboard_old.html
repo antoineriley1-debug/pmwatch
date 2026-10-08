@@ -2791,7 +2791,7 @@ function spokenText(text){
   return String(text || "")
     .replace(/×/g, " times ")
     .replace(/\$\s?(\d+(?:\.\d+)?)\s?([MK])\b/gi, (m, n, u) => n + (u.toUpperCase() === "M" ? " million" : " thousand") + " dollars")
-    .replace(/(^|[^\d.$\w])(\d{1,5}\.\d{2})(?![\d%])/g, "$1$$$2")
+    .replace(/(^|[^\d.$\wx])(\d{1,5}\.\d{1,2})(?![\d%x]|\s*(?:times|percent|million|thousand|to 1|R\b|ATR|seconds?|s\b))/gi, (m, pre, n) => pre + "$" + (/\.\d$/.test(n) ? n + "0" : n))
     .replace(/\bPM VWAP\b/g, "premarket V-WAP").replace(/\bVWAP\b/gi, "V-WAP")
     .replace(/(\d)k\b/g, "$1 thousand").replace(/\bk\b/g, " thousand")
     .replace(/[★·]/g, " ").replace(/\s+/g, " ").trim();

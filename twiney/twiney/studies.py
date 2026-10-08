@@ -367,7 +367,10 @@ def session_levels(st, t):
             if b[0] >= a[3]:
                 a[2], a[3] = b[4], b[0]
     last_ah = ah[max(ah)] if ah else None
-    return {"pmh": pm_h, "pml": pm_l, "pmc": pm_c, "ahh": last_ah[0] if last_ah else None, "ahl": last_ah[1] if last_ah else None,
+    # before 9:30 the premarket is not over: its "close" is just the last price (it moves with price), so there is
+    # no premarket close yet, and the premarket high / low are still being made
+    pm_done = ny_secs(t) >= 34200
+    return {"pmh": pm_h, "pml": pm_l, "pmc": pm_c if pm_done else None, "pm_done": pm_done, "ahh": last_ah[0] if last_ah else None, "ahl": last_ah[1] if last_ah else None,
             "ahc": last_ah[2] if last_ah else None, "open": open_, "open_t": open_t}
 
 
