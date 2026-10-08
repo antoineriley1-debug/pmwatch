@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261008-0219">
+<meta name="build" content="20261008-0243">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -6221,14 +6221,14 @@ function relinkLines(key){
 }
 /* take the loaded contract off the OPTION CHART (its Level II / T&S and ORDER ENTRY follow). Nothing is sold or
    cancelled: a contract you hold stays in POSITIONS, its stop and lines stay on */
-/* the contract that belongs on the option chart for a stock when you come back to it: the one your stock chart's
-   lines trade (CHART LINES TRADE THIS), else the one you are IN (several: the one traded last). None = blank */
+/* the contract that belongs on the option chart for a stock when you come back to it (or open the desk): one you are IN.
+   Several: the one the stock chart's lines trade, else the one traded last. Not in one = blank */
 function contractFor(sym, s){
   if (!sym || !s) return null;
   const d = dataFor(s, sym), pl = d && d.play;
   const held = ((s.account || {}).opt_positions || []).filter(p => p.symbol === sym && p.qty);
-  if (pl && pl.trade_as === "option" && pl.opt_key) return held.find(p => p.key === pl.opt_key) || {key: pl.opt_key};
-  if (!held.length) return null;
+  if (!held.length) return null;                            // only a contract you are IN comes back: a saved chart link alone does not (it outlives a restart)
+  const linked = pl && pl.trade_as === "option" && pl.opt_key && held.find(p => p.key === pl.opt_key); if (linked) return linked;
   const lastFill = k => Math.max(0, ...((s.account || {}).fills || []).filter(f => f.symbol === k).map(f => f.t || 0));
   return held.slice().sort((a, b) => lastFill(b.key) - lastFill(a.key))[0];
 }
