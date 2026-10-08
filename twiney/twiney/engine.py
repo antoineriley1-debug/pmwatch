@@ -4860,6 +4860,7 @@ class Engine:
                 },
                 "alerts": [dict(a, grade=self.grades.get(a["key"])) for a in list(self.alerts)[:40]],
                 "voice": [v for v in list(self.voice)[:20] if t - v["t"] < 60],
+                "speech": {"engine": "cloud" if (self.cfg.get("speech") or {}).get("engine") == "cloud" and (self.cfg.get("speech") or {}).get("api_key") and (self.cfg.get("speech") or {}).get("voice_id") else "browser"},
                 "flow": list(self.flow.recent)[:150],
                 "flow_scope": self.flow_scope,
                 "ladder_half_rows": int(getattr(self, "ladder_half_rows", None) or self.cfg.get("ladder", {}).get("half_rows", 12)),

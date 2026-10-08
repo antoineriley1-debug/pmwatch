@@ -30,6 +30,7 @@ SECTIONS = [
     ("trap", "Trapped traders", "Aggressive prints now underwater."),
     ("depth", "Market depth", "IBKR depth subscriptions and rotation."),
     ("chart", "Chart history", "History loaded at startup."),
+    ("speech", "Voice", "The voice that says every call: the browser's own, or a cloud voice (ElevenLabs) with your API key and voice ID, so it never changes. Each phrase is kept, so repeats play at once."),
     ("inst", "Institutional footprints", "A fund's order sliced by an execution algo: a steady buy / sell PROGRAM (VWAP / % of volume), fund-style reloaders (the same refill size), a side walking the price, volume against its normal for the time of day."),
     ("dark", "Dark pool", "Off-exchange prints (FINRA / TRF / ADF): the big ones called and listed, dark dollars by price on the ladder, the dark share of the day's volume."),
     ("levels", "Key levels", "The daily chart's and the session's levels (prior day open / high / low / close, premarket and after-hours high / low / close, today's open, daily reject / bounce, prior highs and lows): what price does there, REJECTED / BOUNCED / BUYERS TOOK / SELLERS TOOK, called and said."),
@@ -52,12 +53,13 @@ LOCKED = {
     "dashboard.host": "Locked: the desk only listens on this computer.",
 }
 
-SECRET = {"quantdata.api_key"}
+SECRET = {"quantdata.api_key", "speech.api_key"}
 
 CHOICES = {
     "ibkr.port": [(7497, "7497 · TWS paper"), (7496, "7496 · TWS live"), (4002, "4002 · Gateway paper"), (4001, "4001 · Gateway live")],
     "ibkr.market_data_type": [(1, "1 · live"), (2, "2 · frozen"), (3, "3 · delayed"), (4, "4 · delayed frozen")],
     "quantdata.method": [("POST", "POST"), ("GET", "GET")],
+    "speech.engine": [("browser", "browser · this computer's voice"), ("cloud", "cloud · the voice ID below (ElevenLabs)")],
     "quantdata.scope": [("all", "whole market"), ("watchlist", "watchlist only")],
     "flow.alerts": [("watchlist", "watchlist only"), ("all", "every ticker")],
     "demo.scenario": [(None, "random each session"), ("mixed", "mixed"), ("trend_up", "trend up"), ("trend_down", "trend down"),

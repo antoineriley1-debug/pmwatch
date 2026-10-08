@@ -2770,6 +2770,17 @@ function voicePump(){
   const it = VQ.shift(); if (!it) return;
   VQ.busy = true;
   const done = () => { if (it.u._done) return; it.u._done = true; VQ.busy = false; voicePump(); };
+  // THE CLOUD VOICE (SETTINGS > Voice): the call as audio in the fixed voice; if it cannot be had, the browser says it
+  if (state && state.speech && state.speech.engine === "cloud" && it.text){
+    const a = new Audio("/api/tts?text=" + encodeURIComponent(it.text));
+    a.volume = Math.max(0, Math.min(1, +store.get("voiceVol", 1) || 1));
+    let fell = false;
+    const fallback = () => { if (fell || it.u._done) return; fell = true; it.u.onend = done; try { speechSynthesis.speak(it.u); } catch (e) { done(); } };
+    a.onended = done; a.onerror = fallback;
+    a.play().catch(fallback);
+    setTimeout(() => { if (!it.u._done && a.paused && !fell && a.currentTime === 0) fallback(); }, 6000);   // too slow: say it now
+    return;
+  }
   it.u.onend = done; const oe = it.u.onerror; it.u.onerror = ev => { oe && oe(ev); done(); };
   setTimeout(() => { if (!it.u._done && !speechSynthesis.speaking && !speechSynthesis.pending) done(); }, 15000);   // a voice that never ends
   speechSynthesis.speak(it.u);
@@ -2788,7 +2799,7 @@ function say(text, force){
     if (force){ speechSynthesis.speak(u); return; }
     // the calls wait their turn here, not in the browser: one that waited too long is dropped (the market moved on;
     // "coming into VWAP" said ten seconds late is wrong)
-    VQ.push({u, t: Date.now()}); while (VQ.length > 2) VQ.shift();    // a backlog keeps the newest two
+    VQ.push({u, t: Date.now(), text}); while (VQ.length > 2) VQ.shift();    // a backlog keeps the newest two
     voicePump();
     if (force && !speechSynthesis.getVoices().length) toast("No voices installed in this browser yet. Windows: Settings → Time & language → Speech → Manage voices.", false);
   } catch (e) { if (force) toast("Voice failed: " + e.message, false); }

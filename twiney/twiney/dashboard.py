@@ -278,6 +278,16 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                 self._send(200, json.dumps(_clips.load(rec_dir or "recordings")), "application/json")
             elif path == "/api/desk/list":
                 self._send(200, json.dumps(desk.list_recordings() if desk else []), "application/json")
+            elif path == "/api/tts":
+                # THE DESK'S VOICE: this call's words in the cloud voice (cached on disk); 502 = use the browser's voice
+                from . import tts
+                q = parse_qs(urlparse(self.path).query, keep_blank_values=True)
+                cache = os.path.join(os.path.dirname(os.path.abspath(engine.cfg.get("recording", {}).get("dir") or "recordings")), "voice_cache")
+                try:
+                    audio = tts.speak(engine.cfg, q.get("text", [""])[0], cache)
+                    self._send(200, audio, "audio/mpeg")
+                except tts.TTSError as e:
+                    self._send(502, json.dumps({"ok": False, "reason": str(e)}), "application/json")
             elif path == "/healthz":
                 self._send(200, json.dumps({"ok": True, "connection": engine.connection["state"]}),
                            "application/json")

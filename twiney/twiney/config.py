@@ -417,6 +417,17 @@ DEFAULTS = {
         "flow_min_premium": 100000,     # + FLOW: at least this much premium bought at the ask
         "repeat_seconds": 120,          # a call at the same level is not repeated for this long
     },
+    # THE DESK'S VOICE: the browser's own voice, or a cloud voice (ElevenLabs) that never changes: every call in it
+    "speech": {
+        "engine": "browser",            # browser = the computer's own voice · cloud = the voice below (ElevenLabs)
+        "api_key": "",                  # the voice service's API key (kept in your config only, never in recordings)
+        "voice_id": "",                 # the voice's ID (ElevenLabs: Voices > the voice > copy ID)
+        "model": "eleven_turbo_v2_5",   # the voice model (turbo: fast enough for live calls)
+        "stability": 0.5,               # 0-1: steadier delivery (higher) or more expressive (lower)
+        "similarity": 0.8,              # 0-1: how closely it holds to the voice
+        "speed": 1.05,                  # 0.7-1.2: speaking speed
+        "base_url": "https://api.elevenlabs.io",
+    },
     # INSTITUTIONAL FOOTPRINTS: a fund's large order sliced by an execution algo (VWAP / % of volume), read off the tape
     "inst": {
         "enabled": True,                # the INST strip, calls and voice
