@@ -163,7 +163,7 @@ class SequenceTests(unittest.TestCase):
     def test_steps_in_order_long(self):
         pl = {"trigger": 10.00, "side": "long"}
         s = sequence(pl, {"state": "IDLE"}, self.stage((None, 0), ("RELOADING", 3000)))
-        self.assertEqual(s["step"], 1); self.assertIn("reload seller at the trigger: RELOADING", s["note"])
+        self.assertEqual(s["step"], 1); self.assertIn("reload seller at the pivot: RELOADING", s["note"])
         s = sequence(pl, {"state": "BROKE", "extreme": "10.25"}, self.stage((None, 0), ("CLEANED UP", 0)))
         self.assertEqual(s["step"], 2); self.assertIn("new high 10.25", s["note"])
         s = sequence(pl, {"state": "RETRACE", "extreme": "10.25"}, self.stage(("RELOADING", 2000), (None, 0)))

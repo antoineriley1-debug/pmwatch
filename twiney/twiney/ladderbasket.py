@@ -14,10 +14,10 @@ refill for ``flip_dead_seconds``) AND size from the OPPOSITE side shows at that 
 ``flip_min_shares``, held ``flip_hold_seconds``). Size resting on the book, not prints: a single thin print can never
 flip a level. It ends when the defender refills again or the opposite size leaves.
 
-PS60 SEQUENCE (the trigger is the pivot; no entry at the trigger):
-  1 WAITING AT TRIGGER  — before the break; a reload seller at the trigger (long) says whether the break is likely
-  2 BROKE THROUGH       — through the trigger and a new high (new low for shorts)
-  3 PULLBACK TO TRIGGER — the pullback, with the live verdict of the reload buyer defending the trigger
+PS60 SEQUENCE (no entry at the pivot):
+  1 WAITING AT PIVOT    — before the break; a reload seller at the pivot (long) says whether the break is likely
+  2 BROKE THROUGH       — through the pivot and a new high (new low for shorts)
+  3 PULLBACK TO PIVOT   — the pullback, with the live verdict of the reload buyer defending the pivot
   4 SECOND ENTRY        — lit only when the pullback held (back through the new high) with that reload buyer still
                           RELOADING or STILL THERE
 The steps are the desk's own PS60 second-entry engine (ps60.second_entry): IDLE, BROKE, RETRACE, SECOND_ENTRY.
@@ -124,7 +124,7 @@ def flip_words(price_txt, who):
 
 def sequence(play, se, stage_at, t=None):
     """The PS60 SEQUENCE at the top of the ladder. ``se`` = the desk's second-entry read (ps60.second_entry);
-    ``stage_at(side)`` = (stage, size showing) of the tracker on that side AT THE TRIGGER, or (None, 0)."""
+    ``stage_at(side)`` = (stage, size showing) of the tracker on that side AT THE PIVOT, or (None, 0)."""
     trig = play.get("trigger")
     if not trig or not se:
         return None
@@ -142,17 +142,17 @@ def sequence(play, se, stage_at, t=None):
     who_d = "reload buyer" if long_ else "reload seller"
     if step == 1:
         if b_stage in DEFENDING:
-            note = f"{who_b} at the trigger: {b_stage} — the break is not likely yet"
+            note = f"{who_b} at the pivot: {b_stage} — the break is not likely yet"
         elif b_stage in DEAD:
-            note = f"{who_b} at the trigger: {b_stage} — the break is likely"
+            note = f"{who_b} at the pivot: {b_stage} — the break is likely"
         elif b_size:
-            note = f"{int(b_size):,} showing at the trigger, not proven"
+            note = f"{int(b_size):,} showing at the pivot, not proven"
         else:
-            note = "nothing defending the trigger"
+            note = "nothing defending the pivot"
     elif step == 2:
-        note = f"through the trigger, new {'high' if long_ else 'low'} {se.get('extreme')} — wait for the pullback"
+        note = f"through the pivot, new {'high' if long_ else 'low'} {se.get('extreme')} — wait for the pullback"
     elif step == 3:
-        note = (f"pullback to the trigger — {who_d}: {d_stage}" if d_stage else f"pullback to the trigger — no {who_d} there yet")
+        note = (f"pullback to the pivot — {who_d}: {d_stage}" if d_stage else f"pullback to the pivot — no {who_d} there yet")
         if st == "SECOND_ENTRY":
             note += " (back through, but no reload defending: second entry not lit)"
     else:

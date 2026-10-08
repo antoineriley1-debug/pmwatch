@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261008-1723">
+<meta name="build" content="20261008-1743">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -7535,7 +7535,7 @@ function paceHTML(pc){
 function bkCfg(L){ return Object.assign({basket_drop_ms: 250, basket_merge_ms: 50, basket_max_drops: 12, basket_fast_pps: 25, basket_full_x: 3,
   basket_animate: true, basket_pulse: true, basket_glow: true, basket_flip_alerts: true, basket_touch_counter: true, basket_sequence: true,
   basket_manual_pop: true, norm: 0}, (L && L.basket) || {}); }
-const BKROLE = {trigger: ["TRIGGER", "trg"], second_entry: ["SECOND ENTRY", "se"], target: ["TAKE PROFIT", "tp"], stop: ["STOP", "sl"]};
+const BKROLE = {trigger: ["PIVOT", "trg"], second_entry: ["SECOND ENTRY", "se"], target: ["TAKE PROFIT", "tp"], stop: ["STOP", "sl"]};
 function bkOwner(r){
   const tb = r.bid_state === "RELOAD" || r.bid_proven || r.bid_stage, ta = r.ask_state === "RELOAD" || r.ask_proven || r.ask_stage;
   if (tb && !ta) return "bid"; if (ta && !tb) return "ask";
@@ -7562,7 +7562,7 @@ function ladderBasketHTML(L){
   // the PS60 SEQUENCE: four steps, advancing on their own
   let h = "";
   if (seq){
-    const names = ["WAITING AT TRIGGER", "BROKE THROUGH", "PULLBACK TO TRIGGER", "SECOND ENTRY"];
+    const names = ["WAITING AT PIVOT", "BROKE THROUGH", "PULLBACK TO PIVOT", "SECOND ENTRY"];
     const vcls = v => v === "RELOADING" ? "g" : v === "STILL THERE" ? "g2" : v === "NOT RELOADING" ? "a" : v ? "x" : "";
     h += `<div class="bkseq ${seq.side}" title="${esc(seq.note)}">${names.map((n, i) => { const k = i + 1, on = k === seq.step || (k === 4 && seq.lit4), done = k < seq.step;
       return `<span class="st ${on ? "on" : ""} ${done ? "done" : ""}"><b>${k}</b>${k === 2 ? (seq.side === "short" ? "BROKE · NEW LOW" : "BROKE · NEW HIGH") : n}${on && seq.verdict && (k === 1 || k === 3) ? ` <i class="vd ${vcls(seq.verdict)}">${esc(seq.verdict)}</i>` : ""}</span>`; }).join("")}<span class="sqn">${esc(seq.note)}</span></div>`;
@@ -7609,10 +7609,10 @@ function ladderBasketHTML(L){
     const tip = `${own === "bid" ? "BUYER'S" : own === "ask" ? "SELLER'S" : ""} BASKET at ${px(r.price)}: ${sz(absorbed)} absorbed (full = ${sz(Math.round(full))}, ${(+C.basket_full_x || 3)}× this price's normal ${sz(norm)}) · ${sz(b[0])} traded here today (${sz(b[1])} bought, ${sz(b[2])} sold)` +
       (own && r[own + "_stage"] ? ` · ${r[own + "_stage"]}` : "") + (own && r[own + "_rf"] ? ` · ${r[own + "_rf"]} refills in the last minute` : "");
     const touch = C.basket_touch_counter && ps60row && ((r.vs || 0) + (r.vb || 0)) ? `<i class="tch" title="traded at this level since price last touched it (resets each touch)">·${kfmt((r.vs || 0) + (r.vb || 0))}</i>` : "";
-    // the labels: TRIGGER (with its verdict), NEW HIGH / NEW LOW, LAST, SECOND ENTRY, TAKE PROFIT, STOP, FLIP, PULLED
+    // the labels: PIVOT (with its verdict), NEW HIGH / NEW LOW, LAST, SECOND ENTRY, TAKE PROFIT, STOP, FLIP, PULLED
     const lab = [];
-    if (roles.includes("trigger") && seq){ const v = seq.verdict; lab.push(`<b class="bl trg">TRIGGER${v ? " · " + esc(v) : ""}</b>`); }
-    else if (roles.includes("trigger")) lab.push(`<b class="bl trg">TRIGGER</b>`);
+    if (roles.includes("trigger") && seq){ const v = seq.verdict; lab.push(`<b class="bl trg">PIVOT${v ? " · " + esc(v) : ""}</b>`); }
+    else if (roles.includes("trigger")) lab.push(`<b class="bl trg">PIVOT</b>`);
     if (isExt) lab.push(`<b class="bl ext">${seq.side === "short" ? "NEW LOW" : "NEW HIGH"}</b>`);
     for (const x of ["second_entry", "target", "stop"]) if (roles.includes(x)) lab.push(`<b class="bl ${BKROLE[x][1]}">${BKROLE[x][0]}</b>`);
     if (r.flip && C.basket_flip_alerts) lab.push(`<b class="bl flp">FLIP</b>`);
