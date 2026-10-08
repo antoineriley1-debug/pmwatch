@@ -910,3 +910,7 @@ table.lad.clean tr.keyhot td.px{box-shadow:0 0 12px 3px var(--klc)}
 table.lad.clean tr.lastpx.keyrow td.px{background:#e8b931;color:#111}
 table.lad.clean .kt{color:var(--kc);border:1px solid var(--kc);background:color-mix(in srgb, var(--kc) 22%, transparent)}
 table.lad.clean tr.lastpx .kt{background:#111}
+.oct .ldbtn{cursor:pointer;display:inline-block;padding:0 4px;border-radius:3px}
+.oct .ldbtn.on{background:#26d07c;color:#06140d;font-weight:800}
+.oct .ldbtn.on:hover{background:#ff4d5e;color:#fff}
+.oct .ldbtn.on:hover::after{content:" off"}

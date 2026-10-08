@@ -279,7 +279,9 @@ function renderChain(){
       <td class="k">${r.strike % 1 ? r.strike.toFixed(2) : r.strike}${held ? ` <span class="hold ${held > 0 ? "b" : "s"}">${held > 0 ? "+" : ""}${held}</span>` : ""}</td>
       <td class="b">${r.bid == null ? "—" : r.bid.toFixed(2)}</td><td class="s">${r.ask == null ? "—" : r.ask.toFixed(2)}</td><td class="dim">${r.last == null ? "—" : r.last.toFixed(2)}</td>
       <td class="dl" title="delta: how much the contract moves per $1 in the stock">${r.delta == null ? "—" : r.delta.toFixed(2)}</td><td class="dim" title="implied volatility">${r.iv == null ? "—" : Math.round(r.iv * 100) + "%"}</td>
-      <td class="act"><span class="ldbtn" title="load ${esc(curSym)} ${r.strike % 1 ? r.strike.toFixed(2) : r.strike}${d.right} onto the OPTION CHART and ORDER ENTRY (no order is sent)">${OC.link && OC.link.key === r.key ? "✓" : "📈"}</span></td></tr>`; }).join("");
+      <td class="act">${OC.link && OC.link.key === r.key
+        ? `<span class="ldbtn on" title="loaded on the OPTION CHART — click the ✓ to take it off the chart (no order is touched)">✓</span>`
+        : `<span class="ldbtn" title="load ${esc(curSym)} ${r.strike % 1 ? r.strike.toFixed(2) : r.strike}${d.right} onto the OPTION CHART and ORDER ENTRY (no order is sent)">📈</span>`}</td></tr>`; }).join("");
   const working = (d.orders || []).map(o => `<div class="wk"><span class="${o.action === "BUY" ? "b" : "s"}">${esc(o.action)} ${o.remaining ?? o.qty} ${esc(o.symbol)} @ ${o.lmt}</span> <span class="dim">${esc(o.status || "")}</span> <button data-cxl="${o.order_id}" class="danger">✕</button></div>`).join("");
   const noQ = d.rows.length && d.rows.every(r => r.bid == null && r.ask == null);
   const banner = noQ ? `<div class="ocwarn q">NO QUOTES on this chain (market closed, or no option data on this login) — click a strike and type your limit in PX</div>` : "";
@@ -297,6 +299,9 @@ document.addEventListener("click", e => { const b = e.target.closest("button[dat
     const oc = e.target.closest("button[data-oc]"); if (oc){ if (!confirm("CLOSE every contract of " + oc.dataset.oc + "?")) return; const out = await post("/api/trade/opt_adjust", {key: oc.dataset.oc, contracts: 0, mode: "close"}); toast(out.ok ? "Sent: " + out.sent : "Blocked: " + (out.reason || ""), out.ok); return; }
     if (e.target.closest("button[data-ocarm]")){ document.getElementById("armBtn").click(); setTimeout(() => { const bd = P.options.pc.querySelector(".oc-body"); if (bd) bd.dataset.h = ""; renderChain(); }, 600); return; }
     const b = e.target.closest("button[data-oo]");
+    // the ✓ on the loaded contract takes it OFF the option chart again (same button that put it there)
+    { const ld = e.target.closest(".ldbtn"), rowEl = e.target.closest("tr[data-strike]");
+      if (ld && rowEl && OC.link && OC.link.key === rowEl.dataset.key){ unloadContract(); return; } }
     if (!b){ const rowEl = e.target.closest("tr[data-strike]"); if (rowEl && OC.data){ const k = +rowEl.dataset.strike, r = OC.data.rows.find(x => x.strike === k) || {};
         OC.sel = k; const mid = r.bid != null && r.ask != null ? (r.bid + r.ask) / 2 : (r.last != null ? r.last : null);
         OC.link = {sym: curSym, expiry: OC.data.expiry, strike: k, right: OC.data.right, key: r.key, bid: r.bid, ask: r.ask, n: (OC.link && OC.link.n) || 1};
@@ -2127,6 +2132,17 @@ function relinkLines(key){
   if (held){ toast(`Still holding ${shortKey(pl.opt_key)}: the ${sym} chart's lines stay on it until you are out`, false); return; }
   post("/api/trade/trade_as", {symbol: sym, mode: "option", opt_key: key, opt_qty: pl.opt_qty || OCH.n || 1})
     .then(out => toast(out.ok ? `${sym} chart lines now trade ${shortKey(key)}` : "Lines not moved: " + (out.reason || ""), out.ok));
+}
+/* take the loaded contract off the OPTION CHART (its Level II / T&S and ORDER ENTRY follow). Nothing is sold or
+   cancelled: a contract you hold stays in POSITIONS, its stop and lines stay on */
+function unloadContract(){
+  const name = OC.link ? contractName(OC.link) : "contract";
+  OC.link = null; OC.sel = null; OCH.key = null; OCH.data = null;
+  if (ochart){ ochart.data = null; drawChart(ochart); }
+  renderOchHead(); if (typeof renderOptPanels === "function") renderOptPanels(); renderContractL2(); renderContractTape();
+  P.ticket.last = null; poll(true);
+  const bd = P.options && P.options.pc.querySelector(".oc-body"); if (bd) bd.dataset.h = ""; renderChain();
+  toast(`${name} taken off the option chart`, true);
 }
 function chartOption(key, show){ if (!key) return; if (OCH.key !== key) relinkLines(key); if (OCH.key !== key){ OCH.key = key; OCH.data = null; if (ochart){ ochart.data = null; ochart.view.offset = restOffset(); ochart.view.follow = true; ochart.view.yLo = ochart.view.yHi = null; } }
   if (show) showPanel("ochart"); pollOch(); }
