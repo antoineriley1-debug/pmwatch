@@ -125,6 +125,8 @@ DEFAULTS = {
         "enabled": True,                # BREAK TRAPS: who got caught when price took out a key level and came back (the TRAPS box)
         "voice": True,                  # say TRAPPED / BREAK HELD / AT THEIR EXIT (the ticker you are on)
         "retrace_dollars": 0.30,        # TRAPPED: price back through the broken level by this much, no new extreme since
+        "zone_dollars": 0.50,           # the breakout crowd = orders within this much of the level ...
+        "count_minutes": 15,            # ... in this long after the break (not buyers hours later or dollars higher)
         "hod_min_age_seconds": 120,     # a high / low of day counts as a level once it has stood this long (not every tick of a run)
         "min_shares": 1000,             # call it (alert + voice) only when at least this many shares are caught (the box shows every one)
         "memory_minutes": 60,           # a break is forgotten after this long

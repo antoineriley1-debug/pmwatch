@@ -5,7 +5,7 @@ import unittest
 
 from twiney.breaktrap import BreakTraps
 
-CFG = {"retrace_dollars": 0.30, "hod_min_age_seconds": 120, "memory_minutes": 60, "max_breaks": 6}
+CFG = {"retrace_dollars": 0.30, "hod_min_age_seconds": 120, "memory_minutes": 60, "max_breaks": 6, "zone_dollars": 0.50, "count_minutes": 15}
 PMH = [("PREMARKET HIGH", "the premarket high", 100.00)]
 
 
@@ -116,6 +116,13 @@ class BreakTrapTests(unittest.TestCase):
         self.assertEqual(len(bt.breaks), 1); self.assertEqual(bt.breaks[0]["name"], "PREMARKET HIGH / PRIOR DAY HIGH")
         self.assertEqual(len([e for e in evs if e[0] == "BROKE"]), 1)
 
+    def test_only_the_crowd_at_the_break_counts(self):
+        bt = BreakTraps()
+        run(bt, [(99.95, 100, "buy"), (100.05, 500, "buy"), (100.80, 900, "buy")])            # 80 cents up: not at the break
+        self.assertEqual(bt.view(2000, 100.8)[0]["shares"], 500)
+        run(bt, [(100.10, 700, "buy")], t0=1000.0 + 16 * 60)                                   # 16 minutes later: not that break
+        self.assertEqual(bt.view(3000, 100.1)[0]["shares"], 500)
+
     def test_bad_prints_ignored(self):
         bt = BreakTraps()
         self.assertEqual(bt.update(1.0, None, 100, "buy", 0.01, PMH, True, "d1", CFG), [])
@@ -182,3 +189,32 @@ class EngineBreakTrapTests(unittest.TestCase):
         e.cfg["breaktrap"]["enabled"] = False
         e.on_print("AAA", 9.99, 100, "NASDAQ", 1001.0); e.on_print("AAA", 10.05, 5000, "NASDAQ", 1002.0)
         self.assertIsNone(e.snapshot(1003.0)["panes"][0]["breaktraps"])
+
+
+class EngineClockTests(unittest.TestCase):
+    """The key-level clock runs on its own: PACE switched off never silences break traps or the level calls; a desk
+    started mid-session uses the day's real high, not its first print."""
+    def make(self):
+        return EngineBreakTrapTests.make(self)
+
+    def test_pace_off_still_watches_levels(self):
+        e = self.make()
+        e.cfg["pace"]["enabled"] = False
+        e.syms["AAA"]._bt_levels = None
+        called = []
+        e._break_trap_levels = lambda st, t: called.append(t)
+        e.on_print("AAA", 9.99, 100, "NASDAQ", 1001.0)
+        e.tick(1002.0); e.tick(1003.0)
+        self.assertEqual(len(called), 2)
+
+    def test_restart_mid_session_uses_the_real_high(self):
+        e = self.make()
+        st = e.syms["AAA"]
+        st._bt_levels = []
+        st.day_hi, st.day_lo = (10.50, 500.0), (9.50, 400.0)       # loaded from history: the high stood since t=500
+        from twiney import ps60
+        st.day_key = ps60.ny_day(1001.0)
+        e.on_print("AAA", 10.20, 100, "NASDAQ", 1001.0)              # the first print after the restart
+        e.on_print("AAA", 10.55, 300, "NASDAQ", 1002.0)              # through the REAL high
+        b = st._bt.breaks
+        self.assertEqual([(x["name"], x["level"]) for x in b], [("HIGH OF DAY", 10.50)])

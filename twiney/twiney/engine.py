@@ -1105,6 +1105,26 @@ class Engine:
             except Exception:
                 pass
 
+    def _levels_tick(self, t):
+        """The KEY LEVELS clock, twice a second, on its own (not tied to PACE: switching pace off never silences the
+        level calls or the break traps): the levels a break is watched at, and REJECTED / BOUNCED / TOOK."""
+        if t - getattr(self, "_levels_t", -1e9) < 0.5:
+            return
+        self._levels_t = t
+        for sym, st in self.syms.items():
+            last = st.price()
+            if last is None:
+                continue
+            st._user_levels_cache = self._user_levels(st.play)
+            try:
+                self._break_trap_levels(st, t)
+            except Exception:
+                log.exception("break trap levels %s", sym)
+            try:
+                self._level_watch(st, t, last, tick_size(last, sym))
+            except Exception:
+                log.exception("level watch %s", sym)
+
     def _pace_tick(self, t):
         """PACE OF TAPE for every stock, twice a second, browser open or not: speed against its own normal, and the
         calls at your levels (STALLING INTO / PRESSING / BREAKOUT WITH SPEED / BREAK WITHOUT SPEED, + FLOW)."""
@@ -1134,14 +1154,6 @@ class Engine:
                 log.exception("pace %s", sym)
                 continue
             st.pace = p
-            try:
-                self._break_trap_levels(st, t)
-            except Exception:
-                log.exception("break trap levels %s", sym)
-            try:
-                self._level_watch(st, t, last, tick_size(last, sym))
-            except Exception:
-                log.exception("level watch %s", sym)
             call = p.get("call")
             if call and p.get("level") and pc.get("alerts", True):
                 rep_s = float(pc.get("repeat_seconds", 120))
@@ -2980,6 +2992,7 @@ class Engine:
             if self.connection["state"] == "CONNECTED" and self.opt_sim(t):
                 self.practice_opt_tick(t)          # after hours on paper: the contracts you hold / chart move with the stock
             self._pace_tick(t)
+            self._levels_tick(t)
             self._story_tick(t)
             rc = self.cfg["reload"]
             if self.desk is not None and t - getattr(self, "_recon_t", -1e9) >= 5:
@@ -4374,7 +4387,9 @@ class Engine:
         if bt is None:
             bt = st._bt = BreakTraps()
         rth = self.connection["state"] == "DEMO" or ps60.is_rth(t)
-        if bt.day == day and rth:                   # a desk started mid-session knows the day's high / low already
+        if bt.day != day:
+            bt.reset_day(day)
+        if rth:                                     # a desk started mid-session knows the day's high / low already
             if bt.hi is None and st.day_hi:
                 bt.hi = [st.day_hi[0], st.day_hi[1]]
             if bt.lo is None and st.day_lo:

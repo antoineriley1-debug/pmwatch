@@ -6,7 +6,8 @@ run), the premarket high / low, the prior day's high / low / close, the after-ho
 From the break on, every print on the breakout side of the level is counted: for a break UP, the buy prints (paid the
 offer) at or above the level: how many, how many shares, the dollars and their average price; and what was RESTING on
 the offer at the level when it went (the sellers that got taken out). A break DOWN mirrors it: sell prints at or below
-the level, the bid that was resting there.
+the level, the bid that was resting there. Only the crowd AT the break counts: within `zone_dollars` of the level and
+`count_minutes` of the break (buyers hours later and dollars higher did not buy that break).
 
 TRAPPED: price comes back through the level by `retrace_dollars` (well under a dollar by default) without ever making a
 new extreme past the break: the breakout buyers (sellers) are underwater and the level stands as the high (low). Shown:
@@ -99,6 +100,8 @@ class BreakTraps:
         # 3) every live break: count the breakout side, watch for the trap, the reclaim, the exit
         retrace = float(cfg.get("retrace_dollars", 0.30))
         mem = float(cfg.get("memory_minutes", 60)) * 60.0
+        zone = float(cfg.get("zone_dollars", 0.50))              # "at that location": buys this close to the level ...
+        window = float(cfg.get("count_minutes", 15)) * 60.0      # ... in this long after the break
         for b in self.breaks:
             if b["state"] in ("RECLAIMED", "EXPIRED"):
                 continue
@@ -109,7 +112,8 @@ class BreakTraps:
             b["last"] = price
             if b["state"] == "BROKE":
                 # the breakout crowd: buy prints at or above the level (sell prints at or below it for a break down)
-                if (up and side == "buy" and price >= lv - 1e-9) or (not up and side == "sell" and price <= lv + 1e-9):
+                near = abs(price - lv) <= zone + 1e-9 and t - b["t"] <= window
+                if near and ((up and side == "buy" and price >= lv - 1e-9) or (not up and side == "sell" and price <= lv + 1e-9)):
                     b["prints"] += 1; b["shares"] += size; b["usd"] += price * size
                 if (up and price > b["extreme"]) or (not up and price < b["extreme"]):
                     b["extreme"] = price

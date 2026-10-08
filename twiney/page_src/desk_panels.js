@@ -179,7 +179,7 @@ function renderBreakTraps(d){
   const ago = s => s == null ? "" : s < 60 ? s + "s" : Math.round(s / 60) + "m";
   const h = list.map(b => {
     const [word, cls] = st[b.state] || [b.state, ""], who = b.up ? "LONGS" : "SHORTS", act = b.up ? "buy" : "sell";
-    const head = `<div class="btl ${cls} ${b.up ? "up" : "dn"}"><b class="btn" title="${esc(b.name)}">${esc(String(b.name).replace(/PREMARKET /g, "PM ").replace(/PRIOR DAY /g, "PD ").replace(/AFTER-HOURS /g, "AH ").replace(/ OF DAY/g, " OF DAY"))}</b><span class="btp">${px(b.level)} ${b.up ? "▲" : "▼"}</span><span class="btw">${b.state === "TRAPPED" || b.state === "AT EXIT" ? word + " " + who : word}</span><i>${ago(b.age)}</i></div>`;
+    const head = `<div class="btl ${cls} ${b.up ? "up" : "dn"}"><b class="btn" title="${esc(b.name)}">${esc(String(b.name).replace(/PREMARKET /g, "PM ").replace(/PRIOR DAY /g, "PD ").replace(/AFTER-HOURS /g, "AH ").replace(/ OF DAY/g, " OF DAY"))}</b><span class="btp">${px(b.level)} ${b.up ? "▲" : "▼"}</span><span class="btw">${b.state === "TRAPPED" || b.state === "AT EXIT" ? word + " " + who : word}</span><i title="${b.trap_age != null ? "trapped " + ago(b.trap_age) + " ago, broke " + ago(b.age) + " ago" : "broke " + ago(b.age) + " ago"}">${b.trap_age != null ? ago(b.trap_age) : ago(b.age)}</i></div>`;
     const caught = b.shares ? `<div class="btr"><span><b>${(b.prints || 0).toLocaleString()}</b> ${act} orders</span><span><b>${kfmt(b.shares)}</b> sh</span><span>${usdK(b.usd)}</span><span>avg <b>${b.avg != null ? px(b.avg) : "—"}</b></span></div>` : `<div class="btr dim">no ${act} orders at it yet</div>`;
     const rest = b.resting ? `<div class="btr dim" title="shares showing on the ${b.up ? "offer" : "bid"} at ${px(b.level)} when price broke through it">${kfmt(b.resting)} sh resting on the ${b.up ? "offer" : "bid"} at the break</div>` : "";
     const now = (b.state === "TRAPPED" || b.state === "AT EXIT") && b.under != null
@@ -3114,14 +3114,15 @@ function basketFx(wrap, d){
       const dx = dp.from === "l" ? -cr.width * 0.9 : dp.from === "r" ? cr.width * 0.9 : 0, dy = dp.from === "t" ? -cr.height * 1.2 : -cr.height * 0.35;
       const a = el.animate([{transform: `translate(${dx}px,${dy}px)`, opacity: 0}, {opacity: 1, offset: 0.3}, {transform: "translate(0,0)", opacity: 0.95}],
                            {duration: dur, easing: "cubic-bezier(.3,.8,.4,1)"});
-      a.onfinish = a.oncancel = () => { el.remove(); BKLIVE = Math.max(0, BKLIVE - 1); };
+      let done = false; const end = () => { if (done) return; done = true; el.remove(); BKLIVE = Math.max(0, BKLIVE - 1); };
+      a.onfinish = a.oncancel = end; setTimeout(end, dur + 250);     // a layer taken away mid-drop never leaves the count stuck
     }
     if (C.basket_pulse){
       const ring = document.createElement("i"); ring.className = "bkpulse " + (dp.from === "l" ? "s" : dp.from === "r" ? "b" : "m");
       ring.style.left = x + "px"; ring.style.top = y + "px"; ring.style.width = cr.width + "px"; ring.style.height = cr.height + "px";
       fx.appendChild(ring);
       const a2 = ring.animate([{opacity: 0.9, transform: "scale(1)"}, {opacity: 0, transform: "scale(1.25)"}], {duration: dur * 0.9, delay: C.basket_animate ? dur * 0.85 : 0, easing: "ease-out"});
-      a2.onfinish = a2.oncancel = () => ring.remove();
+      a2.onfinish = a2.oncancel = () => ring.remove(); setTimeout(() => ring.remove(), dur * 2 + 250);
     }
   }
 }
