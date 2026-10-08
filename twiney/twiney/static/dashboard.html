@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261008-0519">
+<meta name="build" content="20261008-0532">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -1226,6 +1226,23 @@ table.lad.clean tr.lastpx .kt{background:#111}
 .oct .ldbtn.on{background:#3fb56f;color:#06140d;font-weight:800}
 .oct .ldbtn.on:hover{background:#d9534f;color:#fff}
 .oct .ldbtn.on:hover::after{content:" off"}
+
+/* IND MINI: the small floating indicator pill and its menu */
+.indmini{position:absolute;left:6px;bottom:34px;z-index:7;font:10px ui-monospace,Menlo,Consolas,monospace}
+.indmini .im-pill{background:#11161dcc;color:#cfd8e3;border:1px solid #3a4656;border-radius:9px;padding:1px 7px;font:inherit;font-size:10px;cursor:pointer;line-height:15px;white-space:nowrap}
+.indmini .im-pill:hover{border-color:var(--gold);color:#fff} .indmini .im-pill.tpl{color:var(--gold)}
+.indmini .im-pop{display:none;position:absolute;bottom:calc(100% + 4px);left:0;width:232px;overflow:auto;background:#11161d;border:1px solid #2c3644;border-radius:6px;padding:5px 7px 7px;box-shadow:0 8px 24px #000a;color:#cfd8e3}
+.indmini.open .im-pop{display:block}
+.indmini .im-h{display:flex;justify-content:space-between;font-weight:700;color:#fff;margin-bottom:2px} .indmini .im-x{cursor:pointer;color:var(--dim)}
+.indmini h6{margin:6px 0 2px;font-size:9px;color:var(--gold);letter-spacing:.06em}
+.indmini label{display:flex;align-items:center;gap:4px;cursor:pointer;line-height:15px;white-space:nowrap}
+.indmini label input{margin:0;width:11px;height:11px} .indmini label i{display:inline-block;width:10px;height:3px;border-radius:1px}
+.indmini .im-ma{display:flex;flex-wrap:wrap;gap:0 6px;align-items:center;margin:1px 0} .indmini .im-ma span{width:34px;color:var(--dim);font-size:9px}
+.indmini .im-ma label{gap:2px}
+.indmini .im-tpl>div{display:flex;align-items:center;gap:4px;margin:1px 0} .indmini .im-tpl button{flex:1;text-align:left;font:inherit;padding:1px 5px;background:#1a222c;border:1px solid #2c3644;color:#cfd8e3;border-radius:3px;cursor:pointer}
+.indmini .im-tpl>div.on button{border-color:var(--gold);color:var(--gold)} .indmini .im-tpl kbd{font-size:9px;color:var(--dim)} .indmini .im-tpl b{cursor:pointer;color:var(--dim)} .indmini .im-tpl b:hover{color:var(--sell)}
+.indmini .im-save{display:flex;gap:4px;margin-top:4px} .indmini .im-save input{flex:1;min-width:0;font:inherit;background:#0b0f14;border:1px solid #2c3644;color:#fff;padding:1px 4px;border-radius:3px}
+.indmini .im-save button{font:inherit;padding:1px 6px;background:#1f6b45;border:1px solid #2a8a5a;color:#fff;border-radius:3px;cursor:pointer}
 
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
@@ -3811,8 +3828,99 @@ function mkChart(id, isFoot){
     });
     renderTools(c);
   }
-  charts[id] = c; return c;
+  charts[id] = c; if (!isFoot) mountIndMini(c); return c;
 }
+/* IND MINI: a small floating pill at the bottom of each stock chart. Click it: labels, ATR, the study lines and every
+   moving average on / off, and your TEMPLATES (save the setup, pick one, Alt+1 ... Alt+9). Drag the pill anywhere. */
+const IM_STUDIES = [["gas", "ATR · GAS + ATR levels", "atr"], ["atr_zones", "ATR ladder (¼ rungs)", "atr"], ["gas_readout", "GAS readout", "atr"],
+  ["airspace", "AIRSPACE lines", "lines"], ["air_board", "AIRSPACE board", "lines"], ["unvisited", "Unvisited highs / lows", "lines"], ["whole_numbers", "Whole numbers", "lines"]];
+const IM_KEYS = ["mas", "bb", "vwapOn", "matags", "stLabels"];
+const IM_DEF = {mas: true, bb: true, vwapOn: false, matags: true, stLabels: true};
+function imNow(){
+  const SO = (typeof state !== "undefined" && state && state.studies_on) || {};
+  const st = {ind: Object.assign({}, store.get("ind", {}))}; for (const k of IM_KEYS) st[k] = store.get(k, IM_DEF[k]);
+  return {store: st, studies: Object.fromEntries(IM_STUDIES.map(([k]) => [k, !!SO[k]]))};
+}
+function imApply(t, name){
+  for (const [k, v] of Object.entries(t.store || {})) store.set(k, v);
+  const ch = {}, SO = (typeof state !== "undefined" && state && state.studies_on) || {};
+  for (const [k, v] of Object.entries(t.studies || {})) if (!!SO[k] !== !!v) ch["studies." + k] = !!v;
+  if (Object.keys(ch).length) post("/api/settings", {changes: ch}).then(() => poll(true));
+  if (typeof state !== "undefined" && state && state.studies_on) Object.assign(state.studies_on, t.studies || {});
+  Object.values(charts).forEach(c => { try { drawChart(c); renderTools(c); } catch (e) {} });
+  if (name) store.set("indTplOn", name);
+  imRender();
+}
+function imTpls(){ return store.get("indTpl", []); }
+function imPopHTML(){
+  const n = imNow(), S = n.store, on = k => (S.ind || {})[k] !== false, cur = store.get("indTplOn", "");
+  const ck = (attr, k, label, v, col) => `<label><input type="checkbox" data-im${attr}="${k}" ${v ? "checked" : ""}>${col ? `<i style="background:${col}"></i>` : ""}${label}</label>`;
+  const mas = (list, pre) => list.map(([m, col]) => ck("ind", pre + m, `${m}`, on(pre + m), col)).join("");
+  const tp = imTpls();
+  return `<div class="im-h">INDICATORS<b class="im-x" title="close">✕</b></div>
+    <h6>LABELS</h6>${ck("k", "stLabels", "Study labels (ATR, AIRSPACE...)", S.stLabels)}${ck("k", "matags", "MA price tags", S.matags)}
+    <h6>ATR</h6>${IM_STUDIES.filter(x => x[2] === "atr").map(([k, l]) => ck("st", k, l, n.studies[k])).join("")}
+    <h6>STUDY LINES</h6>${IM_STUDIES.filter(x => x[2] === "lines").map(([k, l]) => ck("st", k, l, n.studies[k])).join("")}
+    <h6>MOVING AVERAGES</h6>${ck("k", "mas", "<b>All MAs</b>", S.mas)}${ck("k", "bb", "Bollinger 20 / 2", S.bb)}${ck("k", "vwapOn", "VWAP", S.vwapOn)}
+    <div class="im-ma"><span>SMA</span>${mas(DAN_SMA, "s")}</div><div class="im-ma"><span>EMA</span>${mas(DAN_EMA, "e")}</div><div class="im-ma"><span>DAILY</span>${mas(DAN_EMA_DAILY, "d")}</div>
+    <h6>TEMPLATES</h6><div class="im-tpl">${tp.length ? tp.map((x, i) => `<div class="${x.name === cur ? "on" : ""}"><button data-imtpl="${i}" title="apply${i < 9 ? " · Alt+" + (i + 1) : ""}">${esc(x.name)}</button>${i < 9 ? `<kbd>Alt+${i + 1}</kbd>` : ""}<b data-imdel="${i}" title="delete this template">✕</b></div>`).join("") : `<div class="dim">none yet</div>`}</div>
+    <div class="im-save"><input data-imname placeholder="name this setup" maxlength="24"><button data-imsave="1">SAVE</button></div>`;
+}
+function imRender(){ document.querySelectorAll(".indmini").forEach(w => { w.querySelector(".im-pill").classList.toggle("tpl", !!store.get("indTplOn", ""));
+  w.querySelector(".im-pill").textContent = "◧ " + (store.get("indTplOn", "") || "IND");
+  const pop = w.querySelector(".im-pop"); if (w.classList.contains("open") && !pop.contains(document.activeElement)) pop.innerHTML = imPopHTML(); }); }
+function mountIndMini(c){
+  const wrap = c.el.querySelector(".chart-wrap"); if (!wrap || wrap.querySelector(".indmini")) return;
+  const w = document.createElement("div"); w.className = "indmini";
+  w.innerHTML = `<button class="im-pill" title="indicators: labels, ATR, lines, MAs, templates (Alt+1...9) · drag to move">◧ IND</button><div class="im-pop"></div>`;
+  wrap.appendChild(w);
+  const posKey = "indmini.pos." + c.id, pos = store.get(posKey, null);
+  if (pos){ w.style.left = pos[0] + "px"; w.style.bottom = pos[1] + "px"; }
+  const pill = w.querySelector(".im-pill"), pop = w.querySelector(".im-pop");
+  ["mousedown", "wheel", "dblclick", "contextmenu"].forEach(ev => w.addEventListener(ev, e => e.stopPropagation()));
+  pill.addEventListener("mousedown", e => {
+    e.preventDefault(); const r = w.getBoundingClientRect(), wr = wrap.getBoundingClientRect(), x0 = e.clientX, y0 = e.clientY; let moved = false;
+    const mv = ev => { if (!moved && Math.abs(ev.clientX - x0) + Math.abs(ev.clientY - y0) < 4) return; moved = true;
+      const left = Math.max(0, Math.min(wr.width - r.width, r.left - wr.left + ev.clientX - x0)), bottom = Math.max(0, Math.min(wr.height - r.height, wr.bottom - r.bottom - (ev.clientY - y0)));
+      w.style.left = left + "px"; w.style.bottom = bottom + "px"; };
+    const up = () => { window.removeEventListener("mousemove", mv); window.removeEventListener("mouseup", up);
+      if (moved) store.set(posKey, [parseInt(w.style.left) || 0, parseInt(w.style.bottom) || 0]);
+      else { const open = !w.classList.contains("open"); document.querySelectorAll(".indmini.open").forEach(x => x.classList.remove("open")); w.classList.toggle("open", open); if (open){ pop.innerHTML = imPopHTML(); imPlace(w, wrap); } } };
+    window.addEventListener("mousemove", mv); window.addEventListener("mouseup", up);
+  });
+  pop.addEventListener("change", e => {
+    const t = e.target, d = t.dataset;
+    if (d.imk){ store.set(d.imk, t.checked); }
+    else if (d.imind){ const IND = store.get("ind", {}); IND[d.imind] = t.checked; store.set("ind", IND); }
+    else if (d.imst){ post("/api/settings", {changes: {["studies." + d.imst]: t.checked}}).then(out => { if (!out.ok) toast("Not saved: " + (out.reason || ""), false); poll(true); });
+      if (typeof state !== "undefined" && state && state.studies_on) state.studies_on[d.imst] = t.checked; }
+    else return;
+    store.set("indTplOn", ""); Object.values(charts).forEach(ch => { try { drawChart(ch); renderTools(ch); } catch (e2) {} }); imRender();
+  });
+  pop.addEventListener("click", e => {
+    const t = e.target;
+    if (t.classList.contains("im-x")){ w.classList.remove("open"); return; }
+    if (t.dataset.imtpl != null){ const x = imTpls()[+t.dataset.imtpl]; if (x){ imApply(x.t, x.name); toast(`Template ${x.name}`, true); } return; }
+    if (t.dataset.imdel != null){ const tp = imTpls(), x = tp[+t.dataset.imdel]; if (x && confirm(`Delete the template "${x.name}"?`)){ tp.splice(+t.dataset.imdel, 1); store.set("indTpl", tp); if (store.get("indTplOn", "") === x.name) store.set("indTplOn", ""); pop.innerHTML = imPopHTML(); imRender(); } return; }
+    if (t.dataset.imsave){ const inp = pop.querySelector("[data-imname]"), name = (inp.value || "").trim(); if (!name) return toast("Name the template first", false);
+      const tp = imTpls(), i = tp.findIndex(x => x.name === name), rec = {name, t: imNow()};
+      if (i >= 0) tp[i] = rec; else tp.push(rec);
+      store.set("indTpl", tp); store.set("indTplOn", name); pop.innerHTML = imPopHTML(); imRender();
+      const k = tp.findIndex(x => x.name === name); toast(`Saved "${name}"` + (k < 9 ? ` · Alt+${k + 1}` : ""), true); }
+  });
+  pop.addEventListener("keydown", e => { e.stopPropagation(); if (e.key === "Enter" && e.target.dataset.imname != null) pop.querySelector("[data-imsave]").click(); });
+  imRender();
+}
+function imPlace(w, wrap){ const pop = w.querySelector(".im-pop"), wr = wrap.getBoundingClientRect(), r = w.getBoundingClientRect();
+  pop.style.maxHeight = Math.max(160, r.top - wr.top - 6) + "px";
+  pop.style.left = (r.left - wr.left + 240 > wr.width) ? "auto" : "0"; pop.style.right = (r.left - wr.left + 240 > wr.width) ? "0" : "auto"; }
+document.addEventListener("keydown", e => {
+  if (!e.altKey || e.ctrlKey || e.metaKey || !/^Digit[1-9]$/.test(e.code)) return;
+  const tag = (document.activeElement || {}).tagName; if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+  const x = imTpls()[+e.code.slice(5) - 1]; if (!x) return;
+  e.preventDefault(); e.stopPropagation(); imApply(x.t, x.name); toast(`Template ${x.name}`, true);
+}, true);
+document.addEventListener("mousedown", e => { if (!e.target.closest(".indmini")) document.querySelectorAll(".indmini.open").forEach(x => x.classList.remove("open")); });
 function indPopHTML(){
   const IND = store.get("ind", {}), on = k => IND[k] !== false;
   const box = (k, label, col) => `<label><input type="checkbox" data-indk="${k}" ${on(k) ? "checked" : ""}> <i style="display:inline-block;width:14px;height:3px;background:${col};vertical-align:middle"></i> ${label}</label>`;
@@ -4026,7 +4134,7 @@ function studiesFront(ctx){
   // spread apart just enough (never more), and a thin lead runs from each line's end to its own label
   const top = rowH, bottom = y(lo) - 2, lab = [];
   for (const it of vis){
-    let text = it.L.l || "";
+    let text = store.get("stLabels", true) ? (it.L.l || "") : "";      // the IND mini menu: labels off, lines stay
     if (text && room < 28) text = "";
     else if (text && g.measureText(text).width > room){ while (text.length > 3 && g.measureText(text + "…").width > room) text = text.slice(0, -1); text += "…"; }
     it.text = text; if (text) lab.push(it);
