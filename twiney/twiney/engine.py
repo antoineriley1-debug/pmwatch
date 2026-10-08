@@ -4102,7 +4102,7 @@ class Engine:
         for j in [j for j in op if abs(j - k) >= away]:
             op.discard(j)
         v = vis.get(k)
-        if k not in op:
+        if k not in op or v is None:                    # (a price cleared from under an open visit starts a new one)
             if v is None:
                 v = vis[k] = {"s": 0.0, "b": 0.0, "ts": deque(maxlen=60), "t": t}
             else:
@@ -4139,6 +4139,7 @@ class Engine:
                     clear[key] = [t, v]
             for k in [k for k in (getattr(st, "visits", None) or {}) if hit(k)]:
                 del st.visits[k]
+                (getattr(st, "visit_open", None) or set()).discard(k)     # a cleared price starts a NEW visit
             bks = st.__dict__.get("basket") or {}
             for k in [k for k in bks if hit(k)]:
                 del bks[k]
@@ -4422,19 +4423,19 @@ class Engine:
         under = (avg - price) if b["up"] else (price - avg)
         if kind == "TRAPPED":
             label = f"TRAPPED {who.upper()} · {b['name']}"
-            text = (f"TRAPPED {who.upper()} at {b['name']} {fmt_price(b['level'])}: {b['prints']:,} {'buy' if b['up'] else 'sell'} orders, "
+            text = (f"TRAPPED {who.upper()} at {b['name']} {narrative.px(b['level'])}: {b['prints']:,} {'buy' if b['up'] else 'sell'} orders, "
                     f"{narrative.shares(b['shares'])} shares, {narrative.dollars(b['usd'])} {'bought at or over' if b['up'] else 'sold at or under'} it, "
-                    f"average {fmt_price(avg)}; price {fmt_price(price)}, {under:.2f} under them. They get out at {fmt_price(avg)}.")
-            words = (f"Trapped {who} at {b['say']}. {narrative.shares(b['shares'])} shares, {b['prints']} orders, average {fmt_price(avg)}. "
-                     f"Price {fmt_price(price)}. They get out at {fmt_price(avg)}.")
+                    f"average {narrative.px(avg)}; price {narrative.px(price)}, {self._cents(under)} under them. They get out at {narrative.px(avg)}.")
+            words = (f"Trapped {who} at {b['say']}. {narrative.shares(b['shares'])} shares, {b['prints']} orders, average {narrative.px(avg)}. "
+                     f"Price {narrative.px(price)}, {self._cents(under)} under them. They get out at {narrative.px(avg)}.")
         elif kind == "RECLAIMED":
             label = f"BREAK HELD · {b['name']}"
-            text = f"BREAK HELD at {b['name']} {fmt_price(b['level'])}: new {'high' if b['up'] else 'low'} {fmt_price(price)} — the trapped {who} are out of it."
+            text = f"BREAK HELD at {b['name']} {narrative.px(b['level'])}: new {'high' if b['up'] else 'low'} {narrative.px(price)} — the trapped {who} are out of it."
             words = f"{b['say'].capitalize()} break held. New {'high' if b['up'] else 'low'}, the trapped {who} are out."
         else:
             label = f"AT TRAPPED {who.upper()}' EXIT · {b['name']}"
-            text = f"AT THE TRAPPED {who.upper()}' EXIT {fmt_price(avg)} ({b['name']} {fmt_price(b['level'])}): {narrative.shares(b['shares'])} shares {'sell' if b['up'] else 'cover'} here to get out."
-            words = f"Back at the trapped {who}' exit, {fmt_price(avg)}. Watch for their {'selling' if b['up'] else 'covering'}."
+            text = f"AT THE TRAPPED {who.upper()}' EXIT {narrative.px(avg)} ({b['name']} {narrative.px(b['level'])}): {narrative.shares(b['shares'])} shares {'sell' if b['up'] else 'cover'} here to get out."
+            words = f"Back at the trapped {who}' exit, {narrative.px(avg)}. Watch for their {'selling' if b['up'] else 'covering'}."
         alert = {"t": t, "symbol": st.symbol, "label": label, "price": fmt_price(b["level"]), "side": "bid" if b["up"] else "ask",
                  "role": "breaktrap", "text": text, "words": f"{st.symbol}. {words}" if bc.get("voice", True) else None,
                  "key": f"{round(t, 2)}|{st.symbol}|{label}"}

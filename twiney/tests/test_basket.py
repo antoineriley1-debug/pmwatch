@@ -83,3 +83,16 @@ class BasketTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ClearWhileOpenTests(unittest.TestCase):
+    """CLR above / below while price sits a cent or two from the cleared prices: the next print there must count (it
+    used to crash the print: the visit was deleted but still marked open)."""
+    def test_print_after_clear_near_price(self):
+        e = make()
+        e.on_print("AAA", 10.01, 100, "NASDAQ", T0 + 1)      # opens a visit at 10.01
+        e.on_print("AAA", 10.00, 100, "NASDAQ", T0 + 2)      # price back at 10.00: 10.01 still open (1 tick away)
+        self.assertTrue(e.ladder_clear("AAA", "above", T0 + 3))
+        e.on_print("AAA", 10.01, 300, "NASDAQ", T0 + 4)      # crashed before the fix
+        r = next(r for r in lad(e, T0 + 5)["rows"] if abs(float(r["price"]) - 10.01) < 1e-9)
+        self.assertEqual(r["vb"], 300); self.assertEqual(r["bk"][0], 300)
