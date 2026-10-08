@@ -642,6 +642,7 @@ class Trader:
                                        #   {"second_entry": {"price", "n", "from"}, "target": price, "stop": price}
         self.opt_stop_fired = {}       # option key -> t it fired (no double sends while the close works)
         self.opt_link = {}             # symbol -> what the chart's lines did on the linked contract (OPTIONS mode)
+        self.opt_indep = set()         # contracts held alongside shares: managed on the OPTION CHART only, until closed
         self.families = {}   # entry order id -> {"symbol", "entry", "stop", "cash": [...], "be_done"}
         self.nonces = {}     # ticket nonce -> result (double-submit protection)
         self.mismatch = {}   # symbol -> since when its working exits have not matched the position
@@ -1452,6 +1453,8 @@ class Trader:
         st = self.engine.syms.get(p.get("symbol"))
         if st is None or not st.price():
             return None
+        if self._contract_independent(key, p.get("symbol")):
+            return None          # shares AND a contract: the stock chart's lines are the shares'; the contract has its own stop
         # a call (or a short put) rides the LONG side's STOP line, a put (or a short call) the SHORT side's — the play's
         # own side, or the other side drawn under / over it
         bull = (p.get("right") == "C") == (p["qty"] > 0)
@@ -1459,6 +1462,23 @@ class Trader:
         lines = st.play if bull == own_long else (st.play.get("alt") or {})
         stop = lines.get("stop")
         return {"price": stop, "on": "stock", "source": "chart"} if stop else None
+
+    def _contract_independent(self, key, sym):
+        """A contract held while the shares are held too is managed on the OPTION CHART only, and stays that way until
+        it is closed: the shares stopping out first never hands the contract the shares' stop line."""
+        p = self.engine.opt_positions.get(key) or {}
+        if not int(p.get("qty") or 0):
+            self.opt_indep.discard(key)
+            return False
+        if self._holds_shares(sym):
+            self.opt_indep.add(key)
+        return key in self.opt_indep
+
+    def _holds_shares(self, sym):
+        try:
+            return bool(int(self.broker.position(sym) or 0))
+        except Exception:
+            return False
 
     # ---- OPTIONS from the stock chart: the 2nd entry, STOP and TARGET lines trade the linked contract ----------------
     def set_trade_as(self, symbol, mode, key=None, qty=None, now=None):
@@ -1542,6 +1562,11 @@ class Trader:
             buying = [o for o in self.engine._pending(key) if o.get("action") == BUY]
             se, tgt = lines.get("second_entry"), lines.get("target")
             s["state"], s["why"] = ("IN" if held > 0 else "SENT" if buying else "WAITING"), ""
+            if self._holds_shares(sym) or self._contract_independent(key, sym):
+                # shares AND the contract: each chart trades its own position. The stock chart's lines are the shares'
+                # exits; the contract is managed on the OPTION CHART (its own stop / target), never from the stock lines
+                s["why"] = f"you hold {sym} shares: the stock chart's lines manage the shares, the contract is managed on the OPTION CHART"
+                se = tgt = None
             if held > 0:
                 s["held"] = True
             # the entry: a real cross of the 2nd entry, the way the contract pays (never chased from the far side)
@@ -2795,7 +2820,7 @@ class Trader:
                  bracket_template=self.bracket_template, bracket_templates=list(self.bracket_templates().keys()),
                  scale_plans={sym: self._plan_view(sym, pl, time.time()) for sym, pl in self.scale_plans.items()},
                  trails={sym: dict(tr) for sym, tr in self.trails.items()},
-                 opt_stops=self._opt_stop_view(), opt_links=self._opt_link_view(), opt_levels=self._opt_level_view(),
+                 opt_stops=self._opt_stop_view(), opt_links=self._opt_link_view(), opt_indep=sorted(self.opt_indep), opt_levels=self._opt_level_view(),
                  allow_sell_to_open=bool(self.cfg.get("allow_sell_to_open", False)),
                  scale_templates={k: v for k, v in (self.cfg["scale_plan"].get("templates") or {}).items()},
                  qty_presets=list(self.cfg.get("qty_presets") or [25, 50, 100, 200, 500, 1000]),

@@ -37,7 +37,8 @@ const CS_DEF = [
     ["select", "cross", "Crosshair", "auto", ["auto", "solid", "dashed", "dotted", "off"]], ["color", "crossCol", "Crosshair colour", ""]]],
   ["TRADING", [["check", "levels", "Your levels (pivot, 2nd entry, stop, target)", true], ["check", "orders", "Working order lines", true],
     ["check", "chip", "2nd entry order chip", true], ["check", "bigmoney", "Big option money (30 days) at its strikes", false],
-    ["check", "trapped", "Trapped crowd's exit (their average price)", false], ["check", "trapband", "Trapped buyers / sellers band (last 10 min)", false]]],
+    ["check", "trapped", "Trapped crowd's exit (their average price)", false], ["check", "trapband", "Trapped buyers / sellers band (last 10 min)", false],
+    ["check", "stopRisk", "Stop $ label: what you lose if the stop is hit (shares or contracts)", true], ["range", "stopRiskPx", "Stop $ label size (px)", 10, 8, 16, true]]],
   ["INDICATORS", [["check", "vwap", "VWAP", true, true], ["check", "mas", "Moving averages", true, true], ["check", "matags", "MA price tags", true, true],
     ["check", "bb", "Bollinger bands", true, true]]],
 ];
@@ -2450,6 +2451,7 @@ const CPIN = (() => { try { return Object.assign({book: "auto", tape: "auto"}, s
 function setPin(which, v){ CPIN[which] = v; store.set("cpin", CPIN); P.book.last = null; P.tape.last = null; renderContractL2(); renderContractTape(); renderSwitchStrips(); poll(true); }
 function contractMode(which){
   if (!(OC.link && OC.link.sym === curSym)) return false;
+  const sd = paneFor(curSym); if (sd && sd.position && sd.position.qty) return false;   // holding the shares: the stock's Level II / T&S stay the stock's
   if (CPIN[which] === "stock") return false;
   const own = P[which === "tape" ? "otape" : "obook"];
   return !(own && own.el.offsetParent !== null);

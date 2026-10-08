@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261008-0448">
+<meta name="build" content="20261008-0519">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -2133,7 +2133,8 @@ function heldContract(d){
   return linked || (typeof contractFor === "function" ? contractFor(d.symbol, state) : null) || held[0];
 }
 function optHeldMenu(d, price){
-  const c = heldContract(d); if (!c) return "";
+  if (d.position && d.position.qty) return "";      // shares too: the stock chart is the shares', the contract lives on the OPTION CHART
+  const c = heldContract(d); if (!c || (T().opt_indep || []).includes(c.key)) return "";
   const parts = String(c.key).split(" "), right = (parts[2] || "").slice(-1), call = right === "C";
   const last = d.last, est = d.opt_est && d.opt_est.key === c.key && !d.opt_est.wait ? d.opt_est : null;
   const val = S => est ? Math.max(0.01, est.mid + est.delta * (S - est.spot) + 0.5 * (est.gamma || 0) * (S - est.spot) ** 2) : null;
@@ -2153,6 +2154,42 @@ async function optHeldLine(d, role, price, key, qty){
   if (role === "stop") await post("/api/trade/opt_stop", {key, price: null});     // one stop: the line on the stock chart
   toast(`${d.symbol} ${role.toUpperCase()} ${px(price)}: ${d.symbol} ${role === "stop" ? "through" : "at"} ${px(price)} sells your ${key.split(" ").slice(2).join(" ")}`, true);
   poll(true);
+}
+/* STOP $: a small tag on the stop line, what you lose if it is hit: the shares on the stock chart, the contract on
+   the option chart, and (no shares) the contract the stock chart's lines trade, estimated from its delta / gamma.
+   Follows the line while you drag it. SETTINGS (⚙): on / off and its size. */
+function stopRiskTag(p, d, g, y, lo, hi, plotW, bracketOn){
+  const lv = d.user_levels || [], dl = p.dragLevel;
+  const at = l => dl && dl.role === l.role && Math.abs(dl.from - l.price) < 1e-6 ? dl.price : l.price;
+  const stops = lv.filter(l => l.role === "stop" || l.role === "alt_stop").map(l => ({l, price: at(l)}));
+  if (!stops.length || d.last == null) return;
+  let loss = null, what = "", sp = null;
+  const pos = d.position;
+  if (p.opt){
+    if (!pos || !pos.qty || !pos.avg_cost) return;
+    sp = stops[0].price; const mult = d.mult || 100;
+    loss = (sp - pos.avg_cost) * mult * pos.qty; what = `${Math.abs(pos.qty)} ct`;
+  } else if (pos && pos.qty && pos.avg_cost){
+    if (bracketOn) return;                                  // the working stop order already carries its $ tag
+    const long = pos.qty > 0, s = stops.filter(x => long ? x.price < d.last : x.price > d.last).sort((a, b) => Math.abs(a.price - d.last) - Math.abs(b.price - d.last))[0];
+    if (!s) return;
+    sp = s.price; loss = (sp - pos.avg_cost) * pos.qty; what = `${sz(Math.abs(pos.qty))} sh`;
+  } else {
+    const e = d.opt_est; if (!e || !e.held || e.wait || !e.entry || (T().opt_indep || []).includes(e.key)) return;
+    const right = String(e.key).split(" ")[2].slice(-1), call = right === "C";
+    const s = stops.filter(x => call ? x.price < d.last : x.price > d.last).sort((a, b) => Math.abs(a.price - d.last) - Math.abs(b.price - d.last))[0];
+    if (!s) return;
+    sp = s.price; const v = Math.max(0.01, e.mid + e.delta * (sp - e.spot) + 0.5 * (e.gamma || 0) * (sp - e.spot) ** 2);
+    loss = (v - e.entry) * 100 * e.held; what = `${e.held} ct`;
+  }
+  if (loss == null || sp < lo || sp > hi) return;
+  const fs = Math.max(8, Math.min(16, +store.get("stopRiskPx", 10) || 10));
+  const txt = `${loss >= 0 ? "+" : "−"}$${Math.abs(loss).toFixed(0)} · ${what}`;
+  g.font = `bold ${fs}px ui-monospace, Menlo, Consolas, monospace`;
+  const w = g.measureText(txt).width + 8, h = fs + 5, yy = y(sp), x = plotW - w - 6, top = yy - h - 2;
+  g.fillStyle = loss < 0 ? "#b3123a" : "#0b7a4b"; g.fillRect(x, top, w, h);
+  g.fillStyle = "#ffffff"; g.fillText(txt, x + 4, top + fs + 1);
+  g.font = "11px ui-monospace, Menlo, Consolas, monospace";
 }
 function chartMenu(p, v, x, y, price){
   if (p.opt && typeof optChartMenu === "function") return optChartMenu(p, x, y, price);
@@ -2839,6 +2876,7 @@ function drawOne(p, cv, v, isFoot){
     if (l.role === "second_entry" && !isFoot) v.seChipY = yy;     // its order-status chip is drawn on top, after the candles
   }
 
+  if (!isFoot && CS("stopRisk")) stopRiskTag(p, d, g, y, lo, hi, plotW, bracketOn);
   const clean = isFoot || store.get("clean", true);
   // PS60: the second-entry line (the new high / low to get back through) and sneaky pivots
   if (d.ps60 && !clean){
@@ -3097,11 +3135,13 @@ function drawOne(p, cv, v, isFoot){
       g.strokeStyle = col; g.lineWidth = drag ? 2.5 : 2; g.setLineDash([]);
       g.beginPath(); g.moveTo(0, yy); g.lineTo(plotW, yy); g.stroke();
       const pnl = (gp - ent) * gr.qty * (long ? 1 : -1);
-      const tag = `${stop ? "STOP" : gr.kind === "part" ? "PARTIAL" : "TGT"} ${sz(gr.qty)}  ${pnl >= 0 ? "+" : "−"}$${Math.abs(pnl).toFixed(0)}`;
-      g.font = "bold 11px ui-monospace, Menlo, Consolas, monospace";
-      const tw = g.measureText(tag).width + 26;
-      g.fillStyle = col; g.fillRect(plotW - tw - 4, yy - 9, tw, 18);
-      g.fillStyle = "#ffffff"; g.fillText("≡ " + tag, plotW - tw + 2, yy + 4);   // ≡ = grab here
+      const tag = stop ? `STOP ${pnl >= 0 ? "+" : "−"}$${Math.abs(pnl).toFixed(0)} · ${sz(gr.qty)} sh`
+        : `${gr.kind === "part" ? "PARTIAL" : "TGT"} ${sz(gr.qty)}  ${pnl >= 0 ? "+" : "−"}$${Math.abs(pnl).toFixed(0)}`;
+      const fs = stop ? Math.max(8, Math.min(16, +store.get("stopRiskPx", 10) || 10)) : 11;     // the stop $ tag: SETTINGS size
+      g.font = `bold ${fs}px ui-monospace, Menlo, Consolas, monospace`;
+      const tw = g.measureText(tag).width + 2 * fs + 4;
+      g.fillStyle = col; g.fillRect(plotW - tw - 4, yy - (fs + 7) / 2, tw, fs + 7);
+      g.fillStyle = "#ffffff"; g.fillText("≡ " + tag, plotW - tw + 2, yy + fs / 2 - 1);   // ≡ = grab here
       g.fillStyle = col; g.fillRect(plotW, yy - 8, labelW, 16);
       g.fillStyle = "#ffffff"; g.fillText(px(gp), plotW + 3, yy + 4);
       g.font = "11px ui-monospace, Menlo, Consolas, monospace";
@@ -4170,7 +4210,8 @@ const CS_DEF = [
     ["select", "cross", "Crosshair", "auto", ["auto", "solid", "dashed", "dotted", "off"]], ["color", "crossCol", "Crosshair colour", ""]]],
   ["TRADING", [["check", "levels", "Your levels (pivot, 2nd entry, stop, target)", true], ["check", "orders", "Working order lines", true],
     ["check", "chip", "2nd entry order chip", true], ["check", "bigmoney", "Big option money (30 days) at its strikes", false],
-    ["check", "trapped", "Trapped crowd's exit (their average price)", false], ["check", "trapband", "Trapped buyers / sellers band (last 10 min)", false]]],
+    ["check", "trapped", "Trapped crowd's exit (their average price)", false], ["check", "trapband", "Trapped buyers / sellers band (last 10 min)", false],
+    ["check", "stopRisk", "Stop $ label: what you lose if the stop is hit (shares or contracts)", true], ["range", "stopRiskPx", "Stop $ label size (px)", 10, 8, 16, true]]],
   ["INDICATORS", [["check", "vwap", "VWAP", true, true], ["check", "mas", "Moving averages", true, true], ["check", "matags", "MA price tags", true, true],
     ["check", "bb", "Bollinger bands", true, true]]],
 ];
@@ -6583,6 +6624,7 @@ const CPIN = (() => { try { return Object.assign({book: "auto", tape: "auto"}, s
 function setPin(which, v){ CPIN[which] = v; store.set("cpin", CPIN); P.book.last = null; P.tape.last = null; renderContractL2(); renderContractTape(); renderSwitchStrips(); poll(true); }
 function contractMode(which){
   if (!(OC.link && OC.link.sym === curSym)) return false;
+  const sd = paneFor(curSym); if (sd && sd.position && sd.position.qty) return false;   // holding the shares: the stock's Level II / T&S stay the stock's
   if (CPIN[which] === "stock") return false;
   const own = P[which === "tape" ? "otape" : "obook"];
   return !(own && own.el.offsetParent !== null);

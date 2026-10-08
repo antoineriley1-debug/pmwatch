@@ -517,3 +517,34 @@ class ExpiryAndHaltTests(unittest.TestCase):
         e.on_halt("AAA", 2, 10.0); e.on_halt("AAA", 2, 11.0); e.on_halt("AAA", 0, 300.0)
         self.assertEqual(said, ["HALTED", "RESUMED"])
         self.assertTrue(any("volatility pause" in a["text"] for a in e.alerts))
+
+
+class SharesAndContractIndependentTests(unittest.TestCase):
+    """Shares AND a contract on the same stock: each chart trades its own. The stock chart's STOP line is the shares'
+    stop only; the contract keeps its own stop (set on the OPTION CHART) and the stock lines never touch it."""
+    def test_stock_stop_takes_only_the_shares(self):
+        import time as _t
+        from twiney import options as _o
+        e, tr, broker = make(); T = _t.time()
+        e.on_l1("AAA", "last", 10.00, T)
+        exp = e.option_chain("AAA", None, "C", T)["expiry"]
+        kc = _o.key_of("AAA", exp, 10, "C")
+        self.assertTrue(tr.submit("AAA", "BUY", 10.0, 100, T, bracket=False)["ok"]); quote(e, 9.99, 10.00, T + 0.5)
+        self.assertTrue(tr.opt_open("AAA", exp, 10, "C", "BUY", 1, None, T + 0.5)["ok"]); e.practice_opt_tick(T + 1)
+        self.assertEqual(broker.position("AAA"), 100); self.assertEqual(int(e.opt_positions[kc]["qty"]), 1)
+        e.set_play_level("AAA", "stop", 9.80, T + 1, source="chart"); tr.watchdog(T + 1.5)
+        self.assertNotIn(kc, tr.snapshot()["opt_stops"])                  # the stock line is NOT the contract's stop
+        quote(e, 9.75, 9.76, T + 2); quote(e, 9.75, 9.76, T + 2.5); tr.watchdog(T + 3); e.practice_opt_tick(T + 3.5); tr.watchdog(T + 4)
+        self.assertEqual(broker.position("AAA"), 0)                       # the shares stopped out
+        self.assertEqual(int(e.opt_positions[kc]["qty"]), 1)              # the call is still on
+
+    def test_with_no_shares_the_stock_line_still_drives_the_contract(self):
+        import time as _t
+        from twiney import options as _o
+        e, tr, broker = make(); T = _t.time()
+        e.on_l1("AAA", "last", 10.00, T)
+        exp = e.option_chain("AAA", None, "C", T)["expiry"]
+        kc = _o.key_of("AAA", exp, 10, "C")
+        tr.opt_open("AAA", exp, 10, "C", "BUY", 1, None, T); e.practice_opt_tick(T + 1)
+        e.set_play_level("AAA", "stop", 9.80, T + 1, source="chart")
+        self.assertEqual(tr.snapshot()["opt_stops"][kc]["source"], "chart")
