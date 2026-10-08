@@ -1729,6 +1729,10 @@ class Engine:
         seen = self.och_seen.get(st.symbol)
         if not key and seen and t - seen[1] < 30.0:
             key = seen[0]
+        if not key:                     # the contract you are IN on this stock (the last one bought when several)
+            held = [(k, p) for k, p in self.opt_positions.items() if p.get("symbol") == st.symbol and (p.get("qty") or 0) > 0]
+            if held:
+                key = max(held, key=lambda kp: kp[1].get("t") or kp[1].get("opened") or 0)[0]
         if not key:
             return None
         try:
@@ -1754,6 +1758,7 @@ class Engine:
         else:
             entry, basis = mid, "now"
         out = {"key": key, "label": label, "held": held, "entry": round(entry, 2), "basis": basis, "lines": {},
+               "mid": round(mid, 4), "delta": delta, "gamma": gamma, "spot": spot,     # the page prices a right-click with these
                "alt": lines is not play}          # the contract rides the OTHER side's lines (a put on a long play)
         for role in ("second_entry", "stop", "target"):
             S = lines.get(role)
