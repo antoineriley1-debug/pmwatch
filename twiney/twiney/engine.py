@@ -923,7 +923,26 @@ class Engine:
             bk = (st.__dict__.get("_rl_basket") or {}).get("rows") or {}
             walk = inst.walking([{"side": r["side"], "price": r["price"], "usd": round(r["shares"] * r["price"]), "first": r["first"]}
                                  for r in bk.values()], t, ic)
-            v = {"program": prog, "tod": tod, "fund": fund[:6], "walk": walk}
+            flev = inst.fund_levels(list(st.trackers.values()), walk, list(st.dark.levels.values()), prog, ic)
+            gd = inst.guides(prog, st.price(), vw, (t + off) % 86400, ic)
+            # a program on the other side of YOUR trade (shares, or a call = long / a put = short)
+            mine = None
+            try:
+                q = int((self._position_view(st.symbol, st.price()) or {}).get("qty") or 0)
+                if q:
+                    mine = "long" if q > 0 else "short"
+                else:
+                    for p in self.opt_positions.values():
+                        if p.get("symbol") == st.symbol and int(p.get("qty") or 0):
+                            mine = "long" if (p.get("right") == "C") == (int(p["qty"]) > 0) else "short"
+                            break
+            except Exception:
+                mine = None
+            against = None
+            if prog and mine and ((prog["side"] == "BUY") != (mine == "long")):
+                against = (f"STEADY {'SELLING' if prog['side'] == 'SELL' else 'BUYING'} AGAINST YOUR {mine.upper()}: "
+                           f"~{prog['part']}% of volume since {prog['since']}")
+            v = {"program": prog, "tod": tod, "fund": fund[:6], "walk": walk, "levels": flev[:8], "guides": gd, "against": against, "mine": mine}
         except Exception:
             log.exception("inst %s", st.symbol)
             v = None
@@ -944,18 +963,26 @@ class Engine:
             calls.append((("PROG", pg["side"]), what,
                           f"{what} (program-like) · net {'buying' if pg['side'] == 'BUY' else 'selling'} in {pg['won']} of {pg['slots']} 5-min slots · ~{pg['part']}% of volume · since {pg['since']} · net {'bought' if pg['side'] == 'BUY' else 'sold'} ≈${pg['usd']:,}",
                           f"{st.symbol}. Steady {'buying' if pg['side'] == 'BUY' else 'selling'} against the market: {pg['won']} of the last {pg['slots']} five minute slots, about {pg['part']:.0f} percent of volume{vw}."))
-        for f in v.get("fund") or []:
+        for f in v.get("levels") or []:
+            if f["score"] < float(ic.get("fund_call", 70)):
+                continue
             who = "BUYER" if f["side"] == "bid" else "SELLER"
-            calls.append((("FUND", f["side"], round(f["price"], 2)), f"FUND-STYLE {who}",
-                          f"FUND-STYLE {who} {fmt_price(f['price'])} · {f['size']:,} at a time × {f['refills']} refills · ${f['usd']:,}",
-                          f"{st.symbol}. Fund style {who.lower()} at {fmt_price(f['price'])}: {f['size']:,} at a time, {f['refills']} refills."))
+            calls.append((("FUND", f["side"], round(f["price"], 2)), f"FUND {who}",
+                          f"FUND {who} {fmt_price(f['price'])} · score {f['score']} · " + " · ".join(f["why"]),
+                          f"{st.symbol}. Fund {who.lower()} at {fmt_price(f['price'])}, score {f['score']}. " + ", ".join(f["why"][:2]) + "."))
         wk = v.get("walk")
         if wk:
+            dist = wk["dir"] == "down"
             calls.append((("WALK", wk["side"], wk["steps"][-1]), f"{wk['side']} WALKING {wk['dir'].upper()}",
-                          f"{wk['side']} WALKING {wk['dir'].upper()} · " + " → ".join(fmt_price(p) for p in wk["steps"]),
-                          f"{st.symbol}. {wk['side'].capitalize()} walking {wk['dir']}: " + ", ".join(fmt_price(p) for p in wk["steps"][-3:]) + "."))
+                          f"{wk['side']} WALKING {'IT DOWN (distribution)' if dist else 'IT UP (accumulation)'} · " + " → ".join(fmt_price(p) for p in wk["steps"]),
+                          f"{st.symbol}. {'Seller walking it down' if dist else 'Buyer walking it up'}: {'selling' if dist else 'buying'} at " + ", then ".join(fmt_price(p) for p in wk["steps"][-4:]) + (". Distribution." if dist else ". Accumulation.")))
+        if v.get("against"):
+            calls.append((("AGAINST", v["against"][:30]), "PROGRAM AGAINST YOU", v["against"], f"{st.symbol}. Warning. " + v["against"].lower().replace("~", "about ") + "."))
+        gd = [g for g in (v.get("guides") or []) if g.startswith("Last hour")]
+        if gd:
+            calls.append((("LASTHOUR",), "INTO THE CLOSE", gd[0], f"{st.symbol}. {gd[0]}."))
         for key, label, text, words in calls:
-            if t - said.get(key, -1e9) < rep:
+            if t - said.get(key, -1e9) < (600.0 if key[0] == "AGAINST" else rep):
                 continue
             said[key] = t
             alert = {"t": t, "symbol": st.symbol, "label": label, "price": fmt_price(st.price() or 0), "side": "bid" if "BUY" in label else "ask",

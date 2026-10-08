@@ -977,3 +977,9 @@ table.lad .dkl{display:inline-block;margin-left:4px;font:800 calc(8.5px * var(--
 .instrip .ih{color:#e8b931;letter-spacing:.06em;margin-right:4px} .instrip .b{color:var(--buy)} .instrip .s{color:var(--sell)} .instrip .sc{font-size:9px;padding:0 3px;border-radius:2px;background:#2c3644;color:#fff}
 .instrip .hot{color:#ffb347} .instrip .cold{color:#7b889e} .instrip .dkcar{float:right;color:var(--dim)}
 .inbox{background:#16130a;border-bottom-color:#3a3214} .inbox .dkh{color:#e8b931}
+
+/* FUND score tag on the ladder; the program-against-you warning and the guide on the T&S */
+table.lad .fdl{display:inline-block;margin-left:4px;font:800 calc(8.5px * var(--ladz,1)) var(--mono);padding:0 3px;border-radius:2px;color:#fff;vertical-align:1px}
+table.lad .fdl.b{background:#1b7a43;box-shadow:0 0 6px #26d07c88} table.lad .fdl.s{background:#9a2433;box-shadow:0 0 6px #ff4d5e88}
+.instwarn{font:800 11px var(--mono);padding:3px 6px;background:#5a1820;color:#fff;border-bottom:1px solid #ff4d5e;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.instguide{font:10.5px var(--mono);padding:1px 6px 2px;color:#e8d9a8;border-bottom:1px solid #202124;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}

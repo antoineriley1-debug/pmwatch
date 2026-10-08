@@ -103,7 +103,7 @@ def alert_text(alert, play):
         shown = alert.get("peak_shown") or alert.get("showing") or 0
         did = "bought" if side == "bid" else "sold"            # a reload buyer has BOUGHT that much, a seller has SOLD it
         hidden = (f" He only ever showed {shares(shown)} on the {'bid' if side == 'bid' else 'ask'} — {shares(n)} traded, so he put it "
-                  f"back {alert.get('refreshes', 0)} times. The rest was hidden size (an iceberg).") if shown and n > shown else \
+                  f"back {alert.get('refreshes', 0)} times. The rest was large size he kept hidden.") if shown and n > shown else \
                  f" He put it back {alert.get('refreshes', 0)} times."
         back = alert.get("back")
         if back:

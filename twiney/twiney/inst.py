@@ -7,7 +7,7 @@ fingerprints of a large parent order sliced into small child orders by an execut
   Where it fills against VWAP says how it is working the benchmark (a buyer under VWAP is buying the dips).
 - TIME OF DAY: this slot's volume against the stock's own normal for that slot (the last two months of 5-minute bars):
   "x1.4 for 11:05" — busy for the time, not just busy.
-- FUND-STYLE RELOAD: a reloader whose refills keep showing the SAME size (an iceberg's display size: 200, 200, 200 ...),
+- FUND-STYLE RELOAD: a reloader whose refills keep showing the SAME size (large size shown a little at a time: 200, 200, 200 ...),
   soaking up everything that hits it.
 - WALKING: the same side's reloaders stepping up (a buyer accumulating behind price) or down (a seller distributing).
 """
@@ -131,7 +131,7 @@ def program(slots, cur_slot, vwap, cfg, mkt=None):
 
 
 def fund_reloads(trackers, t, cfg):
-    """Reloaders whose refills keep showing the same size (an iceberg's display size)."""
+    """Reloaders whose refills keep showing the same size (large size shown a little at a time)."""
     out = []
     for tr in trackers:
         rs = list(getattr(tr, "refill_sizes", ()) or ())
@@ -167,3 +167,67 @@ def walking(basket_rows, t, cfg):
             if best is None or usd > best["usd"]:
                 best = cand
     return best
+
+
+def fund_levels(trackers, walk, dark_levels, prog, cfg):
+    """ONE FUND SCORE PER LEVEL (0-100): how much a reload level looks like a fund working size there.
+      same size  35  the refills keep showing the same size (large size shown a little at a time)
+      large size 20  far more traded there than was ever shown at once
+      walking    20  the level is a step of a side walking the price (up = accumulation, down = distribution)
+      dark       15  off-exchange money printed at that price
+      flow       10  steady one-sided flow on the same side (program-like)"""
+    out = []
+    darks = {round(float(d["price"]), 2): float(d["usd"]) for d in (dark_levels or [])}
+    for tr in trackers:
+        if not (getattr(tr, "proven", False) or str(getattr(tr, "state", "")) == "RELOAD"):
+            continue
+        side = "bid" if str(tr.side).lower().startswith("b") else "ask"
+        p = float(tr.price)
+        why, sc = [], 0.0
+        rs = list(getattr(tr, "refill_sizes", ()) or ())
+        if len(rs) >= 3:
+            size, n = Counter(rs).most_common(1)[0]
+            share = n / len(rs)
+            if share >= 0.5:
+                sc += 35 * min(1.0, (share - 0.5) / 0.4 + 0.25) * min(1.0, len(rs) / 6)
+                why.append(f"same size {size:,} × {n}")
+        absorbed = float(tr.absorbed_all + tr.absorbed_total)
+        peak = float(getattr(tr, "peak_displayed", 0) or 0)
+        if peak > 0 and absorbed >= 2 * peak:
+            sc += 20 * min(1.0, (absorbed / peak - 1) / 5)
+            why.append(f"large size: {absorbed:,.0f} traded, never over {peak:,.0f} shown")
+        if walk and ((walk["side"] == "BUYER") == (side == "bid")) and any(abs(p - x) < 1e-6 for x in walk["steps"]):
+            sc += 20
+            why.append("walking " + walk["dir"] + (" (accumulation)" if walk["dir"] == "up" else " (distribution)"))
+        du = sum(v for k, v in darks.items() if abs(k - p) <= 0.011)
+        if du >= 100000:
+            sc += 15 * min(1.0, du / 1000000)
+            why.append(f"dark ${du / 1e6:.1f}M" if du >= 1e6 else f"dark ${du / 1e3:.0f}K")
+        if prog and (prog["side"] == "BUY") == (side == "bid"):
+            sc += 10
+            why.append(f"steady {'buying' if side == 'bid' else 'selling'}")
+        out.append({"price": p, "side": side, "score": round(sc), "why": why, "usd": round(absorbed * p), "here": float(tr.displayed or 0) > 0})
+    out.sort(key=lambda x: -x["score"])
+    return [x for x in out if x["score"] >= float(cfg.get("fund_show", 50))]
+
+
+def guides(prog, last, vwap, ny_sec, cfg):
+    """What a running program means for the trade (Dan's framework): which side the dips / pops get taken, and what
+    the time of day does to the algo."""
+    if not prog:
+        return []
+    out, buy = [], prog["side"] == "BUY"
+    if last is not None and vwap:
+        if buy and last >= vwap:
+            out.append("Steady buying, price over VWAP: dips to VWAP are likely bought. Favours long 2nd entries near VWAP; pullbacks shallower")
+        elif not buy and last <= vwap:
+            out.append("Steady selling, price under VWAP: pops to VWAP are likely sold. Favours short 2nd entries near VWAP; bounces weaker")
+        elif buy:
+            out.append("Steady buying while under VWAP: the algo is buying the discount. Watch for a reclaim of VWAP")
+        else:
+            out.append("Steady selling while over VWAP: the algo is selling into strength. Watch for a loss of VWAP")
+    if 41400 <= ny_sec < 50400:
+        out.append("Midday: the algo slows down. Expect quiet, shallow pullbacks rather than reversals")
+    elif 54000 <= ny_sec < 57600:
+        out.append(f"Last hour: the algo speeds up to finish. Expect a push {'up' if buy else 'down'} into the close")
+    return out

@@ -1488,7 +1488,7 @@ function reloadMoney(r, side){
   const bk = r[side + "_back"], all = r[side + "_absorbed_all"] || 0;
   const backTxt = bk ? ` BACK — the same ${who.toLowerCase()}, visit ${bk.n}: ${bk.prior === "PULLED" ? "pulled" : "cleaned up"} ${Math.max(1, Math.round((bk.away || 0) / 60))} min ago, refilling again now; ${side === "bid" ? "bought" : "sold"} ${Math.round(all).toLocaleString("en-US")} shares across every visit.` : "";
   return {n, usd, peak, back: bk, all, text: `RELOAD ${who} at ${px(r.price)}: he has ${side === "bid" ? "bought" : "sold"} ${nS} shares at ${px(r.price)} = ${usdK(usd)}.` +
-    (peak && n > peak ? ` He only ever showed ${pS} on the ${side} — ${nS} traded, so he put it back ${rf} times. The rest was hidden size (an iceberg).` : ` He put it back ${rf} times.`) + backTxt +
+    (peak && n > peak ? ` He only ever showed ${pS} on the ${side} — ${nS} traded, so he put it back ${rf} times. The rest was large size he kept hidden.` : ` He put it back ${rf} times.`) + backTxt +
     ` ${side === "bid" ? "Price has trouble going lower" : "Price has trouble going higher"} while he is there.`};
 }
 function flowSide(r, cp){
@@ -1659,7 +1659,9 @@ function ladderCleanHTML(L){
     // a whole / half dollar gets a gold star: emphasis only (the reloaders get the glow)
     const star = Math.abs(r.price * 2 - Math.round(r.price * 2)) < 1e-6 ? `<span class="rstar" title="${Math.abs(r.price - Math.round(r.price)) < 1e-6 ? "whole" : "half"} dollar">★</span>` : "";
     const dkl = (window._darkLv || {})[(+r.price).toFixed(2)];
-    const dkc = dkl ? `<span class="dkl" title="dark pool today at ${px(r.price)}: ${sz(dkl.shares)} shares, ${dkl.prints} prints${dkl.big ? `, ${dkl.big} large` : ""}">D ${usdK(dkl.usd)}</span>` : "";
+    const fl = (window._fundLv || {})[(+r.price).toFixed(2) + "b"] || (window._fundLv || {})[(+r.price).toFixed(2) + "s"];
+    const flc = fl ? `<span class="fdl ${fl.side === "bid" ? "b" : "s"}" title="FUND ${fl.side === "bid" ? "BUYER" : "SELLER"} score ${fl.score}: ${esc(fl.why.join(" · "))}">F${fl.score}</span>` : "";
+    const dkc = flc + (dkl ? `<span class="dkl" title="dark pool today at ${px(r.price)}: ${sz(dkl.shares)} shares, ${dkl.prints} prints${dkl.big ? `, ${dkl.big} large` : ""}">D ${usdK(dkl.usd)}</span>` : "");
     h += `<tr class="${cls}" data-price="${r.price}"${lead ? ` style="--klc:${lead.c};--klf:${lead.c}55"` : ""}>${urg(r, "u_s")}${passive(r, "bid")}<td class="px">${star}${px(r.price)}${dkc}${tags ? `<span class="kts">${tags}</span>` : ""}</td>${passive(r, "ask")}${urg(r, "u_b")}</tr>`;
   }
   h += `</table><div class="legend lgc"><span><b class="sell">HIT</b> sellers now · <b class="buy">BID</b> buyers waiting · <b class="sell">ASK</b> sellers waiting · <b class="buy">LIFT</b> buyers now</span><span class="dim">bright = stacked · faded = pulled · R = reload${on ? " · click a size to trade" : ""}</span></div>`;
