@@ -376,7 +376,7 @@ class Engine:
         if tracker.back and label.startswith("RELOAD"):
             alert["back"] = dict(tracker.back)
         if label == "CLEANED UP":
-            st.consumed.append((t, float(tracker.price), alert["side"]))
+            st.consumed.append((t, float(tracker.price), alert["side"], alert["absorbed_all"]))
         if final:
             alert["size_before_gone"] = round(final["size_before_gone"])
             ah = st.absorb_hist.get((alert["side"], tracker.key))
@@ -997,8 +997,8 @@ class Engine:
                 pass
 
     def _ps60_reload(self, price, sym=None):
-        """Does a reload at this price count for PS60? Only at a whole or half dollar (x.00 / x.50), unless that rule
-        is switched off in SETTINGS > PS60 story. The Level II shows every reload either way."""
+        """Does a reload at this price count for PS60? Every real reload does (repeated execution at one price, how much
+        traded, whether price goes through once it is gone). SETTINGS > PS60 story can limit it to whole / half dollars."""
         if not (self.cfg.get("story") or {}).get("whole_half_reloads_only", True):
             return True
         from .story import qualifies
@@ -1111,8 +1111,9 @@ class Engine:
             if stage not in (ACTIVE, FADING):
                 continue
             reloads.append({"price": float(tr.price), "side": "bid" if tr.side == BID else "ask", "stage": stage,
-                            "absorbed": round(tr.absorbed_total)})
-        consumed = [{"price": p, "side": sd} for (ct, p, sd) in st.consumed if t - ct <= 60 and self._ps60_reload(p, st.symbol)]
+                            "absorbed": round(tr.absorbed_all + tr.absorbed_total)})
+        consumed = [{"price": c[1], "side": c[2], "absorbed": c[3] if len(c) > 3 else 0} for c in st.consumed
+                    if t - c[0] <= 60 and self._ps60_reload(c[1], st.symbol)]
         cur = int(t // BAR_SECONDS) * BAR_SECONDS
         mins = [[k] + list(st.bars[k][:5]) for k in sorted(st.bars)[-12:] if k <= cur]
         se_state = ((getattr(st, "_ps60_cache", None) or (0, {}))[1] or {}).get("state")

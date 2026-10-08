@@ -10,7 +10,7 @@ board and every call the desk already makes stay exactly as they are. This layer
                       52-week highs and lows + your own lines and zones (no automatic support / resistance)
     CONFLUENCE     -> locations that sit together are one place, not four: "MAJOR PS60 CONFLUENCE around $145.00"
     HIGH ATTENTION -> price close to any of them: everything below is read against THAT place
-    RELOADS        -> only a reload buyer / seller at a whole or half dollar (x.00 / x.50) counts for PS60
+    RELOADS        -> every confirmed reload buyer / seller counts; a whole / half dollar only gets a gold star
     OPTION FLOW    -> NOT YET CONFIRMED / DEVELOPING / CONFIRMED / CONFLICTING, always said with where price is
     PRICE RESPONSE -> is price doing what the flow and the tape say it should?
 
@@ -55,6 +55,15 @@ def qualifies(price, tick=0.01):
 
 def inst_name(p):
     return "whole dollar" if abs(p - round(p)) < 1e-6 else "half dollar"
+
+
+def round_tag(p):
+    """A gold star on a whole / half dollar (x.00 / x.50): a highlight, never a rule."""
+    return " ★" if qualifies(p) else ""
+
+
+def sh(n):
+    return f"{int(round(n or 0)):,}"
 
 
 # ---- the Daily chart -------------------------------------------------------------------------------------------
@@ -420,7 +429,7 @@ def edge_read(up, ctx, foc, se_state, pace, reloads, consumed, fs, resp, last, n
     """THE EDGE: seven independent reads, each asked the same question: does it agree with this move?
     DAILY (the 50-day framework, and the 200-day on the right side) · PS60 (a PS60 place, or the 2nd entry live) ·
     LOCATION (a major confluence: levels, moving averages, a zone together) · TAPE (fast, and the aggressive shares on
-    this side) · LEVEL II (an x.00 / x.50 reloader with you, or the one against you consumed) · FLOW (short-dated OTM
+    this side) · LEVEL II (a reloader with you, or the one against you consumed) · FLOW (short-dated OTM
     flow on this side, CONFIRMED; DEVELOPING counts half) · PRICE (responding the way the flow says).
     ROOM (the measured potential to the next supply / demand, not THIN against the ATR).
     It counts agreement, it does not invent odds: all but one agreeing is HIGH PROBABILITY, more than half BUILDING."""
@@ -465,7 +474,7 @@ def edge_read(up, ctx, foc, se_state, pace, reloads, consumed, fs, resp, last, n
     elif withme:
         add("LEVEL II", True, f"reload {'buyer' if up else 'seller'} holding {px(withme[0]['price'])}")
     else:
-        add("LEVEL II", None, "no x.00 / x.50 reloader here")
+        add("LEVEL II", None, "no reloader here")
     st_ = fs.get("state")
     add("FLOW", True if st_ == "CONFIRMED" else 0.5 if st_ == "DEVELOPING" else False,
         {"CONFIRMED": "option flow confirming", "DEVELOPING": "option flow developing", "CONFLICTING": "option flow against",
@@ -514,7 +523,7 @@ class Story:
 
 def build(sb, t, last, tick, atr, play, se_state, ctx, points, zones, conf, fr, pace, reloads, consumed, mins, cfg):
     """One read: the line for now, plus whatever new moments go on the feed. sb: the symbol's Story.
-    reloads: qualifying reloaders [{price, side, stage, absorbed}] (x.00 / x.50 only). consumed: qualifying reloaders
+    reloads: confirmed reloaders [{price, side, stage, absorbed}]. consumed: reloaders
     cleaned up in the last minute [{price, side}]."""
     out = {"ctx": ctx, "attention": False, "focus": None, "now": None, "tone": "neutral", "flow": None, "response": None, "edge": None, "room": None,
            "confluence": conf, "zones": zones, "reloads": reloads, "said": []}
@@ -661,22 +670,25 @@ def build(sb, t, last, tick, atr, play, se_state, ctx, points, zones, conf, fr, 
     tw = tape_words(pace, up)
     if tw:
         parts.append(tw)
-    # the reloaders at this place (only x.00 / x.50 count)
+    # the reloaders at this place (any price: round numbers only get a star)
     at_rl = [r for r in reloads if foc["lo"] - near <= r["price"] <= foc["hi"] + near]
     for r in at_rl[:1]:
         who = "seller" if r["side"] == "ask" else "buyer"
-        inst = inst_name(r["price"])
-        parts.append(f"Reload {who} sitting on the {inst} {px(r['price'])}")
+        # the tell: repeated execution at one price and how much traded there (round numbers only highlighted)
+        took = (f"buyers absorbed {sh(r.get('absorbed'))} shares" if who == "seller" else f"sellers hit him for {sh(r.get('absorbed'))} shares") if r.get("absorbed") else ""
+        what = f"{who.capitalize()} reloading at {px(r['price'])}{round_tag(r['price'])}" + (f" · {took}" if took else "")
+        parts.append(what)
         note("reload:" + str(r["price"]) + r["side"], r.get("stage") or "RELOADING",
-             f"{head[0].upper() + head[1:]}. Reload {who} on the {inst} {px(r['price'])}: {'supply' if who == 'seller' else 'demand'} sitting on it", "warn", loud=True)
+             f"{head[0].upper() + head[1:]}. {what}: {'supply' if who == 'seller' else 'demand'} sitting on it", "warn", loud=True)
         bp = (pace or {}).get("buy_pct")
         if bp is not None and ((who == "seller" and bp >= 60) or (who == "buyer" and bp <= 40)):
             parts.append(f"{'Buyers keep lifting' if who == 'seller' else 'Sellers keep hitting'} {px(r['price'])} and the {who} keeps reloading")
     for c in consumed:
         if foc["lo"] - near <= c["price"] <= foc["hi"] + near:
             who = "seller" if c["side"] == "ask" else "buyer"
-            bit = (f"Reload {who} CLEANED UP at {px(c['price'])}. {foc['name'][0].upper() + foc['name'][1:]} "
-                   f"{'breaking' if who == 'seller' else 'breaking down'}")
+            # his liquidity is gone and price went through: exhausted
+            bit = (f"{who.capitalize()} exhausted at {px(c['price'])}" + (f" after {sh(c.get('absorbed'))} shares" if c.get("absorbed") else "")
+                   + f" · {'buyers breaking through' if who == 'seller' else 'sellers breaking through'}")
             parts.insert(0, bit)
             note("consumed:" + str(c["price"]), c["side"], bit + (f". {fs['text'][0].upper() + fs['text'][1:]}" if fs["state"] in ("CONFIRMED", "DEVELOPING") else ""),
                  "bull" if who == "seller" else "bear", loud=True)

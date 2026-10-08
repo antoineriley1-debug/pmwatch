@@ -163,16 +163,16 @@ class StoryRunTests(unittest.TestCase):
                            flow=flow, pace={"state": "FAST", "buy_pct": 72, "ratio": 1.7})
         self.assertTrue(out["attention"])
         self.assertIn("major PS60 confluence around 145.00", out["now"])
-        self.assertIn("Reload seller sitting on the whole dollar 145.00", out["now"])
+        self.assertIn("Seller reloading at 145.00 ★ · buyers absorbed", out["now"])
         self.assertIn("Buyers keep lifting 145.00 and the seller keeps reloading", out["now"])
         self.assertIn("The flow is starting, not confirmed yet", out["now"])
-        self.assertTrue(any("Reload seller on the whole dollar 145.00: supply sitting on it" in s["text"] for s in out["said"]))
+        self.assertTrue(any("Seller reloading at 145.00 ★" in s["text"] and "supply sitting on it" in s["text"] for s in out["said"]))
         # consumed: through 145 and the prior-day high, calls building
         flow = prints("C", 500_000, 5, t + 120)
         out = self.run_one(sb, t + 120, 145.12, consumed=[{"price": 145.0, "side": "ask"}], flow=flow,
                            pace={"state": "SURGE", "buy_pct": 80, "ratio": 3.0},
                            mins=[[t - 300 + 60 * k, c, c, c, c, 1] for k, c in enumerate((144.60, 144.75, 144.90, 145.0, 145.05, 145.12))])
-        self.assertIn("Reload seller CLEANED UP at 145.00", out["now"])
+        self.assertIn("Seller exhausted at 145.00 · buyers breaking through", out["now"])
         self.assertIn("The dough is here: flow confirming", out["now"])
         self.assertEqual(out["tone"], "bull")
         # pull back to the level and hold it

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261008-0611">
+<meta name="build" content="20261008-0653">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -1270,6 +1270,9 @@ table.lad.clean td.sz.rl.rl-live .szn{color:#fff;font-weight:800}
 .rbk-t td.gone{opacity:.45} .rbk-t td i{display:block;font-style:normal;font-size:9px;color:#fff;opacity:.85}
 .rbk-t td.b.here{background:#14532f;box-shadow:inset 0 0 0 1px #37e08c} .rbk-t td.s.here{background:#5a1820;box-shadow:inset 0 0 0 1px #ff6b7a}
 .rbk-t tr.atpx td.px{background:#e8b931;color:#111} .rbk-t tr.tot td{border-top:1px solid #3a4656;font-weight:800;padding-top:3px}
+
+/* whole / half dollars: a small gold star by the price (emphasis only) */
+table.lad .rstar{color:#ffcc33;font-size:calc(9px * var(--ladz,1));margin-right:3px;text-shadow:0 0 4px #ffcc3399;vertical-align:1px}
 
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
@@ -2569,7 +2572,9 @@ function ladderCleanHTML(L){
     const appr = dt == null ? "" : dt <= 1 ? "kl-at" : dt <= near ? "kl-near" : "";
     const cls = [r.best_bid ? "best-bid" : "", r.best_ask ? "best-ask" : "", r.last ? "lastpx" : "", tags ? "keyrow " + lvk : "", appr, hot ? "keyhot" : "", ...new Set(mine),
       (r.bid_state === "RELOAD" || r.bid_proven) ? "rl-bid" : "", (r.ask_state === "RELOAD" || r.ask_proven) ? "rl-ask" : ""].join(" ");
-    h += `<tr class="${cls}" data-price="${r.price}"${lead ? ` style="--klc:${lead.c};--klf:${lead.c}55"` : ""}>${urg(r, "u_s")}${passive(r, "bid")}<td class="px">${px(r.price)}${tags ? `<span class="kts">${tags}</span>` : ""}</td>${passive(r, "ask")}${urg(r, "u_b")}</tr>`;
+    // a whole / half dollar gets a gold star: emphasis only (the reloaders get the glow)
+    const star = Math.abs(r.price * 2 - Math.round(r.price * 2)) < 1e-6 ? `<span class="rstar" title="${Math.abs(r.price - Math.round(r.price)) < 1e-6 ? "whole" : "half"} dollar">★</span>` : "";
+    h += `<tr class="${cls}" data-price="${r.price}"${lead ? ` style="--klc:${lead.c};--klf:${lead.c}55"` : ""}>${urg(r, "u_s")}${passive(r, "bid")}<td class="px">${star}${px(r.price)}${tags ? `<span class="kts">${tags}</span>` : ""}</td>${passive(r, "ask")}${urg(r, "u_b")}</tr>`;
   }
   h += `</table><div class="legend lgc"><span><b class="sell">HIT</b> sellers now · <b class="buy">BID</b> buyers waiting · <b class="sell">ASK</b> sellers waiting · <b class="buy">LIFT</b> buyers now</span><span class="dim">bright = stacked · faded = pulled · R = reload${on ? " · click a size to trade" : ""}</span></div>`;
   return h;
@@ -5910,8 +5915,12 @@ function reloadWords(a){
   const traded = a.absorbed ? ` He's ${a.side === "bid" ? "bought" : "sold"} ${num(a.absorbed)}${a.dollars ? ", " + (a.dollars >= 1e6 ? (a.dollars / 1e6).toFixed(1) + " million dollars" : Math.round(a.dollars / 1e3) + " thousand dollars") : ""}.` : "";
   if (a.label.startsWith("RELOAD") && a.back){ const nth = {2: "second", 3: "third", 4: "fourth"}[a.back.n] || (a.back.n + "th"), mins = Math.max(1, Math.round((a.back.away || 0) / 60));
     return `The reload ${who} at ${px(a.price)} is back. ${nth} visit. He was ${a.back.prior === "PULLED" ? "pulled" : "cleaned up"} ${mins} minute${mins === 1 ? "" : "s"} ago and he's refilling again.${a.absorbed_all ? ` He's ${a.side === "bid" ? "bought" : "sold"} ${num(a.absorbed_all)} across every visit.` : ""}`; }
-  if (a.label.startsWith("RELOAD")) return `Reload ${who} at ${px(a.price)}. ${showing}${n != null ? ` Refilled ${n} time${n === 1 ? "" : "s"}.` : ""}${traded}`;
-  if (a.label === "CLEANED UP") return `Reload ${who} at ${px(a.price)} cleared out.${a.absorbed ? ` He had ${a.side === "bid" ? "bought" : "sold"} ${num(a.absorbed)}.` : ""}`;
+  // the tell, said the way a tape reader says it: who is reloading, how much the other side has thrown into him, and
+  // when his liquidity is gone and price goes through, that he is exhausted
+  const took = a.absorbed_all || a.absorbed;
+  const other = a.side === "bid" ? "Sellers hit him for" : "Buyers absorbed";
+  if (a.label.startsWith("RELOAD")) return `${who === "buyer" ? "Buyer" : "Seller"} reloading at ${px(a.price)}.${took ? ` ${other} ${num(took)} shares.` : ""}${n != null ? ` Refilled ${n} time${n === 1 ? "" : "s"}.` : ""} ${showing}`.trim();
+  if (a.label === "CLEANED UP") return `${who === "buyer" ? "Buyer" : "Seller"} exhausted at ${px(a.price)}${took ? ` after ${num(took)} shares` : ""}. ${a.side === "bid" ? "Sellers" : "Buyers"} breaking through.`;
   if (a.label === "PULLED") return `Reload ${who} at ${px(a.price)} pulled.`;
   return null;
 }
@@ -7229,7 +7238,7 @@ function renderStory(d){
     <div class="sbody">
       ${list("CONFLUENCE", (s.confluence || []).map(x => `<div class="srow ${x.major ? "major" : ""}">${esc(x.text)}</div>`))}
       ${list("ZONES", (s.zones || []).map(z => `<div class="srow z-${z.user ? "user" : esc(z.kind)}">${esc(z.name)}</div>`))}
-      ${list("PS60 RELOADS (x.00 / x.50 only)", (s.reloads || []).map(r => `<div class="srow ${r.side === "ask" ? "s" : "b"}">Reload ${r.side === "ask" ? "seller" : "buyer"} ${px(r.price)} · ${esc(r.stage || "")} · ${sz(r.absorbed)} traded into him</div>`))}
+      ${list("RELOADS (★ = whole / half dollar)", (s.reloads || []).map(r => `<div class="srow ${r.side === "ask" ? "s" : "b"}">${r.side === "ask" ? "Seller" : "Buyer"} reloading ${Math.abs(r.price * 2 - Math.round(r.price * 2)) < 1e-6 ? "★ " : ""}${px(r.price)} · ${esc(r.stage || "")} · ${r.side === "ask" ? "buyers absorbed" : "sellers hit him for"} ${sz(r.absorbed)}</div>`))}
       <div class="sth">THE STORY</div>
       ${(s.feed || []).map(x => `<div class="sfeed t-${esc(x[2])}"><i>${tm(x[0])}</i>${esc(x[1])}</div>`).join("") || `<div class="dim" style="padding:4px 8px">Nothing yet.</div>`}
     </div>`;

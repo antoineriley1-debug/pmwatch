@@ -434,7 +434,7 @@ DEFAULTS = {
         "enabled": True,                # the PS60 STORY: Daily context + PS60 places + tape + Level II + option flow + price response
         "alerts": True,                 # put the big moments in CALLS (breaks, reloads consumed, flow confirming / conflicting, retests)
         "voice": False,                 # say those moments out loud (when voice is on)
-        "whole_half_reloads_only": True,  # only a reload buyer / seller at a whole or half dollar (x.00 / x.50) counts for PS60
+        "whole_half_reloads_only": False,  # on: only reloads at x.00 / x.50 count for PS60. Off (default): every real reload counts, round numbers are just highlighted
         "draw_zones": True,             # shade the zones you drew on the stock chart (right-click the chart, ZONE)
         "near_ticks": 8,                # HIGH ATTENTION: price within this many ticks of a place ...
         "near_atr_pct": 12,             # ... or this % of the daily ATR ...

@@ -1546,8 +1546,12 @@ function reloadWords(a){
   const traded = a.absorbed ? ` He's ${a.side === "bid" ? "bought" : "sold"} ${num(a.absorbed)}${a.dollars ? ", " + (a.dollars >= 1e6 ? (a.dollars / 1e6).toFixed(1) + " million dollars" : Math.round(a.dollars / 1e3) + " thousand dollars") : ""}.` : "";
   if (a.label.startsWith("RELOAD") && a.back){ const nth = {2: "second", 3: "third", 4: "fourth"}[a.back.n] || (a.back.n + "th"), mins = Math.max(1, Math.round((a.back.away || 0) / 60));
     return `The reload ${who} at ${px(a.price)} is back. ${nth} visit. He was ${a.back.prior === "PULLED" ? "pulled" : "cleaned up"} ${mins} minute${mins === 1 ? "" : "s"} ago and he's refilling again.${a.absorbed_all ? ` He's ${a.side === "bid" ? "bought" : "sold"} ${num(a.absorbed_all)} across every visit.` : ""}`; }
-  if (a.label.startsWith("RELOAD")) return `Reload ${who} at ${px(a.price)}. ${showing}${n != null ? ` Refilled ${n} time${n === 1 ? "" : "s"}.` : ""}${traded}`;
-  if (a.label === "CLEANED UP") return `Reload ${who} at ${px(a.price)} cleared out.${a.absorbed ? ` He had ${a.side === "bid" ? "bought" : "sold"} ${num(a.absorbed)}.` : ""}`;
+  // the tell, said the way a tape reader says it: who is reloading, how much the other side has thrown into him, and
+  // when his liquidity is gone and price goes through, that he is exhausted
+  const took = a.absorbed_all || a.absorbed;
+  const other = a.side === "bid" ? "Sellers hit him for" : "Buyers absorbed";
+  if (a.label.startsWith("RELOAD")) return `${who === "buyer" ? "Buyer" : "Seller"} reloading at ${px(a.price)}.${took ? ` ${other} ${num(took)} shares.` : ""}${n != null ? ` Refilled ${n} time${n === 1 ? "" : "s"}.` : ""} ${showing}`.trim();
+  if (a.label === "CLEANED UP") return `${who === "buyer" ? "Buyer" : "Seller"} exhausted at ${px(a.price)}${took ? ` after ${num(took)} shares` : ""}. ${a.side === "bid" ? "Sellers" : "Buyers"} breaking through.`;
   if (a.label === "PULLED") return `Reload ${who} at ${px(a.price)} pulled.`;
   return null;
 }
@@ -2865,7 +2869,7 @@ function renderStory(d){
     <div class="sbody">
       ${list("CONFLUENCE", (s.confluence || []).map(x => `<div class="srow ${x.major ? "major" : ""}">${esc(x.text)}</div>`))}
       ${list("ZONES", (s.zones || []).map(z => `<div class="srow z-${z.user ? "user" : esc(z.kind)}">${esc(z.name)}</div>`))}
-      ${list("PS60 RELOADS (x.00 / x.50 only)", (s.reloads || []).map(r => `<div class="srow ${r.side === "ask" ? "s" : "b"}">Reload ${r.side === "ask" ? "seller" : "buyer"} ${px(r.price)} · ${esc(r.stage || "")} · ${sz(r.absorbed)} traded into him</div>`))}
+      ${list("RELOADS (★ = whole / half dollar)", (s.reloads || []).map(r => `<div class="srow ${r.side === "ask" ? "s" : "b"}">${r.side === "ask" ? "Seller" : "Buyer"} reloading ${Math.abs(r.price * 2 - Math.round(r.price * 2)) < 1e-6 ? "★ " : ""}${px(r.price)} · ${esc(r.stage || "")} · ${r.side === "ask" ? "buyers absorbed" : "sellers hit him for"} ${sz(r.absorbed)}</div>`))}
       <div class="sth">THE STORY</div>
       ${(s.feed || []).map(x => `<div class="sfeed t-${esc(x[2])}"><i>${tm(x[0])}</i>${esc(x[1])}</div>`).join("") || `<div class="dim" style="padding:4px 8px">Nothing yet.</div>`}
     </div>`;

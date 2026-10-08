@@ -188,7 +188,7 @@ def chart_gate(play, price, se, mp, reloaders, tape, now, cfg):
         lanes["L3_SECOND_ENTRY"] = (R, "no second entry: break → new extreme → retrace → back through it")
     # L4 build + the reload trap (R12)
     rl = reloaders or {"below": [], "above": []}
-    # only a reloader at a whole or half dollar (x.00 / x.50) counts for PS60 (the ladder still shows every one)
+    # every confirmed reloader counts (SETTINGS > PS60 story can still limit it to whole / half dollars)
     against = [r for r in (rl["above"] if long_ else rl["below"]) if r.get("kind") == "confirmed" and r.get("ps60", True)
                and r.get("side") == ("ask" if long_ else "bid") and (r.get("stage") or "RELOADING") in ("RELOADING", "STILL THERE")]
     tp = tape or {}

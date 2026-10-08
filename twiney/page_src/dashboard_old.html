@@ -1656,7 +1656,9 @@ function ladderCleanHTML(L){
     const appr = dt == null ? "" : dt <= 1 ? "kl-at" : dt <= near ? "kl-near" : "";
     const cls = [r.best_bid ? "best-bid" : "", r.best_ask ? "best-ask" : "", r.last ? "lastpx" : "", tags ? "keyrow " + lvk : "", appr, hot ? "keyhot" : "", ...new Set(mine),
       (r.bid_state === "RELOAD" || r.bid_proven) ? "rl-bid" : "", (r.ask_state === "RELOAD" || r.ask_proven) ? "rl-ask" : ""].join(" ");
-    h += `<tr class="${cls}" data-price="${r.price}"${lead ? ` style="--klc:${lead.c};--klf:${lead.c}55"` : ""}>${urg(r, "u_s")}${passive(r, "bid")}<td class="px">${px(r.price)}${tags ? `<span class="kts">${tags}</span>` : ""}</td>${passive(r, "ask")}${urg(r, "u_b")}</tr>`;
+    // a whole / half dollar gets a gold star: emphasis only (the reloaders get the glow)
+    const star = Math.abs(r.price * 2 - Math.round(r.price * 2)) < 1e-6 ? `<span class="rstar" title="${Math.abs(r.price - Math.round(r.price)) < 1e-6 ? "whole" : "half"} dollar">★</span>` : "";
+    h += `<tr class="${cls}" data-price="${r.price}"${lead ? ` style="--klc:${lead.c};--klf:${lead.c}55"` : ""}>${urg(r, "u_s")}${passive(r, "bid")}<td class="px">${star}${px(r.price)}${tags ? `<span class="kts">${tags}</span>` : ""}</td>${passive(r, "ask")}${urg(r, "u_b")}</tr>`;
   }
   h += `</table><div class="legend lgc"><span><b class="sell">HIT</b> sellers now · <b class="buy">BID</b> buyers waiting · <b class="sell">ASK</b> sellers waiting · <b class="buy">LIFT</b> buyers now</span><span class="dim">bright = stacked · faded = pulled · R = reload${on ? " · click a size to trade" : ""}</span></div>`;
   return h;
