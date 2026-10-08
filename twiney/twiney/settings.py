@@ -23,14 +23,13 @@ SECTIONS = [
     ("quantdata", "Quant Data", "Your option flow data feed."),
     ("reload", "Reload detection", "When a buyer or seller counts as a reload, cleared out, or pulled."),
     ("ladder", "Level II", "Big and huge size on the ladder."),
-    ("voice", "Voice", "Spoken call-outs."),
     ("ps60", "PS60", "Second entry, measured potential, sneaky pivots, remount and rejection calls."),
     ("tape", "Time & Sales", "How the tape is read."),
     ("orderflow", "Order flow", "5 / 15 second delta windows and the pressure labels (estimated from the tape)."),
     ("trap", "Trapped traders", "Aggressive prints now underwater."),
     ("depth", "Market depth", "IBKR depth subscriptions and rotation."),
     ("chart", "Chart history", "History loaded at startup."),
-    ("speech", "Voice", "The voice that says every call: the browser's own, or a cloud voice (ElevenLabs) with your API key and voice ID, so it never changes. Each phrase is kept, so repeats play at once."),
+    ("speech", "Voice", "EVERYTHING the desk says, in one place. The voice itself: the browser's own, or your cloud voice (ElevenLabs: API key + voice ID), so it never changes; each phrase is kept, so repeats play at once. TEST VOICE says a line in it and tells you if ElevenLabs answered. Below it: which calls are spoken."),
     ("inst", "Institutional footprints", "A fund's order sliced by an execution algo: a steady buy / sell PROGRAM (VWAP / % of volume), fund-style reloaders (the same refill size), a side walking the price, volume against its normal for the time of day."),
     ("dark", "Large orders", "Large off-exchange orders (FINRA / TRF / ADF): the big ones called and listed, their dollars by price on the ladder, their share of the day's volume."),
     ("levels", "Key levels", "The daily chart's and the session's levels (prior day open / high / low / close, premarket and after-hours high / low / close, today's open, daily reject / bounce, prior highs and lows): what price does there, REJECTED / BOUNCED / BUYERS TOOK / SELLERS TOOK, called and said."),
@@ -178,16 +177,38 @@ def _kind(path, default):
 RETIRED = {"trading.loss_limit_live_only", "studies.label_merge_pct"}
 
 
+def _is_voice(path):
+    """A 'say it out loud' switch that lives in another section: shown in the one VOICE section instead."""
+    last = path.split(".")[-1]
+    return path.split(".")[0] not in ("speech",) and (path.startswith("voice.") or last == "voice" or last.startswith("voice_"))
+
+
+def _voice_leaves():
+    """The VOICE section: the voice itself (speech.*), then every spoken-call switch from the other sections."""
+    out = list(_leaves(DEFAULTS["speech"], "speech."))
+    titles = {k: t for k, t, _b in SECTIONS}
+    titles["voice"] = "Ladder size call-outs"
+    for path, default in _leaves(DEFAULTS):
+        if _is_voice(path):
+            out.append((path, default, titles.get(path.split(".")[0], path.split(".")[0])))
+    return out
+
+
 def schema(cfg):
     sections = []
     for key, title, blurb in SECTIONS:
         fields = []
-        for path, default in _leaves(DEFAULTS[key], key + "."):
-            if path in RETIRED:
-                continue                          # an old setting kept only so saved configs still load
+        leaves = _voice_leaves() if key == "speech" else _leaves(DEFAULTS[key], key + ".")
+        for leaf in leaves:
+            path, default = leaf[0], leaf[1]
+            if path in RETIRED or (key != "speech" and _is_voice(path)):
+                continue                          # an old setting kept only so saved configs still load / shown under VOICE
             kind = _kind(path, default)
             value = _get(cfg, path)
-            f = {"path": path, "label": INLINE[path] if path.startswith(("studies.", "pace.", "story.")) and path in INLINE else _label(path.split(".")[-1]), "help": HELP.get(path, ""), "type": kind,
+            label = INLINE[path] if path.startswith(("studies.", "pace.", "story.")) and path in INLINE else _label(path.split(".")[-1])
+            if len(leaf) > 2:                     # a spoken-call switch from another section: say which calls it is
+                label = f"{leaf[2]} · {'say them out loud' if label == 'Voice' else label}"
+            f = {"path": path, "label": label, "help": HELP.get(path, ""), "type": kind,
                  "restart": path.startswith(RESTART) or any(path == r for r in RESTART), "locked": LOCKED.get(path)}
             if kind == "secret":
                 f["value"] = ""

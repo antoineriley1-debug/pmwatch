@@ -16,6 +16,15 @@ class TTSError(Exception):
     pass
 
 
+# how the cloud voice did last time it was asked (shown on the desk's VOICE button and by TEST VOICE)
+STATUS = {"ok": None, "t": None, "error": ""}
+
+
+def _status(ok, error=""):
+    import time
+    STATUS.update(ok=ok, t=time.time(), error=error)
+
+
 def ready(cfg):
     sc = cfg.get("speech") or {}
     return sc.get("engine") == "cloud" and bool(sc.get("api_key")) and bool(sc.get("voice_id"))
@@ -27,8 +36,19 @@ def _cache_path(cache_dir, sc, text):
     return os.path.join(cache_dir, h + ".mp3")
 
 
-def speak(cfg, text, cache_dir, timeout=10.0):
-    """The audio (mp3 bytes) for ``text`` in the configured voice: from the cache, or made now and kept."""
+def speak(cfg, text, cache_dir, timeout=10.0, fresh=False):
+    """The audio (mp3 bytes) for ``text`` in the configured voice: from the cache, or made now and kept.
+    ``fresh``: ask the voice service even when the phrase is cached (TEST VOICE)."""
+    try:
+        audio = _speak(cfg, text, cache_dir, timeout, fresh)
+    except TTSError as e:
+        if ready(cfg):
+            _status(False, str(e))
+        raise
+    return audio
+
+
+def _speak(cfg, text, cache_dir, timeout, fresh):
     sc = cfg.get("speech") or {}
     if not ready(cfg):
         raise TTSError("the cloud voice is not set up: SETTINGS > Voice (engine cloud, API key, voice ID)")
@@ -37,7 +57,7 @@ def speak(cfg, text, cache_dir, timeout=10.0):
         raise TTSError("nothing to say")
     os.makedirs(cache_dir, exist_ok=True)
     path = _cache_path(cache_dir, sc, text)
-    if os.path.exists(path) and os.path.getsize(path) > 0:
+    if not fresh and os.path.exists(path) and os.path.getsize(path) > 0:
         with open(path, "rb") as fh:
             return fh.read()
     base = str(sc.get("base_url") or "https://api.elevenlabs.io").rstrip("/")
@@ -65,4 +85,5 @@ def speak(cfg, text, cache_dir, timeout=10.0):
     with open(tmp, "wb") as fh:
         fh.write(audio)
     os.replace(tmp, path)
+    _status(True)
     return audio

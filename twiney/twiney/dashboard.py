@@ -280,6 +280,23 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                 self._send(200, json.dumps(_clips.load(rec_dir or "recordings")), "application/json")
             elif path == "/api/desk/list":
                 self._send(200, json.dumps(desk.list_recordings() if desk else []), "application/json")
+            elif path == "/api/tts/test":
+                # TEST VOICE: one line straight from the voice service (not the cache): is ElevenLabs answering?
+                from . import tts
+                sc = engine.cfg.get("speech") or {}
+                cache = os.path.join(os.path.dirname(os.path.abspath(engine.cfg.get("recording", {}).get("dir") or "recordings")), "voice_cache")
+                out = {"engine": sc.get("engine") or "browser", "key_set": bool(sc.get("api_key")), "voice_set": bool(sc.get("voice_id"))}
+                if out["engine"] != "cloud":
+                    out.update(ok=False, reason="SETTINGS > Voice: Engine is set to the browser voice. Pick cloud (ElevenLabs).")
+                elif not out["key_set"] or not out["voice_set"]:
+                    out.update(ok=False, reason="SETTINGS > Voice: " + " and ".join(x for x, ok in (("the API key", out["key_set"]), ("the voice ID", out["voice_set"])) if not ok) + " missing.")
+                else:
+                    try:
+                        audio = tts.speak(engine.cfg, "Voice check. The desk is live.", cache, fresh=True)
+                        out.update(ok=True, bytes=len(audio), reason="ElevenLabs answered: your cloud voice is working.")
+                    except tts.TTSError as e:
+                        out.update(ok=False, reason=str(e))
+                self._send(200, json.dumps(out), "application/json")
             elif path == "/api/tts":
                 # THE DESK'S VOICE: this call's words in the cloud voice (cached on disk); 502 = use the browser's voice
                 from . import tts

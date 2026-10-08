@@ -983,3 +983,9 @@ table.lad .fdl{display:inline-block;margin-left:4px;font:800 calc(8.5px * var(--
 table.lad .fdl.b{background:#1b7a43;box-shadow:0 0 6px #26d07c88} table.lad .fdl.s{background:#9a2433;box-shadow:0 0 6px #ff4d5e88}
 .instwarn{font:800 11px var(--mono);padding:3px 6px;background:#5a1820;color:#fff;border-bottom:1px solid #ff4d5e;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .instguide{font:10.5px var(--mono);padding:1px 6px 2px;color:#e8d9a8;border-bottom:1px solid #202124;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+/* SETTINGS > Voice: TEST VOICE, and the VOICE button when ElevenLabs failed */
+.vtest { margin: 6px 0 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.vtest button { font-weight: 700; }
+.vtest .vok { color: #26a69a; font-weight: 600; }
+.vtest .vbad { color: #ef5350; font-weight: 600; }
+#voiceBtn.vfail { color: #ef5350; }

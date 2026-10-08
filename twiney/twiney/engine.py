@@ -2671,6 +2671,14 @@ class Engine:
             else:
                 self.connection["market_data_type"] = mdt
 
+    def _speech_view(self):
+        """Which voice the desk speaks in, and how the cloud voice did last (VOICE button)."""
+        from . import tts
+        sc = self.cfg.get("speech") or {}
+        cloud = sc.get("engine") == "cloud" and bool(sc.get("api_key")) and bool(sc.get("voice_id"))
+        return {"engine": "cloud" if cloud else "browser", "wanted": sc.get("engine") or "browser",
+                "ok": tts.STATUS["ok"] if cloud else None, "error": tts.STATUS["error"] if cloud else ""}
+
     def desk_alert(self, symbol, label, text, words, t, side=None, price=None):
         """A desk call (halt, expiry, option stop): on the alert list, in the log, and spoken."""
         with self.lock:
@@ -4860,7 +4868,7 @@ class Engine:
                 },
                 "alerts": [dict(a, grade=self.grades.get(a["key"])) for a in list(self.alerts)[:40]],
                 "voice": [v for v in list(self.voice)[:20] if t - v["t"] < 60],
-                "speech": {"engine": "cloud" if (self.cfg.get("speech") or {}).get("engine") == "cloud" and (self.cfg.get("speech") or {}).get("api_key") and (self.cfg.get("speech") or {}).get("voice_id") else "browser"},
+                "speech": self._speech_view(),
                 "flow": list(self.flow.recent)[:150],
                 "flow_scope": self.flow_scope,
                 "ladder_half_rows": int(getattr(self, "ladder_half_rows", None) or self.cfg.get("ladder", {}).get("half_rows", 12)),

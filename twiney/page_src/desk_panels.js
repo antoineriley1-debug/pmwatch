@@ -541,7 +541,7 @@ function renderTape(d){
   const el = P.tape.pc.querySelector(".p-tape");
   renderContractTape(); renderSwitchStrips(); if (contractMode("tape")){ renderBigTape(d); return; }
   if (!d){ el.innerHTML = `<div class="dim" style="padding:8px">${NA}</div>`; P.tape.last = null; renderBigTape(null); return; }
-  const html = refsHTML(d.refs, d.story && d.story.edge) + tapeGaugeHTML(d.tape) + darkStripHTML(d.dark) + instStripHTML(d.inst) + tapeSpeedHTML(d.tape.speed) + paceHTML(d.tape.pace) + tapeHTML(d.tape, d.ladder); if (P.tape.last !== html){ P.tape.last = html;
+  const html = refsHTML(null, d.story && d.story.edge) + tapeGaugeHTML(d.tape) + darkStripHTML(d.dark) + instStripHTML(d.inst) + tapeSpeedHTML(d.tape.speed) + paceHTML(d.tape.pace) + tapeHTML(d.tape, d.ladder); if (P.tape.last !== html){ P.tape.last = html;
     const keep = el.scrollTop; el.innerHTML = html; el.scrollTop = keep; makeColsResizable(el.querySelector("table")); }
   renderBigTape(d); flyBigPrints(d);
 }
@@ -1775,7 +1775,7 @@ function renderSettings(){
   document.getElementById("setNav").innerHTML = secs.map(s => { const n = s.fields.filter(match).length; const d = s.fields.filter(f => SET.dirty.hasOwnProperty(f.path)).length;
     return `<div class="sn ${s.key === SET.cur && !q ? "on" : ""} ${n ? "" : "none"}" data-sec="${s.key}">${esc(s.title)}${d ? ` <i>${d}</i>` : ""}${q && n ? ` <span class="dim">${n}</span>` : ""}</div>`; }).join("");
   const show = q ? secs.filter(s => s.fields.some(match)) : secs.filter(s => s.key === SET.cur);
-  document.getElementById("setForm").innerHTML = show.map(s => `<div class="ss"><h4>${esc(s.title)}</h4><div class="sb">${esc(s.blurb)}</div>${s.fields.filter(match).map(setField).join("")}</div>`).join("") || `<div class="dim" style="padding:20px">No setting matches.</div>`;
+  document.getElementById("setForm").innerHTML = show.map(s => `<div class="ss"><h4>${esc(s.title)}</h4><div class="sb">${esc(s.blurb)}</div>${s.key === "speech" ? `<div class="vtest"><button id="voiceTest" type="button">TEST VOICE</button> <span id="voiceTestOut" class="dim">says one line in your ElevenLabs voice and tells you if it answered (save changes first)</span></div>` : ""}${s.fields.filter(match).map(setField).join("")}</div>`).join("") || `<div class="dim" style="padding:20px">No setting matches.</div>`;
   const n = Object.keys(SET.dirty).length;
   const sv = document.getElementById("setSave"); sv.disabled = !n; sv.textContent = n ? `SAVE ${n}` : "SAVE";
   document.getElementById("setRestart").hidden = !(SET.restartPending && SET.canRestart);
@@ -1791,6 +1791,16 @@ function readInput(el){
 document.getElementById("setBtn").addEventListener("click", openSettings);
 document.getElementById("setClose").addEventListener("click", () => { if (Object.keys(SET.dirty).length && !confirm("Close without saving your changes?")) return; document.getElementById("settings").hidden = true; });
 document.getElementById("setFind").addEventListener("input", renderSettings);
+// TEST VOICE: ask ElevenLabs for one line (not the cache), say if it answered, and play it
+document.getElementById("setForm").addEventListener("click", async e => {
+  if (!e.target.closest("#voiceTest")) return;
+  const out = document.getElementById("voiceTestOut"); out.className = "dim"; out.textContent = "asking ElevenLabs…";
+  try {
+    const j = await (await fetch("/api/tts/test")).json();
+    out.className = j.ok ? "vok" : "vbad"; out.textContent = (j.ok ? "✓ " : "✗ ") + j.reason;
+    if (j.ok){ const a = new Audio("/api/tts?text=" + encodeURIComponent("Voice check. The desk is live.")); a.play().catch(() => {}); }
+  } catch (err) { out.className = "vbad"; out.textContent = "✗ the desk did not answer"; }
+});
 document.getElementById("setNav").addEventListener("click", e => { const s = e.target.closest("[data-sec]"); if (!s) return; SET.cur = s.dataset.sec; document.getElementById("setFind").value = ""; renderSettings(); });
 document.getElementById("setForm").addEventListener("change", e => { if (!e.target.dataset.path) return; readInput(e.target); const n = Object.keys(SET.dirty).length; const sv = document.getElementById("setSave"); sv.disabled = !n; sv.textContent = n ? `SAVE ${n}` : "SAVE"; e.target.closest(".sf").classList.toggle("dirty", SET.dirty.hasOwnProperty(e.target.dataset.path)); });
 document.getElementById("setForm").addEventListener("input", e => { if (e.target.dataset.path && e.target.type !== "checkbox") e.target.dispatchEvent(new Event("change", {bubbles: true})); });
@@ -1862,7 +1872,13 @@ function renderStatus(s){
   const sd = curData(), sb = document.getElementById("sideBtn"), side = sd && sd.play && sd.play.side;
   sb.textContent = side === "short" ? "S" : "L"; sb.className = side === "short" ? "short" : "long"; sb.disabled = !side; sb.title = side ? `${curSym} is a ${side.toUpperCase()} — click for ${side === "short" ? "LONG" : "SHORT"} (your levels stay)` : "no ticker on screen";
   document.getElementById("oneclick").checked = !!t.one_click; document.getElementById("bracket").checked = !!t.bracket; document.getElementById("scale").checked = !!t.scale;
-  document.getElementById("voiceBtn").textContent = store.get("voice", true) ? "VOICE ON" : "VOICE OFF";
+  { const sp = s.speech || {}, vb = document.getElementById("voiceBtn");
+    const who = sp.engine === "cloud" ? (sp.ok === false ? " · ELEVENLABS ✗" : " · ELEVENLABS") : "";
+    vb.textContent = (store.get("voice", true) ? "VOICE ON" : "VOICE OFF") + who;
+    vb.classList.toggle("vfail", sp.engine === "cloud" && sp.ok === false);
+    vb.title = sp.engine === "cloud" ? (sp.ok === false ? "ElevenLabs did not answer the last call, so the browser voice said it: " + (sp.error || "") + " (SETTINGS > Voice > TEST VOICE)"
+                                                        : "Your ElevenLabs voice says the calls" + (sp.ok ? " (last call: OK)" : ""))
+             : sp.wanted === "cloud" ? "Browser voice: the cloud voice needs its API key and voice ID (SETTINGS > Voice)" : "Browser voice (SETTINGS > Voice to use ElevenLabs)"; }
   document.getElementById("soundBtn").textContent = store.get("sound", true) ? "BEEP ON" : "BEEP OFF";
   const rot = document.getElementById("rotate"); rot.textContent = "ROTATE " + (s.auto_rotate ? "ON" : "OFF");
   const rec = document.getElementById("recBtn"); rec.className = s.desk && s.desk.recording ? "on" : ""; rec.textContent = s.desk && s.desk.recording ? "STOP REC" : "REC";
@@ -2865,7 +2881,7 @@ function lvCls(m){ const c = (LVROLE[m.role] || ["", "ex"])[1]; return m.role ==
 function distTxt(d, tick){ if (d == null) return ""; const t = Math.round(Math.abs(d) / (tick || 0.01)); return (d >= 0 ? "+" : "−") + Math.abs(d).toFixed(Math.abs(d) < 1 && tick && tick < 0.01 ? 4 : 2) + (t <= 50 ? ` · ${t}t` : ""); }
 /* PACE OF TAPE: speed against this stock's own normal (×1.0 = normal), who is pushing, the flow behind it, and the
    call at your level. One strip on the ladder and on the T&S, the last-price row glowing harder as the tape runs */
-/* VWAP and the daily 50-day: on the T&S and the LEVEL II, always, with how far price is from each (live) */
+/* VWAP and the daily 50-day: on the LEVEL II only (not the T&S), always, with how far price is from each (live) */
 // THE EDGE chip: how many of the seven reads agree with the move right now (click: the PS60 STORY panel)
 function edgeChip(eg){
   if (!eg) return "";

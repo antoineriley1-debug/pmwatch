@@ -2785,6 +2785,17 @@ function voicePump(){
   setTimeout(() => { if (!it.u._done && !speechSynthesis.speaking && !speechSynthesis.pending) done(); }, 15000);   // a voice that never ends
   speechSynthesis.speak(it.u);
 }
+// HOW A CALL IS SAID: prices as dollars ("337.19" → "$337.19": three hundred thirty-seven dollars nineteen),
+// $2.1M as "2.1 million dollars", VWAP as one word ("vee-wap"), never spelled out letter by letter
+function spokenText(text){
+  return String(text || "")
+    .replace(/×/g, " times ")
+    .replace(/\$\s?(\d+(?:\.\d+)?)\s?([MK])\b/gi, (m, n, u) => n + (u.toUpperCase() === "M" ? " million" : " thousand") + " dollars")
+    .replace(/(^|[^\d.$\w])(\d{1,5}\.\d{2})(?![\d%])/g, "$1$$$2")
+    .replace(/\bPM VWAP\b/g, "premarket V-WAP").replace(/\bVWAP\b/gi, "V-WAP")
+    .replace(/(\d)k\b/g, "$1 thousand").replace(/\bk\b/g, " thousand")
+    .replace(/[★·]/g, " ").replace(/\s+/g, " ").trim();
+}
 function say(text, force){
   if (!force && !store.get("voice", true)) return;
   if (!("speechSynthesis" in window)){ if (force) toast("This browser has no speech. Use Chrome or Edge.", false); return; }
@@ -2792,7 +2803,8 @@ function say(text, force){
     if (!voicePick) pickVoice();
     if (force){ speechSynthesis.cancel(); VQ.length = 0; VQ.busy = false; }   // a click: say it now, drop any backlog
     if (speechSynthesis.paused) speechSynthesis.resume();
-    const u = new SpeechSynthesisUtterance(text.replace(/×/g, " times ").replace(/\$/g, "").replace(/\bk\b/g, " thousand"));
+    text = spokenText(text);
+    const u = new SpeechSynthesisUtterance(text);
     if (voicePick) u.voice = voicePick;
     u.rate = 1.1; u.pitch = 1; u.volume = 1;
     u.onerror = ev => { if (force) toast("Voice error: " + (ev.error || "unknown") + ". Windows: Settings → Time & language → Speech → add a voice.", false); };
