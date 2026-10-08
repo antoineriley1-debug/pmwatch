@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261008-2000">
+<meta name="build" content="20261008-2159">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -3094,11 +3094,16 @@ function drawOne(p, cv, v, isFoot){
     ? {g, S: d.studies, bars, x0, cw, plotW, labelW, y, lo, hi, last: d.last, lightScreen: dan, bg: C.bg || chartBg(p)} : null;
   // premarket / after hours: shaded behind their candles like TradingView (orange before 9:30, blue after 4:00)
   if (!isDaily && !isFoot && store.get("extShade", true)){
-    for (let k = 0; k < bars.length; k++){
-      const t0 = bars[k][0], eo = eoDay(t0), sec = ((t0 + eo) % 86400 + 86400) % 86400;
-      if (sec >= 34200 && sec < 57600) continue;
-      g.fillStyle = sec < 34200 ? "rgba(255,152,0,.16)" : (dan ? "rgba(0,50,140,.13)" : "rgba(33,150,243,.12)");   // visible on every screen
-      g.fillRect(x0 + k * cw, 0, cw + .5, plotH);
+    // one block per run of premarket (after hours) candles: a strip per candle overlaps its neighbour and leaves a line at every candle edge
+    let runCol = null, runK = 0;
+    const shadeRun = k => { if (runCol){ g.fillStyle = runCol; g.fillRect(Math.round(x0 + runK * cw), 0, Math.round(x0 + k * cw) - Math.round(x0 + runK * cw), plotH); } };
+    for (let k = 0; k <= bars.length; k++){
+      let col = null;
+      if (k < bars.length){
+        const t0 = bars[k][0], eo = eoDay(t0), sec = ((t0 + eo) % 86400 + 86400) % 86400;
+        if (!(sec >= 34200 && sec < 57600)) col = sec < 34200 ? (dan ? "rgba(255,120,0,.30)" : "rgba(255,152,0,.16)") : (dan ? "rgba(0,50,140,.13)" : "rgba(33,150,243,.12)");   // visible on every screen (the light-blue screen washes a faint orange out)
+      }
+      if (col !== runCol){ shadeRun(k); runCol = col; runK = k; }
     }
   }
   // the PS60 story's zones (support / resistance found from the 30-minute history, and yours): shaded bands behind it all
