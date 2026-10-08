@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261008-0532">
+<meta name="build" content="20261008-0551">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -2089,8 +2089,8 @@ function wireChart(p, cv, v, saveView, isFoot){
   });
   cv.addEventListener("mousemove", e => { const r = cv.getBoundingClientRect(); v.cross = [e.clientX - r.left, e.clientY - r.top];
     cv.style.cursor = (e.clientX - r.left) > r.width - 86 ? "ns-resize" : (e.clientY - r.top) > r.height - 18 ? "ew-resize" : "";
-    drawChart(p); });
-  cv.addEventListener("mouseleave", () => { v.cross = null; if (typeof ladderHighlight === "function") ladderHighlight(null); drawChart(p); });
+    drawChart(p); crossSync(p); });
+  cv.addEventListener("mouseleave", () => { v.cross = null; if (typeof ladderHighlight === "function") ladderHighlight(null); drawChart(p); crossSync(null); });
   cv.addEventListener("contextmenu", e => {
     e.preventDefault();
     if (!p.data || !v.chartY) return;
@@ -2207,6 +2207,16 @@ function stopRiskTag(p, d, g, y, lo, hi, plotW, bracketOn){
   g.fillStyle = loss < 0 ? "#b3123a" : "#0b7a4b"; g.fillRect(x, top, w, h);
   g.fillStyle = "#ffffff"; g.fillText(txt, x + 4, top + fs + 1);
   g.font = "11px ui-monospace, Menlo, Consolas, monospace";
+}
+/* CROSSHAIR SYNC: the time under the mouse on one chart is shown on every other chart (redrawn once a frame) */
+let _xsyncRAF = 0;
+function crossSync(src){
+  window.XSYNC = src && src.view && src.view.cross && src.view.crossT != null
+    ? {t: src.view.crossT, price: src.view.crossP, sym: src.data && src.data.symbol, opt: !!src.opt, src} : null;
+  if (_xsyncRAF) return;
+  _xsyncRAF = requestAnimationFrame(() => { _xsyncRAF = 0;
+    const all = new Set([...(typeof charts !== "undefined" ? Object.values(charts) : []), ...(typeof ochart !== "undefined" && ochart ? [ochart] : []), ...(typeof views !== "undefined" ? views : [])]);
+    for (const c of all) if (c && c !== src) try { drawChart(c); } catch (e) {} });
 }
 function chartMenu(p, v, x, y, price){
   if (p.opt && typeof optChartMenu === "function") return optChartMenu(p, x, y, price);
@@ -3325,6 +3335,14 @@ function drawOne(p, cv, v, isFoot){
     const kA = Math.max(0, Math.floor(-x0 / cw) - 1), kB = Math.min(bars.length - 1, Math.ceil((plotW - x0) / cw) + 1);
     const parts = t => { const d = new Date((t + etOffset(t)) * 1000); return {y: d.getUTCFullYear(), m: d.getUTCMonth(), d: d.getUTCDate(), dow: d.getUTCDay(), min: d.getUTCHours() * 60 + d.getUTCMinutes()}; };
     const monthly = /[WM]$/.test(String(tf)), cand = [];
+    // one even step for this zoom (5 / 15 / 30 min, 1 / 2 h ...), from the real spacing of the bars: the labels say
+    // 13:00, 13:30, 14:00 even when a quiet contract's bar opens at 13:02 (never 14:23 / 14:36)
+    const dts = []; for (let i = Math.max(1, kA); i <= kB && dts.length < 60; i++){ const dd = bars[i][0] - bars[i - 1][0]; if (dd > 0 && dd < 86400) dts.push(dd); }
+    dts.sort((a, b) => a - b);
+    const barSec = dts.length ? dts[dts.length >> 1] : (isDaily ? 86400 : (+tf || 1) * 60);
+    const pxPerMin = cw / Math.max(1, barSec / 60);
+    const step = Math.max(Math.round(barSec / 60), [1, 2, 5, 10, 15, 30, 60, 120, 180, 240, 360, 720].find(s0 => s0 * pxPerMin >= 64) || 720);
+    const hhmm = m => String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0");
     let prev = kA > 0 ? parts(bars[kA - 1][0]) : null;
     for (let k = kA; k <= kB; k++){
       const q = parts(bars[k][0]); let rank = 0, txt = "", kind = "t";
@@ -3332,13 +3350,17 @@ function drawOne(p, cv, v, isFoot){
       else if (q.y !== prev.y){ rank = 100; txt = String(q.y); kind = "y"; }
       else if (q.m !== prev.m){ rank = 90; txt = MON[q.m]; kind = "m"; }
       else if (isDaily){
-        if (!monthly && q.dow < prev.dow){ rank = 50; txt = String(q.d); kind = "d"; }        // a new week
+        if (q.d === prev.d && q.m === prev.m){ /* the same day twice (today's live bar): one label */ }
+        else if (!monthly && q.dow < prev.dow){ rank = 50; txt = String(q.d); kind = "d"; }        // a new week
         else if (!monthly){ rank = 10; txt = String(q.d); kind = "d"; }
-      } else if (q.d !== prev.d){ rank = 80; txt = `${MON[q.m]} ${q.d}`; kind = "day"; }
+      } else if (q.d !== prev.d){ rank = 80; txt = `${["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][q.dow]} ${q.d}`; kind = "day"; }   // a new day, bold
       else {
-        const mm = q.min;
-        rank = mm % 240 === 0 ? 60 : mm % 120 === 0 ? 55 : mm % 60 === 0 ? 50 : mm % 30 === 0 ? 40 : mm % 15 === 0 ? 30 : mm % 5 === 0 ? 20 : 10;
-        txt = nyHM(bars[k][0]);
+        const slot = Math.floor(q.min / step);
+        if (slot !== Math.floor(prev.min / step)){                                          // crossed a step: that round time
+          const m = slot * step;
+          rank = m % 240 === 0 ? 60 : m % 120 === 0 ? 55 : m % 60 === 0 ? 50 : m % 30 === 0 ? 40 : 30;
+          txt = hhmm(m);
+        }
       }
       if (rank) cand.push({k, rank, txt, kind, x: x0 + k * cw + cw / 2});
       prev = q;
@@ -3349,19 +3371,21 @@ function drawOne(p, cv, v, isFoot){
     const placed = [];
     cand.sort((a, b) => b.rank - a.rank || a.k - b.k);
     for (const c of cand){
-      const w = g.measureText(c.txt).width, l = c.x - w / 2 - 7, r = c.x + w / 2 + 7;
+      const w = g.measureText(c.txt).width, l = c.x - w / 2 - 10, r = c.x + w / 2 + 10;
       if (l < 2 || r > plotW - 2) continue;
       if (placed.some(p => l < p.r && r > p.l)) continue;
       placed.push({l, r, c});
     }
     g.save(); g.textAlign = "center";
+    g.strokeStyle = C.axis; g.globalAlpha = 0.6; g.beginPath(); g.moveTo(0, plotH + volH + .5); g.lineTo(plotW, plotH + volH + .5); g.stroke(); g.globalAlpha = 1;
+    const AXF = "11px -apple-system, 'Segoe UI', Roboto, Arial, sans-serif";
     for (const {c} of placed){
-      if (c.kind !== "t" && c.kind !== "d"){               // a session / month / year boundary: brighter, bold
-        g.fillStyle = C.dots ? "#e6c15a" : "#e6c15a"; g.font = "bold 11px ui-monospace, Menlo, Consolas, monospace";
-      } else { g.fillStyle = C.text; g.font = "11px ui-monospace, Menlo, Consolas, monospace"; }
-      g.fillText(c.txt, c.x, H - 4);
-      g.strokeStyle = C.axis; g.beginPath(); g.moveTo(c.x + .5, plotH + volH); g.lineTo(c.x + .5, plotH + volH + 4); g.stroke();   // tick
+      if (c.kind !== "t" && c.kind !== "d"){               // a day / month / year boundary: bold, full strength
+        g.fillStyle = C.text; g.globalAlpha = 1; g.font = "600 " + AXF;
+      } else { g.fillStyle = C.text; g.globalAlpha = 0.72; g.font = AXF; }
+      g.fillText(c.txt, c.x, H - 5);
     }
+    g.globalAlpha = 1;
     g.restore();
     g.font = "11px ui-monospace, Menlo, Consolas, monospace";
     v.timeAxisY = H - 16;
@@ -3378,6 +3402,33 @@ function drawOne(p, cv, v, isFoot){
   // the contract you trade, read at your lines in % (IND: contract % at my lines)
   if (!isFoot && !p.opt && d.opt_est && store.get("optPct", true) && typeof optPctTags === "function")
     optPctTags({g, plotW, plotH, y, lo, hi, canvas: p.canvas, drag: p.dragLevel}, d.opt_est);
+  // the mouse on ANOTHER chart: the same moment here (a dashed line at that time; the same price too when it is the
+  // same stock), so the stock chart, CHART 2 / 3 and the option chart read together
+  const SY = window.XSYNC;
+  if (!v.cross && SY && SY.t != null && SY.src !== p && CS("crossSync") && bars.length){
+    let k = -1; for (let i = bars.length - 1; i >= 0; i--) if (bars[i][0] <= SY.t){ k = i; break; }
+    const span = bars.length > 1 ? bars[bars.length - 1][0] - bars[bars.length - 2][0] : 60;
+    if (k >= 0 && (k < bars.length - 1 || SY.t - bars[k][0] <= span)){
+      const bx = x0 + k * cw + cw / 2;
+      if (bx < 0 || bx > plotW){                     // that moment is off this chart's screen: a small tag at the edge
+        const tt = (bx < 0 ? "◀ " : "") + (isDaily ? nyDate(bars[k][0], {month: "short", day: "numeric"}) : nyHM(SY.t)) + (bx > plotW ? " ▶" : "");
+        g.font = "10px ui-monospace, Menlo, Consolas, monospace";
+        const tw = g.measureText(tt).width + 8, lx = bx < 0 ? 2 : plotW - tw - 2;
+        g.fillStyle = "#26282ccc"; g.fillRect(lx, H - 17, tw, 15); g.fillStyle = "#d6d6d3"; g.fillText(tt, lx + 4, H - 6);
+      }
+      if (bx >= 0 && bx <= plotW){
+        g.strokeStyle = CS("crossCol", "") || (dan ? "#ff0000" : "#7d7f85"); g.globalAlpha = 0.85; g.setLineDash([4, 4]); g.lineWidth = 1;
+        g.beginPath(); g.moveTo(bx, 0); g.lineTo(bx, plotH); g.stroke();
+        const same = SY.sym && d.symbol === SY.sym && !!p.opt === !!SY.opt && SY.price != null && SY.price >= lo && SY.price <= hi;
+        if (same){ const yy = y(SY.price); g.beginPath(); g.moveTo(0, yy); g.lineTo(plotW, yy); g.stroke(); }
+        g.setLineDash([]); g.globalAlpha = 1;
+        const tt = isDaily ? nyDate(bars[k][0], {weekday: "short", month: "short", day: "numeric"}) : nyHM(SY.t);
+        g.font = "11px ui-monospace, Menlo, Consolas, monospace";
+        const tw = g.measureText(tt).width + 10, lx = Math.max(0, Math.min(plotW - tw, bx - tw / 2));
+        g.fillStyle = dan ? "#ff0000" : "#26282c"; g.fillRect(lx, H - 17, tw, 17); g.fillStyle = "#d6d6d3"; g.fillText(tt, lx + 5, H - 4);
+      }
+    }
+  }
   // crosshair with price / time readout
   p.dataPrice = (v.cross && v.cross[1] < plotH && v.cross[0] < plotW) ? hi - (v.cross[1] - 8) / (plotH - 8) * (hi - lo) : null;
   if (!isFoot && typeof renderDataWin === "function") renderDataWin(p);
@@ -3394,6 +3445,7 @@ function drawOne(p, cv, v, isFoot){
       g.fillStyle = dan ? "#ff0000" : "#26282c"; g.fillRect(plotW, cy - 8, labelW, 16);
       g.fillStyle = "#d6d6d3"; g.fillText(px(pr), plotW + 3, cy + 4);
       const k = Math.floor((cx - x0) / cw);
+      v.crossT = bars[k] ? bars[k][0] : null; v.crossP = pr;
       if (bars[k]){                                    // the bar's date and time, boxed on the time axis
         const bt = bars[k][0], bx = x0 + k * cw + cw / 2;
         const tt = isDaily ? nyDate(bt, {weekday: "short", month: "short", day: "numeric", year: "2-digit"})
@@ -4315,7 +4367,8 @@ const CS_DEF = [
     ["check", "lastLabel", "Last price label", true], ["check", "countdown", "Bar close countdown", true]]],
   ["CANVAS", [
     ["color", "bgCol", "Background (light screens)", ""], ["check", "gridH", "Horizontal grid lines", true], ["check", "sessions", "Session separators", true],
-    ["select", "cross", "Crosshair", "auto", ["auto", "solid", "dashed", "dotted", "off"]], ["color", "crossCol", "Crosshair colour", ""]]],
+    ["select", "cross", "Crosshair", "auto", ["auto", "solid", "dashed", "dotted", "off"]], ["color", "crossCol", "Crosshair colour", ""],
+    ["check", "crossSync", "Crosshair synced on every chart (same time)", true]]],
   ["TRADING", [["check", "levels", "Your levels (pivot, 2nd entry, stop, target)", true], ["check", "orders", "Working order lines", true],
     ["check", "chip", "2nd entry order chip", true], ["check", "bigmoney", "Big option money (30 days) at its strikes", false],
     ["check", "trapped", "Trapped crowd's exit (their average price)", false], ["check", "trapband", "Trapped buyers / sellers band (last 10 min)", false],

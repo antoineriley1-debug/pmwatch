@@ -34,7 +34,8 @@ const CS_DEF = [
     ["check", "lastLabel", "Last price label", true], ["check", "countdown", "Bar close countdown", true]]],
   ["CANVAS", [
     ["color", "bgCol", "Background (light screens)", ""], ["check", "gridH", "Horizontal grid lines", true], ["check", "sessions", "Session separators", true],
-    ["select", "cross", "Crosshair", "auto", ["auto", "solid", "dashed", "dotted", "off"]], ["color", "crossCol", "Crosshair colour", ""]]],
+    ["select", "cross", "Crosshair", "auto", ["auto", "solid", "dashed", "dotted", "off"]], ["color", "crossCol", "Crosshair colour", ""],
+    ["check", "crossSync", "Crosshair synced on every chart (same time)", true]]],
   ["TRADING", [["check", "levels", "Your levels (pivot, 2nd entry, stop, target)", true], ["check", "orders", "Working order lines", true],
     ["check", "chip", "2nd entry order chip", true], ["check", "bigmoney", "Big option money (30 days) at its strikes", false],
     ["check", "trapped", "Trapped crowd's exit (their average price)", false], ["check", "trapband", "Trapped buyers / sellers band (last 10 min)", false],
