@@ -529,9 +529,14 @@ function flyBigPrints(d){
   if (!d || !d.tape || !P.book.el.offsetParent || !P.tape.el.offsetParent) return;
   const big = (d.ladder && d.ladder.big_shares) || 5000, now = Date.now();
   for (const [k, at] of FLOWN) if (now - at > 30000) FLOWN.delete(k);
+  // a print INTO a reloader (a sell into a reload buyer's bid, a buy from a reload seller's ask) flies too, whatever
+  // its size: his fills leave his row on the ladder and land, glowing, on the tape
+  const rlAt = {};
+  for (const x of ((d.ladder && d.ladder.rows) || [])){ if (x.bid_state === "RELOAD" || x.bid_proven) rlAt[x.price + "|sell"] = "b"; if (x.ask_state === "RELOAD" || x.ask_proven) rlAt[x.price + "|buy"] = "s"; }
   let n = 0;
   for (const r of (d.tape.recent || [])){
-    if (r.age > 2 || r.size < big || n >= 3) continue;
+    const rlk = rlAt[(+r.price) + "|" + r.side];
+    if (r.age > 2 || n >= 4 || (r.size < big && !rlk)) continue;
     const key = `${d.symbol}|${r.price}|${r.size}|${r.exchange}|${Math.round((state.now - r.age) * 2)}`;
     if (FLOWN.has(key)) continue; FLOWN.set(key, now); n++;
     const row = P.book.el.querySelector(`.ladder-wrap tr[data-price="${r.price}"]`), dst = P.tape.el.querySelector(".tape2");
@@ -539,8 +544,8 @@ function flyBigPrints(d){
     const a = row.getBoundingClientRect(), b = dst.getBoundingClientRect();
     if (!a.width || !b.width) continue;
     const chip = document.createElement("div");
-    chip.className = "flychip " + (r.side === "buy" ? "b" : r.side === "sell" ? "s" : "");
-    chip.textContent = `${r.side === "buy" ? "▲" : r.side === "sell" ? "▼" : "•"} ${kfmt(r.size)} @ ${px(r.price)}`;
+    chip.className = "flychip " + (r.side === "buy" ? "b" : r.side === "sell" ? "s" : "") + (rlk ? " rl" : "");
+    chip.textContent = `${rlk ? `R ${rlk === "b" ? "BUYER" : "SELLER"} ` : ""}${r.side === "buy" ? "▲" : r.side === "sell" ? "▼" : "•"} ${kfmt(r.size)} @ ${px(r.price)}`;
     chip.style.left = (a.left + a.width / 2 - 50) + "px"; chip.style.top = (a.top) + "px";
     document.body.appendChild(chip);
     requestAnimationFrame(() => requestAnimationFrame(() => { chip.style.left = (b.left + 8) + "px"; chip.style.top = (b.top + 20) + "px"; chip.style.opacity = "0.15"; }));
