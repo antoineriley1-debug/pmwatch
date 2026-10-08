@@ -2129,16 +2129,6 @@ const ochart = (() => { const p = P.ochart; if (!p) return null;
   p.el._pane = c; wireChart(c, c.canvas, c.view, () => {}, false);
   new ResizeObserver(() => drawChart(c)).observe(p.el); return c; })();
 function ochVisible(){ return ["ochart", "obook", "otape", "obig"].some(id => P[id] && P[id].el.offsetParent !== null) || ((contractMode("book") && P.book.el.offsetParent !== null) || (contractMode("tape") && P.tape.el.offsetParent !== null)); }
-function relinkLines(key){
-  // OPTIONS mode follows the OPTION CHART: the stock chart's lines trade whatever contract sits there (not while you
-  // still hold the one they trade — its stop stays on it)
-  const sym = key.split(" ")[0], d = paneFor(sym), pl = d && d.play;
-  if (!pl || pl.trade_as !== "option" || !pl.opt_key || pl.opt_key === key) return;
-  const held = (((state || {}).account || {}).opt_positions || []).find(p => p.key === pl.opt_key && p.qty);
-  if (held){ toast(`Still holding ${shortKey(pl.opt_key)}: the ${sym} chart's lines stay on it until you are out`, false); return; }
-  post("/api/trade/trade_as", {symbol: sym, mode: "option", opt_key: key, opt_qty: pl.opt_qty || OCH.n || 1})
-    .then(out => toast(out.ok ? `${sym} chart lines now trade ${shortKey(key)}` : "Lines not moved: " + (out.reason || ""), out.ok));
-}
 /* take the loaded contract off the OPTION CHART (its Level II / T&S and ORDER ENTRY follow). Nothing is sold or
    cancelled: a contract you hold stays in POSITIONS, its stop and lines stay on */
 /* the contract that belongs on the option chart for a stock when you come back to it (or open the desk): one you are IN.
@@ -2175,7 +2165,9 @@ function blankOchart(){ const cv = ochart && ochart.canvas; if (!cv) return; con
   ochart.dataBar = null; const dw = cv.parentElement && cv.parentElement.querySelector(".datawin"); if (dw) dw.style.display = "none";
   const g = cv.getContext("2d"); g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, cv.width, cv.height);
   if (W && H){ g.setTransform(dpr, 0, 0, dpr, 0, 0); g.fillStyle = "#6b7685"; g.font = "13px system-ui, sans-serif"; g.textAlign = "center"; g.fillText("No contract — pick one from the OPTION CHAIN", W / 2, H / 2); } }
-function chartOption(key, show){ if (!key) return; if (OCH.key !== key) relinkLines(key); if (OCH.key !== key){ OCH.key = key; OCH.data = null; if (ochart){ ochart.data = null; blankOchart(); ochart.view.offset = restOffset(); ochart.view.follow = true; ochart.view.yLo = ochart.view.yHi = null; } }
+/* the stock chart's lines stay on the contract you linked them to: looking at another contract on the OPTION CHART
+   never moves them (LINK CHART LINES on the option chart, or OPTION on the order bar, moves them on purpose) */
+function chartOption(key, show){ if (!key) return; if (OCH.key !== key){ OCH.key = key; OCH.data = null; if (ochart){ ochart.data = null; blankOchart(); ochart.view.offset = restOffset(); ochart.view.follow = true; ochart.view.yLo = ochart.view.yHi = null; } }
   if (show) showPanel("ochart"); pollOch(); }
 async function pollOch(){
   if (OCH.busy || !ochart) return;
