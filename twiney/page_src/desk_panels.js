@@ -1684,6 +1684,7 @@ function renderVoiceBtns(){
 document.getElementById("voiceFlowBtn").addEventListener("click", () => { store.set("voiceFlow", !voiceFlow()); renderVoiceBtns(); say(voiceFlow() ? "Flow voice on." : "Flow voice off. Reloaders only.", true); });
 document.getElementById("soloBtn").addEventListener("click", () => { store.set("solo", !solo()); renderVoiceBtns(); const el = document.getElementById("flowList"); if (el) el.dataset.h = ""; if (state) renderFlow(state); say(solo() ? "This ticker only." : "All tickers.", true); });
 renderVoiceBtns();
+document.getElementById("replayBtn").addEventListener("click", () => replayLast());
 document.getElementById("voiceBtn").addEventListener("click", () => { const on = !store.get("voice", true); store.set("voice", on); document.getElementById("voiceBtn").textContent = on ? "VOICE ON" : "VOICE OFF"; if (on) say("Voice on.", true); renderTabs(); });
 document.getElementById("voiceVol").value = store.get("voiceVol", 1);
 document.getElementById("voiceVol").addEventListener("change", e => store.set("voiceVol", +e.target.value));

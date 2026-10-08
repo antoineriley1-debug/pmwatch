@@ -856,6 +856,13 @@ class Engine:
         atr = ((sv.get("gas") or {}).get("y_atr")) or None
         for ev in lw.update(t, last, lv, tick, atr, lc):
             self._level_alert(st, ev, t)
+        # THE FOLLOW-UP: 5-7 minutes after a level's back and forth, how it came out (defended / lost / reclaimed)
+        if lc.get("followup", True):
+            from .levelverdict import LevelFollowUp
+            fu = st.__dict__.get("_lfu") or LevelFollowUp()
+            st._lfu = fu
+            for v in fu.update(t, last, lv, lc, tick):
+                self._level_verdict(st, fu, v, t)
 
     def _level_context(self, st, p, t, from_below):
         """What the rest of the desk sees at a level, in a few words each: the TAPE (who is stepping up, how fast),
@@ -1108,9 +1115,42 @@ class Engine:
         self.alerts.appendleft(alert)
         self._rec(dict(alert, ev="alert"))
         self.log(st.symbol, text, t, kind="level")
+        if st.__dict__.get("_lfu") is None:
+            from .levelverdict import LevelFollowUp
+            st._lfu = LevelFollowUp()
+        st._lfu.note(ev, t)
         try:
             tone = "good" if kind in ("BOUNCED", "BUYERS TOOK") else "bad" if kind in ("REJECTED", "SELLERS TOOK") else "info"
             st.storybook.say("level", (kind, round(p, 4)), words + ".", tone, t, repeat=300.0)
+        except Exception:
+            pass
+        for fn in self.listeners:
+            try:
+                fn(alert)
+            except Exception:
+                pass
+
+    def _level_verdict(self, st, fu, v, t):
+        """The follow-up call: how the back and forth at a level came out, in casual words (levelverdict)."""
+        from .levelverdict import label
+        tk = tick_size(v["price"], st.symbol)
+        dist = self._cents(v["dist"]) if v["dist"] >= tk * 0.5 else "right on it"
+        words = fu.words(v, v["say"], fmt_price(v["price"]), fmt_price(v["last"]), dist)
+        lab = label(v)
+        mins = max(1, round((t - v["t0"]) / 60.0)) if not v.get("rechecked") else None
+        text = f"{lab} {v['name']} {fmt_price(v['price'])} · price {fmt_price(v['last'])} · after {v['n']} calls"
+        voice = (self.cfg.get("levels") or {}).get("voice", True)
+        good = (v["outcome"] in ("DEFENDED", "RECLAIMED") and v["from"] == "above") or v["outcome"] == "BROKE"
+        bad = (v["outcome"] in ("DEFENDED", "RECLAIMED") and v["from"] == "below") or v["outcome"] == "LOST"
+        alert = {"t": t, "symbol": st.symbol, "label": lab, "price": fmt_price(v["price"]), "side": "ask" if good else "bid",
+                 "role": "level", "text": text, "words": f"{st.symbol}. {words}" if voice else None, "code": v.get("code"),
+                 "zone": v.get("zone"), "last": v["last"], "followup": True}
+        alert["key"] = f"{round(t, 2)}|{st.symbol}|FOLLOWUP|{v['price']}"
+        self.alerts.appendleft(alert)
+        self._rec(dict(alert, ev="alert"))
+        self.log(st.symbol, text, t, kind="level")
+        try:
+            st.storybook.say("level", ("FOLLOWUP", round(v["price"], 4)), words + ".", "good" if good else "bad" if bad else "info", t, repeat=120.0)
         except Exception:
             pass
         for fn in self.listeners:

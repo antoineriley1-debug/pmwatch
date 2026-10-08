@@ -502,6 +502,18 @@ DEFAULTS = {
     "levels": {
         "enabled": True,                # KEY LEVELS WATCH: REJECTED / BOUNCED / BUYERS TOOK / SELLERS TOOK at the daily and session levels
         "voice": True,                  # say them (the ticker you are on)
+        # FOLLOW-UP: after a bunch of calls at one level, say how it came out (defended, lost, broke through, reclaimed) in plain words
+        "followup": True,
+        # Follow-up: say it this many minutes after the back and forth started at the earliest ...
+        "followup_min_minutes": 5,
+        # ... and by this many minutes at the latest (it waits for a quiet minute in between)
+        "followup_max_minutes": 7,
+        # Follow-up: only after at least this many calls at that level (coming into it, at it, bounced, rejected, taken)
+        "followup_min_alerts": 3,
+        # Follow-up: a quiet stretch with no new call at the level before it is said (seconds)
+        "followup_quiet_seconds": 60,
+        # Follow-up: still sitting on the level when due: look again this many minutes later, then say it as it is
+        "followup_recheck_minutes": 4,
         "near_ticks": 6,                # COMING INTO a level: within this many ticks and travelling toward it ...
         "near_atr_pct": 8,              # ... or this % of the daily ATR (the ladder lights the level's price from here too)
         "zone_ticks": 2,                # AT a level: within this many ticks ...

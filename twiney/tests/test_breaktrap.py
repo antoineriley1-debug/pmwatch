@@ -60,9 +60,9 @@ class BreakTrapTests(unittest.TestCase):
         bt = BreakTraps()
         seq = [(10.00 + i * 0.01, 100, "buy") for i in range(20)]          # a run: every print a new high, 1 s apart
         evs = run(bt, seq, levels=[], rth=True)
-        self.assertFalse([e for e in evs if e[1] == "HIGH OF DAY"])     # never a 'break' of a high that never stood
+        self.assertFalse([e for e in evs if e[1] == "EARLIER HIGH"])     # never a 'break' of a high that never stood
         evs = run(bt, [(10.15, 100, "sell")] * 1 + [(10.20, 300, "buy")], levels=[], t0=1300.0, rth=True)   # the 10.19 high stood 280 s
-        self.assertIn(("BROKE", "HIGH OF DAY"), evs)
+        self.assertIn(("BROKE", "EARLIER HIGH"), evs)
         self.assertAlmostEqual(bt.view(1400, 10.20)[0]["level"], 10.19)
 
     def test_no_hod_outside_regular_hours(self):
@@ -217,4 +217,4 @@ class EngineClockTests(unittest.TestCase):
         e.on_print("AAA", 10.20, 100, "NASDAQ", 1001.0)              # the first print after the restart
         e.on_print("AAA", 10.55, 300, "NASDAQ", 1002.0)              # through the REAL high
         b = st._bt.breaks
-        self.assertEqual([(x["name"], x["level"]) for x in b], [("HIGH OF DAY", 10.50)])
+        self.assertEqual([(x["name"], x["level"]) for x in b], [("EARLIER HIGH", 10.50)])

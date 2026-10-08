@@ -2817,6 +2817,20 @@ function spokenText(text){
     .replace(/(\d)k\b/g, "$1 thousand").replace(/\bk\b/g, " thousand")
     .replace(/[★·]/g, " ").replace(/\s+/g, " ").trim();
 }
+// 🔁 LAST CALL: the last call said again, in the same voice, even with the voice muted (you asked for it)
+let LAST_SAID = "";
+function replayLast(){
+  if (!LAST_SAID){ toast("No call said yet.", false); return; }
+  if (!("speechSynthesis" in window) && !(state && state.speech && state.speech.engine === "cloud")){ toast("This browser has no speech. Use Chrome or Edge.", false); return; }
+  try {
+    if (!voicePick && "speechSynthesis" in window) pickVoice();
+    const u = new SpeechSynthesisUtterance(LAST_SAID);
+    if (voicePick) u.voice = voicePick;
+    u.rate = 1.1; u.pitch = 1; u.volume = 1;
+    VQ.unshift({u, t: Date.now(), text: LAST_SAID});       // next up, ahead of any backlog
+    voicePump();
+  } catch (e) { toast("Voice failed: " + e.message, false); }
+}
 function say(text, force){
   if (!force && !store.get("voice", true)) return;
   if (!("speechSynthesis" in window)){ if (force) toast("This browser has no speech. Use Chrome or Edge.", false); return; }
@@ -2833,6 +2847,8 @@ function say(text, force){
     // the calls wait their turn here, not in the browser: one that waited too long is dropped (the market moved on;
     // "coming into VWAP" said ten seconds late is wrong)
     VQ.push({u, t: Date.now(), text}); while (VQ.length > 2) VQ.shift();    // a backlog keeps the newest two
+    LAST_SAID = text;
+    const rb = document.getElementById("replayBtn"); if (rb) rb.title = "Say the last call again: " + text;
     voicePump();
     if (force && !speechSynthesis.getVoices().length) toast("No voices installed in this browser yet. Windows: Settings → Time & language → Speech → Manage voices.", false);
   } catch (e) { if (force) toast("Voice failed: " + e.message, false); }

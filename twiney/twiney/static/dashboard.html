@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261008-2241">
+<meta name="build" content="20261008-2258">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -1689,7 +1689,7 @@ body.resizing .zbody{pointer-events:none}
   <span class="clipgrp"><button id="clipBtn" title="Save the last minutes of this recording to the journal as a clip">CLIP</button><select id="clipLen" title="how far back the clip reaches"><option value="60">1m</option><option value="120" selected>2m</option><option value="300">5m</option><option value="600">10m</option></select></span>
   <span class="sep"></span>
   <button id="trainBtn" title="Training: no reload calls, tags or voice. You read the tape; REVEAL in the RELOADS window checks your call.">TRAIN OFF</button>
-  <button id="voiceBtn" title="Voice on / off">VOICE ON</button><button id="voiceFlowBtn" title="Option flow in the voice: unusual calls / puts, repeat flow, the dough. Off = you hear reload buyers and sellers only">FLOW VOICE</button><button id="soloBtn" title="THIS TICKER: the voice and the OPTION FLOW panel follow the tab you are on and nothing else">ALL TICKERS</button>
+  <button id="replayBtn" title="Say the last call again (in case you missed it)">🔁 LAST CALL</button><button id="voiceBtn" title="Voice on / off">VOICE ON</button><button id="voiceFlowBtn" title="Option flow in the voice: unusual calls / puts, repeat flow, the dough. Off = you hear reload buyers and sellers only">FLOW VOICE</button><button id="soloBtn" title="THIS TICKER: the voice and the OPTION FLOW panel follow the tab you are on and nothing else">ALL TICKERS</button>
   <input type="range" id="voiceVol" min="0" max="1" step="0.1" style="width:60px" title="voice volume">
   <button id="soundBtn" title="beep on calls (active tab)">BEEP</button>
   <span class="spacer"></span>
@@ -3679,6 +3679,20 @@ function spokenText(text){
     .replace(/(\d)k\b/g, "$1 thousand").replace(/\bk\b/g, " thousand")
     .replace(/[★·]/g, " ").replace(/\s+/g, " ").trim();
 }
+// 🔁 LAST CALL: the last call said again, in the same voice, even with the voice muted (you asked for it)
+let LAST_SAID = "";
+function replayLast(){
+  if (!LAST_SAID){ toast("No call said yet.", false); return; }
+  if (!("speechSynthesis" in window) && !(state && state.speech && state.speech.engine === "cloud")){ toast("This browser has no speech. Use Chrome or Edge.", false); return; }
+  try {
+    if (!voicePick && "speechSynthesis" in window) pickVoice();
+    const u = new SpeechSynthesisUtterance(LAST_SAID);
+    if (voicePick) u.voice = voicePick;
+    u.rate = 1.05; u.pitch = 1; u.volume = store.get("voiceVol", 1);
+    VQ.unshift({u, t: Date.now(), text: LAST_SAID});       // next up, ahead of any backlog
+    voicePump();
+  } catch (e) { toast("Voice failed: " + e.message, false); }
+}
 function say(text, force){
   if (!force && !store.get("voice", true)) return;
   if (!("speechSynthesis" in window)){ if (force) toast("This browser has no speech. Use Chrome or Edge.", false); return; }
@@ -3695,6 +3709,8 @@ function say(text, force){
     // the calls wait their turn here, not in the browser: one that waited too long is dropped (the market moved on;
     // "coming into VWAP" said ten seconds late is wrong)
     VQ.push({u, t: Date.now(), text}); while (VQ.length > 2) VQ.shift();    // a backlog keeps the newest two
+    LAST_SAID = text;
+    const rb = document.getElementById("replayBtn"); if (rb) rb.title = "Say the last call again: " + text;
     voicePump();
     if (force && !speechSynthesis.getVoices().length) toast("No voices installed in this browser yet. Windows: Settings → Time & language → Speech → Manage voices.", false);
   } catch (e) { if (force) toast("Voice failed: " + e.message, false); }
@@ -6208,6 +6224,7 @@ function renderVoiceBtns(){
 document.getElementById("voiceFlowBtn").addEventListener("click", () => { store.set("voiceFlow", !voiceFlow()); renderVoiceBtns(); say(voiceFlow() ? "Flow voice on." : "Flow voice off. Reloaders only.", true); });
 document.getElementById("soloBtn").addEventListener("click", () => { store.set("solo", !solo()); renderVoiceBtns(); const el = document.getElementById("flowList"); if (el) el.dataset.h = ""; if (state) renderFlow(state); say(solo() ? "This ticker only." : "All tickers.", true); });
 renderVoiceBtns();
+document.getElementById("replayBtn").addEventListener("click", () => replayLast());
 document.getElementById("voiceBtn").addEventListener("click", () => { const on = !store.get("voice", true); store.set("voice", on); document.getElementById("voiceBtn").textContent = on ? "VOICE ON" : "VOICE OFF"; if (on) say("Voice on.", true); renderTabs(); });
 document.getElementById("voiceVol").value = store.get("voiceVol", 1);
 document.getElementById("voiceVol").addEventListener("change", e => store.set("voiceVol", +e.target.value));

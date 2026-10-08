@@ -82,20 +82,21 @@ class BreakTraps:
                 elif was == "above" and now == "below":
                     self._open(t, name, say, lv, False, resting_at(False, lv) if resting_at else 0, cfg)
                 self.side[k] = now
-        # 2) the high / low of day: a high that STOOD at least min_age seconds, then a print through it
+        # 2) the high / low of day: a high that STOOD at least min_age seconds, then a print through it. Named EARLIER HIGH
+        #    (LOW): the price it broke, which is not the high of day any more once it went (the chart's HIGH OF DAY is now)
         if rth:
             age = float(cfg.get("hod_min_age_seconds", 120))
             if self.hi is None:
                 self.hi = [price, t]
             elif price > self.hi[0] + through:
                 if t - self.hi[1] >= age:
-                    self._open(t, "HIGH OF DAY", "the high of day", self.hi[0], True, resting_at(True, self.hi[0]) if resting_at else 0, cfg)
+                    self._open(t, "EARLIER HIGH", "the earlier high of day", self.hi[0], True, resting_at(True, self.hi[0]) if resting_at else 0, cfg)
                 self.hi = [price, t]
             if self.lo is None:
                 self.lo = [price, t]
             elif price < self.lo[0] - through:
                 if t - self.lo[1] >= age:
-                    self._open(t, "LOW OF DAY", "the low of day", self.lo[0], False, resting_at(False, self.lo[0]) if resting_at else 0, cfg)
+                    self._open(t, "EARLIER LOW", "the earlier low of day", self.lo[0], False, resting_at(False, self.lo[0]) if resting_at else 0, cfg)
                 self.lo = [price, t]
         # 3) every live break: count the breakout side, watch for the trap, the reclaim, the exit
         retrace = float(cfg.get("retrace_dollars", 0.30))
