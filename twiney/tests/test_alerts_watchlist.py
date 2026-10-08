@@ -92,7 +92,7 @@ class UserAlertTests(unittest.TestCase):
         eq = [g for g in self.got if g["label"] == "EQUITY FLOW"]
         self.assertEqual(len(eq), 1)
         self.assertIn("$2.0M print", eq[0]["text"])
-        self.assertIn("dark pool", eq[0]["text"])
+        self.assertIn("off-exchange", eq[0]["text"])
         snap = e.snapshot(4.0)
         self.assertEqual([p["vid"] for p in snap["equity"]], ["b", "a"])
         self.assertEqual(snap["user_alerts"], [])

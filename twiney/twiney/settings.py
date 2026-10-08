@@ -32,7 +32,7 @@ SECTIONS = [
     ("chart", "Chart history", "History loaded at startup."),
     ("speech", "Voice", "The voice that says every call: the browser's own, or a cloud voice (ElevenLabs) with your API key and voice ID, so it never changes. Each phrase is kept, so repeats play at once."),
     ("inst", "Institutional footprints", "A fund's order sliced by an execution algo: a steady buy / sell PROGRAM (VWAP / % of volume), fund-style reloaders (the same refill size), a side walking the price, volume against its normal for the time of day."),
-    ("dark", "Dark pool", "Off-exchange prints (FINRA / TRF / ADF): the big ones called and listed, dark dollars by price on the ladder, the dark share of the day's volume."),
+    ("dark", "Large orders", "Large off-exchange orders (FINRA / TRF / ADF): the big ones called and listed, their dollars by price on the ladder, their share of the day's volume."),
     ("levels", "Key levels", "The daily chart's and the session's levels (prior day open / high / low / close, premarket and after-hours high / low / close, today's open, daily reject / bounce, prior highs and lows): what price does there, REJECTED / BOUNCED / BUYERS TOOK / SELLERS TOOK, called and said."),
     ("pace", "Pace of tape", "How fast each stock trades against its own normal, and the calls at your levels: stalling, pressing, breakout with speed (+ flow)."),
     ("story", "PS60 story", "The Daily chart, your PS60 places, zones, the tape, reload buyers / sellers, option flow and price response told as one running story."),

@@ -962,7 +962,7 @@ table.lad.clean td.sz.rl.rl-live .szn{color:#fff;font-weight:800}
 /* whole / half dollars: a small gold star by the price (emphasis only) */
 table.lad .rstar{color:#ffcc33;font-size:calc(9px * var(--ladz,1));margin-right:3px;text-shadow:0 0 4px #ffcc3399;vertical-align:1px}
 
-/* DARK POOL: purple. The D tag on off-exchange prints, the large ones glow; the DARK strip on the T&S; D$ on the ladder */
+/* LARGE ORDERS (off-exchange): purple. The L tag and glow on the T&S; the LARGE ORDERS strip; L $ on the ladder */
 .p-tape .t.tape2 .dktag{display:inline-block;font:800 9px var(--sans);padding:0 3px;margin-right:4px;border-radius:2px;background:#7c4dff;color:#fff;vertical-align:1px}
 .p-tape .t.tape2 tr.dkbig td{background:rgba(124,77,255,.30);box-shadow:inset 0 0 0 1px #b39dff,inset 0 0 10px rgba(124,77,255,.55);color:#fff;font-weight:800}
 .dkstrip{font:11px var(--mono);padding:2px 6px;border-bottom:1px solid #202124;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#d9ccff}

@@ -1026,10 +1026,10 @@ class Engine:
         amt = (lambda x: f"${x:.2f}" if x >= 1 else f"{x * 100:.0f}¢")(abs(vv)) if vv is not None else ""
         vtxt = "" if vv is None else f" · {amt} {'over' if vv > 0 else 'under'} VWAP" if abs(vv) >= 0.005 else " · at VWAP"
         usd = rec["usd"]; m = f"${usd / 1e6:.1f}M" if usd >= 1e6 else f"${usd / 1e3:.0f}K"
-        text = f"DARK POOL {m} · {int(size):,} @ {fmt_price(price)}" + (f" · {rec['at']}" if rec["at"] else "") + vtxt
-        words = (f"{st.symbol}. Dark pool, {usd / 1e6:.1f} million dollars, {int(size):,} shares at {fmt_price(price)}"
+        text = f"LARGE ORDER {m} · {int(size):,} @ {fmt_price(price)}" + (f" · {rec['at']}" if rec["at"] else "") + vtxt
+        words = (f"{st.symbol}. Large order, {usd / 1e6:.1f} million dollars, {int(size):,} shares at {fmt_price(price)}"
                  + ("" if vv is None else f", {abs(vv) * 100:.0f} cents {'over' if vv > 0 else 'under'} VWAP" if abs(vv) >= 0.005 else ", at VWAP"))
-        alert = {"t": t, "symbol": st.symbol, "label": "DARK POOL", "price": fmt_price(price), "side": "mid", "role": "dark",
+        alert = {"t": t, "symbol": st.symbol, "label": "LARGE ORDER", "price": fmt_price(price), "side": "mid", "role": "dark",
                  "text": text, "words": words if dc.get("voice", True) else None, "usd": round(usd), "shares": int(size)}
         alert["key"] = f"{round(t, 2)}|{st.symbol}|DARK|{price}|{int(size)}"
         self.alerts.appendleft(alert)
@@ -3562,7 +3562,7 @@ class Engine:
                 if a.get("repeat") and a.get("last") is not None and t - a["last"] < 300:
                     continue
                 k = lambda v: f"${v / 1e6:.1f}M" if v >= 1e6 else f"${v / 1e3:.0f}K"
-                where = "dark pool" if p.get("dark") else "on the tape"
+                where = "off-exchange" if p.get("dark") else "on the tape"
                 self._fire_user_alert(a, "EQUITY FLOW", f"EQUITY FLOW: {p['symbol']} {k(p['dollars'])} print, {narrative.shares(p['size'])} shares at "
                                       f"{narrative.px(p['price'])} {where}", f"equity print, {self._spoken(p['dollars'])} {where}", t,
                                       price=p.get("price"), dollars=p["dollars"])

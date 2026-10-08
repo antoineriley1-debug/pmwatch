@@ -545,17 +545,17 @@ function renderTape(d){
     const keep = el.scrollTop; el.innerHTML = html; el.scrollTop = keep; makeColsResizable(el.querySelector("table")); }
   renderBigTape(d); flyBigPrints(d);
 }
-/* DARK POOL on the T&S: today's off-exchange dollars and their share of the volume, the last large dark print.
-   Click: every large dark print (size, $, against the quote and VWAP) and the prices dark money keeps printing at */
+/* LARGE ORDERS on the T&S (off-exchange): today's dollars and their share of the volume, the last large order.
+   Click: every large order (size, $, against the quote and VWAP) and the prices they keep printing at */
 function darkStripHTML(dk){
-  if (!dk || !dk.usd) return `<div class="dkstrip dim" data-dk="1">DARK · no off-exchange prints yet</div>`;
+  if (!dk || !dk.usd) return `<div class="dkstrip dim" data-dk="1">LARGE ORDERS · none yet today</div>`;
   const open = store.get("darkOpen", false), b = (dk.big || [])[0];
   const vv = v => v == null ? "" : Math.abs(v) < 0.005 ? "at VWAP" : `${(Math.abs(v) * 100).toFixed(0)}¢ ${v > 0 ? "over" : "under"} VWAP`;
-  let h = `<div class="dkstrip" data-dk="1" title="off-exchange prints (dark pools / FINRA TRF): where funds route size. Click for the list"><b>DARK</b> ${usdK(dk.usd)}${dk.pct != null ? ` · ${dk.pct}% of volume` : ""}${b ? ` · last big <b>${kfmt(b.size)} @ ${px(b.price)}</b> ${usdK(b.usd)}${b.vs_vwap != null ? " · " + vv(b.vs_vwap) : ""} · ${ago(b.age)} ago` : ""}<span class="dkcar">${open ? "▴" : "▾"}</span></div>`;
+  let h = `<div class="dkstrip" data-dk="1" title="large off-exchange orders: click for the list"><b>LARGE ORDERS</b> ${usdK(dk.usd)}${dk.pct != null ? ` · ${dk.pct}% of volume` : ""}${b ? ` · last big <b>${kfmt(b.size)} @ ${px(b.price)}</b> ${usdK(b.usd)}${b.vs_vwap != null ? " · " + vv(b.vs_vwap) : ""} · ${ago(b.age)} ago` : ""}<span class="dkcar">${open ? "▴" : "▾"}</span></div>`;
   if (open){
     h += `<div class="dkbox"><table class="dkt"><tr><th>AGO</th><th>SIZE</th><th>PRICE</th><th>$</th><th>QUOTE</th><th>VWAP</th></tr>` +
-      ((dk.big || []).slice(0, 10).map(r => `<tr><td>${ago(r.age)}</td><td><b>${sz(r.size)}</b></td><td>${px(r.price)}</td><td><b>${usdK(r.usd)}</b></td><td class="dim">${esc(r.at || "")}</td><td class="${r.vs_vwap > 0.004 ? "s" : r.vs_vwap < -0.004 ? "b" : "dim"}">${r.vs_vwap == null ? "" : (r.vs_vwap >= 0 ? "+" : "−") + (Math.abs(r.vs_vwap) * 100).toFixed(0) + "¢"}</td></tr>`).join("") || `<tr><td colspan="6" class="dim">no large dark prints yet</td></tr>`) + `</table>` +
-      `<div class="dkh">WHERE DARK MONEY KEEPS PRINTING</div><table class="dkt">` + (dk.levels || []).slice(0, 6).map(x => `<tr><td>${px(x.price)}</td><td><b>${usdK(x.usd)}</b></td><td>${sz(x.shares)} sh</td><td class="dim">${x.prints} prints${x.big ? ` · ${x.big} large` : ""}</td></tr>`).join("") + `</table></div>`;
+      ((dk.big || []).slice(0, 10).map(r => `<tr><td>${ago(r.age)}</td><td><b>${sz(r.size)}</b></td><td>${px(r.price)}</td><td><b>${usdK(r.usd)}</b></td><td class="dim">${esc(r.at || "")}</td><td class="${r.vs_vwap > 0.004 ? "s" : r.vs_vwap < -0.004 ? "b" : "dim"}">${r.vs_vwap == null ? "" : (r.vs_vwap >= 0 ? "+" : "−") + (Math.abs(r.vs_vwap) * 100).toFixed(0) + "¢"}</td></tr>`).join("") || `<tr><td colspan="6" class="dim">no large orders yet</td></tr>`) + `</table>` +
+      `<div class="dkh">WHERE LARGE ORDERS KEEP PRINTING</div><table class="dkt">` + (dk.levels || []).slice(0, 6).map(x => `<tr><td>${px(x.price)}</td><td><b>${usdK(x.usd)}</b></td><td>${sz(x.shares)} sh</td><td class="dim">${x.prints} prints${x.big ? ` · ${x.big} large` : ""}</td></tr>`).join("") + `</table></div>`;
   }
   return h;
 }
@@ -576,7 +576,7 @@ function instStripHTML(ic){
   let h = warn + `<div class="instrip" data-inst="1" title="institutional footprints: a fund's order sliced by an execution algo. Click for the details"><b class="ih">INST</b> ${main}${extra}${todTxt ? " · " + todTxt : ""}<span class="dkcar">${open ? "▴" : "▾"}</span></div>` + guide;
   if (open){
     const f = ic.levels || [];
-    h += `<div class="dkbox inbox">` + (f.length ? `<div class="dkh">FUND SCORE BY LEVEL · same size · large size · walking · dark · steady flow</div><table class="dkt">` + f.map(x => `<tr><td class="${x.side === "bid" ? "b" : "s"}"><b>${x.score}</b> ${x.side === "bid" ? "BUYER" : "SELLER"}</td><td>${px(x.price)}</td><td><b>${usdK(x.usd)}</b></td><td class="dim">${esc(x.why.join(" · "))}${x.here ? " · there now" : ""}</td></tr>`).join("") + `</table>` : `<div class="dim">no fund levels yet</div>`) +
+    h += `<div class="dkbox inbox">` + (f.length ? `<div class="dkh">FUND SCORE BY LEVEL · same size · large size · walking · large orders · steady flow</div><table class="dkt">` + f.map(x => `<tr><td class="${x.side === "bid" ? "b" : "s"}"><b>${x.score}</b> ${x.side === "bid" ? "BUYER" : "SELLER"}</td><td>${px(x.price)}</td><td><b>${usdK(x.usd)}</b></td><td class="dim">${esc(x.why.join(" · "))}${x.here ? " · there now" : ""}</td></tr>`).join("") + `</table>` : `<div class="dim">no fund levels yet</div>`) +
       (ic.walk ? `<div class="dkh">WALKING ${ic.walk.dir === "down" ? "IT DOWN · distribution" : "IT UP · accumulation"}</div><div>${ic.walk.side === "SELLER" ? "Selling" : "Buying"} at ${ic.walk.steps.map(px).join(" → ")} · ${usdK(ic.walk.usd)}</div>` : "") +
       ((ic.guides || []).length > 1 ? `<div class="dkh">WHAT IT MEANS</div>` + ic.guides.map(g => `<div>${esc(g)}</div>`).join("") : "") +
       (pg ? `<div class="dkh">STEADY ${pg.side === "BUY" ? "BUYING" : "SELLING"} · program-like</div><div>${pg.side === "BUY" ? "Buyers" : "Sellers"} won ${pg.won} of the last ${pg.slots} five-minute slots (${pg.agree}%), net ~${pg.part}% of all volume, ${sz(pg.shares)} shares since ${pg.since}${vv(pg.vs_vwap)}. Steady, scaled to the volume: the way a VWAP / % of volume algo works a fund's order.</div>` : "") + `</div>`;
@@ -1439,15 +1439,15 @@ document.getElementById("alAdd").addEventListener("click", async () => {
 });
 ["alSym", "alVal"].forEach(id => document.getElementById(id).addEventListener("keydown", e => { e.stopPropagation(); if (e.key === "Enter") document.getElementById("alAdd").click(); }));
 document.getElementById("alList").addEventListener("click", async e => { const x = e.target.closest(".wlx"); if (!x) return; const out = await post("/api/alerts", {action: "remove", id: +x.dataset.al}); if (out.ok) poll(true); });
-/* ---------- equity flow: big stock prints, lit and dark */
+/* ---------- equity flow: big stock prints, on and off the exchanges */
 function renderEquity(s){
   const el = document.getElementById("eqList"); if (!el) return;
   const dark = document.getElementById("eqDark").checked, mine = document.getElementById("eqMine").checked;
   const rows = (s.equity || []).filter(p => (!dark || p.dark) && (!mine || (s.symbols || []).includes(p.symbol))).slice(0, 80);
   const src = document.getElementById("eqSrc"); const st = s.connection && s.connection.state === "DEMO" ? "PRACTICE PRINTS" : (s.equity_status && s.equity_status.detail ? "NO PRINTS READ · hover" : "QUANT DATA"); if (src.textContent !== st){ src.textContent = st; src.title = (s.equity_status && s.equity_status.detail) || ""; }
-  const html = rows.length ? rows.map(p => `<div class="fl eq ${p.dark ? "dk" : "lt"} ${p.side === "ask" ? "c" : p.side === "bid" ? "p" : ""}" title="${p.dark ? "off-exchange (dark pool) print" : "on the tape"}${p.side === "ask" ? " · at the ask (buyer paid up)" : p.side === "bid" ? " · at the bid (seller hit it)" : ""}">
+  const html = rows.length ? rows.map(p => `<div class="fl eq ${p.dark ? "dk" : "lt"} ${p.side === "ask" ? "c" : p.side === "bid" ? "p" : ""}" title="${p.dark ? "off-exchange print" : "on the tape"}${p.side === "ask" ? " · at the ask (buyer paid up)" : p.side === "bid" ? " · at the bid (seller hit it)" : ""}">
       <div class="tm">${nyHM(p.t)}</div>
-      <div class="top"><span class="tk">${esc(p.symbol)}</span><span class="prem">${kfmt$(p.dollars)}</span><span class="venue ${p.dark ? "dk" : ""}">${p.dark ? "DARK" : esc(p.venue || "LIT")}</span></div>
+      <div class="top"><span class="tk">${esc(p.symbol)}</span><span class="prem">${kfmt$(p.dollars)}</span><span class="venue ${p.dark ? "dk" : ""}">${p.dark ? "OFF-EX" : esc(p.venue || "LIT")}</span></div>
       <div class="cols"><span><i>SHARES</i>${sz(p.size)}</span><span><i>PRICE</i>${px(p.price)}</span><span><i>SIDE</i>${p.side === "ask" ? "PAID UP" : p.side === "bid" ? "HIT" : "MID"}</span></div></div>`).join("")
     : `<div class="dim" style="padding:10px">${s.connection && s.connection.state === "DEMO" ? "Practice prints are warming up." : (s.equity_status && s.equity_status.detail) ? "Quant Data answered but no equity print could be read: " + esc(s.equity_status.detail) : "No big equity prints yet (prints under the minimum in SETTINGS, Quant Data, are left out)."}</div>`;
   if (el.dataset.h !== html){ el.dataset.h = html; el.innerHTML = html; }
@@ -1612,7 +1612,7 @@ function speakNew(s){
     if (isFlow){ const fw = flowWords(a); if (fw && voiceFlow() && (mine || !solo())) items.push(fw); continue; }
     if (a.role === "trap"){ if (a.words && mine) items.push(a.words); continue; }   // trapped crowd: the tab you are on
     if (a.role === "inst"){ if (a.words && mine && store.get("voiceInst", true)) items.push(a.words); continue; }   // a program / fund footprint
-    if (a.role === "dark"){ if (a.words && mine && store.get("voiceDark", true)) items.push(a.words); continue; }   // a big dark pool print
+    if (a.role === "dark"){ if (a.words && mine && store.get("voiceDark", true)) items.push(a.words); continue; }   // a large order
     // the KEY LEVELS (rejected / bounced / took) and the PACE at them (pushing / stalling / breakout): the tab you are on
     if (a.role === "level" || a.role === "pace"){ if (a.words && mine && store.get("voiceLevels", true)) items.push(a.words); continue; }
     if (!mine) continue;                                         // background tabs never speak

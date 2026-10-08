@@ -449,8 +449,8 @@ DEFAULTS = {
     },
     # DARK POOL: trades printed off the exchanges (FINRA / TRF / ADF / OTC), where funds route much of their size
     "dark": {
-        "enabled": True,                # track off-exchange prints (T&S tag, DARK strip, ladder D$ at prices)
-        "big_shares": 10000,            # a LARGE dark print: at least this many shares ...
+        "enabled": True,                # track large off-exchange orders (T&S L tag, LARGE ORDERS strip, ladder L $ at prices)
+        "big_shares": 10000,            # a LARGE ORDER: at least this many shares ...
         "big_usd": 200000,              # ... or this many dollars
         "alert_usd": 2000000,           # call it out (alert + voice on the tab you are on) from this many dollars
         "call_gap_seconds": 120,        # ... at most one call per stock this often, unless a print is twice the last one called

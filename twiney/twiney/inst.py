@@ -202,7 +202,7 @@ def fund_levels(trackers, walk, dark_levels, prog, cfg):
         du = sum(v for k, v in darks.items() if abs(k - p) <= 0.011)
         if du >= 100000:
             sc += 15 * min(1.0, du / 1000000)
-            why.append(f"dark ${du / 1e6:.1f}M" if du >= 1e6 else f"dark ${du / 1e3:.0f}K")
+            why.append(f"large orders ${du / 1e6:.1f}M" if du >= 1e6 else f"large orders ${du / 1e3:.0f}K")
         if prog and (prog["side"] == "BUY") == (side == "bid"):
             sc += 10
             why.append(f"steady {'buying' if side == 'bid' else 'selling'}")
