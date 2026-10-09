@@ -277,6 +277,8 @@ class Engine:
         self.opt_vol = {}         # option key -> IBKR's cumulative day volume (volume bars from its changes)
         self.opt_watch = {}       # symbol -> {expiry, right, keys[]}: the chain rows the page is looking at
         self.jlog_path = None     # recordings/desk.log: one JSON line per connection / order / fill / error event
+        from .scorecard import Scorecard
+        self.score = Scorecard(None, cfg.get("score") or {})   # THE DESK SCORE: every directional call, judged 5 / 15 min later
         self._jlog = None
         self.opt_positions = {}   # option key -> {symbol, expiry, strike, right, mult, qty, avg_cost, bid, ask, last}     # (account, symbol) -> {"qty", "avg_cost"}
         self.fills = {}         # exec id -> fill dict
@@ -338,6 +340,14 @@ class Engine:
     def _rec(self, event):
         if self.recorder is not None:
             self.recorder.write(event)
+        if event.get("ev") == "alert" and (self.cfg.get("score") or {}).get("enabled", True):
+            try:
+                st = self.syms.get(event.get("symbol"))
+                if st is not None:
+                    atr = (st.__dict__.get("_story_atr") or {}).get("v") or st.play.get("atr")
+                    self.score.note(event, event.get("t") or self.last_t, st.price(), atr)
+            except Exception:
+                log.exception("scorecard note")
         if self.jlog_path and event.get("ev") in self.LOGGED_EVENTS:
             # a structured log line per operational event (never credentials: none pass through here)
             try:
@@ -3393,6 +3403,12 @@ class Engine:
             self._pace_tick(t)
             self._levels_tick(t)
             self._story_tick(t)
+            if (self.score.open or self.score.day is None) and t - getattr(self, "_score_t", -1e9) >= 1.0:
+                self._score_t = t
+                try:
+                    self.score.tick(t, {sym: st.price() for sym, st in self.syms.items() if st.price()})
+                except Exception:
+                    log.exception("scorecard tick")
             rc = self.cfg["reload"]
             if self.desk is not None and t - getattr(self, "_recon_t", -1e9) >= 5:
                 self._recon_t = t
@@ -5494,6 +5510,7 @@ class Engine:
                 "trading": self.trader.snapshot(run_watchdog=False) if self.trader else {"mode": "NONE", "can_trade": False,
                                                                         "why_not": "order entry not loaded"},
                 "replay": dict(self.replay) if self.replay else None,
+                "score": self.score.view() if (self.cfg.get("score") or {}).get("enabled", True) else None,
                 "account": {
                     "seen": self.account_seen,
                     "pending": sorted((dict(o, state=self.order_state(o)) for o in self._pending()), key=lambda o: -o.get("first_seen", 0)),

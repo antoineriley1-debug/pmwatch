@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261009-1341">
+<meta name="build" content="20261009-1446">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -1464,6 +1464,14 @@ body.whitedesk .chart-wrap canvas,body.whitedesk img,body.whitedesk video{filter
 .lad.candle td.cdl em.hl.l{top:auto;bottom:1px}
 .lad.candle th.cdl i.oc.h,.lad.candle th.cdl i.oc.l{opacity:.8}.lad.candle th.cdl i.oc.r{opacity:.7}
 
+/* THE DESK SCORE */
+.scrow{display:grid;grid-template-columns:minmax(120px,1fr) 28px 40px 60px auto;white-space:nowrap;gap:6px;align-items:baseline;font:11px var(--mono);padding:2px 8px;color:#cfd6df}
+.scrow i{font-style:normal;color:#9fb0c3;text-align:right} .scrow b{text-align:right} .scrow b.good{color:#3fb950} .scrow b.bad{color:#f85149}
+.scrow em{font-style:normal;color:#7d8590} .scrow u{text-decoration:none;color:#9fb0c3}
+.screc{display:grid;grid-template-columns:62px 44px 1fr 44px 56px;white-space:nowrap;gap:6px;align-items:baseline;font:11px var(--mono);padding:2px 8px;color:#cfd6df;border-left:3px solid transparent}
+.screc.good{border-left-color:#3fb950} .screc.bad{border-left-color:#f85149} .screc i{font-style:normal;color:#9fb0c3} .screc em{font-style:normal;font-weight:800}
+.screc.good em{color:#3fb950} .screc.bad em{color:#f85149} .screc u{text-decoration:none;text-align:right}
+
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
   --buy:#3fb56f;--sell:#d9534f;--gold:#e3a83a;--cyan:#5aa9d6;--violet:#a48bd6;--warn:#d9a441;
@@ -1858,6 +1866,7 @@ body.resizing .zbody{pointer-events:none}
       <button id="alAdd">ADD ALERT</button><span class="dim" id="alMsg"></span></div><div id="alList"></div></div></div>
   <div class="pnl" data-p="conviction"><div class="pc"><div id="cvPanel"></div></div></div>
   <div class="pnl" data-p="story"><div class="pc"></div></div>
+  <div class="pnl" data-p="score"><div class="pc"></div></div>
   <div class="pnl" data-p="options"><div class="pc"><div class="oc"><div class="oc-hd">
     <span class="sym" id="ocSym"></span><select id="ocExp" title="expiry"></select>
     <span class="cp"><button data-right="C" class="on">CALLS</button><button data-right="P">PUTS</button></span>
@@ -2131,7 +2140,7 @@ function makeColsResizable(table){
 
 /* ===================== TED — TWINEY EXECUTION DESK: panel pool ===================== */
 const PANELS = {
-  chart: "CHART", chart2: "CHART 2", chart3: "CHART 3", ochart: "OPTION CHART", obook: "OPTION LEVEL II", otape: "OPTION T&S", obig: "OPTION BIG TAPE", foot: "FOOTPRINT 5m", book: "LEVEL II", tape: "TIME & SALES", bigtape: "BIG TAPE", options: "OPTION CHAIN", setup: "PLAY SETUP", ps60: "PS60", conviction: "CONVICTION", story: "PS60 STORY", reload: "RELOADS",
+  chart: "CHART", chart2: "CHART 2", chart3: "CHART 3", ochart: "OPTION CHART", obook: "OPTION LEVEL II", otape: "OPTION T&S", obig: "OPTION BIG TAPE", foot: "FOOTPRINT 5m", book: "LEVEL II", tape: "TIME & SALES", bigtape: "BIG TAPE", options: "OPTION CHAIN", setup: "PLAY SETUP", ps60: "PS60", conviction: "CONVICTION", story: "PS60 STORY", score: "DESK SCORE", reload: "RELOADS",
   ticket: "ORDER ENTRY", positions: "POSITIONS", orders: "ORDERS", watch: "WATCHLIST", calls: "CALLS",
   flow: "OPTION FLOW", eqflow: "EQUITY FLOW", urgency: "URGENT FLOW", bigmoney: "BIG MONEY 30D", myalerts: "ALERTS", desk: "DESK", journal: "JOURNAL", messages: "MESSAGES"};
 const SYMBOL_LINKED = new Set(["chart", "chart2", "chart3", "foot", "book", "tape", "bigtape", "options", "ps60", "reload", "ticket", "calls", "setup", "bigmoney", "conviction", "story"]);
@@ -3978,7 +3987,7 @@ function normalize(l){
   const placed = new Set([].concat(...ZONES.map(z => out.zones[z])).concat(Object.keys(out.floats || {})));
   // a panel new in a build docks itself once (ALERTS beside the watchlist, EQUITY FLOW beside the option flow), so it is
   // not lost behind the PANELS menu; a panel you hid yourself stays hidden
-  const NEW_PANELS = {myalerts: "TL", eqflow: "BC", urgency: "BC", bigmoney: "BC", conviction: "BC", bigtape: "BX", options: "BC", ochart: "BC", story: "BL"};
+  const NEW_PANELS = {myalerts: "TL", eqflow: "BC", urgency: "BC", bigmoney: "BC", conviction: "BC", bigtape: "BX", options: "BC", ochart: "BC", story: "BL", score: "BL"};
   out.seen = Array.isArray(out.seen) ? out.seen : Object.keys(P).filter(id => !(id in NEW_PANELS));
   for (const id of Object.keys(NEW_PANELS)) if (P[id] && !out.seen.includes(id)){ out.seen.push(id); if (!placed.has(id)){ out.zones[NEW_PANELS[id]].push(id); placed.add(id); } }
   out.hidden = Object.keys(P).filter(id => !placed.has(id));
@@ -6847,7 +6856,7 @@ function render(s){
   renderQuote(d);
   charts.chart.el.classList.toggle("clean", store.get("clean", true));
   drawChart(charts.chart); drawChart(charts.foot); drawChart(charts.chart2); drawChart(charts.chart3); renderFast(d);
-  renderBook(d); renderTape(d); renderSetup(d); renderPS60(d); renderReloads(d); renderConviction(d); renderStory(d);
+  renderBook(d); renderTape(d); renderSetup(d); renderPS60(d); renderReloads(d); renderConviction(d); renderStory(d); renderScore(s);
   renderTicket(s, d);
   renderWatch(s); renderCalls(s); renderPositions(s); renderOrders(s);
   renderDesk(s); renderTrades(s); renderFlow(s); renderFlowScope(s); renderEquity(s); renderMyAlerts(s); renderUrgency(s); renderBigMoney(curData());
@@ -7089,6 +7098,24 @@ function renderBigMoney(d){
 // the name under each dot, so the row reads without hovering (click it for the whole CONVICTION panel)
 const LANE_SHORT = {L0_DAILY_MP: "MP", L1_PIVOT: "PIVOT", L2_CONFIRM: "CONFIRM", L3_SECOND_ENTRY: "2ND", L4_BUILD: "BUILD", L5_FLOW_SIDE: "FLOW", L6_FLOW_QUALITY: "QUALITY", L7_CORRELATION: "CORR"};
 const LANE_NAMES = {L0_DAILY_MP: "DAILY MP", L1_PIVOT: "PIVOT", L2_CONFIRM: "CONFIRM", L3_SECOND_ENTRY: "2ND ENTRY", L4_BUILD: "BUILD", L5_FLOW_SIDE: "FLOW SIDE", L6_FLOW_QUALITY: "FLOW QUALITY", L7_CORRELATION: "CORRELATION"};
+function renderScore(st){
+  if (!P.score) return;
+  const s = st && st.score;
+  if (!s){ panelHTML("score", `<div class="dim" style="padding:8px">${st ? "THE DESK SCORE is off (SETTINGS > Desk score)." : NA}</div>`); return; }
+  const tm = t => typeof nyHM12 === "function" ? nyHM12(t) : new Date(t * 1000).toLocaleTimeString();
+  const pc = v => v == null ? "" : `${v}%`;
+  const mv = v => v == null ? "" : `${v >= 0 ? "+" : ""}${(+v).toFixed(2)}`;
+  const kinds = (s.kinds || []).map(k => `<div class="scrow"><span>${esc(k.kind)}</span><i>${k.n}</i>
+      <b class="${k.hit_pct == null ? "" : k.hit_pct >= 60 ? "good" : k.hit_pct <= 35 ? "bad" : ""}">${pc(k.hit_pct)}</b>
+      <em title="hits / misses / flat">${k.hit}·${k.miss}·${k.flat}</em><u title="average move at 5 and 15 min, in ATRs">${mv(k.avg5)} / ${mv(k.avg15)} ATR</u></div>`).join("");
+  const recent = (s.recent || []).map(r => `<div class="screc ${r.outcome === "HIT" ? "good" : r.outcome === "MISS" ? "bad" : ""}" title="${esc(r.text || "")}">
+      <span>${tm(r.t)}</span><b>${esc(r.symbol || "")}</b><i>${esc(r.kind)} ${r.dir > 0 ? "▲" : "▼"}</i><em>${r.outcome || ""}</em><u>${r.pct15 == null ? "" : (r.pct15 >= 0 ? "+" : "") + r.pct15 + "%"}</u></div>`).join("");
+  const html = `<div class="sth">BY CALL · count · hit rate · hit·miss·flat · avg move 5 / 15 min (ATRs)</div>
+    <div class="sctab">${kinds || `<div class="dim" style="padding:4px 8px">no call has had its 15 minutes yet${s.open ? ` · ${s.open} waiting` : ""}</div>`}</div>
+    <div class="sth">THE LAST CALLS · judged 15 minutes after${s.open ? ` · ${s.open} still waiting` : ""}</div>
+    <div class="sctab">${recent || `<div class="dim" style="padding:4px 8px">nothing judged yet</div>`}</div>`;
+  panelHTML("score", html);
+}
 function renderConviction(d){
   const strip = document.getElementById("cvStrip"), panel = document.getElementById("cvPanel");
   const c = d && d.conviction;

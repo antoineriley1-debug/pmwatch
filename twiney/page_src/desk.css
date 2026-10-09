@@ -1151,3 +1151,11 @@ body.whitedesk .chart-wrap canvas,body.whitedesk img,body.whitedesk video{filter
 .lad.candle td.cdl em.hl{position:absolute;right:1px;top:1px;font:700 8px/1 var(--mono);color:var(--cc);font-style:normal}
 .lad.candle td.cdl em.hl.l{top:auto;bottom:1px}
 .lad.candle th.cdl i.oc.h,.lad.candle th.cdl i.oc.l{opacity:.8}.lad.candle th.cdl i.oc.r{opacity:.7}
+
+/* THE DESK SCORE */
+.scrow{display:grid;grid-template-columns:minmax(120px,1fr) 28px 40px 60px auto;white-space:nowrap;gap:6px;align-items:baseline;font:11px var(--mono);padding:2px 8px;color:#cfd6df}
+.scrow i{font-style:normal;color:#9fb0c3;text-align:right} .scrow b{text-align:right} .scrow b.good{color:#3fb950} .scrow b.bad{color:#f85149}
+.scrow em{font-style:normal;color:#7d8590} .scrow u{text-decoration:none;color:#9fb0c3}
+.screc{display:grid;grid-template-columns:62px 44px 1fr 44px 56px;white-space:nowrap;gap:6px;align-items:baseline;font:11px var(--mono);padding:2px 8px;color:#cfd6df;border-left:3px solid transparent}
+.screc.good{border-left-color:#3fb950} .screc.bad{border-left-color:#f85149} .screc i{font-style:normal;color:#9fb0c3} .screc em{font-style:normal;font-weight:800}
+.screc.good em{color:#3fb950} .screc.bad em{color:#f85149} .screc u{text-decoration:none;text-align:right}

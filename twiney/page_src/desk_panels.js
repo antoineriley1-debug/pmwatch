@@ -2144,7 +2144,7 @@ function render(s){
   renderQuote(d);
   charts.chart.el.classList.toggle("clean", store.get("clean", true));
   drawChart(charts.chart); drawChart(charts.foot); drawChart(charts.chart2); drawChart(charts.chart3); renderFast(d);
-  renderBook(d); renderTape(d); renderSetup(d); renderPS60(d); renderReloads(d); renderConviction(d); renderStory(d);
+  renderBook(d); renderTape(d); renderSetup(d); renderPS60(d); renderReloads(d); renderConviction(d); renderStory(d); renderScore(s);
   renderTicket(s, d);
   renderWatch(s); renderCalls(s); renderPositions(s); renderOrders(s);
   renderDesk(s); renderTrades(s); renderFlow(s); renderFlowScope(s); renderEquity(s); renderMyAlerts(s); renderUrgency(s); renderBigMoney(curData());
@@ -2386,6 +2386,24 @@ function renderBigMoney(d){
 // the name under each dot, so the row reads without hovering (click it for the whole CONVICTION panel)
 const LANE_SHORT = {L0_DAILY_MP: "MP", L1_PIVOT: "PIVOT", L2_CONFIRM: "CONFIRM", L3_SECOND_ENTRY: "2ND", L4_BUILD: "BUILD", L5_FLOW_SIDE: "FLOW", L6_FLOW_QUALITY: "QUALITY", L7_CORRELATION: "CORR"};
 const LANE_NAMES = {L0_DAILY_MP: "DAILY MP", L1_PIVOT: "PIVOT", L2_CONFIRM: "CONFIRM", L3_SECOND_ENTRY: "2ND ENTRY", L4_BUILD: "BUILD", L5_FLOW_SIDE: "FLOW SIDE", L6_FLOW_QUALITY: "FLOW QUALITY", L7_CORRELATION: "CORRELATION"};
+function renderScore(st){
+  if (!P.score) return;
+  const s = st && st.score;
+  if (!s){ panelHTML("score", `<div class="dim" style="padding:8px">${st ? "THE DESK SCORE is off (SETTINGS > Desk score)." : NA}</div>`); return; }
+  const tm = t => typeof nyHM12 === "function" ? nyHM12(t) : new Date(t * 1000).toLocaleTimeString();
+  const pc = v => v == null ? "" : `${v}%`;
+  const mv = v => v == null ? "" : `${v >= 0 ? "+" : ""}${(+v).toFixed(2)}`;
+  const kinds = (s.kinds || []).map(k => `<div class="scrow"><span>${esc(k.kind)}</span><i>${k.n}</i>
+      <b class="${k.hit_pct == null ? "" : k.hit_pct >= 60 ? "good" : k.hit_pct <= 35 ? "bad" : ""}">${pc(k.hit_pct)}</b>
+      <em title="hits / misses / flat">${k.hit}·${k.miss}·${k.flat}</em><u title="average move at 5 and 15 min, in ATRs">${mv(k.avg5)} / ${mv(k.avg15)} ATR</u></div>`).join("");
+  const recent = (s.recent || []).map(r => `<div class="screc ${r.outcome === "HIT" ? "good" : r.outcome === "MISS" ? "bad" : ""}" title="${esc(r.text || "")}">
+      <span>${tm(r.t)}</span><b>${esc(r.symbol || "")}</b><i>${esc(r.kind)} ${r.dir > 0 ? "▲" : "▼"}</i><em>${r.outcome || ""}</em><u>${r.pct15 == null ? "" : (r.pct15 >= 0 ? "+" : "") + r.pct15 + "%"}</u></div>`).join("");
+  const html = `<div class="sth">BY CALL · count · hit rate · hit·miss·flat · avg move 5 / 15 min (ATRs)</div>
+    <div class="sctab">${kinds || `<div class="dim" style="padding:4px 8px">no call has had its 15 minutes yet${s.open ? ` · ${s.open} waiting` : ""}</div>`}</div>
+    <div class="sth">THE LAST CALLS · judged 15 minutes after${s.open ? ` · ${s.open} still waiting` : ""}</div>
+    <div class="sctab">${recent || `<div class="dim" style="padding:4px 8px">nothing judged yet</div>`}</div>`;
+  panelHTML("score", html);
+}
 function renderConviction(d){
   const strip = document.getElementById("cvStrip"), panel = document.getElementById("cvPanel");
   const c = d && d.conviction;

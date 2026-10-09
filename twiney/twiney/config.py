@@ -610,6 +610,11 @@ DEFAULTS = {
         "coach_seconds": 180,           # the patience words at most this often
         "coach_reload_repeat_seconds": 120,  # a reload buyer / seller at the place: be careful, said again this often while he is STILL THERE
     },
+    "score": {
+        "enabled": True,                # THE DESK SCORE: every directional call (second entry live, CLEANED UP, levels taken on a close, breakouts
+                                        # with speed, programs, calls / puts pounded, the open read) judged 5 and 15 minutes later
+        "hit_atr": 0.10,                # a HIT: price moved at least this much of the daily ATR the call's way at 15 minutes (a MISS: the other way)
+    },
     "studies": {
         "gas": True,                    # GAS + ATR (new PS60 Gas + ATR)
         "airspace": True,               # AIRSPACE (PS60 MP Airspace)

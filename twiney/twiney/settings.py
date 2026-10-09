@@ -36,6 +36,7 @@ SECTIONS = [
     ("levels", "Key levels", "The daily chart's and the session's levels (prior day open / high / low / close, premarket and after-hours high / low / close, today's open, daily reject / bounce, prior highs and lows): what price does there, REJECTED / BOUNCED / BUYERS TOOK / SELLERS TOOK, called and said."),
     ("pace", "Pace of tape", "How fast each stock trades against its own normal, and the calls at your levels: stalling, pressing, breakout with speed (+ flow)."),
     ("story", "PS60 story", "The Daily chart, your PS60 places, zones, the tape, reload buyers / sellers, option flow and price response told as one running story."),
+    ("score", "Desk score", "THE DESK SCORE: every call with a direction in it (second entry live, CLEANED UP, a level taken on a close, a breakout with speed, a program, calls / puts pounded, the open read) judged 5 and 15 minutes later. Which calls earn their airtime."),
     ("studies", "Chart studies", "GAS + ATR, AIRSPACE and UNVISITED HIGHS / LOWS on the stock chart (never the option chart). Each switches off on its own."),
     ("account", "Account", "Orders, positions and fills."),
     ("health", "Feed health", "When a feed counts as stale."),
@@ -72,6 +73,7 @@ CHOICES = {
 }
 
 LABELS = {
+    "hit_atr": "A HIT: moved this much of the daily ATR the call's way at 15 min",
     "min_premium": "Min premium ($)", "index_min_premium": "Index min premium ($)", "otm_pct": "Min % out of the money",
     "max_dte": "Max days to expiry", "api_key": "API key", "base_url": "API address", "flow_path": "Flow endpoint",
     "max_dollars_per_order": "Max $ per order", "max_daily_loss": "Day loss limit ($)", "allow_market": "Allow market / naked stop orders",
