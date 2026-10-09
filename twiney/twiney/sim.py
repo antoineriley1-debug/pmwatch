@@ -523,6 +523,11 @@ class DemoFeed:
             size = st[3] if len(st) > 3 else rg["size"]
             s.thin = st[4] if len(st) > 4 else 1.0
             b = 0.5 + 0.8 * (b - 0.5) + (1.0 if s.episode else 0.6) * s.beta * m   # still feels the market
+            if s.hod is not None and s.lod is not None and s.day_open:
+                atr = max(s.tk * 20, s.day_open * 0.018)
+                stretch = (s.last - (s.hod + s.lod) / 2) / atr
+                if abs(stretch) > 1.2:
+                    b -= (1 if stretch > 0 else -1) * 0.1 * min(1.5, abs(stretch) - 1.2)
             return min(0.9, max(0.1, b)), r * heat * s.vs ** 0.5, size * s.vs ** 0.25
         s.thin = 1.0
         s.episode = None
@@ -553,7 +558,23 @@ class DemoFeed:
             b -= ph["vwap"] * 0.12 * max(-1.0, min(1.0, dev / 0.004))
         rate_x *= s.vs ** 0.5                                   # a hot tape: more prints, a little bigger, not 3x everything
         size_x *= s.vs ** 0.25
+        b = self._rubber(s, b)
         return min(0.9, max(0.1, b)), rg["rate"] * heat * rate_x, rg["size"] * size_x
+
+    def _rubber(self, s, b):
+        """THE DAY'S RUBBER BAND. A stock has a daily range it tends to keep (its ATR): the further the session has
+        stretched from its middle, the more the other side leans in (the market makers, the mean reverters, the
+        profit takers), so a day runs one to two ATRs, not ten. The lean is damped too: a 60 / 40 regime is a lean on
+        the tape, not a one-way street."""
+        b = 0.5 + 0.55 * (b - 0.5)
+        if s.hod is None or s.lod is None or not s.day_open:
+            return b
+        atr = max(s.tk * 20, s.day_open * 0.018)
+        mid = (s.hod + s.lod) / 2
+        stretch = (s.last - mid) / atr
+        if abs(stretch) > 0.6:
+            b -= (1 if stretch > 0 else -1) * 0.16 * min(1.5, abs(stretch) - 0.6)
+        return b
 
     def _close_spread(self, s):
         """Market makers: a gap between bid and ask gets stepped into within a moment. Who steps in follows the
@@ -971,9 +992,11 @@ class DemoFeed:
             s = self.state[sym]
             if s.script:
                 continue
-            lean = (0.16 if down else 0.84) if not whole else (0.5 - 0.2 * s.beta if down else 0.5 + 0.2 * s.beta)
-            back = (0.62 if down else 0.38) if not whole else 0.5
-            s.script = [(lean, 6.0, t + dur * 0.5, 2.5, 0.35), (back, 2.5, t + dur, 1.4, 1.0)]
+            # a real shock: a few percent in a few minutes, four times the pace, part of the book pulled, then the
+            # partial retrace. The day's rubber band keeps it to a couple of ATRs, never a stock cut in half
+            lean = (0.27 if down else 0.73) if not whole else (0.5 - 0.14 * s.beta if down else 0.5 + 0.14 * s.beta)
+            back = (0.6 if down else 0.4) if not whole else 0.5
+            s.script = [(lean, 4.0, t + dur * 0.5, 2.0, 0.6), (back, 2.2, t + dur, 1.3, 1.0)]
             s.episode = "news"
             s.ep_script = s.script
             s.vs = 3.0
