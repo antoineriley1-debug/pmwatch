@@ -214,3 +214,95 @@ class ManagementTests(unittest.TestCase):
         paid = e.opt_positions[k]["avg_cost"] / (e.opt_positions[k].get("mult") or 100)
         self.assertGreaterEqual(tr.opt_stops[k]["price"], paid - 1e-9)                # never under what you paid
         self.assertLess(tr.opt_stops[k]["price"] - paid, 0.05 + 1e-9); self.assertEqual(tr.opt_stops[k]["on"], "option")
+
+
+class BackupStopTests(unittest.TestCase):
+    """A BACKUP STOP at IBKR on a contract you hold: placed at the contract's price where your stop is (plus a cushion),
+    sized to what you hold, moved with your stop, off when you are out, and it alone gets you out with the desk off."""
+    def setUp(self):
+        import datetime, zoneinfo
+        from twiney import options as _o
+        self.e, self.tr, self.broker = make()
+        self.T = datetime.datetime(2026, 10, 12, 11, 0, tzinfo=zoneinfo.ZoneInfo("America/New_York")).timestamp()
+        self.e.on_l1("AAA", "last", 10.0, self.T)
+        self.exp = self.e.option_chain("AAA", None, "C", self.T)["expiry"]
+        self.k = _o.key_of("AAA", self.exp, 9, "C")          # in the money: a real premium to put a stop under
+
+    def backups(self):
+        return [o for o in self.e._pending(self.k) if o.get("role") == "backup_stop"]
+
+    def held(self):
+        return int((self.e.opt_positions.get(self.k) or {}).get("qty") or 0)
+
+    def buy(self, n):
+        self.assertTrue(self.tr.opt_open("AAA", self.exp, 9, "C", "BUY", n, None, self.T)["ok"]); self.e.practice_opt_tick(self.T + 1)
+        self.assertEqual(self.held(), n)
+
+    def test_placed_sized_moved_and_off(self):
+        e, tr, T, k = self.e, self.tr, self.T, self.k
+        self.buy(2)
+        tr.watchdog(T + 1.5); self.assertEqual(self.backups(), [])                    # no stop: nothing to back up
+        self.assertTrue(tr.set_opt_stop(k, 9.70, "stock", T + 2)["ok"]); tr.watchdog(T + 2.5)
+        b = self.backups(); self.assertEqual(len(b), 1)
+        bid = e.opt_quotes[k]["bid"]
+        self.assertEqual((b[0]["action"], b[0]["type"], int(b[0]["remaining"])), ("SELL", "STP LMT", 2))
+        self.assertLess(b[0]["aux"], bid)                                               # under the contract now
+        trig1 = b[0]["aux"]
+        # the desk's own stop is not blocked by it (it is not a close)
+        self.assertEqual(tr._opt_working(k, "SELL"), 0)
+        # move the stop lower: the backup follows
+        tr.set_opt_stop(k, 9.40, "stock", T + 3); tr.watchdog(T + 5.5)
+        self.assertLess(self.backups()[0]["aux"], trig1)
+        # take one off: the backup covers the one left
+        self.assertTrue(tr.opt_adjust(k, 1, "close", None, T + 6)["ok"]); e.practice_opt_tick(T + 6.5); tr.watchdog(T + 7)
+        self.assertEqual(self.held(), 1); self.assertEqual(int(self.backups()[0]["remaining"]), 1)
+        # out: the backup is off
+        self.assertTrue(tr.opt_adjust(k, 0, "close", None, T + 8)["ok"]); e.practice_opt_tick(T + 8.5); tr.watchdog(T + 9)
+        self.assertEqual(self.held(), 0); self.assertEqual(self.backups(), [])
+
+    def test_the_backup_alone_gets_you_out_with_the_desk_off(self):
+        e, tr, T, k = self.e, self.tr, self.T, self.k
+        self.buy(1)
+        tr.set_opt_stop(k, 9.70, "stock", T + 2); tr.watchdog(T + 2.5)
+        self.assertEqual(len(self.backups()), 1)
+        # the desk is off: no watchdog, no fast stops — only IBKR (the simulator) and the market
+        for i, px in enumerate((9.6, 9.3, 9.0, 8.7)):
+            e.on_l1("AAA", "last", px, T + 3 + i); e.practice_opt_tick(T + 3.5 + i)
+        self.assertEqual(self.held(), 0)
+
+    def test_setting_off_means_no_backup(self):
+        e, tr, T, k = self.e, self.tr, self.T, self.k
+        tr.cfg["option_backup_stop"] = False
+        self.buy(1); tr.set_opt_stop(k, 9.70, "stock", T + 2); tr.watchdog(T + 2.5)
+        self.assertEqual(self.backups(), [])
+
+
+class PartialTargetTests(unittest.TestCase):
+    def test_half_at_the_target_the_rest_at_breakeven(self):
+        import datetime, zoneinfo
+        from twiney import options as _o
+        e, tr, broker = make(); tr.cfg["option_target_take_pct"] = 50; tr.cfg["option_backup_stop"] = False
+        T = datetime.datetime(2026, 10, 12, 11, 0, tzinfo=zoneinfo.ZoneInfo("America/New_York")).timestamp()
+        e.on_l1("AAA", "last", 10.0, T)
+        exp = e.option_chain("AAA", None, "C", T)["expiry"]; k = _o.key_of("AAA", exp, 10, "C")
+        tr.opt_open("AAA", exp, 10, "C", "BUY", 4, None, T); e.practice_opt_tick(T + 1)
+        paid = e.opt_positions[k]["avg_cost"] / 100
+        bid = e.opt_quotes[k]["bid"]
+        self.assertTrue(tr.set_opt_level(k, "target", round(bid + 0.30, 2), now=T + 1)["ok"])
+        tr.watchdog(T + 1.5)
+        for i, px in enumerate((10.3, 10.6, 10.9, 11.2)):
+            e.on_l1("AAA", "last", px, T + 2 + i); e.practice_opt_tick(T + 2.5 + i); tr.watchdog(T + 2.7 + i)
+        self.assertEqual(int(e.opt_positions[k]["qty"]), 2)                            # half out, half runs
+        self.assertEqual(tr.opt_stops[k]["on"], "option"); self.assertGreaterEqual(tr.opt_stops[k]["price"], paid - 1e-9)
+
+
+class WalkingCallTests(unittest.TestCase):
+    def test_a_walking_call_never_breaks_the_desk(self):
+        """A side WALKING the price (institutional footprints) used to join raw prices and crash the whole snapshot."""
+        e, tr, broker = make()
+        st = e.syms["AAA"]
+        v = {"walk": {"side": "SELLER", "steps": [10.05, 10.0, 9.95, 9.9], "dir": "down"}}
+        try:
+            e._inst_calls(st, v, 100.0, dict(e.cfg.get("inst") or {}, voice=True))
+        except TypeError as exc:
+            self.fail(f"walking call crashed: {exc}")

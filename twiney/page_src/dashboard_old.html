@@ -1285,9 +1285,9 @@ function optHeldMenu(d, price){
   const stopOk = last == null || (call ? price < last : price > last), tgtOk = last == null || (call ? price > last : price < last);
   const name = `${parts[1] ? parts[1].slice(4, 6) + "/" + parts[1].slice(6, 8) + " " : ""}${parts[2] || c.key}`;
   const btn = (role, ok, label, why) => `<button data-do="optline" data-role="${role}" data-key="${esc(c.key)}" data-qty="${c.qty}" class="blvl" ${ok ? "" : `disabled title="${why}"`}>${label} @ ${px(price)}${ok ? at(price) : ""}</button>`;
-  return `<div class="lvl2 heldopt" title="the line goes on the ${esc(d.symbol)} chart and trades your contract: ${esc(d.symbol)} through the STOP sells it, ${esc(d.symbol)} at the TARGET sells it all">
+  return `<div class="lvl2 heldopt" title="the line goes on the ${esc(d.symbol)} chart and trades your contract: ${esc(d.symbol)} through the STOP sells it, ${esc(d.symbol)} at the TARGET sells ${(T().opt_target_pct || 100) >= 100 ? "it all" : (T().opt_target_pct) + "% of it, the rest runs with its stop at breakeven"}">
       <div class="hh"><b class="${call ? "b" : "s"}">YOUR ${esc(name)}</b> <span class="dim">· ${c.qty} ct · lines on the stock chart sell it</span></div>
-      <div class="hb">${btn("stop", stopOk, "STOP", `a ${call ? "call" : "put"}'s stop goes ${call ? "under" : "over"} ${px(last)}`)}${btn("target", tgtOk, "TARGET", `a ${call ? "call" : "put"}'s target goes ${call ? "over" : "under"} ${px(last)}`)}</div></div>`;
+      <div class="hb">${btn("stop", stopOk, "STOP", `a ${call ? "call" : "put"}'s stop goes ${call ? "under" : "over"} ${px(last)}`)}${btn("target", tgtOk, (T().opt_target_pct || 100) >= 100 ? "TARGET" : `TARGET ${T().opt_target_pct}%`, `a ${call ? "call" : "put"}'s target goes ${call ? "over" : "under"} ${px(last)}`)}</div></div>`;
 }
 async function optHeldLine(d, role, price, key, qty){
   const right = (String(key).split(" ")[2] || "").slice(-1), side = right === "C" ? "long" : "short";

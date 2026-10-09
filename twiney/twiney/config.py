@@ -241,6 +241,23 @@ DEFAULTS = {
         "clean_chart_on_start": True,
         # a contract you hold is stopped out by the stock chart's STOP line (the side that hurts it) unless you set its own stop
         "option_stop_follows_chart": True,
+        # BACKUP STOP at IBKR for a contract you hold: the desk fires your option stops itself (on the stock's price or
+        # the contract's), so they need the desk running. This puts a real stop-limit order on the contract at IBKR,
+        # at its price where your stop is (a little past it, so the desk's own stop goes first): it protects you with
+        # the desk or the computer off. Sized to what you hold, it follows your stop, and comes off when you are out
+        "option_backup_stop": True,
+        # Backup stop: how far past the contract's price at your stop it sits (% of that price, at least a nickel)
+        "option_backup_cushion_pct": 15,
+        # Backup stop: once it triggers, how far it may sell down (buy up) to get you out (% of the trigger, at least a dime).
+        # Wide on purpose: a contract can gap straight through a tight limit and never fill
+        "option_backup_limit_pct": 50,
+        # Backup stop: GTC stays at IBKR across days (until it fills or the desk takes it off); DAY ends at the close
+        "option_backup_tif": "GTC",
+        # A contract's TARGET (on the stock chart or the option chart) takes this % of your contracts (100 = all of them;
+        # 50 = half at the target, the rest runs). At least one contract; with one contract it is all
+        "option_target_take_pct": 100,
+        # After a part comes off at the TARGET, the rest's stop goes to what you paid (breakeven) when the contract is over it
+        "option_target_rest_be": True,
         # SELL TO OPEN (writing a contract you don't own: you are SHORT). Off: only covered calls (100 shares each). Your
         # IBKR account also needs the option level for it; a naked short call has no ceiling on the loss
         "allow_sell_to_open": False,

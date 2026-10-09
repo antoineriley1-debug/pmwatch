@@ -534,16 +534,16 @@ class SimBroker:
         return self.pos.get(symbol, [0.0, 0.0])[0]
 
     # ---- practice options: LIMIT DAY orders on a contract, filled against the practice quote ------------
-    def place_option(self, key, action, qty, price, now, reducing=False):
+    def place_option(self, key, action, qty, price, now, reducing=False, order_type="LMT", aux=None, role="option", tif="DAY"):
         with self.lock:
             oid = self.next_id
             self.next_id += 1
-            o = {"id": oid, "symbol": key, "action": action, "qty": qty, "remaining": qty, "type": "LMT", "price": price,
-                 "aux": None, "parent": None, "role": "option", "status": "Submitted", "tif": "DAY", "t": now, "children": [],
+            o = {"id": oid, "symbol": key, "action": action, "qty": qty, "remaining": qty, "type": order_type, "price": price,
+                 "aux": aux, "parent": None, "role": role, "status": "Submitted", "tif": tif, "t": now, "children": [],
                  "oca": None, "held": False, "opt": True}
             self.orders[oid] = o
-            self.engine.on_order(f"sim{oid}", now, symbol=key, action=action, qty=float(qty), remaining=float(qty), type="LMT",
-                                 lmt=price, aux=None, tif="DAY", status="Submitted", order_id=oid, role="option", mine=True, parent=None, opt=True)
+            self.engine.on_order(f"sim{oid}", now, symbol=key, action=action, qty=float(qty), remaining=float(qty), type=order_type,
+                                 lmt=price, aux=aux, tif=tif, status="Submitted", order_id=oid, role=role, mine=True, parent=None, opt=True)
             self.on_opt_market(key, now)
             return oid
 
@@ -554,6 +554,11 @@ class SimBroker:
         for o in list(self.orders.values()):
             if not o.get("opt") or o["symbol"] != key or o["status"] not in ("Submitted", "PreSubmitted"):
                 continue
+            if o["type"] == "STP LMT":         # a stop on the contract: armed until its bid (ask on a buy) reaches the trigger
+                touch = q.get("bid") if o["action"] == SELL else q.get("ask")
+                if touch is None or (touch > o["aux"] if o["action"] == SELL else touch < o["aux"]):
+                    continue
+                o["type"] = "LMT"
             px = q.get("ask") if o["action"] == BUY else q.get("bid")
             if px is None or (o["action"] == BUY and o["price"] < px) or (o["action"] == SELL and o["price"] > px):
                 continue
@@ -615,10 +620,10 @@ class IbkrBroker:
         with self.engine.lock:
             return sum(p["qty"] for (a, s), p in self.engine.positions.items() if s == symbol)
 
-    def place_option(self, key, action, qty, price, now, reducing=False):
+    def place_option(self, key, action, qty, price, now, reducing=False, order_type="LMT", aux=None, role="option", tif="DAY"):
         if self.engine.opt_sim(now):          # a limit priced off a simulated quote never goes to IBKR
             raise RuntimeError(self.engine.SIM_WHY)
-        return self.session.send_option_order(key, action, qty, price, now, reducing=reducing)
+        return self.session.send_option_order(key, action, qty, price, now, reducing=reducing, role=role, order_type=order_type, aux=aux, tif=tif)
 
 
 # ---------------------------------------------------------------------------
@@ -1330,6 +1335,143 @@ class Trader:
 
     # ---- option stops: on the STOCK's price (PS60 levels) or on the option's own price -----------------------
 
+    BACKUP = "backup_stop"
+
+    def _opt_backups(self, key):
+        return [o for o in self.engine._pending(key) if o.get("role") == self.BACKUP and o.get("order_id") is not None
+                and o.get("status") != "PendingCancel"]
+
+    def _fit_backup(self, key, n, now):
+        """The backup stop covers at most ``n`` contracts (cancelled at 0)."""
+        left = lambda o: int(o.get("remaining") if o.get("remaining") is not None else o.get("qty") or 0)
+        for i, o in enumerate(self._opt_backups(key)):
+            try:
+                if n <= 0 or i > 0:
+                    self.broker.cancel(o["order_id"], now)
+                elif left(o) > n:
+                    self.broker.resize(o["order_id"], n, now)
+            except Exception as exc:
+                log.warning("backup stop fit %s: %s", key, exc)
+
+    def _opt_backup_price(self, key, p):
+        """Where the BACKUP STOP sits on the contract's own price: the contract's price at your stop (the stop on the
+        contract itself, or the stock-price stop read through today's delta and gamma), a cushion past it so the desk's
+        own stop goes first. Returns ((trigger, limit), None) or (None, why)."""
+        s = self._opt_stop_for(key, p)
+        if not s:
+            return None, "no stop"
+        held = int(p.get("qty") or 0)
+        long_ = held > 0
+        q = self.engine.opt_quotes.get(key) or {}
+        if s["on"] == "option":
+            at = float(s["price"])
+        else:
+            st = self.engine.syms.get(p.get("symbol"))
+            spot = st.price() if st else None
+            b, a = q.get("bid"), q.get("ask")
+            mid = (b + a) / 2 if b and a and a >= b else q.get("last")
+            delta, gamma = q.get("delta"), q.get("gamma") or 0.0
+            if not spot or not mid or delta is None:
+                return None, "no delta for the contract yet"
+            S = float(s["price"])
+            at = max(0.01, mid + delta * (S - spot) + 0.5 * gamma * (S - spot) ** 2)
+        cush = max(0.05, at * float(self.cfg.get("option_backup_cushion_pct", 15)) / 100.0)
+        trig = at - cush if long_ else at + cush
+        trig = round((math.floor(trig / 0.05 + 1e-9) if long_ else math.ceil(trig / 0.05 - 1e-9)) * 0.05, 2)   # on a nickel, further out
+        if long_ and trig < 0.05:
+            return None, "the contract is too cheap for a stop under it"
+        touch = q.get("bid") if long_ else q.get("ask")
+        if touch is None:
+            return None, "no quote on the contract"
+        if (trig >= touch) if long_ else (trig <= touch):
+            return None, "the contract is already past the backup's price"
+        # the limit has ROOM: a backup is for when nobody is watching, and a contract can gap through a tight limit and
+        # never fill. It may sell down to (buy up to) option_backup_limit_pct past the trigger — a floor, never a naked market
+        room = max(0.10, trig * float(self.cfg.get("option_backup_limit_pct", 50)) / 100.0)
+        lmt = round(max(0.01, trig - room), 2) if long_ else round(trig + room, 2)
+        return (trig, lmt), None
+
+    def _opt_backup_tick(self, now):
+        """BACKUP STOPS at IBKR on the contracts you hold (SETTINGS > Trading): placed, sized to what you hold (less any
+        close already working), moved with your stop, taken off when you are out or the stop is gone."""
+        on = bool(self.cfg.get("option_backup_stop", True)) and hasattr(self.broker, "place_option")
+        tif = str(self.cfg.get("option_backup_tif", "GTC") or "GTC").upper()
+        said = self.__dict__.setdefault("_bk_said", {})
+        last = self.__dict__.setdefault("_bk_t", {})
+        left = lambda o: int(o.get("remaining") if o.get("remaining") is not None else o.get("qty") or 0)
+        keys = set(self.engine.opt_positions) | {o.get("symbol") for o in self.engine._pending() if o.get("role") == self.BACKUP}
+        for key in keys:
+            p = self.engine.opt_positions.get(key) or {}
+            held = int(p.get("qty") or 0)
+            bk = self._opt_backups(key)
+            if not held or not on:
+                if bk:
+                    self._fit_backup(key, 0, now)
+                    if held == 0:
+                        self._note(now, f"{key}: out — the backup stop at IBKR is off", True)
+                continue
+            action = SELL if held > 0 else BUY
+            want, why = self._opt_backup_price(key, p)
+            if want is None:
+                if bk and why == "no stop":
+                    self._fit_backup(key, 0, now)
+                    self._note(now, f"{key}: no stop on it any more — the backup stop at IBKR is off", True)
+                elif not bk and why not in ("no stop",) and said.get(key) != why:
+                    said[key] = why
+                    self._note(now, f"{key}: no backup stop at IBKR yet — {why}", False if "past" in why else True)
+                continue
+            trig, lmt = want
+            n = abs(held) - self._opt_working(key, action)
+            if n <= 0:
+                self._fit_backup(key, 0, now)
+                continue
+            if not bk:
+                if now - last.get(key, -1e9) < 5.0:
+                    continue
+                last[key] = now
+                try:
+                    self.broker.place_option(key, action, n, lmt, now, reducing=True, order_type="STP LMT", aux=trig, role=self.BACKUP, tif=tif)
+                    said.pop(key, None)
+                    self._note(now, f"{key}: BACKUP STOP at IBKR — {action} {n} if the contract trades {trig:.2f} (limit {lmt:.2f}, {tif}): "
+                                    f"it protects you with the desk off", True)
+                except Exception as exc:
+                    if said.get(key) != str(exc):
+                        said[key] = str(exc)
+                        self._note(now, f"{key}: backup stop not placed at IBKR — {exc}", False)
+                continue
+            o = bk[0]
+            if len(bk) > 1:
+                self._fit_backup(key, n, now)
+            try:
+                if left(o) != n:
+                    self.broker.resize(o["order_id"], n, now)
+                if o.get("aux") is not None and abs(float(o["aux"]) - trig) >= 0.05 - 1e-9 and now - last.get(key, -1e9) >= 2.0:
+                    last[key] = now
+                    self.broker.modify(o["order_id"], trig, now)
+                    self._note(now, f"{key}: backup stop at IBKR moved to {trig:.2f} with your stop", True)
+            except Exception as exc:
+                # an order the desk cannot move (one IBKR still held from before a restart): replaced, never left stale
+                log.warning("backup stop %s: %s — replacing it", key, exc)
+                try:
+                    self.broker.cancel(o["order_id"], now)
+                except Exception:
+                    pass
+
+    def _opt_take_at_target(self, key, held, now, why):
+        """A contract's TARGET reached: every contract out, or option_target_take_pct of them (at least one; all with
+        one). After a part, the rest's stop goes to what you paid (option_target_rest_be) when the contract is over it."""
+        pct = max(1, min(100, int(self.cfg.get("option_target_take_pct", 100) or 100)))
+        n = held if pct >= 100 or held <= 1 else max(1, min(held, int(round(held * pct / 100.0))))
+        out = self.opt_adjust(key, 0 if n >= held else n, "close", None, now)
+        part = "every contract" if n >= held else f"{n} of {held} ({pct}%) — the rest runs"
+        self._note(now, f"OPTION TARGET {key}: {why} — {part}: " + (out.get("sent") or f"close refused — {out.get('reason')}"),
+                   bool(out.get("ok")))
+        if out.get("ok") and n < held and self.cfg.get("option_target_rest_be", True):
+            be = self.opt_breakeven(key, now)
+            self._note(now, f"{key}: the {held - n} left — " + (be.get("sent") if be.get("ok") else f"stop not moved to breakeven: {be.get('reason')}"),
+                       bool(be.get("ok")))
+        return out, n
+
     def opt_breakeven(self, key, now=None):
         """BE on a CONTRACT: its stop goes to what you paid (the premium per contract), on the contract's own price —
         out at no loss if it comes back. Refused while the contract is under that price (it would fire at once)."""
@@ -1505,9 +1647,7 @@ class Trader:
                 if ref and ((ref >= tgt) if held > 0 else (ref <= tgt)) and now - lv.get("_tgt_t", -1e9) > 15.0:
                     lv["_tgt_t"] = now
                     if self._opt_working(key, SELL if held > 0 else BUY) < abs(held):
-                        out = self.opt_adjust(key, 0, "close", None, now)
-                        self._note(now, f"OPTION TARGET {key} traded {ref:g}, your target {tgt:g}: "
-                                        + (out.get("sent") or f"close refused — {out.get('reason')}"), bool(out.get("ok")))
+                        out, _n = self._opt_take_at_target(key, abs(held), now, f"the contract traded {ref:g}, your target {tgt:g}")
                         if out.get("ok"):
                             lv.pop("target", None)
             # the 2ND: a REAL cross, the quote's mid moving through the line from the side it was on (both sides of the
@@ -1685,14 +1825,14 @@ class Trader:
             if se and held <= 0 and not buying and s.get("sent") != price_key(se):
                 if not (self.gate.can_trade() and self.gate.armed):
                     s["why"] = self.gate.why_not() or "trading is DISARMED — click ARM"
-            # the target: the stock got there, every contract goes
+            # the target: the stock got there — every contract goes, or your % of them (SETTINGS > Trading), the rest runs
             if tgt and held > 0 and s.get("tgt") != price_key(tgt) and ((last >= tgt) if bull else (last <= tgt)):
                 s["tgt"] = price_key(tgt)
-                out = self.opt_adjust(key, 0, "close", None, now)
-                self._note(now, f"OPTION TARGET {sym} reached {money(tgt)}: " + (out.get("sent") or f"close refused — {out.get('reason')}"),
-                           bool(out.get("ok")))
+                out, n = self._opt_take_at_target(key, held, now, f"{sym} reached {money(tgt)}")
                 if out.get("ok"):
-                    self.engine.log(sym, f"OPTION TARGET {key} out ({sym} {money(tgt)})", now, kind="fill")
+                    self.engine.log(sym, f"OPTION TARGET {key} {'out' if n >= held else f'{n} of {held} out'} ({sym} {money(tgt)})", now, kind="fill")
+                    if n < held:              # the runner has no target now: draw a new one for it (the stop stays)
+                        self.engine.set_play_level(sym, "target", None, now, source="target took part", alt=alt)
             # flat again after holding it: the trade is over, its lines come off (the pivot stays)
             if held <= 0 and s.get("held") and not self.engine._pending(key):
                 s["held"] = False
@@ -1852,6 +1992,10 @@ class Trader:
             self._opt_stop_tick(now or time.time())
         except Exception as exc:
             log.warning("option stop: %s", exc)
+        try:
+            self._opt_backup_tick(now or time.time())
+        except Exception as exc:
+            log.warning("backup stop: %s", exc)
         try:
             self._flat_lines_tick(now or time.time())
         except Exception as exc:
@@ -2769,10 +2913,12 @@ class Trader:
             return {"ok": True, "id": oid, "key": key, "sent": f"{action} {n} {key} @ {money(price)}"}
 
     def _opt_working(self, key, action):
-        """Contracts of ``key`` already working on this side (orders not being cancelled)."""
+        """Contracts of ``key`` already working on this side (orders not being cancelled). The BACKUP STOP resting at
+        IBKR is not a close: it never counts (the desk's own stop still fires, a close still goes out)."""
         return int(sum((o.get("remaining") if o.get("remaining") is not None else o.get("qty") or 0)
                        for o in self.engine._pending(key)
-                       if o.get("action") == action and o.get("order_id") is not None and o.get("status") != "PendingCancel"))
+                       if o.get("action") == action and o.get("order_id") is not None and o.get("status") != "PendingCancel"
+                       and o.get("role") != self.BACKUP))
 
     def opt_adjust(self, key, contracts, mode, price=None, now=None):
         """Scale an OPTION position you hold: mode "close" takes contracts off (all of them with contracts 0 /
@@ -2828,6 +2974,8 @@ class Trader:
                 self._note(now, f"FAILED {action} {n} {key} @ {money(price)}: {exc}", False)
                 return {"ok": False, "reason": str(exc)}
             what = "CLOSE" if reducing and n >= held else "SCALE OUT" if reducing else "SCALE IN"
+            if reducing:
+                self._fit_backup(key, held - self._opt_working(key, action), now)
             self._note(now, f"SENT {what} {action} {n} {key} @ {money(price)} (${n * price * mult:,.0f})", True)
             self.engine._rec({"ev": "order", "t": now, "sym": key, "action": action, "qty": n, "px": price,
                               "type": "LMT", "aux": None, "tif": "DAY", "legs": [], "id": oid, "role": "option"})
@@ -3030,7 +3178,7 @@ class Trader:
             self.watchdog()
         s = self.gate.snapshot()
         s.update(default_shares=self.default_shares, bracket=self.bracket, scale=self.scale,
-                 scale_plan=self.cfg["scale_plan"]["cash_flow"], log=list(self.log)[:12], pnl=self.day_pnl(),
+                 opt_target_pct=int(self.cfg.get("option_target_take_pct", 100) or 100), scale_plan=self.cfg["scale_plan"]["cash_flow"], log=list(self.log)[:12], pnl=self.day_pnl(),
                  auto_on=self.auto_on, risk_dollars=self.risk_dollars, auto=self.auto_status(),
                  filled_chip_seconds=float(self.cfg.get("filled_chip_seconds", 90)),
                  bracket_template=self.bracket_template, bracket_templates=list(self.bracket_templates().keys()),

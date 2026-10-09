@@ -388,7 +388,13 @@ class TwineyWrapper:
             lmt=num(getattr(order, "lmtPrice", None)) or None, aux=num(getattr(order, "auxPrice", None)) or None,
             tif=getattr(order, "tif", None), status=getattr(orderState, "status", None),
             order_id=int(orderId) if mine else None, mine=mine,
-            role=self.session.order_roles.get(int(orderId)) if mine else "manual")
+            role=(self.session.order_roles.get(int(orderId)) or self._role_from_ref(order)) if mine else
+                 (self._role_from_ref(order) or "manual"))
+
+    @staticmethod
+    def _role_from_ref(order):
+        ref = str(getattr(order, "orderRef", "") or "")
+        return ref.split(":", 1)[1] if ref.startswith("twiney:") else None
 
     def orderStatus(self, orderId, status, filled, remaining, avgFillPrice, permId, *rest):
         client = rest[2] if len(rest) > 2 else None     # rest = parentId, lastFillPrice, clientId, whyHeld, ...
@@ -1234,7 +1240,7 @@ class MarketDataSession:
                                              f"({self.lines_used()} of {self.lines_budget()}; IBKR allows "
                                              f"{self.cfg['ibkr'].get('max_lines', 100)} and TWS's own windows use some)", t)
 
-    def send_option_order(self, key, action, qty, price, now, reducing=False, role="option"):
+    def send_option_order(self, key, action, qty, price, now, reducing=False, role="option", order_type="LMT", aux=None, tif="DAY"):
         """A LIMIT DAY order on an option contract you hold (scale in / out, close). Same gate as a stock order:
         reducing (taking the position down) is never blocked; adding goes through the caps, in real dollars."""
         with self._lock:
@@ -1247,14 +1253,20 @@ class MarketDataSession:
                 raise RuntimeError("trading gate closed")
             oid = self.next_order_id
             self.next_order_id += 1
-            order = self.order_factory(action, qty, "LMT", price, "DAY", None, transmit=True)
+            # LMT (scale in / out, close) or STP LMT (the BACKUP STOP: held at IBKR, works with the desk off)
+            order = self.order_factory(action, qty, order_type, price, tif, None, transmit=True,
+                                       **({"aux": aux} if order_type == "STP LMT" else {}))
+            try:
+                order.orderRef = f"twiney:{role}"      # IBKR keeps it: a GTC backup stop is still known as one after a restart
+            except Exception:
+                pass
             self.order_roles[oid] = role
-            self.my_orders[oid] = {"symbol": key, "parent": None, "action": action, "qty": qty, "type": "LMT",
-                                   "tif": "DAY", "aux": None, "price": price, "oca": None, "opt": True,
+            self.my_orders[oid] = {"symbol": key, "parent": None, "action": action, "qty": qty, "type": order_type,
+                                   "tif": tif, "aux": aux, "price": price, "oca": None, "opt": True,
                                    "reducing": reducing, "role": role}
             self.app.placeOrder(oid, contract, order)
             self.engine.on_order(f"id{oid}", now, symbol=key, action=action, qty=float(qty), remaining=float(qty),
-                                 type="LMT", lmt=price, aux=None, tif="DAY", status="PendingSubmit",
+                                 type=order_type, lmt=price, aux=aux, tif=tif, status="PendingSubmit",
                                  order_id=oid, role=role, mine=True, parent=None, opt=True)
             self._orders_seen.add(f"id{oid}")
             self._next_orders = now + 1.0

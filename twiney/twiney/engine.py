@@ -945,6 +945,19 @@ class Engine:
                 short.append(f"{big} {narrative.say_dollars(max(calls, puts))}")
         return ", ".join(words), " · ".join(short)
 
+    def _safe_view(self, fn, st, t, what):
+        """A read-only panel that fails shows nothing for that refresh (logged once a minute) — it never takes the whole
+        desk down with it (positions, orders and the ladder keep updating)."""
+        try:
+            return fn(st, t)
+        except Exception as exc:
+            last = self.__dict__.setdefault("_view_err_t", {})
+            if t - last.get(what, -1e9) > 60:
+                last[what] = t
+                log.exception("%s view failed on %s", what, st.symbol)
+                self._message("warn", f"{st.symbol}: the {what} read failed ({exc}) — skipped, everything else keeps running", t, st.symbol)
+            return None
+
     def _inst_view(self, st, t):
         """INSTITUTIONAL FOOTPRINTS (inst.py): the program read, this slot's volume against its normal for the time of
         day, fund-style reloaders (same refill size) and a side walking the price. Once every few seconds; the new
@@ -1033,8 +1046,8 @@ class Engine:
         if wk:
             dist = wk["dir"] == "down"
             calls.append((("WALK", wk["side"], wk["steps"][-1]), f"{wk['side']} WALKING {wk['dir'].upper()}",
-                          f"{wk['side']} WALKING {'IT DOWN (distribution)' if dist else 'IT UP (accumulation)'} · " + " → ".join(fmt_price(p) for p in wk["steps"]),
-                          f"{st.symbol}. {'Seller walking it down' if dist else 'Buyer walking it up'}: {'selling' if dist else 'buying'} at " + ", then ".join(fmt_price(p) for p in wk["steps"][-4:]) + (". Distribution." if dist else ". Accumulation.")))
+                          f"{wk['side']} WALKING {'IT DOWN (distribution)' if dist else 'IT UP (accumulation)'} · " + " → ".join(str(fmt_price(p)) for p in wk["steps"]),
+                          f"{st.symbol}. {'Seller walking it down' if dist else 'Buyer walking it up'}: {'selling' if dist else 'buying'} at " + ", then ".join(str(fmt_price(p)) for p in wk["steps"][-4:]) + (". Distribution." if dist else ". Accumulation.")))
         if v.get("against"):
             calls.append((("AGAINST", v["against"][:30]), "PROGRAM AGAINST YOU", v["against"], f"{st.symbol}. Warning. " + v["against"].lower().replace("~", "about ") + "."))
         gd = [g for g in (v.get("guides") or []) if g.startswith("Last hour")]
@@ -5132,7 +5145,7 @@ class Engine:
             "reloaders": reloaders,
             "reload_basket": self._reload_basket(st, t),
             "dark": st.dark.view(t, st.price()),
-            "inst": self._inst_view(st, t),
+            "inst": self._safe_view(self._inst_view, st, t, "institutional footprints"),
             "user_levels": user_levels,
             "log": self.symbol_log(sym),
             "bigmoney": self.bigmoney.for_symbol(sym, st.price(), t, lambda d: self._close_on(st, d)) if self.bigmoney is not None else [],

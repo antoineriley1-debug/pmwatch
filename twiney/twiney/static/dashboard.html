@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261009-0016">
+<meta name="build" content="20261009-0041">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -2316,9 +2316,9 @@ function optHeldMenu(d, price){
   const stopOk = last == null || (call ? price < last : price > last), tgtOk = last == null || (call ? price > last : price < last);
   const name = `${parts[1] ? parts[1].slice(4, 6) + "/" + parts[1].slice(6, 8) + " " : ""}${parts[2] || c.key}`;
   const btn = (role, ok, label, why) => `<button data-do="optline" data-role="${role}" data-key="${esc(c.key)}" data-qty="${c.qty}" class="blvl" ${ok ? "" : `disabled title="${why}"`}>${label} @ ${px(price)}${ok ? at(price) : ""}</button>`;
-  return `<div class="lvl2 heldopt" title="the line goes on the ${esc(d.symbol)} chart and trades your contract: ${esc(d.symbol)} through the STOP sells it, ${esc(d.symbol)} at the TARGET sells it all">
+  return `<div class="lvl2 heldopt" title="the line goes on the ${esc(d.symbol)} chart and trades your contract: ${esc(d.symbol)} through the STOP sells it, ${esc(d.symbol)} at the TARGET sells ${(T().opt_target_pct || 100) >= 100 ? "it all" : (T().opt_target_pct) + "% of it, the rest runs with its stop at breakeven"}">
       <div class="hh"><b class="${call ? "b" : "s"}">YOUR ${esc(name)}</b> <span class="dim">· ${c.qty} ct · lines on the stock chart sell it</span></div>
-      <div class="hb">${btn("stop", stopOk, "STOP", `a ${call ? "call" : "put"}'s stop goes ${call ? "under" : "over"} ${px(last)}`)}${btn("target", tgtOk, "TARGET", `a ${call ? "call" : "put"}'s target goes ${call ? "over" : "under"} ${px(last)}`)}</div></div>`;
+      <div class="hb">${btn("stop", stopOk, "STOP", `a ${call ? "call" : "put"}'s stop goes ${call ? "under" : "over"} ${px(last)}`)}${btn("target", tgtOk, (T().opt_target_pct || 100) >= 100 ? "TARGET" : `TARGET ${T().opt_target_pct}%`, `a ${call ? "call" : "put"}'s target goes ${call ? "over" : "under"} ${px(last)}`)}</div></div>`;
 }
 async function optHeldLine(d, role, price, key, qty){
   const right = (String(key).split(" ")[2] || "").slice(-1), side = right === "C" ? "long" : "short";
@@ -5857,7 +5857,8 @@ function renderPositions(s){
         <button class="danger" data-oclose="${esc(p.key)}" data-n="0" ${on ? "" : "disabled"} title="CLOSE every contract with a limit at the touch">X</button></td></tr>`;
   }).join("");
   // option orders that have not filled yet: they are not a position, so say so where you look for it
-  const wk = (A.pending || []).filter(o => / \d{8} /.test(o.symbol || "") && !["FILLED", "CANCELED", "REJECTED"].includes(o.state)).map(o =>
+  const wk = (A.pending || []).filter(o => / \d{8} /.test(o.symbol || "") && !["FILLED", "CANCELED", "REJECTED"].includes(o.state)).map(o => o.role === "backup_stop" ?
+    `<tr class="posrow opt wk bk"><td class="l"><b>${esc(o.symbol)}</b> <span class="s">BACKUP STOP</span></td><td>${o.aux ? (+o.aux).toFixed(2) : NA}</td><td colspan="3" class="l dim" title="a real stop order held at IBKR: it protects the contract with the desk or the computer off. The desk's own stop goes first; this one sits a little past it, follows your stop, and comes off when you are out">at IBKR · ${esc(o.action)} ${sz(o.remaining ?? o.qty)} ct if the contract trades ${o.aux ? (+o.aux).toFixed(2) : NA} (limit ${o.lmt ? (+o.lmt).toFixed(2) : NA}, ${esc(o.tif || "")}) · works with the desk off</td><td></td></tr>` :
     `<tr class="posrow opt wk"><td class="l"><b>${esc(o.symbol)}</b> <span class="${o.action === "BUY" ? "b" : "s"}">${esc(o.action)} ${sz(o.remaining ?? o.qty)} ct</span></td><td>${o.lmt ? (+o.lmt).toFixed(2) : NA}</td><td colspan="3" class="l gold">WORKING · not filled yet — it shows here as a position once it fills</td>
       <td class="l ctl"><button class="danger" data-cxl="${o.order_id}" title="cancel this option order">CANCEL</button></td></tr>`).join("");
   panelHTML("positions", `<table class="grid pos2"><tr><th>POSITION</th><th>ENTRY</th><th>LAST</th><th>P&amp;L %</th><th>STOP · TGT</th><th style="text-align:left" title="25 / 50 / 75 = take that much off at the touch · … = your own number · @ = partial at your price · BE = stop to breakeven · X = close · +½ +1× +… = scale in at the touch">OUT 25 · 50 · 75 · … · @ · BE · X &nbsp; IN +½ · +1× · +…</th></tr>${rows + orows + wk || `<tr><td colspan="6" class="dim l">${A.seen ? "FLAT" : "NO ACCOUNT DATA"}</td></tr>`}</table>`);
