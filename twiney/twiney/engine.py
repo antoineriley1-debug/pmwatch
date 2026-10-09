@@ -65,7 +65,9 @@ class SymbolState:
     def __init__(self, play, cfg):
         self.play = play
         self.symbol = play["symbol"]
-        self.hist_ver = 0       # bumps whenever history arrives, so the page knows to fetch it again
+        self.hist_ver = 0       # bumps when history arrives, so the page knows to fetch it again (coalesced: see Engine._hist_bump)
+        self.hist_dirty = False
+        self.hist_bump_t = -1e9
         self.daily_vol = {}     # day start -> shares traded (daily bars from IBKR carry volume)
         self.l1 = {k: None for k in L1_FIELDS}
         self.l1_t = None
@@ -690,6 +692,26 @@ class Engine:
                 if label:
                     self._emit(st, tr, label, t)
 
+    HIST_BUMP_SECONDS = 2.0
+
+    def _hist_bump(self, st):
+        """History arrived. The page refetches a symbol's whole history whenever hist_ver changes, so one bump per
+        bar (a 5-day minute history is 1,950 bars, ten years of daily 2,500) had the page re-downloading megabytes
+        every poll for minutes while the chart showed one bar. The version moves at most once every couple of
+        seconds; the snapshot flushes the last change (Engine._hist_flush)."""
+        now = self.last_t or time.time()
+        st.hist_dirty = True
+        if now - st.hist_bump_t >= self.HIST_BUMP_SECONDS:
+            st.hist_ver += 1
+            st.hist_bump_t = now
+            st.hist_dirty = False
+
+    def _hist_flush(self, st, t):
+        if st.hist_dirty and t - st.hist_bump_t >= self.HIST_BUMP_SECONDS:
+            st.hist_ver += 1
+            st.hist_bump_t = t
+            st.hist_dirty = False
+
     def on_daily_bar(self, symbol, t0, o, h, l, c, v=None):
         """Historical daily bar (ATR / measured potential)."""
         with self.lock:
@@ -700,7 +722,7 @@ class Engine:
             st.daily[t0] = [o, h, l, c]
             if v is not None:
                 st.daily_vol[t0] = float(v)
-            st.hist_ver += 1
+            self._hist_bump(st)
             if len(st.daily) > 3000:          # ~12 years: the Daily / Weekly 200s settle exactly like TradingView's
                 for k in sorted(st.daily)[:len(st.daily) - 3000]:
                     del st.daily[k]
@@ -725,7 +747,7 @@ class Engine:
                     del store[k]
             st.study_ver += 1
             if kind != "m5x":            # the chart's longer history changed: the page fetches it again
-                st.hist_ver += 1
+                self._hist_bump(st)
 
     def _pace_levels(self, st, sc_v, t=None):
         """The prices the PACE reads against: your lines on the chart and the KEY LEVELS (the same list the ladder,
@@ -1729,7 +1751,7 @@ class Engine:
                 live[4] = max(live[4], v or 0.0)
             else:
                 st.bars[m] = [o, h, l, c, v or 0.0, 0.0, 0.0]
-            st.hist_ver += 1
+            self._hist_bump(st)
 
     # ---- account view (read-only) --------------------------------------------
 
@@ -5224,6 +5246,7 @@ class Engine:
 
     def _pane(self, sym, i, t, order, full=True):
         st = self.syms[sym]
+        self._hist_flush(st, t)              # a history change still pending shows in this snapshot's version
         rows = self.cfg["depth"]["rows_displayed"]
         book = st.book
         bids = [[fmt_price(p), round(s), n] for p, s, n in book.levels(BID, rows)] if book else []

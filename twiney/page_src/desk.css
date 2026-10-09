@@ -1142,3 +1142,12 @@ body.whitedesk .chart-wrap canvas,body.whitedesk img,body.whitedesk video{filter
 .cfly.land{opacity:0}
 .cland{position:fixed;z-index:9998;pointer-events:none;width:28px;height:28px;border-radius:50%;border:2px solid var(--cc);box-shadow:0 0 16px 4px var(--cc);animation:cland .8s ease-out forwards}
 @keyframes cland{0%{transform:scale(.4);opacity:1}100%{transform:scale(2.2);opacity:0}}
+
+/* the candle's range on the ladder: a wick you can see, H / L marks at its ends, O H L C R in the header */
+.lad.candle td.cdl{width:26px;min-width:26px}
+.lad.candle tr.cw td.cdl i.wk{width:3px;margin-left:-1.5px}
+.lad.candle tr.c-high td.cdl i.wk::before,.lad.candle tr.c-low td.cdl i.wk::after{content:"";position:absolute;left:-4px;width:11px;height:2px;background:var(--cc)}
+.lad.candle tr.c-high td.cdl i.wk::before{top:0}.lad.candle tr.c-low td.cdl i.wk::after{bottom:0}
+.lad.candle td.cdl em.hl{position:absolute;right:1px;top:1px;font:700 8px/1 var(--mono);color:var(--cc);font-style:normal}
+.lad.candle td.cdl em.hl.l{top:auto;bottom:1px}
+.lad.candle th.cdl i.oc.h,.lad.candle th.cdl i.oc.l{opacity:.8}.lad.candle th.cdl i.oc.r{opacity:.7}

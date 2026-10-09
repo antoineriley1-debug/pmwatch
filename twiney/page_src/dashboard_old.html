@@ -1656,7 +1656,7 @@ function tagsHTML(tags){ return tags.map(o => `<span class="kt" style="--kc:${o.
 function ladderCandleHTML(L){
   const base = ladderCleanHTML(L), c = L.candle, tk = +L.tick || 0.01, half = tk / 2 + 1e-9, tfm = (c && c.tf) || 5;
   const left = typeof barCloseIn === "function" ? barCloseIn(tfm) : "";
-  const oc = c ? `<i class="oc">O ${px(c.open)}</i><i class="oc ${c.last >= c.open ? "u" : "d"}">C ${px(c.last)}</i>` : "";
+  const oc = c ? `<i class="oc">O ${px(c.open)}</i><i class="oc h">H ${px(c.high)}</i><i class="oc l">L ${px(c.low)}</i><i class="oc ${c.last >= c.open ? "u" : "d"}">C ${px(c.last)}</i><i class="oc r">R ${(Math.max(0, c.high - c.low) * 100).toFixed(0)}¢</i>` : "";
   const th = `<th class="cdl" data-w="30" data-min="18" title="THE CANDLE: the ${tfm}-minute candle (the chart's timeframe) drawn on the ladder rows. Body = open to last, wick = high to low (green building up, red down), ghost = the prior candle. When it closes it flies over to the chart and lands as that candle. The resting size on the rows is the wick: prints eat it, the size goes down; size that comes back is a reload">${tfm}m${left ? `<i>${esc(left)}</i>` : ""}${oc}</th>`;
   let h = base.replace('<table class="lad clean" data-cols="ladc"><tr>', `<table class="lad clean candle" data-cols="ladcc"><tr>${th}`);
   if (!c) return h.replace(/(<tr class="[^"]*" data-price="[^"]+"[^>]*>)/g, '$1<td class="cdl"></td>');
@@ -1668,7 +1668,8 @@ function ladderCandleHTML(L){
     if (Math.abs(q - c.open) <= half) k.push("c-open"); if (Math.abs(q - c.last) <= half) k.push("c-last");
     if (Math.abs(q - c.high) <= half) k.push("c-high"); if (Math.abs(q - c.low) <= half) k.push("c-low");
     if (c.prev){ k.push(pUp ? "p-up" : "p-dn"); if (q >= pLo - half && q <= pHi + half) k.push("pb"); else if (q >= c.prev.low - half && q <= c.prev.high + half) k.push("pw"); }
-    return `<tr class="${cls} ${k.join(" ")}" data-price="${p}"${rest}><td class="cdl"><i class="pg"></i><i class="wk"></i><i class="bd"></i></td>`;
+    const hl = k.includes("c-high") ? `<em class="hl h" title="the candle's high">H</em>` : k.includes("c-low") ? `<em class="hl l" title="the candle's low">L</em>` : "";
+    return `<tr class="${cls} ${k.join(" ")}" data-price="${p}"${rest}><td class="cdl"><i class="pg"></i><i class="wk"></i><i class="bd"></i>${hl}</td>`;
   });
 }
 function ladderCleanHTML(L){

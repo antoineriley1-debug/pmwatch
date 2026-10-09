@@ -211,6 +211,12 @@ class TwineyWrapper:
                 self.session.opt_depth = None
                 self.engine.on_opt_depth_refused(sym, code, msg, t)
             return
+        if kind in ("hist", "daily", "m30", "m5x", "m5") and code in self.session.HIST_RETRY_CODES:
+            if code in (2104, 2106):
+                return                                    # "market data farm connection is OK": not a refusal
+            self.req.pop(req_id, None)
+            self.session._hist_refused(kind, sym, code, msg, t)
+            return
         if kind == "tape" and code in TAPE_REFUSED:
             self.session.tape_refused(sym, req_id, code, msg)
             return
@@ -713,6 +719,7 @@ class MarketDataSession:
                 self.handle_closed("no nextValidId within 15s (check API settings / client id)")
             if self.ready:
                 self._study_step(now)
+                self._hist_retry_step(now)
                 self._study_new_day(now)
                 self.engine.tick(now)
                 self.reconcile_opt_depth(now)
@@ -1298,7 +1305,9 @@ class MarketDataSession:
 
     # the chart studies' histories go out one at a time (IBKR flags 6+ requests on one contract within 2 s), and again
     # each new trading day so yesterday's completed bars join the sample
-    STUDY_REQS = (("m30", "1 Y", "30 mins", 1, False), ("m5x", "3 D", "5 mins", 0, True), ("m5", "2 M", "5 mins", None, False))
+    # the 5-minute chart and the premarket / after-hours shading come first (what you see when you open a chart);
+    # the year of 30-minute bars for the 60-minute averages last
+    STUDY_REQS = (("m5x", "3 D", "5 mins", 0, True), ("m5", "2 M", "5 mins", None, False), ("m30", "1 Y", "30 mins", 1, False))
 
     def _queue_studies(self, sym, play):
         from collections import deque
@@ -1331,6 +1340,47 @@ class MarketDataSession:
             self.app.reqHistoricalData(rid, self.contract_factory(play), "", dur, size, "TRADES", rth, 2, keep, [])
         except Exception as exc:
             log.warning("study history %s %s: %s", sym, kind, exc)
+
+    HIST_RETRY_CODES = {162, 165, 366, 420, 10197, 2104, 2106}   # pacing / "no market data permissions yet" / service messages
+    HIST_SPECS = {"hist": ("5 D", "1 min", None, False), "daily": ("10 Y", "1 day", 1, False)}
+
+    def _hist_refused(self, kind, sym, code, msg, now):
+        """A history request IBKR refused (a pacing violation, the service not ready): asked again a little later, a
+        few times, so a chart never stays empty until tomorrow because the first request landed in a burst."""
+        if kind not in ("hist", "daily") and kind not in dict((k, 1) for k, *_r in self.STUDY_REQS):
+            return False
+        tries = self.__dict__.setdefault("hist_tries", {})
+        n = tries.get((kind, sym), 0)
+        if n >= 3:
+            return True
+        tries[(kind, sym)] = n + 1
+        from collections import deque
+        self.__dict__.setdefault("hist_retry", deque()).append((now + 15.0 * (n + 1), kind, sym))
+        log.warning("history %s %s refused (%s %s): retry %d in %ds", kind, sym, code, msg, n + 1, 15 * (n + 1))
+        return True
+
+    def _hist_retry_step(self, now):
+        q = getattr(self, "hist_retry", None)
+        if not q or self.app is None or now < q[0][0]:
+            return
+        _at, kind, sym = q.popleft()
+        play = self.plays.get(sym)
+        if play is None:
+            return
+        if kind in self.HIST_SPECS:
+            dur, size, rth, keep = self.HIST_SPECS[kind]
+            if rth is None:
+                rth = 1 if self.cfg["chart"]["regular_hours_only"] else 0
+            rid = self._rid()
+            self.app.req[rid] = (kind, sym)
+            try:
+                self.app.reqHistoricalData(rid, self.contract_factory(play), "", dur, size, "TRADES", rth, 2, keep, [])
+            except Exception as exc:
+                log.warning("history retry %s %s: %s", sym, kind, exc)
+        else:
+            spec = next((sp for sp in self.STUDY_REQS if sp[0] == kind), None)
+            if spec:
+                self.__dict__.setdefault("study_q", __import__("collections").deque()).appendleft((sym, play, spec))
 
     def _study_new_day(self, now):
         """Once a new New York trading day is past 9:25, every symbol's study histories (and daily bars) are asked

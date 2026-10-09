@@ -968,3 +968,47 @@ class LineLimitTests(unittest.TestCase):
         self.assertTrue(any("LIVE DATA BACK" in m["text"] for m in engine.messages))
         s.step(clock())
         self.assertGreater(names(app).count("reqTickByTickData"), n_tape)  # books and Time & Sales asked again
+
+
+class HistoryLoadTests(unittest.TestCase):
+    """A chart has its bars as soon as it opens: the intraday histories go out first, and a refused request (IBKR
+    pacing) is asked again instead of leaving the chart with one bar until tomorrow."""
+
+    def connect(self):
+        s, engine, clock = make_session()
+        s.step(clock())
+        app = s.app
+        app.nextValidId(1)
+        return s, engine, clock, app
+
+    def test_the_5_minute_bars_and_the_extended_hours_go_out_before_the_year_of_30_minute(self):
+        s, engine, clock, app = self.connect()
+        before = len([c for c in app.calls if c[0] == "reqHistoricalData"])
+        for i in range(3):
+            clock.t += 1.0
+            s.step(clock())
+        study = [c for c in app.calls if c[0] == "reqHistoricalData"][before:]
+        self.assertEqual([c[4] for c in study[:3]], ["3 D", "2 M", "1 Y"])       # m5x, m5, m30 for the first symbol
+        self.assertEqual(study[0][5], "5 mins")
+
+    def test_a_refused_minute_history_is_asked_again(self):
+        s, engine, clock, app = self.connect()
+        hid = [c[1] for c in app.calls if c[0] == "reqHistoricalData" and c[2] == "AAA" and c[5] == "1 min"][0]
+        n0 = len([c for c in app.calls if c[0] == "reqHistoricalData" and c[2] == "AAA" and c[5] == "1 min"])
+        app.error(hid, 162, "Historical Market Data Service error message: pacing violation")
+        self.assertNotIn(hid, app.req)
+        clock.t += 5.0; s.step(clock())
+        self.assertEqual(len([c for c in app.calls if c[0] == "reqHistoricalData" and c[2] == "AAA" and c[5] == "1 min"]), n0)   # not yet
+        clock.t += 12.0; s.step(clock())
+        again = [c for c in app.calls if c[0] == "reqHistoricalData" and c[2] == "AAA" and c[5] == "1 min"]
+        self.assertEqual(len(again), n0 + 1)
+        self.assertEqual(again[-1][4], "5 D")
+        self.assertEqual(app.req[again[-1][1]], ("hist", "AAA"))
+
+    def test_a_refusal_is_retried_three_times_then_left(self):
+        s, engine, clock, app = self.connect()
+        for k in range(5):
+            hid = [c[1] for c in app.calls if c[0] == "reqHistoricalData" and c[2] == "AAA" and c[5] == "1 min"][-1]
+            app.error(hid, 162, "pacing violation")
+            clock.t += 70.0; s.step(clock())
+        self.assertEqual(len([c for c in app.calls if c[0] == "reqHistoricalData" and c[2] == "AAA" and c[5] == "1 min"]), 4)
