@@ -67,7 +67,7 @@ class ExitGuardTests(unittest.TestCase):
         self.assertTrue(tr.adjust("AAA", 100, "close", 3.0)["ok"])
         self.assertEqual(broker.position("AAA"), 0)
         tr.watchdog(3.5)
-        self.assertTrue(pend(e))                                  # waits for fills / positions to settle
+        self.assertEqual(pend(e), [])                             # CLOSE of the whole position takes its stop / target with it
         tr.watchdog(5.1); tr.watchdog(7.2)
         self.assertEqual(pend(e), [])
 
@@ -303,7 +303,7 @@ class LockedCloseTests(unittest.TestCase):
         blocked = tr.submit("AAA", "BUY", 10.00, 100, 2.0, False)
         self.assertFalse(blocked["ok"]); self.assertIn("LOCKED", blocked["reason"])
         flip = tr.submit("AAA", "SELL", 9.99, 150, 2.1, False)
-        self.assertFalse(flip["ok"]); self.assertIn("LOCKED", flip["reason"])
+        self.assertFalse(flip["ok"]); self.assertIn("would close them and open", flip["reason"])   # never a flip by accident
         out = tr.submit("AAA", "SELL", 9.99, 60, 2.2, False, "LMT", None, "DAY", "n-close")
         self.assertTrue(out["ok"], out); self.assertIn("close", out["sent"])
         self.assertEqual(broker.position("AAA"), 40)          # bid 9.99: filled at once

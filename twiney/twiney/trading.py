@@ -683,12 +683,12 @@ class Trader:
                 return w
         return None
 
-    def submit(self, symbol, action, price, qty=None, now=None, bracket=None, order_type="LMT", aux=None, tif="DAY", nonce=None):
+    def submit(self, symbol, action, price, qty=None, now=None, bracket=None, order_type="LMT", aux=None, tif="DAY", nonce=None, flip=False):
         with self.lock:
-            return self._submit_unlocked(symbol, action, price, qty, now, bracket, order_type, aux, tif, nonce)
+            return self._submit_unlocked(symbol, action, price, qty, now, bracket, order_type, aux, tif, nonce, flip=flip)
 
     def _submit_unlocked(self, symbol, action, price, qty=None, now=None, bracket=None, order_type="LMT", aux=None,
-               tif="DAY", nonce=None, levels=None):
+               tif="DAY", nonce=None, levels=None, flip=False):
         """``levels``: the stop / target the bracket uses when it is not the play's own side (its OTHER SIDE)."""
         now = now or time.time()
         qty = int(qty or self.default_shares)
@@ -725,6 +725,15 @@ class Trader:
         # position) is a close, not a trade: it goes through the reducing gate, which the day-loss lock, DISARM
         # and the caps never block. Getting out is always allowed
         pos0 = int(self.broker.position(symbol))
+        if pos0 and action == (SELL if pos0 > 0 else BUY) and qty > abs(pos0) and not flip:
+            # more than you hold, the other way: it would close the position AND open the other side. Never from a
+            # click that meant "take profit" (the chart, the ladder): only when you said so (the order bar asks first)
+            self.nonces.pop(nonce, None) if nonce else None
+            side = "long" if pos0 > 0 else "short"
+            reason = (f"you hold {abs(pos0):,} {side}: {action} {qty:,} would close them and open {qty - abs(pos0):,} "
+                      f"{'short' if pos0 > 0 else 'long'} — {action} {abs(pos0):,} closes it (REVERSE turns it around)")
+            self._note(now, f"BLOCKED {action} {qty} {symbol}: {reason}", False)
+            return {"ok": False, "reason": reason}
         closing = bool(pos0) and order_type == "LMT" and action == (SELL if pos0 > 0 else BUY) and qty <= abs(pos0)
         if closing:
             # never more than is left to close: closes already working count (two SELL 100s on a 100 long would flip it short)
@@ -907,6 +916,69 @@ class Trader:
 
     REDUCING = ("flatten", "close", "partial")
 
+    def _committed(self, symbol, action, roles):
+        """Shares already in working orders of these roles on the closing side."""
+        left = lambda o: int(o.get("remaining") if o.get("remaining") is not None else o.get("qty") or 0)
+        return sum(left(o) for o in self.engine._pending(symbol) if o.get("action") == action and o.get("order_id") is not None
+                   and o.get("status") != "PendingCancel" and str(o.get("role") or "").startswith(roles))
+
+    def _fit_exits(self, symbol, action, keep, now, why=None):
+        """The STOP and the TAKE-PROFIT orders on the closing side cover at most ``keep`` shares: trimmed (largest
+        first; your own take-profits last) or cancelled at 0. Never grown here."""
+        keep = max(0, int(keep))
+        left = lambda o: int(o.get("remaining") if o.get("remaining") is not None else o.get("qty") or 0)
+        pend = [o for o in self.engine._pending(symbol) if o.get("action") == action and o.get("order_id") is not None
+                and o.get("status") != "PendingCancel"]
+        changed = []
+        for grp in ([o for o in pend if str(o.get("role") or "").startswith("stop")],
+                    sorted([o for o in pend if str(o.get("role") or "").startswith(("target", "runner", "cash_flow", "partial"))],
+                           key=lambda o: (o.get("role") == "partial", -left(o)))):
+            extra = sum(left(o) for o in grp) - keep
+            for o in grp:
+                if extra <= 0:
+                    break
+                cut = min(left(o), extra)
+                try:
+                    if left(o) - cut <= 0:
+                        self.broker.cancel(o["order_id"], now)
+                    else:
+                        self.broker.resize(o["order_id"], left(o) - cut, now)
+                    changed.append(f"{o.get('role')} {left(o)}→{left(o) - cut}")
+                except Exception as exc:
+                    log.warning("fit exit %s: %s", o.get("order_id"), exc)
+                extra -= cut
+        if changed:
+            self._note(now, f"{symbol}: exits fitted to {keep:,} shares{' (' + why + ')' if why else ''}: " + ", ".join(changed), True)
+
+    def _stop_follows_fills(self, now):
+        """A take-profit / target / close the desk sent FILLS: the stop on that position shrinks by the same shares at
+        once (IBKR's own fill report, not the position report that can trail it), the way a reduce-on-fill OCA works."""
+        seen = self.__dict__.get("_exit_filled")
+        with self.engine.lock:
+            orders = [dict(o) for o in self.engine.orders.values()]
+        filled = lambda o: max(0, int((o.get("qty") or 0) - (o.get("remaining") if o.get("remaining") is not None else
+                                                              (0 if str(o.get("status")) in ("Filled", "FILLED") else (o.get("qty") or 0)))))
+        if seen is None:                                  # first look: what already filled before is history
+            self._exit_filled = {o.get("order_id"): filled(o) for o in orders if o.get("order_id") is not None}
+            return
+        for o in orders:
+            oid, role = o.get("order_id"), str(o.get("role") or "")
+            if oid is None or not role.startswith(("partial", "target", "runner", "cash_flow", "close", "stop")) or is_option_key(o.get("symbol")):
+                continue
+            f, prev = filled(o), seen.get(oid, 0)
+            if f > prev:
+                seen[oid] = f
+                # a take-profit filled: the STOP shrinks by those shares; the STOP filled: the take-profits shrink
+                other = ("stop",) if not role.startswith("stop") else ("target", "runner", "cash_flow", "partial")
+                rest = [x for x in self.engine._pending(o["symbol"]) if str(x.get("role") or "").startswith(other)
+                        and x.get("action") == o.get("action") and x.get("order_id") is not None and x.get("status") != "PendingCancel"]
+                have = sum(int(x.get("remaining") if x.get("remaining") is not None else x.get("qty") or 0) for x in rest)
+                if rest:
+                    keep = have - (f - prev)
+                    if role.startswith("stop"):
+                        keep = min(keep, int(o.get("remaining") or 0))     # never more than the stop still covers
+                    self._fit_exits(o["symbol"], o.get("action"), keep, now, why=f"{role} filled {f - prev:,}")
+
     def _can_reduce_by(self, symbol, now):
         """Shares that can still be taken off: the position less the flatten / close orders already working. A close
         that filled a moment ago may not show in the position yet: then nothing more is sent until it does."""
@@ -922,7 +994,7 @@ class Trader:
         with self.lock:
             return self._flatten_unlocked(symbol, now)
 
-    def _flatten_unlocked(self, symbol, now=None):
+    def _flatten_unlocked(self, symbol, now=None, keep_entries=False):
         """Close the position with a marketable limit (through the spread by a few ticks). Works disarmed, locked
         for the day and over the caps: getting out is never blocked. One flatten at a time per symbol."""
         now = now or time.time()
@@ -963,6 +1035,8 @@ class Trader:
                 except Exception as exc:
                     log.warning("move %s to flatten: %s", o.get("order_id"), exc)
                 working += int(o.get("remaining") if o.get("remaining") is not None else o.get("qty") or 0)
+            elif keep_entries and not self._is_exit(o) and o.get("role") not in self.REDUCING:
+                continue                          # CLOSE (not FLATTEN): an entry / add-on you placed stays working
             else:
                 try:
                     self.broker.cancel(o["order_id"], now)
@@ -1186,18 +1260,20 @@ class Trader:
                 continue                                   # an add still working: wait until it is in
             exit_side = SELL if pos > 0 else BUY
             left = lambda o: int(o.get("remaining") if o.get("remaining") is not None else o.get("qty") or 0)
+            closing = self._committed(sym, exit_side, ("close", "flatten", "partial"))
             for role in (("stop", "target") if self.bracket else ("stop",)):
                 grp = [o for o in pend if o.get("role") == role and o.get("action") == exit_side and o.get("order_id") is not None
                        and o.get("status") != "PendingCancel"]
                 have = sum(left(o) for o in grp)
                 prices = {round(float(o.get("aux") or o.get("lmt") or 0), 4) for o in grp}
-                if not grp or have >= abs(pos) or len(prices) != 1:
+                need = abs(pos) - (closing if role == "stop" else closing)
+                if not grp or have >= need or len(prices) != 1:
                     continue
                 big = max(grp, key=left)
                 try:
-                    self.broker.resize(big["order_id"], left(big) + abs(pos) - have, now)
+                    self.broker.resize(big["order_id"], left(big) + need - have, now)
                     grown[sym] = now
-                    self._note(now, f"{sym}: {'STOP' if role == 'stop' else 'TAKE PROFIT'} now covers all {abs(pos):,} shares (was {have:,})", True)
+                    self._note(now, f"{sym}: {'STOP' if role == 'stop' else 'TAKE PROFIT'} now covers {need:,} shares (was {have:,})", True)
                 except Exception as exc:
                     self._note(now, f"{sym}: could not grow the {role} to {abs(pos):,} shares: {exc}", False)
 
@@ -1253,6 +1329,30 @@ class Trader:
                        f"{sym}: flat — leftover exit orders cancelled", True)
 
     # ---- option stops: on the STOCK's price (PS60 levels) or on the option's own price -----------------------
+
+    def opt_breakeven(self, key, now=None):
+        """BE on a CONTRACT: its stop goes to what you paid (the premium per contract), on the contract's own price —
+        out at no loss if it comes back. Refused while the contract is under that price (it would fire at once)."""
+        with self.lock:
+            now = now or time.time()
+            p = self.engine.opt_positions.get(key)
+            q = int((p or {}).get("qty") or 0)
+            if not q:
+                return {"ok": False, "reason": "you do not hold that contract"}
+            mult = p.get("mult") or 100
+            paid = (p.get("avg_cost") or 0) / mult if mult else (p.get("avg_cost") or 0)
+            # on a nickel, rounded to the side that never locks in a loss: up for a contract you bought, down for one sold
+            entry = round((math.ceil(paid / 0.05 - 1e-9) if q > 0 else math.floor(paid / 0.05 + 1e-9)) * 0.05, 2) if paid else 0
+            if not entry or entry <= 0:
+                return {"ok": False, "reason": "no entry price for the contract yet"}
+            touch = p.get("bid") if q > 0 else p.get("ask")
+            if touch is None or (touch <= entry if q > 0 else touch >= entry):
+                return {"ok": False, "reason": f"the contract is {touch if touch is not None else 'not quoted'} — not over your {entry:.2f} yet; a breakeven stop would fire now"}
+        out = self.set_opt_stop(key, entry, "option", now)
+        if out.get("ok"):
+            out["sent"] = f"stop to breakeven {entry:.2f} (the contract's price)"
+            out["price"] = entry
+        return out
 
     def set_opt_stop(self, key, price, on="stock", now=None):
         """A stop on a contract you hold. ``on`` "stock": out when the stock trades through ``price`` (a call / short
@@ -1442,10 +1542,10 @@ class Trader:
         q = self.engine.opt_quotes.get(key) or {}
         return q.get("bid") if p["qty"] > 0 else q.get("ask")
 
-    def _opt_stop_for(self, key, p):
+    def _opt_stop_for(self, key, p, chart_only=False):
         """The stop protecting a contract: the one you set, else (SETTINGS, option stop follows the chart) the stock
         chart's STOP line on the side that hurts this contract (under the price for a call, over it for a put)."""
-        mine = self.opt_stops.get(key)
+        mine = None if chart_only else self.opt_stops.get(key)
         if mine:
             return dict(mine, source="set")
         if not self.cfg.get("option_stop_follows_chart", True):
@@ -1665,18 +1765,23 @@ class Trader:
         for key, p in list(self.engine.opt_positions.items()):
             if not p.get("qty"):
                 continue
-            s = self._opt_stop_for(key, p)
-            if not s or now - self.opt_stop_fired.get(key, -1e9) < 15.0:
+            if now - self.opt_stop_fired.get(key, -1e9) < 15.0:
                 continue
             if self._opt_working(key, SELL if p["qty"] > 0 else BUY) >= abs(int(p["qty"])):
                 continue                          # its close is already working: never a second one on top
-            ref = self._opt_stop_ref(key, p, s["on"])
-            if ref is None:
-                continue
+            # the stop you set on the contract AND the stock chart's STOP line both protect it: whichever is hit first
+            # (a line drawn on the chart never just sits there doing nothing)
             bull = (p.get("right") == "C") == (p["qty"] > 0)
-            hit = ((ref <= s["price"]) if bull else (ref >= s["price"])) if s["on"] == "stock" else \
-                  ((ref <= s["price"]) if p["qty"] > 0 else (ref >= s["price"]))
-            if not hit:
+            s, ref = None, None
+            for c in [x for x in (self._opt_stop_for(key, p), self._opt_stop_for(key, p, chart_only=True)) if x]:
+                r = self._opt_stop_ref(key, p, c["on"])
+                if r is None:
+                    continue
+                if ((r <= c["price"]) if bull else (r >= c["price"])) if c["on"] == "stock" else \
+                        ((r <= c["price"]) if p["qty"] > 0 else (r >= c["price"])):
+                    s, ref = c, r
+                    break
+            if s is None:
                 continue
             self.opt_stop_fired[key] = now
             out = self.opt_adjust(key, 0, "close", None, now)
@@ -1699,6 +1804,10 @@ class Trader:
                 self._opt_stop_tick(now or time.time())
             except Exception as exc:
                 log.warning("option stop: %s", exc)
+            try:
+                self._stop_follows_fills(now or time.time())
+            except Exception as exc:
+                log.warning("stop follows fills: %s", exc)
 
     def _watchdog_unlocked(self, now=None):
         """Called on every dashboard snapshot: breakeven stops after cash flow; exits never bigger than the
@@ -1719,6 +1828,10 @@ class Trader:
             self._reverse_stop_tick(now or time.time())
         except Exception as exc:
             log.warning("reverse stop: %s", exc)
+        try:
+            self._stop_follows_fills(now or time.time())
+        except Exception as exc:
+            log.warning("stop follows fills: %s", exc)
         try:
             self._guard_exits(now or time.time())
         except Exception as exc:
@@ -1959,7 +2072,7 @@ class Trader:
         self._note(now, msg, False)
         self.engine.log(sym, msg, now, kind="level")
 
-    EXIT_ROLES = ("stop", "target", "flatten", "close", "partial", "cash_flow", "runner", "trail", "breakeven")
+    NOT_ENTRY = ("stop", "target", "flatten", "close", "partial", "cash_flow", "runner", "trail", "breakeven")   # orders that never open a trade
 
     def _flat_lines_tick(self, now):
         """TRADE OVER, however it was opened (ticket, ladder, chart, right-click, order bar, auto, a stock or an option
@@ -1992,7 +2105,7 @@ class Trader:
             if w["flat_t"] is None:
                 w["flat_t"] = now
                 continue
-            entry_working = any(o.get("role") not in self.EXIT_ROLES for o in self.engine._pending(sym))
+            entry_working = any(not str(o.get("role") or "").startswith(self.NOT_ENTRY) for o in self.engine._pending(sym))
             if now - w["flat_t"] < 5.0 or entry_working:
                 continue                                   # the report can trail the fill; a reverse / new entry is still on
             had, w["held"], w["flat_t"], w["lines"] = w["lines"], False, None, {}
@@ -2746,6 +2859,10 @@ class Trader:
             if not pos:
                 self._note(now, f"{symbol}: already flat, nothing to close", True)
                 return {"ok": False, "reason": "flat"}
+            if shares >= abs(pos):
+                # the WHOLE position (CLOSE, 100%): a flatten — working take-profits move to the market, the stop and
+                # target are cancelled, the rest is sold. Never "closed 50, 25 left" behind a resting take-profit
+                return self._flatten_unlocked(symbol, now, keep_entries=True)
             _p, free, why = self._can_reduce_by(symbol, now)
             if not free:
                 self._note(now, f"{symbol}: {why}", False)
@@ -2757,12 +2874,17 @@ class Trader:
         else:
             return {"ok": False, "reason": "mode must be close or add"}
         price = bid if action == SELL else ask
-        if mode == "close":           # getting out: the reducing path (works locked / disarmed), exits trimmed after
+        if mode == "close":           # getting out: the reducing path (works locked / disarmed)
             reason = self.gate.check_reduce(action, shares, price, now)
             if reason:
                 self._note(now, f"BLOCKED close {symbol}: {reason}", False)
                 return {"ok": False, "reason": reason}
-            return self._reduce(symbol, action, price, shares, now, "close")
+            out = self._reduce(symbol, action, price, shares, now, "close")
+            if out.get("ok"):
+                # the stop and the take-profits shrink to what will be left NOW, not after the position report: a stop
+                # for more shares than you hold would open the other side when it fires
+                self._fit_exits(symbol, action, abs(pos) - self._committed(symbol, action, ("close", "flatten")), now)
+            return out
         return self.submit(symbol, action, price, shares, now, bracket=False)
 
     # ---- SCALE PLAN: scale out (and add) off the position as price moves from your entry -----------------

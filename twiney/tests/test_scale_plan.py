@@ -418,7 +418,10 @@ class OptionStopTests(unittest.TestCase):
     def setUp(self):
         import time as _t
         from twiney import options as _o
-        self.e, self.tr, self.broker = make(); self.T = _t.time()
+        import datetime, zoneinfo
+        # a fixed Monday 11:00 New York, the week's contracts days out: the same option prices every run (on the real
+        # clock a contract near expiry at night is worth a cent or two and this went one way or the other)
+        self.e, self.tr, self.broker = make(); self.T = datetime.datetime(2026, 10, 12, 11, 0, tzinfo=zoneinfo.ZoneInfo("America/New_York")).timestamp()
         self.e.on_l1("AAA", "last", 10.00, self.T)
         exp = self.e.option_chain("AAA", None, "C", self.T)["expiry"]
         self.kc, self.kp = _o.key_of("AAA", exp, 10, "C"), _o.key_of("AAA", exp, 10, "P")

@@ -1263,6 +1263,17 @@ function heldContract(d){
   const pl = d.play || {}, linked = pl.trade_as === "option" && pl.opt_key && held.find(p => p.key === pl.opt_key);
   return linked || (typeof contractFor === "function" ? contractFor(d.symbol, state) : null) || held[0];
 }
+// TAKE PROFIT from the chart: holding shares, right-click where you want out and take 25% / 50% / all of it there (a
+// resting limit that only takes the position down; the stop shrinks as it fills). The other side of the price is for a stop.
+function takeProfitMenu(d, price){
+  const pos = d.position, q = pos ? Math.abs(pos.qty) : 0; if (!q) return "";
+  const long = pos.qty > 0, last = d.last, ok = last == null || (long ? price > last : price < last);
+  const n = f => Math.max(1, Math.floor(q * f)), act = long ? "SELL" : "BUY";
+  const b = (f, lbl) => `<button data-do="tp" data-n="${f >= 1 ? q : n(f)}" class="blvl" ${ok ? "" : "disabled"}>${lbl} <span class="dim">${sz(f >= 1 ? q : n(f))}</span></button>`;
+  return `<div class="lvl2 tpmenu" title="${act} part of your ${sz(q)} ${long ? "long" : "short"} at ${px(price)}: a limit that only takes the position down">
+      <div class="hh"><b class="${long ? "b" : "s"}">TAKE PROFIT @ ${px(price)}</b> <span class="dim">· ${act} of your ${sz(q)}</span></div>
+      <div class="hb">${b(0.25, "25%")}${b(0.5, "50%")}${b(1, "ALL")}</div>${ok ? "" : `<div class="dim">profit is ${long ? "above" : "below"} ${px(last)} — this side is for a STOP</div>`}</div>`;
+}
 function optHeldMenu(d, price){
   if (d.position && d.position.qty) return "";      // shares too: the stock chart is the shares', the contract lives on the OPTION CHART
   const c = heldContract(d); if (!c || (T().opt_indep || []).includes(c.key)) return "";
@@ -1339,6 +1350,7 @@ function chartMenu(p, v, x, y, price){
   const m = document.createElement("div"); m.id = "cmenu"; m.className = "pop cmenu";
   m.innerHTML = `<div class="dim" style="font-size:11px;margin-bottom:4px">${esc(d.symbol)} @ <b style="color:var(--gold)">${px(price)}</b><span class="x" title="close (Esc)">✕</span></div>
     ${optHeldMenu(d, price)}
+    ${takeProfitMenu(d, price)}
     <button class="bbuy" data-do="buy" ${on ? "" : "disabled"}>BUY ${sz(t.default_shares)} limit @ ${px(price)}</button>
     <button class="bsell" data-do="sell" ${on ? "" : "disabled"}>SELL ${sz(t.default_shares)} limit @ ${px(price)}</button>
     ${d.position ? `<button class="bflat" data-do="flat" ${on ? "" : "disabled"}>Flatten ${esc(d.symbol)}</button>` : ""}
@@ -1371,6 +1383,8 @@ function chartMenu(p, v, x, y, price){
       if (role === "trigger" && own && cur && Math.abs(cur - price) > 1e-9 && !confirm(`Move the ${d.symbol} pivot from ${px(cur)} to ${px(price)}?`)) return;
       post("/api/level", {symbol: d.symbol, role, price, side, confirm: role === "trigger"}).then(out => { toast(out.ok ? `${d.symbol} ${side ? side.toUpperCase() + " " : ""}${names[role]} ${px(price)}` + (role === "second_entry" ? " — entry order going in (armed desk)" : "") : "Could not set the " + names[role], out.ok); if (out.ok) poll(true); }); }
     else if (b.dataset.do === "optline") optHeldLine(d, b.dataset.role, price, b.dataset.key, +b.dataset.qty);
+    else if (b.dataset.do === "tp") post("/api/trade/partial", {symbol: d.symbol, shares: +b.dataset.n, price}).then(out => {
+      toast(out.ok ? `TAKE PROFIT: ${out.sent}` : "Take profit blocked: " + (out.reason || ""), out.ok); if (out.ok) poll(true); });
     else if (b.dataset.do === "sneaky") post("/api/level", {symbol: d.symbol, price, on: true, role: "sneaky"}).then(out => { toast(out.ok ? `${d.symbol} SNEAKY PIVOT ${px(price)} — on the chart and the ladder` : "Could not mark it", out.ok); if (out.ok) poll(true); });
     else if (b.dataset.do === "alert") addAlert({symbol: d.symbol, kind: "price", price, when: "hit", repeat: false});
     else if (b.dataset.do === "zone"){ const tk = price >= 1 ? 0.01 : 0.0001; v.levelTool = "zone"; v.zoneStart = +(Math.round(price / tk) * tk).toFixed(4); renderTools(p); toast(`Zone edge ${px(v.zoneStart)}: now click the other edge`, true); }

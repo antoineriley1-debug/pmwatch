@@ -1243,8 +1243,10 @@ async function moveToBreakeven(sym){
   toast(out.ok ? sym + ": " + out.sent : "Breakeven blocked: " + (out.reason || ""), out.ok);
   poll(true);
 }
-document.addEventListener("click", e => {
+document.addEventListener("click", async e => {
   const be = e.target.closest("button[data-be]"); if (be){ moveToBreakeven(be.dataset.be); return; }
+  const obe = e.target.closest("button[data-obe]"); if (obe){ const out = await post("/api/trade/opt_breakeven", {key: obe.dataset.obe});
+    toast(out.ok ? obe.dataset.obe + ": " + out.sent : "Breakeven blocked: " + (out.reason || ""), out.ok); poll(true); return; }
   const op = e.target.closest("button[data-partial]"); if (op){ const s = op.dataset.partial; PP[s] = {open: !(PP[s] && PP[s].open)}; P.positions.last = null; P.ticket.last = null; renderPositions(state); renderTicket(state, curData(), true); return; }
   const box = e.target.closest(".pp[data-pp]"); if (!box) return;
   const sym = box.dataset.pp, dd = ppDefaults(sym);
@@ -1288,6 +1290,7 @@ function renderPositions(s){
       <td class="pct ${p.pnl == null ? "" : p.pnl >= 0 ? "up" : "dn"}">${p.pnl == null ? NA : (p.pnl >= 0 ? "+" : "−") + "$" + sz(Math.abs(p.pnl).toFixed(0))}</td><td class="mono dim">${(() => { const os = (T().opt_stops || {})[p.key]; return os ? `<span class="s" title="${os.source === "chart" ? "your chart STOP line" : "the stop you set"}">S ${os.on === "stock" ? esc(p.symbol) + " " : ""}${(+os.price).toFixed(2)}</span>` : `<span class="gold" title="no stop on this contract: set one on the OPTION CHART, or draw a STOP on the stock chart">no stop</span>`; })()}</td>
       <td class="l ctl">${off(Math.max(1, Math.floor(q / 4)), "25", "take off a quarter")}${off(Math.max(1, Math.floor(q / 2)), "50", "take off half")}${off(Math.max(1, Math.floor(q * 3 / 4)), "75", "take off three quarters")}<button data-oclose="${esc(p.key)}" data-n="ask" ${on ? "" : "disabled"} title="take off a number of contracts you type, at a price you type">…</button>
         <span class="sep"></span>${add(1, "+1")}${add(Math.max(1, Math.floor(q / 2)), "+½")}${add(q, "+1×")}<button data-oadd="${esc(p.key)}" data-n="ask" ${canTrade() ? "" : "disabled"} title="scale in by a number of contracts you type, at a price you type">+…</button>
+        <button data-obe="${esc(p.key)}" ${on ? "" : "disabled"} title="move this contract's stop to what you paid (${p.per_contract.toFixed(2)}): out at no loss if it comes back">BE</button>
         <button class="danger" data-oclose="${esc(p.key)}" data-n="0" ${on ? "" : "disabled"} title="CLOSE every contract with a limit at the touch">X</button></td></tr>`;
   }).join("");
   // option orders that have not filled yet: they are not a position, so say so where you look for it
@@ -2402,7 +2405,7 @@ function renderOchHead(){
       <span class="tfs">${[1, 5, 15].map(m => `<button data-ochtf="${m}" class="${tf === m ? "on" : ""}">${m}m</button>`).join("")}<button data-ochind="mas" class="${store.get("och.mas", false) ? "on" : ""}" title="moving averages on the OPTION CHART (the stock chart keeps its own)">MAS</button><button data-ochind="bb" class="${store.get("och.bb", false) ? "on" : ""}" title="Bollinger Bands on the OPTION CHART">BB</button></span>
       <span class="cn">${[1, 2, 5, 10].map(n => `<button data-ochn="${n}" class="${OCH.n === n ? "on" : ""}">${n}</button>`).join("")}</span>
       <button class="b big" data-ochnow="BUY">BUY ${OCH.n}</button><button class="s big" data-ochnow="SELL">SELL ${OCH.n}</button>${q ? `${q > 1 ? `<button class="out" data-ochnow="HALF" title="take half off now, at the touch (no confirm)">½ OUT</button>` : ""}<button class="out all" data-ochnow="ALL" title="out of all ${q} now, at the touch (no confirm)">ALL OUT ${q}</button>` : ""}
-      ${(() => { const ol = optLinkFor(d.underlying), on = ol && ol.key === d.key;
+      ${!d ? "" : (() => { const ol = optLinkFor(d.underlying), on = ol && ol.key === d.key;     // the contract still loading: nothing to link yet
         return on ? `<button class="olink on" data-olink="stock" title="the ${esc(d.underlying)} chart's 2nd entry, STOP and TARGET trade ${ol.qty} of this contract — click to trade the STOCK with them again">◆ ${esc(d.underlying)} CHART LINES TRADE THIS ×${ol.qty}</button>`
           : `<button class="olink" data-olink="option" title="make the ${esc(d.underlying)} chart's 2nd entry, STOP and TARGET trade ${OCH.n} of this contract (instead of shares)">LINK ${esc(d.underlying)} CHART LINES</button>`; })()}
       <span class="dim hint">right-click the chart to trade at a price</span>
@@ -2890,7 +2893,7 @@ document.addEventListener("click", async e => {
   const touch = act === "BUY" ? d.ask : d.bid;
   if (!(touch > 0)){ toast("No quote yet", false); return; }
   const tk = tickOfPx(touch), price = snapPx(act === "BUY" ? touch + 3 * tk : touch - 3 * tk);
-  const send = async () => done(await post("/api/trade/order", {symbol: d.symbol, action: act, price, qty: closing ? Math.min(n, q) : n, type: "LMT", bracket: closing ? false : !!T().bracket, tif: "DAY", nonce: "qb" + Date.now()}), act);
+  const send = async () => done(await post("/api/trade/order", {symbol: d.symbol, action: act, price, qty: closing ? Math.min(n, q) : n, type: "LMT", bracket: closing ? false : !!T().bracket, tif: "DAY", nonce: "qb" + Date.now(), flip: against && n > q}), act);
   if (T().one_click || closing) return send();
   confirmBox(`${act} ${sz(n)} ${d.symbol} @ ${px(price)}`, `limit: ${act === "BUY" ? "ask" : "bid"} ${px(touch)}, never ${act === "BUY" ? "above" : "below"} ${px(price)}${T().bracket ? " · with your stop and target" : ""} · ONE-CLICK (top bar) skips this box`, act === "BUY" ? "b" : "s", send);
 });

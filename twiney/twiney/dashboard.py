@@ -650,7 +650,7 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                 elif action == "order":
                     out = tr.submit(sym, str(body.get("action", "")).upper(), body.get("price"),
                                     body.get("qty"), now, body.get("bracket"), str(body.get("type", "LMT")),
-                                    body.get("aux"), str(body.get("tif", "DAY")), body.get("nonce"))
+                                    body.get("aux"), str(body.get("tif", "DAY")), body.get("nonce"), flip=bool(body.get("flip")))
                 elif action == "cancel":
                     out = tr.cancel(body.get("id"), now)
                 elif action == "cancel_all":
@@ -683,6 +683,8 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                     out = tr.set_stop(sym, body.get("price"), now)
                 elif action == "trade_as":
                     out = tr.set_trade_as(sym, str(body.get("mode", "stock")), body.get("opt_key"), body.get("opt_qty"), now)
+                elif action == "opt_breakeven":
+                    out = tr.opt_breakeven(str(body.get("key", "")), now)
                 elif action == "opt_stop":
                     out = tr.set_opt_stop(str(body.get("key", "")), body.get("price"), str(body.get("on", "stock")), now)
                 elif action == "opt_level":
