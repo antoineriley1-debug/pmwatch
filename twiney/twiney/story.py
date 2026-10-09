@@ -921,12 +921,25 @@ def response(mins, fr, pace, near, cfg):
 
 # ---- the running story -----------------------------------------------------------------------------------------
 
-def tape_words(pace, up):
-    """Buyers / sellers stepping up, the tape accelerating, or stalling — from the PACE OF TAPE read."""
+def tape_words(pace, up, sb=None):
+    """Buyers / sellers stepping up, the tape accelerating, or stalling — from the PACE OF TAPE read. Against the lean
+    (who HAS the tape) a counter-move is the other side TRYING, never stepping up."""
     if not pace or pace.get("state") in (None, "QUIET", "WARMING UP"):
         return None
     bp, st, acc = pace.get("buy_pct"), pace.get("state"), pace.get("accel")
     fast = st in ("FAST", "SURGE") or acc == "SPEEDING UP"
+    ctl = pace.get("control")
+    ln = lean_side(sb) if sb is not None else 0
+    buyers_now = (ctl == "buyers" and bp is not None and bp <= 40) or (fast and bp is not None and bp >= 60 and ctl != "sellers")
+    sellers_now = (ctl == "sellers" and bp is not None and bp >= 60) or (fast and bp is not None and bp <= 40 and ctl != "buyers")
+    if ln < 0 and buyers_now:
+        return trying(sb, "Buyers")
+    if ln > 0 and sellers_now:
+        return trying(sb, "Sellers")
+    if ctl == "sellers" and bp is not None and bp >= 60:
+        return "Sellers in control, the buying is getting run over"
+    if ctl == "buyers" and bp is not None and bp <= 40:
+        return "Buyers in control, the selling is getting absorbed"
     if fast and bp is not None and bp >= 60:
         return "Buyers stepping up" if up is not False else "Buyers pushing back"
     if fast and bp is not None and bp <= 40:
@@ -938,10 +951,124 @@ def tape_words(pace, up):
     return None
 
 
+# ---- WHO HAS THE TAPE: the lean, held until the data changes it ----------------------------------------------------
+
+def tape_lean(sb, t, last, mins, fr, drows, live, cfg):
+    """Which side HAS the tape: SELLERS (levels taken on a close and not recovered, a new low of day, lower highs and
+    lower lows, the puts out in front), BUYERS (the mirror), or NEUTRAL when the data does not say. Once a side has it
+    the desk holds that tone: a bounce while sellers have the tape is buyers TRYING, never buyers in control. The lean
+    only turns when the data turns: the lost levels recovered on a close, the other side's levels taken, the flow
+    turning, and not before lean_hold_minutes. Returns the lean dict (sb.lean), with "changed" set on the moment it
+    changed."""
+    st = sb.__dict__.setdefault("lean", {"side": None, "since": None, "why": [], "score": 0, "cand": None, "changed": None})
+    st["changed"] = None
+    bear, bull = [], []
+    # the levels on the books: taken on a close and not recovered (a failed break is a recovered level: it counts
+    # for nobody)
+    for name, b in sb.breaks.items():
+        if b["state"] in ("broke", "retest", "held") and t - b["t"] <= 4 * 3600:
+            (bear if b["dir"] == "down" else bull).append(name + " taken")
+    rows = [r for r in (mins or []) if r and r[4] is not None]
+    if rows:
+        dk = studies.day_key(t)
+        today = [r for r in rows if studies.day_key(r[0]) == dk]
+        if len(today) >= 5:
+            lo_i = min(range(len(today)), key=lambda i: today[i][3])
+            hi_i = max(range(len(today)), key=lambda i: today[i][2])
+            if t - today[lo_i][0] <= 1800 and lo_i >= 3:
+                bear.append("new low of day")
+            if t - today[hi_i][0] <= 1800 and hi_i >= 3:
+                bull.append("new high of day")
+        # the path of the last 15 minutes against the 15 before: lower highs and lower lows, or higher highs and
+        # higher lows
+        if len(rows) >= 30:
+            a, b_ = rows[-30:-15], rows[-15:]
+            if max(r[2] for r in b_) < max(r[2] for r in a) and min(r[3] for r in b_) < min(r[3] for r in a):
+                bear.append("lower highs and lower lows")
+            elif max(r[2] for r in b_) > max(r[2] for r in a) and min(r[3] for r in b_) > min(r[3] for r in a):
+                bull.append("higher highs and higher lows")
+    # the Daily: today under the prior day's low (or over its high) right now
+    if drows and live and len(drows) >= 2 and last is not None:
+        if last < drows[-2][3]:
+            bear.append("under the prior-day low")
+        elif last > drows[-2][2]:
+            bull.append("over the prior-day high")
+    # the money: puts against calls (bought at the ask, out of the money) in the window
+    c_, p_ = (fr or {}).get("C") or {}, (fr or {}).get("P") or {}
+    cu, pu = float(c_.get("usd") or 0), float(p_.get("usd") or 0)
+    fmin = float(cfg.get("lean_flow_min", 250000))
+    if pu >= fmin and pu >= 2 * cu:
+        bear.append(f"puts {money(pu)} against calls {money(cu)}")
+    elif cu >= fmin and cu >= 2 * pu:
+        bull.append(f"calls {money(cu)} against puts {money(pu)}")
+    score = len(bull) - len(bear)
+    need = int(cfg.get("lean_min", 2))
+    hold = float(cfg.get("lean_hold_minutes", 10)) * 60
+    calm = float(cfg.get("lean_neutral_minutes", 3)) * 60
+    want = "bear" if score <= -need else "bull" if score >= need else None
+    side = st["side"]
+    new = side
+    if side is None:
+        new = want
+    elif side == "bear":
+        if want == "bull" and st["since"] is not None and t - st["since"] >= hold:
+            new = "bull"
+        elif score >= 0 and want != "bear":
+            # the reasons are gone (levels recovered, the flow turned): neutral, after a short while to be sure
+            c = st.get("cand")
+            if not c or c[0] != "neutral":
+                st["cand"] = ("neutral", t)
+            elif t - c[1] >= calm:
+                new = None
+        else:
+            st["cand"] = None
+    elif side == "bull":
+        if want == "bear" and st["since"] is not None and t - st["since"] >= hold:
+            new = "bear"
+        elif score <= 0 and want != "bull":
+            c = st.get("cand")
+            if not c or c[0] != "neutral":
+                st["cand"] = ("neutral", t)
+            elif t - c[1] >= calm:
+                new = None
+        else:
+            st["cand"] = None
+    st["score"] = score
+    st["why"] = bear if (new or want) == "bear" else bull if (new or want) == "bull" else (bear + bull)
+    if new != side:
+        st["side"], st["since"], st["cand"] = new, t, None
+        why = ", ".join(st["why"][:4])
+        if new == "bear":
+            st["changed"] = f"Sellers have the tape: {why}. Any bounce is buyers trying until they take a level back"
+        elif new == "bull":
+            st["changed"] = f"Buyers have the tape: {why}. Any dip is sellers trying until they take a level back"
+        else:
+            st["changed"] = "No side has the tape now: " + (", ".join((bear + bull)[:3]) if (bear or bull) else "the lost levels are back and the flow is even")
+    st["text"] = ("SELLERS HAVE THE TAPE" if st["side"] == "bear" else "BUYERS HAVE THE TAPE" if st["side"] == "bull" else "NO SIDE HAS THE TAPE") \
+        + (" · " + ", ".join(st["why"][:4]) if st["why"] else "")
+    return st
+
+
+def lean_side(sb):
+    """-1 sellers have the tape, +1 buyers, 0 nobody."""
+    ln = sb.__dict__.get("lean") or {}
+    return -1 if ln.get("side") == "bear" else 1 if ln.get("side") == "bull" else 0
+
+
+def trying(sb, who):
+    """The counter-move said against the lean: 'buyers are trying, sellers still have the tape (prior-day low taken)'."""
+    ln = sb.__dict__.get("lean") or {}
+    why = (ln.get("why") or [])[:2]
+    other = "sellers" if who.lower() == "buyers" else "buyers"
+    return f"{who} are trying, {other} still have the tape" + (f" ({', '.join(why)})" if why else "")
+
+
 # ---- PLAY-BY-PLAY: at the place, who is doing what right now -----------------------------------------------------
 
 PBP_OPEN = {
     "on": ["Right on {nm}", "Sitting on {nm}", "At {nm}", "Price on {nm}"],
+    "under": ["Just under {nm}", "Sitting under {nm}", "Under {nm}", "Price under {nm}"],
+    "over": ["Just over {nm}", "Sitting over {nm}", "Over {nm}", "Price over {nm}"],
     "near": ["Coming into {nm}", "Closing in on {nm}", "Working toward {nm}", "Getting near {nm}"],
 }
 PBP_READ = {
@@ -983,7 +1110,10 @@ def play_by_play(sb, t, foc, last, near, pace, fr, reloads, consumed, cfg):
         i = n.get(kind, 0)
         n[kind] = i + 1
         return opts[i % len(opts)]
-    head = pick("open_" + ("on" if foc["on"] else "near"), PBP_OPEN["on" if foc["on"] else "near"]).format(nm=nm)
+    # the opening says which side of the place price is: ON it only when it is inside the place; within reach but
+    # under it is UNDER (never "sitting on" a level price is below), over it is OVER; farther out, coming into it
+    kind = ("on" if pos == "on" else "under" if pos == "below" else "over") if foc["on"] else "near"
+    head = pick("open_" + kind, PBP_OPEN[kind]).format(nm=nm)
     c_n = round(d * 100)
     cents = (f"{c_n} cent" + ("" if c_n == 1 else "s")) if d < 1 else f"${d:.2f}"
     where = f"price {px(last)}, " + ("right on it" if pos == "on" or d < 0.005 else f"{cents} {'over' if pos == 'above' else 'under'} it")
@@ -995,8 +1125,20 @@ def play_by_play(sb, t, foc, last, near, pace, fr, reloads, consumed, cfg):
     bp, st = pc.get("buy_pct"), pc.get("state")
     tape = 0
     fast = st in ("FAST", "SURGE") or pc.get("accel") == "SPEEDING UP"
-    if bp is not None and st not in (None, "QUIET", "WARMING UP"):
-        if bp >= 60:
+    ctl, drift = pc.get("control"), pc.get("drift") or 0.0
+    ln = lean_side(sb)
+    if bp is not None and st not in (None, "QUIET", "WARMING UP") and ln < 0 and ((bp >= 60 and ctl != "sellers") or ctl == "buyers"):
+        bits.append(trying(sb, "buyers") + f"; {bp:.0f}% lifting the offer")        # sellers have the tape: no vote for the buyers
+    elif bp is not None and st not in (None, "QUIET", "WARMING UP") and ln > 0 and ((bp <= 40 and ctl != "buyers") or ctl == "sellers"):
+        bits.append(trying(sb, "sellers") + f"; {100 - bp:.0f}% hitting the bid")
+    elif bp is not None and st not in (None, "QUIET", "WARMING UP"):
+        if ctl == "sellers" and bp >= 60:
+            tape = -1
+            bits.append(f"sellers in control, price down {abs(drift):.2f} in 15 seconds; {bp:.0f}% lifting the offer and getting run over")
+        elif ctl == "buyers" and bp <= 40:
+            tape = 1
+            bits.append(f"buyers in control, price up {abs(drift):.2f} in 15 seconds; {100 - bp:.0f}% hitting the bid and getting absorbed")
+        elif bp >= 60:
             tape = 1
             bits.append(f"buyers stepping up, {bp:.0f}% of the tape lifting the offer" + (" and speeding up" if fast else ""))
         elif bp <= 40:
@@ -1047,8 +1189,8 @@ def play_by_play(sb, t, foc, last, near, pace, fr, reloads, consumed, cfg):
     score = sum(votes)
     if not votes:
         read, tone = "quiet", "neutral"
-    elif len(set(votes)) > 1 and abs(score) < 2:
-        read, tone = "mixed", "warn"
+    elif (len(set(votes)) > 1 and abs(score) < 2) or (ln and score * ln < 0):
+        read, tone = "mixed", "warn"                  # against who has the tape: a fight, not a turn (until a level is taken back)
     elif score > 0:
         read, tone = ("defend" if sup else "press_res"), "bull"
     else:
@@ -1491,7 +1633,7 @@ def build(sb, t, last, tick, atr, play, se_state, ctx, points, zones, conf, fr, 
 
     # what gets said first when several things happen at once (the page's one mouth): 1 your trade and your second
     # entry, 2 the reload buyer / seller and the money, 3 the levels taken, the averages, the Daily, 4 the colour
-    PRI = {"trade": 1, "se": 1, "reload": 2, "consumed": 2, "hype": 2, "coach_rl": 2, "break": 3, "h60": 3, "retrace": 3, "fw": 3,
+    PRI = {"trade": 1, "se": 1, "reload": 2, "consumed": 2, "hype": 2, "coach_rl": 2, "lean": 2, "break": 3, "h60": 3, "retrace": 3, "fw": 3,
            "struct": 3, "ma": 3, "daily": 3, "fail": 3, "held": 3, "maflow": 3, "flow": 3, "align": 3, "edge": 3}
 
     def note(topic, key, text, tone, repeat=600.0, loud=False):
@@ -1600,6 +1742,15 @@ def build(sb, t, last, tick, atr, play, se_state, ctx, points, zones, conf, fr, 
                  "bull" if up else "bear", loud=True)
 
     out["play"] = None
+    # WHO HAS THE TAPE: read before the play-by-play (which speaks against it), said out loud when it changes
+    try:
+        ln = tape_lean(sb, t, last, mins, fr, drows, live, cfg)
+    except Exception:
+        ln = None
+    out["lean"] = {"side": ln["side"], "text": ln["text"], "why": list(ln["why"][:4]), "since": ln["since"]} if ln else None
+    if ln and ln.get("changed"):
+        note("lean", (ln["side"], round(t)), ln["changed"], "bear" if ln["side"] == "bear" else "bull" if ln["side"] == "bull" else "neutral",
+             repeat=60, loud=True)
     hy = hype(fr, cfg) if cfg.get("hype", True) else None
     out["hype"] = hy["text"] if hy else None
     if hy and sb.say("hype:" + hy["cp"] + str(hy["strike"]), hy["key"], hy["text"] + ("" if hy["text"].endswith("!") else "!"),
@@ -1748,7 +1899,7 @@ def build(sb, t, last, tick, atr, play, se_state, ctx, points, zones, conf, fr, 
         head = f"Coming into {where[0].lower() + where[1:] if where.startswith('Major') else where}{at}"
         tone = "neutral"
     parts.append(head[0].upper() + head[1:])
-    tw = tape_words(pace, up)
+    tw = tape_words(pace, up, sb)
     if tw:
         parts.append(tw)
     # the reloaders at this place (any price: round numbers only get a star)

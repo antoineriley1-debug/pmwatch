@@ -112,11 +112,17 @@ def read(book, now, last, levels, tick, cfg, flow=None, knows=None):
              else "SLOWING" if rate5 < 0.6 * sps or sps < 0.6 * rate_1m else "")
     directional = cur_b + cur_s
     buy_pct = 100.0 * cur_b / directional if directional else None
+    # the PRICE PATH over the same 15 s: who is really in control. Buyers lifting offers that keep stepping lower are
+    # getting run over, not stepping up; the voice never calls buyers while the tape prints lower and lower
+    win_rows = [r for r in rows if w0 <= r[0] < cur0 + BUCKET]
+    drift = round(win_rows[-1][6] - win_rows[0][5], 4) if win_rows else 0.0
+    step = max(3 * float(tick or 0.01), (last or win_rows[-1][6] if win_rows else 0.0) * 0.001)
+    control = "sellers" if drift <= -step else "buyers" if drift >= step else None
     c = cfg
     state = ("SURGE" if ratio >= c["surge_ratio"] and pct >= 90 else "FAST" if ratio >= c["fast_ratio"]
              else "DRYING UP" if ratio <= c["dry_ratio"] else "SLOW" if ratio <= c["slow_ratio"] else "NORMAL")
     out.update(state=state, ratio=round(ratio, 2), pct=round(pct), heat=round(min(1.0, ratio / 3.0), 2), buy_pct=None if buy_pct is None else round(buy_pct),
-               accel=accel, sps=round(sps), pps=round(cur_n / span, 1), norm_sps=round(norm))
+               accel=accel, sps=round(sps), pps=round(cur_n / span, 1), norm_sps=round(norm), drift=drift, control=control)
     if last is None:
         return out
     levels = levels or []

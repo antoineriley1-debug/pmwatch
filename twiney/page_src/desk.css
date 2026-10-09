@@ -1166,3 +1166,7 @@ body.whitedesk .chart-wrap canvas,body.whitedesk img,body.whitedesk video{filter
 #rpQuiz.on{display:flex}
 #rpQuiz b{color:#c9b8ff;letter-spacing:.08em;white-space:nowrap} #rpQuiz span{flex:1;min-width:0;white-space:normal}
 #rpQuiz button{font-weight:800;padding:5px 12px} #rpQuiz button[data-ans=long]{color:#3fb950} #rpQuiz button[data-ans=short]{color:#f85149} #rpQuiz button[data-ans=wait]{color:#e8b931}
+
+/* WHO HAS THE TAPE */
+.slean{font:11px var(--sans);padding:4px 8px;color:#cfd6df;border-left:3px solid #7d8590} .slean b{letter-spacing:.08em;margin-right:6px;color:#9fb0c3}
+.slean.bear{border-left-color:#f85149} .slean.bear b{color:#f85149} .slean.bull{border-left-color:#3fb950} .slean.bull b{color:#3fb950}

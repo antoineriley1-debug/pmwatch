@@ -598,6 +598,10 @@ DEFAULTS = {
         "pbp_flow_seconds": 120,        # ... calls / puts bought over the last N seconds
         "pbp_flow_min": 25000,          # ... option premium under this is no real flow
         "pbp_quiet": False,             # off: when nothing is going on at the place (no tape, no book, no option flow) the chart stays quiet
+        "lean_min": 2,                  # WHO HAS THE TAPE: this many reasons one way (levels taken, new low / high of day, lower lows, the flow) before a side has it
+        "lean_hold_minutes": 10,        # ... a side keeps the tape at least this long before the other side can take it (a bounce is "trying" until then)
+        "lean_neutral_minutes": 3,      # ... the reasons gone (levels recovered, flow even) this long: no side has the tape
+        "lean_flow_min": 250000,        # ... puts (calls) count as a reason from this much, and at least twice the other side
         "hype": True,                   # THE EXCITEMENT: deep out-of-the-money calls / puts hit, or one strike pounded again and again ("they're pounding the 300s non stop!")
         "voice_hype": True,             # say it out loud (voice on)
         "hype_min_premium": 75000,      # ... at least this much on that one strike in the last couple of minutes

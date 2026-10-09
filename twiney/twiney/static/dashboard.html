@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261009-1524">
+<meta name="build" content="20261009-1613">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -1478,6 +1478,10 @@ body.whitedesk .chart-wrap canvas,body.whitedesk img,body.whitedesk video{filter
 #rpQuiz.on{display:flex}
 #rpQuiz b{color:#c9b8ff;letter-spacing:.08em;white-space:nowrap} #rpQuiz span{flex:1;min-width:0;white-space:normal}
 #rpQuiz button{font-weight:800;padding:5px 12px} #rpQuiz button[data-ans=long]{color:#3fb950} #rpQuiz button[data-ans=short]{color:#f85149} #rpQuiz button[data-ans=wait]{color:#e8b931}
+
+/* WHO HAS THE TAPE */
+.slean{font:11px var(--sans);padding:4px 8px;color:#cfd6df;border-left:3px solid #7d8590} .slean b{letter-spacing:.08em;margin-right:6px;color:#9fb0c3}
+.slean.bear{border-left-color:#f85149} .slean.bear b{color:#f85149} .slean.bull{border-left-color:#3fb950} .slean.bull b{color:#3fb950}
 
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
@@ -5361,7 +5365,9 @@ function rlBanner(wrap, d){
   const prices = new Set(rows.map(r => +r.price)), lo = rows.length ? Math.min(...prices) : null, hi = rows.length ? Math.max(...prices) : null;
   const off = (d.orders || []).filter(o => o.price && !prices.has(+o.price) && lo != null).map(o => `<span class="rlb ord ${o.action === "BUY" ? "b" : "s"} ${o.price > hi ? "up" : "down"}" data-oid="${o.id}" title="${esc(o.type || "")} ${esc(o.role || "")} order, ${o.price > hi ? "above" : "below"} the rows on screen · click to cancel it">${o.price > hi ? "▲" : "▼"} YOUR ${esc(o.action)} ${sz(o.qty)} @ ${px(o.price)}${o.type && o.type !== "LMT" ? " " + esc(o.type) : ""} · ${o.price > hi ? "above" : "below"} the ladder ✕</span>`).join("");
   const noBook = rows.length && !rows.some(r => r.bid || r.ask);
-  const nb = noBook ? `<span class="rlb nobook" title="Level II needs one of the ${(state && state.slots) || 3} book slots (LADDERS at the bottom). The ticker on screen takes one; give it a second.">NO BOOK YET FOR ${esc(d.symbol)} · bid and ask sizes come in a moment · the HIT / PAID numbers are what already traded</span>` : "";
+  const refused = d.health && d.health.depth_refused;
+  const nb = noBook ? (refused ? `<span class="rlb nobook" title="${esc(refused)}">LEVEL II REFUSED BY IBKR FOR ${esc(d.symbol)} · ${esc(refused)}</span>`
+    : `<span class="rlb nobook" title="Level II needs one of the ${(state && state.slots) || 3} book slots (LADDERS at the bottom). The ticker on screen takes one; give it a second.">NO BOOK YET FOR ${esc(d.symbol)} · bid and ask sizes come in a moment · the HIT / PAID numbers are what already traded</span>`) : "";
   const html = nb + off + items.map(i => `<span class="rlb ${i.side === "bid" ? "b" : "s"} ${i.where}" data-jump="${i.price}" title="${esc(i.rw.text)} · ${i.stage} · click to jump to it">${i.where === "up" ? "▲" : i.where === "down" ? "▼" : "●"} RELOAD ${i.side === "bid" ? "BUYER" : "SELLER"}${i.rw.back ? ` BACK ×${i.rw.back.n} (gone ${Math.max(1, Math.round((i.rw.back.away || 0) / 60))}m)` : ""} ${px(i.price)} · ${i.side === "bid" ? "bought" : "sold"} ${kfmt(i.rw.n)} sh · ${usdK(i.rw.usd)}${i.rw.back && i.rw.all > i.rw.n ? ` · ${kfmt(i.rw.all)} all visits` : ""}${i.rw.peak && i.rw.n > i.rw.peak ? ` · never showed more than ${kfmt(i.rw.peak)} at once (large size, refilled ${i.n}×)` : ""}${i.where !== "on" ? ` · ${i.rowsAway} rows ${i.where}` : ""}${i.knows ? " ⚡" : ""}</span>`).join("");
   if (ban.dataset.h !== html){ ban.dataset.h = html; ban.innerHTML = html; ban.classList.toggle("on", !!(items.length || off || nb)); }
 }
@@ -7894,6 +7900,7 @@ function renderStory(d){
       <div class="sctx ${c.bias === "bull" ? "bull" : c.bias === "bear" ? "bear" : ""}"><b>${c.bias === "bull" ? "DAILY ▲ BULLISH PS60" : c.bias === "bear" ? "DAILY ▼ BEARISH PS60" : "DAILY"}</b> <span>${esc(c.text || "")}</span></div>
       <div class="satt">${s.attention ? `<b class="hat">HIGH ATTENTION</b>` : `<b class="watch">WATCHING</b>`} <span>${where}</span></div>
       <div class="snow t-${esc(s.tone || "neutral")}">${esc(s.now || "")}</div>
+      ${s.lean ? `<div class="slean ${s.lean.side === "bear" ? "bear" : s.lean.side === "bull" ? "bull" : ""}" title="who HAS the tape: levels taken on a close and not recovered, a new low / high of day, lower lows / higher highs, the puts or calls out in front. Held until the data turns it; a move against it is the other side TRYING"><b>WHO HAS THE TAPE</b> ${esc(s.lean.text || "")}</div>` : ""}
       ${s.play ? `<div class="splay"><b>PLAY-BY-PLAY</b> ${esc(s.play)}</div>` : ""}
       ${s.framework && s.framework.text ? `<div class="sfw"><b>THE AVERAGES</b> ${esc(s.framework.text)}</div>` : ""}
       ${s.framework && s.framework.text ? `<div class="sfw"><b>THE AVERAGES</b> ${esc(s.framework.text)}</div>` : ""}

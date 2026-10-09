@@ -20,7 +20,7 @@ from .flow import FLOW_LABELS, FlowBook
 from .levels import BUILDING, GONE_PENDING, RELOAD, LevelTracker, WATCHING
 from .prices import fmt_price, price_key, tick_size
 from .ranking import allocate, distances, rank
-from .tape import MID, Tape, classify
+from .tape import MID, Tape, classify, BUY, SELL
 from .dark import DarkBook, is_dark
 
 log = logging.getLogger("twiney.engine")
@@ -233,8 +233,31 @@ class SymbolState:
                 return classify(price, b, a)
             return MID
         side = classify(price, bid, ask)
-        if side != MID:
-            return side
+        through = (ask is not None and price > ask + 1e-9) or (bid is not None and price < bid - 1e-9)
+        if side != MID and not through:
+            return side                           # at the offer or at the bid of the market right now: plain
+        if through:
+            # the print is OUTSIDE the market now: the quote moved before the print reached us (the tape and the
+            # book are separate streams; in a sell-off the quote is already lower). Read it against the quote it
+            # traded IN, the last one of the past second that held it: a sell at the old bid is a sell, never a
+            # buy over the new offer
+            for qt, b, a in reversed(self.quotes):
+                if t - qt > max(window, 1.0):
+                    break
+                if locked(b, a) or b is None or a is None:
+                    continue
+                if b - 1e-9 <= price <= a + 1e-9:
+                    return classify(price, b, a)
+            # no quote held it: the tick rule, against the print before it (lower = hit, higher = lifted)
+            prev = self.tape.last() if getattr(self, "tape", None) is not None else None
+            if prev is not None:
+                if price < prev["price"] - 1e-9:
+                    return SELL
+                if price > prev["price"] + 1e-9:
+                    return BUY
+                if prev["side"] in (BUY, SELL):
+                    return prev["side"]
+            return side if side != MID else MID
         for qt, b, a in reversed(self.quotes):   # the quote may have just moved: the last moment's quotes only
             if t - qt > window:
                 break
@@ -982,8 +1005,21 @@ class Engine:
         words, short = [], []
         pc = st.pace or {}
         bp = pc.get("buy_pct")
-        if bp is not None:
-            if bp >= 60:
+        ctl, drift = pc.get("control"), pc.get("drift")
+        from . import story as story_mod
+        ln = story_mod.lean_side(st.storybook) if getattr(st, "storybook", None) is not None else 0
+        if bp is not None and ln < 0 and ((bp >= 60 and ctl != "sellers") or ctl == "buyers"):
+            words.append(story_mod.trying(st.storybook, "buyers")); short.append("buyers trying")
+        elif bp is not None and ln > 0 and ((bp <= 40 and ctl != "buyers") or ctl == "sellers"):
+            words.append(story_mod.trying(st.storybook, "sellers")); short.append("sellers trying")
+        elif bp is not None:
+            # the price path decides who is in control: a tape that keeps printing lower is sellers' whatever the
+            # buy percentage says (buyers lifting offers that keep stepping down are getting run over)
+            if ctl == "sellers" and bp >= 60:
+                words.append(f"sellers in control, price down {self._cents(abs(drift))} in fifteen seconds; buyers lifting and getting run over"); short.append(f"sellers in control · −{abs(drift):.2f}")
+            elif ctl == "buyers" and bp <= 40:
+                words.append(f"buyers in control, price up {self._cents(abs(drift))} in fifteen seconds; sellers hitting and getting absorbed"); short.append(f"buyers in control · +{abs(drift):.2f}")
+            elif bp >= 60:
                 words.append(f"buyers stepping up, {bp} percent at the offer"); short.append(f"buyers {bp}%")
             elif bp <= 40:
                 words.append(f"sellers stepping up, {100 - bp} percent at the bid"); short.append(f"sellers {100 - bp}%")
@@ -3212,9 +3248,26 @@ class Engine:
             self._rec({"ev": "depth_rejected", "t": t, "sym": symbol, "code": code, "msg": msg})
             st.rejected_until = t + self.cfg["depth"]["reject_cooldown_seconds"]
             st.last_error = f"{code}: {msg}"
+            st.depth_refused = self.depth_refusal(code, msg)
+            self._message("error", f"{symbol}: Level II refused by IBKR [{code}]: {st.depth_refused}", t, symbol, category="MARKET DATA")
             if symbol in self.slots:
                 self._deactivate(symbol, t, record=True, reason=f"rejected {code}")
-            self._message("error", f"{symbol}: depth rejected ({code}) {msg}", t, symbol)
+
+    @staticmethod
+    def depth_refusal(code, msg):
+        """What a Level II refusal means and what fixes it, in plain words."""
+        try:
+            code = int(code)
+        except (TypeError, ValueError):
+            code = 0
+        if code == 309:
+            return ("too many depth lines open: IBKR allows 3 at a time across EVERYTHING on this login (TWS depth windows, "
+                    "other apps). Close the other depth windows, or lower SETTINGS > Market depth > slots")
+        if code == 10092:
+            return ("no Level II market data for this exchange on your account: SMART depth needs NASDAQ TotalView (and NYSE "
+                    "ArcaBook / OpenBook) in IBKR Account Management > Market Data Subscriptions. Or turn SMART depth off in "
+                    "SETTINGS > Market depth and the single-exchange book is used")
+        return f"{msg} (the desk asks again in a moment; the tape and quote still read)"
 
     def on_contract(self, symbol, details, t):
         """Contract details from IBKR: the instrument is valid, and this is its minimum tick (never assume a penny)."""
@@ -4552,6 +4605,7 @@ class Engine:
             "resets": st.resets,
             "anomalies": st.book.anomalies if st.book else 0,
             "last_error": st.last_error,
+            "depth_refused": getattr(st, "depth_refused", None) if st.rejected_until > t else None,
         }
 
     def _user_levels(self, play):
