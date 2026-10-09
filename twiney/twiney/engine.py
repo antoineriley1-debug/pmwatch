@@ -124,6 +124,7 @@ class SymbolState:
         self.storybook = Story()         # PS60 STORY: the running story, newest first
         self.story = None
         self.consumed = deque(maxlen=20) # (t, price, side): reloaders that got cleaned up (the story's "consumed")
+        self.pulled = deque(maxlen=20)   # (t, price, side): reloaders that PULLED (left, not cleaned up)
         self.dark = DarkBook()           # DARK POOL prints: large off-exchange trades and where dark volume keeps printing
         self.rflow_said = {}             # (strike, cp, expiry) -> when REPEAT FLOW was last called on it
         self.l1_volume = None            # IBKR's cumulative day volume (symbols without a tape)
@@ -387,6 +388,8 @@ class Engine:
             alert["back"] = dict(tracker.back)
         if label == "CLEANED UP":
             st.consumed.append((t, float(tracker.price), alert["side"], alert["absorbed_all"]))
+        elif label == "PULLED":
+            st.pulled.append((t, float(tracker.price), alert["side"]))
         if final:
             alert["size_before_gone"] = round(final["size_before_gone"])
             ah = st.absorb_hist.get((alert["side"], tracker.key))
@@ -868,15 +871,26 @@ class Engine:
                for u in (st._user_levels_cache or []) if u.get("price")]
         sv = ((st.__dict__.get("_studies") or {}).get("v")) or {}
         atr = ((sv.get("gas") or {}).get("y_atr")) or None
-        for ev in lw.update(t, last, lv, tick, atr, lc):
+        close = self._last_close(st, t)
+        for ev in lw.update(t, last, lv, tick, atr, lc, close):
             self._level_alert(st, ev, t)
         # THE FOLLOW-UP: 5-7 minutes after a level's back and forth, how it came out (defended / lost / reclaimed)
         if lc.get("followup", True):
             from .levelverdict import LevelFollowUp
             fu = st.__dict__.get("_lfu") or LevelFollowUp()
             st._lfu = fu
-            for v in fu.update(t, last, lv, lc, tick):
+            for v in fu.update(t, last, lv, lc, tick, close):
                 self._level_verdict(st, fu, v, t)
+
+    @staticmethod
+    def _last_close(st, t):
+        """(t the candle ended, its close) for the last completed 1-minute candle: a level is taken on a close."""
+        cur = int(t // BAR_SECONDS) * BAR_SECONDS
+        ks = [k for k in st.bars if k < cur]
+        if not ks:
+            return None
+        k = max(ks)
+        return (k + BAR_SECONDS, st.bars[k][3])
 
     def _level_context(self, st, p, t, from_below):
         """What the rest of the desk sees at a level, in a few words each: the TAPE (who is stepping up, how fast),
@@ -1135,8 +1149,8 @@ class Engine:
                 "AT": at_words,
                 "REJECTED": f"Rejected at {nm}, {fmt_price(p)}. Sellers defending it, pulling off",
                 "BOUNCED": f"Bounced off {nm}, {fmt_price(p)}. Buyers defending it, pulling off",
-                "BUYERS TOOK": f"Buyers took {nm}, {fmt_price(p)}. Holding over it",
-                "SELLERS TOOK": f"Sellers took {nm}, {fmt_price(p)}. Holding under it"}[kind]
+                "BUYERS TOOK": f"Closed over {nm}, {fmt_price(p)}. Buyers took it",
+                "SELLERS TOOK": f"Closed under {nm}, {fmt_price(p)}. Sellers took it"}[kind]
         words = head + (". " + ctx_w[0].upper() + ctx_w[1:] if ctx_w else "")
         text = f"{kind} {ev['name']} {fmt_price(p)}" + (f" · price {fmt_price(last)}" if last is not None and abs(gap) >= tk * 0.5 else "") + (f" · {ctx_s}" if ctx_s else "")
         voice = (self.cfg.get("levels") or {}).get("voice", True)
@@ -1314,7 +1328,8 @@ class Engine:
         good = "WITH SPEED" in call
         text = (f"{call}: {lvl[1]} at {fmt_price(lvl[0])}" if call == "SPEED + FLOW" else f"{call} {lvl[1]} {fmt_price(lvl[0])}") \
             + f" · tape ×{p['ratio']} its normal pace" + (f" · {p['flow']}" if p.get("flow") else "") \
-            + (f" · buyers {p['buy_pct']}%" if p.get("buy_pct") is not None else "")
+            + (f" · buyers {p['buy_pct']}%" if p.get("buy_pct") is not None else "") \
+            + (f" · not confirmed until a candle closes {p['needs_close']} it" if p.get("needs_close") else "")
         flow_on = bool(p.get("flow")) and p["flow"].startswith("+") and "WITHOUT" not in call and call != "SPEED + FLOW"
         alert = {"t": t, "symbol": st.symbol, "label": call + (" + FLOW" if flow_on else ""),
                  "price": fmt_price(lvl[0]), "side": "ask" if call.startswith(("BREAKOUT", "PRESSING")) or (call == "SPEED + FLOW" and "calls" in lvl[1]) else "bid",
@@ -1453,12 +1468,55 @@ class Engine:
         cur = int(t // BAR_SECONDS) * BAR_SECONDS
         mins = [[k] + list(st.bars[k][:5]) for k in sorted(st.bars)[-12:] if k <= cur]
         se_state = ((getattr(st, "_ps60_cache", None) or (0, {}))[1] or {}).get("state")
+        try:
+            traps = self._break_trap_pane(st, t)
+        except Exception:
+            traps = None
         out = story_mod.build(st.storybook, t, last, tick, atr, st.play, se_state, ctx, points, zones, conf, fr, st.pace,
-                              reloads, consumed, mins, sc)
+                              reloads, consumed, mins, sc, traps=traps, market=self._market_read(st, t),
+                              pulled={(c[1], c[2]): c[0] for c in getattr(st, "pulled", ()) if t - c[0] <= 60})
         out["feed"] = list(st.storybook.feed)[:30]
         out["near"] = round(story_mod.near_dist(last, atr, tick, sc), 4)
         out["atr"] = atr
         out["draw_zones"] = bool(sc.get("draw_zones", True))
+        return out
+
+    def _market_read(self, st, t):
+        """What the market is doing, for the coach: SPY / QQQ when on the desk (up or down on the day, over or under
+        VWAP), else the desk itself (how many of the other stocks are green). Once every 5 s."""
+        memo = self.__dict__.setdefault("_mkt_memo", {})
+        if memo.get("t", -1e9) > t - 5 and st.symbol in memo.get("v", {}):
+            return memo["v"][st.symbol]
+        if memo.get("t", -1e9) <= t - 5:
+            memo["t"], memo["v"] = t, {}
+
+        def chg(o):
+            p, c = o.price(), (o.l1 or {}).get("close")
+            return (p - c) / c * 100.0 if p and c else None
+        idx = [(s2, o) for s2, o in self.syms.items() if s2 in ("SPY", "QQQ") and s2 != st.symbol]
+        out = None
+        if idx:
+            bits, ups, downs = [], 0, 0
+            for s2, o in idx:
+                ch = chg(o)
+                if ch is None:
+                    continue
+                vw = ((o.__dict__.get("_refs") or {}).get("v") or {}).get("vwap")
+                over = None if not vw else o.price() > vw
+                bits.append(f"{s2} {'up' if ch >= 0 else 'down'} {abs(ch):.1f}%" + ("" if over is None else f", {'over' if over else 'under'} VWAP"))
+                ups += ch > 0.15 and over is not False
+                downs += ch < -0.15 and over is not True
+            if bits:
+                d = "up" if ups and not downs else "down" if downs and not ups else None
+                out = {"dir": d, "text": "; ".join(bits) + "."}
+        else:
+            chs = [chg(o) for s2, o in self.syms.items() if s2 != st.symbol]
+            chs = [c for c in chs if c is not None]
+            if len(chs) >= 4:
+                g = sum(1 for c in chs if c > 0)
+                d = "up" if g >= 0.7 * len(chs) else "down" if g <= 0.3 * len(chs) else None
+                out = {"dir": d, "text": f"{g} of {len(chs)} stocks on the desk are green."}
+        memo["v"][st.symbol] = out
         return out
 
     @staticmethod
@@ -1472,7 +1530,7 @@ class Engine:
         tone = s_.get("tone")
         alert = {"t": t, "symbol": st.symbol, "label": "PS60 STORY", "price": fmt_price(st.price()),
                  "side": "bid" if tone == "bear" else "ask", "role": "story", "text": s_["text"],
-                 "words": f"{st.symbol}. {s_['text']}" if sc.get("voice", False) else None}
+                 "words": f"{st.symbol}. {s_['text']}" if sc.get("voice", False) or (s_.get("topic") == "pbp" and sc.get("voice_play_by_play", True)) or (s_.get("topic") == "coach" and sc.get("voice_coach", True)) or (s_.get("topic") == "hype" and sc.get("voice_hype", True)) else None}
         alert["key"] = f"{round(t, 2)}|{st.symbol}|STORY|{s_['topic']}"
         self.alerts.appendleft(alert)
         self._rec(dict(alert, ev="alert"))

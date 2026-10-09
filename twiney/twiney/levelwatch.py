@@ -5,7 +5,8 @@ Every key level is watched the same way, the way a tape reader reads it:
     price comes INTO the level (within a few ticks / a slice of the ATR)
       -> goes back the way it came, far enough        REJECTED (came up into it: sellers defended it)
                                                       BOUNCED  (came down into it: buyers defended it)
-      -> goes THROUGH and holds there for a minute     BUYERS TOOK it (from below) / SELLERS TOOK it (from above)
+      -> goes THROUGH and a candle CLOSES through it   BUYERS TOOK it (from below) / SELLERS TOOK it (from above)
+         (trading through it is not taking it: no close under / over it, no break)
 
 PUSHING INTO / STALLING INTO / BREAKOUT and BREAKDOWN with or without speed come from the PACE read against the very
 same levels, so the ladder, the calls, the voice and the story all name the same prices the same way.
@@ -24,8 +25,9 @@ class LevelWatch:
         self.said = {}     # (kind, level key) -> t
         self.path = deque()   # (t, price) for the last ~20 s: which way price is travelling
 
-    def update(self, t, price, levels, tick, atr, cfg):
-        """levels: [{"price", "name", "say", "code"}]. Returns the events that happened on this read."""
+    def update(self, t, price, levels, tick, atr, cfg, close=None):
+        """levels: [{"price", "name", "say", "code"}]. close: (t the candle ended, its close) for the last completed
+        candle: a level is only taken when a candle closes through it. Returns the events that happened on this read."""
         if price is None or not levels:
             return []
         atr = atr or 0.0
@@ -94,7 +96,11 @@ class LevelWatch:
                 else:
                     if s["cross"] is None:
                         s["cross"] = t
-                    if t - s["cross"] >= hold:
+                    if close is None:
+                        took = t - s["cross"] >= hold            # no candles to go by: through and holding
+                    else:                                        # a candle that ended after the cross CLOSED through it
+                        took = close[0] > s["cross"] and (close[1] > p if side_now == "above" else close[1] < p)
+                    if took:
                         ev = "BUYERS TOOK" if side_now == "above" else "SELLERS TOOK"
                 if ev:
                     s["touch"] = None; s["cross"] = None; s["side"] = side_now

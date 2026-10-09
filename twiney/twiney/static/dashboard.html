@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261009-0207">
+<meta name="build" content="20261009-0326">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -1388,6 +1388,11 @@ table.lad.basket2 th .bkgear{background:none;border:0;color:#9aa4b4;cursor:point
 .fread button[disabled]{opacity:.45;cursor:default}
 .fl.said{outline:2px solid var(--gold);outline-offset:-2px;background:rgba(255,193,7,.07)}
 .say .fbtn{font:700 9.5px var(--sans);padding:0 5px;margin:0 6px 0 2px;border-radius:3px;border:1px solid var(--gold);background:transparent;color:var(--gold);cursor:pointer}
+
+/* PLAY-BY-PLAY: the live read at the place */
+.splay{margin:4px 0;padding:5px 8px;border-left:3px solid var(--gold,#d4a017);background:rgba(212,160,23,.08);font-size:12px;line-height:1.35}
+.splay b{color:var(--gold,#d4a017);font-size:10px;letter-spacing:.06em;margin-right:4px}
+.storyln b.pbp{background:#d4a017;color:#111;padding:0 4px;border-radius:3px;font-size:9px;margin-right:4px}
 
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
@@ -3333,6 +3338,9 @@ function drawOne(p, cv, v, isFoot){
 
   // the position's bracket: entry line, stop and target as solid draggable lines with the risk / reward zones and
   // what each one is worth in dollars. Shown on every chart of that symbol, whichever tab you come back from.
+  // your position / order lines start a few candles left of the last one (like the study lines), never across the
+  // whole chart through the history and its labels
+  const ordX = Math.max(0, Math.min(plotW - 40, x0 + (bars.length - 1) * cw + cw / 2 - Math.max(4, studyStyle(d.studies).back) * cw));
   if (bracketOn && !isFoot){
     const pos = d.position, ent = pos.avg_cost, long = pos.qty > 0, qa = Math.abs(pos.qty);
     const groups = {};
@@ -3343,9 +3351,9 @@ function drawOne(p, cv, v, isFoot){
       const drag = p.dragOrder && gr.ids.includes(p.dragOrder.id), gp = drag ? p.dragOrder.price : gr.price;
       const yy = y(gp), stop = gr.kind === "stop", col = stop ? "#ff2d55" : "#16c784";
       g.fillStyle = stop ? "rgba(255,45,85,.10)" : "rgba(22,199,132,.10)";
-      g.fillRect(0, Math.min(yE, yy), plotW, Math.abs(yy - yE));
+      g.fillRect(ordX, Math.min(yE, yy), plotW - ordX, Math.abs(yy - yE));
       g.strokeStyle = col; g.lineWidth = drag ? 2.5 : 2; g.setLineDash([]);
-      g.beginPath(); g.moveTo(0, yy); g.lineTo(plotW, yy); g.stroke();
+      g.beginPath(); g.moveTo(ordX, yy); g.lineTo(plotW, yy); g.stroke();
       const pnl = (gp - ent) * gr.qty * (long ? 1 : -1);
       const tag = stop ? `STOP ${pnl >= 0 ? "+" : "−"}$${Math.abs(pnl).toFixed(0)} · ${sz(gr.qty)} sh`
         : `${gr.kind === "part" ? "PARTIAL" : "TGT"} ${sz(gr.qty)}  ${pnl >= 0 ? "+" : "−"}$${Math.abs(pnl).toFixed(0)}`;
@@ -3360,7 +3368,7 @@ function drawOne(p, cv, v, isFoot){
     }
     const openPnl = d.last ? (d.last - ent) * pos.qty : 0;
     g.strokeStyle = "#1a1a1a"; g.lineWidth = 1.5; g.setLineDash([6, 3]);
-    g.beginPath(); g.moveTo(0, yE); g.lineTo(plotW, yE); g.stroke(); g.setLineDash([]);
+    g.beginPath(); g.moveTo(ordX, yE); g.lineTo(plotW, yE); g.stroke(); g.setLineDash([]);
     const etag = `${long ? "LONG" : "SHORT"} ${sz(qa)} @ ${px(ent)}  ${openPnl >= 0 ? "+" : "−"}$${Math.abs(openPnl).toFixed(0)}`;
     g.font = "bold 11px ui-monospace, Menlo, Consolas, monospace";
     const ew = g.measureText(etag).width + 12;
@@ -3373,7 +3381,7 @@ function drawOne(p, cv, v, isFoot){
     const pos = d.position, ent = pos.avg_cost, yE = y(ent), mult = d.mult || 1;
     const openPnl = d.last ? (d.last - ent) * pos.qty * mult : 0;
     g.strokeStyle = "#1a1a1a"; g.lineWidth = 1.5; g.setLineDash([6, 3]);
-    g.beginPath(); g.moveTo(0, yE); g.lineTo(plotW, yE); g.stroke(); g.setLineDash([]);
+    g.beginPath(); g.moveTo(ordX, yE); g.lineTo(plotW, yE); g.stroke(); g.setLineDash([]);
     const etag = `${pos.qty > 0 ? "YOU HAVE" : "SHORT"} ${Math.abs(pos.qty)} ${d.unit || ""} @ ${ent.toFixed(2)}  ${openPnl >= 0 ? "+" : "−"}$${Math.abs(openPnl).toFixed(0)}`;
     g.font = "bold 11px ui-monospace, Menlo, Consolas, monospace";
     const ew = g.measureText(etag).width + 12;
@@ -3389,7 +3397,7 @@ function drawOne(p, cv, v, isFoot){
     const drag = p.dragOrder && p.dragOrder.id === o.id;
     const yy = y(drag ? p.dragOrder.price : o.price), col = o.action === "BUY" ? "#9fe0bd" : "#e8a3a3";
     g.strokeStyle = col; g.lineWidth = 1.2; g.setLineDash([8, 3, 2, 3]);
-    g.beginPath(); g.moveTo(0, yy); g.lineTo(plotW, yy); g.stroke(); g.setLineDash([]);
+    g.beginPath(); g.moveTo(ordX, yy); g.lineTo(plotW, yy); g.stroke(); g.setLineDash([]);
     g.fillStyle = "#0c0c0d"; g.strokeStyle = col; g.fillRect(plotW, yy - 8, labelW, 16); g.strokeRect(plotW + .5, yy - 7.5, labelW - 1, 15);
     g.fillStyle = col; g.fillText((drag ? px(p.dragOrder.price) + " >" : `${o.role === "entry" ? "YOU " + o.action : o.role.toUpperCase()} ${sz(o.qty)}`).slice(0, 13), plotW + 3, yy + 4);
   }
@@ -4240,7 +4248,7 @@ function indPopHTML(){
   const sbox = (k, label) => `<label><input type="checkbox" data-study="${k}" ${SO[k] ? "checked" : ""}> ${label}</label>`;
   return `<h5>STUDIES · STOCK CHART</h5>${sbox("gas", "GAS + ATR (tank, ATR levels, PDH / PDL, PMH / PML, box, 2nd entry)")}${sbox("airspace", "AIRSPACE (Bounce / Reject, MP, MT supply / demand)")}${sbox("unvisited", "UNVISITED HIGHS / LOWS")}
     <button data-stset="1" class="stset" title="colours, label size, how far right the labels sit, line widths and lengths, and every input of the three scripts">⚙ STUDY SETTINGS</button>
-    <div style="margin-left:14px">${sbox("gas_readout", "GAS readout panel (bottom right)")}${sbox("atr_zones", "ATR ladder (¼ ATR rungs, coloured as price eats the tank)")}${sbox("air_board", "AIRSPACE board panel (top left)")}${sbox("whole_numbers", "whole-number lines (WHOLE 147.00 ...)")}</div>
+    <div style="margin-left:14px">${sbox("gas_readout", "GAS readout panel (bottom right)")}${sbox("atr_zones", "ATR ladder (25% ATR rungs, coloured as price eats the tank)")}${sbox("air_board", "AIRSPACE board panel (top left)")}${sbox("whole_numbers", "whole-number lines (WHOLE 147.00 ...)")}</div>
     <div class="dim" style="font-size:10.5px;margin-bottom:4px">Every piece of each is in SETTINGS &gt; Chart studies.</div>
     <h5>SCREEN</h5>
     <div class="row"><span class="dim" style="width:64px">CUSTOM</span><input type="color" data-cs="screenColor" value="${store.get("screenColor", "#dfe9f3")}" title="your own screen colour (pick CUSTOM on the toolbar)"><span class="dim" style="font-size:10px">pick CUSTOM on the toolbar to use it</span></div>
@@ -7608,7 +7616,7 @@ function storyLineHTML(s){
   return `<div class="storyln t-${esc(s.tone || "neutral")}${s.attention ? " att" : ""}" data-story="1" title="PS60 STORY: ${esc(s.now)} (click for the whole story)">`
     + (s.ctx && s.ctx.bias ? `<b class="dbias ${s.ctx.bias}" title="${esc(s.ctx.text || "")}">${s.ctx.bias === "bull" ? "▲ DAILY" : "▼ DAILY"}</b>` : "")
     + (s.attention ? `<b class="hat">HIGH ATTENTION</b>` : "") + (fl ? `<b class="fst ${FLOW_CLS[fl]}">${FLOW_SHORT[fl]}</b>` : "")
-    + `<span class="stx">${esc(s.now)}</span></div>`;
+    + (s.play && s.attention ? `<b class="pbp">LIVE</b><span class="stx">${esc(s.play)}</span></div>` : `<span class="stx">${esc(s.now)}</span></div>`);
 }
 document.addEventListener("click", e => { if (e.target.closest(".storyln[data-story], .edge[data-story]") && typeof showPanel === "function") showPanel("story"); });
 function renderStory(d){
@@ -7624,6 +7632,7 @@ function renderStory(d){
       <div class="sctx ${c.bias === "bull" ? "bull" : c.bias === "bear" ? "bear" : ""}"><b>${c.bias === "bull" ? "DAILY ▲ BULLISH PS60" : c.bias === "bear" ? "DAILY ▼ BEARISH PS60" : "DAILY"}</b> <span>${esc(c.text || "")}</span></div>
       <div class="satt">${s.attention ? `<b class="hat">HIGH ATTENTION</b>` : `<b class="watch">WATCHING</b>`} <span>${where}</span></div>
       <div class="snow t-${esc(s.tone || "neutral")}">${esc(s.now || "")}</div>
+      ${s.play ? `<div class="splay"><b>PLAY-BY-PLAY</b> ${esc(s.play)}</div>` : ""}
       <div class="sflow">${chips}</div>
       ${s.response ? `<div class="sresp t-${esc(s.response.tone)}">PRICE RESPONSE · ${esc(s.response.text)}</div>` : ""}
       ${s.edge ? `<div class="sedge">${edgeChip(s.edge)}<div class="echecks">${s.edge.checks.map(c => `<span class="ec ${c.ok === true ? "y" : c.ok === 0.5 ? "h" : c.ok === false ? "n" : "u"}" title="${esc(c.why)}"><i></i>${esc(c.k)}<em>${esc(c.why)}</em></span>`).join("")}</div></div>` : ""}

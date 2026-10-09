@@ -5,7 +5,7 @@ When a level gets a bunch of calls (coming into it, at it, bounced, rejected, ta
 
   DEFENDED     price is back on the side it came from and never held on the other side
                (came down into it: the buyers defended it; came up into it: the sellers did)
-  LOST / BROKE price went through and is holding on the other side
+  LOST / BROKE price went through, a candle CLOSED on the other side, and it is holding there
                (came down into it: support lost; came up into it: it broke through)
   RECLAIMED    it went through, held there a while, and price is back on the side it came from
   UNDECIDED    still sitting on it: checked once more a few minutes later, then said as it is
@@ -93,8 +93,9 @@ class LevelFollowUp:
         if f["from"] is None and ev.get("from") in ("above", "below"):
             f["from"] = ev["from"]
 
-    def update(self, t, price, levels, cfg, tick):
-        """Every read: watch the open fights. Returns the verdicts due now: [fight dict + "outcome"]."""
+    def update(self, t, price, levels, cfg, tick, close=None):
+        """Every read: watch the open fights. close: (t the candle ended, its close) for the last completed candle:
+        a level is only lost / broken on a close through it. Returns the verdicts due now: [fight dict + "outcome"]."""
         if price is None:
             return []
         lo = float(cfg.get("followup_min_minutes", 5)) * 60.0
@@ -118,10 +119,13 @@ class LevelFollowUp:
             if side not in ("at", f["from"]):              # through it: how long has it held over there?
                 if f["other_since"] is None:
                     f["other_since"] = t
-                if t - f["other_since"] >= hold:
+                if close is not None and close[0] > f["other_since"] and (close[1] > f["price"] if side == "above" else close[1] < f["price"]):
+                    f["closed_other"] = True
+                if t - f["other_since"] >= hold and (close is None or f.get("closed_other")):
                     f["held_other"] = True
             elif side == f["from"]:
                 f["other_since"] = None
+                f["closed_other"] = False
             age = t - f["t0"]
             if age < lo or (t - f["last_alert"] < quiet and age < hi):
                 continue
@@ -135,7 +139,7 @@ class LevelFollowUp:
                 outcome = "UNDECIDED"
             elif side == f["from"]:
                 outcome = "RECLAIMED" if f["held_other"] else "DEFENDED"
-            elif f["other_since"] is not None and t - f["other_since"] >= hold:
+            elif f["other_since"] is not None and t - f["other_since"] >= hold and (close is None or f.get("closed_other")):
                 outcome = "LOST" if f["from"] == "above" else "BROKE"
             else:
                 continue                                   # just went through: give it the hold time first

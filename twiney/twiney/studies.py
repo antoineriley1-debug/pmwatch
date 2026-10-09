@@ -548,10 +548,11 @@ def _rgba(h, a):
 
 
 def _rung_name(m):
-    whole, part = int(m), round(m - int(m), 2)
-    if not part:
-        return f"{whole} ATR"
-    return f"{'' if not whole else whole}{FRAC[part]} ATR"
+    """A rung by its percent of the daily ATR, spelled out: 25% / 50% / 75% ATR, 1 ATR, 125% ATR ... (the ½ / ¼ signs
+    read like a % sign on the chart and never said HOW much)."""
+    if abs(m - round(m)) < 1e-9:
+        return f"{int(round(m))} ATR"
+    return f"{round(m * 100)}% ATR"
 
 
 def atr_ladder(dH, dL, used, y_atr, move_up, one_side, cfg, last=None):
@@ -596,7 +597,7 @@ def atr_ladder(dH, dL, used, y_atr, move_up, one_side, cfg, last=None):
                 away = f" · ${abs(b - last):.2f} away" if last is not None else ""
                 if not told:                       # the next rung: how much of the tank is gone
                     told = True
-                    lbl = f"{_rung_name(m)} {b:.2f}{away} · {round(eaten / y_atr * 100)}% eaten"
+                    lbl = f"{_rung_name(m)} {b:.2f}{away} · {round(eaten / y_atr * 100)}% of the ATR eaten"
                 else:
                     lbl = f"{_rung_name(m)} {b:.2f}{away}"
             lines.append({"p": b, "c": col, "w": 2 if whole else 1, "d": "solid" if whole else "dot", "l": lbl, "lc": LADDER_TXT.get(col, col),

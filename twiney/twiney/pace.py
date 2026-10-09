@@ -166,7 +166,9 @@ def read(book, now, last, levels, tick, cfg, flow=None, knows=None):
                    words=(f"{'Breakout' if up else 'Breakdown'} through {broke[2]} with speed, {ratio:.1f} times its normal pace"
                           + (f", and somebody knows something: {_k(flow_usd)} of short dated {'calls' if up else 'puts'} hammered" if flow_txt and "KNOWS" in flow_txt
                              else f", and {_k(flow_usd)} of {'calls' if up else 'puts'} behind it" if flow_txt and flow_txt.startswith("+") else "")
-                          if fast else f"{broke[2]} broke without speed. Careful, that one can come back"))
+                          if fast else f"{broke[2]} broke without speed. Careful, that one can come back")
+                   + f". Not confirmed until a candle closes {'over' if up else 'under'} it")
+        out["needs_close"] = "over" if up else "under"
         return out
     # SPEED + FLOW: the tape speeding up on one side while short-dated out-of-the-money options on that side are
     # being hammered — wherever price is

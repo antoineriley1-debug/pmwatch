@@ -2306,6 +2306,9 @@ function drawOne(p, cv, v, isFoot){
 
   // the position's bracket: entry line, stop and target as solid draggable lines with the risk / reward zones and
   // what each one is worth in dollars. Shown on every chart of that symbol, whichever tab you come back from.
+  // your position / order lines start a few candles left of the last one (like the study lines), never across the
+  // whole chart through the history and its labels
+  const ordX = Math.max(0, Math.min(plotW - 40, x0 + (bars.length - 1) * cw + cw / 2 - Math.max(4, studyStyle(d.studies).back) * cw));
   if (bracketOn && !isFoot){
     const pos = d.position, ent = pos.avg_cost, long = pos.qty > 0, qa = Math.abs(pos.qty);
     const groups = {};
@@ -2316,9 +2319,9 @@ function drawOne(p, cv, v, isFoot){
       const drag = p.dragOrder && gr.ids.includes(p.dragOrder.id), gp = drag ? p.dragOrder.price : gr.price;
       const yy = y(gp), stop = gr.kind === "stop", col = stop ? "#ff2d55" : "#16c784";
       g.fillStyle = stop ? "rgba(255,45,85,.10)" : "rgba(22,199,132,.10)";
-      g.fillRect(0, Math.min(yE, yy), plotW, Math.abs(yy - yE));
+      g.fillRect(ordX, Math.min(yE, yy), plotW - ordX, Math.abs(yy - yE));
       g.strokeStyle = col; g.lineWidth = drag ? 2.5 : 2; g.setLineDash([]);
-      g.beginPath(); g.moveTo(0, yy); g.lineTo(plotW, yy); g.stroke();
+      g.beginPath(); g.moveTo(ordX, yy); g.lineTo(plotW, yy); g.stroke();
       const pnl = (gp - ent) * gr.qty * (long ? 1 : -1);
       const tag = stop ? `STOP ${pnl >= 0 ? "+" : "−"}$${Math.abs(pnl).toFixed(0)} · ${sz(gr.qty)} sh`
         : `${gr.kind === "part" ? "PARTIAL" : "TGT"} ${sz(gr.qty)}  ${pnl >= 0 ? "+" : "−"}$${Math.abs(pnl).toFixed(0)}`;
@@ -2333,7 +2336,7 @@ function drawOne(p, cv, v, isFoot){
     }
     const openPnl = d.last ? (d.last - ent) * pos.qty : 0;
     g.strokeStyle = "#1a1a1a"; g.lineWidth = 1.5; g.setLineDash([6, 3]);
-    g.beginPath(); g.moveTo(0, yE); g.lineTo(plotW, yE); g.stroke(); g.setLineDash([]);
+    g.beginPath(); g.moveTo(ordX, yE); g.lineTo(plotW, yE); g.stroke(); g.setLineDash([]);
     const etag = `${long ? "LONG" : "SHORT"} ${sz(qa)} @ ${px(ent)}  ${openPnl >= 0 ? "+" : "−"}$${Math.abs(openPnl).toFixed(0)}`;
     g.font = "bold 11px ui-monospace, Menlo, Consolas, monospace";
     const ew = g.measureText(etag).width + 12;
@@ -2346,7 +2349,7 @@ function drawOne(p, cv, v, isFoot){
     const pos = d.position, ent = pos.avg_cost, yE = y(ent), mult = d.mult || 1;
     const openPnl = d.last ? (d.last - ent) * pos.qty * mult : 0;
     g.strokeStyle = "#1a1a1a"; g.lineWidth = 1.5; g.setLineDash([6, 3]);
-    g.beginPath(); g.moveTo(0, yE); g.lineTo(plotW, yE); g.stroke(); g.setLineDash([]);
+    g.beginPath(); g.moveTo(ordX, yE); g.lineTo(plotW, yE); g.stroke(); g.setLineDash([]);
     const etag = `${pos.qty > 0 ? "YOU HAVE" : "SHORT"} ${Math.abs(pos.qty)} ${d.unit || ""} @ ${ent.toFixed(2)}  ${openPnl >= 0 ? "+" : "−"}$${Math.abs(openPnl).toFixed(0)}`;
     g.font = "bold 11px ui-monospace, Menlo, Consolas, monospace";
     const ew = g.measureText(etag).width + 12;
@@ -2362,7 +2365,7 @@ function drawOne(p, cv, v, isFoot){
     const drag = p.dragOrder && p.dragOrder.id === o.id;
     const yy = y(drag ? p.dragOrder.price : o.price), col = o.action === "BUY" ? "#9fffcf" : "#ffb3bb";
     g.strokeStyle = col; g.lineWidth = 1.2; g.setLineDash([8, 3, 2, 3]);
-    g.beginPath(); g.moveTo(0, yy); g.lineTo(plotW, yy); g.stroke(); g.setLineDash([]);
+    g.beginPath(); g.moveTo(ordX, yy); g.lineTo(plotW, yy); g.stroke(); g.setLineDash([]);
     g.fillStyle = "#0a0d12"; g.strokeStyle = col; g.fillRect(plotW, yy - 8, labelW, 16); g.strokeRect(plotW + .5, yy - 7.5, labelW - 1, 15);
     g.fillStyle = col; g.fillText((drag ? px(p.dragOrder.price) + " ▸" : `${o.role === "entry" ? "YOU " + o.action : o.role.toUpperCase()} ${sz(o.qty)}`).slice(0, 13), plotW + 3, yy + 4);
   }

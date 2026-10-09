@@ -274,8 +274,8 @@ class AtrLadderTests(unittest.TestCase):
         self.assertEqual([l["rung"] for l in rungs], [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0])
         self.assertEqual([round(l["p"], 2) for l in rungs[:4]], [101.0, 102.0, 103.0, 104.0])
         self.assertTrue(rungs[0]["eaten"] and rungs[1]["eaten"] and not rungs[2]["eaten"])
-        self.assertIn("½ ATR EATEN", rungs[1]["l"])
-        self.assertEqual(rungs[2]["l"], "¾ ATR 103.00 · $0.50 away · 65% eaten")
+        self.assertIn("50% ATR EATEN", rungs[1]["l"])
+        self.assertEqual(rungs[2]["l"], "75% ATR 103.00 · $0.50 away · 65% of the ATR eaten")
         self.assertEqual(rungs[3]["l"], "1 ATR 104.00 · $1.50 away")
         hot = [z for z in lad["zones"] if z["eat"]]
         self.assertEqual(len(hot), 3)                       # ¼, ½ and the eaten part of ¾
@@ -288,7 +288,7 @@ class AtrLadderTests(unittest.TestCase):
         lad = atr_ladder(50.0, 48.5, 1.5, 2.0, False, True, {}, 48.6)
         self.assertEqual(round(lad["lines"][3]["p"], 2), 48.0)            # 1 ATR under the high
         self.assertTrue(lad["lines"][2]["eaten"])                         # 1.5 of 2.0 = ¾ eaten
-        self.assertEqual(lad["lines"][3]["l"], "1 ATR 48.00 · $0.60 away · 75% eaten")
+        self.assertEqual(lad["lines"][3]["l"], "1 ATR 48.00 · $0.60 away · 75% of the ATR eaten")
 
 
 class H60OnTheHourTests(unittest.TestCase):

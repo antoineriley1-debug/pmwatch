@@ -106,3 +106,32 @@ class FollowUpTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CloseConfirmsLevelTests(unittest.TestCase):
+    """SELLERS TOOK / LOST only on a candle CLOSE under the level (BUYERS TOOK / BROKE: a close over it)."""
+
+    def run_closes(self, prices, closes_under):
+        lw, fu, calls, verdicts = LevelWatch(), LevelFollowUp(), [], []
+        for i, px in enumerate(prices):
+            t = 1000.0 + i
+            m = int(t // 60) * 60
+            close = (m, closes_under(m - 60, prices[max(0, int(m - 1000) - 1)]))
+            for ev in lw.update(t, px, L, 0.01, 2.0, CFG, close):
+                calls.append((t, ev["kind"])); fu.note(ev, t)
+            for v in fu.update(t, px, L, CFG, 0.01, close):
+                verdicts.append(v["outcome"])
+        return calls, verdicts
+
+    def test_trading_under_without_a_close_under_is_not_taken(self):
+        # every candle closes back over 100 (a wick under), price sits under it in between
+        prices = path(100.40, CHOP_FROM_ABOVE + [(99.80, 30), (99.80, 400)])
+        calls, vs = self.run_closes(prices, lambda t0, px: 100.05)
+        self.assertNotIn("SELLERS TOOK", [k for _t, k in calls])
+        self.assertNotIn("LOST", vs)
+
+    def test_the_close_under_takes_it(self):
+        prices = path(100.40, CHOP_FROM_ABOVE + [(99.80, 30), (99.80, 400)])
+        calls, vs = self.run_closes(prices, lambda t0, px: px)
+        self.assertIn("SELLERS TOOK", [k for _t, k in calls])
+        self.assertIn("LOST", vs)

@@ -562,8 +562,28 @@ DEFAULTS = {
         "confirm_repeats": 2,           # ... in at least this many separate minutes (one order split in two is one buyer)
         "response_minutes": 5,          # PRICE RESPONSE: what price did over the last N minutes
         "retest_minutes": 30,           # a retest is watched for this long after a break
+        "close_minutes": 1,             # a place is TAKEN only when a candle of this many minutes CLOSES through it (trading through it is pressing, not a break)
         "mp_min_atr": 0.5,              # ROOM: the measured potential to the next supply (above the 50) / demand (below) is THIN under this many ATRs
-        "memory_minutes": 120,          # unusual flow with no PS60 trigger is remembered this long
+        "memory_minutes": 120,          # unusual flow with no PS60 pivot in play is remembered this long
+        "play_by_play": True,           # PLAY-BY-PLAY at a place: where price is, who is stepping up, the reload buyer / seller, calls / puts being bought, what it adds up to
+        "voice_play_by_play": True,     # say the play-by-play out loud when it changes (voice on)
+        "pbp_seconds": 30,              # play-by-play: a new line on the story at most this often
+        "pbp_repeat_seconds": 90,       # ... the same read again only after this long
+        "pbp_say_seconds": 60,          # ... said out loud at most this often, and only when the read changes
+        "pbp_flow_seconds": 120,        # ... calls / puts bought over the last N seconds
+        "pbp_flow_min": 25000,          # ... option premium under this is no real flow
+        "pbp_quiet": False,             # off: when nothing is going on at the place (no tape, no book, no option flow) the chart stays quiet
+        "hype": True,                   # THE EXCITEMENT: deep out-of-the-money calls / puts hit, or one strike pounded again and again ("they're pounding the 300s non stop!")
+        "voice_hype": True,             # say it out loud (voice on)
+        "hype_min_premium": 75000,      # ... at least this much on that one strike in the last couple of minutes
+        "hype_pound_prints": 4,         # ... POUNDED: at least this many prints on the one strike
+        "hype_repeat_seconds": 180,     # ... the same strike again only when it grows, and not before this long
+        "coach": True,                  # THE COACH at a place: stay patient, before 10 o'clock give it time, the first pivot of the day wants more context
+        "voice_coach": True,            # say the coach's words out loud (voice on)
+        "coach_wait_until_hour": 10,    # before this hour (New York), the coach says give it until then
+        "coach_patience_seconds": 90,   # a fight with no side winning this long: stay patient, hang in there
+        "coach_seconds": 180,           # the patience words at most this often
+        "coach_reload_repeat_seconds": 120,  # a reload buyer / seller at the place: be careful, said again this often while he is STILL THERE
     },
     "studies": {
         "gas": True,                    # GAS + ATR (new PS60 Gas + ATR)

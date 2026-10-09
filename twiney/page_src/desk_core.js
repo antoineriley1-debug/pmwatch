@@ -389,7 +389,7 @@ function indPopHTML(){
   const sbox = (k, label) => `<label><input type="checkbox" data-study="${k}" ${SO[k] ? "checked" : ""}> ${label}</label>`;
   return `<h5>STUDIES · STOCK CHART</h5>${sbox("gas", "GAS + ATR (tank, ATR levels, PDH / PDL, PMH / PML, box, 2nd entry)")}${sbox("airspace", "AIRSPACE (Bounce / Reject, MP, MT supply / demand)")}${sbox("unvisited", "UNVISITED HIGHS / LOWS")}
     <button data-stset="1" class="stset" title="colours, label size, how far right the labels sit, line widths and lengths, and every input of the three scripts">⚙ STUDY SETTINGS</button>
-    <div style="margin-left:14px">${sbox("gas_readout", "GAS readout panel (bottom right)")}${sbox("atr_zones", "ATR ladder (¼ ATR rungs, coloured as price eats the tank)")}${sbox("air_board", "AIRSPACE board panel (top left)")}${sbox("whole_numbers", "whole-number lines (WHOLE 147.00 ...)")}</div>
+    <div style="margin-left:14px">${sbox("gas_readout", "GAS readout panel (bottom right)")}${sbox("atr_zones", "ATR ladder (25% ATR rungs, coloured as price eats the tank)")}${sbox("air_board", "AIRSPACE board panel (top left)")}${sbox("whole_numbers", "whole-number lines (WHOLE 147.00 ...)")}</div>
     <div class="dim" style="font-size:10.5px;margin-bottom:4px">Every piece of each is in SETTINGS &gt; Chart studies.</div>
     <h5>SCREEN</h5>
     <div class="row"><span class="dim" style="width:64px">CUSTOM</span><input type="color" data-cs="screenColor" value="${store.get("screenColor", "#dfe9f3")}" title="your own screen colour (pick CUSTOM on the toolbar)"><span class="dim" style="font-size:10px">pick CUSTOM on the toolbar to use it</span></div>

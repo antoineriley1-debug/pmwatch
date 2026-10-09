@@ -3015,7 +3015,7 @@ function storyLineHTML(s){
   return `<div class="storyln t-${esc(s.tone || "neutral")}${s.attention ? " att" : ""}" data-story="1" title="PS60 STORY: ${esc(s.now)} (click for the whole story)">`
     + (s.ctx && s.ctx.bias ? `<b class="dbias ${s.ctx.bias}" title="${esc(s.ctx.text || "")}">${s.ctx.bias === "bull" ? "▲ DAILY" : "▼ DAILY"}</b>` : "")
     + (s.attention ? `<b class="hat">HIGH ATTENTION</b>` : "") + (fl ? `<b class="fst ${FLOW_CLS[fl]}">${FLOW_SHORT[fl]}</b>` : "")
-    + `<span class="stx">${esc(s.now)}</span></div>`;
+    + (s.play && s.attention ? `<b class="pbp">LIVE</b><span class="stx">${esc(s.play)}</span></div>` : `<span class="stx">${esc(s.now)}</span></div>`);
 }
 document.addEventListener("click", e => { if (e.target.closest(".storyln[data-story], .edge[data-story]") && typeof showPanel === "function") showPanel("story"); });
 function renderStory(d){
@@ -3031,6 +3031,7 @@ function renderStory(d){
       <div class="sctx ${c.bias === "bull" ? "bull" : c.bias === "bear" ? "bear" : ""}"><b>${c.bias === "bull" ? "DAILY ▲ BULLISH PS60" : c.bias === "bear" ? "DAILY ▼ BEARISH PS60" : "DAILY"}</b> <span>${esc(c.text || "")}</span></div>
       <div class="satt">${s.attention ? `<b class="hat">HIGH ATTENTION</b>` : `<b class="watch">WATCHING</b>`} <span>${where}</span></div>
       <div class="snow t-${esc(s.tone || "neutral")}">${esc(s.now || "")}</div>
+      ${s.play ? `<div class="splay"><b>PLAY-BY-PLAY</b> ${esc(s.play)}</div>` : ""}
       <div class="sflow">${chips}</div>
       ${s.response ? `<div class="sresp t-${esc(s.response.tone)}">PRICE RESPONSE · ${esc(s.response.text)}</div>` : ""}
       ${s.edge ? `<div class="sedge">${edgeChip(s.edge)}<div class="echecks">${s.edge.checks.map(c => `<span class="ec ${c.ok === true ? "y" : c.ok === 0.5 ? "h" : c.ok === false ? "n" : "u"}" title="${esc(c.why)}"><i></i>${esc(c.k)}<em>${esc(c.why)}</em></span>`).join("")}</div></div>` : ""}

@@ -1076,3 +1076,8 @@ table.lad.basket2 th .bkgear{background:none;border:0;color:#9aa4b4;cursor:point
 .fread button[disabled]{opacity:.45;cursor:default}
 .fl.said{outline:2px solid var(--gold);outline-offset:-2px;background:rgba(255,193,7,.07)}
 .say .fbtn{font:700 9.5px var(--sans);padding:0 5px;margin:0 6px 0 2px;border-radius:3px;border:1px solid var(--gold);background:transparent;color:var(--gold);cursor:pointer}
+
+/* PLAY-BY-PLAY: the live read at the place */
+.splay{margin:4px 0;padding:5px 8px;border-left:3px solid var(--gold,#d4a017);background:rgba(212,160,23,.08);font-size:12px;line-height:1.35}
+.splay b{color:var(--gold,#d4a017);font-size:10px;letter-spacing:.06em;margin-right:4px}
+.storyln b.pbp{background:#d4a017;color:#111;padding:0 4px;border-radius:3px;font-size:9px;margin-right:4px}

@@ -313,12 +313,98 @@ def flow_read(prints, now, cfg, daily_closes=None):
             if p.get("dte") is not None and p["dte"] <= 7:
                 f *= 1.2
             w += p["premium"] * f
+        r2 = [p for p in rows if now - p["t"] <= float(cfg.get("pbp_flow_seconds", 120))]
         recent = sum(p["premium"] for p in rows if now - p["t"] <= 300)
         before = sum(p["premium"] for p in rows if 300 < now - p["t"] <= 600)
         out[cp] = {"usd": round(usd), "w": round(w), "prints": len(rows), "deep": n_deep, "otm": n_otm,
                    "minutes": len({int(p["t"] // 60) for p in rows}),
-                   "rising": recent > before and recent > 0, "recent": round(recent)}
+                   "rising": recent > before and recent > 0, "recent": round(recent),
+                   "now_usd": round(sum(p["premium"] for p in r2)), "now_prints": len(r2),
+                   "now_big": _big(r2), "now_hot": _hot(r2, deep)}
     return out
+
+
+def _big(rows):
+    if not rows:
+        return None
+    b = max(rows, key=lambda p: p["premium"])
+    return {"strike": b.get("strike"), "premium": b["premium"], "dte": b.get("dte"), "id": b.get("id")}
+
+
+def versus(me_usd, them_usd, what, other):
+    """Puts against calls in dollars, and how far one is out in front: 'puts $1.2M vs calls $300K, puts out in front
+    by $900K, 4 to 1'."""
+    me_usd, them_usd = float(me_usd or 0), float(them_usd or 0)
+    if them_usd <= 0 < me_usd:
+        return f"{what} {money(me_usd)}, no {other} against them"
+    if me_usd <= 0 < them_usd:
+        return f"{other} {money(them_usd)}, no {what}"
+    head = f"{what} {money(me_usd)} vs {other} {money(them_usd)}"
+    lead, lag, who = (me_usd, them_usd, what) if me_usd >= them_usd else (them_usd, me_usd, other)
+    if lead <= 0:
+        return head
+    r = lead / lag
+    if r < 1.2:
+        return f"{head}, about even"
+    ratio = f"{r:.0f} to 1" if r >= 3 else f"{r:.1f} to 1"
+    return f"{head}, {who} out in front by {money(lead - lag)}, {ratio}"
+
+
+def _hot(rows, deep):
+    """The strike they keep coming for in the last couple of minutes: the most premium on one strike, how many
+    separate prints, how far out of the money."""
+    by = {}
+    for p in rows:
+        k = p.get("strike")
+        if k is None:
+            continue
+        b = by.setdefault(k, {"strike": k, "usd": 0.0, "prints": 0, "otm": p.get("otm_pct"), "ids": []})
+        b["usd"] += p["premium"]; b["prints"] += 1
+        if p.get("id") is not None:
+            b["ids"].append(p["id"])
+    if not by:
+        return None
+    h = max(by.values(), key=lambda b: b["usd"])
+    h["deep"] = h["otm"] is not None and h["otm"] >= deep
+    h["usd"] = round(h["usd"])
+    return h
+
+
+HYPE = {
+    "deep": ["Oh my God, they're coming for the {k}s! {n} prints on the {k} {what}, {usd} in two minutes, way out of the money",
+             "Whoa, look at this, they're going after the {k} {what}! {usd}, {n} prints, deep out of the money",
+             "Here they come! Somebody wants the {k}s, {usd} on the {k} {what}, {otm} out of the money"],
+    "pound": ["Oh my God, they're pounding the {k}s non stop! {n} prints on the {k} {what}, {usd}",
+              "They will not stop buying the {k}s! {n} prints, {usd} on the {k} {what}",
+              "Again and again on the {k} {what}! {n} prints, {usd}. Somebody really wants these"],
+}
+HYPE_TURN = {}
+
+
+def hype(fr, cfg):
+    """The excitement: deep out-of-the-money calls / puts getting hit, or one strike pounded again and again, in the
+    last couple of minutes. Returns {"cp", "kind", "key", "text"} or None."""
+    best = None
+    for cp in ("C", "P"):
+        h = ((fr or {}).get(cp) or {}).get("now_hot")
+        if not h or h["usd"] < float(cfg.get("hype_min_premium", 75000)):
+            continue
+        pound = h["prints"] >= int(cfg.get("hype_pound_prints", 4))
+        if not (h["deep"] or pound):
+            continue
+        if best is None or h["usd"] > best[1]["usd"]:
+            best = (cp, h, "pound" if pound else "deep")
+    if not best:
+        return None
+    cp, h, kind = best
+    i = HYPE_TURN.get(kind, 0)
+    HYPE_TURN[kind] = i + 1
+    k = f"{float(h['strike']):g}"
+    text = HYPE[kind][i % len(HYPE[kind])].format(k=k, n=h["prints"], what="calls" if cp == "C" else "puts", usd=money(h["usd"]),
+                                                  otm=f"{h['otm']:.0f}%" if h.get("otm") is not None else "way")
+    # said again only when it grows: a new key every doubling of the money / every 3 more prints
+    return {"cp": cp, "kind": kind, "strike": h["strike"], "ids": h.get("ids") or [], "text": text,
+            "key": (cp, h["strike"], kind, int(h["usd"] // max(1.0, float(cfg.get("hype_min_premium", 75000)))).bit_length(), h["prints"] // 3)}
 
 
 def flow_state(fr, up, cfg):
@@ -330,13 +416,15 @@ def flow_state(fr, up, cfg):
     rep = int(cfg.get("confirm_repeats", 2))
     tag = ("deep OTM " if me["deep"] and me["deep"] >= me["otm"] else "OTM ") + what
     out = {"cp": "C" if up else "P", "usd": me["usd"], "against": them["usd"], "prints": me["prints"], "deep": me["deep"], "rising": me["rising"]}
+    vs = versus(them["usd"], me["usd"], other, what) if them["usd"] >= me["usd"] else versus(me["usd"], them["usd"], what, other)
+    out["versus"] = vs
     if them["w"] >= dev and them["w"] > me["w"] * 1.25:
         t_tag = ("deep OTM " if them["deep"] and them["deep"] >= them["otm"] else "") + other
-        out.update(state="CONFLICTING", text=f"the flow is against it: {money(them['usd'])} of {t_tag} bought at the ask{' and still coming' if them['rising'] else ''}")
+        out.update(state="CONFLICTING", text=f"the flow is against it: {money(them['usd'])} of {t_tag} bought at the ask{' and still coming' if them['rising'] else ''} ({vs})")
     elif me["w"] >= conf and me.get("minutes", me["prints"]) >= rep and me["w"] >= them["w"] * 1.5:
-        out.update(state="CONFIRMED", text=f"{tag} scooped up again and again ({money(me['usd'])}, {me['prints']} prints). The dough is here: flow confirming")
+        out.update(state="CONFIRMED", text=f"{tag} scooped up again and again ({money(me['usd'])}, {me['prints']} prints; {vs}). The dough is here: flow confirming")
     elif me["w"] >= dev:
-        out.update(state="DEVELOPING", text=f"{tag} {'starting to come in' if me['rising'] else 'showing up'} ({money(me['usd'])}). The flow is starting, not confirmed yet")
+        out.update(state="DEVELOPING", text=f"{tag} {'starting to come in' if me['rising'] else 'showing up'} ({money(me['usd'])}; {vs}). The flow is starting, not confirmed yet")
     else:
         out.update(state="NOT YET CONFIRMED", text=f"no {what[:-1]} flow yet: no flow, no dough")
     return out
@@ -390,6 +478,341 @@ def tape_words(pace, up):
     if st == "SLOW":
         return "Tape slowing"
     return None
+
+
+# ---- PLAY-BY-PLAY: at the place, who is doing what right now -----------------------------------------------------
+
+PBP_OPEN = {
+    "on": ["Right on {nm}", "Sitting on {nm}", "At {nm}", "Price on {nm}"],
+    "near": ["Coming into {nm}", "Closing in on {nm}", "Working toward {nm}", "Getting near {nm}"],
+}
+PBP_READ = {
+    "defend": ["buyers are defending it", "buyers are holding the line", "demand is showing up at the level"],
+    "press_sup": ["sellers are pressing it, the level is in danger", "sellers leaning on it, watch for the break down",
+                  "buyers are not stepping in, it could give way"],
+    "press_res": ["buyers are leaning on it, watch for the break", "buyers pushing into it, it could give way",
+                  "buyers keep coming at it"],
+    "reject": ["sellers are defending it", "sellers are turning it away", "supply is showing up at the level"],
+    "mixed": ["tape and options disagree, let it show its hand", "mixed signals, no side has it yet",
+              "it's a fight, wait for one side to win"],
+    "quiet": ["nobody is committing yet", "quiet at the level, no side stepping up", "waiting on a side to show up"],
+}
+
+
+def play_by_play(sb, t, foc, last, near, pace, fr, reloads, consumed, cfg):
+    """What is happening at the place right now, said like a play-by-play: where price is against the place, who is
+    stepping up on the tape, the reload buyer / seller sitting there, and the calls / puts being bought at the ask in the
+    last couple of minutes, then what it adds up to. Returns {"key", "text", "tone"} or None (no place in play)."""
+    if not foc or not foc.get("approach") or last is None:
+        return None
+    nm = foc["name"] + (f" {px(foc['p'])}" if foc["kind"] != "uzone" else "")
+    lo, hi = foc["lo"], foc["hi"]
+    if last > hi:
+        pos, d = "above", last - hi
+    elif last < lo:
+        pos, d = "below", lo - last
+    else:
+        pos, d = "on", 0.0
+    # the side price CLOSED on: above the place it is support, below it resistance. Trading through it without a
+    # candle close there does not change that
+    closed_side = sb.side.get(foc["name"])
+    if closed_side not in ("above", "below"):
+        closed_side = pos if pos != "on" else ("above" if foc.get("dir") == "down" else "below")
+    sup = closed_side == "above"
+    n = sb.__dict__.setdefault("pbp_turn", {})
+
+    def pick(kind, opts):
+        i = n.get(kind, 0)
+        n[kind] = i + 1
+        return opts[i % len(opts)]
+    head = pick("open_" + ("on" if foc["on"] else "near"), PBP_OPEN["on" if foc["on"] else "near"]).format(nm=nm)
+    c_n = round(d * 100)
+    cents = (f"{c_n} cent" + ("" if c_n == 1 else "s")) if d < 1 else f"${d:.2f}"
+    where = f"price {px(last)}, " + ("right on it" if pos == "on" or d < 0.005 else f"{cents} {'over' if pos == 'above' else 'under'} it")
+    if pos in ("above", "below") and pos != closed_side:
+        where += f", no close {'under' if pos == 'below' else 'over'} it yet"
+    bits = []
+    # the tape
+    pc = pace or {}
+    bp, st = pc.get("buy_pct"), pc.get("state")
+    tape = 0
+    fast = st in ("FAST", "SURGE") or pc.get("accel") == "SPEEDING UP"
+    if bp is not None and st not in (None, "QUIET", "WARMING UP"):
+        if bp >= 60:
+            tape = 1
+            bits.append(f"buyers stepping up, {bp:.0f}% of the tape lifting the offer" + (" and speeding up" if fast else ""))
+        elif bp <= 40:
+            tape = -1
+            bits.append(f"sellers stepping up, {100 - bp:.0f}% of the tape hitting the bid" + (" and speeding up" if fast else ""))
+        else:
+            bits.append("two-way tape, buyers and sellers trading even")
+    elif st in ("QUIET", "DRYING UP", "SLOW"):
+        bits.append("the tape is quiet")
+    # the book at the place
+    book = 0
+    for c in consumed:
+        if lo - near <= c["price"] <= hi + near:
+            who = "seller" if c["side"] == "ask" else "buyer"
+            bits.append(f"the {who} at {px(c['price'])} is CLEANED UP")
+            book = 1 if who == "seller" else -1
+            break
+    else:
+        for r in reloads:
+            if lo - near <= r["price"] <= hi + near:
+                who = "seller" if r["side"] == "ask" else "buyer"
+                stg = r.get("stage") or "RELOADING"
+                ab = r.get("absorbed")
+                bits.append(f"reload {who} at {px(r['price'])} {stg}" + (f", {sh(ab)} shares traded into him" if ab else ""))
+                book = -1 if who == "seller" else 1
+                break
+    # the options in the last couple of minutes
+    c_, p_ = (fr or {}).get("C") or {}, (fr or {}).get("P") or {}
+    cu, pu = c_.get("now_usd") or 0, p_.get("now_usd") or 0
+    small = float(cfg.get("pbp_flow_min", 25000))
+    opt = 0
+
+    def big(x, what):
+        b = x.get("now_big")
+        return f" (biggest {fmt_strike(b['strike'])} {what[:-1]} {money(b['premium'])})" if b and b.get("strike") else ""
+    if max(cu, pu) >= small:
+        if cu >= 2 * pu:
+            opt = 1
+            bits.append(f"calls being bought at the ask" + big(c_, "calls") + f": {versus(cu, pu, 'calls', 'puts')} in the last two minutes")
+        elif pu >= 2 * cu:
+            opt = -1
+            bits.append(f"puts being bought at the ask" + big(p_, "puts") + f": {versus(pu, cu, 'puts', 'calls')} in the last two minutes")
+        else:
+            bits.append(f"calls and puts both getting bought: {versus(cu, pu, 'calls', 'puts') if cu >= pu else versus(pu, cu, 'puts', 'calls')}")
+    else:
+        bits.append("no real option flow in the last two minutes")
+    votes = [v for v in (tape, book, opt) if v]
+    score = sum(votes)
+    if not votes:
+        read, tone = "quiet", "neutral"
+    elif len(set(votes)) > 1 and abs(score) < 2:
+        read, tone = "mixed", "warn"
+    elif score > 0:
+        read, tone = ("defend" if sup else "press_res"), "bull"
+    else:
+        read, tone = ("press_sup" if sup else "reject"), "bear"
+    rd = pick(read, PBP_READ[read])
+    text = f"{head}: {where}. " + ". ".join(b[0].upper() + b[1:] for b in bits) + ". " + rd[0].upper() + rd[1:]
+    key = (foc["name"], "on" if foc["on"] else "near", tape, book, opt, read)
+    return {"key": key, "text": text, "tone": tone, "read": read}
+
+
+COACH = {
+    "pre": ["Premarket. Let's see the open before we get involved",
+            "Still premarket, guys. Let the open show us something first",
+            "It's premarket. Mark it, but let the bell set the tone"],
+    "early": ["It's before 10. Let's give it until 10 o'clock to see what the market gives us",
+              "Early in the session. Let's give it until 10 and see what the market wants to do",
+              "Before 10 o'clock, things whip around. Let's give it some time and see what we get"],
+    "first": ["This is the first pivot of the day. Let's get some more context",
+              "First pivot of the day, guys. Let's see how it reacts before we lean on it",
+              "First test of the pivot today. Let's get some more context first"],
+    "patience": ["Stay patient, guys. Hang in there",
+                 "Hang in there. Give it some time",
+                 "No need to force it. Let it come to us",
+                 "Stay patient. We wait for one side to show its hand",
+                 "Give it some time, guys. The level will tell us"],
+    "chop": ["This is choppy, guys. {x} No clean side. Sit on your hands",
+             "Sloppy price action. {x} Let it clean up before we do anything",
+             "Chop. {x} This is where accounts bleed, stay patient"],
+    "clean_up": ["Clean price action. {x} Buyers in control",
+                 "Nice and clean. {x} This is how a stock should act going up",
+                 "That's clean. {x} Buyers own it right now"],
+    "clean_down": ["Clean move down. {x} Sellers in control",
+                   "Clean price action to the downside. {x} Sellers own it right now",
+                   "That's clean selling. {x} No buyers stepping in"],
+    "trapped": ["{who} are trapped. {x}",
+                "Heads up, {who} got caught. {x}",
+                "We've got trapped {who_l}. {x}"],
+    "freed": ["The trapped {who_l} at {nm} are out. The break held",
+              "{nm} break held. Whoever was trapped got out of jail",
+              "No more trapped {who_l} at {nm}. That break held up"],
+    "rl_buyer": ["There's a reload buyer at {p}, be careful guys. Don't go sticking your neck out on the short, wait till this guy is CLEANED UP",
+                 "Reload buyer at {p}. Be careful guys, he keeps reloading. Wait till he's confirmed CLEANED UP before you go short",
+                 "Careful, reload buyer sitting at {p}{ab}. Don't fight him. Wait for him to get CLEANED UP",
+                 "Reload buyer at {p}, guys. Let's wait for this guy to get cleaned up"],
+    "rl_seller": ["There's a reload seller at {p}, be careful guys. Don't go sticking your neck out on the long, wait till this guy is CLEANED UP",
+                  "Reload seller at {p}. Be careful guys, he keeps reloading. Wait till he's confirmed CLEANED UP before you go long",
+                  "Careful, reload seller sitting at {p}{ab}. Don't fight him. Wait for him to get CLEANED UP",
+                  "Reload seller at {p}, guys. Let's wait for this guy to get cleaned up"],
+    "rl_still_buyer": ["Reload buyer at {p} STILL THERE{ab}. Still not cleaned up, guys. Be patient",
+                       "That buyer at {p} is STILL THERE, still reloading. Don't stick your neck out yet",
+                       "Buyer at {p} STILL THERE. Let's wait for this guy to get cleaned up"],
+    "rl_still_seller": ["Reload seller at {p} STILL THERE{ab}. Still not cleaned up, guys. Be patient",
+                        "That seller at {p} is STILL THERE, still reloading. Don't stick your neck out yet",
+                        "Seller at {p} STILL THERE. Let's wait for this guy to get cleaned up"],
+    "rl_clean_buyer": ["The reload buyer at {p} is CLEANED UP! Sellers took him out. Now we've got something",
+                       "There it is, the buyer at {p} is CLEANED UP. That's what we were waiting for"],
+    "rl_clean_seller": ["The reload seller at {p} is CLEANED UP! Buyers took him out. Now we've got something",
+                        "There it is, the seller at {p} is CLEANED UP. That's what we were waiting for"],
+    "rl_pulled_buyer": ["The buyer at {p} PULLED his order. Not cleaned up, he just left. Careful, that's not the same thing"],
+    "rl_pulled_seller": ["The seller at {p} PULLED his order. Not cleaned up, he just left. Careful, that's not the same thing"],
+    "mkt_with": ["The market's with us. {x}",
+                 "Market's on our side. {x}",
+                 "Tailwind from the market. {x}"],
+    "mkt_against": ["Careful, the market's going the other way. {x}",
+                    "The market isn't helping here. {x}",
+                    "Headwind from the market. {x} Be picky"],
+}
+COACH_TURN = {}          # kind -> how many times said, across every stock: two stocks never get the same line together
+
+
+def price_action(mins, level, n=8):
+    """Clean or choppy, from the last n one-minute candles: how efficient the path was (net move over the total
+    distance travelled), how often the candles overlap, and how many closes crossed the level.
+    Returns {"kind": "chop" / "clean_up" / "clean_down" / None, "crosses", "eff", "text"}."""
+    rows = [r for r in (mins or []) if r and r[4] is not None][-n:]
+    if len(rows) < 5:
+        return {"kind": None}
+    closes = [r[4] for r in rows]
+    path = sum(abs(b - a) for a, b in zip(closes, closes[1:])) or 1e-9
+    eff = abs(closes[-1] - closes[0]) / path
+    over = sum(1 for a, b in zip(rows, rows[1:]) if min(a[2], b[2]) - max(a[3], b[3]) > 0.6 * min(a[2] - a[3], b[2] - b[3]))
+    crosses = 0
+    if level is not None:
+        sides = [1 if c > level else -1 if c < level else 0 for c in closes]
+        sides = [x for x in sides if x]
+        crosses = sum(1 for a, b in zip(sides, sides[1:]) if a != b)
+    m = len(rows)
+    hl_up = sum(1 for a, b in zip(rows, rows[1:]) if b[3] >= a[3])
+    lh_dn = sum(1 for a, b in zip(rows, rows[1:]) if b[2] <= a[2])
+    if crosses >= 3 or (eff < 0.25 and over >= m - 3):
+        bits = []
+        if crosses >= 3:
+            bits.append(f"{crosses} closes back and forth across the level in {m} minutes.")
+        if over >= m - 3:
+            bits.append("Candles all on top of each other.")
+        return {"kind": "chop", "crosses": crosses, "eff": round(eff, 2), "text": " ".join(bits)}
+    if eff >= 0.6 and closes[-1] > closes[0] and hl_up >= m - 2:
+        return {"kind": "clean_up", "crosses": crosses, "eff": round(eff, 2), "text": "Higher lows, every dip getting bought."}
+    if eff >= 0.6 and closes[-1] < closes[0] and lh_dn >= m - 2:
+        return {"kind": "clean_down", "crosses": crosses, "eff": round(eff, 2), "text": "Lower highs, every pop getting sold."}
+    return {"kind": None, "crosses": crosses, "eff": round(eff, 2)}
+
+
+def coach(sb, t, foc, pb, cfg, mins=None, traps=None, market=None, up=None, reloads=None, consumed=None, pulled=None):
+    """The desk talking to you like a room that knows what it's looking at: before 10 o'clock give it time, the first
+    pivot of the day wants more context, clean price action or chop, who is trapped and who got out, what the market
+    is doing against this trade, and patience while it fights. Returns [(kind, text)] due now."""
+    if not cfg.get("coach", True) or not foc or not pb:
+        return []
+    secs = studies.ny_secs(t)
+    day = studies.day_key(t)
+    c = sb.__dict__.setdefault("coach", {})
+    if c.get("day") != day:
+        c.clear()
+        c["day"] = day
+    every = float(cfg.get("coach_seconds", 180))
+
+    def pick(kind, **kw):
+        i = COACH_TURN.get(kind, 0)
+        COACH_TURN[kind] = i + 1
+        return COACH[kind][i % len(COACH[kind])].format(**kw).replace("  ", " ").strip()
+
+    def due(kind, gap):
+        if t - c.get("t_" + kind, -1e9) < gap:
+            return False
+        c["t_" + kind] = t
+        return True
+    out = []
+    active = pb["read"] != "quiet"                # nothing going on (no tape, no book, no option flow): the chart stays quiet
+    ps60 = foc["kind"] in PS60_KINDS or (foc.get("conf") or {}).get("ps60")
+    if active and foc["on"] and ps60 and not c.get("first") and 9.5 * 3600 <= secs < 16 * 3600:
+        c["first"] = foc["name"]
+        out.append(("first", pick("first")))
+    if not active:
+        pass
+    elif secs < 9.5 * 3600:
+        if not c.get("pre"):
+            c["pre"] = True
+            out.append(("pre", pick("pre")))
+    elif secs < float(cfg.get("coach_wait_until_hour", 10)) * 3600 and due("early", every * 2):
+        out.append(("early", pick("early")))
+    # clean or choppy
+    pa = price_action(mins, foc["p"] if foc["kind"] != "uzone" else (foc["lo"] + foc["hi"]) / 2)
+    if active and pa.get("kind") and (pa["kind"] != c.get("pa") or due("pa_" + pa["kind"], every * 2)):
+        if pa["kind"] != c.get("pa"):
+            c["t_pa_" + pa["kind"]] = t
+        c["pa"] = pa["kind"]
+        out.append((pa["kind"], pick(pa["kind"], x=pa["text"])))
+    elif not pa.get("kind"):
+        c["pa"] = None
+    # the reload buyer / seller at the place: be careful until he is CLEANED UP (said again while he is STILL THERE)
+    rl = c.setdefault("rl", {})
+    near = abs(foc["hi"] - foc["lo"]) / 2 + max(0.05, abs(foc["p"]) * 0.0015)
+    for r in (reloads or []):
+        if not (foc["lo"] - near <= r["price"] <= foc["hi"] + near):
+            continue
+        who = "buyer" if r["side"] == "bid" else "seller"
+        k = (r["price"], r["side"])
+        ab = f", {sh(r['absorbed'])} shares traded into him" if r.get("absorbed") else ""
+        prev = rl.get(k)
+        if prev is None:
+            rl[k] = {"t": t, "n": 1}
+            out.append(("rl_" + who, pick("rl_" + who, p=px(r["price"]), ab=ab)))
+        elif t - prev["t"] >= float(cfg.get("coach_reload_repeat_seconds", 120)):
+            prev["t"] = t; prev["n"] += 1
+            out.append(("rl_still_" + who, pick("rl_still_" + who, p=px(r["price"]), ab=ab)))
+    for cu in (consumed or []):
+        k = (cu["price"], cu["side"])
+        if k in rl and not rl[k].get("done"):
+            rl[k]["done"] = True
+            who = "buyer" if cu["side"] == "bid" else "seller"
+            out.append(("rl_clean_" + who, pick("rl_clean_" + who, p=px(cu["price"]))))
+    for k, v in list(rl.items()):
+        if v.get("done") or any((r["price"], r["side"]) == k for r in (reloads or [])):
+            continue
+        if (pulled or {}).get(k):
+            v["done"] = True
+            who = "buyer" if k[1] == "bid" else "seller"
+            out.append(("rl_pulled_" + who, pick("rl_pulled_" + who, p=px(k[0]))))
+    # who is trapped
+    for b in (traps or [])[:2]:
+        key = (b["name"], round(b["level"], 2))
+        st_ = b.get("state")
+        if st_ in ("TRAPPED", "AT EXIT") and c.get(("trap",) + key) != st_:
+            c[("trap",) + key] = st_
+            who = "Longs" if b.get("up") else "Shorts"
+            avg = b.get("avg")
+            x = (f"They {'bought' if b.get('up') else 'sold'} the break {'over' if b.get('up') else 'under'} {b['name']} {px(b['level'])}, "
+                 f"{sh(b.get('shares'))} shares" + (f" averaging {px(avg)}" if avg else "") + ". "
+                 + (f"Price is {abs(b['under']) * 100:.0f} cents {'under' if b.get('up') else 'over'} them. " if b.get("under") and b["under"] > 0 and b["under"] < 1 else "")
+                 + (f"Back at their exit {px(avg)}, watch them {'sell' if b.get('up') else 'cover'} into it" if st_ == "AT EXIT" and avg else
+                    f"Their pain is fuel for the move {'down' if b.get('up') else 'up'}, and {px(avg)} is where they get out" if avg else ""))
+            out.append(("trapped", pick("trapped", who=who, who_l=who.lower(), x=x.strip())))
+        elif st_ == "RECLAIMED" and c.get(("trap",) + key) in ("TRAPPED", "AT EXIT"):
+            c[("trap",) + key] = st_
+            who = "longs" if b.get("up") else "shorts"
+            out.append(("freed", pick("freed", who_l=who, nm=b["name"])))
+    # the market against / with this trade
+    if active and market and up is not None and market.get("dir"):
+        side = "with" if (market["dir"] == "up") == up else "against"
+        if c.get("mkt") != side or due("mkt", every * 3):
+            if c.get("mkt") != side:
+                c["t_mkt"] = t
+            c["mkt"] = side
+            out.append(("mkt_" + side, pick("mkt_" + side, x=market["text"])))
+    # patience while nobody wins
+    if pb["read"] == "mixed":                     # a real fight (both sides showing): quiet is not a fight, the chart stays quiet
+        c.setdefault("fight", t)
+        if t - c["fight"] >= float(cfg.get("coach_patience_seconds", 90)) and pa.get("kind") != "chop":
+            out.append(("patience", pick("patience")))
+            c["fight"] = t
+    else:
+        c.pop("fight", None)
+    return out
+
+
+def fmt_strike(k):
+    try:
+        k = float(k)
+    except (TypeError, ValueError):
+        return str(k)
+    return f"{k:g}"
 
 
 def room_read(up, ctx, foc, points, zones, last, near, atr, cfg):
@@ -498,7 +921,7 @@ class Story:
         self.feed = deque(maxlen=keep)
         self.said = {}            # topic -> (key, t)
         self.breaks = {}          # place name -> {"dir", "t", "p", "lo", "hi", "state"}
-        self.memory = {}          # "C" / "P" -> {"t", "usd"}: unusual flow seen with no PS60 trigger
+        self.memory = {}          # "C" / "P" -> {"t", "usd"}: unusual flow seen with no PS60 pivot in play
         self.side = {}            # place name -> last side of price ("above" / "below" / "in")
         self.day = None
 
@@ -521,7 +944,20 @@ class Story:
         return True
 
 
-def build(sb, t, last, tick, atr, play, se_state, ctx, points, zones, conf, fr, pace, reloads, consumed, mins, cfg):
+def _closed_n(mins, t, n):
+    """The completed n-minute candles from 1-minute rows [t0, o, h, l, c, v]: [t0, o, h, l, c, v] per n-minute block."""
+    out = {}
+    for r in mins or []:
+        k = int(r[0] // (60 * n)) * 60 * n
+        if k + 60 * n > t + 1e-6:
+            continue
+        b = out.get(k)
+        out[k] = [k, r[1], r[2], r[3], r[4], r[5]] if b is None else [k, b[1], max(b[2], r[2]), min(b[3], r[3]), r[4], b[5] + r[5]]
+    return [out[k] for k in sorted(out)]
+
+
+def build(sb, t, last, tick, atr, play, se_state, ctx, points, zones, conf, fr, pace, reloads, consumed, mins, cfg,
+          traps=None, market=None, pulled=None):
     """One read: the line for now, plus whatever new moments go on the feed. sb: the symbol's Story.
     reloads: confirmed reloaders [{price, side, stage, absorbed}]. consumed: reloaders
     cleaned up in the last minute [{price, side}]."""
@@ -554,8 +990,18 @@ def build(sb, t, last, tick, atr, play, se_state, ctx, points, zones, conf, fr, 
              [(z["short"], z["lo"], z["hi"], "uzone") for z in zones]
     held, failed = {"up": [], "down": []}, {"up": [], "down": []}
     band = max(tick / 2, 0.25 * near)         # a break is a real move through the place, not a one-tick wiggle
+    # a place is only TAKEN on a CLOSE: the last completed candle closed through it. Trading through it on the way
+    # (fast or not) is pressing, not a break
+    cmin = max(1, int(cfg.get("close_minutes", 1)))
+    done = [r for r in (mins or []) if r[0] + 60 * cmin <= t + 1e-6] if cmin == 1 else _closed_n(mins, t, cmin)
+    cl = done[-1][4] if done else None
+    out["close"] = cl
+    pressing = {}
     for name, lo, hi, kind in places:
-        side = "above" if last > hi + band else "below" if last < lo - band else "in"
+        side_live = "above" if last > hi + band else "below" if last < lo - band else "in"
+        side = side_live if cl is None else "above" if cl > hi else "below" if cl < lo else "in"
+        if side_live in ("above", "below") and sb.side.get(name) not in (None, side_live) and side != side_live:
+            pressing[name] = side_live                # through it right now, no close there yet
         # a break already on the books: is the retest holding, or did it fail? (before a new break replaces it)
         b = sb.breaks.get(name)
         if b and t - b["t"] <= float(cfg.get("retest_minutes", 30)) * 60:
@@ -563,7 +1009,8 @@ def build(sb, t, last, tick, atr, play, se_state, ctx, points, zones, conf, fr, 
             edge = hi if up else lo
             if b["state"] == "broke" and abs(last - edge) <= near and t - b["t"] >= 30:
                 b["state"] = "retest"
-            if b["state"] in ("broke", "retest") and ((up and last < lo - 0.3 * near) or (not up and last > hi + 0.3 * near)):
+            back = cl if cl is not None else last
+            if b["state"] in ("broke", "retest") and ((up and back < lo) or (not up and back > hi)) and (cl is None or done[-1][0] + 60 > b["t"]):
                 b["state"] = "failed"                     # closed back through it
                 failed[b["dir"]].append((name, round(b["t"])))
             elif b["state"] == "retest" and ((up and last >= edge + 0.6 * near) or (not up and last <= edge - 0.6 * near)):
@@ -624,7 +1071,7 @@ def build(sb, t, last, tick, atr, play, se_state, ctx, points, zones, conf, fr, 
             else:
                 m["usd"] = max(m["usd"], s["usd"])
             what = "calls" if cp == "C" else "puts"
-            note("memory:" + cp, "seen", f"Unusual OTM {what} detected ({money(s['usd'])}). No immediate PS60 trigger. Watching", "neutral", repeat=1800)
+            note("memory:" + cp, "seen", f"Unusual OTM {what} detected ({money(s['usd'])}). No PS60 pivot in play yet. Watching", "neutral", repeat=1800)
     mem_win = float(cfg.get("memory_minutes", 120)) * 60
     if ps60_on and up is not None:
         cp = "C" if up else "P"
@@ -634,6 +1081,30 @@ def build(sb, t, last, tick, atr, play, se_state, ctx, points, zones, conf, fr, 
             note("align:" + foc["name"], cp, f"Earlier OTM {'call' if up else 'put'} activity ({money(m['usd'])}, {_hm(m['t'])}) now aligning with {foc['name']}",
                  "bull" if up else "bear", loud=True)
 
+    out["play"] = None
+    hy = hype(fr, cfg) if cfg.get("hype", True) else None
+    out["hype"] = hy["text"] if hy else None
+    if hy and sb.say("hype:" + hy["cp"] + str(hy["strike"]), hy["key"], hy["text"] + ("" if hy["text"].endswith("!") else "!"),
+                     "bull" if hy["cp"] == "C" else "bear", t, float(cfg.get("hype_repeat_seconds", 180))):
+        said.append({"topic": "hype", "text": hy["text"], "tone": "bull" if hy["cp"] == "C" else "bear"})
+    if cfg.get("play_by_play", True):
+        pb = play_by_play(sb, t, foc, last, near, pace, fr, reloads, consumed, cfg)
+        if pb and pb["read"] == "quiet" and not cfg.get("pbp_quiet", False):
+            out["play"] = None                    # nothing going on: the chart stays quiet (no tape, no book, no option flow)
+        elif pb:
+            out["play"] = pb["text"]
+            lk = sb.__dict__.get("pbp_loud") or (None, -1e9)
+            # said out loud only when it says something (a quiet read stays on the story) and the read changed
+            loud = pb["read"] != "quiet" and pb["key"] != lk[0] and t - lk[1] >= float(cfg.get("pbp_say_seconds", 60))
+            if sb.say("pbp", pb["key"], pb["text"], pb["tone"], t, float(cfg.get("pbp_repeat_seconds", 90)),
+                      float(cfg.get("pbp_seconds", 30))) and loud:
+                sb.pbp_loud = (pb["key"], t)
+                said.append({"topic": "pbp", "text": pb["text"], "tone": pb["tone"]})
+        for kind, text in coach(sb, t, foc, pb, cfg, mins, traps, market, up, reloads, consumed, pulled):
+            tone = {"rl_buyer": "warn", "rl_seller": "warn", "rl_still_buyer": "warn", "rl_still_seller": "warn",
+                    "rl_clean_buyer": "bear", "rl_clean_seller": "bull", "rl_pulled_buyer": "warn", "rl_pulled_seller": "warn","trapped": "warn", "chop": "warn", "mkt_against": "warn", "clean_up": "bull", "clean_down": "bear"}.get(kind, "neutral")
+            if sb.say("coach:" + kind, (kind, text), text, tone, t, 600.0, float(cfg.get("coach_seconds", 180)) if kind == "patience" else 0.0):
+                said.append({"topic": "coach", "text": text, "tone": tone})
     if not foc or not foc["approach"]:
         sb.said["att"] = (False, t)
         out["now"] = (f"Watching. Nearest: {foc['name']} {px(foc['p']) if foc['kind'] != 'uzone' else ''}".rstrip()
@@ -655,11 +1126,16 @@ def build(sb, t, last, tick, atr, play, se_state, ctx, points, zones, conf, fr, 
         verb = (("reclaimed" if br["dir"] == "up" else "lost") if foc["kind"] in MA_KINDS
                 else ("cleared" if br["dir"] == "up" else "lost") if foc["kind"] in ("pdh", "pwh", "mh", "yh", "pdl", "pwl", "ml", "yl")
                 else ("breaking" if br["dir"] == "up" else "breaking down"))
-        head = f"{where} {verb}"
+        head = f"{where} {verb}: a candle closed {'over' if br['dir'] == 'up' else 'under'} it" + (f" at {px(cl)}" if cl is not None else "")
         tone = "bull" if br["dir"] == "up" else "bear"
     elif br and br["state"] in ("broke", "retest", "held") and t - br["t"] <= float(cfg.get("retest_minutes", 30)) * 60:
         head = f"{'Holding above' if br['dir'] == 'up' else 'Holding below'} {where[0].lower() + where[1:] if where.startswith('Major') else where}" + (" on the retest" if br["state"] == "retest" else "")
         tone = "bull" if br["dir"] == "up" else "bear"
+    elif foc["name"] in pressing:
+        dn = pressing[foc["name"]] == "below"
+        head = (f"Trading {'under' if dn else 'over'} {where[0].lower() + where[1:] if where.startswith('Major') else where}{at}, "
+                f"no close {'under' if dn else 'over'} it yet. Not taken until a candle closes {'under' if dn else 'over'} it")
+        tone = "warn"
     elif foc["on"]:
         head = f"Testing {where[0].lower() + where[1:] if where.startswith('Major') else where}{at}"
         tone = "neutral"
