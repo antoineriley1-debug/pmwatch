@@ -204,6 +204,7 @@ def note_stripped(engine, args):
 def start_watchdog(get_trader, clock=time.time, every=0.5):
     """The loss lock, breakeven stops and the exit guard run on their own clock, browser open or not."""
     def run():
+        saved_at = clock()
         while True:
             tr = get_trader()
             if tr is not None:
@@ -215,6 +216,13 @@ def start_watchdog(get_trader, clock=time.time, every=0.5):
                         tr.engine._message("error", f"order watchdog error: {exc}", clock())
                     except Exception:
                         pass
+                # the live histories, kept for the practice desk: every five minutes
+                if clock() - saved_at >= 300:
+                    saved_at = clock()
+                    try:
+                        tr.engine.save_history(_paths.history_dir(), clock())
+                    except Exception:
+                        logging.getLogger("twiney").exception("history cache")
             time.sleep(every)
     threading.Thread(target=run, name="twiney-watchdog", daemon=True).start()
 
@@ -258,7 +266,7 @@ def run_demo(cfg, plays, args):
     # practice flow is made up and the demo price starts fresh every launch: its big prints live in memory
     # only, so the real 30-day memory (recordings/big_money.jsonl) never carries practice prints
     engine.bigmoney = BigMoney(cfg["flow"], None)
-    feed = DemoFeed(engine, plays, seed=None, scenario=cfg.get("demo", {}).get("scenario"))
+    feed = DemoFeed(engine, plays, seed=None, scenario=cfg.get("demo", {}).get("scenario"), history_dir=_paths.history_dir())
     feed.start(time.time())
     print(f"Practice session · day type: {feed.scenario}  (not shown on the desk; set demo.scenario in config.json to pick one)", flush=True)
     gate = TradingGate(cfg)

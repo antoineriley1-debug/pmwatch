@@ -130,7 +130,7 @@ class _Sym:
                  "big_home", "parts", "level_cooldown", "hidden_next", "prev", "l1", "base", "mid0", "beta", "sym", "eff", "owed",
                  "hot", "hot_dir", "mom", "spent", "now", "last_mid", "episode", "ep_next", "thin", "ep_script",
                  "program", "program_next",
-                 "vs", "vs_t", "vs_mid", "vs_norm", "pulse", "hl_t", "lv_cool", "lv_next", "day_open", "hod", "lod", "pdh", "pdl", "pdc", "pmh", "pml", "ahh", "ahl", "vwap_pv", "vwap_v", "day_key")
+                 "vs", "vs_t", "vs_mid", "vs_norm", "pulse", "hl_t", "lv_cool", "lv_next", "day_open", "hod", "lod", "pdh", "pdl", "pdc", "pmh", "pml", "ahh", "ahl", "vwap_pv", "vwap_v", "day_key", "real_hist", "atr_day")
 
     def __init__(self, play, mid, t):
         self.play = play
@@ -178,13 +178,28 @@ class _Sym:
         self.hod = self.lod = None
         self.pdh = self.pdl = self.pdc = None
         self.pmh = self.pml = self.ahh = self.ahl = None
+        self.real_hist = False       # seeded from the stock's real history (Engine.save_history)
+        self.atr_day = None
         self.vwap_pv = self.vwap_v = 0.0
         self.day_key = None
 
 
 class DemoFeed:
-    def __init__(self, engine, plays, seed=7, scenario=None):
+    def __init__(self, engine, plays, seed=7, scenario=None, history_dir=None):
         self.engine = engine
+        # real histories the live desk saved (Engine.save_history): a stock practices at its own price, ATR and levels
+        self.history_dir = history_dir
+        self.cache = {}
+        if history_dir:
+            for p in plays:
+                if p.get("active"):
+                    try:
+                        from .engine import Engine
+                        d = Engine.load_history(history_dir, p["symbol"])
+                    except Exception:
+                        d = None
+                    if d:
+                        self.cache[p["symbol"]] = d
         self.rng = random.Random(seed if seed is not None else int(__import__("time").time() * 1000) % 1000003)
         names = list(SCENARIOS)
         self.scenario = scenario if scenario in SCENARIOS else self.rng.choices(names, weights=[3, 2, 2, 2, 1, 1])[0]
@@ -199,7 +214,8 @@ class DemoFeed:
             # any level drawn says where the stock trades: the pivot, else the stop or the target alone
             from .flow import SimFlow
             known = {k: v for k, v, _b in SimFlow.MARKET}
-            base = p.get("trigger") or p.get("second_entry") or p.get("stop") or p.get("target") or known.get(p["symbol"]) \
+            real = (self.cache.get(p["symbol"]) or {}).get("last") or ((self.cache.get(p["symbol"]) or {}).get("daily") or [[0, 0, 0, 0, 0]])[-1][4]
+            base = real or p.get("trigger") or p.get("second_entry") or p.get("stop") or p.get("target") or known.get(p["symbol"]) \
                 or self.rng.uniform(20, 300)
             mid = round(base * (1 + self.rng.uniform(0.002, 0.006) * self.rng.choice((-1, 1))), 2)
             band = sorted(x for x in (p.get("stop"), p.get("target")) if x)
@@ -229,6 +245,15 @@ class DemoFeed:
         from .flow import SimFlow
         known = {k: v for k, v, _b in SimFlow.MARKET}
         base = known.get(p["symbol"])
+        if self.history_dir and p["symbol"] not in self.cache:
+            try:
+                from .engine import Engine
+                d = Engine.load_history(self.history_dir, p["symbol"])
+                if d:
+                    self.cache[p["symbol"]] = d
+                    base = d.get("last") or d["daily"][-1][4]
+            except Exception:
+                pass
         s = _Sym(p, round(base * self.rng.uniform(0.98, 1.02), 2) if base else round(self.rng.uniform(20, 300), 2), t)
         self._history_one(p["symbol"], s, t)
         self._seed_book(s, t)
@@ -246,23 +271,36 @@ class DemoFeed:
         atr_ = max(tk * 20, (p.get("trigger") or s.mid0) * 0.018)
         off = ny_offset(t)
         today0 = (t + off) // 86400 * 86400 - off
+        cache = self.cache.get(sym)
+        real_days = [r for r in (cache or {}).get("daily") or [] if r[0] < today0]
         px = s.mid0 * (1 + rng.uniform(-0.03, 0.03))
         day_bars = []
-        for d in range(300, 0, -1):
-            day0 = today0 - d * 86400
-            if ((day0 + off) // 86400) % 7 in (2, 3):   # skip Sat / Sun (epoch day 0 is a Thursday: 2 = Sat, 3 = Sun)
-                continue
-            o = px
-            c = round(o + rng.uniform(-atr_, atr_) * 0.7, 2)
-            h = round(max(o, c) + rng.uniform(0, atr_ * 0.4), 2)
-            l = round(min(o, c) - rng.uniform(0, atr_ * 0.4), 2)
-            day_bars.append((day0, o, h, l, c))
-            px = c
-        # anchor the daily history so it walks into today's price instead of ending somewhere else
-        if day_bars:
-            shift = (s.mid0 - day_bars[-1][4]) / len(day_bars)
-            day_bars = [(d0, round(o + shift * (i + 1), 2), round(h + shift * (i + 1), 2), round(l + shift * (i + 1), 2), round(c + shift * (i + 1), 2))
-                        for i, (d0, o, h, l, c) in enumerate(day_bars)]
+        if len(real_days) >= 20:
+            # THE REAL DAILY: the stock's own days, moved as a whole so the last close is where the practice price
+            # starts (a few cents at most), with its real ATR
+            shift = s.mid0 - real_days[-1][4]
+            day_bars = [(r[0], round(r[1] + shift, 2), round(r[2] + shift, 2), round(r[3] + shift, 2), round(r[4] + shift, 2)) for r in real_days[-300:]]
+            trs = [max(h - l, abs(h - pc), abs(l - pc)) for (_d, _o, h, l, _c), pc in zip(day_bars[-15:], [b[4] for b in day_bars[-16:-1]])]
+            if trs:
+                atr_ = max(tk * 20, sum(trs) / len(trs))
+            s.real_hist = True
+        else:
+            for d in range(300, 0, -1):
+                day0 = today0 - d * 86400
+                if ((day0 + off) // 86400) % 7 in (2, 3):   # skip Sat / Sun (epoch day 0 is a Thursday: 2 = Sat, 3 = Sun)
+                    continue
+                o = px
+                c = round(o + rng.uniform(-atr_, atr_) * 0.7, 2)
+                h = round(max(o, c) + rng.uniform(0, atr_ * 0.4), 2)
+                l = round(min(o, c) - rng.uniform(0, atr_ * 0.4), 2)
+                day_bars.append((day0, o, h, l, c))
+                px = c
+            # anchor the daily history so it walks into today's price instead of ending somewhere else
+            if day_bars:
+                shift = (s.mid0 - day_bars[-1][4]) / len(day_bars)
+                day_bars = [(d0, round(o + shift * (i + 1), 2), round(h + shift * (i + 1), 2), round(l + shift * (i + 1), 2), round(c + shift * (i + 1), 2))
+                            for i, (d0, o, h, l, c) in enumerate(day_bars)]
+        s.atr_day = atr_
         if day_bars:
             s.pdh, s.pdl, s.pdc = day_bars[-1][2], day_bars[-1][3], day_bars[-1][4]
         for day0, o, h, l, c in day_bars:
@@ -316,6 +354,23 @@ class DemoFeed:
                 pm_h = h if pm_h is None else max(pm_h, h); pm_l = l if pm_l is None else min(pm_l, l)
                 px2 = c2
             s.pmh, s.pml, s.ahh, s.ahl = pm_h, pm_l, ah_h, ah_l
+        real_min = [r for r in (cache or {}).get("bars") or [] if r[0] < t and len(r) >= 5]
+        if len(real_min) >= 390 and len(real_days) >= 20:
+            # THE REAL MINUTES: the last sessions as they traded, moved by the same shift
+            shift = s.mid0 - real_days[-1][4]
+            for r in real_min[-1950:]:
+                self.engine.on_hist_bar(sym, r[0], round(r[1] + shift, 2), round(r[2] + shift, 2), round(r[3] + shift, 2), round(r[4] + shift, 2), int(r[5] if len(r) > 5 else 0))
+            for r in (cache or {}).get("m5x") or []:
+                if r[0] < t and len(r) >= 5:
+                    self.engine.on_study_bar(sym, "m5x", r[0], round(r[1] + shift, 2), round(r[2] + shift, 2), round(r[3] + shift, 2), round(r[4] + shift, 2), float(r[5] if len(r) > 5 else 0))
+            s.pmh = s.pml = s.ahh = s.ahl = None
+            try:
+                from . import studies as _stu
+                sess = _stu.session_levels(self.engine.syms[sym], t)
+                s.pmh, s.pml, s.ahh, s.ahl = sess.get("pmh"), sess.get("pml"), sess.get("ahh"), sess.get("ahl")
+            except Exception:
+                pass
+            return
         sessions = [b[0] for b in day_bars[-5:]]
         n_total = 390 * len(sessions)
         end_px = s.mid0
@@ -553,7 +608,7 @@ class DemoFeed:
             s.thin = st[4] if len(st) > 4 else 1.0
             b = 0.5 + 0.8 * (b - 0.5) + (1.0 if s.episode else 0.6) * s.beta * m   # still feels the market
             if s.hod is not None and s.lod is not None and s.day_open:
-                atr = max(s.tk * 20, s.day_open * 0.018)
+                atr = s.atr_day or max(s.tk * 20, s.day_open * 0.018)
                 stretch = (s.last - (s.hod + s.lod) / 2) / atr
                 if abs(stretch) > 1.0 and (b - 0.5) * stretch > 0:      # pushing further out: the push loses its legs
                     b = 0.5 + (b - 0.5) * max(0.25, 1.0 - 0.6 * (abs(stretch) - 1.0))
@@ -600,7 +655,7 @@ class DemoFeed:
         b = 0.5 + 0.55 * (b - 0.5)
         if s.hod is None or s.lod is None or not s.day_open:
             return b
-        atr = max(s.tk * 20, s.day_open * 0.018)
+        atr = s.atr_day or max(s.tk * 20, s.day_open * 0.018)
         mid = (s.hod + s.lod) / 2
         stretch = (s.last - mid) / atr
         if abs(stretch) > 0.6:

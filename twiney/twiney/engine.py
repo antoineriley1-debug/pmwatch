@@ -692,6 +692,54 @@ class Engine:
                 if label:
                     self._emit(st, tr, label, t)
 
+    # ---- the history cache: what the live desk saw, kept for the practice desk --------------------------------------
+
+    def save_history(self, folder, t=None, only=None):
+        """Write each stock's real histories (daily, the last five days of minutes, the extended-hours and 5-minute
+        bars) to folder/SYM.json. The practice feed seeds from them, so practice AAPL trades at AAPL's price, ATR and
+        levels. Live sessions only: the practice feed's own bars are never saved."""
+        import json
+        import os
+        if self.connection.get("state") != "CONNECTED":
+            return 0
+        t = t if t is not None else (self.last_t or time.time())
+        n = 0
+        with self.lock:
+            items = [(sym, st) for sym, st in self.syms.items() if only is None or sym in only]
+        for sym, st in items:
+            if len(st.daily) < 20:
+                continue
+            cut = t - 6 * 86400
+            data = {"symbol": sym, "saved": t, "last": st.price(),
+                    "daily": [[k] + list(st.daily[k][:4]) + [st.daily_vol.get(k) or 0] for k in sorted(st.daily)[-400:]],
+                    "bars": [[k] + [round(x, 4) for x in st.bars[k][:5]] for k in sorted(st.bars) if k >= cut],
+                    "m5x": [[k] + list(st.m5x[k][:5]) for k in sorted(st.m5x) if k >= cut],
+                    "m5": [[k] + list(st.m5[k][:5]) for k in sorted(st.m5)[-2400:]]}
+            try:
+                tmp = os.path.join(folder, f"{sym}.json.tmp")
+                with open(tmp, "w", encoding="utf-8") as f:
+                    json.dump(data, f)
+                os.replace(tmp, os.path.join(folder, f"{sym}.json"))
+                n += 1
+            except OSError as exc:
+                log.warning("history cache %s: %s", sym, exc)
+        return n
+
+    @staticmethod
+    def load_history(folder, sym):
+        """The cached real history for one stock, or None."""
+        import json
+        import os
+        path = os.path.join(folder, f"{sym}.json")
+        if not os.path.isfile(path):
+            return None
+        try:
+            with open(path, encoding="utf-8") as f:
+                d = json.load(f)
+            return d if d.get("daily") else None
+        except (OSError, ValueError):
+            return None
+
     HIST_BUMP_SECONDS = 2.0
 
     def _hist_bump(self, st):

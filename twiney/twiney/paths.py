@@ -55,3 +55,11 @@ def recordings_dir(cfg_dir_value):
     """Recordings go in the data folder too unless config.json names an absolute path."""
     v = cfg_dir_value or "recordings"
     return v if os.path.isabs(v) else os.path.join(data_dir(), v)
+
+
+def history_dir():
+    """Real histories the live desk saw (daily, minute and extended-hours bars per stock), kept so the practice desk
+    can trade a stock at its own price, ATR and levels. In the data folder; never in a zip or git."""
+    d = os.path.join(data_dir(), "history")
+    os.makedirs(d, exist_ok=True)
+    return d
