@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261009-0428">
+<meta name="build" content="20261009-0507">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -1437,6 +1437,24 @@ table.lad.basket2 th .bkgear{background:none;border:0;color:#9aa4b4;cursor:point
 body.whitedesk{filter:invert(1) hue-rotate(180deg);background:#000}
 body.whitedesk .chart-wrap canvas,body.whitedesk img,body.whitedesk video{filter:invert(1) hue-rotate(180deg)}
 
+/* THE HAND-OFF: the ladder's candle flies to the chart when it closes */
+.lad.candle th.cdl i.oc{display:block;font-style:normal;font-size:8px;line-height:1.1;opacity:.9;letter-spacing:0}
+.lad.candle th.cdl i.oc.u{color:#1fb86a}.lad.candle th.cdl i.oc.d{color:#e8404f}
+.lad.candle tr.cclose td.cdl{animation:cclose 1.4s ease-out}
+@keyframes cclose{0%{box-shadow:inset 0 0 0 2px var(--cc),0 0 12px 2px var(--cc)}100%{box-shadow:none}}
+.cfly{position:fixed;z-index:9999;pointer-events:none;will-change:left,top,width,height,opacity;opacity:1;
+  transition:left .68s cubic-bezier(.22,.9,.25,1),top .68s cubic-bezier(.22,.9,.25,1),width .68s cubic-bezier(.22,.9,.25,1),height .68s cubic-bezier(.22,.9,.25,1),opacity .35s ease .95s;
+  filter:drop-shadow(0 0 6px var(--cc)) drop-shadow(0 0 14px var(--cc))}
+.cfly i{position:absolute;display:block}
+.cfly i.wk{left:50%;top:0;bottom:0;width:2px;margin-left:-1px;background:var(--cc)}
+.cfly i.bd{left:12%;right:12%;background:var(--cc);border-radius:1px;box-shadow:0 0 10px 1px var(--cc)}
+.cfly b{position:absolute;left:100%;margin-left:6px;font:700 10px/1 var(--mono);color:var(--cc);white-space:nowrap;text-shadow:0 0 6px rgba(0,0,0,.6);transition:opacity .3s}
+.cfly b.o{top:-2px}.cfly b.c{bottom:-2px}
+.cfly.go b{opacity:.0}
+.cfly.land{opacity:0}
+.cland{position:fixed;z-index:9998;pointer-events:none;width:28px;height:28px;border-radius:50%;border:2px solid var(--cc);box-shadow:0 0 16px 4px var(--cc);animation:cland .8s ease-out forwards}
+@keyframes cland{0%{transform:scale(.4);opacity:1}100%{transform:scale(2.2);opacity:0}}
+
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
   --buy:#3fb56f;--sell:#d9534f;--gold:#e3a83a;--cyan:#5aa9d6;--violet:#a48bd6;--warn:#d9a441;
@@ -2733,10 +2751,11 @@ function tagsHTML(tags){ return tags.map(o => `<span class="kt" style="--kc:${o.
    down; size that comes back at the same price is a reload. An option on the LEVEL II bar (CANDLE), nothing else
    changes. */
 function ladderCandleHTML(L){
-  const base = ladderCleanHTML(L), c = L.candle, tk = +L.tick || 0.01, half = tk / 2 + 1e-9;
-  const left = typeof barCloseIn === "function" ? barCloseIn(5) : "";
-  const th = `<th class="cdl" data-w="20" data-min="14" title="THE CANDLE: the 5-minute candle drawn on the ladder rows. Body = open to last, wick = high to low (green building up, red down), ghost = the prior candle. The resting size on the rows is the wick: prints eat it, the size goes down; size that comes back is a reload">5m${left ? `<i>${esc(left)}</i>` : ""}</th>`;
-  let h = base.replace('<table class="lad clean" data-cols="ladc"><tr>', `<table class="lad clean candle" data-cols="ladc"><tr>${th}`);
+  const base = ladderCleanHTML(L), c = L.candle, tk = +L.tick || 0.01, half = tk / 2 + 1e-9, tfm = (c && c.tf) || 5;
+  const left = typeof barCloseIn === "function" ? barCloseIn(tfm) : "";
+  const oc = c ? `<i class="oc">O ${px(c.open)}</i><i class="oc ${c.last >= c.open ? "u" : "d"}">C ${px(c.last)}</i>` : "";
+  const th = `<th class="cdl" data-w="30" data-min="18" title="THE CANDLE: the ${tfm}-minute candle (the chart's timeframe) drawn on the ladder rows. Body = open to last, wick = high to low (green building up, red down), ghost = the prior candle. When it closes it flies over to the chart and lands as that candle. The resting size on the rows is the wick: prints eat it, the size goes down; size that comes back is a reload">${tfm}m${left ? `<i>${esc(left)}</i>` : ""}${oc}</th>`;
+  let h = base.replace('<table class="lad clean" data-cols="ladc"><tr>', `<table class="lad clean candle" data-cols="ladcc"><tr>${th}`);
   if (!c) return h.replace(/(<tr class="[^"]*" data-price="[^"]+"[^>]*>)/g, '$1<td class="cdl"></td>');
   const up = c.last >= c.open, bLo = Math.min(c.open, c.last), bHi = Math.max(c.open, c.last);
   const pUp = c.prev ? c.prev.close >= c.prev.open : null, pLo = c.prev ? Math.min(c.prev.open, c.prev.close) : null, pHi = c.prev ? Math.max(c.prev.open, c.prev.close) : null;
@@ -3094,6 +3113,8 @@ function drawOne(p, cv, v, isFoot){
   v.chartY = [lo, hi];
   const y = v => 8 + (hi - v) / (hi - lo) * (plotH - 8);
   const x0 = plotW - (bars.length + space) * cw;
+  // the candle geometry, for anything that has to land ON a candle (the ladder's candle flying over when it closes)
+  v.geom = {x0, cw, n: bars.length, keys: bars.map(b => b[0]), lo, hi, plotH, plotW, tf, sym: d.symbol};
   // candles sit by index (gaps overnight / weekends take no room), so anything placed by time goes through the
   // candle it belongs to: VWAP, bubbles, call markers
   const bucketOf = isDaily ? (t => t) : bucketFn(tf), kOf = new Map(bars.map((b, i) => [b[0], i]));
@@ -4715,6 +4736,7 @@ const CS_DEF = [
     ["range", "flyMax", "Prints that fly to T&S at once (big + reload fills)", 4, 1, 12, true]]],
   ["INDICATORS", [["check", "vwap", "VWAP", true, true], ["check", "mas", "Moving averages", true, true], ["check", "matags", "MA price tags", true, true],
     ["check", "bb", "Bollinger bands", true, true]]],
+  ["LEVEL II CANDLE", [["check", "candleFly", "The ladder's candle flies to the chart when it closes (CANDLE mode, 1m / 5m)", true, true]]],
 ];
 function csKey(f){ return f[0] === "range" ? f[1] : f[4] === true || (f[0] === "check" && f.length > 4 && f[4]) ? f[1] : "cs." + f[1]; }
 function csHTML(){
@@ -4863,16 +4885,59 @@ function renderBreakTraps(d){
   if (w.dataset.h !== sym + h){ w.dataset.h = sym + h; w.querySelector(".bts").textContent = d.symbol; w.querySelector(".btb").innerHTML = h; }
   if (w.hidden) w.hidden = false;
 }
-/* the 5-minute candle being built right now (and the one before it), from the 1-minute bars: for the CANDLE ladder */
+/* the candle being built right now (and the one before it), from the 1-minute bars, on the chart's timeframe when
+   it is 1 or 5 minutes (else 5): for the CANDLE ladder */
+function ladderCandleTf(){ const c = typeof charts !== "undefined" && charts.chart, tf = c ? store.get("tf." + c.id, 1) : 0; return +tf === 1 || +tf === 5 ? +tf : 5; }
 function ladderCandle(d){
-  const bars = d.bars || [], last = d.last != null ? +d.last : null;
+  const bars = d.bars || [], last = d.last != null ? +d.last : null, tfm = ladderCandleTf(), span = tfm * 60;
   if (!bars.length || last == null || typeof bucketFn !== "function") return null;
-  const now = (state && state.now) || Date.now() / 1000, bk = bucketFn(5), cur = bk(now), prev = cur - 300;
-  const inb = bars.filter(b => b[0] >= cur && b[0] < cur + 300), pb = bars.filter(b => b[0] >= prev && b[0] < cur);
+  const now = (state && state.now) || Date.now() / 1000, bk = bucketFn(tfm), cur = bk(now), prev = cur - span;
+  const inb = bars.filter(b => b[0] >= cur && b[0] < cur + span), pb = bars.filter(b => b[0] >= prev && b[0] < cur);
   const agg = rows => rows.length ? {open: +rows[0][1], high: Math.max(...rows.map(b => +b[2])), low: Math.min(...rows.map(b => +b[3])), close: +rows[rows.length - 1][4]} : null;
   const c = agg(inb) || {open: last, high: last, low: last, close: last};
-  c.high = Math.max(c.high, last); c.low = Math.min(c.low, last); c.last = last; c.prev = agg(pb);
+  c.high = Math.max(c.high, last); c.low = Math.min(c.low, last); c.last = last; c.prev = agg(pb); c.tf = tfm; c.t0 = cur;
   return c;
+}
+/* THE HAND-OFF: when the ladder's candle closes, the same candle (body, wick, open, close) lifts off the ladder, flies
+   across the screen with a glow and lands exactly on its slot on the chart, where the chart's own candle takes over.
+   The ladder flashes the close row and starts the next candle. Only when the chart shows that symbol on that
+   timeframe (1m or 5m); never in the way of a click. SETTINGS / ⚙ on the ladder: candle_fly */
+const CFLY = {last: {}};
+function candleHandoff(wrap, d, c){
+  if (!c || !d) return;
+  const key = d.symbol, prev = CFLY.last[key];
+  CFLY.last[key] = {t0: c.t0, open: c.open, high: c.high, low: c.low, close: c.last, tf: c.tf};
+  if (!prev || prev.t0 === c.t0 || prev.tf !== c.tf || !store.get("candleFly", true)) return;
+  const closed = prev;                                           // the candle that just finished
+  // the row where it closed flashes
+  const rowOf = p => wrap.querySelector(`tr[data-price="${(+p).toFixed(2)}"]`) || [...wrap.querySelectorAll("tr[data-price]")].find(r => Math.abs(+r.dataset.price - p) < 0.0051);
+  const rc = rowOf(closed.close); if (rc){ rc.classList.add("cclose"); setTimeout(() => rc.classList.remove("cclose"), 1400); }
+  const ch = typeof charts !== "undefined" && charts.chart, g = ch && ch.view && ch.view.geom;
+  if (!g || g.sym !== key || +g.tf !== closed.tf || !ch.canvas.offsetParent) return;
+  const rh = rowOf(closed.high), rl = rowOf(closed.low), ro = rowOf(closed.open);
+  const col = wrap.querySelector("td.cdl"); if (!col || !(rh || rl)) return;
+  const a = (rh || rl).getBoundingClientRect(), b = (rl || rh).getBoundingClientRect(), cb = col.getBoundingClientRect();
+  const top = Math.min(a.top, b.top), bot = Math.max(a.bottom, b.bottom);
+  const up = closed.close >= closed.open, colr = up ? "#1fb86a" : "#e8404f";
+  // where it lands: the chart's slot for that bucket (or the newest candle)
+  const cr = ch.canvas.getBoundingClientRect();
+  const kIdx = Math.max(0, g.keys.indexOf(closed.t0) >= 0 ? g.keys.indexOf(closed.t0) : g.n - 1);
+  const yC = v => cr.top + 8 + (g.hi - v) / (g.hi - g.lo) * (g.plotH - 8);
+  const xC = cr.left + g.x0 + kIdx * g.cw + g.cw / 2;
+  const dTop = yC(closed.high), dBot = yC(closed.low), dH = Math.max(3, dBot - dTop), dW = Math.max(3, g.cw * 0.76);
+  const bodyTop = (closed.high - Math.max(closed.open, closed.close)) / Math.max(1e-9, closed.high - closed.low), bodyBot = (Math.min(closed.open, closed.close) - closed.low) / Math.max(1e-9, closed.high - closed.low);
+  const el = document.createElement("div");
+  el.className = "cfly " + (up ? "u" : "d");
+  el.style.cssText = `left:${cb.left + 2}px;top:${top}px;width:${Math.max(10, cb.width - 4)}px;height:${Math.max(6, bot - top)}px;--cc:${colr}`;
+  el.innerHTML = `<i class="wk"></i><i class="bd" style="top:${(bodyTop * 100).toFixed(1)}%;bottom:${(bodyBot * 100).toFixed(1)}%"></i><b class="o">O ${px(closed.open)}</b><b class="c">C ${px(closed.close)}</b>`;
+  document.body.appendChild(el);
+  const ring = document.createElement("div"); ring.className = "cland"; ring.style.cssText = `left:${xC - 14}px;top:${dTop + dH / 2 - 14}px;--cc:${colr}`;
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    el.classList.add("go");
+    el.style.left = (xC - dW / 2) + "px"; el.style.top = dTop + "px"; el.style.width = dW + "px"; el.style.height = dH + "px";
+  }));
+  setTimeout(() => { document.body.appendChild(ring); el.classList.add("land"); }, 640);
+  setTimeout(() => { el.remove(); ring.remove(); }, 1500);
 }
 function renderBook(d){
   try { renderBreakTraps(d); } catch (e) {}
@@ -4890,11 +4955,12 @@ function renderBook(d){
   window._darkLv = {}; for (const x of ((d.dark && d.dark.levels) || [])) if (x.usd >= 200000) window._darkLv[(+x.price).toFixed(2)] = x;   // dark $ by price for the ladder
   if (d.ladder && store.get("ladMode", "clean") === "candle") d.ladder.candle = ladderCandle(d);   // the 5-minute candle on the rows
   const html = ladderHTML(training() ? Object.assign({}, d.ladder, {rows: d.ladder.rows.map(r => Object.assign({}, r, {bid_state: null, ask_state: null, bid_refills: 0, ask_refills: 0, bid_verdict: null, ask_verdict: null}))}) : d.ladder);
-  if (P.book.last === html){ try { basketFx(wrap, d); } catch (e) {} return; }   // nothing redrawn: the basket clock still ticks
+  if (P.book.last === html){ try { basketFx(wrap, d); } catch (e) {} if (d.ladder && d.ladder.candle) try { candleHandoff(wrap, d, d.ladder.candle); } catch (e) {} return; }   // nothing redrawn: the basket clock still ticks
   P.book.last = html;
   const keep = wrap.scrollTop;
   wrap.innerHTML = html; applyLadCols(wrap.querySelector("table")); makeColsResizable(wrap.querySelector("table")); if (hoverPx != null) ladderHighlight(hoverPx);
   eatMarks(wrap, d); avgRow(wrap, d); fitLadderRows(wrap);
+  if (d.ladder && d.ladder.candle) try { candleHandoff(wrap, d, d.ladder.candle); } catch (e) {}
   try { basketFx(wrap, d); } catch (e) {}                 // the BASKET drop: cosmetic, never stops the ladder
   const cur = wrap.querySelector("tr.lastpx") || wrap.querySelector("tr.best-ask");
   // a STILL ladder: the view holds where it is while price trades inside its middle; it re-centres only when price

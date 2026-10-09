@@ -711,12 +711,29 @@ class SimFlow:
         o = self.others.get(sym)
         return o[0] if o else None
 
+    INDEX_DAILY = {"SPY", "QQQ", "SPX", "IWM"}
+
+    def _expiry(self, sym, dte, t):
+        """A real listing: the Friday on or after t + dte days (index products also list Monday / Wednesday, and
+        trade 0DTE). The expiry date and the real days to it, so SOMEBODY KNOWS SOMETHING reads the same week."""
+        import datetime as _dt
+        day = _dt.datetime.fromtimestamp(t).date()
+        target = day + _dt.timedelta(days=max(0, int(round(dte))))
+        wanted = (0, 2, 4) if sym in self.INDEX_DAILY else (4,)
+        for k in range(0, 8):
+            d = target + _dt.timedelta(days=k)
+            if d.weekday() in wanted:
+                break
+        real = (d - day).days
+        return d.strftime("%Y-%m-%d"), float(max(real, 0.3) if real == 0 else real)
+
     def _print(self, sym, spot, cp, strike, dte, size, at_ask, kind, t):
+        expiry, dte = self._expiry(sym, dte, t)
         intrinsic = max(0.0, spot - strike) if cp == "C" else max(0.0, strike - spot)
         otm = max(0.0, ((strike - spot) if cp == "C" else (spot - strike)) / spot * 100.0)
         tv = spot * 0.008 * math.sqrt(max(dte, 0.5) / 7.0) * math.exp(-otm / (1.5 + 0.35 * math.sqrt(max(dte, 0.5)))) * self.rng.uniform(0.8, 1.25)
         price = max(0.05, round(intrinsic + tv, 2))
-        return {"t": t, "symbol": sym, "strike": strike, "cp": cp, "expiry": time.strftime("%Y-%m-%d", time.localtime(t + dte * 86400)),
+        return {"t": t, "symbol": sym, "strike": strike, "cp": cp, "expiry": expiry,
                 "dte": float(dte), "size": int(size), "price": price, "premium": round(price * 100 * size, 2), "spot": round(spot, 2),
                 "side": "ask" if at_ask else self.rng.choice(("bid", "mid")), "kind": kind,
                 "otm_pct": round(((strike - spot) if cp == "C" else (spot - strike)) / spot * 100.0, 2), "oi": None, "iv": None}
@@ -764,6 +781,25 @@ class SimFlow:
                 pr["side"] = "bid"
             self.engine.on_flow(pr, t)
 
+    def _hedges(self, t):
+        """After a stock has run (up 1%+ over the last half hour) the holders buy near-the-money puts; after a dump,
+        calls. That is a hedge, not a bet: the story's hedge filter has to see it to ignore it."""
+        rng = self.rng
+        for sym in self.symbols:
+            h = self.hist.get(sym)
+            spot = self._spot(sym)
+            if not h or not spot or len(h) < 10:
+                continue
+            old = h[0][1]
+            r = (spot - old) / old
+            if abs(r) < 0.01 or rng.random() > 0.02:
+                continue
+            cp = "P" if r > 0 else "C"
+            step = 5.0 if spot > 1000 else 1.0 if spot > 50 else 0.5 if spot > 10 else 0.25
+            strike = round(round(spot * (1 + rng.uniform(0.0, 0.8) / 100.0 * (1 if cp == "C" else -1)) / step) * step, 2)
+            size = int(rng.choice((100, 200, 300, 500, 800)))
+            self.engine.on_flow(self._print(sym, spot, cp, strike, rng.choice((5, 9, 16, 30)), size, True, "trade", t), t)
+
     def step(self, t):
         rng = self.rng
         if not self.others:
@@ -786,12 +822,18 @@ class SimFlow:
                 # with size for many minutes. That is the thing Dan reads — and in this market it is the thing that
                 # is actually informative: the move follows a strong, sustained cluster far more often than a weak one
                 strength = rng.random()
+                spot0 = self._spot(sym) or 100.0
+                step0 = 5.0 if spot0 > 1000 else 1.0 if spot0 > 50 else 0.5 if spot0 > 10 else 0.25
+                otm0 = rng.uniform(3.5, 9.0)
+                # the strike is picked once and pounded: "they keep coming for the 300s"
+                strike0 = round(round(spot0 * (1 + otm0 / 100.0 * (1 if cp == "C" else -1)) / step0) * step0, 2)
                 self.cluster[sym] = {"cp": cp, "until": t + 90 + strength * 900, "next": t, "strength": strength,
-                                     "otm": rng.uniform(3.5, 9.0), "dte": rng.choice((2, 5, 9, 16, 23))}
+                                     "otm": otm0, "dte": rng.choice((2, 5, 9, 16, 23)), "strike": strike0}
                 pushes = getattr(self.market, "pushes", None)
                 if pushes is not None and sym in getattr(self.market, "state", {}) and rng.random() < 0.12 + 0.6 * strength:
                     pushes[sym] = (t + rng.uniform(300, 1200), 1 if cp == "C" else -1)
         self._reactive(t)
+        self._hedges(t)
         whole = getattr(self.engine, "flow_scope", "all") != "watchlist"
         for sym in self.symbols + (list(self.others) if whole else []):
             spot = self._spot(sym)
@@ -807,7 +849,9 @@ class SimFlow:
                                        "vid": f"sim{int(t * 10)}{sym}"}, t)
             # ordinary flow: near the money, mixed sides, mixed expiries; index products trade far more
             if t >= self.next_t.get(sym, 0):
-                self.next_t[sym] = t + rng.expovariate(busy / 25.0)
+                from .sim import DemoFeed
+                ph = self.market._phase(t) if hasattr(self.market, "_phase") else DemoFeed._phase_at(t)
+                self.next_t[sym] = t + rng.expovariate(busy / 25.0 * ph["rate"])   # busier at the open and the close
                 cp = "C" if rng.random() < 0.5 + 1.2 * lean else "P"
                 step = 5.0 if spot > 1000 else 1.0 if spot > 50 else 0.5 if spot > 10 else 0.25
                 strike = round(round((spot * (1 + rng.gauss(0, 0.02) * (1 if cp == "C" else -1))) / step) * step, 2)
@@ -822,6 +866,6 @@ class SimFlow:
                 sg = cl.get("strength", 0.5)
                 cl["next"] = t + rng.uniform(15, 60) * (1.4 - 0.8 * sg)          # strong: prints every 10-30 s
                 step = 5.0 if spot > 1000 else 1.0 if spot > 50 else 0.5 if spot > 10 else 0.25
-                strike = round(round(spot * (1 + cl["otm"] / 100.0 * (1 if cl["cp"] == "C" else -1)) / step) * step, 2)
+                strike = cl.get("strike") or round(round(spot * (1 + cl["otm"] / 100.0 * (1 if cl["cp"] == "C" else -1)) / step) * step, 2)
                 size = int(rng.choice((300, 500, 800, 1200, 2000)) * (0.5 + sg))
                 self.engine.on_flow(self._print(sym, spot, cl["cp"], strike, cl["dte"], size, True, rng.choice(("sweep", "sweep", "block")), t), t)

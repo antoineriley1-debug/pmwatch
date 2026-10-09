@@ -1654,10 +1654,11 @@ function tagsHTML(tags){ return tags.map(o => `<span class="kt" style="--kc:${o.
    down; size that comes back at the same price is a reload. An option on the LEVEL II bar (CANDLE), nothing else
    changes. */
 function ladderCandleHTML(L){
-  const base = ladderCleanHTML(L), c = L.candle, tk = +L.tick || 0.01, half = tk / 2 + 1e-9;
-  const left = typeof barCloseIn === "function" ? barCloseIn(5) : "";
-  const th = `<th class="cdl" data-w="20" data-min="14" title="THE CANDLE: the 5-minute candle drawn on the ladder rows. Body = open to last, wick = high to low (green building up, red down), ghost = the prior candle. The resting size on the rows is the wick: prints eat it, the size goes down; size that comes back is a reload">5m${left ? `<i>${esc(left)}</i>` : ""}</th>`;
-  let h = base.replace('<table class="lad clean" data-cols="ladc"><tr>', `<table class="lad clean candle" data-cols="ladc"><tr>${th}`);
+  const base = ladderCleanHTML(L), c = L.candle, tk = +L.tick || 0.01, half = tk / 2 + 1e-9, tfm = (c && c.tf) || 5;
+  const left = typeof barCloseIn === "function" ? barCloseIn(tfm) : "";
+  const oc = c ? `<i class="oc">O ${px(c.open)}</i><i class="oc ${c.last >= c.open ? "u" : "d"}">C ${px(c.last)}</i>` : "";
+  const th = `<th class="cdl" data-w="30" data-min="18" title="THE CANDLE: the ${tfm}-minute candle (the chart's timeframe) drawn on the ladder rows. Body = open to last, wick = high to low (green building up, red down), ghost = the prior candle. When it closes it flies over to the chart and lands as that candle. The resting size on the rows is the wick: prints eat it, the size goes down; size that comes back is a reload">${tfm}m${left ? `<i>${esc(left)}</i>` : ""}${oc}</th>`;
+  let h = base.replace('<table class="lad clean" data-cols="ladc"><tr>', `<table class="lad clean candle" data-cols="ladcc"><tr>${th}`);
   if (!c) return h.replace(/(<tr class="[^"]*" data-price="[^"]+"[^>]*>)/g, '$1<td class="cdl"></td>');
   const up = c.last >= c.open, bLo = Math.min(c.open, c.last), bHi = Math.max(c.open, c.last);
   const pUp = c.prev ? c.prev.close >= c.prev.open : null, pLo = c.prev ? Math.min(c.prev.open, c.prev.close) : null, pHi = c.prev ? Math.max(c.prev.open, c.prev.close) : null;
@@ -2019,6 +2020,8 @@ function drawOne(p, cv, v, isFoot){
   v.chartY = [lo, hi];
   const y = v => 8 + (hi - v) / (hi - lo) * (plotH - 8);
   const x0 = plotW - (bars.length + space) * cw;
+  // the candle geometry, for anything that has to land ON a candle (the ladder's candle flying over when it closes)
+  v.geom = {x0, cw, n: bars.length, keys: bars.map(b => b[0]), lo, hi, plotH, plotW, tf, sym: d.symbol};
   // candles sit by index (gaps overnight / weekends take no room), so anything placed by time goes through the
   // candle it belongs to: VWAP, bubbles, call markers
   const bucketOf = isDaily ? (t => t) : bucketFn(tf), kOf = new Map(bars.map((b, i) => [b[0], i]));

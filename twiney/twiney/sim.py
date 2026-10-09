@@ -92,11 +92,12 @@ def beta_of(sym):
 
 class _Mkt:
     """The market: one regime process everybody leans on. The session's day type tilts this one."""
-    __slots__ = ("regime", "regime_until", "bias", "level", "prev_level")
+    __slots__ = ("regime", "regime_until", "bias", "level", "prev_level", "pulse")
 
     def __init__(self):
         self.regime, self.regime_until, self.bias = "chop", 0.0, 0.5
         self.level = self.prev_level = 488.0      # QQQ-like
+        self.pulse = None                          # the tape's push / pullback clock (every trending name breathes with it)
 
 
 
@@ -128,7 +129,8 @@ class _Sym:
     __slots__ = ("play", "tk", "asks", "bids", "last", "vol", "regime", "regime_until", "script", "big",
                  "big_home", "parts", "level_cooldown", "hidden_next", "prev", "l1", "base", "mid0", "beta", "sym", "eff", "owed",
                  "hot", "hot_dir", "mom", "spent", "now", "last_mid", "episode", "ep_next", "thin", "ep_script",
-                 "program", "program_next")
+                 "program", "program_next",
+                 "vs", "vs_t", "vs_mid", "vs_norm", "pulse", "lv_next", "day_open", "hod", "lod", "pdh", "pdl", "pdc", "vwap_pv", "vwap_v", "day_key")
 
     def __init__(self, play, mid, t):
         self.play = play
@@ -163,6 +165,18 @@ class _Sym:
         self.thin = 1.0              # the book on the side being hit (pulled bids in a flush, pulled offers in a squeeze)
         self.prev = {ASK: [], BID: []}
         self.l1 = {}
+        # THE MARKET DAY: volatility clusters (vs), a trend breathes (pulse: push / pullback), the key levels of the
+        # day get defended or taken (pdh / pdl / pdc / hod / lod / VWAP), the session has a shape (open, 10 o'clock,
+        # midday, the close)
+        self.vs = 1.0                # volatility state: rises on a big move or a shock, decays over minutes
+        self.vs_t = None; self.vs_mid = None; self.vs_norm = 0.002
+        self.pulse = None            # {"mode": "push" / "pullback", "until"} inside a trend
+        self.lv_next = t
+        self.day_open = None
+        self.hod = self.lod = None
+        self.pdh = self.pdl = self.pdc = None
+        self.vwap_pv = self.vwap_v = 0.0
+        self.day_key = None
 
 
 class DemoFeed:
@@ -175,6 +189,7 @@ class DemoFeed:
         self.pushes = {}   # symbol -> (time, direction): a move the option flow saw coming
         self.state = {}
         self.t = None
+        self.t0 = None
         for p in plays:
             if not p["active"]:
                 continue
@@ -194,6 +209,7 @@ class DemoFeed:
 
     def start(self, t):
         self.t = t
+        self.t0 = t                                           # the practice clock starts here (see _clock)
         self.engine.on_connection("DEMO", "SYNTHETIC DEMO FEED — not market data", t, market_data_type=None)
         for sym, s in self.state.items():
             self._history_one(sym, s, t)
@@ -244,6 +260,8 @@ class DemoFeed:
             shift = (s.mid0 - day_bars[-1][4]) / len(day_bars)
             day_bars = [(d0, round(o + shift * (i + 1), 2), round(h + shift * (i + 1), 2), round(l + shift * (i + 1), 2), round(c + shift * (i + 1), 2))
                         for i, (d0, o, h, l, c) in enumerate(day_bars)]
+        if day_bars:
+            s.pdh, s.pdl, s.pdc = day_bars[-1][2], day_bars[-1][3], day_bars[-1][4]
         for day0, o, h, l, c in day_bars:
             # a day's volume: bigger on the big-range days, like the real thing
             rng_pct = (h - l) / max(c, 0.01)
@@ -414,6 +432,7 @@ class DemoFeed:
             self.engine.on_print(sym, price, int(take), rng.choice(EXCH), t)
             s.last = price
             s.vol += take
+            s.vwap_pv += price * take; s.vwap_v += take
             rows[0][1] -= take
             remaining -= take
             if lv is not None:
@@ -465,12 +484,12 @@ class DemoFeed:
         tempo, lean = self._tempo(s)
         base_rate = rate
         rate *= tempo
-        lam = rate * dt * self._tod(t)
+        lam = rate * dt
         # chasers: a moving price pulls in orders on the side it is moving to (momentum, stops) - the tape speeds up
         # WITH the move; most moves start with the market, so this amplifies the market's move, not noise
         heat = self._heat(s)
         if s.hot_dir and heat > 0.3:
-            lc = base_rate * dt * self._tod(t) * 0.9 * heat
+            lc = base_rate * dt * 0.9 * heat
             nc = int(lc) + (1 if rng.random() < lc - int(lc) else 0)
             for _ in range(nc):
                 size = _r100(rng.lognormvariate(5.2, 0.7) * mult)
@@ -504,12 +523,37 @@ class DemoFeed:
             size = st[3] if len(st) > 3 else rg["size"]
             s.thin = st[4] if len(st) > 4 else 1.0
             b = 0.5 + 0.8 * (b - 0.5) + (1.0 if s.episode else 0.6) * s.beta * m   # still feels the market
-            return min(0.9, max(0.1, b)), r * heat, size
+            return min(0.9, max(0.1, b)), r * heat * s.vs ** 0.5, size * s.vs ** 0.25
         s.thin = 1.0
         s.episode = None
         own = 0.25 if s.sym in INDEX else 0.4                   # an index is mostly the market; a stock is part itself
         b = 0.5 + own * (rg["bias"] - 0.5) + 1.0 * s.beta * m
-        return min(0.9, max(0.1, b)), rg["rate"] * heat, rg["size"]
+        ph = self._phase(t)
+        # a trend breathes: a push, then a pullback that gets bought (higher lows) or sold (lower highs). That is
+        # where the second entries live; a chop has no pulse, its candles sit on top of each other
+        rate_x, size_x = ph["rate"], ph["size"]
+        if s.regime in ("trend_up", "trend_down", "grind_up", "grind_down"):
+            rng = self.rng
+            # the whole tape breathes together: one clock for the desk (the pullbacks come at the same time across
+            # the names, the way they do when the index pulls back), each name on its own trend
+            mk = self.mkt
+            pulse = getattr(mk, "pulse", None)
+            if pulse is None or t >= pulse["until"]:
+                push = pulse is None or pulse["mode"] == "pullback"
+                pulse = mk.pulse = {"mode": "push" if push else "pullback", "until": t + (rng.uniform(90, 240) if push else rng.uniform(40, 120))}
+            s.pulse = pulse
+            if pulse["mode"] == "pullback":
+                b = 0.5 - 0.4 * (b - 0.5)                       # against the trend, shallow: the retrace
+                rate_x *= 0.7; size_x *= 0.8
+        else:
+            s.pulse = None
+        # the VWAP magnet: stretched away from it (midday most of all) the lean comes back toward it
+        if s.vwap_v > 0 and ph["vwap"] and s.last:
+            dev = (s.last - s.vwap_pv / s.vwap_v) / s.last
+            b -= ph["vwap"] * 0.12 * max(-1.0, min(1.0, dev / 0.004))
+        rate_x *= s.vs ** 0.5                                   # a hot tape: more prints, a little bigger, not 3x everything
+        size_x *= s.vs ** 0.25
+        return min(0.9, max(0.1, b)), rg["rate"] * heat * rate_x, rg["size"] * size_x
 
     def _close_spread(self, s):
         """Market makers: a gap between bid and ask gets stepped into within a moment. Who steps in follows the
@@ -598,20 +642,56 @@ class DemoFeed:
                 s.owed *= 0.99     # leaning on a wall: one clip a beat, a little of the push gives up
                 return
 
+    # THE SESSION'S SHAPE, the way the day really trades: the opening drive, the 10 o'clock reversal window, the
+    # morning, the midday chop with the VWAP as the magnet, the afternoon trend, the close with the day's program.
+    # rate / size scale the tape; tilt leans the regime draw; vwap is how hard price gets pulled back to the VWAP
+    PHASES = (
+        (0, 30, dict(name="open", rate=2.4, size=1.5, vwap=0.0, tilt={"trend_up": 2.2, "trend_down": 2.2, "squeeze": 1.3, "capitulation": 1.3, "chop": 0.5})),
+        (30, 60, dict(name="reversal", rate=1.6, size=1.2, vwap=0.25, tilt={"chop": 1.0})),
+        (60, 120, dict(name="morning", rate=1.1, size=1.0, vwap=0.35, tilt={})),
+        (120, 270, dict(name="midday", rate=0.6, size=0.85, vwap=0.9, tilt={"chop": 3.0, "grind_up": 1.2, "grind_down": 1.2, "trend_up": 0.5, "trend_down": 0.5, "squeeze": 0.3, "capitulation": 0.3})),
+        (270, 360, dict(name="afternoon", rate=1.0, size=1.0, vwap=0.4, tilt={"trend_up": 1.5, "trend_down": 1.5, "grind_up": 1.2, "grind_down": 1.2})),
+        (360, 390, dict(name="close", rate=1.7, size=1.4, vwap=0.1, tilt={"chop": 0.6})),
+    )
+    CLOSED = dict(name="closed", rate=0.35, size=0.8, vwap=0.0, tilt={"chop": 2.5, "squeeze": 0.2, "capitulation": 0.2})
+
     @staticmethod
-    def _tod(t):
+    def _phase_at(t):
         from .ps60 import ny_offset, SESSION_OPEN
         off = ny_offset(t)
-        sec = (t + off) % 86400 - SESSION_OPEN
-        if sec < 0 or sec > 390 * 60:
-            return 1.0
-        if sec < 30 * 60:
-            return 1.9
-        if sec > 360 * 60:
-            return 1.5
-        if 150 * 60 < sec < 270 * 60:
-            return 0.7
-        return 1.0
+        m = ((t + off) % 86400 - SESSION_OPEN) / 60.0
+        for lo, hi, ph in DemoFeed.PHASES:
+            if lo <= m < hi:
+                return ph
+        return DemoFeed.CLOSED
+
+    def _clock(self, t):
+        """THE PRACTICE CLOCK. During the real session (New York, a weekday) the practice day is the real day. Outside
+        it (nights, weekends, premarket) the practice day starts at 9:30 the moment the feed starts and runs its 390
+        minutes, then the next day opens: you get a whole session's shape whenever you sit down."""
+        from .ps60 import ny_offset, SESSION_OPEN
+        off = ny_offset(t)
+        loc = t + off
+        sec = loc % 86400
+        wd = (int(loc // 86400) + 3) % 7                     # epoch day 0 is a Thursday: 0 = Monday here
+        if wd < 5 and SESSION_OPEN <= sec < SESSION_OPEN + 390 * 60:
+            return t, 0
+        t0 = self.t0 if self.t0 is not None else t
+        el = max(0.0, t - t0)
+        day = int(el // (390 * 60))
+        day0 = int(loc // 86400) * 86400 - off
+        return day0 + SESSION_OPEN + (el - day * 390 * 60), day + 1
+
+    def _phase(self, t):
+        return DemoFeed._phase_at(self._clock(t)[0])
+
+    def _day_key(self, t):
+        from .ps60 import ny_offset
+        ct, vday = self._clock(t)
+        return int((ct + ny_offset(ct)) // 86400) * 10 + vday
+
+    def _tod(self, t):
+        return self._phase(t)["rate"]
 
     # ---- regimes ---------------------------------------------------------------
 
@@ -619,7 +699,23 @@ class DemoFeed:
         if t < s.regime_until:
             return
         rng = self.rng
-        tilt = SCENARIOS.get(self.scenario, {}) if s is self.mkt else {}
+        tilt = dict(SCENARIOS.get(self.scenario, {})) if s is self.mkt else {}
+        ph = self._phase(t)
+        # the session's shape is the MARKET's: the opening drive, the 10 o'clock fade and the close are one tape,
+        # every name feels it through its beta. A name on its own only gets the midday quiet
+        if s is self.mkt:
+            for n, w in ph["tilt"].items():
+                tilt[n] = tilt.get(n, 1.0) * w
+            if getattr(self, "mkt_day_open", None):
+                up = s.level > self.mkt_day_open
+                if ph["name"] == "reversal":           # the 10 o'clock window: the opening drive often gets faded
+                    for n in (("trend_down", "fade", "grind_down") if up else ("trend_up", "bounce", "grind_up")):
+                        tilt[n] = tilt.get(n, 1.0) * 2.2
+                elif ph["name"] == "close":            # the close goes with the day
+                    for n in (("trend_up", "grind_up") if up else ("trend_down", "grind_down")):
+                        tilt[n] = tilt.get(n, 1.0) * 2.5
+        elif ph["name"] == "midday":
+            tilt["chop"] = tilt.get("chop", 1.0) * 1.8
         opts = [(n, w * tilt.get(n, 1.0)) for n, w in NEXT[s.regime]]
         tot = sum(w for _, w in opts)
         x = rng.uniform(0, tot)
@@ -702,6 +798,39 @@ class DemoFeed:
                 s.parts.append(pt)
                 # flow leans into the level, not always hard: sometimes it takes a while to get tested
                 s.script = [(0.62 if seller else 0.38, rng.uniform(1.6, 2.8), t + rng.uniform(120, 300))]
+        # THE KEY LEVELS: price coming into the prior day's high / low / close, the high / low of the day, the VWAP:
+        # someone is usually there. He defends it (the bounce / the reject), gets cleaned up (the break, then the
+        # retest and the second entry), or pulls. The same participant engine as the pivot, so the ladder and the
+        # tape read the same way at every level that matters
+        if t >= s.lv_next:
+            s.lv_next = t + 20.0
+            vw = s.vwap_pv / s.vwap_v if s.vwap_v > 0 else None
+            keys = [("PDH", s.pdh), ("PDL", s.pdl), ("PDC", s.pdc), ("HOD", s.hod), ("LOD", s.lod), ("VWAP", vw)]
+            d = s.hot_dir or (1 if s.eff[0] > 0.5 else -1)
+            rows = s.asks if d > 0 else s.bids
+            if rows and len(rows) > 3:
+                best = rows[0][0]
+                for name, lv in keys:
+                    if not lv:
+                        continue
+                    lvp = round(round(lv / tk) * tk, 2)
+                    steps = int(round((lvp - best) / tk)) if d > 0 else int(round((best - lvp) / tk))
+                    if not (1 <= steps <= 3):
+                        continue
+                    side = ASK if d > 0 else BID
+                    if any(abs(pt["price"] - lvp) < 1e-9 for pt in s.parts) or (side, round(lvp, 4)) in s.spent:
+                        continue
+                    if name in ("HOD", "LOD") and abs(lvp - (s.hod if name == "HOD" else s.lod)) < tk * 0.5 and abs(lvp - s.last) < tk * 1.5:
+                        continue                               # the high of the day is the price itself right now
+                    if rng.random() < 0.7:
+                        pt = self._new_part(s, side, lvp, t, False)
+                        pt["key"] = name
+                        if name in ("PDH", "PDL", "VWAP"):     # the levels everyone watches: more often defended, bigger
+                            pt["mode"] = rng.choices(("hold", "clean", "pull"), weights=(5, 3, 2))[0]
+                            pt["base"] = int(pt["base"] * 1.4 / 100) * 100 or 100
+                        rows[steps][1] = _r100(pt["base"] * rng.uniform(0.7, 1.3))
+                        s.parts.append(pt)
+                    break
         # hidden participants anywhere in the book, on either side: the ones you have to find yourself
         if t >= s.hidden_next:
             s.hidden_next = t + rng.uniform(240, 900)
@@ -762,6 +891,17 @@ class DemoFeed:
                     # break: momentum through, a retrace back toward the level, then continuation (the second entry)
                     s.script = [(0.72 if seller else 0.28, 3.0, t + 50), (0.38 if seller else 0.62, 1.8, t + 110),
                                 (0.66 if seller else 0.34, 2.4, t + 260)]
+                elif lv.get("key") and lv["done"] == "clean":
+                    s.vs = min(3.5, s.vs + 0.6)                    # a key level breaking: the tape gets busier for a while
+                    if rng.random() < 0.3:
+                        # the failed break: through it, the chasers pile in, and it comes straight back through the
+                        # level the other way (trapped longs / shorts)
+                        s.script = [(0.70 if seller else 0.30, 3.0, t + 40), (0.22 if seller else 0.78, 3.2, t + 130),
+                                    (0.42 if seller else 0.58, 1.6, t + 240)]
+                    else:
+                        # the real break: momentum, the retest of the level from the other side, the second entry
+                        s.script = [(0.72 if seller else 0.28, 3.0, t + 50), (0.36 if seller else 0.64, 1.8, t + 120),
+                                    (0.68 if seller else 0.32, 2.4, t + 280)]
                 elif rng.random() < 0.6:
                     s.script = [(0.68 if seller else 0.32, 2.4, t + 60)]
             s.parts.remove(lv)
@@ -813,10 +953,40 @@ class DemoFeed:
         if rng.random() < 0.0008 * dt:
             self.engine.on_print(sym, round(mid, 2), int(rng.choice((10000, 15000, 25000, 40000, 60000))), "FINRA", t)
 
+    def _news(self, t):
+        """Now and then the market gets news: one name (or the whole tape) dumps or rips for a few minutes, six
+        times the pace, the book on the side being hit pulled, then a partial retrace. Where the trapped traders and
+        the capitulation / squeeze episodes come from on a real day."""
+        rng = self.rng
+        if getattr(self, "shock_next", None) is None:
+            self.shock_next = t + rng.uniform(2400, 9000)
+        if t < self.shock_next or not self.state:
+            return
+        self.shock_next = t + rng.uniform(3600, 10800)
+        syms = list(self.state)
+        whole = rng.random() < 0.25
+        down = rng.random() < 0.55
+        dur = rng.uniform(180, 480)
+        for sym in (syms if whole else [rng.choice(syms)]):
+            s = self.state[sym]
+            if s.script:
+                continue
+            lean = (0.16 if down else 0.84) if not whole else (0.5 - 0.2 * s.beta if down else 0.5 + 0.2 * s.beta)
+            back = (0.62 if down else 0.38) if not whole else 0.5
+            s.script = [(lean, 6.0, t + dur * 0.5, 2.5, 0.35), (back, 2.5, t + dur, 1.4, 1.0)]
+            s.episode = "news"
+            s.ep_script = s.script
+            s.vs = 3.0
+
     def step(self, t):
         dt = 0.25 if self.t is None else max(0.05, min(1.0, t - self.t))
         self.t = t
         self._market_step(t, dt)
+        self._news(t)
+        ph = self._phase(t)
+        dk = self._day_key(t)
+        if ph["name"] != "closed" and getattr(self, "mkt_day_key", None) != dk:
+            self.mkt_day_key, self.mkt_day_open = dk, self.mkt.level     # the market's own open, for the 10 o'clock / close tilts
         for sym, (at, d) in list(self.pushes.items()):          # the move the option flow was early on
             s = self.state.get(sym)
             if s is not None and t >= at and not s.script:
@@ -829,6 +999,13 @@ class DemoFeed:
             if not slotted:
                 s.prev = {ASK: [], BID: []}
             s.now = t
+            # the day's open, high and low, and the VWAP: reset at the open (the session, not midnight)
+            if ph["name"] != "closed" and s.day_key != dk:
+                s.day_key = dk
+                s.day_open = s.last; s.hod = s.lod = s.last
+                s.vwap_pv = s.vwap_v = 0.0
+            if s.hod is not None:
+                s.hod = max(s.hod, s.last); s.lod = min(s.lod, s.last)
             self._regime(s, t)
             self._episodes(s, t)
             s.eff = self._params(s, t)
@@ -849,6 +1026,20 @@ class DemoFeed:
                 want = s.beta * math.log(mkt.level / mkt.prev_level) * mid / s.tk if mkt.prev_level else 0.0
                 s.mom = s.mom * (0.975 ** (dt / 0.25)) + want
                 s.hot = s.hot * (0.93 ** (dt / 0.25))
+                # volatility clusters: judged once a minute on the minute's move against a normal one (0.15 %), the
+                # state eases toward it (half-life a few minutes): the wild stretch after a break or a shock, the
+                # quiet stretch in a tight base. A shock sets it high directly
+                if s.vs_t is None:
+                    s.vs_t, s.vs_mid = t, mid
+                elif t - s.vs_t >= 60:
+                    ret = abs(mid - s.vs_mid) / s.vs_mid if s.vs_mid else 0.0
+                    # against this name's own normal minute (a running average of its quiet-state moves) and what the
+                    # state itself produces: a hot tape that only moves as much as a hot tape does is settling, not
+                    # getting hotter (so the state mean-reverts the way volatility does)
+                    s.vs_norm = 0.9 * s.vs_norm + 0.1 * max(1e-5, ret / s.vs)
+                    target = min(3.5, max(0.6, ret / (s.vs_norm * s.vs)))
+                    s.vs = min(3.5, max(0.6, 0.75 * s.vs + 0.25 * target))
+                    s.vs_t, s.vs_mid = t, mid
                 if s.hot < 1.0:
                     s.hot_dir = (1 if s.mom > 0 else -1) if abs(s.mom) >= 3 else 0
                 s.last_mid = mid
