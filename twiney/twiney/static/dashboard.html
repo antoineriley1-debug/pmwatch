@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261009-0427">
+<meta name="build" content="20261009-0428">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -1431,23 +1431,11 @@ table.lad.basket2 th .bkgear{background:none;border:0;color:#9aa4b4;cursor:point
 .lad.candle tr.pb td.cdl i.pg{left:1px;top:0;bottom:0;width:3px;background:var(--pc);opacity:.35}
 .lad.candle tr.lastpx td.cdl{background:rgba(227,168,58,.10)}
 
-/* THE WHITE DESK (DESK WHITE on the toolbar): the same desk on a light screen */
-body.whitedesk{--bg:#ffffff;--panel:#f5f7fa;--panel2:#eaeef4;--line:#c6cfdb;--text:#14181f;--dim:#5a6577;--buy:#118a4d;--sell:#d6303f;--gold:#c58a00;--cyan:#0f7fb0;--violet:#6a3fd0;--warn:#b7791f}
-body.whitedesk .lad th,body.whitedesk .t th{background:#eaeef4;color:#3b4656}
-body.whitedesk .lad .px{color:#14181f}
-body.whitedesk .lad tr.lvl td.px{color:#000}
-body.whitedesk .lad tr.lvl td{border-color:rgba(0,0,0,.25)}
-body.whitedesk .bar-n{color:#14181f}
-body.whitedesk .lad tr.lastpx td.px{background:#e3a83a;color:#000}
-body.whitedesk .lad tr.lastpx td{background:rgba(197,138,0,.12)}
-body.whitedesk .lad.candle tr.c-open td.cdl i.bd{border-top-color:#000}
-body.whitedesk .mine{border-color:#000;color:#000}
-body.whitedesk .tape2 tr.kid td{background:rgba(15,127,176,.12)}
-body.whitedesk .splay{background:rgba(197,138,0,.10)}
-body.whitedesk .sfw{background:rgba(15,127,176,.08)}
-body.whitedesk .bar.sold{background:rgba(17,138,77,.45)}
-body.whitedesk .bar.bought{background:rgba(214,48,63,.45)}
-body.whitedesk .storyln b.pbp{background:#c58a00;color:#fff}
+/* THE WHITE DESK (DESK WHITE on the toolbar): the whole desk on a light screen. Every colour keeps its hue (green
+   stays green, red stays red, gold stays gold), only light and dark trade places; the charts keep their own screen
+   colour (they are flipped back) */
+body.whitedesk{filter:invert(1) hue-rotate(180deg);background:#000}
+body.whitedesk .chart-wrap canvas,body.whitedesk img,body.whitedesk video{filter:invert(1) hue-rotate(180deg)}
 
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
