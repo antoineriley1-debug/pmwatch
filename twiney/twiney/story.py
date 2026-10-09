@@ -709,9 +709,16 @@ def near_dist(last, atr, tick, cfg):
                last * float(cfg.get("near_pct", 0.15)) / 100.0)
 
 
-def attention(points, zones, conf, last, near):
+def on_dist(last, atr, tick):
+    """ON a place: a couple of ticks, a twentieth of a percent, 2% of the daily ATR, whichever is widest. Within REACH
+    (near_dist) is not on it: 80 cents under the prior-day low on an $8 ATR stock is under it, never "sitting on it"."""
+    return max(2 * float(tick or 0.01), float(last or 0) * 0.0005, float(atr or 0) * 0.02)
+
+
+def attention(points, zones, conf, last, near, tick=0.01, atr=None):
     """HIGH ATTENTION: price close to a place that matters (whole / half dollars alone never switch it on). Returns
-    the nearest one: the place everything else is read against."""
+    the nearest one: the place everything else is read against. ``on``: right on it; ``reach``: within the near
+    band (the place in play); ``approach``: coming into reach."""
     if last is None:
         return None
     cands = []
@@ -730,7 +737,8 @@ def attention(points, zones, conf, last, near):
         if c["lo"] - near <= best["p"] <= c["hi"] + near:
             best["conf"] = c
             break
-    best["on"] = best["d"] <= near
+    best["reach"] = best["d"] <= near
+    best["on"] = best["d"] <= min(near, on_dist(last, atr, tick))
     best["approach"] = best["d"] <= 2.5 * near
     best["dir"] = "up" if best["lo"] > last else "down" if best["hi"] < last else None
     return best
@@ -1112,7 +1120,8 @@ def play_by_play(sb, t, foc, last, near, pace, fr, reloads, consumed, cfg):
         return opts[i % len(opts)]
     # the opening says which side of the place price is: ON it only when it is inside the place; within reach but
     # under it is UNDER (never "sitting on" a level price is below), over it is OVER; farther out, coming into it
-    kind = ("on" if pos == "on" else "under" if pos == "below" else "over") if foc["on"] else "near"
+    reach = foc.get("reach", foc["on"])
+    kind = ("on" if pos == "on" else "under" if pos == "below" else "over") if (reach or foc["on"]) else "near"
     head = pick("open_" + kind, PBP_OPEN[kind]).format(nm=nm)
     c_n = round(d * 100)
     cents = (f"{c_n} cent" + ("" if c_n == 1 else "s")) if d < 1 else f"${d:.2f}"
@@ -1202,7 +1211,7 @@ def play_by_play(sb, t, foc, last, near, pace, fr, reloads, consumed, cfg):
         read, tone = ("press_sup" if sup else "reject"), "bear"
     rd = pick(read, PBP_READ[read])
     text = f"{head}: {where}. " + ". ".join(b[0].upper() + b[1:] for b in bits) + ". " + rd[0].upper() + rd[1:]
-    key = (foc["name"], "on" if foc["on"] else "near", tape, book, opt, read)
+    key = (foc["name"], kind, tape, book, opt, read)
     tail = ". ".join(b[0].upper() + b[1:] for b in bits if not b.startswith("no real option flow")) if read != "quiet" else ""
     return {"key": key, "text": text, "tone": tone, "read": read, "tail": tail}
 
@@ -1327,7 +1336,7 @@ def coach(sb, t, foc, pb, cfg, mins=None, traps=None, market=None, up=None, relo
     out = []
     active = pb["read"] != "quiet"                # nothing going on (no tape, no book, no option flow): the chart stays quiet
     ps60 = foc["kind"] in PS60_KINDS or (foc.get("conf") or {}).get("ps60")
-    if active and foc["on"] and ps60 and not c.get("first") and 9.5 * 3600 <= secs < 16 * 3600:
+    if active and foc.get("reach", foc["on"]) and ps60 and not c.get("first") and 9.5 * 3600 <= secs < 16 * 3600:
         c["first"] = foc["name"]
         out.append(("first", pick("first")))
     if not active:
@@ -1701,7 +1710,7 @@ def build(sb, t, last, tick, atr, play, se_state, ctx, points, zones, conf, fr, 
             note("held:" + d_, tuple(rows), f"Held the retest of {names(rows)}. Watch the second entry back through the {'high' if d_ == 'up' else 'low'}",
                  "bull" if d_ == "up" else "bear", loud=True)
 
-    foc = attention(points, zones, conf, last, near)
+    foc = attention(points, zones, conf, last, near, tick, atr)
     out["focus"] = foc
     up = None
     if foc:
@@ -1875,7 +1884,7 @@ def build(sb, t, last, tick, atr, play, se_state, ctx, points, zones, conf, fr, 
             note("resp", resp["key"], resp["text"], resp["tone"], repeat=300)
         return out
 
-    out["attention"] = bool(foc["on"])
+    out["attention"] = bool(foc.get("reach", foc["on"]))
     cf = foc.get("conf") if foc.get("conf") and foc["conf"].get("major") else None
     where = cf["text"].split(":")[0] if cf else foc["name"]
     lvl = None if cf or foc["kind"] == "uzone" else foc["p"]
@@ -1899,6 +1908,12 @@ def build(sb, t, last, tick, atr, play, se_state, ctx, points, zones, conf, fr, 
         tone = "warn"
     elif foc["on"]:
         head = f"Testing {where[0].lower() + where[1:] if where.startswith('Major') else where}{at}"
+        tone = "neutral"
+    elif foc.get("reach"):
+        below = last < foc["lo"]
+        gap = (foc["lo"] - last) if below else (last - foc["hi"])
+        head = (f"{'Under' if below else 'Over'} {where[0].lower() + where[1:] if where.startswith('Major') else where}{at}, "
+                f"price {px(last)}, {int(round(gap * 100))} cents {'under' if below else 'over'} it")
         tone = "neutral"
     else:
         head = f"Coming into {where[0].lower() + where[1:] if where.startswith('Major') else where}{at}"
@@ -1953,10 +1968,12 @@ def build(sb, t, last, tick, atr, play, se_state, ctx, points, zones, conf, fr, 
     if fresh_break and t - br["t"] <= 5 and not any(x["topic"].startswith("consumed:") for x in said):
         note("break:" + foc["name"], (br["dir"], round(br["t"])), parts[0] + f". {ftext[0].upper() + ftext[1:]}.", tone, loud=True)
         loud_now = True
-    first_on = foc["on"] and not sb.said.get("att", (None,))[0]
-    sb.said["att"] = (bool(foc["on"]), t)
+    reach_ = bool(foc.get("reach", foc["on"]))
+    first_on = reach_ and not sb.said.get("att", (None,))[0]
+    sb.said["att"] = (reach_, t)
     if not loud_now and (first_on or t - sb.said.get("focus", (None, -1e9))[1] >= 60):
-        note("focus", (head.split(" ")[-1] if foc["on"] else "near", foc["name"]), parts[0] + (f". {tw}" if tw and not foc["on"] else "") + ".", "neutral", repeat=900)
+        note("focus", (head.split(" ")[-1] if foc["on"] else head.split(" ")[0].lower() if reach_ else "near", foc["name"]),
+             parts[0] + (f". {tw}" if tw and not foc["on"] else "") + ".", "neutral", repeat=900)
     ma = foc if foc["kind"] in MA_KINDS else next((m for m in points if m["kind"] in MA_KINDS and foc["lo"] - near <= m["p"] <= foc["hi"] + near), None)
     if ma and fs["state"] != "NOT YET CONFIRMED":
         # the 50 / 200 day with the option flow: the moment the money shows up at the line the big money watches
