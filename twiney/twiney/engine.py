@@ -1008,7 +1008,10 @@ class Engine:
         ctl, drift = pc.get("control"), pc.get("drift")
         from . import story as story_mod
         ln = story_mod.lean_side(st.storybook) if getattr(st, "storybook", None) is not None else 0
-        if bp is not None and ln < 0 and ((bp >= 60 and ctl != "sellers") or ctl == "buyers"):
+        if bp is not None and pc.get("bp_suspect"):
+            who = "sellers" if ctl == "sellers" else "buyers"
+            words.append(f"price printing {'lower' if ctl == 'sellers' else 'higher'}, {self._cents(abs(drift))} in fifteen seconds; {who} have it"); short.append(f"{who} have it · path")
+        elif bp is not None and ln < 0 and ((bp >= 60 and ctl != "sellers") or ctl == "buyers"):
             words.append(story_mod.trying(st.storybook, "buyers")); short.append("buyers trying")
         elif bp is not None and ln > 0 and ((bp <= 40 and ctl != "buyers") or ctl == "sellers"):
             words.append(story_mod.trying(st.storybook, "sellers")); short.append("sellers trying")

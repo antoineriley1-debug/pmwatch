@@ -224,3 +224,24 @@ class LeanTests(unittest.TestCase):
         self.assertIsNone(ln["side"])
         self.assertEqual(ln["text"], "NO SIDE HAS THE TAPE")
         self.assertEqual(story.tape_words({"state": "FAST", "buy_pct": 80, "ratio": 1.8}, None, sb), "Buyers stepping up")
+
+
+class SuspectLiftTests(unittest.TestCase):
+    def test_a_lift_count_against_the_path_is_never_quoted(self):
+        from twiney import story
+        import copy
+        from twiney.config import DEFAULTS
+        C = copy.deepcopy(DEFAULTS)["story"]
+        b, t = _steady()
+        for k in range(15):
+            b.add(t + k, 100.00 - 0.02 * k, 1000.0, "buy")          # "100% lifting" while price prints lower
+        p = pace.read(b, t + 15, 99.7, [], 0.01, CFG)
+        self.assertEqual(p["buy_pct"], 100)
+        self.assertTrue(p["bp_suspect"])
+        sb = story.Story()
+        foc = {"on": True, "approach": True, "kind": "pdl", "name": "prior-day low", "p": 99.7, "lo": 99.7, "hi": 99.7, "dir": "down"}
+        out = story.play_by_play(sb, t + 15, foc, 99.7, 0.3, p, None, [], [], C)
+        self.assertNotIn("100%", out["text"])
+        self.assertNotIn("buyers stepping up", out["text"].lower())
+        self.assertIn("sellers have it", out["text"].lower())
+        self.assertEqual(out["tone"], "bear")

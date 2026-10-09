@@ -118,11 +118,14 @@ def read(book, now, last, levels, tick, cfg, flow=None, knows=None):
     drift = round(win_rows[-1][6] - win_rows[0][5], 4) if win_rows else 0.0
     step = max(3 * float(tick or 0.01), (last or win_rows[-1][6] if win_rows else 0.0) * 0.001)
     control = "sellers" if drift <= -step else "buyers" if drift >= step else None
+    # a lift count that contradicts the price path (90% "lifting" while price prints lower) is not information: the
+    # tape printed into a quote that had already moved. It is never quoted as a fact
+    bp_suspect = buy_pct is not None and ((control == "sellers" and buy_pct >= 85) or (control == "buyers" and buy_pct <= 15))
     c = cfg
     state = ("SURGE" if ratio >= c["surge_ratio"] and pct >= 90 else "FAST" if ratio >= c["fast_ratio"]
              else "DRYING UP" if ratio <= c["dry_ratio"] else "SLOW" if ratio <= c["slow_ratio"] else "NORMAL")
     out.update(state=state, ratio=round(ratio, 2), pct=round(pct), heat=round(min(1.0, ratio / 3.0), 2), buy_pct=None if buy_pct is None else round(buy_pct),
-               accel=accel, sps=round(sps), pps=round(cur_n / span, 1), norm_sps=round(norm), drift=drift, control=control)
+               accel=accel, sps=round(sps), pps=round(cur_n / span, 1), norm_sps=round(norm), drift=drift, control=control, bp_suspect=bp_suspect)
     if last is None:
         return out
     levels = levels or []

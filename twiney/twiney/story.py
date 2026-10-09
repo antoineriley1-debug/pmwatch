@@ -1127,7 +1127,12 @@ def play_by_play(sb, t, foc, last, near, pace, fr, reloads, consumed, cfg):
     fast = st in ("FAST", "SURGE") or pc.get("accel") == "SPEEDING UP"
     ctl, drift = pc.get("control"), pc.get("drift") or 0.0
     ln = lean_side(sb)
-    if bp is not None and st not in (None, "QUIET", "WARMING UP") and ln < 0 and ((bp >= 60 and ctl != "sellers") or ctl == "buyers"):
+    if bp is not None and st not in (None, "QUIET", "WARMING UP") and pc.get("bp_suspect"):
+        # the lift count fights the price path: not information. The path is the read
+        tape = -1 if ctl == "sellers" else 1
+        bits.append(f"price printing {'lower' if ctl == 'sellers' else 'higher'}, {abs(drift):.2f} in 15 seconds; "
+                    f"{'sellers' if ctl == 'sellers' else 'buyers'} have it whatever the lift count says")
+    elif bp is not None and st not in (None, "QUIET", "WARMING UP") and ln < 0 and ((bp >= 60 and ctl != "sellers") or ctl == "buyers"):
         bits.append(trying(sb, "buyers") + f"; {bp:.0f}% lifting the offer")        # sellers have the tape: no vote for the buyers
     elif bp is not None and st not in (None, "QUIET", "WARMING UP") and ln > 0 and ((bp <= 40 and ctl != "buyers") or ctl == "sellers"):
         bits.append(trying(sb, "sellers") + f"; {100 - bp:.0f}% hitting the bid")
