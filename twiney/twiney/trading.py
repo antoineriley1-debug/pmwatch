@@ -1814,10 +1814,16 @@ class Trader:
                     self._cancel_unlocked(cur["id"], now)
                     self.auto.pop(symbol, None)
                 with self.engine.lock:
-                    st.play.update(trade_as="option", opt_key=str(key), opt_qty=n, trade_as_set=True)
-                    # the contract sets the direction: a call is the LONG side, a put the SHORT side. A one-sided play
-                    # on the other side turns (a two-sided play already has both: the contract rides its own side)
+                    # the contract's direction: a call is the LONG side, a put the SHORT side. The drawn levels decide
+                    # the side first (a 2nd entry under the pivot IS a short): a contract against them is refused,
+                    # never silently turned. With no levels saying otherwise, the contract sets the side (a two-sided
+                    # play already has both: the contract rides its own side)
                     want = "long" if right == "C" else "short"
+                    levels_say = self.engine.side_from_levels_only(st.play)
+                    if levels_say and levels_say != want and not st.play.get("alt"):
+                        return {"ok": False, "reason": f"{key} is a {'CALL' if right == 'C' else 'PUT'} ({want.upper()} side) but your levels draw a "
+                                                      f"{levels_say.upper()}: pick a {'PUT' if levels_say == 'short' else 'CALL'}, or redraw the levels"}
+                    st.play.update(trade_as="option", opt_key=str(key), opt_qty=n, trade_as_set=True)
                     if st.play.get("side", "long") != want and not st.play.get("alt"):
                         st.play["side"] = want; st.play["side_set"] = True
                         self._note(now, f"{symbol}: a {'CALL' if right == 'C' else 'PUT'} is the {want.upper()} side — the play is {want.upper()} now", True)

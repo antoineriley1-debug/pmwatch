@@ -181,9 +181,11 @@ class OptionsFromTheStockChartTests(unittest.TestCase):
 
     def test_put_in_when_the_stock_breaks_down_through_the_short_entry(self):
         e, tr, broker, T, key = self._setup("P")
-        tr.set_trade_as("AAA", "option", key, 1, T)
-        self.assertEqual(e.syms["AAA"].play["side"], "short")                   # a put makes the play SHORT
+        out = tr.set_trade_as("AAA", "option", key, 1, T)
+        self.assertFalse(out["ok"])                                             # the drawn levels say LONG: a put is refused, never turns them
         e.set_play_level("AAA", "second_entry", None, T, source="chart")
+        self.assertTrue(tr.set_trade_as("AAA", "option", key, 1, T)["ok"])
+        self.assertEqual(e.syms["AAA"].play["side"], "short")                   # with no 2nd entry drawn, a put makes the play SHORT
         e.set_play_level("AAA", "second_entry", 9.80, T, source="chart")
         self._move(e, tr, 9.95, T + 1)
         self.assertFalse([o for o in e.orders.values() if o.get("symbol") == key])

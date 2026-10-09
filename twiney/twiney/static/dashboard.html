@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261009-1454">
+<meta name="build" content="20261009-1524">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -7779,22 +7779,28 @@ function optLinkFor(sym){ return ((state && state.trading && state.trading.opt_l
 function linkedContract(sym){ const k = OCH.key || (OC.link && OC.link.key); if (k && k.split(" ")[0] === sym) return k;
   const d = paneFor(sym); return d && d.play && d.play.trade_as === "option" && d.play.opt_key ? d.play.opt_key : null; }
 function shortKey(k){ const [s, e, x] = k.split(" "); return `${s} ${e.slice(4, 6)}/${e.slice(6, 8)} ${x}`; }
-function tradeAsBox(sym, se, onPick, onCancel){
+function tradeAsBox(sym, se, side, onPick, onCancel){
   const old = document.getElementById("modal"); if (old) old.remove();
-  const k = linkedContract(sym), ol = optLinkFor(sym), n0 = (ol && ol.qty) || OCH.n || 1, t = (state && state.trading) || {};
+  // the contract on the OPTION CHART is offered only when it is THIS stock's and fits the 2nd entry's side (a CALL on
+  // a LONG, a PUT on a SHORT): anything else, and the 2nd entry trades the STOCK (Enter)
+  const k0 = linkedContract(sym), right = k0 ? (k0.split(" ")[2] || "").slice(-1) : null;
+  const fits = !!k0 && k0.split(" ")[0] === sym && ((right === "C") === (side !== "short"));
+  const k = fits ? k0 : null, ol = fits ? optLinkFor(sym) : null, n0 = (ol && ol.qty) || OCH.n || 1, t = (state && state.trading) || {};
+  const why = k ? "" : k0 && k0.split(" ")[0] === sym ? `${esc(shortKey(k0))} is a ${right === "C" ? "CALL (the LONG side)" : "PUT (the SHORT side)"} — this 2nd entry is a ${side.toUpperCase()}. Pick a ${side === "short" ? "PUT" : "CALL"} in OPTIONS to trade the contract`
+    : "no " + esc(sym) + " contract picked in OPTIONS — the 2nd entry trades the STOCK";
   const m = document.createElement("div"); m.id = "modal"; m.className = "tradeas";
-  m.innerHTML = `<div class="box"><h2>2ND ENTRY ${esc(sym)} ${px(se)} — TRADE IT WITH</h2>
-    <div class="ta"><button class="pick stock ${ol ? "" : "on"}" data-ta="stock"><b>STOCK</b><span>${esc(sym)} shares · the entry order goes in now${t.armed ? "" : " (once ARMED)"}</span></button>
-    <button class="pick opt ${ol ? "on" : ""}" data-ta="option" ${k ? "" : "disabled"}><b>OPTIONS</b><span>${k ? `BUY <input id="taN" type="number" min="1" step="1" value="${n0}"> × ${esc(shortKey(k))} when ${esc(sym)} trades through ${px(se)}` : "no " + esc(sym) + " contract on the OPTION CHART yet — pick one in OPTIONS first"}</span></button></div>
+  m.innerHTML = `<div class="box"><h2>${side === "short" ? "SHORT" : "LONG"} 2ND ENTRY ${esc(sym)} ${px(se)} — TRADE IT WITH</h2>
+    <div class="ta"><button class="pick stock ${ol ? "" : "on"}" data-ta="stock"><b>STOCK</b><span>${esc(sym)} shares · the entry order goes in now${t.armed ? "" : " (once ARMED)"}${k ? "" : " · Enter"}</span></button>
+    <button class="pick opt ${ol ? "on" : ""}" data-ta="option" ${k ? "" : "disabled"}><b>OPTIONS</b><span>${k ? `BUY <input id="taN" type="number" min="1" step="1" value="${n0}"> × ${esc(shortKey(k))} when ${esc(sym)} trades through ${px(se)}` : why}</span></button></div>
     <div class="legs">OPTIONS: the STOP line takes the contract out when ${esc(sym)} trades through it, the TARGET sells every contract. All limits.</div>
     <div class="btns"><button class="no">Cancel (Esc)</button></div></div>`;
   let picked = false;
   const close = () => { m.remove(); document.removeEventListener("keydown", key); if (!picked && onCancel) onCancel(); };
-  const key = e => { if (e.key === "Escape") close(); };
+  const key = e => { if (e.key === "Escape") close(); if (e.key === "Enter" && !k){ e.preventDefault(); picked = true; close(); onPick({trade_as: "stock"}); } };
   m.querySelector(".no").onclick = close;
   m.onclick = e => { if (e.target === m) return close(); const b = e.target.closest("button[data-ta]"); if (!b || e.target.tagName === "INPUT") return;
     const n = Math.max(1, Math.round(+(m.querySelector("#taN") || {}).value || 1)); picked = true; close();
-    onPick(b.dataset.ta === "option" ? {trade_as: "option", opt_key: k, opt_qty: n} : {trade_as: "stock"}); };
+    onPick(b.dataset.ta === "option" && k ? {trade_as: "option", opt_key: k, opt_qty: n} : {trade_as: "stock"}); };
   document.addEventListener("keydown", key); document.body.appendChild(m);
 }
 { const rawPost = post;
@@ -7805,7 +7811,10 @@ function tradeAsBox(sym, se, onPick, onCancel){
       const alt = body.role === "alt_second_entry" || (body.side && body.side !== (pl.side || "long"));
       const had = alt ? (pl.alt || {}).second_entry : pl.second_entry;
       if (!had && d && !pl.trade_as_set){   // a NEW 2nd entry and STOCK / OPTION not picked yet on the ORDER BAR: ask
-        return new Promise(res => tradeAsBox(d.symbol, +body.price, async pick => res(await rawPost(path, Object.assign({}, body, pick))),
+        // the side this 2nd entry draws: under the pivot a SHORT, over it a LONG (the other side's line is the opposite)
+        const own = pl.side || "long", trig = pl.trigger != null ? +pl.trigger : null, pr = +body.price;
+        const side = alt ? (own === "long" ? "short" : "long") : (trig != null && pr !== trig ? (pr < trig ? "short" : "long") : own);
+        return new Promise(res => tradeAsBox(d.symbol, +body.price, side, async pick => res(await rawPost(path, Object.assign({}, body, pick))),
                                              () => res({ok: false, reason: "not drawn (cancelled)"})));
       }
     }

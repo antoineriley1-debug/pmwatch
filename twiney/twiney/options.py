@@ -22,6 +22,15 @@ def parse_key(key):
     return sym, exp, float(rest[:-1]), rest[-1]
 
 
+def fits_side(key, side):
+    """A CALL rides the LONG side, a PUT the SHORT side. None = not an option key."""
+    try:
+        right = parse_key(str(key or ""))[3]
+    except (ValueError, IndexError):
+        return None
+    return (right == "C") == ((side or "long") == "long")
+
+
 def strike_step(spot):
     return 0.5 if spot < 25 else 1.0 if spot < 200 else 2.5 if spot < 500 else 5.0
 

@@ -877,6 +877,20 @@ def _alt_side(raw):
     return out
 
 
+def _opt_link_ok(item):
+    """A saved OPTIONS link is kept only when a 2nd entry is drawn and the contract fits the side the levels draw."""
+    if str(item.get("trade_as", "")).lower() != "option" or not item.get("opt_key") or item.get("second_entry") is None:
+        return False
+    from . import options as _o
+    stop, target, trigger, second = item.get("stop"), item.get("target"), item.get("trigger"), item.get("second_entry")
+    side = item.get("side") or "long"
+    if stop and target and stop != target:
+        side = "short" if stop > target else "long"
+    elif trigger and second and trigger != second:
+        side = "short" if second < trigger else "long"
+    return _o.fits_side(item["opt_key"], side) is True
+
+
 def validate_plays(raw):
     items = raw.get("plays") if isinstance(raw, dict) else raw
     if not isinstance(items, list) or not items:
@@ -965,10 +979,11 @@ def validate_plays(raw):
             "auto": bool(item.get("auto", True)),
             "side_set": bool(item.get("side_set", False)),
             # the chart's lines trade the STOCK, or the option contract linked from the OPTION CHART (opt_key, opt_qty)
-            "trade_as_set": bool(item.get("trade_as_set", False)),
-            "trade_as": "option" if str(item.get("trade_as", "")).lower() == "option" and item.get("opt_key") else "stock",
-            **({"opt_key": str(item["opt_key"]), "opt_qty": max(1, int(item.get("opt_qty") or 1))}
-               if str(item.get("trade_as", "")).lower() == "option" and item.get("opt_key") else {}),
+            # a saved contract link loads only while it fits the side the saved levels draw (a call on a long, a
+            # put on a short) and a 2nd entry is still drawn; STOCK / OPTIONS is asked again at the next new 2nd entry
+            "trade_as_set": False,
+            "trade_as": "option" if _opt_link_ok(item) else "stock",
+            **({"opt_key": str(item["opt_key"]), "opt_qty": max(1, int(item.get("opt_qty") or 1))} if _opt_link_ok(item) else {}),
             **({"alt": _alt_side(item.get("alt"))} if _alt_side(item.get("alt")) else {}),
             "exchange": str(item.get("exchange", "SMART")).upper(),
             "primary_exchange": str(item.get("primary_exchange", "")).upper(),

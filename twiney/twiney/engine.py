@@ -2848,6 +2848,10 @@ class Engine:
                 return True
             if role == "trigger" and price is not None:
                 st.play["watch"] = False  # a typed-in ticker becomes a real play once it has a pivot
+                if st.play.get("trigger") is None and (st.play.get("trade_as_set") or st.play.get("opt_key")):
+                    # a NEW pivot is a new play: yesterday's contract link never rides today's 2nd entry. The next 2nd
+                    # entry asks STOCK / OPTIONS again (a contract picked in OPTIONS is offered only if it fits the side)
+                    self._unlink_contract(st, t, "a new pivot: the 2nd entry trades the STOCK unless you pick a contract that fits")
             old = st.play.get(role)
             st.play[role] = price
             if role == "second_entry" and price is not None and (old is None or price_key(old) != price_key(price)):
@@ -2865,6 +2869,7 @@ class Engine:
                 st.play["mp"] = price
             if role in ("target", "stop", "second_entry") and price is not None:
                 self._side_from_levels(st, t)
+                self._opt_fit(st, t)
             if role in ("trigger", "second_entry"):
                 # drop the old trackers for this role (unless another role shares that price)
                 if old is not None:
@@ -3813,6 +3818,49 @@ class Engine:
     def side_picked(play):
         """Has the trader taken a side on this ticker (a pick, or levels that only fit one side)? See board.side_picked."""
         return board.side_picked(play)
+
+    def _unlink_contract(self, st, t, why):
+        """The chart's lines go back to trading the STOCK (no contract rides them)."""
+        from . import options as _o
+        key = st.play.get("opt_key")
+        st.play["trade_as"] = "stock"
+        st.play["trade_as_set"] = False
+        st.play.pop("opt_key", None)
+        st.play.pop("opt_qty", None)
+        tr = getattr(self, "trader", None)
+        if tr is not None and getattr(tr, "opt_link", None) is not None:
+            tr.opt_link.pop(st.symbol, None)
+        self._message("warn", f"{st.symbol}: {'the ' + str(key) + ' link is off: ' if key else ''}{why}", t or self.last_t, st.symbol)
+        self.log(st.symbol, f"contract link off ({why})", t, kind="level")
+
+    def _opt_fit(self, st, t=None):
+        """The linked contract must fit the side the levels say: a CALL on a LONG, a PUT on a SHORT. One that does
+        not (yesterday's call under today's short 2nd entry) comes off, and the 2nd entry trades the STOCK."""
+        from . import options as _o
+        if st.play.get("trade_as") != "option" or not st.play.get("opt_key"):
+            return True
+        side = st.play.get("side", "long")
+        fit = _o.fits_side(st.play["opt_key"], side)
+        if fit is False:
+            key = st.play["opt_key"]
+            right = _o.parse_key(key)[3]
+            self._unlink_contract(st, t, f"{key} is a {'CALL' if right == 'C' else 'PUT'}, the {'LONG' if right == 'C' else 'SHORT'} side; "
+                                         f"your 2nd entry is a {side.upper()}. The 2nd entry trades the STOCK (pick a "
+                                         f"{'PUT' if side == 'short' else 'CALL'} in OPTIONS to trade the contract)")
+            return False
+        return True
+
+    @staticmethod
+    def side_from_levels_only(play):
+        """What the drawn levels say the side is (None when they say nothing): a stop above the target or a 2nd
+        entry under the pivot is a SHORT; the other way round a LONG."""
+        stop, target = play.get("stop"), play.get("target")
+        trigger, second = play.get("trigger"), play.get("second_entry")
+        if stop and target and stop != target:
+            return "short" if stop > target else "long"
+        if trigger and second and trigger != second:
+            return "short" if second < trigger else "long"
+        return None
 
     def _side_from_levels(self, st, t=None):
         """The side reads off the levels: a stop ABOVE the target can only be a short, a stop BELOW it a long
