@@ -17,7 +17,7 @@ function renderQuote(d){
     <span class="dim">PIVOT <b style="color:#dbe3ee">${px(pl.trigger)}</b> 2ND <b style="color:var(--cyan)">${px(pl.second_entry)}</b> TGT <b style="color:var(--buy)">${px(pl.target)}</b> STOP <b style="color:var(--sell)">${px(pl.stop)}</b></span>
     ${g ? `<span class="p-ps60" style="margin:0;height:auto;overflow:visible"><span class="g ${g.grade}" title="${esc(g.why)}">${g.grade}</span></span>` : ""}
     <span class="dim">${esc(d.health.status)}${d.pinned ? " · PINNED" : ""}${(d.book && (d.book.bids.length || d.book.asks.length)) ? "" : " · no depth"}</span>`;
-  const scr = store.get("screen", "blue");
+  const scr = store.get("screen", "white");
   const html2 = html + `<span class="spacer"></span><select class="qscreen" data-qscreen="1" title="chart screen">${[["blue", "BLUE"], ["white", "WHITE"], ["pink", "PINK"], ["custom", "CUSTOM"], ["desk", "DESK"]].map(([v, l]) => `<option value="${v}" ${scr === v ? "selected" : ""}>${l}</option>`).join("")}</select><button class="qtools ${store.get("tools", false) ? "on" : ""}" data-tools="1" title="show / hide the chart toolbar">TOOLS</button>`;
   const html3 = html2 + `<button class="qgear" data-gear="1" title="chart settings">⚙</button>`;
   if (el.dataset.h !== html3){ el.dataset.h = html3; el.innerHTML = html3; }
@@ -191,6 +191,17 @@ function renderBreakTraps(d){
   if (w.dataset.h !== sym + h){ w.dataset.h = sym + h; w.querySelector(".bts").textContent = d.symbol; w.querySelector(".btb").innerHTML = h; }
   if (w.hidden) w.hidden = false;
 }
+/* the 5-minute candle being built right now (and the one before it), from the 1-minute bars: for the CANDLE ladder */
+function ladderCandle(d){
+  const bars = d.bars || [], last = d.last != null ? +d.last : null;
+  if (!bars.length || last == null || typeof bucketFn !== "function") return null;
+  const now = (state && state.now) || Date.now() / 1000, bk = bucketFn(5), cur = bk(now), prev = cur - 300;
+  const inb = bars.filter(b => b[0] >= cur && b[0] < cur + 300), pb = bars.filter(b => b[0] >= prev && b[0] < cur);
+  const agg = rows => rows.length ? {open: +rows[0][1], high: Math.max(...rows.map(b => +b[2])), low: Math.min(...rows.map(b => +b[3])), close: +rows[rows.length - 1][4]} : null;
+  const c = agg(inb) || {open: last, high: last, low: last, close: last};
+  c.high = Math.max(c.high, last); c.low = Math.min(c.low, last); c.last = last; c.prev = agg(pb);
+  return c;
+}
 function renderBook(d){
   try { renderBreakTraps(d); } catch (e) {}
   const wrap = P.book.pc.querySelector(".ladder-wrap");
@@ -205,6 +216,7 @@ function renderBook(d){
     d.ladder.seq = d.seq; d.ladder.pps = d.tape && d.tape.speed ? d.tape.speed.pps : null; }   // the BASKET ladder's sequence and fast mode    // PACE OF TAPE and the PS60 STORY line ride on top of the ladder
   window._fundLv = {}; for (const x of ((d.inst && d.inst.levels) || [])) window._fundLv[(+x.price).toFixed(2) + (x.side === "bid" ? "b" : "s")] = x;   // FUND score by level
   window._darkLv = {}; for (const x of ((d.dark && d.dark.levels) || [])) if (x.usd >= 200000) window._darkLv[(+x.price).toFixed(2)] = x;   // dark $ by price for the ladder
+  if (d.ladder && store.get("ladMode", "clean") === "candle") d.ladder.candle = ladderCandle(d);   // the 5-minute candle on the rows
   const html = ladderHTML(training() ? Object.assign({}, d.ladder, {rows: d.ladder.rows.map(r => Object.assign({}, r, {bid_state: null, ask_state: null, bid_refills: 0, ask_refills: 0, bid_verdict: null, ask_verdict: null}))}) : d.ladder);
   if (P.book.last === html){ try { basketFx(wrap, d); } catch (e) {} return; }   // nothing redrawn: the basket clock still ticks
   P.book.last = html;
@@ -748,7 +760,7 @@ async function setLadQty(n){ n = Math.max(1, Math.round(+n || 0)); if (!n) retur
 document.getElementById("ladQty").addEventListener("change", e => setLadQty(e.target.value));
 document.getElementById("ladQty").addEventListener("keydown", e => { e.stopPropagation(); if (e.key === "Enter"){ setLadQty(e.target.value); e.target.blur(); } });
 document.getElementById("ladPresets").addEventListener("click", e => { const b = e.target.closest("button[data-qp]"); if (b) setLadQty(b.dataset.qp); });
-(function(){ const b = document.getElementById("ladMode"); if (!b) return; const MODES = ["clean", "basket", "pro", "simple", "tight", "wide"];
+(function(){ const b = document.getElementById("ladMode"); if (!b) return; const MODES = ["clean", "candle", "basket", "pro", "simple", "tight", "wide"];
   if (!store.get("ladClean1", false)){ store.set("ladClean1", true); store.set("ladMode", "clean"); }   // the CLEAN ladder arrives as the default once
   const paint = () => { b.textContent = store.get("ladMode", "clean").toUpperCase(); }; paint();
   b.addEventListener("click", () => { const m = store.get("ladMode", "clean"); store.set("ladMode", MODES[(MODES.indexOf(m) + 1) % MODES.length]); paint(); P.book.last = null; poll(true); }); })();
@@ -1712,6 +1724,11 @@ document.getElementById("voiceFlowBtn").addEventListener("click", () => { store.
 document.getElementById("soloBtn").addEventListener("click", () => { store.set("solo", !solo()); renderVoiceBtns(); const el = document.getElementById("flowList"); if (el) el.dataset.h = ""; if (state) renderFlow(state); say(solo() ? "This ticker only." : "All tickers.", true); });
 renderVoiceBtns();
 document.getElementById("replayBtn").addEventListener("click", () => replayLast());
+/* THE DESK THEME: white (light) or dark, for the whole desk (the ladder, the tape, the panels). The chart keeps its own
+   screen colour. Saved per browser */
+(function(){ const b = document.getElementById("deskTheme"); if (!b) return;
+  const paint = () => { const w = store.get("deskTheme", "white") === "white"; document.body.classList.toggle("whitedesk", w); b.textContent = w ? "DESK WHITE" : "DESK DARK"; }; paint();
+  b.addEventListener("click", () => { store.set("deskTheme", store.get("deskTheme", "white") === "white" ? "dark" : "white"); paint(); if (P.book) P.book.last = null; if (P.tape) P.tape.last = null; Object.values(charts || {}).forEach(c => { try { drawChart(c); } catch (e) {} }); }); })();
 document.getElementById("voiceBtn").addEventListener("click", () => { const on = !store.get("voice", true); store.set("voice", on); document.getElementById("voiceBtn").textContent = on ? "VOICE ON" : "VOICE OFF"; if (on) say("Voice on.", true); renderTabs(); });
 document.getElementById("voiceVol").value = store.get("voiceVol", 1);
 document.getElementById("voiceVol").addEventListener("change", e => store.set("voiceVol", +e.target.value));

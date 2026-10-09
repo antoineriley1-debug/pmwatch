@@ -1648,6 +1648,28 @@ function cleanTags(r, price){
   return out;
 }
 function tagsHTML(tags){ return tags.map(o => `<span class="kt" style="--kc:${o.c}" title="${esc(o.n)}">${esc(o.t)}</span>`).join(""); }
+/* THE CANDLE LADDER: the CLEAN ladder with the 5-minute candle you are watching drawn down its rows. The body runs
+   from the candle's open to the last print, the wick from its high to its low (green building up, red building
+   down), the prior candle a ghost beside it. Resting size on the rows IS the wick: prints eat it and the size goes
+   down; size that comes back at the same price is a reload. An option on the LEVEL II bar (CANDLE), nothing else
+   changes. */
+function ladderCandleHTML(L){
+  const base = ladderCleanHTML(L), c = L.candle, tk = +L.tick || 0.01, half = tk / 2 + 1e-9;
+  const left = typeof barCloseIn === "function" ? barCloseIn(5) : "";
+  const th = `<th class="cdl" data-w="20" data-min="14" title="THE CANDLE: the 5-minute candle drawn on the ladder rows. Body = open to last, wick = high to low (green building up, red down), ghost = the prior candle. The resting size on the rows is the wick: prints eat it, the size goes down; size that comes back is a reload">5m${left ? `<i>${esc(left)}</i>` : ""}</th>`;
+  let h = base.replace('<table class="lad clean" data-cols="ladc"><tr>', `<table class="lad clean candle" data-cols="ladc"><tr>${th}`);
+  if (!c) return h.replace(/(<tr class="[^"]*" data-price="[^"]+"[^>]*>)/g, '$1<td class="cdl"></td>');
+  const up = c.last >= c.open, bLo = Math.min(c.open, c.last), bHi = Math.max(c.open, c.last);
+  const pUp = c.prev ? c.prev.close >= c.prev.open : null, pLo = c.prev ? Math.min(c.prev.open, c.prev.close) : null, pHi = c.prev ? Math.max(c.prev.open, c.prev.close) : null;
+  return h.replace(/<tr class="([^"]*)" data-price="([^"]+)"([^>]*)>/g, (m, cls, p, rest) => {
+    const q = +p, k = [up ? "c-up" : "c-dn"];
+    if (q >= bLo - half && q <= bHi + half) k.push("cb"); else if (q >= c.low - half && q <= c.high + half) k.push("cw");
+    if (Math.abs(q - c.open) <= half) k.push("c-open"); if (Math.abs(q - c.last) <= half) k.push("c-last");
+    if (Math.abs(q - c.high) <= half) k.push("c-high"); if (Math.abs(q - c.low) <= half) k.push("c-low");
+    if (c.prev){ k.push(pUp ? "p-up" : "p-dn"); if (q >= pLo - half && q <= pHi + half) k.push("pb"); else if (q >= c.prev.low - half && q <= c.prev.high + half) k.push("pw"); }
+    return `<tr class="${cls} ${k.join(" ")}" data-price="${p}"${rest}><td class="cdl"><i class="pg"></i><i class="wk"></i><i class="bd"></i></td>`;
+  });
+}
 function ladderCleanHTML(L){
   const on = canTrade(), last = L.last != null ? +L.last : null, tk = +L.tick || 0.01;
   const big = +L.big_shares || 0, mx = Math.max(1, +L.max_size || 1, ...L.rows.map(r => Math.max(r.bid || 0, r.ask || 0)));
@@ -1702,6 +1724,7 @@ function ladderHTML(L){
   if (!L || !L.rows.length) return `<div class="empty">Waiting for the book…</div>`;
   const mode = store.get("ladMode", "clean");
   if (mode === "clean") return ladderCleanHTML(L);
+  if (mode === "candle") return ladderCandleHTML(L);
   if (mode === "basket") return ladderBasketHTML(L);
   if (mode === "pro") return ladderProHTML(L);
   if (mode === "simple") return ladderSimpleHTML(L);
@@ -1911,7 +1934,7 @@ function drawOne(p, cv, v, isFoot){
   g.clearRect(0, 0, W, H);
   const tf = isFoot ? 5 : store.get("tf." + p.id, 1), isDaily = typeof tf === "string", span = isDaily ? 86400 : tf * 60;
   // the screen: DESK (dark) or an eSignal-style light screen — white, blue, pink or your own colour. Light screens get Dan's candles.
-  const screen = isFoot ? "desk" : store.get("screen", "blue");
+  const screen = isFoot ? "desk" : store.get("screen", "white");
   const SCREENS = {white: "#ffffff", blue: "#a9d1f2", pink: "#f4d3e2", custom: store.get("screenColor", "#dfe9f3")};
   const dan = screen !== "desk";
   const C = dan ? {bg: SCREENS[screen] || SCREENS.white, grid: "#5d6b7a", axis: "#111111", text: "#111111", up: "#00f900", dn: "#ff2600", wick: "#000000", border: "#000000", label: "#ffffff", pivot: "#111111", dots: true}

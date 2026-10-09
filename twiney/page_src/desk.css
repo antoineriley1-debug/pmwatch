@@ -1102,3 +1102,37 @@ table.lad.basket2 th .bkgear{background:none;border:0;color:#9aa4b4;cursor:point
 .tape2 tr.kid td{background:rgba(91,141,239,.14)}
 .tape2 .kidtag{display:inline-block;margin-right:3px;color:#5b8def;font-weight:700}
 .instrip b.kids{background:rgba(91,141,239,.16);padding:0 5px;border-radius:3px}
+
+/* THE CANDLE LADDER: the 5-minute candle drawn down the rows (CANDLE on the LEVEL II bar) */
+.lad.candle td.cdl{width:20px;min-width:20px;padding:0;position:relative;border-right:1px solid var(--line)}
+.lad.candle th.cdl{font-size:9px}.lad.candle th.cdl i{display:block;font-style:normal;font-size:8px;opacity:.75}
+.lad.candle td.cdl i{position:absolute;display:block}
+.lad.candle tr.c-up{--cc:#1fb86a}.lad.candle tr.c-dn{--cc:#e8404f}
+.lad.candle tr.cw td.cdl i.wk{left:50%;top:0;bottom:0;width:2px;margin-left:-1px;background:var(--cc)}
+.lad.candle tr.c-high.cw td.cdl i.wk{top:50%}.lad.candle tr.c-low.cw td.cdl i.wk{bottom:50%}
+.lad.candle tr.cb td.cdl i.bd{left:4px;right:4px;top:0;bottom:0;background:var(--cc);opacity:.92}
+.lad.candle tr.cb.c-high td.cdl i.bd{top:35%}.lad.candle tr.cb.c-low td.cdl i.bd{bottom:35%}
+.lad.candle tr.c-open td.cdl i.bd{border-top:2px solid rgba(255,255,255,.95)}
+.lad.candle tr.c-last td.cdl i.bd{box-shadow:0 0 7px 2px var(--cc)}
+.lad.candle tr.p-up{--pc:#1fb86a}.lad.candle tr.p-dn{--pc:#e8404f}
+.lad.candle tr.pw td.cdl i.pg{left:2px;top:0;bottom:0;width:0;border-left:1px dotted var(--pc);opacity:.6}
+.lad.candle tr.pb td.cdl i.pg{left:1px;top:0;bottom:0;width:3px;background:var(--pc);opacity:.35}
+.lad.candle tr.lastpx td.cdl{background:rgba(255,197,61,.10)}
+
+/* THE WHITE DESK (DESK WHITE on the toolbar): the same desk on a light screen */
+body.whitedesk{--bg:#ffffff;--panel:#f5f7fa;--panel2:#eaeef4;--line:#c6cfdb;--text:#14181f;--dim:#5a6577;--buy:#118a4d;--sell:#d6303f;--gold:#c58a00;--cyan:#0f7fb0;--violet:#6a3fd0;--warn:#b7791f}
+body.whitedesk .lad th,body.whitedesk .t th{background:#eaeef4;color:#3b4656}
+body.whitedesk .lad .px{color:#14181f}
+body.whitedesk .lad tr.lvl td.px{color:#000}
+body.whitedesk .lad tr.lvl td{border-color:rgba(0,0,0,.25)}
+body.whitedesk .bar-n{color:#14181f}
+body.whitedesk .lad tr.lastpx td.px{background:#ffc53d;color:#000}
+body.whitedesk .lad tr.lastpx td{background:rgba(197,138,0,.12)}
+body.whitedesk .lad.candle tr.c-open td.cdl i.bd{border-top-color:#000}
+body.whitedesk .mine{border-color:#000;color:#000}
+body.whitedesk .tape2 tr.kid td{background:rgba(15,127,176,.12)}
+body.whitedesk .splay{background:rgba(197,138,0,.10)}
+body.whitedesk .sfw{background:rgba(15,127,176,.08)}
+body.whitedesk .bar.sold{background:rgba(17,138,77,.45)}
+body.whitedesk .bar.bought{background:rgba(214,48,63,.45)}
+body.whitedesk .storyln b.pbp{background:#c58a00;color:#fff}

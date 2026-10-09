@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261009-0422">
+<meta name="build" content="20261009-0427">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -1415,6 +1415,40 @@ table.lad.basket2 th .bkgear{background:none;border:0;color:#9aa4b4;cursor:point
 .tape2 .kidtag{display:inline-block;margin-right:3px;color:#5b8def;font-weight:700}
 .instrip b.kids{background:rgba(91,141,239,.16);padding:0 5px;border-radius:3px}
 
+/* THE CANDLE LADDER: the 5-minute candle drawn down the rows (CANDLE on the LEVEL II bar) */
+.lad.candle td.cdl{width:20px;min-width:20px;padding:0;position:relative;border-right:1px solid var(--line)}
+.lad.candle th.cdl{font-size:9px}.lad.candle th.cdl i{display:block;font-style:normal;font-size:8px;opacity:.75}
+.lad.candle td.cdl i{position:absolute;display:block}
+.lad.candle tr.c-up{--cc:#1fb86a}.lad.candle tr.c-dn{--cc:#e8404f}
+.lad.candle tr.cw td.cdl i.wk{left:50%;top:0;bottom:0;width:2px;margin-left:-1px;background:var(--cc)}
+.lad.candle tr.c-high.cw td.cdl i.wk{top:50%}.lad.candle tr.c-low.cw td.cdl i.wk{bottom:50%}
+.lad.candle tr.cb td.cdl i.bd{left:4px;right:4px;top:0;bottom:0;background:var(--cc);opacity:.92}
+.lad.candle tr.cb.c-high td.cdl i.bd{top:35%}.lad.candle tr.cb.c-low td.cdl i.bd{bottom:35%}
+.lad.candle tr.c-open td.cdl i.bd{border-top:2px solid rgba(255,255,255,.95)}
+.lad.candle tr.c-last td.cdl i.bd{box-shadow:0 0 7px 2px var(--cc)}
+.lad.candle tr.p-up{--pc:#1fb86a}.lad.candle tr.p-dn{--pc:#e8404f}
+.lad.candle tr.pw td.cdl i.pg{left:2px;top:0;bottom:0;width:0;border-left:1px dotted var(--pc);opacity:.6}
+.lad.candle tr.pb td.cdl i.pg{left:1px;top:0;bottom:0;width:3px;background:var(--pc);opacity:.35}
+.lad.candle tr.lastpx td.cdl{background:rgba(227,168,58,.10)}
+
+/* THE WHITE DESK (DESK WHITE on the toolbar): the same desk on a light screen */
+body.whitedesk{--bg:#ffffff;--panel:#f5f7fa;--panel2:#eaeef4;--line:#c6cfdb;--text:#14181f;--dim:#5a6577;--buy:#118a4d;--sell:#d6303f;--gold:#c58a00;--cyan:#0f7fb0;--violet:#6a3fd0;--warn:#b7791f}
+body.whitedesk .lad th,body.whitedesk .t th{background:#eaeef4;color:#3b4656}
+body.whitedesk .lad .px{color:#14181f}
+body.whitedesk .lad tr.lvl td.px{color:#000}
+body.whitedesk .lad tr.lvl td{border-color:rgba(0,0,0,.25)}
+body.whitedesk .bar-n{color:#14181f}
+body.whitedesk .lad tr.lastpx td.px{background:#e3a83a;color:#000}
+body.whitedesk .lad tr.lastpx td{background:rgba(197,138,0,.12)}
+body.whitedesk .lad.candle tr.c-open td.cdl i.bd{border-top-color:#000}
+body.whitedesk .mine{border-color:#000;color:#000}
+body.whitedesk .tape2 tr.kid td{background:rgba(15,127,176,.12)}
+body.whitedesk .splay{background:rgba(197,138,0,.10)}
+body.whitedesk .sfw{background:rgba(15,127,176,.08)}
+body.whitedesk .bar.sold{background:rgba(17,138,77,.45)}
+body.whitedesk .bar.bought{background:rgba(214,48,63,.45)}
+body.whitedesk .storyln b.pbp{background:#c58a00;color:#fff}
+
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
   --buy:#3fb56f;--sell:#d9534f;--gold:#e3a83a;--cyan:#5aa9d6;--violet:#a48bd6;--warn:#d9a441;
@@ -1724,7 +1758,7 @@ body.resizing .zbody{pointer-events:none}
   <span class="clipgrp"><button id="clipBtn" title="Save the last minutes of this recording to the journal as a clip">CLIP</button><select id="clipLen" title="how far back the clip reaches"><option value="60">1m</option><option value="120" selected>2m</option><option value="300">5m</option><option value="600">10m</option></select></span>
   <span class="sep"></span>
   <button id="trainBtn" title="Training: no reload calls, tags or voice. You read the tape; REVEAL in the RELOADS window checks your call.">TRAIN OFF</button>
-  <button id="replayBtn" title="Say the last call again (in case you missed it)">🔁 LAST CALL</button><button id="voiceBtn" title="Voice on / off">VOICE ON</button><button id="voiceFlowBtn" title="Option flow in the voice: unusual calls / puts, repeat flow, the dough. Off = you hear reload buyers and sellers only">FLOW VOICE</button><button id="soloBtn" title="THIS TICKER: the voice and the OPTION FLOW panel follow the tab you are on and nothing else">ALL TICKERS</button>
+  <button id="deskTheme" title="the desk itself: WHITE (light) or DARK. The chart has its own screen colour (the select on the chart)">DESK WHITE</button><button id="replayBtn" title="Say the last call again (in case you missed it)">🔁 LAST CALL</button><button id="voiceBtn" title="Voice on / off">VOICE ON</button><button id="voiceFlowBtn" title="Option flow in the voice: unusual calls / puts, repeat flow, the dough. Off = you hear reload buyers and sellers only">FLOW VOICE</button><button id="soloBtn" title="THIS TICKER: the voice and the OPTION FLOW panel follow the tab you are on and nothing else">ALL TICKERS</button>
   <input type="range" id="voiceVol" min="0" max="1" step="0.1" style="width:60px" title="voice volume">
   <button id="soundBtn" title="beep on calls (active tab)">BEEP</button>
   <span class="spacer"></span>
@@ -2705,6 +2739,28 @@ function cleanTags(r, price){
   return out;
 }
 function tagsHTML(tags){ return tags.map(o => `<span class="kt" style="--kc:${o.c}" title="${esc(o.n)}">${esc(o.t)}</span>`).join(""); }
+/* THE CANDLE LADDER: the CLEAN ladder with the 5-minute candle you are watching drawn down its rows. The body runs
+   from the candle's open to the last print, the wick from its high to its low (green building up, red building
+   down), the prior candle a ghost beside it. Resting size on the rows IS the wick: prints eat it and the size goes
+   down; size that comes back at the same price is a reload. An option on the LEVEL II bar (CANDLE), nothing else
+   changes. */
+function ladderCandleHTML(L){
+  const base = ladderCleanHTML(L), c = L.candle, tk = +L.tick || 0.01, half = tk / 2 + 1e-9;
+  const left = typeof barCloseIn === "function" ? barCloseIn(5) : "";
+  const th = `<th class="cdl" data-w="20" data-min="14" title="THE CANDLE: the 5-minute candle drawn on the ladder rows. Body = open to last, wick = high to low (green building up, red down), ghost = the prior candle. The resting size on the rows is the wick: prints eat it, the size goes down; size that comes back is a reload">5m${left ? `<i>${esc(left)}</i>` : ""}</th>`;
+  let h = base.replace('<table class="lad clean" data-cols="ladc"><tr>', `<table class="lad clean candle" data-cols="ladc"><tr>${th}`);
+  if (!c) return h.replace(/(<tr class="[^"]*" data-price="[^"]+"[^>]*>)/g, '$1<td class="cdl"></td>');
+  const up = c.last >= c.open, bLo = Math.min(c.open, c.last), bHi = Math.max(c.open, c.last);
+  const pUp = c.prev ? c.prev.close >= c.prev.open : null, pLo = c.prev ? Math.min(c.prev.open, c.prev.close) : null, pHi = c.prev ? Math.max(c.prev.open, c.prev.close) : null;
+  return h.replace(/<tr class="([^"]*)" data-price="([^"]+)"([^>]*)>/g, (m, cls, p, rest) => {
+    const q = +p, k = [up ? "c-up" : "c-dn"];
+    if (q >= bLo - half && q <= bHi + half) k.push("cb"); else if (q >= c.low - half && q <= c.high + half) k.push("cw");
+    if (Math.abs(q - c.open) <= half) k.push("c-open"); if (Math.abs(q - c.last) <= half) k.push("c-last");
+    if (Math.abs(q - c.high) <= half) k.push("c-high"); if (Math.abs(q - c.low) <= half) k.push("c-low");
+    if (c.prev){ k.push(pUp ? "p-up" : "p-dn"); if (q >= pLo - half && q <= pHi + half) k.push("pb"); else if (q >= c.prev.low - half && q <= c.prev.high + half) k.push("pw"); }
+    return `<tr class="${cls} ${k.join(" ")}" data-price="${p}"${rest}><td class="cdl"><i class="pg"></i><i class="wk"></i><i class="bd"></i></td>`;
+  });
+}
 function ladderCleanHTML(L){
   const on = canTrade(), last = L.last != null ? +L.last : null, tk = +L.tick || 0.01;
   const big = +L.big_shares || 0, mx = Math.max(1, +L.max_size || 1, ...L.rows.map(r => Math.max(r.bid || 0, r.ask || 0)));
@@ -2759,6 +2815,7 @@ function ladderHTML(L){
   if (!L || !L.rows.length) return `<div class="empty">Waiting for the book…</div>`;
   const mode = store.get("ladMode", "clean");
   if (mode === "clean") return ladderCleanHTML(L);
+  if (mode === "candle") return ladderCandleHTML(L);
   if (mode === "basket") return ladderBasketHTML(L);
   if (mode === "pro") return ladderProHTML(L);
   if (mode === "simple") return ladderSimpleHTML(L);
@@ -2964,7 +3021,7 @@ function drawOne(p, cv, v, isFoot){
   g.clearRect(0, 0, W, H);
   const tf = isFoot ? 5 : store.get("tf." + p.id, 1), isDaily = typeof tf === "string", span = isDaily ? 86400 : tf * 60;
   // the screen: DESK (dark) or an eSignal-style light screen — white, blue, pink or your own colour. Light screens get Dan's candles.
-  const screen = isFoot ? "desk" : store.get("screen", "blue");
+  const screen = isFoot ? "desk" : store.get("screen", "white");
   const SCREENS = {white: "#ffffff", blue: "#a9d1f2", pink: "#f4d3e2", custom: store.get("screenColor", "#dfe9f3")};
   const dan = screen !== "desk";
   const C = dan ? {bg: SCREENS[screen] || SCREENS.white, grid: "#5d6b7a", axis: "#111111", text: "#111111", up: "#00f900", dn: "#ff2600", wick: "#000000", border: "#000000", label: "#ffffff", pivot: "#111111", dots: true}
@@ -4284,9 +4341,9 @@ function indPopHTML(){
     <label><input type="radio" name="volstyle" data-vol="dan" ${store.get("volstyle", "auto") === "dan" ? "checked" : ""}> Dan's: green up close, red down close</label>
     <label><input type="radio" name="volstyle" data-vol="desk" ${store.get("volstyle", "auto") === "desk" ? "checked" : ""}> desk: split buyers paid up / sellers hit bid</label>
     <h5>CANDLES</h5>
-    <div class="row"><span class="dim" style="width:64px">WICK</span><input type="range" data-cs="wick" min="1" max="8" step="0.5" value="${store.get("wick", store.get("screen", "blue") !== "desk" ? 3 : 1)}" style="flex:1"><span class="mono" data-csv="wick">${store.get("wick", store.get("screen", "blue") !== "desk" ? 3 : 1)}px</span></div>
+    <div class="row"><span class="dim" style="width:64px">WICK</span><input type="range" data-cs="wick" min="1" max="8" step="0.5" value="${store.get("wick", store.get("screen", "white") !== "desk" ? 3 : 1)}" style="flex:1"><span class="mono" data-csv="wick">${store.get("wick", store.get("screen", "white") !== "desk" ? 3 : 1)}px</span></div>
     <div class="row" title="empty bars kept right of the last candle, so price action isn't jammed against the edge. Double-click the chart to go back to it"><span class="dim" style="width:64px">SPACE →</span><input type="range" data-cs="rspace" min="0" max="40" step="1" value="${store.get("rspace", 0)}" style="flex:1"><span class="mono" data-csv="rspace">${store.get("rspace", 0)} bars</span></div>
-    <div class="row"><span class="dim" style="width:64px">BODY</span><input type="range" data-cs="body" min="20" max="95" step="5" value="${store.get("body", store.get("screen", "blue") !== "desk" ? 76 : 70)}" style="flex:1"><span class="mono" data-csv="body">${store.get("body", store.get("screen", "blue") !== "desk" ? 76 : 70)}%</span></div>
+    <div class="row"><span class="dim" style="width:64px">BODY</span><input type="range" data-cs="body" min="20" max="95" step="5" value="${store.get("body", store.get("screen", "white") !== "desk" ? 76 : 70)}" style="flex:1"><span class="mono" data-csv="body">${store.get("body", store.get("screen", "white") !== "desk" ? 76 : 70)}%</span></div>
     <h5>SMA</h5>${DAN_SMA.map(([n, col]) => box("s" + n, n + " SMA", col)).join("")}
     <h5>EMA</h5>${DAN_EMA.map(([n, col]) => box("e" + n, n + " EMA", col)).join("")}
     <h5>EMA · DAILY CHART ONLY</h5>${DAN_EMA_DAILY.map(([n, col]) => box("d" + n, n + " EMA", col)).join("")}
@@ -4342,7 +4399,7 @@ function renderTools(v){
     + `<button data-fit="1">fit</button><button data-vwap="1" class="${store.get("vwapOn", false) ? "on" : ""}">VWAP</button><button data-stEdge="1" class="${store.get("stEdge", false) ? "on" : ""}" title="candles to the right edge: the study labels go off the screen to the right, just the market. Click again to bring them back">▶|</button>`
     + `<button data-mas="1" class="${store.get("mas", true) ? "on" : ""}" title="Dan's moving averages: SMA 5/10/20/50/100/150/200, EMA 5/10/20/50/100/150/200, plus 34/65/89 EMA on Daily only">MAS</button>`
     + `<button data-bb="1" class="${store.get("bb", true) ? "on" : ""}" title="Bollinger Bands 20 / 2.0">BB</button>`
-    + `<select data-screen="1" class="${store.get("screen", "blue") !== "desk" ? "on" : ""}" title="the screen: dark desk, or an eSignal-style light screen with Dan's candles">${[["desk", "DESK"], ["white", "WHITE"], ["blue", "BLUE"], ["pink", "PINK"], ["custom", "CUSTOM"]].map(([v, l]) => `<option value="${v}" ${store.get("screen", "blue") === v ? "selected" : ""}>${l}</option>`).join("")}</select>`
+    + `<select data-screen="1" class="${store.get("screen", "white") !== "desk" ? "on" : ""}" title="the screen: dark desk, or an eSignal-style light screen with Dan's candles">${[["desk", "DESK"], ["white", "WHITE"], ["blue", "BLUE"], ["pink", "PINK"], ["custom", "CUSTOM"]].map(([v, l]) => `<option value="${v}" ${store.get("screen", "white") === v ? "selected" : ""}>${l}</option>`).join("")}</select>`
     + `<span class="menu ind"><button data-ind="1" title="pick the lines you want, set wick and body width">IND</button><div class="pop">${indPopHTML()}</div></span>`
     + `<button data-foot="1" class="${store.get("foot." + v.id, false) ? "on" : ""}" title="footprint on this timeframe">FOOT</button>`
     + `<button data-clean="1" class="${store.get("clean", true) ? "on" : ""}" title="clean chart: candles, volume, VWAP, your levels, your orders">clean</button>`
@@ -4644,7 +4701,7 @@ function renderQuote(d){
     <span class="dim">PIVOT <b style="color:#d6d6d3">${px(pl.trigger)}</b> 2ND <b style="color:var(--cyan)">${px(pl.second_entry)}</b> TGT <b style="color:var(--buy)">${px(pl.target)}</b> STOP <b style="color:var(--sell)">${px(pl.stop)}</b></span>
     ${g ? `<span class="p-ps60" style="margin:0;height:auto;overflow:visible"><span class="g ${g.grade}" title="${esc(g.why)}">${g.grade}</span></span>` : ""}
     <span class="dim">${esc(d.health.status)}${d.pinned ? " · PINNED" : ""}${(d.book && (d.book.bids.length || d.book.asks.length)) ? "" : " · no depth"}</span>`;
-  const scr = store.get("screen", "blue");
+  const scr = store.get("screen", "white");
   const html2 = html + `<span class="spacer"></span><select class="qscreen" data-qscreen="1" title="chart screen">${[["blue", "BLUE"], ["white", "WHITE"], ["pink", "PINK"], ["custom", "CUSTOM"], ["desk", "DESK"]].map(([v, l]) => `<option value="${v}" ${scr === v ? "selected" : ""}>${l}</option>`).join("")}</select><button class="qtools ${store.get("tools", false) ? "on" : ""}" data-tools="1" title="show / hide the chart toolbar">TOOLS</button>`;
   const html3 = html2 + `<button class="qgear" data-gear="1" title="chart settings">⚙</button>`;
   if (el.dataset.h !== html3){ el.dataset.h = html3; el.innerHTML = html3; }
@@ -4818,6 +4875,17 @@ function renderBreakTraps(d){
   if (w.dataset.h !== sym + h){ w.dataset.h = sym + h; w.querySelector(".bts").textContent = d.symbol; w.querySelector(".btb").innerHTML = h; }
   if (w.hidden) w.hidden = false;
 }
+/* the 5-minute candle being built right now (and the one before it), from the 1-minute bars: for the CANDLE ladder */
+function ladderCandle(d){
+  const bars = d.bars || [], last = d.last != null ? +d.last : null;
+  if (!bars.length || last == null || typeof bucketFn !== "function") return null;
+  const now = (state && state.now) || Date.now() / 1000, bk = bucketFn(5), cur = bk(now), prev = cur - 300;
+  const inb = bars.filter(b => b[0] >= cur && b[0] < cur + 300), pb = bars.filter(b => b[0] >= prev && b[0] < cur);
+  const agg = rows => rows.length ? {open: +rows[0][1], high: Math.max(...rows.map(b => +b[2])), low: Math.min(...rows.map(b => +b[3])), close: +rows[rows.length - 1][4]} : null;
+  const c = agg(inb) || {open: last, high: last, low: last, close: last};
+  c.high = Math.max(c.high, last); c.low = Math.min(c.low, last); c.last = last; c.prev = agg(pb);
+  return c;
+}
 function renderBook(d){
   try { renderBreakTraps(d); } catch (e) {}
   const wrap = P.book.pc.querySelector(".ladder-wrap");
@@ -4832,6 +4900,7 @@ function renderBook(d){
     d.ladder.seq = d.seq; d.ladder.pps = d.tape && d.tape.speed ? d.tape.speed.pps : null; }   // the BASKET ladder's sequence and fast mode    // PACE OF TAPE and the PS60 STORY line ride on top of the ladder
   window._fundLv = {}; for (const x of ((d.inst && d.inst.levels) || [])) window._fundLv[(+x.price).toFixed(2) + (x.side === "bid" ? "b" : "s")] = x;   // FUND score by level
   window._darkLv = {}; for (const x of ((d.dark && d.dark.levels) || [])) if (x.usd >= 200000) window._darkLv[(+x.price).toFixed(2)] = x;   // dark $ by price for the ladder
+  if (d.ladder && store.get("ladMode", "clean") === "candle") d.ladder.candle = ladderCandle(d);   // the 5-minute candle on the rows
   const html = ladderHTML(training() ? Object.assign({}, d.ladder, {rows: d.ladder.rows.map(r => Object.assign({}, r, {bid_state: null, ask_state: null, bid_refills: 0, ask_refills: 0, bid_verdict: null, ask_verdict: null}))}) : d.ladder);
   if (P.book.last === html){ try { basketFx(wrap, d); } catch (e) {} return; }   // nothing redrawn: the basket clock still ticks
   P.book.last = html;
@@ -5375,7 +5444,7 @@ async function setLadQty(n){ n = Math.max(1, Math.round(+n || 0)); if (!n) retur
 document.getElementById("ladQty").addEventListener("change", e => setLadQty(e.target.value));
 document.getElementById("ladQty").addEventListener("keydown", e => { e.stopPropagation(); if (e.key === "Enter"){ setLadQty(e.target.value); e.target.blur(); } });
 document.getElementById("ladPresets").addEventListener("click", e => { const b = e.target.closest("button[data-qp]"); if (b) setLadQty(b.dataset.qp); });
-(function(){ const b = document.getElementById("ladMode"); if (!b) return; const MODES = ["clean", "basket", "pro", "simple", "tight", "wide"];
+(function(){ const b = document.getElementById("ladMode"); if (!b) return; const MODES = ["clean", "candle", "basket", "pro", "simple", "tight", "wide"];
   if (!store.get("ladClean1", false)){ store.set("ladClean1", true); store.set("ladMode", "clean"); }   // the CLEAN ladder arrives as the default once
   const paint = () => { b.textContent = store.get("ladMode", "clean").toUpperCase(); }; paint();
   b.addEventListener("click", () => { const m = store.get("ladMode", "clean"); store.set("ladMode", MODES[(MODES.indexOf(m) + 1) % MODES.length]); paint(); P.book.last = null; poll(true); }); })();
@@ -6339,6 +6408,11 @@ document.getElementById("voiceFlowBtn").addEventListener("click", () => { store.
 document.getElementById("soloBtn").addEventListener("click", () => { store.set("solo", !solo()); renderVoiceBtns(); const el = document.getElementById("flowList"); if (el) el.dataset.h = ""; if (state) renderFlow(state); say(solo() ? "This ticker only." : "All tickers.", true); });
 renderVoiceBtns();
 document.getElementById("replayBtn").addEventListener("click", () => replayLast());
+/* THE DESK THEME: white (light) or dark, for the whole desk (the ladder, the tape, the panels). The chart keeps its own
+   screen colour. Saved per browser */
+(function(){ const b = document.getElementById("deskTheme"); if (!b) return;
+  const paint = () => { const w = store.get("deskTheme", "white") === "white"; document.body.classList.toggle("whitedesk", w); b.textContent = w ? "DESK WHITE" : "DESK DARK"; }; paint();
+  b.addEventListener("click", () => { store.set("deskTheme", store.get("deskTheme", "white") === "white" ? "dark" : "white"); paint(); if (P.book) P.book.last = null; if (P.tape) P.tape.last = null; Object.values(charts || {}).forEach(c => { try { drawChart(c); } catch (e) {} }); }); })();
 document.getElementById("voiceBtn").addEventListener("click", () => { const on = !store.get("voice", true); store.set("voice", on); document.getElementById("voiceBtn").textContent = on ? "VOICE ON" : "VOICE OFF"; if (on) say("Voice on.", true); renderTabs(); });
 document.getElementById("voiceVol").value = store.get("voiceVol", 1);
 document.getElementById("voiceVol").addEventListener("change", e => store.set("voiceVol", +e.target.value));
