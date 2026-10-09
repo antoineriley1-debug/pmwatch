@@ -5632,6 +5632,7 @@ class Engine:
                 "names": self._spoken_names(),
                 "studies_on": {k: bool((self.cfg.get("studies") or {}).get(k)) for k in ("gas", "airspace", "unvisited", "air_board", "gas_readout", "whole_numbers", "atr_zones")},
                 "slots": self.cfg["depth"]["slots"],
+                "depth_smart": bool(self.cfg["depth"].get("smart_depth", True)),
                 "auto_rotate": self.auto_rotate,
                 "ranking": ranking,
                 "user_alerts": [dict(a) for a in self.user_alerts],

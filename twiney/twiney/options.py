@@ -36,8 +36,13 @@ def strike_step(spot):
 
 
 def practice_expiries(now, n=6):
-    """The next n Fridays (today counts when it is a Friday), as IBKR expiry strings YYYYMMDD."""
-    d = datetime.fromtimestamp(now, NY).date()
+    """The next n Fridays, as IBKR expiry strings YYYYMMDD. Today counts when it is a Friday morning; from noon on
+    the expiry day the practice chain rolls to next week (hours from the close the model's prices barely move, so a
+    practice contract picked by default would be a dead one)."""
+    nyd = datetime.fromtimestamp(now, NY)
+    d = nyd.date()
+    if d.weekday() == 4 and nyd.hour >= 12:
+        d += timedelta(days=1)
     out = []
     while len(out) < n:
         if d.weekday() == 4:

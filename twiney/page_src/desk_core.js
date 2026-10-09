@@ -39,7 +39,10 @@ function applyLayout(){
     const zt = col.querySelector(`.zone[data-zone="${top}"]`), zb = col.querySelector(`.zone[data-zone="${bot}"]`), gh = col.querySelector(".gut.h");
     gh.style.display = t && b ? "" : "none";
     zt.classList.toggle("fill", t); zb.classList.toggle("fill", b && !t);
-    zb.style.height = t && b ? (s.r2[c] || 300) + "px" : "";
+    // the bottom window never squeezes the top one to nothing: on a short screen the top keeps at least 40% / 170 px
+    // (a ladder in 47 px is no ladder)
+    const wh = work.clientHeight || 0, cap = wh ? Math.max(90, wh - Math.max(170, wh * 0.4)) : Infinity;
+    zb.style.height = t && b ? Math.min(s.r2[c] || 300, cap) + "px" : "";
   }
   // a width gutter sits between two columns that are both on screen
   const on = ["L", "C", "R", "X"].filter(c => shown[c]);

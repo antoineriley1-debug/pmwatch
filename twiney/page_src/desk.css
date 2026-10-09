@@ -1172,3 +1172,52 @@ body.whitedesk .chart-wrap canvas,body.whitedesk img,body.whitedesk video{filter
 .slean.bear{border-left-color:#f85149} .slean.bear b{color:#f85149} .slean.bull{border-left-color:#3fb950} .slean.bull b{color:#3fb950}
 .slean u{text-decoration:none;font-weight:800;color:#e8b931} .slean .satt{font:11px var(--mono);padding:2px 0 0 0;color:#cfd6df} .slean .satt b{letter-spacing:.04em;margin-right:4px;color:#e8b931}
 .slean .satt.done{color:#9fb0c3} .slean .satt.done.ok b{color:#3fb950} .slean .satt.done.no b{color:#f85149}
+
+/* ================= TWINEY'S PRECISION LEVEL 2 (the DOM) ================= */
+.lad.dom{--wb:38,181,111;--ws:217,83,79;--vb:38,181,111;--vs:217,83,79;--tr:150,160,175}
+.lad.dom.cb{--wb:70,140,255;--ws:255,150,40;--vb:70,140,255;--vs:255,150,40}
+.lad.dom td{position:relative;font-variant-numeric:tabular-nums;height:calc(16px * var(--ladz,1) * var(--ladh,1))}
+.lad.dom td.sz,.lad.dom td.dvol,.lad.dom td.dtr{padding:0 3px}
+.lad.dom td.bsz,.lad.dom td.dvol.s{text-align:right} .lad.dom td.asz,.lad.dom td.dvol.b,.lad.dom td.dtr{text-align:left}
+.lad.dom td.px{text-align:center;font-weight:700;color:#e6e9ef;background:rgba(255,255,255,.025);width:58px}
+.lad.dom td.px sup{font-size:.7em;color:var(--dim);margin-left:2px}
+.lad.dom i.dbar{position:absolute;top:2px;bottom:2px;width:0;pointer-events:none;border-radius:1px;transition:width 160ms cubic-bezier(.2,.7,.3,1)}
+.lad.dom.still i.dbar{transition:none}
+.lad.dom td.bsz i.dbar{right:0;background:linear-gradient(to left,rgba(var(--wb),.42),rgba(var(--wb),.10))}
+.lad.dom td.asz i.dbar{left:0;background:linear-gradient(to right,rgba(var(--ws),.42),rgba(var(--ws),.10))}
+.lad.dom td.dvol.s i.dbar{right:0;background:rgba(var(--vs),.22)} .lad.dom td.dvol.b i.dbar{left:0;background:rgba(var(--vb),.22)}
+.lad.dom td.dtr i.dbar{left:0;background:rgba(var(--tr),.16)}
+.lad.dom td.sz .szn,.lad.dom td.dvol .vn,.lad.dom td.dtr .vn{position:relative;z-index:1}
+.lad.dom td.dvol.s .vn{color:rgb(var(--vs))} .lad.dom td.dvol.b .vn{color:rgb(var(--vb))} .lad.dom td.dtr .vn{color:#b9c2d0}
+.lad.dom td.dvol.pulse,.lad.dom td.dtr.pulse{animation:dompulse 220ms 1}
+@keyframes dompulse{0%{box-shadow:inset 0 0 0 2px rgba(255,255,255,.55)}100%{box-shadow:inset 0 0 0 0 rgba(255,255,255,0)}}
+.lad.dom td.sz.eat::before{display:none}                         /* the DOM draws its own bar: no second fill under it */
+.lad.dom tr.lastpx td{background:rgba(232,185,49,.07)} .lad.dom tr.lastpx td.px{outline:1px solid rgba(232,185,49,.55);outline-offset:-1px;color:#ffd866}
+.lad.dom tr.best-bid td.bsz .szn{color:#dff3e6} .lad.dom tr.best-ask td.asz .szn{color:#ffe0e0}
+.lad.dom tr.best-bid td.bsz,.lad.dom tr.best-ask td.asz{box-shadow:inset 0 -1px 0 rgba(255,255,255,.18)}
+.lad.dom td.rail{padding:0 2px;white-space:nowrap;overflow:hidden;font:700 calc(8.5px * var(--ladz,1)) var(--sans);letter-spacing:.02em;text-align:center;width:52px;max-width:52px}
+.lad.dom td.rail.has .lvm{max-width:calc(100% - 4px)} .lad.dom td.rail.has .rcl ~ .rcl{margin-left:1px}
+.lad.dom td.rail.has:has(.rcl) .lvm{max-width:46%}                     /* a marker and a cluster share the rail: the marker shortens, the cluster never crosses into the price */
+.lad.dom td.rail .lvm{display:inline-block;padding:0 3px;border-radius:2px;line-height:calc(12px * var(--ladz,1));background:rgba(255,255,255,.08);color:#dfe5ee;max-width:100%;overflow:hidden;text-overflow:ellipsis;vertical-align:middle}
+.lad.dom td.rail .lvm u{text-decoration:none;margin-left:2px;color:var(--gold)}
+.lad.dom td.rail .lvm.trg{background:rgba(232,185,49,.25);color:#ffe08a} .lad.dom td.rail .lvm.se{background:rgba(90,150,255,.25);color:#bcd4ff}
+.lad.dom td.rail .lvm.tp{background:rgba(38,181,111,.25);color:#b9f0d0} .lad.dom td.rail .lvm.sl{background:rgba(217,83,79,.25);color:#ffc2c0}
+.lad.dom td.rail .lvmore{display:none;position:fixed;z-index:60;background:#12161d;border:1px solid var(--line);padding:3px;box-shadow:0 4px 12px rgba(0,0,0,.5);white-space:nowrap}
+.lad.dom td.rail .lvmore .lvm{display:block;max-width:none;margin:1px 0;text-align:left}
+.lad.dom td.rail.open .lvmore{display:block}
+.lad.dom td.rail .rcl{display:inline-block;margin-left:2px;padding:0 3px;border-radius:8px;font:800 calc(8.5px * var(--ladz,1)) var(--mono);line-height:calc(12px * var(--ladz,1));vertical-align:middle;box-shadow:0 0 0 calc(1px + var(--n,0) * .35px) currentColor inset}
+.lad.dom td.rail .rcl.b{color:rgb(var(--wb));background:rgba(var(--wb),.14)} .lad.dom td.rail .rcl.s{color:rgb(var(--ws));background:rgba(var(--ws),.14)}
+.lad.dom td.rail .rcl.still{opacity:.8} .lad.dom td.rail .rcl.not{opacity:.55;box-shadow:none;text-decoration:line-through} .lad.dom td.rail .rcl.gone{opacity:.45;box-shadow:none}
+.lad.dom.no-sell th.volh.s,.lad.dom.no-sell td.dvol.s,.lad.dom.no-buy th.volh.b,.lad.dom.no-buy td.dvol.b,.lad.dom.no-rail th.railh,.lad.dom.no-rail td.rail,.lad.dom.no-traded th.trh,.lad.dom.no-traded td.dtr{display:none}
+.lad.dom td.mn{color:#9fb0c3;font-size:.9em;padding:0 3px}
+.lad.dom td.sz.fake .szn{text-decoration:line-through;opacity:.7}
+.lad.dom td.sz.big .szn{color:#f2d59a} .lad.dom td.sz.huge .szn{color:#fff;font-weight:800}
+.domhdr{display:flex;gap:8px;align-items:center;padding:2px 6px;font:10px var(--sans);color:#9fb0c3;background:#0b0f16;border-bottom:1px solid var(--line);white-space:nowrap;overflow:hidden}
+.domhdr .st{letter-spacing:.1em;padding:0 5px;border-radius:2px;background:#1c232c;color:#cfd6df} .domhdr.ok .st{background:#153a26;color:#7dffb8} .domhdr.warn .st{background:#3a2e12;color:#ffd866} .domhdr.bad .st{background:#3a1515;color:#ff8a96}
+.domhdr .src{overflow:hidden;text-overflow:ellipsis} .domhdr .age{font-family:var(--mono);color:#7d8590} .domhdr .stale{color:#ff8a96;letter-spacing:.08em}
+.domhdr .sp{flex:1} .domhdr .domrc{display:none;font:800 9px var(--sans);padding:0 6px;height:16px;line-height:16px} .domhdr .domrc.on{display:inline-block}
+.eatbar .pinbox{position:static;display:none;border-top:1px dashed var(--line);margin-top:2px;padding:2px 0 0 0;background:transparent} .eatbar .pinbox.on{display:flex}
+.lad.dom th .short{display:none} .lad.dom.narrow th .full{display:none} .lad.dom.narrow th .short{display:inline}
+.pnl[data-p="book"].short .eatbar .ltouch{display:none} .pnl[data-p="book"].short .eatbar .lstory{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-height:14px}
+.pnl[data-p="book"].short .eatbar .pinbox .txt{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.eatbar{max-height:38%;overflow:hidden}

@@ -1725,6 +1725,7 @@ function ladderCleanHTML(L){
 function ladderHTML(L){
   if (!L || !L.rows.length) return `<div class="empty">Waiting for the book…</div>`;
   const mode = store.get("ladMode", "clean");
+  if (mode === "dom") return ladderDomHTML(L);
   if (mode === "clean") return ladderCleanHTML(L);
   if (mode === "candle") return ladderCandleHTML(L);
   if (mode === "basket") return ladderBasketHTML(L);
@@ -2534,7 +2535,7 @@ function drawOne(p, cv, v, isFoot){
     const pxPerMin = cw / Math.max(1, barSec / 60);
     const step = Math.max(Math.round(barSec / 60), [1, 2, 5, 10, 15, 30, 60, 120, 180, 240, 360, 720].find(s0 => s0 * pxPerMin >= 64) || 720);
     const hhmm = m => String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0");
-    let prev = kA > 0 ? parts(bars[kA - 1][0]) : null;
+    let prev = kA > 0 && bars[kA - 1] ? parts(bars[kA - 1][0]) : null;     // a tiny chart can start past the last bar
     for (let k = kA; k <= kB; k++){
       const q = parts(bars[k][0]); let rank = 0, txt = "", kind = "t";
       if (!prev){ rank = 45; txt = isDaily ? `${MON[q.m]} ${String(q.y).slice(2)}` : `${MON[q.m]} ${q.d}`; kind = "day"; }   // the first bar of the history: no boundary behind it
