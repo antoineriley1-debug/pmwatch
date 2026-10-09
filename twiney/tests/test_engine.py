@@ -242,7 +242,9 @@ class FlowTests(unittest.TestCase):
             self.assertNotIn("trigger", saved)
             self.assertTrue(e.set_play_level("AAA", "stop", 9.50, 3.0))
             self.assertEqual(e.snapshot(4.0)["panes"][0]["play"]["stop"], 9.5)
-            self.assertFalse(e.set_play_level("AAA", "trigger", None, 5.0))     # trigger can't be cleared
+            self.assertTrue(e.set_play_level("AAA", "trigger", None, 5.0))      # the pivot comes off (right-click)
+            self.assertIsNone(e.syms["AAA"].play["trigger"]); self.assertTrue(e.syms["AAA"].play["watch"])
+            self.assertTrue(e.set_play_level("AAA", "trigger", 10.0, 5.5))       # and goes back on
             self.assertTrue(e.set_play_level("AAA", "second_entry", None, 6.0))  # 2nd entry can
             self.assertNotIn((BID, 1015), e.syms["AAA"].trackers)
 

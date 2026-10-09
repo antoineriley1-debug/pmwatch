@@ -54,6 +54,7 @@ def options_ny_off(t):
     from .ps60 import ny_offset
     return ny_offset(t)
 
+
 class _StudyView:
     """What the chart studies read of a symbol, copied: the maths runs on this, never on the live state."""
     def price(self):
@@ -2581,7 +2582,23 @@ class Engine:
                 if price <= 0:
                     return False
             if role == "trigger" and price is None:
-                return False  # a play always needs a trigger
+                old = st.play.get("trigger")
+                if old is None:
+                    return True
+                st.play["trigger"] = None
+                st.play["watch"] = True              # no pivot: a watch-only chart until you draw one
+                for side in (BID, ASK):
+                    tr = st.trackers.get((side, price_key(old)))
+                    if tr is not None:
+                        roles = [r for r in tr.role.split("+") if r != "trigger"]
+                        if roles:
+                            tr.role = "+".join(roles)
+                        else:
+                            del st.trackers[(side, price_key(old))]
+                self.log(symbol, f"PIVOT removed (was {narrative.px(old)})", t, kind="level")
+                self._rec({"ev": "play_level", "t": t or self.last_t, "sym": symbol, "role": role, "px": None})
+                self._save_plays()
+                return True
             if role == "trigger" and price is not None:
                 st.play["watch"] = False  # a typed-in ticker becomes a real play once it has a pivot
             old = st.play.get(role)
@@ -2727,6 +2744,8 @@ class Engine:
             for px_ in list(st.play.get("sneaky_levels") or []):
                 self.remove_level(symbol, px_, t, kind="sneaky")
             st.play.pop("alt", None)              # and the other side
+            st.play["zones"] = []                 # your zones too: a blank chart
+            st.play.pop("auto_stop_px", None)
             st.play["side_set"] = False          # a blank chart has no side until you pick one or draw it
             old = st.play.get("trigger")
             if old is not None:

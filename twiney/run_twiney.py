@@ -400,7 +400,11 @@ def main(argv=None):
             cfg = load_config(args.config) if os.path.exists(args.config) else build_config({})
             if args.port: cfg["dashboard"]["port"] = args.port
             plays = load_plays(args.plays) if os.path.exists(args.plays) else load_plays("plays.example.json")
-            CLEANED[0] = clean_chart(plays, cfg, args.plays)
+            # PRACTICE starts from a clean slate EVERY launch: its price is made up fresh each time, so a line drawn in an
+            # earlier practice session sits at a meaningless price. Lines you draw now stay until you move or delete them
+            CLEANED[0] = clean_chart(plays, {"trading": {"clean_chart_on_start": True}})
+            for p in plays:
+                p["extra_levels"], p["sneaky_levels"], p["zones"] = [], [], []
             return run_demo(cfg, plays, args)
         if args.replay:
             cfg = load_config(args.config) if os.path.exists(args.config) else build_config({})

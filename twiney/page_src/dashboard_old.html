@@ -1122,9 +1122,9 @@ function wireChart(p, cv, v, saveView, isFoot){
     if (p.data && v.chartY && !onAxis && !onTime && !(e.ctrlKey || e.metaKey)){
       const price = yAt(), per = (v.chartY[1] - v.chartY[0]) / ((v.chartH || 1) - 8);
       const nearOrder = (p.data.orders || []).some(o => o.price && Math.abs(o.price - price) <= per * 5);
-      // the pivot is locked on the chart: once set it only changes from PLAY SETUP (or the mark tool, which asks)
+      // every line you drew drags, the pivot too (dragging it is the deliberate move; it is logged)
       const bracketOn = !!(p.data.position && p.data.position.qty && (p.data.orders || []).some(o => o.role && !["entry", "flatten", "close"].includes(o.role)));
-      const lv = !nearOrder && (p.data.user_levels || []).find(l => l.role !== "trigger" && !(bracketOn && (l.role === "stop" || l.role === "target"))
+      const lv = !nearOrder && (p.data.user_levels || []).find(l => !(bracketOn && (l.role === "stop" || l.role === "target"))
         && Math.abs(l.price - price) <= per * 5);
       if (lv){
         e.preventDefault();
@@ -1140,7 +1140,7 @@ function wireChart(p, cv, v, saveView, isFoot){
           if (p.opt && typeof optLevel === "function"){ await optLevel(d.role, d.price, ((T().opt_levels || {})[OCH.key] || {}).n || OCH.n); return; }
           if (d.role === "extra"){ await post("/api/level", {symbol: p.data.symbol, price: d.from, on: false, role: "extra"});
             out = await post("/api/level", {symbol: p.data.symbol, price: d.price, on: true, role: "extra"}); }
-          else out = await post("/api/level", {symbol: p.data.symbol, price: d.price, role: d.role});
+          else out = await post("/api/level", {symbol: p.data.symbol, price: d.price, role: d.role, confirm: d.role === "trigger"});
           toast(out.ok ? `${d.label} moved to ${px(d.price)} — saved` : "Could not move " + d.label, out.ok); };
         window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
         return;
@@ -1274,6 +1274,21 @@ function takeProfitMenu(d, price){
       <div class="hh"><b class="${long ? "b" : "s"}">TAKE PROFIT @ ${px(price)}</b> <span class="dim">· ${act} of your ${sz(q)}</span></div>
       <div class="hb">${b(0.25, "25%")}${b(0.5, "50%")}${b(1, "ALL")}</div>${ok ? "" : `<div class="dim">profit is ${long ? "above" : "below"} ${px(last)} — this side is for a STOP</div>`}</div>`;
 }
+function hasLines(d){
+  const pl = d.play || {}, al = pl.alt || {};
+  return ["trigger", "second_entry", "stop", "target"].some(k => pl[k] != null || al[k] != null) || (pl.extra_levels || []).length || (pl.sneaky_levels || []).length || (pl.zones || []).length;
+}
+// CLEAR ALL MY LINES: every line you drew on this ticker comes off and every working order on it is cancelled. Holding a
+// position, you are told its stop / target orders go too (the position itself stays open)
+async function clearAllLines(d){
+  const q = d.position && d.position.qty ? Math.abs(d.position.qty) : 0;
+  if (!confirm(`Clear every line you drew on ${d.symbol} and cancel all ${d.orders.length} working order${d.orders.length === 1 ? "" : "s"} on it?` +
+               (q ? `\n\nYou hold ${q} ${d.position.qty > 0 ? "long" : "short"}: its STOP and TARGET orders are cancelled too — the position stays open with NO stop.` : ""))) return;
+  const c = d.orders.length ? await post("/api/trade/cancel_all", {symbol: d.symbol}) : {cancelled: 0};
+  const out = await post("/api/play", {symbol: d.symbol, action: "clear"});
+  toast(out.ok ? `${d.symbol}: every line cleared` + (c.cancelled ? `, ${c.cancelled} order${c.cancelled === 1 ? "" : "s"} cancelled` : "") : "Could not clear the lines", out.ok);
+  if (typeof poll === "function") poll(true);
+}
 function optHeldMenu(d, price){
   if (d.position && d.position.qty) return "";      // shares too: the stock chart is the shares', the contract lives on the OPTION CHART
   const c = heldContract(d); if (!c || (T().opt_indep || []).includes(c.key)) return "";
@@ -1364,8 +1379,9 @@ function chartMenu(p, v, x, y, price){
     <button data-do="zone" title="draw YOUR ZONE: this price is one edge, then click the chart at the other edge. The PS60 story watches it from then on">▭ ZONE from ${px(price)} (then click the other edge)</button>
     ${(() => { const z = ((d.play && d.play.zones) || []).find(z => price >= z[0] - 1e-9 && price <= z[1] + 1e-9);
       return z ? `<button data-do="rmzone" data-lo="${z[0]}" data-hi="${z[1]}">✕ Remove your zone ${px(z[0])}–${px(z[1])}</button>` : ""; })()}
-    ${(() => { const per = v.chartY ? (v.chartY[1] - v.chartY[0]) / ((v.chartH || 1) - 8) : 0; const lv = (d.user_levels || []).find(l => l.role !== "trigger" && Math.abs(l.price - price) <= per * 6);
+    ${(() => { const per = v.chartY ? (v.chartY[1] - v.chartY[0]) / ((v.chartH || 1) - 8) : 0; const lv = (d.user_levels || []).find(l => Math.abs(l.price - price) <= per * 6);
       return lv ? `<button data-do="rmlevel" data-role="${esc(lv.role)}" data-lp="${lv.price}">✕ Remove ${esc(lv.label)} ${px(lv.price)}</button>` : ""; })()}
+    ${hasLines(d) || d.orders.length ? `<button data-do="clearall" class="bclear" title="take off every line you drew on ${esc(d.symbol)} (pivot, 2nd entry, stop, target, extra lines, sneaky pivots, zones, both sides) and cancel every working order on it">✕ Clear all my lines${d.orders.length ? ` + cancel ${d.orders.length} order${d.orders.length === 1 ? "" : "s"}` : ""}</button>` : ""}
     ${!on ? `<div class="dim" style="font-size:11px;margin-top:4px">${esc(whyNot())}</div>` : ""}`;
   m.style.left = Math.min(x, window.innerWidth - 230) + "px"; m.style.top = Math.min(y, window.innerHeight - 160) + "px";
   document.body.appendChild(m);
@@ -1388,9 +1404,10 @@ function chartMenu(p, v, x, y, price){
     else if (b.dataset.do === "sneaky") post("/api/level", {symbol: d.symbol, price, on: true, role: "sneaky"}).then(out => { toast(out.ok ? `${d.symbol} SNEAKY PIVOT ${px(price)} — on the chart and the ladder` : "Could not mark it", out.ok); if (out.ok) poll(true); });
     else if (b.dataset.do === "alert") addAlert({symbol: d.symbol, kind: "price", price, when: "hit", repeat: false});
     else if (b.dataset.do === "zone"){ const tk = price >= 1 ? 0.01 : 0.0001; v.levelTool = "zone"; v.zoneStart = +(Math.round(price / tk) * tk).toFixed(4); renderTools(p); toast(`Zone edge ${px(v.zoneStart)}: now click the other edge`, true); }
+    else if (b.dataset.do === "clearall") clearAllLines(d);
     else if (b.dataset.do === "rmzone") post("/api/zone", {symbol: d.symbol, lo: +b.dataset.lo, hi: +b.dataset.hi, on: false}).then(out => { toast(out.ok ? "Zone removed" : "Could not remove it", out.ok); if (out.ok) poll(true); });
     else if (b.dataset.do === "rmlevel"){ const role = b.dataset.role, lp = +b.dataset.lp;
-      (role === "extra" || role === "sneaky" ? post("/api/level", {symbol: d.symbol, price: lp, on: false, role}) : post("/api/level", {symbol: d.symbol, role, price: null}))
+      (role === "extra" || role === "sneaky" ? post("/api/level", {symbol: d.symbol, price: lp, on: false, role}) : post("/api/level", {symbol: d.symbol, role, price: null, confirm: role === "trigger"}))
         .then(out => { toast(out.ok ? "Level removed " + px(lp) : "Could not remove it", out.ok); if (out.ok) poll(true); }); }
   });
   // any click outside closes it (a click inside on a disabled button must not use that up), so does Escape or 20 s
@@ -2578,6 +2595,19 @@ function drawOne(p, cv, v, isFoot){
     g.fillStyle = m.col; g.fillRect(plotW, m.yy - 8, labelW, 16);
     g.fillStyle = m.dark ? "#0a0d12" : "#ffffff"; g.font = "bold 11px ui-monospace, Menlo, Consolas, monospace";
     g.fillText(m.txt, plotW + 3, m.yy + 4); g.font = "11px ui-monospace, Menlo, Consolas, monospace";
+  }
+  // THE PRICE IS DOMINANT on the right scale: the LAST tag (and its countdown) is drawn again here, over every level
+  // tag that went on after it (your pivot, stop, target ...), so a line at the price never hides what the price is
+  if (d.last && CS("lastLabel")){
+    const yy = y(d.last), lastCol = dan ? "#000000" : "#ffc53d";
+    g.fillStyle = lastCol; g.fillRect(plotW, yy - 8, labelW, 16);
+    g.fillStyle = dan ? "#ffffff" : "#0a0d12"; g.font = "bold 11px ui-monospace, Menlo, Consolas, monospace"; g.fillText(`LAST ${px(d.last)}`, plotW + 3, yy + 4);
+    const left2 = barCloseIn(tf, isDaily);
+    if (left2 != null && !isFoot && CS("countdown")){
+      g.fillStyle = dan ? "#333333" : "#2a3548"; g.fillRect(plotW, yy + 9, labelW, 14);
+      g.fillStyle = "#ffffff"; g.font = "bold 10px ui-monospace, Menlo, Consolas, monospace"; g.fillText(left2, plotW + 3, yy + 20);
+    }
+    g.font = "11px ui-monospace, Menlo, Consolas, monospace";
   }
   // crosshair with price / time readout
   p.dataPrice = (v.cross && v.cross[1] < plotH && v.cross[0] < plotW) ? hi - (v.cross[1] - 8) / (plotH - 8) * (hi - lo) : null;
