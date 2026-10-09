@@ -69,5 +69,5 @@ def pressure(prints, now, cfg=None):
         if same and abs(pace_s) >= 1.5 * abs(pace_l):
             out["momentum"] = "MOMENTUM INCREASING ↑"
         elif not same or abs(pace_s) <= 0.5 * abs(pace_l):
-            out["momentum"] = "MOMENTUM FADING ↓"
+            out["momentum"] = "MOMENTUM EASING ↓"
     return out

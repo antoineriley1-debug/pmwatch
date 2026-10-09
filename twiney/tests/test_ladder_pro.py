@@ -320,4 +320,4 @@ class DayTrapScenarioTests(unittest.TestCase):
         self.assertEqual(len(alerts), n)
         dt = e._day_trap_pane(e.syms["AAA"], t + 50)
         self.assertEqual(dt["flow"]["verdict"], "FADES"); self.assertIn("FADES the trap", dt["text"])
-        self.assertIn("fading the trap", narrative.day_trap_words(dt))
+        self.assertIn("going against the trap", narrative.day_trap_words(dt))

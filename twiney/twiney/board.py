@@ -200,7 +200,7 @@ def chart_gate(play, price, se, mp, reloaders, tape, now, cfg):
     elif stt == ps60.SECOND_ENTRY and se.get("build") == "building":
         lanes["L4_BUILD"] = (G, "building: price improving past the second entry" + tape_txt)
     elif stt == ps60.SECOND_ENTRY and se.get("build") == "early":
-        lanes["L4_BUILD"] = (G, "just triggered — inside the two-minute grace" + tape_txt)
+        lanes["L4_BUILD"] = (G, "just went through the pivot — inside the two-minute grace" + tape_txt)
     elif stt == ps60.SECOND_ENTRY:
         lanes["L4_BUILD"] = (R, "second entry is not building — stand aside" + tape_txt)
     else:
@@ -325,7 +325,7 @@ def build(play, price, se, mp, reloaders, tape, prints, daily_closes, bars, now,
         if fg["state"] == "FLOW_OPPOSITE":
             why.append("opposing " + ("put" if side == "long" else "call") + " flow")
         if lanes["L0_DAILY_MP"][0] == R:
-            why.append("MP gone")
+            why.append("no MP left")
         if why:
             state, light, reasons = "INVALIDATED", R, why
     label = {"READY_TO_GO": f"{side.upper()} READY TO GO", "ARMED": f"{side.upper()} ARMED — WAITING {'FLOW' if chart_ok else 'CHART'} GATE",
@@ -370,7 +370,7 @@ def alert_text(b, play, mp, se):
                 f"(repeat short-dated OTM {what.lower()}s{', hedge=false' if side == 'SHORT' else ''}). MP {mp_usd} / ATR {atr}. "
                 f"Max pain: prior 5m {'low' if side == 'LONG' else 'high'} {_px(b['max_pain']['options'])} (options) / process stop {_px(b['max_pain']['equity'])} (equity).")
     if st == "INVALIDATED":
-        return f"[PS60 OF] {sym} {side} INVALIDATED — {', '.join(b['reasons']) or 'setup gone'}."
+        return f"[PS60 OF] {sym} {side} INVALIDATED — {', '.join(b['reasons']) or 'setup over'}."
     return f"[PS60 OF] {sym} PASS."
 
 

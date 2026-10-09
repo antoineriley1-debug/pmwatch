@@ -144,8 +144,8 @@ def ma_points(ctx):
 
 
 def ma_stack_points(daily_pack, h60_pack):
-    """Dan's moving-average pack (EMA 5/10/20/34/50/65/89/100/150/200, SMA 5/10/20/50/100/150/200) on the daily and the
-    60-minute, the same Pine-exact numbers the chart and AIRSPACE use. They join a confluence (a pivot sitting on the
+    """Dan's moving averages exactly as the chart draws them (SMA and EMA 5/10/20/50/100/150/200 on the daily and the
+    60-minute, the 34/65/89 EMA on the daily only), the same Pine-exact numbers the chart and AIRSPACE use. They join a confluence (a pivot sitting on the
     60m 200 EMA), they never switch HIGH ATTENTION on alone (the 50 / 200-day are their own places)."""
     out = []
     for pack, tag, kind in ((daily_pack, "daily", "dma"), (h60_pack, "60m", "hma")):
@@ -154,9 +154,416 @@ def ma_stack_points(daily_pack, h60_pack):
                 continue
             if kind == "dma" and nm in ("SMA 50", "SMA 200"):
                 continue
+            if kind == "hma" and nm in ("EMA 34", "EMA 65", "EMA 89"):
+                continue                          # the 34 / 65 / 89 EMA are on the daily chart only
             n, typ = nm.split(" ")[1], nm.split(" ")[0]
             out.append({"p": float(v), "name": f"{tag} {n} {typ}", "kind": kind})
     return out
+
+
+# ---- THE MOVING-AVERAGE FRAMEWORK: who controls the 5, the 10 is the birth of the trade, rising 60-minute support ---
+
+def _ma(pack, nm):
+    return next((float(v) for n, v in (pack or []) if n == nm and v is not None), None)
+
+
+def ma_framework(dpack, dprev, hpack, hprev, last, cfg):
+    """Dan's read of the averages. The 50-day says bullish or bearish territory (the Daily context). Whoever controls
+    the daily 5 controls the short-term sentiment; the 10 is the birth of the trade. Strong plays come into RISING
+    60-minute support, the 60m 5 and 10: in an uptrend wait for the 60-minute retrace into them to buy (falling
+    60-minute resistance to short, the reverse). dprev / hprev: the packs one bar back (are they rising?)."""
+    if last is None:
+        return None
+    dt, ht = cfg.get("fw_daily_type", "SMA"), cfg.get("fw_60m_type", "SMA")
+    d5, d10 = _ma(dpack, f"{dt} 5"), _ma(dpack, f"{dt} 10")
+    h5, h10 = _ma(hpack, f"{ht} 5"), _ma(hpack, f"{ht} 10")
+    h5p, h10p = _ma(hprev, f"{ht} 5"), _ma(hprev, f"{ht} 10")
+    out = {"d5": d5, "d10": d10, "h5": h5, "h10": h10, "five": None, "ten": None, "h60": None, "zone": None, "bits": []}
+    if d5 is not None:
+        out["five"] = "buyers" if last > d5 else "sellers"
+        out["bits"].append(f"{'Buyers' if last > d5 else 'Sellers'} control the 5-day ({px(d5)}): short-term sentiment {'bullish' if last > d5 else 'bearish'}")
+    if d10 is not None:
+        out["ten"] = "over" if last > d10 else "under"
+        out["bits"].append(f"{'Over' if last > d10 else 'Under'} the 10-day ({px(d10)}): " + ("the long trade is born" if last > d10 else "the short trade is born"))
+    if None not in (h5, h10, h5p, h10p):
+        lo, hi = min(h5, h10), max(h5, h10)
+        out["zone"] = (round(lo, 4), round(hi, 4))
+        if h5 > h5p and h10 > h10p and h5 >= h10:
+            out["h60"] = "rising"
+            out["bits"].append(f"Rising 60-minute support at the 60m 5 / 10 ({px(h5)} / {px(h10)}): wait for the 60-minute retrace into it to buy")
+        elif h5 < h5p and h10 < h10p and h5 <= h10:
+            out["h60"] = "falling"
+            out["bits"].append(f"Falling 60-minute resistance at the 60m 5 / 10 ({px(h5)} / {px(h10)}): wait for the 60-minute pop into it to short")
+        else:
+            out["h60"] = "flat"
+            out["bits"].append(f"60m 5 / 10 ({px(h5)} / {px(h10)}) flat and tangled: no clean 60-minute trend")
+    out["text"] = ". ".join(out["bits"])
+    return out
+
+
+def _ma_list(v):
+    return [x.strip().upper() for x in (v.split(",") if isinstance(v, str) else (v or [])) if x.strip()]
+
+
+def key_mas(dpack, hpack, cfg):
+    """The averages whose reactions get called out (SETTINGS > PS60 story): exactly the chart's. SMA and EMA 5 / 10 /
+    20 / 50 / 100 / 150 / 200 on the daily and the 60m, plus the 34 / 65 / 89 EMA on the daily only."""
+    out = []
+    for pack, tag, names in ((dpack, "daily", _ma_list(cfg.get("fw_daily_mas", "SMA 5, SMA 10, SMA 20, SMA 50, SMA 100, SMA 150, SMA 200, EMA 5, EMA 10, EMA 20, EMA 50, EMA 100, EMA 150, EMA 200, EMA 34, EMA 65, EMA 89"))),
+                             (hpack, "60m", _ma_list(cfg.get("fw_60m_mas", "SMA 5, SMA 10, SMA 20, SMA 50, SMA 100, SMA 150, SMA 200, EMA 5, EMA 10, EMA 20, EMA 50, EMA 100, EMA 150, EMA 200")))):
+        for nm in names:
+            v = _ma(pack, nm)
+            if v is None:
+                continue
+            typ, n = nm.split(" ")
+            label = (f"{n}-day" if typ == "SMA" else f"daily {n} EMA") if tag == "daily" else f"60m {n} {typ}"
+            out.append({"p": v, "name": label, "tf": tag, "n": int(n), "typ": typ})
+    return out
+
+
+def merge_mas(mas, band):
+    """Averages sitting on top of each other are one place: '5-day / 60m 20 SMA'."""
+    out = []
+    for m in sorted(mas, key=lambda x: x["p"]):
+        if out and abs(m["p"] - out[-1]["p"]) <= band:
+            o = out[-1]
+            o["name"] = o["name"] + " / " + m["name"]
+            o["p"] = (o["p"] * o["k"] + m["p"]) / (o["k"] + 1)
+            o["k"] += 1
+        else:
+            out.append(dict(m, k=1))
+    return out
+
+
+MA_WORDS = {
+    "bounce": ["Bounce off the {nm} {p}. Demand held: technical buyers meeting emotional sellers{room}",
+               "Buyers defended the {nm} {p}, that's demand. Bounced off it{room}",
+               "{nm} {p} held as demand. Nice bounce{room}"],
+    "reject": ["Rejected at the {nm} {p}. That's supply: technical sellers meeting emotional buyers{room}",
+               "Sellers defended the {nm} {p}, supply did its job. Rejected{room}",
+               "{nm} {p} turned it away. Supply{room}"],
+    "through_up": ["Closed over the {nm} {p}. That supply is taken, next supply up{room}",
+                   "Buyers closed it over the {nm} {p}. Supply to supply from here{room}"],
+    "through_dn": ["Closed under the {nm} {p}. That demand is lost, next demand down{room}",
+                   "Sellers closed it under the {nm} {p}. Demand to demand from here{room}"],
+    "into": ["Coming into the {nm} {p}, {what}. Let's see if it {test}",
+             "Price working into the {nm} {p}: {what}. Watch for {test2}"],
+}
+MA_TURN = {}
+
+
+def ma_watch(sb, t, last, near, mas, cl, cl_t, all_points, cfg):
+    """How price REACTS at each key moving average, daily and 60-minute: coming into it, the BOUNCE off it (demand
+    held), the REJECT at it (supply held), or a CLOSE through it (taken). Returns [(kind, ma, text)] due now."""
+    w = sb.__dict__.setdefault("maw", {})
+    out = []
+
+    def pick(kind, **kw):
+        i = MA_TURN.get(kind, 0)
+        MA_TURN[kind] = i + 1
+        return MA_WORDS[kind][i % len(MA_WORDS[kind])].format(**kw)
+
+    def room(up, frm):
+        """Supply to supply / demand to demand: the next average or level past this one, and the MP to it."""
+        nxt = [(abs(q["p"] - last), q) for q in all_points if (q["p"] > frm + near / 2 if up else q["p"] < frm - near / 2)]
+        if not nxt:
+            return f". Open air {'above' if up else 'below'}"
+        d, q = min(nxt, key=lambda x: x[0])
+        return f". Next {'supply' if up else 'demand'}: {q['name']} {px(q['p'])}, MP ${d:.2f}"
+    away = max(near, 0.0)
+    for m in mas:
+        k = m["name"]
+        s_ = w.setdefault(k, {"side": None, "touch": None, "said": -1e9})
+        d = last - m["p"]
+        side = "above" if d > near * 0.25 else "below" if d < -near * 0.25 else "at"
+        if s_["touch"] is None and side != "at" and abs(d) <= near and s_["side"] == side and t - s_["said"] > float(cfg.get("ma_repeat_seconds", 600)):
+            s_["touch"] = {"t": t, "from": side, "said_into": False}
+        if s_["touch"] is not None:
+            tch = s_["touch"]
+            if not tch["said_into"] and abs(d) <= near * 0.6:
+                tch["said_into"] = True
+                frm_above = tch["from"] == "above"
+                out.append(("into", m, pick("into", nm=m["name"], p=px(m["p"]),
+                                            what="demand under price" if frm_above else "supply over price",
+                                            test="holds as demand or gets closed under" if frm_above else "holds as supply or gets closed over",
+                                            test2="the bounce, or a close under it" if frm_above else "the reject, or a close over it")))
+            closed_through = cl is not None and cl_t is not None and cl_t > tch["t"] and (
+                (tch["from"] == "above" and cl < m["p"]) or (tch["from"] == "below" and cl > m["p"]))
+            if closed_through:
+                up = tch["from"] == "below"
+                out.append(("through_up" if up else "through_dn", m, pick("through_up" if up else "through_dn", nm=m["name"], p=px(m["p"]), room=room(up, m["p"]))))
+                s_["touch"] = None; s_["said"] = t
+            elif side == tch["from"] and abs(d) >= away and tch["said_into"]:
+                up = tch["from"] == "above"
+                kind = "bounce" if up else "reject"
+                out.append((kind, m, pick(kind, nm=m["name"], p=px(m["p"]), room=room(up, m["p"]))))
+                s_["touch"] = None; s_["said"] = t
+            elif t - tch["t"] > float(cfg.get("ma_touch_minutes", 20)) * 60:
+                s_["touch"] = None
+        if side != "at":
+            s_["side"] = side
+    return out
+
+
+# ---- THE TRADE YOU'RE IN: the levels against your position --------------------------------------------------------
+
+def h60_confirm(sb, t, h60, last):
+    """Every 60-minute candle is confirmed by the next one: building over the prior 60-minute high confirms the long,
+    under the prior low confirms the short. h60: the last 60-minute rows [t0, o, h, l, c, v] (the newest may be the one
+    forming). Returns (side, text) the first time the forming candle does it, else None."""
+    if not h60 or len(h60) < 2 or last is None:
+        return None
+    cur = h60[-1] if h60[-1][0] + 3600 > t else None
+    prev = h60[-2] if cur is not None else h60[-1]
+    cur_t = cur[0] if cur is not None else int(t // 3600) * 3600
+    c = sb.__dict__.setdefault("h60c", {})
+    if c.get("t0") != cur_t:
+        c.clear(); c["t0"] = cur_t
+    if last > prev[2] and not c.get("up"):
+        c["up"] = True
+        return ("up", f"Building over the prior 60-minute high {px(prev[2])}: the new 60-minute candle is confirming the long")
+    if last < prev[3] and not c.get("dn"):
+        c["dn"] = True
+        return ("down", f"Building under the prior 60-minute low {px(prev[3])}: the new 60-minute candle is confirming the short")
+    return None
+
+
+SE_STEPS = (1.00, 0.50, 0.25, 0.10)
+
+
+def second_entry_watch(sb, t, play, last, near, pb, se_state, cfg):
+    """YOUR SECOND ENTRY: once you mark it, the desk walks price into it: how far away it is at each step (a dollar,
+    50 cents, a quarter, a dime), who is stepping up as it gets there, and the moment price goes through it (the
+    second entry is live: it should go now). Then the build. Returns [(kind, text)]."""
+    se = play.get("second_entry")
+    w = sb.__dict__.setdefault("sew", {})
+    if not se:
+        w.clear()
+        return []
+    se = float(se)
+    long_ = play.get("side", "long") != "short"
+    if w.get("se") != se:
+        w.clear(); w["se"] = se; w["steps"] = set(); w["through"] = False
+        d = (se - last) if long_ else (last - se)
+        return [("set", f"Second entry marked at {px(se)}, {abs(d) * 100:.0f} cents {'away' if d > 0 else 'under price' if long_ else 'over price'}. "
+                        f"Price has to go back through it on a new candle for the trade to be live. I'll walk you in")]
+    out = []
+    d = (se - last) if long_ else (last - se)                       # how far price still has to go, the trade's way
+    if d > 0:
+        # the smallest step price has reached that has not been said; the bigger ones are passed with it
+        reached = [x for x in SE_STEPS if d <= x + 0.005]
+        if reached:
+            step = min(reached)
+            if step not in w["steps"]:
+                w["steps"].update(x for x in SE_STEPS if x >= step)
+                lbl = "a dollar" if step == 1.0 else "50 cents" if step == 0.5 else "a quarter" if step == 0.25 else "a dime"
+                tail = f". {pb['tail']}" if pb and pb.get("tail") else ""
+                out.append(("near", f"Second entry {px(se)} is {lbl} away, price {px(last)}{tail}" + (". Get ready" if step <= 0.25 else "")))
+        w["through"] = False
+    elif not w.get("through"):
+        w["through"] = True
+        w["t_through"] = t
+        tail = f". {pb['tail']}" if pb and pb.get("tail") else ""
+        out.append(("through", f"Through the second entry {px(se)}, price {px(last)}. The second entry is live, it should go now{tail}. "
+                               f"If it doesn't go in a couple of minutes, that's your answer"))
+    if w.get("through") and se_state and se_state == "SECOND_ENTRY" and not w.get("build_said") and t - w.get("t_through", t) >= 60:
+        w["build_said"] = True
+        out.append(("build", f"Second entry {px(se)} building: price keeps improving {'up' if long_ else 'down'} from it. Stay with it"))
+    return out
+
+
+def trade_read(sb, t, trade, foc, last, near, pb, rm, cfg, pace=None, market=None, fr=None):
+    """You're in a trade (the stock or its options): say it as you enter it (risk to the stop, the first level in
+    your way, the MP), when price comes into a new level with your position on (who is stepping up there), and when
+    price closes in on your stop or your target. Returns [(kind, text)] due now."""
+    tr = sb.__dict__.setdefault("trade", {})
+    if not trade:
+        tr.clear()
+        return []
+    out = []
+    long_ = trade["dir"] == "long"
+    what = trade["what"]
+    pnl = trade.get("pnl")
+    pnl_s = "" if pnl is None else f", {'up' if pnl >= 0 else 'down'} ${abs(pnl):,.0f}"
+    key = trade["key"]
+    if tr.get("key") != key:
+        fresh = tr.get("key") is None or (tr.get("key") or (None,))[0] != key[0]   # a new trade, not an add / a partial
+        t0, p0 = (t, last) if fresh else (tr.get("t0", t), tr.get("p0", last))
+        tr.clear(); tr["key"] = key; tr["t0"], tr["p0"] = t, last
+        if not fresh:
+            tr["t0"], tr["p0"], tr["paid"], tr["r57"] = t0, p0, True, True
+        bits = [f"You're in: {what}{pnl_s}"]
+        if trade.get("stop") is not None:
+            bits.append(f"Stop {px(trade['stop'])}, {abs(last - trade['stop']) * 100:.0f} cents away")
+        if foc:
+            bits.append(f"First level {'up' if long_ else 'down'}: {foc['name']} {px(foc['p']) if foc['kind'] != 'uzone' else ''}".rstrip())
+        if rm and rm.get("to") is not None:
+            bits.append(f"MP ${rm['dollars']:.2f} to {rm['name']} {px(rm['to'])}" + (f", {rm['atr_x']:g} ATR" if rm.get("atr_x") is not None else "")
+                        + (". That's thin for options, be careful" if rm.get("thin") else ". Good room"))
+        elif rm:
+            bits.append("Open air, no supply in the way" if long_ else "Open air, no demand in the way")
+        out.append(("enter", ". ".join(bits)))
+    if foc and foc.get("approach") and tr.get("lvl") != foc["name"]:
+        tr["lvl"] = foc["name"]
+        with_ = (foc["p"] >= last) == long_
+        say = f"With your {'long' if long_ else 'short'} on, {'coming into' if not foc['on'] else 'right at'} {foc['name']} {px(foc['p']) if foc['kind'] != 'uzone' else ''}".rstrip()
+        say += (f": that's {'supply' if long_ else 'demand'} in your way, it needs a close {'over' if long_ else 'under'} it" if with_
+                else f": that's {'demand' if long_ else 'supply'} under your trade, it has to hold")
+        if pb and pb.get("tail"):
+            say += f". {pb['tail']}"
+        out.append(("level", say + pnl_s.replace(", up", ". You're up").replace(", down", ". You're down")))
+    ref = trade.get("entry") or tr.get("p0") or last
+    fav = (last - ref) if long_ else (ref - last)               # how far it has moved your way, in the stock
+    mins = (t - tr.get("t0", t)) / 60.0
+    lo57, hi57 = float(cfg.get("rule57_min", 5)), float(cfg.get("rule57_max", 7))
+    if not tr.get("r57") and lo57 <= mins <= hi57 + 1 and fav < max(near * 0.5, 0.05):
+        tr["r57"] = True
+        who = "seller" if long_ else "buyer"
+        out.append(("r57", f"It's been {mins:.0f} minutes and it's not going your way. 5-7 minute rule: if it's stuck, there may be a reload {who} "
+                           f"sitting there, and you never win a battle with a reload {who}. Think about taking the scratch"))
+    elif mins > hi57 + 1:
+        tr["r57"] = True
+    first = float(cfg.get("first_move_dollars", 0.25))
+    risk = abs(ref - trade["stop"]) if trade.get("stop") is not None else None
+    stop_at_be = risk is not None and ((trade["stop"] >= ref) if long_ else (trade["stop"] <= ref))
+    if not tr.get("paid") and not stop_at_be and fav >= max(first, risk or 0):
+        tr["paid"] = True
+        out.append(("pay", f"There's your first move, {fav * 100:.0f} cents your way{pnl_s}. Pay yourself: take a third or half off "
+                           "and move your stop to breakeven. Free trade"))
+    # in the trade and it's working: how much MP / airspace is left, keep you encouraged
+    every = float(cfg.get("trade_update_seconds", 90))
+    if rm and rm.get("dollars") is not None and fav > max(near * 0.25, 0.02) and t - tr.get("upd_t", -1e9) >= every:
+        left = rm["dollars"]
+        k_ = round(left / max(0.05, near * 0.5))
+        if k_ != tr.get("upd_k"):
+            tr["upd_t"], tr["upd_k"] = t, k_
+            n_ = tr["upd_n"] = tr.get("upd_n", 0) + 1
+            if rm.get("thin"):
+                msg = (f"Moving your way{pnl_s}. Only ${left:.2f} of airspace left to {rm['name']} {px(rm['to'])}. "
+                       + ("If it can't close through it, pay yourself there" if not rm.get("beyond") else
+                          f"Get a close through it and there's ${rm['beyond']['dollars']:.2f} to {rm['beyond']['name']}"))
+            else:
+                enc = ("Stay patient", "Let it work", "You're doing fine, let it breathe", "Stay with the plan")[n_ % 4]
+                msg = (f"{enc}. You've got ${left:.2f} of MP left to {rm['name']} {px(rm['to'])}"
+                       + (f", {rm['atr_x']:g} ATR" if rm.get("atr_x") is not None else "") + f"{pnl_s}")
+            out.append(("mp", msg))
+    # PS60: a trade is managed at its levels, never on a pullback. This warning is for a COMPLETE BREAKDOWN only, and
+    # it has to hold: the tape one-sided against you for minutes (not a dip), the market (SPY / QQQ) going the other
+    # way, AND tremendous option flow on the other side. All three, held for trade_weak_seconds, before a word is said.
+    # A pullback with the tape still two-way, or flow that is merely present, never gets you worked out of the trade
+    pc = pace or {}
+    bp = pc.get("buy_pct")
+    fast = pc.get("state") in ("FAST", "SURGE") or pc.get("ratio", 0) and pc["ratio"] >= 1.3
+    heavy = float(cfg.get("trade_weak_tape_pct", 75))
+    tape_bad = bp is not None and fast and ((100 - bp >= heavy) if long_ else (bp >= heavy))
+    mkt_bad = bool(market and market.get("dir") and (market["dir"] == "up") != long_)
+    me, them = ((fr or {}).get("C") or {}, (fr or {}).get("P") or {}) if long_ else ((fr or {}).get("P") or {}, (fr or {}).get("C") or {})
+    big = float(cfg.get("trade_weak_flow_min", 250000))
+    opt_bad = (them.get("now_usd") or 0) >= big and (them.get("now_usd") or 0) >= 4 * (me.get("now_usd") or 0)
+    if tape_bad and mkt_bad and opt_bad and fav > 0:
+        tr.setdefault("weak_since", t)
+        if t - tr["weak_since"] >= float(cfg.get("trade_weak_seconds", 180)) and t - tr.get("weak_t", -1e9) >= float(cfg.get("trade_weak_repeat_seconds", 600)):
+            tr["weak_t"] = t
+            what, other = ("puts", "calls") if long_ else ("calls", "puts")
+            why = [f"{'sellers' if long_ else 'buyers'} own the tape, {100 - bp if long_ else bp:.0f}% and fast, for {(t - tr['weak_since']) / 60:.0f} minutes",
+                   f"the market's going the other way ({market['text'].rstrip('.')})",
+                   f"tremendous {what} flow: {versus(them.get('now_usd') or 0, me.get('now_usd') or 0, what, other)}"]
+            mp_s = f" This is not a pullback, it may not make the MP to {rm['name']} {px(rm['to'])}." if rm and rm.get("to") is not None else " This is not a pullback."
+            out.append(("weak", f"Heads up{pnl_s}: " + ", ".join(why) + "." + mp_s + " Think about paying yourself here"))
+    else:
+        tr.pop("weak_since", None)
+    st_ = trade.get("stop")
+    if st_ is not None:
+        dist = abs(last - st_)
+        warn = max(near, abs((trade.get("entry") or last) - st_) * 0.35)
+        if dist <= warn and t - tr.get("stop_t", -1e9) > float(cfg.get("trade_repeat_seconds", 120)):
+            tr["stop_t"] = t
+            out.append(("stop", f"Getting close to your stop {px(st_)}, {dist * 100:.0f} cents away{pnl_s}. Know your plan"))
+    tg = trade.get("target")
+    if tg is not None and abs(last - tg) <= near and t - tr.get("tgt_t", -1e9) > float(cfg.get("trade_repeat_seconds", 120)):
+        tr["tgt_t"] = t
+        out.append(("target", f"Price is at your target {px(tg)}{pnl_s}. Pay yourself"))
+    return out
+
+
+# ---- STRUCTURE: higher highs / lower lows on the 60-minute and the daily, said in Dan's words --------------------
+
+def structure_read(sb, t, h60, drows, live, last, fw, cfg):
+    """Lower lows on the 60 (the 60-minute channel is stepping down: demand to demand), higher highs on the 60 (stepping
+    up: supply to supply); on the Daily, a higher high or a lower low against the prior days (the brain of the
+    trade). Each one said once when it happens. Returns [(kind, text)]."""
+    st = sb.__dict__.setdefault("struct", {})
+    out = []
+    if h60 and len(h60) >= 3:
+        cur = h60[-1] if h60[-1][0] + 3600 > t else None
+        done = h60[:-1] if cur is not None else h60
+        if len(done) >= 2:
+            a, b = done[-2], done[-1]
+            k60 = b[0]
+            if st.get("h60_k") != k60:
+                st["h60_k"] = k60
+                if b[3] < a[3] and b[2] < a[2]:
+                    n = st["ll"] = st.get("ll", 0) + 1; st["hh"] = 0
+                    out.append(("ll60", f"Lower low on the 60-minute, {px(b[3])} under {px(a[3])}" + (f", {n} in a row" if n > 1 else "")
+                                + ". The 60-minute channel is stepping down, demand to demand"
+                                + (f". Next demand: {px(fw['h10'])}, the 60m 10" if fw and fw.get("h10") and fw["h10"] < last else "")))
+                elif b[2] > a[2] and b[3] > a[3]:
+                    n = st["hh"] = st.get("hh", 0) + 1; st["ll"] = 0
+                    out.append(("hh60", f"Higher high on the 60-minute, {px(b[2])} over {px(a[2])}" + (f", {n} in a row" if n > 1 else "")
+                                + ". The 60-minute channel is stepping up, supply to supply"))
+    # intraday: the live 60-minute candle taking out the prior 60-minute low / high is said by h60_confirm; here the
+    # DAILY: today's range against the prior days
+    if drows and live and len(drows) >= 3:
+        today, prev = drows[-1], drows[-2]
+        hh_ref = max(r[2] for r in drows[-6:-1])
+        ll_ref = min(r[3] for r in drows[-6:-1])
+        dk = studies.day_key(t)
+        if st.get("day") != dk:
+            st["day"] = dk; st["dhh"] = st["dll"] = False
+        if not st.get("dhh") and today[2] > hh_ref:
+            st["dhh"] = True
+            out.append(("hhD", f"Higher high on the Daily: {px(today[2])} takes out the last five days' high {px(hh_ref)}. "
+                               "Daily supply taken, the Daily is building, supply to supply"))
+        elif not st.get("dhh2") and today[2] > prev[2] and today[2] <= hh_ref:
+            st["dhh2"] = True
+            out.append(("hhD1", f"Over the prior-day high {px(prev[2])} on the Daily, higher high against yesterday. "
+                                f"Next Daily supply: the five-day high {px(hh_ref)}"))
+        if not st.get("dll") and today[3] < ll_ref:
+            st["dll"] = True
+            out.append(("llD", f"Lower low on the Daily: {px(today[3])} takes out the last five days' low {px(ll_ref)}. "
+                               "Daily demand lost, the Daily is breaking down, demand to demand"))
+        elif not st.get("dll2") and today[3] < prev[3] and today[3] >= ll_ref:
+            st["dll2"] = True
+            out.append(("llD1", f"Under the prior-day low {px(prev[3])} on the Daily, lower low against yesterday. "
+                                f"Next Daily demand: the five-day low {px(ll_ref)}"))
+    return out
+
+
+def daily_brief(ctx, fw, rm_up, rm_dn, drows, live, atr, cfg):
+    """The Daily, the brain of the trade, in one read: where we are against the 50-day, who controls the 5, the 10,
+    the airspace both ways to the next Daily supply / demand (the averages, the prior highs / lows) against the ATR."""
+    if not ctx or not ctx.get("bias"):
+        return None
+    bull = ctx["bias"] == "bull"
+    bits = [ctx["text"].rstrip(".")]
+    if fw and fw.get("bits"):
+        bits += [b for b in fw["bits"] if "-day" in b]
+    r = rm_up if bull else rm_dn
+    if r:
+        if r.get("to") is None:
+            bits.append(f"Airspace {'above' if bull else 'below'} is clear: open air, no {'supply' if bull else 'demand'} in the way")
+        else:
+            bits.append(f"MP ${r['dollars']:.2f} to the next {'supply' if bull else 'demand'}, {r['name']} {px(r['to'])}"
+                        + (f", {r['atr_x']:g} ATR" if r.get("atr_x") is not None else "")
+                        + (": THIN" if r.get("thin") else ": room to work"))
+            if r.get("beyond"):
+                bits.append(f"Through it there's ${r['beyond']['dollars']:.2f} to {r['beyond']['name']}")
+    other = rm_dn if bull else rm_up
+    if other and other.get("to") is not None:
+        bits.append(f"{'Demand' if bull else 'Supply'} {'under' if bull else 'over'} us: {other['name']} {px(other['to'])}, ${other['dollars']:.2f} away")
+    if atr:
+        bits.append(f"Daily ATR ${atr:.2f}")
+    return ". ".join(bits) + "."
 
 
 def structure_points(drows, live, t):
@@ -598,7 +1005,8 @@ def play_by_play(sb, t, foc, last, near, pace, fr, reloads, consumed, cfg):
     rd = pick(read, PBP_READ[read])
     text = f"{head}: {where}. " + ". ".join(b[0].upper() + b[1:] for b in bits) + ". " + rd[0].upper() + rd[1:]
     key = (foc["name"], "on" if foc["on"] else "near", tape, book, opt, read)
-    return {"key": key, "text": text, "tone": tone, "read": read}
+    tail = ". ".join(b[0].upper() + b[1:] for b in bits if not b.startswith("no real option flow")) if read != "quiet" else ""
+    return {"key": key, "text": text, "tone": tone, "read": read, "tail": tail}
 
 
 COACH = {
@@ -815,37 +1223,87 @@ def fmt_strike(k):
     return f"{k:g}"
 
 
+def clusters(levels, band):
+    """[(price, name)] sorted along the path -> [{"near", "far", "names"}]: levels within `band` of each other (chained)
+    are ONE supply / ONE demand (several MAs sitting close against the ATR)."""
+    out = []
+    for p, nm in levels:
+        if out and abs(p - out[-1]["far"]) <= band:
+            out[-1]["far"] = p
+            if nm not in out[-1]["names"]:
+                out[-1]["names"].append(nm)
+        else:
+            out.append({"near": p, "far": p, "names": [nm]})
+    return out
+
+
+def _cl_name(c):
+    n = c["names"]
+    return n[0] if len(n) == 1 else " / ".join(n[:3]) + (f" +{len(n) - 3}" if len(n) > 3 else "")
+
+
 def room_read(up, ctx, foc, points, zones, last, near, atr, cfg):
-    """MEASURED POTENTIAL, Dan's way: price travels from one level to the next. Above the 50-day it is SUPPLY TO
-    SUPPLY: the room up to the next supply overhead (a moving average, a prior high, your zone). Below it,
-    DEMAND TO DEMAND: the room down to the next demand underneath. The room past the place being tested is the MP;
-    measured against the daily ATR (THIN under mp_min_atr of an ATR)."""
+    """MEASURED POTENTIAL, Dan's way (the hard law): MP = dollars from price to the next supply (up) / demand (down).
+    Above the 50-day it is SUPPLY TO SUPPLY, below it DEMAND TO DEMAND. Several MAs sitting close against the ATR are
+    ONE supply / demand: MP runs to its FAR edge. Always against the ATR (THIN under mp_min_atr); when the first air is
+    thin the next MP beyond it is said too. The ATR levels are never supply or demand."""
     if up is None or last is None:
         return None
     start = max(last, foc["hi"]) if (foc and up) else min(last, foc["lo"]) if foc else last
     gap = near / 2.0
-    obst = []
+    lv = []
     for p in points:
         if p["kind"] == "inst":
             continue
         if (up and p["p"] > start + gap) or (not up and p["p"] < start - gap):
-            obst.append((abs(p["p"] - last), p["p"], p["name"]))
+            lv.append((p["p"], p["name"]))
     for z in zones:
         edge_ = z["lo"] if up else z["hi"]
         if (up and edge_ > start + gap) or (not up and edge_ < start - gap):
-            obst.append((abs(edge_ - last), edge_, z["short"]))
+            lv.append((edge_, z["short"]))
+    lv.sort(key=lambda x: x[0] if up else -x[0])
     frame = "supply to supply" if up else "demand to demand"
     with50 = bool(ctx and ctx.get("bias") and (ctx["bias"] == "bull") == up)
-    if not obst:
+    nxt = "supply" if up else "demand"
+    if not lv:
         return {"frame": frame, "with50": with50, "to": None, "name": "open air: nothing in the way", "dollars": None, "atr_x": None, "thin": False,
-                "text": f"{frame.capitalize()}: open air {'above' if up else 'below'}, no {'supply' if up else 'demand'} in the way"}
-    d, p, nm = min(obst)
+                "map": [], "text": f"{frame.capitalize()}: open air {'above' if up else 'below'}, no {nxt} in the way"}
+    band = max(near * 0.25, (atr or 0) * float(cfg.get("mp_merge_atr_pct", 8)) / 100.0)
+    cs = clusters(lv, band)
+    c0 = cs[0]
+    d = abs(c0["far"] - last)
     ax = round(d / atr, 2) if atr else None
     thin = ax is not None and ax < float(cfg.get("mp_min_atr", 0.5))
-    nxt = "supply" if up else "demand"
-    return {"frame": frame, "with50": with50, "to": p, "name": nm, "dollars": round(d, 2), "atr_x": ax, "thin": thin,
-            "text": f"{frame.capitalize()}: MP ${d:.2f} of airspace to the next {nxt}, {nm} {px(p)}" + (f" ({ax:g} ATR)" if ax is not None else "")
-                    + (" — THIN, not enough airspace" if thin else "") + ("" if with50 else " · against the 50-day framework")}
+    nm = _cl_name(c0)
+    one = len(c0["names"]) > 1
+    text = (f"{frame.capitalize()}: MP ${d:.2f} of airspace to the next {nxt}, {nm} "
+            + (f"{px(c0['near'])}–{px(c0['far'])} (one {nxt}, far edge)" if one else px(c0["far"]))
+            + (f" ({ax:g} ATR)" if ax is not None else ""))
+    beyond = None
+    if thin and len(cs) > 1:
+        c1 = cs[1]
+        beyond = {"to": c1["far"], "name": _cl_name(c1), "dollars": round(abs(c1["far"] - last), 2)}
+        text += f" — THIN; next MP beyond it: ${beyond['dollars']:.2f} to {beyond['name']} {px(c1['far'])}"
+    elif thin:
+        text += " — THIN, not enough airspace"
+    if not with50:
+        text += " · against the 50-day framework"
+    mp_map = [{"near": round(c["near"], 4), "far": round(c["far"], 4), "name": _cl_name(c), "dollars": round(abs(c["far"] - last), 2),
+               "room": round(abs(c["near"] - (cs[i - 1]["far"] if i else last)), 2)} for i, c in enumerate(cs[:6])]
+    return {"frame": frame, "with50": with50, "to": c0["far"], "name": nm, "dollars": round(d, 2), "atr_x": ax, "thin": thin,
+            "beyond": beyond, "map": mp_map, "text": text}
+
+
+def mp_layout(last, points, atr, near, cfg):
+    """Where every average and level sits around price, both ways: the supply clusters above and the demand clusters
+    below, nearest first, with the room between each (the airspace the trade has to travel)."""
+    if last is None:
+        return None
+    out = {}
+    for up in (True, False):
+        r = room_read(up, None, None, points, [], last, near, atr, cfg)
+        out["above" if up else "below"] = (r or {}).get("map") or []
+    return out
 
 
 def edge_read(up, ctx, foc, se_state, pace, reloads, consumed, fs, resp, last, near, room=None):
@@ -957,7 +1415,7 @@ def _closed_n(mins, t, n):
 
 
 def build(sb, t, last, tick, atr, play, se_state, ctx, points, zones, conf, fr, pace, reloads, consumed, mins, cfg,
-          traps=None, market=None, pulled=None):
+          traps=None, market=None, pulled=None, fw=None, mas=None, trade=None, h60=None, drows=None, live=False):
     """One read: the line for now, plus whatever new moments go on the feed. sb: the symbol's Story.
     reloads: confirmed reloaders [{price, side, stage, absorbed}]. consumed: reloaders
     cleaned up in the last minute [{price, side}]."""
@@ -976,11 +1434,20 @@ def build(sb, t, last, tick, atr, play, se_state, ctx, points, zones, conf, fr, 
     # how often each kind of moment may be said, whatever it says (a stock chopping around a level must not
     # call "cleared / lost / cleared" every few seconds)
     GAPS = {"break": 300.0, "flow": 240.0, "resp": 180.0, "maflow": 600.0, "fail": 600.0, "held": 600.0,
-            "focus": 60.0, "room": 600.0, "reload": 120.0}
+            "focus": 60.0, "room": 600.0, "reload": 120.0,
+            "daily": float(cfg.get("daily_repeat_minutes", 45)) * 60 / 3, "struct": 300.0, "fw": 300.0, "ma": 120.0,
+            "h60": 600.0, "hype": 120.0}
+
+    # what gets said first when several things happen at once (the page's one mouth): 1 your trade and your second
+    # entry, 2 the reload buyer / seller and the money, 3 the levels taken, the averages, the Daily, 4 the colour
+    PRI = {"trade": 1, "se": 1, "reload": 2, "consumed": 2, "hype": 2, "coach_rl": 2, "break": 3, "h60": 3, "retrace": 3, "fw": 3,
+           "struct": 3, "ma": 3, "daily": 3, "fail": 3, "held": 3, "maflow": 3, "flow": 3, "align": 3, "edge": 3}
 
     def note(topic, key, text, tone, repeat=600.0, loud=False):
         if sb.say(topic, key, text, tone, t, repeat, GAPS.get(topic.split(":")[0], 0.0)) and loud:
-            said.append({"topic": topic, "text": text, "tone": tone})
+            k0 = topic.split(":")[0]
+            pri = PRI.get(k0, PRI.get(k0.split("_")[0] if not k0.startswith("coach_rl") else "coach_rl", 4))
+            said.append({"topic": topic, "text": text, "tone": tone, "pri": pri})
 
     if ctx and ctx.get("text"):
         note("ctx", (ctx.get("bias"), ctx.get("taken")), ctx["text"], "bull" if ctx.get("bias") == "bull" else "bear" if ctx.get("bias") == "bear" else "neutral",
@@ -1086,7 +1553,7 @@ def build(sb, t, last, tick, atr, play, se_state, ctx, points, zones, conf, fr, 
     out["hype"] = hy["text"] if hy else None
     if hy and sb.say("hype:" + hy["cp"] + str(hy["strike"]), hy["key"], hy["text"] + ("" if hy["text"].endswith("!") else "!"),
                      "bull" if hy["cp"] == "C" else "bear", t, float(cfg.get("hype_repeat_seconds", 180))):
-        said.append({"topic": "hype", "text": hy["text"], "tone": "bull" if hy["cp"] == "C" else "bear"})
+        said.append({"topic": "hype", "text": hy["text"], "tone": "bull" if hy["cp"] == "C" else "bear", "pri": 2})
     if cfg.get("play_by_play", True):
         pb = play_by_play(sb, t, foc, last, near, pace, fr, reloads, consumed, cfg)
         if pb and pb["read"] == "quiet" and not cfg.get("pbp_quiet", False):
@@ -1099,12 +1566,92 @@ def build(sb, t, last, tick, atr, play, se_state, ctx, points, zones, conf, fr, 
             if sb.say("pbp", pb["key"], pb["text"], pb["tone"], t, float(cfg.get("pbp_repeat_seconds", 90)),
                       float(cfg.get("pbp_seconds", 30))) and loud:
                 sb.pbp_loud = (pb["key"], t)
-                said.append({"topic": "pbp", "text": pb["text"], "tone": pb["tone"]})
+                said.append({"topic": "pbp", "text": pb["text"], "tone": pb["tone"], "pri": 4})
         for kind, text in coach(sb, t, foc, pb, cfg, mins, traps, market, up, reloads, consumed, pulled):
             tone = {"rl_buyer": "warn", "rl_seller": "warn", "rl_still_buyer": "warn", "rl_still_seller": "warn",
                     "rl_clean_buyer": "bear", "rl_clean_seller": "bull", "rl_pulled_buyer": "warn", "rl_pulled_seller": "warn","trapped": "warn", "chop": "warn", "mkt_against": "warn", "clean_up": "bull", "clean_down": "bear"}.get(kind, "neutral")
-            if sb.say("coach:" + kind, (kind, text), text, tone, t, 600.0, float(cfg.get("coach_seconds", 180)) if kind == "patience" else 0.0):
-                said.append({"topic": "coach", "text": text, "tone": tone})
+            gap_ = float(cfg.get("coach_seconds", 180)) if kind in ("patience", "chop", "clean_up", "clean_down", "early", "mkt_with", "mkt_against") else 0.0
+            # each kind of coaching has its own gap: the first pivot of the day never silences the reload warning
+            if sb.say("coach_" + kind + ":" + kind, (kind, text), text, tone, t, 600.0, gap_):
+                said.append({"topic": "coach", "text": text, "tone": tone, "pri": 2 if kind.startswith("rl_") else 4})
+    # the moving-average framework: who controls the 5, the 10, rising / falling 60-minute support
+    out["framework"] = fw
+    out["layout"] = mp_layout(last, [q for q in points if q["kind"] != "inst"], atr, near, cfg)
+    if out["layout"] is not None:
+        out["layout"]["last"] = last
+    if out["layout"] is not None:
+        out["layout"]["last"] = last
+    if fw:
+        fs_ = sb.__dict__.setdefault("fw", {})
+        for k_, now_ in (("five", fw.get("five")), ("ten", fw.get("ten")), ("h60", fw.get("h60"))):
+            if now_ is None:
+                continue
+            was = fs_.get(k_)
+            fs_[k_] = now_
+            if was is None or was == now_:
+                continue
+            txt = {("five", "buyers"): f"Buyers just took the 5-day {px(fw['d5'])}. They control the short-term sentiment now",
+                   ("five", "sellers"): f"Sellers just took the 5-day {px(fw['d5'])}. They control the short-term sentiment now",
+                   ("ten", "over"): f"Back over the 10-day {px(fw['d10'])}. That's the birth of the long trade",
+                   ("ten", "under"): f"Under the 10-day {px(fw['d10'])}. That's the birth of the short trade",
+                   ("h60", "rising"): f"The 60m 5 and 10 are rising: rising 60-minute support at {px(fw['h5'])} / {px(fw['h10'])}. Strong plays come into it, wait for the retrace",
+                   ("h60", "falling"): f"The 60m 5 and 10 are falling: falling 60-minute resistance at {px(fw['h5'])} / {px(fw['h10'])}. Wait for the pop into it to short",
+                   ("h60", "flat"): "The 60m 5 and 10 flattened out. No clean 60-minute trend right now"}[(k_, now_)]
+            note("fw:" + k_, now_, txt, "bull" if now_ in ("buyers", "over", "rising") else "bear" if now_ in ("sellers", "under", "falling") else "neutral",
+                 repeat=900, loud=True)
+        z = fw.get("zone")
+        if z and fw.get("h60") in ("rising", "falling"):
+            rising = fw["h60"] == "rising"
+            inside = z[0] - near * 0.5 <= last <= z[1] + near * 0.5
+            came = (last >= z[0] - near * 0.5) if rising else (last <= z[1] + near * 0.5)
+            if inside and came and t - fs_.get("retrace_t", -1e9) > float(cfg.get("retrace_repeat_minutes", 30)) * 60:
+                fs_["retrace_t"] = t
+                note("retrace", (fw["h60"], round(t // 1800)),
+                     (f"Here's the 60-minute retrace into rising support, the 60m 5 / 10 at {px(fw['h5'])} / {px(fw['h10'])}. "
+                      "This is where we look to buy: technical buyers meeting emotional sellers. Wait for the reload buyer or a close off it")
+                     if rising else
+                     (f"Here's the 60-minute pop into falling resistance, the 60m 5 / 10 at {px(fw['h5'])} / {px(fw['h10'])}. "
+                      "This is where we look to short: technical sellers meeting emotional buyers. Wait for the reload seller or a close off it"),
+                     "bull" if rising else "bear", repeat=1800, loud=True)
+    # structure: lower lows / higher highs on the 60 and on the Daily
+    for kind, txt in structure_read(sb, t, h60, drows, live, last, fw, cfg):
+        note("struct:" + kind, (kind, round(t // 60)), txt, "bear" if kind.startswith("ll") else "bull", repeat=1800, loud=True)
+    # THE DAILY BRIEF: the brain of the trade, said once a day and again whenever it changes (the 50, the 5 / 10, the MP)
+    dr_up = room_read(True, ctx, None, points, zones, last, near, atr, cfg)
+    dr_dn = room_read(False, ctx, None, points, zones, last, near, atr, cfg)
+    db = daily_brief(ctx, fw, dr_up, dr_dn, drows, live, atr, cfg)
+    out["daily"] = db
+    if db:
+        # said again only when the Daily itself changes (the 50, the 5, the 10, room or thin), never because the nearest
+        # average moved a cent; and never more often than daily_repeat_minutes whatever changed
+        mine = (dr_up if ctx.get("bias") == "bull" else dr_dn) or {}
+        dkey = (ctx.get("bias"), (fw or {}).get("five"), (fw or {}).get("ten"), "thin" if mine.get("thin") else "open" if mine.get("to") is None else "room")
+        note("daily", dkey, db, "bull" if ctx["bias"] == "bull" else "bear", repeat=float(cfg.get("daily_repeat_minutes", 45)) * 60, loud=True)
+    # how price reacts at the averages, daily and 60-minute: bounce off demand, reject at supply, close through
+    if mas:
+        mas = merge_mas(mas, max(tick, near * 0.2))
+        cl_t = (done[-1][0] + 60 * cmin) if done else None
+        room_pts = [q for q in points if q["kind"] != "inst"]
+        active_ = bool(out.get("play"))
+        for kind, m, txt in ma_watch(sb, t, last, near, mas, cl, cl_t, room_pts, cfg):
+            tone_ = {"bounce": "bull", "reject": "bear", "through_up": "bull", "through_dn": "bear"}.get(kind, "neutral")
+            note("ma:" + m["name"], (kind, round(t // 60)), txt, tone_, repeat=600, loud=kind != "into" or active_)
+    # YOUR SECOND ENTRY: walked in, step by step, then live
+    for kind, txt in second_entry_watch(sb, t, play or {}, last, near, locals().get("pb"), se_state, cfg):
+        note("se:" + kind, (kind, txt[:40]), txt, "bull" if (play or {}).get("side", "long") != "short" else "bear", repeat=30, loud=True)
+    # the 60-minute candle confirmation (PS60 rule 2)
+    hc = h60_confirm(sb, t, h60, last)
+    if hc:
+        note("h60:" + hc[0], (hc[0], round(t // 3600)), hc[1], "bull" if hc[0] == "up" else "bear", repeat=3600,
+             loud=bool(trade) or bool(foc and foc.get("approach") and out.get("play")))
+    # the trade you're in, against the levels
+    if trade:
+        rm_t = room_read(trade["dir"] == "long", ctx, foc, points, zones, last, near, atr, cfg)
+        pb_ = locals().get("pb")
+        for kind, txt in trade_read(sb, t, trade, foc, last, near, pb_, rm_t, cfg, pace, market, fr):
+            note("trade:" + kind, (kind, txt[:60]), txt, "warn" if kind in ("stop", "r57", "weak") else "bull" if kind in ("pay", "mp") else "neutral", repeat=60, loud=True)
+    else:
+        trade_read(sb, t, None, foc, last, near, None, None, cfg)
     if not foc or not foc["approach"]:
         sb.said["att"] = (False, t)
         out["now"] = (f"Watching. Nearest: {foc['name']} {px(foc['p']) if foc['kind'] != 'uzone' else ''}".rstrip()

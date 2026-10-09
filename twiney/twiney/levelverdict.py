@@ -20,25 +20,25 @@ PHRASES = {
     "DEFENDED_BUYERS": [
         "{nm} held up. Buyers defended {lvl} after all that back and forth, price {px}, {dist} over it",
         "Buyers won that fight at {nm}. {lvl} held, we're at {px} now",
-        "{nm} did its job, {lvl} held as support. Price {px}, sitting {dist} above it",
+        "{nm} did its job, {lvl} held as demand. Buyers were there. Price {px}, sitting {dist} above it",
         "That was a defend at {nm}. Buyers kept {lvl}, price is {px}",
     ],
     "DEFENDED_SELLERS": [
-        "{nm} held as resistance. Sellers defended {lvl}, price {px}, {dist} under it",
+        "{nm} held as supply. Sellers defended {lvl}, price {px}, {dist} under it",
         "Sellers won that one at {nm}. {lvl} held, we're at {px}",
         "{nm} turned it away. {lvl} held up top, price back to {px}",
         "That was a reject at {nm}. Sellers kept {lvl}, price is {px}",
     ],
     "LOST": [
         "{nm} is lost. Sellers took {lvl} and price is holding under it at {px}",
-        "Support gave out at {nm}. {lvl} broke, we're at {px}, {dist} below it",
-        "{nm} didn't hold. {lvl} broke down, price {px}, now it's resistance",
+        "Demand gave out at {nm}. {lvl} broke, we're at {px}, {dist} below it",
+        "{nm} didn't hold. {lvl} broke down, price {px}, now it's supply over us",
         "Buyers lost {nm} at {lvl}. Price {px}, living under it now",
     ],
     "BROKE": [
         "{nm} broke. Buyers took {lvl} and price is holding over it at {px}",
         "We're through {nm}. {lvl} gave way, price {px}, {dist} above it",
-        "{nm} got taken out. {lvl} is behind us, price {px}, now it's support",
+        "{nm} got taken out. {lvl} is behind us, price {px}, now it's demand under us",
         "Sellers lost {nm} at {lvl}. Price {px}, holding above it",
     ],
     "RECLAIMED_UP": [
@@ -164,7 +164,7 @@ def label(v):
     """The short label on the alert list."""
     o, frm = v["outcome"], v["from"]
     if o == "DEFENDED":
-        return "DEFENDED" if frm == "above" else "HELD AS RESISTANCE"
+        return "DEFENDED" if frm == "above" else "HELD AS SUPPLY"
     if o == "RECLAIMED":
         return "RECLAIMED" if frm == "above" else "FAILED BREAKOUT"
     return {"LOST": "LOST", "BROKE": "BROKE THROUGH", "UNDECIDED": "STILL UNDECIDED"}[o]

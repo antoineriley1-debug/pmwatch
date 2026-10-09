@@ -620,3 +620,305 @@ class CoachReadsTests(unittest.TestCase):
             for w in opts:
                 for bad in ("fading", "stale", "gone", "trigger", "dark", "iceberg"):
                     self.assertNotIn(bad, w.lower())
+
+
+class FrameworkTests(unittest.TestCase):
+    """Who controls the 5, the 10 is the birth of the trade, rising 60-minute support (the 60m 5 / 10)."""
+
+    def packs(self, d5, d10, h5, h10, h5p, h10p):
+        return ([("SMA 5", d5), ("SMA 10", d10)], [("SMA 5", d5), ("SMA 10", d10)],
+                [("SMA 5", h5), ("SMA 10", h10)], [("SMA 5", h5p), ("SMA 10", h10p)])
+
+    def test_uptrend_read(self):
+        dp, dpp, hp, hpp = self.packs(100.0, 99.0, 101.0, 100.5, 100.8, 100.3)
+        fw = story.ma_framework(dp, dpp, hp, hpp, 101.5, CFG)
+        self.assertEqual((fw["five"], fw["ten"], fw["h60"]), ("buyers", "over", "rising"))
+        self.assertIn("Buyers control the 5-day", fw["text"])
+        self.assertIn("the long trade is born", fw["text"])
+        self.assertIn("wait for the 60-minute retrace into it to buy", fw["text"])
+
+    def test_downtrend_read(self):
+        dp, dpp, hp, hpp = self.packs(100.0, 101.0, 99.0, 99.5, 99.2, 99.8)
+        fw = story.ma_framework(dp, dpp, hp, hpp, 98.5, CFG)
+        self.assertEqual((fw["five"], fw["ten"], fw["h60"]), ("sellers", "under", "falling"))
+
+    def test_retrace_into_rising_60m_support_is_called(self):
+        sb, t = story.Story(), ny_t(2026, 10, 5, 11, 0)
+        dp, dpp, hp, hpp = self.packs(140.0, 139.0, 144.95, 144.80, 144.7, 144.6)
+        play = {"side": "long", "trigger": 150.0}
+        pts = story.ps60_points(play)
+        said = []
+        for i, last in enumerate((145.60, 145.30, 144.92)):
+            fw = story.ma_framework(dp, dpp, hp, hpp, last, CFG)
+            out = story.build(sb, t + 30 * i, last, 0.01, 3.0, play, None, None, pts, [], [], story.flow_read([], t, CFG), None, [], [],
+                              [[t - 120, last, last, last, last, 1]], CFG, fw=fw)
+            said += [x["text"] for x in out["said"]]
+        self.assertTrue(any("60-minute retrace into rising support" in w for w in said), said)
+
+    def test_the_5_changing_hands_is_said(self):
+        sb, t = story.Story(), ny_t(2026, 10, 5, 11, 0)
+        play = {"side": "long", "trigger": 150.0}
+        pts = story.ps60_points(play)
+        said = []
+        for i, last in enumerate((101.0, 99.0)):
+            dp, dpp, hp, hpp = self.packs(100.0, 98.0, 100.0, 100.0, 100.0, 100.0)
+            fw = story.ma_framework(dp, dpp, hp, hpp, last, CFG)
+            out = story.build(sb, t + 30 * i, last, 0.01, 3.0, play, None, None, pts, [], [], story.flow_read([], t, CFG), None, [], [],
+                              [[t - 120, last, last, last, last, 1]], CFG, fw=fw)
+            said += [x["text"] for x in out["said"]]
+        self.assertTrue(any("Sellers just took the 5-day" in w for w in said), said)
+
+    def test_key_mas_include_the_daily_89_ema(self):
+        dpack = [("SMA 5", 1.0), ("EMA 89", 2.0), ("EMA 34", 3.0)]
+        hpack = [("EMA 20", 4.0), ("EMA 89", 5.0), ("SMA 150", 6.0)]
+        names = [m["name"] for m in story.key_mas(dpack, hpack, CFG)]
+        self.assertIn("daily 89 EMA", names); self.assertIn("daily 34 EMA", names); self.assertIn("5-day", names)
+        self.assertIn("60m 20 EMA", names); self.assertIn("60m 150 SMA", names)
+        self.assertNotIn("60m 89 EMA", names)                                  # the 34 / 65 / 89 EMA: daily only
+        pts = story.ma_stack_points([("EMA 89", 2.0)], [("EMA 89", 5.0), ("EMA 20", 4.0)])
+        self.assertEqual([p["name"] for p in pts], ["daily 89 EMA", "60m 20 EMA"])
+
+    def test_mas_on_top_of_each_other_are_one(self):
+        m = story.merge_mas([{"p": 100.00, "name": "5-day"}, {"p": 100.02, "name": "60m 20 SMA"}, {"p": 101.0, "name": "10-day"}], 0.05)
+        self.assertEqual([x["name"] for x in m], ["5-day / 60m 20 SMA", "10-day"])
+
+
+class MaWatchTests(unittest.TestCase):
+    def run_path(self, prices, ma=100.0, closes=None):
+        sb, t = story.Story(), ny_t(2026, 10, 5, 11, 0)
+        mas = [{"p": ma, "name": "daily 89 EMA"}]
+        pts = [{"p": 103.0, "name": "prior-day high", "kind": "pdh"}, {"p": 97.0, "name": "prior-day low", "kind": "pdl"}]
+        out = []
+        for i, px_ in enumerate(prices):
+            cl = closes[i] if closes else None
+            out += story.ma_watch(sb, t + 10 * i, px_, 0.30, mas, cl, (t + 10 * i) if cl is not None else None, pts, CFG)
+        return out
+
+    def test_bounce_off_demand(self):
+        out = self.run_path([100.80, 100.40, 100.25, 100.10, 100.05, 100.30, 100.60])
+        kinds = [k for k, _m, _w in out]
+        self.assertIn("into", kinds); self.assertIn("bounce", kinds)
+        w = next(w for k, _m, w in out if k == "bounce")
+        self.assertIn("daily 89 EMA 100.00", w); self.assertIn("Next supply: prior-day high 103.00", w)
+
+    def test_reject_at_supply(self):
+        out = self.run_path([99.20, 99.60, 99.75, 99.90, 99.95, 99.70, 99.40])
+        self.assertIn("reject", [k for k, _m, _w in out])
+
+    def test_close_through_needs_a_close(self):
+        prices = [100.80, 100.40, 100.10, 99.80, 99.70]
+        out = self.run_path(prices, closes=[None, None, 100.10, 100.05, 100.02])        # wicks under, closes over
+        self.assertNotIn("through_dn", [k for k, _m, _w in out])
+        out = self.run_path(prices, closes=[None, None, 100.10, 99.85, 99.75])
+        self.assertIn("through_dn", [k for k, _m, _w in out])
+
+
+class TradeReadTests(unittest.TestCase):
+    def trade(self, **kw):
+        d = {"dir": "long", "what": "long 100 AAPL from 145.00", "pnl": 0.0, "entry": 145.0, "stop": 144.60, "target": 146.0,
+             "qty": 100, "key": ("long", 100, ())}
+        d.update(kw)
+        return d
+
+    def test_entering_says_the_stop_and_first_level(self):
+        sb, t = story.Story(), ny_t(2026, 10, 5, 11, 0)
+        foc = {"on": False, "approach": True, "kind": "pdh", "name": "prior-day high", "p": 145.40, "lo": 145.40, "hi": 145.40}
+        out = story.trade_read(sb, t, self.trade(), foc, 145.0, 0.3, None, {"to": 145.4, "name": "prior-day high", "dollars": 0.4}, CFG)
+        w = dict(out)
+        self.assertIn("You're in: long 100 AAPL from 145.00", w["enter"])
+        self.assertIn("Stop 144.60, 40 cents away", w["enter"])
+        self.assertIn("needs a close over it", w["level"])
+
+    def test_five_to_seven_minute_rule(self):
+        sb, t = story.Story(), ny_t(2026, 10, 5, 11, 0)
+        story.trade_read(sb, t, self.trade(), None, 145.0, 0.3, None, None, CFG)
+        out = story.trade_read(sb, t + 330, self.trade(), None, 145.02, 0.3, None, None, CFG)
+        self.assertTrue(any(k == "r57" and "reload seller" in w for k, w in out), out)
+        self.assertFalse([1 for k, _w in story.trade_read(sb, t + 360, self.trade(), None, 145.02, 0.3, None, None, CFG) if k == "r57"])
+
+    def test_first_move_pay_yourself(self):
+        sb, t = story.Story(), ny_t(2026, 10, 5, 11, 0)
+        story.trade_read(sb, t, self.trade(), None, 145.0, 0.3, None, None, CFG)
+        out = story.trade_read(sb, t + 60, self.trade(pnl=45.0), None, 145.45, 0.3, None, None, CFG)
+        self.assertTrue(any(k == "pay" and "breakeven" in w for k, w in out), out)
+
+    def test_close_to_the_stop(self):
+        sb, t = story.Story(), ny_t(2026, 10, 5, 11, 0)
+        story.trade_read(sb, t, self.trade(), None, 145.0, 0.3, None, None, CFG)
+        out = story.trade_read(sb, t + 60, self.trade(pnl=-30.0), None, 144.70, 0.3, None, None, CFG)
+        self.assertTrue(any(k == "stop" for k, _w in out), out)
+
+    def test_options_short_side(self):
+        sb, t = story.Story(), ny_t(2026, 10, 5, 11, 0)
+        tr = self.trade(dir="short", what="2 AAPL 10/09 140P at 1.20", entry=None, stop=None, target=None, key=("short", 0, (("k", 2),)))
+        foc = {"on": False, "approach": True, "kind": "pdl", "name": "prior-day low", "p": 144.6, "lo": 144.6, "hi": 144.6}
+        w = dict(story.trade_read(sb, t, tr, foc, 145.0, 0.3, None, None, CFG))
+        self.assertIn("2 AAPL 10/09 140P", w["enter"]); self.assertIn("needs a close under it", w["level"])
+
+
+class H60ConfirmTests(unittest.TestCase):
+    def test_building_over_the_prior_60_minute_high(self):
+        sb, t = story.Story(), ny_t(2026, 10, 5, 11, 20)
+        h = int(t // 3600) * 3600
+        h60 = [[h - 3600, 100, 101, 99.5, 100.8, 1], [h, 100.8, 100.9, 100.6, 100.7, 1]]
+        self.assertIsNone(story.h60_confirm(sb, t, h60, 100.9))
+        side, w = story.h60_confirm(sb, t + 60, h60, 101.05)
+        self.assertEqual(side, "up"); self.assertIn("prior 60-minute high 101.00", w)
+        self.assertIsNone(story.h60_confirm(sb, t + 120, h60, 101.10))           # once per candle
+        side, w = story.h60_confirm(sb, t + 180, h60, 99.40)
+        self.assertEqual(side, "down")
+
+
+class TradeMpTests(unittest.TestCase):
+    trade = TradeReadTests.trade
+
+    def test_mp_clusters_measure_to_the_far_edge(self):
+        pts = [{"p": 146.00, "name": "60m 20 SMA", "kind": "hma"}, {"p": 146.10, "name": "5-day", "kind": "dma"},
+               {"p": 148.00, "name": "daily 89 EMA", "kind": "dma"}]
+        r = story.room_read(True, {"bias": "bull"}, None, pts, [], 145.0, 0.3, 3.0, CFG)
+        self.assertEqual(r["to"], 146.10); self.assertEqual(r["name"], "60m 20 SMA / 5-day")
+        self.assertIn("one supply, far edge", r["text"])
+        self.assertTrue(r["thin"]); self.assertIn("next MP beyond it: $3.00 to daily 89 EMA", r["text"])
+        self.assertEqual([m["name"] for m in r["map"]], ["60m 20 SMA / 5-day", "daily 89 EMA"])
+        self.assertAlmostEqual(r["map"][1]["room"], 1.90)
+
+    def test_mp_left_while_it_works(self):
+        sb, t = story.Story(), ny_t(2026, 10, 5, 11, 0)
+        rm = {"to": 147.0, "name": "daily 89 EMA", "dollars": 2.0, "atr_x": 0.67, "thin": False}
+        story.trade_read(sb, t, self.trade(), None, 145.0, 0.3, None, rm, CFG)
+        out = story.trade_read(sb, t + 100, self.trade(pnl=20.0), None, 145.20, 0.3, None, dict(rm, dollars=1.80), CFG)
+        w = [w for k, w in out if k == "mp"]
+        self.assertTrue(w and "$1.80 of MP left to daily 89 EMA 147.00" in w[0], out)
+
+    def test_weak_tape_market_and_puts_say_take_some_profit(self):
+        sb, t = story.Story(), ny_t(2026, 10, 5, 11, 0)
+        story.trade_read(sb, t, self.trade(), None, 145.0, 0.3, None, None, CFG)
+        fr = {"C": {"now_usd": 10_000}, "P": {"now_usd": 400_000}}
+        pace = {"state": "FAST", "buy_pct": 20, "ratio": 2.0}
+        mkt = {"dir": "down", "text": "SPY down 0.6%, under VWAP; QQQ down 0.9%, under VWAP."}
+        rm = {"to": 147.0, "name": "daily 89 EMA", "dollars": 1.6, "thin": False}
+        story.trade_read(sb, t + 10, self.trade(pnl=40.0), None, 145.40, 0.3, None, rm, CFG, pace, mkt, fr)
+        out = story.trade_read(sb, t + 80, self.trade(pnl=40.0), None, 145.40, 0.3, None, rm, CFG, pace, mkt, fr)
+        self.assertFalse([1 for k, _w in out if k == "weak"])                 # a minute is not a breakdown
+        out = story.trade_read(sb, t + 200, self.trade(pnl=40.0), None, 145.40, 0.3, None, rm, CFG, pace, mkt, fr)
+        w = [w for k, w in out if k == "weak"]
+        self.assertTrue(w, out)
+        self.assertIn("SPY down 0.6%", w[0]); self.assertIn("puts $400K vs calls $10K", w[0]); self.assertIn("not a pullback", w[0])
+        self.assertIn("paying yourself", w[0])
+        for bad in ("fading", "stale", "gone"):
+            self.assertNotIn(bad, w[0].lower())
+
+    def test_a_pullback_never_gets_you_worked_out(self):
+        """Sellers on the tape and the market soft, but no tremendous flow against you: a pullback. Not a word."""
+        sb, t = story.Story(), ny_t(2026, 10, 5, 11, 0)
+        story.trade_read(sb, t, self.trade(), None, 145.0, 0.3, None, None, CFG)
+        fr = {"C": {"now_usd": 30_000}, "P": {"now_usd": 90_000}}
+        mkt = {"dir": "down", "text": "SPY down 0.3%."}
+        for i in range(30):
+            out = story.trade_read(sb, t + 20 * i, self.trade(pnl=40.0), None, 145.30, 0.3, None, None, CFG,
+                                   {"state": "FAST", "buy_pct": 35, "ratio": 1.5}, mkt, fr)
+            self.assertFalse([1 for k, _w in out if k == "weak"])
+        # tremendous flow but the tape still two-way: still a pullback
+        fr = {"C": {"now_usd": 10_000}, "P": {"now_usd": 500_000}}
+        for i in range(30):
+            out = story.trade_read(sb, t + 600 + 20 * i, self.trade(pnl=40.0), None, 145.30, 0.3, None, None, CFG,
+                                   {"state": "FAST", "buy_pct": 45, "ratio": 1.5}, mkt, fr)
+            self.assertFalse([1 for k, _w in out if k == "weak"])
+
+    def test_short_side_the_reverse(self):
+        sb, t = story.Story(), ny_t(2026, 10, 5, 11, 0)
+        tr = self.trade(dir="short", what="short 100 AAPL from 145.00", stop=145.40, target=144.0, key=("short", -100, ()))
+        story.trade_read(sb, t, tr, None, 145.0, 0.3, None, None, CFG)
+        fr = {"C": {"now_usd": 450_000}, "P": {"now_usd": 5_000}}
+        pace = {"state": "SURGE", "buy_pct": 80, "ratio": 2.2}
+        mkt = {"dir": "up", "text": "SPY up 0.7%, over VWAP."}
+        story.trade_read(sb, t + 10, dict(tr, pnl=40.0), None, 144.60, 0.3, None, None, CFG, pace, mkt, fr)
+        out = story.trade_read(sb, t + 200, dict(tr, pnl=40.0), None, 144.60, 0.3, None, None, CFG, pace, mkt, fr)
+        w = [w for k, w in out if k == "weak"]
+        self.assertTrue(w, out)
+        self.assertIn("buyers own the tape, 80%", w[0]); self.assertIn("calls $450K vs puts $5K", w[0])
+
+
+class StructureTests(unittest.TestCase):
+    def test_lower_lows_on_the_60(self):
+        sb, t = story.Story(), ny_t(2026, 10, 5, 12, 5)
+        h = int(t // 3600) * 3600
+        h60 = [[h - 7200, 101, 102, 100, 101, 1], [h - 3600, 101, 101.5, 99.5, 100, 1], [h, 100, 100.2, 99.8, 100, 1]]
+        out = story.structure_read(sb, t, h60, None, False, 100.0, {"h10": 99.0}, CFG)
+        self.assertEqual(out[0][0], "ll60")
+        self.assertIn("Lower low on the 60-minute, 99.50 under 100.00", out[0][1]); self.assertIn("demand to demand", out[0][1])
+        self.assertIn("Next demand: 99.00, the 60m 10", out[0][1])
+        self.assertEqual(story.structure_read(sb, t + 60, h60, None, False, 100.0, None, CFG), [])      # once per candle
+
+    def test_higher_high_on_the_daily(self):
+        sb, t = story.Story(), ny_t(2026, 10, 5, 12, 5)
+        rows = daily_rows([100, 101, 102, 101, 102, 103])
+        rows[-1] = [t - 3600 * 3, 103, 105.5, 102.5, 105, 1e6]                 # today, live, over the five-day high
+        out = story.structure_read(sb, t, None, rows, True, 105.0, None, CFG)
+        self.assertEqual(out[0][0], "hhD"); self.assertIn("Higher high on the Daily", out[0][1]); self.assertIn("supply to supply", out[0][1])
+
+    def test_no_banned_words_in_structure(self):
+        sb, t = story.Story(), ny_t(2026, 10, 5, 12, 5)
+        h = int(t // 3600) * 3600
+        for h60 in ([[h - 7200, 101, 102, 100, 101, 1], [h - 3600, 101, 101.5, 99.5, 100, 1], [h, 100, 100.2, 99.8, 100, 1]],
+                    [[h - 7200, 101, 102, 100, 101, 1], [h - 3600, 101, 103, 100.5, 102, 1], [h, 102, 102.2, 101.8, 102, 1]]):
+            for _k, w in story.structure_read(story.Story(), t, h60, None, False, 100.0, None, CFG):
+                for bad in ("fading", "stale", "gone", "trigger", "dark", "iceberg", "support", "resistance"):
+                    self.assertNotIn(bad, w.lower(), w)
+
+
+class DailyBriefTests(unittest.TestCase):
+    def test_the_brain_of_the_trade(self):
+        ctx = {"bias": "bull", "text": "Daily above the 50-day (138.20): bullish PS60, supply to supply. Objective: take the prior-day high 145.03."}
+        fw = {"bits": ["Buyers control the 5-day (143.10): short-term sentiment bullish", "Over the 10-day (142.00): the long trade is born",
+                       "Rising 60-minute support at the 60m 5 / 10 (144.00 / 143.80): wait for the 60-minute retrace into it to buy"]}
+        up = {"to": 147.0, "name": "daily 89 EMA", "dollars": 2.0, "atr_x": 0.67, "thin": False}
+        dn = {"to": 143.1, "name": "5-day", "dollars": 1.9}
+        w = story.daily_brief(ctx, fw, up, dn, None, True, 3.0, CFG)
+        self.assertIn("bullish PS60, supply to supply", w)
+        self.assertIn("Buyers control the 5-day", w); self.assertIn("the long trade is born", w)
+        self.assertNotIn("60-minute", w)                                           # the Daily brief is the Daily
+        self.assertIn("MP $2.00 to the next supply, daily 89 EMA 147.00, 0.67 ATR: room to work", w)
+        self.assertIn("Demand under us: 5-day 143.10, $1.90 away", w); self.assertIn("Daily ATR $3.00", w)
+
+    def test_open_air(self):
+        ctx = {"bias": "bear", "text": "Daily below the 50-day (150.00): bearish PS60, demand to demand."}
+        w = story.daily_brief(ctx, None, None, {"to": None}, None, True, None, CFG)
+        self.assertIn("Airspace below is clear: open air, no demand in the way", w)
+
+
+class SecondEntryWatchTests(unittest.TestCase):
+    def test_walked_into_the_second_entry_then_live(self):
+        sb, t = story.Story(), ny_t(2026, 10, 5, 11, 0)
+        play = {"side": "long", "trigger": 145.0, "second_entry": 146.0}
+        out = story.second_entry_watch(sb, t, play, 144.80, 0.3, None, None, CFG)
+        self.assertEqual(out[0][0], "set"); self.assertIn("Second entry marked at 146.00, 120 cents away", out[0][1])
+        said = []
+        for i, px_ in enumerate((145.00, 145.30, 145.52, 145.76, 145.92, 146.05, 146.20)):
+            said += story.second_entry_watch(sb, t + 10 * (i + 1), play, px_, 0.3, {"tail": "Buyers stepping up, 70% of the tape lifting the offer"}, None, CFG)
+        kinds = [k for k, _w in said]
+        self.assertEqual(kinds, ["near", "near", "near", "near", "through"])
+        self.assertIn("a dollar away", said[0][1]); self.assertIn("50 cents away", said[1][1]); self.assertIn("a quarter away", said[2][1])
+        self.assertIn("a dime away", said[3][1]); self.assertIn("Get ready", said[3][1])
+        self.assertIn("Through the second entry 146.00", said[4][1]); self.assertIn("it should go now", said[4][1])
+        self.assertIn("Buyers stepping up", said[4][1])
+        # the build, a minute on
+        out = story.second_entry_watch(sb, t + 200, play, 146.40, 0.3, None, "SECOND_ENTRY", CFG)
+        self.assertEqual(out[0][0], "build")
+
+    def test_short_side_and_removing_it(self):
+        sb, t = story.Story(), ny_t(2026, 10, 5, 11, 0)
+        play = {"side": "short", "trigger": 145.0, "second_entry": 144.0}
+        story.second_entry_watch(sb, t, play, 145.2, 0.3, None, None, CFG)
+        out = story.second_entry_watch(sb, t + 10, play, 144.48, 0.3, None, None, CFG)
+        self.assertIn("50 cents away", out[0][1])
+        self.assertEqual(story.second_entry_watch(sb, t + 20, {"side": "short", "trigger": 145.0}, 144.3, 0.3, None, None, CFG), [])
+
+    def test_no_banned_words(self):
+        sb, t = story.Story(), ny_t(2026, 10, 5, 11, 0)
+        play = {"side": "long", "trigger": 145.0, "second_entry": 146.0}
+        ws = [w for _k, w in story.second_entry_watch(sb, t, play, 144.8, 0.3, None, None, CFG)]
+        ws += [w for i, px_ in enumerate((145.0, 145.3, 145.52, 145.76, 145.92, 146.05)) for _k, w in story.second_entry_watch(sb, t + 10 * (i + 1), play, px_, 0.3, None, None, CFG)]
+        for w in ws:
+            for bad in ("fading", "stale", "gone", "trigger", "dark", "iceberg"):
+                self.assertNotIn(bad, w.lower(), w)

@@ -336,7 +336,7 @@ class LevelTracker:
         if self.state == BUILDING and not self.absorbed_window(now):
             return "RESTING"
         if self.state == GONE_PENDING:
-            return "GONE — JUDGING"
+            return "LEFT — JUDGING"
         return self.state
 
     def snapshot(self, now):

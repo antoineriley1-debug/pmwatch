@@ -146,7 +146,7 @@ class FlowTests(unittest.TestCase):
         self.assertEqual(got[-1]["label"], "RELOAD SELLER DETECTED")   # 1 s is not enough to call it cleared
         e.tick(t + 3.2)                                                  # still gone, price still through
         self.assertEqual(got[-1]["label"], "CLEANED UP")
-        self.assertIn("CLEANED UP — the SELLER at 10.00 (your pivot) is gone", got[-1]["text"])
+        self.assertIn("CLEANED UP — the SELLER at 10.00 (your pivot) is done", got[-1]["text"])
         self.assertIn("RELOAD SELLER at 10.00", got[0]["text"])
         self.assertEqual(got[-1]["size_before_gone"], 1000)
         pane = e.snapshot(t + 1)["panes"][0]

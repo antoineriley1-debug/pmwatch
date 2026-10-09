@@ -1012,6 +1012,12 @@ class Engine:
                                  for r in bk.values()], t, ic)
             flev = inst.fund_levels(list(st.trackers.values()), walk, list(st.dark.levels.values()), prog, ic)
             gd = inst.guides(prog, st.price(), vw, (t + off) % 86400, ic)
+            # CHILD ORDERS: the same size again and again on one side at a steady clock, an algo working an order
+            kids = inst.children(list(st.tape.prints), t, ic)
+            if kids:
+                kids["since"] = self._hm_t(kids["t0"])
+                kids["sizes_set"] = set(kids.get("sizes") or [])
+            memo["kids"] = kids
             # a program on the other side of YOUR trade (shares, or a call = long / a put = short)
             mine = None
             try:
@@ -1029,7 +1035,11 @@ class Engine:
             if prog and mine and ((prog["side"] == "BUY") != (mine == "long")):
                 against = (f"STEADY {'SELLING' if prog['side'] == 'SELL' else 'BUYING'} AGAINST YOUR {mine.upper()}: "
                            f"~{prog['part']}% of volume since {prog['since']}")
-            v = {"program": prog, "tod": tod, "fund": fund[:6], "walk": walk, "levels": flev[:8], "guides": gd, "against": against, "mine": mine}
+            if kids and mine and ((kids["side"] == "BUY") != (mine == "long")) and not against:
+                against = (f"CHILD ORDERS AGAINST YOUR {mine.upper()}: {kids['n']} prints of {kids['size']} {'at the ask' if kids['side'] == 'BUY' else 'at the bid'} "
+                           f"every {kids['every']}s since {kids['since']}")
+            v = {"program": prog, "tod": tod, "fund": fund[:6], "walk": walk, "levels": flev[:8], "guides": gd, "against": against, "mine": mine,
+                 "kids": {k: v_ for k, v_ in kids.items() if k != "sizes_set"} if kids else None}
         except Exception:
             log.exception("inst %s", st.symbol)
             v = None
@@ -1038,10 +1048,27 @@ class Engine:
             self._inst_calls(st, v, t, ic)
         return v
 
+    @staticmethod
+    def _hm_t(t):
+        from .ps60 import ny_offset
+        sec = int((t + ny_offset(t)) % 86400)
+        h, m = sec // 3600, (sec % 3600) // 60
+        return f"{(h - 1) % 12 + 1}:{m:02d}"
+
     def _inst_calls(self, st, v, t, ic):
         said = st.__dict__.setdefault("_inst_said", {})
         rep = float(ic.get("repeat_seconds", 1200))
         calls = []
+        kd = v.get("kids")
+        if kd:
+            who = "buyer" if kd["side"] == "BUY" else "seller"
+            at = "at the ask" if kd["side"] == "BUY" else "at the bid"
+            what = "CHILD ORDERS · BUY PROGRAM" if kd["side"] == "BUY" else "CHILD ORDERS · SELL PROGRAM"
+            calls.append(((("KIDS", kd["side"])), what,
+                          f"{what}: {kd['n']} prints of {kd['size']:,} {at} in {kd['minutes']:g} min, one every {kd['every']:g} s, "
+                          f"{kd['one_way']}% one way · {kd['shares']:,} shares ≈${kd['usd']:,} since {kd['since']} · an algo working a {who}'s order",
+                          f"Child orders. A {who} is working an order: {kd['n']} prints of {kd['size']} shares {at}, one every {kd['every']:g} seconds, "
+                          f"since {kd['since']}. {kd['shares']:,} shares so far. Those prints look like nothing one at a time. That's the algo"))
         pg = v.get("program")
         if pg and pg["score"] >= float(ic.get("call_score", 70)):
             vv = pg.get("vs_vwap")
@@ -1444,11 +1471,19 @@ class Engine:
             mc["k"] = (int(t // 60), st.hist_ver, st.study_ver)
             try:
                 h60 = studies.h60_series(st, t, self.cfg.get("studies") or {})
-                mc["v"] = story_mod.ma_stack_points(studies.ma_pack([r[4] for r in drows], use_bb=False),
-                                                    studies.ma_pack([r[4] for r in h60], use_bb=False) if len(h60) >= 5 else [])
+                dcl, hcl = [r[4] for r in drows], [r[4] for r in h60]
+                dpack = studies.ma_pack(dcl, use_bb=False)
+                hpack = studies.ma_pack(hcl, use_bb=False) if len(h60) >= 5 else []
+                mc["v"] = story_mod.ma_stack_points(dpack, hpack)
+                # the framework reads the slope: the packs one bar back (the 60m 5 / 10 rising or falling)
+                mc["dprev"] = studies.ma_pack(dcl[:-1], use_bb=False) if len(dcl) > 6 else []
+                mc["hprev"] = studies.ma_pack(hcl[:-1], use_bb=False) if len(hcl) > 6 else []
+                mc["dpack"], mc["hpack"] = dpack, hpack
+                mc["mas"] = story_mod.key_mas(dpack, hpack, sc)
+                mc["h60"] = h60[-3:]
             except Exception:
                 log.exception("story MAs %s", st.symbol)
-                mc["v"] = []
+                mc["v"], mc["mas"], mc["dpack"], mc["hpack"], mc["dprev"], mc["hprev"], mc["h60"] = [], [], [], [], [], [], []
         points = story_mod.ps60_points(st.play, getattr(st, "sneaky_auto", None)) + dc["pts"] + story_mod.ma_points(ctx) + mc["v"]
         zones = story_mod.user_zones(st.play)                 # your zones only: no automatic support / resistance
         conf = story_mod.confluence(points, zones, last, atr, tick, sc)
@@ -1474,12 +1509,42 @@ class Engine:
             traps = None
         out = story_mod.build(st.storybook, t, last, tick, atr, st.play, se_state, ctx, points, zones, conf, fr, st.pace,
                               reloads, consumed, mins, sc, traps=traps, market=self._market_read(st, t),
-                              pulled={(c[1], c[2]): c[0] for c in getattr(st, "pulled", ()) if t - c[0] <= 60})
+                              pulled={(c[1], c[2]): c[0] for c in getattr(st, "pulled", ()) if t - c[0] <= 60},
+                              fw=story_mod.ma_framework(mc.get("dpack"), mc.get("dprev"), mc.get("hpack"), mc.get("hprev"), last, sc),
+                              mas=mc.get("mas"), trade=self._trade_read(st, last), h60=mc.get("h60"), drows=drows, live=live)
         out["feed"] = list(st.storybook.feed)[:30]
         out["near"] = round(story_mod.near_dist(last, atr, tick, sc), 4)
         out["atr"] = atr
         out["draw_zones"] = bool(sc.get("draw_zones", True))
         return out
+
+    def _trade_read(self, st, last):
+        """The trade you're in on this stock, for the story: the shares and / or its options, which way, the entry,
+        the working stop / target, the open P&L."""
+        try:
+            pos = self._position_view(st.symbol, last)
+            opts = [self._opt_view(p) for p in list(self.opt_positions.values()) if p.get("symbol") == st.symbol and p.get("qty")]
+        except Exception:
+            return None
+        if not pos and not opts:
+            return None
+        pend = self._pending(st.symbol)
+        stop = next((o.get("aux") or o.get("lmt") for o in pend if o.get("role") == "stop"), None) or st.play.get("stop")
+        tgt = next((o.get("lmt") for o in pend if o.get("role") in ("target", "partial")), None) or st.play.get("target")
+        bits, pnl, dir_ = [], 0.0, None
+        if pos:
+            dir_ = "long" if pos["qty"] > 0 else "short"
+            bits.append(f"{'long' if pos['qty'] > 0 else 'short'} {abs(pos['qty']):,} {st.symbol} from {fmt_price(pos['avg_cost'])}")
+            pnl += pos.get("pnl") or 0.0
+        for o in opts:
+            d_ = "long" if (o["right"] == "C") == (o["qty"] > 0) else "short"
+            dir_ = dir_ or d_
+            bits.append(f"{abs(o['qty'])} {o['label']} at {o['per_contract']:.2f}")
+            pnl += o.get("pnl") or 0.0
+        return {"dir": dir_, "what": " and ".join(bits), "pnl": round(pnl, 2), "entry": pos["avg_cost"] if pos else None,
+                "stop": float(stop) if stop else None, "target": float(tgt) if tgt else None,
+                "qty": pos["qty"] if pos else sum(o["qty"] for o in opts),
+                "key": (dir_, pos["qty"] if pos else 0, tuple(sorted((o["key"], o["qty"]) for o in opts)))}
 
     def _market_read(self, st, t):
         """What the market is doing, for the coach: SPY / QQQ when on the desk (up or down on the day, over or under
@@ -1526,11 +1591,27 @@ class Engine:
             return None
         return {k: v for k, v in s_.items() if k != "said"}
 
+    @staticmethod
+    def _story_voiced(s_, sc):
+        """Which story moments the voice says (SETTINGS > PS60 story): your trade and second entry always; the
+        play-by-play, the coach and the excitement by their own switches; the rest by story.voice."""
+        k = (s_.get("topic") or "").split(":")[0]
+        if k in ("trade", "se"):
+            return True
+        if k == "pbp":
+            return bool(sc.get("voice_play_by_play", True))
+        if k.startswith("coach"):
+            return bool(sc.get("voice_coach", True))
+        if k == "hype":
+            return bool(sc.get("voice_hype", True))
+        return bool(sc.get("voice", True))
+
     def _story_alert(self, st, s_, t, sc):
         tone = s_.get("tone")
         alert = {"t": t, "symbol": st.symbol, "label": "PS60 STORY", "price": fmt_price(st.price()),
                  "side": "bid" if tone == "bear" else "ask", "role": "story", "text": s_["text"],
-                 "words": f"{st.symbol}. {s_['text']}" if sc.get("voice", False) or (s_.get("topic") == "pbp" and sc.get("voice_play_by_play", True)) or (s_.get("topic") == "coach" and sc.get("voice_coach", True)) or (s_.get("topic") == "hype" and sc.get("voice_hype", True)) else None}
+                 "pri": int(s_.get("pri") or 3),
+                 "words": f"{st.symbol}. {s_['text']}" if self._story_voiced(s_, sc) else None}
         alert["key"] = f"{round(t, 2)}|{st.symbol}|STORY|{s_['topic']}"
         self.alerts.appendleft(alert)
         self._rec(dict(alert, ev="alert"))
@@ -5187,6 +5268,7 @@ class Engine:
 
         change = self.slot_changes[i] if 0 <= i < len(self.slot_changes) else None
         ps = self._ps60(st, t, bars, st.price())
+        kids_ = (st.__dict__.get("_inst") or {}).get("kids")   # the child-order stream, for the ⚙ marks on the tape
         return {
             "slot": i,
             "sv": st.sv,
@@ -5213,9 +5295,10 @@ class Engine:
             "daytrap": self._day_trap_pane(st, t),
             "breaktraps": self._break_trap_pane(st, t),
             "seq": self._sequence(st, t, ps),
-            "tape": dict(tape, recent=[
+            "tape": dict(tape, recent=[                  # ⚙ on the prints an algo's child-order stream is made of
                 {"age": round(t - p["t"], 1), "price": fmt_price(p["price"]), "size": round(p["size"]),
-                 "side": p["side"], "large": p["large"], "exchange": p["exchange"], "at": at_level(p["price"])}
+                 "side": p["side"], "large": p["large"], "exchange": p["exchange"], "at": at_level(p["price"]),
+                 "kid": bool(kids_ and p["side"] == kids_["side"].lower() and int(p["size"]) in kids_["sizes_set"] and p["t"] >= kids_["t0"])}
                 for p in st.tape.recent(14)]),
             "levels": levels,
             "trap": trap,

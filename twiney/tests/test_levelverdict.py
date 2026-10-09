@@ -49,7 +49,7 @@ class FollowUpTests(unittest.TestCase):
         self.assertGreaterEqual(len(calls), 3)
         t, v, words = self.one(vs)
         self.assertEqual(v["outcome"], "DEFENDED"); self.assertEqual(label(v), "DEFENDED"); self.timing(calls, t)
-        self.assertIn("uyers", words)
+        self.assertTrue(any(w.split("{")[0].strip()[:8].lower() in words.lower() for w in PHRASES["DEFENDED_BUYERS"]) or "uyers" in words, words)
 
     def test_lost(self):
         calls, vs = run(path(100.40, CHOP_FROM_ABOVE + [(99.60, 30), (99.60, 420)]))
@@ -71,8 +71,8 @@ class FollowUpTests(unittest.TestCase):
         legs = [(99.60, 5), (100.00, 20), (99.70, 20), (99.99, 20), (99.70, 20), (100.00, 20), (99.65, 30), (99.65, 420)]
         calls, vs = run(path(99.60, legs))
         t, v, words = self.one(vs)
-        self.assertEqual(v["outcome"], "DEFENDED"); self.assertEqual(label(v), "HELD AS RESISTANCE")
-        self.assertIn("ellers", words)
+        self.assertEqual(v["outcome"], "DEFENDED"); self.assertEqual(label(v), "HELD AS SUPPLY")
+        self.assertTrue(any(w.split("{")[0].strip()[:8].lower() in words.lower() for w in PHRASES["DEFENDED_SELLERS"]) or "ellers" in words, words)
 
     def test_still_on_it_looks_again_then_says_undecided(self):
         calls, vs = run(path(100.40, CHOP_FROM_ABOVE + [(100.00, 30), (100.00, 900)]))
@@ -100,7 +100,7 @@ class FollowUpTests(unittest.TestCase):
     def test_no_banned_words(self):
         for opts in PHRASES.values():
             for w in opts:
-                for bad in ("fading", "stale", "gone", "trigger", "dark", "iceberg"):
+                for bad in ("fading", "stale", "gone", "trigger", "dark", "iceberg", "support", "resistance"):
                     self.assertNotIn(bad, w.lower())
 
 

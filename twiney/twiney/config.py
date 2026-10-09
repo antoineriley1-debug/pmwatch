@@ -504,6 +504,13 @@ DEFAULTS = {
         "same_size_share": 0.6,         # ... and this share of them showing the same size
         "walk_minutes": 20,             # WALKING: the same side's reloads within this many minutes ...
         "walk_steps": 3,                # ... stepping one way at least this many prices
+        "child_minutes": 12,            # CHILD ORDERS: the same size again and again on one side at a steady clock, over the last this many minutes ...
+        "child_min_prints": 25,         # ... at least this many prints of that size (the top one or two sizes)
+        "child_max_gap": 20,            # ... typically one every this many seconds or less
+        "child_min_span_minutes": 8,    # ... and the stream keeps going for at least this long, in every quarter of its span (a crowd chasing a push prints in a burst)
+        "child_regular": 0.6,           # ... this share of the gaps on the algo's clock (within a third to three times the typical gap)
+        "child_one_way": 0.4,           # ... the one side's EXCESS of that size over the other side (the crowd's baseline) is at least this share of its prints
+        "child_score": 60,              # ... call it from this score (0-100)
         "repeat_seconds": 1200,         # the same call is not repeated for this long
         "every_seconds": 5,             # read every this many seconds
     },
@@ -546,7 +553,7 @@ DEFAULTS = {
     "story": {
         "enabled": True,                # the PS60 STORY: Daily context + PS60 places + tape + Level II + option flow + price response
         "alerts": True,                 # put the big moments in CALLS (breaks, reloads consumed, flow confirming / conflicting, retests)
-        "voice": False,                 # say those moments out loud (when voice is on)
+        "voice": True,                  # say the story's moments out loud (the levels taken, the averages, the Daily, the 60-minute candle): the tab you are on
         "whole_half_reloads_only": False,  # on: only reloads at x.00 / x.50 count for PS60. Off (default): every real reload counts, round numbers are just highlighted
         "draw_zones": True,             # shade the zones you drew on the stock chart (right-click the chart, ZONE)
         "near_ticks": 8,                # HIGH ATTENTION: price within this many ticks of a place ...
@@ -562,6 +569,24 @@ DEFAULTS = {
         "confirm_repeats": 2,           # ... in at least this many separate minutes (one order split in two is one buyer)
         "response_minutes": 5,          # PRICE RESPONSE: what price did over the last N minutes
         "retest_minutes": 30,           # a retest is watched for this long after a break
+        "fw_daily_type": "SMA",         # MA FRAMEWORK: the daily 5 / 10 (who controls the 5, the 10 is the birth of the trade): SMA or EMA
+        "fw_60m_type": "SMA",           # ... the 60m 5 / 10 (rising 60-minute support / falling 60-minute resistance): SMA or EMA
+        "fw_daily_mas": "SMA 5, SMA 10, SMA 20, SMA 50, SMA 100, SMA 150, SMA 200, EMA 5, EMA 10, EMA 20, EMA 50, EMA 100, EMA 150, EMA 200, EMA 34, EMA 65, EMA 89",   # the daily averages whose bounce / reject / close through is called out (the chart's; 34 / 65 / 89 EMA daily only)
+        "fw_60m_mas": "SMA 5, SMA 10, SMA 20, SMA 50, SMA 100, SMA 150, SMA 200, EMA 5, EMA 10, EMA 20, EMA 50, EMA 100, EMA 150, EMA 200",       # ... the 60-minute ones (the chart's)
+        "ma_repeat_seconds": 600,       # one average: a new call at it at most this often
+        "ma_touch_minutes": 20,         # ... a test of it is watched this long for the bounce / reject / close through
+        "retrace_repeat_minutes": 30,   # the 60-minute retrace into rising support (pop into falling resistance): said at most this often
+        "rule57_min": 5,                # THE 5-7 MINUTE RULE: your trade not moving your way between these minutes after the entry ...
+        "rule57_max": 7,                # ... a reload buyer / seller may be sitting there: think about the scratch
+        "first_move_dollars": 0.25,     # FINANCE THE TRADE: the first move (at least this, or your risk): pay yourself, stop to breakeven
+        "trade_update_seconds": 90,     # YOUR TRADE working: how much MP / airspace is left, said at most this often (and only when it changed)
+        "mp_merge_atr_pct": 8,          # MP: averages / levels within this % of the ATR of each other are ONE supply / demand (MP to its far edge)
+        "trade_weak_seconds": 180,      # YOUR TRADE in profit, a COMPLETE BREAKDOWN only: the tape one-sided against you AND the market the other way AND tremendous option flow against you, all held this long -> think about paying yourself. A pullback never fires it
+        "trade_weak_tape_pct": 75,      # ... the tape one-sided against you: at least this % hitting the other side, and fast
+        "trade_weak_flow_min": 250000,  # ... tremendous flow: at least this much premium on the other side in the last couple of minutes, 4x what is with you
+        "trade_weak_repeat_seconds": 600,  # ... said at most this often
+        "daily_repeat_minutes": 45,     # THE DAILY BRIEF (the brain of the trade): said at the open and again when it changes, else at most this often
+        "trade_repeat_seconds": 120,    # YOUR TRADE: close to your stop / at your target, said at most this often
         "close_minutes": 1,             # a place is TAKEN only when a candle of this many minutes CLOSES through it (trading through it is pressing, not a break)
         "mp_min_atr": 0.5,              # ROOM: the measured potential to the next supply (above the 50) / demand (below) is THIN under this many ATRs
         "memory_minutes": 120,          # unusual flow with no PS60 pivot in play is remembered this long

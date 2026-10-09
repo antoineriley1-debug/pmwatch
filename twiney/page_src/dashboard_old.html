@@ -1764,8 +1764,8 @@ function tapeHTML(t, lad){
   const isDk = ex => /^(FINRA|ADF|TRF|OTC|DARK)/i.test(String(ex || ""));
   const rows = t.recent.map(r => { const g = rl[(+r.price) + "|" + r.side], dk = isDk(r.exchange), dkBig = dk && (r.size >= 10000 || r.size * r.price >= 200000);
     const gv = near(+r.price, rf.vwap), g5 = near(+r.price, rf.sma50);
-    return `<tr class="${r.at?"atlvl":""} ${r.side}${g ? " rlhit " + g : ""}${dk ? " dk" : ""}${dkBig ? " dkbig" : ""}${gv ? " g-vw" : ""}${g5 ? " g-d50" : ""}" title="${who(r)}${g ? (g === "b" ? " · sold into the RELOAD BUYER at this price" : " · bought from the RELOAD SELLER at this price") : ""}${gv ? " · AT THE VWAP" : ""}${g5 ? " · AT THE DAILY 50-DAY" : ""}${r.exchange ? " · " + esc(r.exchange) : ""} · ${ago(r.age)} ago">
-    <td class="${r.side}">${dkBig ? `<span class="dktag" title="large order (${esc(r.exchange)})">L</span>` : ""}${g ? `<span class="rltag">R</span>` : ""}${px(r.price)}${r.at?` <span class="tag">${esc(r.at)}</span>`:""}${gv ? ` <span class="gtag vw">VWAP</span>` : ""}${g5 ? ` <span class="gtag d50">50D</span>` : ""}</td>
+    return `<tr class="${r.at?"atlvl":""} ${r.side}${g ? " rlhit " + g : ""}${r.kid ? " kid" : ""}${dk ? " dk" : ""}${dkBig ? " dkbig" : ""}${gv ? " g-vw" : ""}${g5 ? " g-d50" : ""}" title="${who(r)}${g ? (g === "b" ? " · sold into the RELOAD BUYER at this price" : " · bought from the RELOAD SELLER at this price") : ""}${gv ? " · AT THE VWAP" : ""}${g5 ? " · AT THE DAILY 50-DAY" : ""}${r.exchange ? " · " + esc(r.exchange) : ""} · ${ago(r.age)} ago">
+    <td class="${r.side}">${dkBig ? `<span class="dktag" title="large order (${esc(r.exchange)})">L</span>` : ""}${g ? `<span class="rltag">R</span>` : ""}${r.kid ? `<span class="kidtag" title="CHILD ORDER: one of an algo's same-size prints on a clock, an institution working an order (INST strip)">⚙</span>` : ""}${px(r.price)}${r.at?` <span class="tag">${esc(r.at)}</span>`:""}${gv ? ` <span class="gtag vw">VWAP</span>` : ""}${g5 ? ` <span class="gtag d50">50D</span>` : ""}</td>
     <td class="${r.side} ${r.large?"large":""}">${sz(r.size)}</td></tr>`; }).join("")
     || `<tr><td colspan="2" class="dim">no prints yet</td></tr>`;
   return `<table class="t tape2" data-cols="tape2"><tr><th data-w="1.1">PRICE</th><th data-w="0.9" title="green = paid the ask (buyer in a rush) · red = hit the bid (seller getting out) · bold = big">SIZE</th></tr>${rows}</table>`;
@@ -2864,7 +2864,8 @@ function spokenText(text){
     .replace(/(\d)k\b/g, "$1 thousand").replace(/\bk\b/g, " thousand")
     .replace(/[★·]/g, " ").replace(/\s+/g, " ").trim();
 }
-// 🔁 LAST CALL: the last call said again, in the same voice, even with the voice muted (you asked for it)
+// 🔁 LAST CALL: the last call said again (a reload, an option flow call, a level, the story — whatever was said last),
+// in the same voice, even with the voice muted (you asked for it)
 let LAST_SAID = "";
 function replayLast(){
   if (!LAST_SAID){ toast("No call said yet.", false); return; }
@@ -2878,8 +2879,9 @@ function replayLast(){
     voicePump();
   } catch (e) { toast("Voice failed: " + e.message, false); }
 }
-function say(text, force){
+function say(text, force, pri){
   if (!force && !store.get("voice", true)) return;
+  pri = pri == null ? 2 : pri;
   if (!("speechSynthesis" in window)){ if (force) toast("This browser has no speech. Use Chrome or Edge.", false); return; }
   try {
     if (!voicePick) pickVoice();
@@ -2893,7 +2895,10 @@ function say(text, force){
     if (force){ speechSynthesis.speak(u); return; }
     // the calls wait their turn here, not in the browser: one that waited too long is dropped (the market moved on;
     // "coming into VWAP" said ten seconds late is wrong)
-    VQ.push({u, t: Date.now(), text}); while (VQ.length > 2) VQ.shift();    // a backlog keeps the newest two
+    // one mouth: a bigger moment (your trade, a reloader) drops the smaller ones still waiting; a backlog keeps the newest two
+    for (let i = VQ.length - 1; i >= 0; i--) if ((VQ[i].pri || 2) > pri) VQ.splice(i, 1);
+    if (VQ.some(q => (q.pri || 2) < pri) && pri >= 4) return;             // colour never waits behind a real call
+    VQ.push({u, t: Date.now(), text, pri}); while (VQ.length > 2) VQ.shift();
     LAST_SAID = text;
     const rb = document.getElementById("replayBtn"); if (rb) rb.title = "Say the last call again: " + text;
     voicePump();

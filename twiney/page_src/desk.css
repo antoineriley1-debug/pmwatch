@@ -1081,3 +1081,24 @@ table.lad.basket2 th .bkgear{background:none;border:0;color:#9aa4b4;cursor:point
 .splay{margin:4px 0;padding:5px 8px;border-left:3px solid var(--gold,#d4a017);background:rgba(212,160,23,.08);font-size:12px;line-height:1.35}
 .splay b{color:var(--gold,#d4a017);font-size:10px;letter-spacing:.06em;margin-right:4px}
 .storyln b.pbp{background:#d4a017;color:#111;padding:0 4px;border-radius:3px;font-size:9px;margin-right:4px}
+
+.sfw{margin:4px 0;padding:5px 8px;border-left:3px solid #5b8def;background:rgba(91,141,239,.08);font-size:12px;line-height:1.35}
+.sfw b{color:#5b8def;font-size:10px;letter-spacing:.06em;margin-right:4px}
+.smap .srow{display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:baseline}
+.smap .srow i{font-style:normal;font-variant-numeric:tabular-nums}
+.smap .srow em{font-style:normal;opacity:.75;font-size:11px}
+.smap .srow.s span{color:#e05561}.smap .srow.b span{color:#26a65b}
+.smap .srow.now{border-top:1px dashed currentColor;border-bottom:1px dashed currentColor;font-weight:700}
+
+.sfw{margin:4px 0;padding:5px 8px;border-left:3px solid #5b8def;background:rgba(91,141,239,.08);font-size:12px;line-height:1.35}
+.sfw b{color:#5b8def;font-size:10px;letter-spacing:.06em;margin-right:4px}
+.smap .srow{display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:baseline}
+.smap .srow i{font-style:normal;font-variant-numeric:tabular-nums}
+.smap .srow em{font-style:normal;opacity:.75;font-size:11px}
+.smap .srow.s span{color:#e05561}.smap .srow.b span{color:#26a65b}
+.smap .srow.now{border-top:1px dashed currentColor;border-bottom:1px dashed currentColor;font-weight:700}
+
+/* CHILD ORDERS: an algo's same-size prints stick out on the tape */
+.tape2 tr.kid td{background:rgba(91,141,239,.14)}
+.tape2 .kidtag{display:inline-block;margin-right:3px;color:#5b8def;font-weight:700}
+.instrip b.kids{background:rgba(91,141,239,.16);padding:0 5px;border-radius:3px}

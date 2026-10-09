@@ -87,6 +87,83 @@ def market_shares(others):
     return out
 
 
+def children(prints, now, cfg):
+    """CHILD ORDERS: an execution algo (VWAP / % of volume / TWAP) works a fund's order as a stream of small prints
+    on one side, the same size (or a few sizes) again and again at a steady cadence. One print looks like nothing;
+    forty of them in twelve minutes, every few seconds, the same 300 shares at the ask, is a buyer working an order.
+    prints: the tape's records {t, price, size, side} (side "buy" at the ask / "sell" at the bid).
+    Returns None or {"side", "size", "n", "minutes", "every", "shares", "usd", "share", "score", "since", "ids"}."""
+    win = float(cfg.get("child_minutes", 12)) * 60.0
+    rows = [p for p in prints if now - p["t"] <= win and p.get("side") in ("buy", "sell") and p["size"] > 0]
+    if len(rows) < int(cfg.get("child_min_prints", 25)):
+        return None
+    best = None
+    for side in ("buy", "sell"):
+        mine = [p for p in rows if p["side"] == side]
+        if len(mine) < int(cfg.get("child_min_prints", 25)):
+            continue
+        by = {}
+        for p in mine:
+            by.setdefault(int(p["size"]), []).append(p)
+        # each size that keeps coming back is judged on its own: round lots 100 .. 5000, the three most common
+        for size, grp in sorted(by.items(), key=lambda kv: -len(kv[1]))[:3]:
+            if not (100 <= size <= 5000):
+                continue
+            grp = sorted(grp, key=lambda p: p["t"])
+            n = len(grp)
+            if n < int(cfg.get("child_min_prints", 25)):
+                continue
+            # the cadence: the gaps between them, most of them inside a band (an algo's clock, not a crowd's)
+            gaps = [b_["t"] - a_["t"] for a_, b_ in zip(grp, grp[1:]) if b_["t"] > a_["t"]]
+            if not gaps:
+                continue
+            gaps_s = sorted(gaps)
+            med = gaps_s[len(gaps_s) // 2]
+            if med > float(cfg.get("child_max_gap", 20)):
+                continue
+            regular = sum(1 for g in gaps if 0.3 * med <= g <= 3.0 * med) / len(gaps)
+            # an algo works the whole window on its clock; a crowd chasing a push prints in a burst. The stream must
+            # span most of the window and keep going in every quarter of it
+            span = grp[-1]["t"] - grp[0]["t"]
+            if span < float(cfg.get("child_min_span_minutes", 8)) * 60:
+                continue
+            q = [0, 0, 0, 0]
+            for p in grp:
+                q[min(3, int((p["t"] - grp[0]["t"]) / span * 4))] += 1
+            if min(q) < 0.12 * n:
+                continue
+            # the algo's clock is the same clock all the way through; a crowd's cadence runs with the tape's pace
+            qm = []
+            for k in range(4):
+                part = [p for p in grp if min(3, int((p["t"] - grp[0]["t"]) / span * 4)) == k]
+                g_ = sorted(b_["t"] - a_["t"] for a_, b_ in zip(part, part[1:]) if b_["t"] > a_["t"])
+                if g_:
+                    qm.append(g_[len(g_) // 2])
+            if len(qm) < 4 or max(qm) > 2.0 * min(qm):
+                continue
+            # the crowd trades that size both ways about evenly; the algo is the EXCESS on the one side. The other
+            # side's count of the same size is the crowd's baseline: what is left over is the stream
+            other = sum(1 for p in rows if p["side"] != side and int(p["size"]) == size)
+            excess = n - other
+            one_way = excess / n if n else 0.0
+            side_sh = sum(p["size"] for p in mine)
+            share = sum(p["size"] for p in grp) / side_sh if side_sh else 0.0
+            if regular < float(cfg.get("child_regular", 0.6)) or excess < int(cfg.get("child_min_prints", 25)) or one_way < float(cfg.get("child_one_way", 0.4)):
+                continue
+            score = min(100, int(regular * 45 + min(1.0, one_way / 0.8) * 35 + min(1.0, excess / 80.0) * 20))
+            if score < int(cfg.get("child_score", 60)):
+                continue
+            shares = sum(p["size"] for p in grp)
+            usd = sum(p["size"] * p["price"] for p in grp)
+            out = {"side": "BUY" if side == "buy" else "SELL", "size": size, "sizes": [size], "n": n, "excess": excess,
+                   "minutes": round((now - grp[0]["t"]) / 60.0, 1), "every": round(med, 1), "shares": round(shares),
+                   "usd": round(usd), "share": round(share * 100), "regular": round(regular * 100), "one_way": round(one_way * 100),
+                   "score": score, "t0": grp[0]["t"], "lo": min(p["price"] for p in grp), "hi": max(p["price"] for p in grp)}
+            if best is None or out["score"] > best["score"]:
+                best = out
+    return best
+
+
 def program(slots, cur_slot, vwap, cfg, mkt=None):
     """A buy / sell PROGRAM on today's completed slots, or None. Rows [slot, vol, buy, sell, pv]. ``mkt`` = the
     market's one-sided share per slot (market_shares): taken out first, so only this stock's own flow counts."""
@@ -98,14 +175,17 @@ def program(slots, cur_slot, vwap, cfg, mkt=None):
     if len(done) < need:
         return None
     win = done[-int(cfg.get("window_slots", 18)):]
-    vol = sum(r[1] for r in win)
+    # the imbalance against the volume that took a side (at the ask / at the bid): prints inside the spread say
+    # nothing about who was in a rush, and on a busy tape they are most of the volume: counting them hid the program
+    vol = sum(r[2] + r[3] for r in win) or sum(r[1] for r in win)
     net = sum(r[2] - r[3] for r in win)
     if vol <= 0 or net == 0:
         return None
     side = 1 if net > 0 else -1
-    part = net / vol                                           # the net imbalance as a share of all volume
-    agree = sum(1 for r in win if (r[2] - r[3]) * side > 0.03 * r[1]) / len(win)
-    steady = sum(1 for r in win if 0.25 * abs(part) <= (r[2] - r[3]) * side / r[1] <= 3.0 * abs(part)) / len(win)
+    part = net / vol                                           # the net imbalance as a share of the sided volume
+    cls = lambda r: (r[2] + r[3]) or r[1]
+    agree = sum(1 for r in win if (r[2] - r[3]) * side > 0.03 * cls(r)) / len(win)
+    steady = sum(1 for r in win if 0.25 * abs(part) <= (r[2] - r[3]) * side / cls(r) <= 3.0 * abs(part)) / len(win)
     if not (agree >= float(cfg.get("agree", 0.65)) and abs(part) >= float(cfg.get("min_part", 0.06)) and steady >= float(cfg.get("steady", 0.45))):
         return None
     # since when: the earliest slot from which the run still agrees
@@ -125,7 +205,7 @@ def program(slots, cur_slot, vwap, cfg, mkt=None):
     fillp = (sum((r[4] / r[1]) * abs(r[2] - r[3]) for r in run if (r[2] - r[3]) * side > 0 and r[1]) / wsum) if wsum else None
     vs = None if (fillp is None or not vwap) else round(fillp - vwap, 4)
     return {"side": "BUY" if side > 0 else "SELL", "agree": round(agree * 100), "slots": len(win),
-            "won": sum(1 for r in win if (r[2] - r[3]) * side > 0.03 * r[1]), "part": round(abs(part) * 100, 1),
+            "won": sum(1 for r in win if (r[2] - r[3]) * side > 0.03 * cls(r)), "part": round(abs(part) * 100, 1),
             "since": hm(since), "usd": round(abs(rnet) * avgp), "shares": round(abs(rnet)), "vs_vwap": vs,
             "score": round(min(100, agree * 60 + min(abs(part) / 0.2, 1) * 25 + steady * 15))}
 

@@ -783,9 +783,13 @@ class DemoFeed:
             if any(o is not s and getattr(o, "program", None) for o in self.state.values()):
                 s.program_next = t + rng.uniform(300, 900)     # one fund at a time on the desk
                 return
-            # a percentage-of-volume algo: each child is a steady share (6-12 %) of what traded since the last one
+            # two kinds of algo: a VWAP / TWAP slicer sends the SAME child size on a steady clock (the prints that repeat
+            # and look normal); a percentage-of-volume algo sends a steady share (6-12 %) of what traded since the
+            # last one, so its children vary with the tape
+            fixed = rng.random() < 0.5
             s.program = pg = {"buy": rng.random() < 0.55, "pov": rng.uniform(0.06, 0.12), "every": rng.uniform(2.5, 6.0),
-                              "end": t + rng.uniform(2400, 5400), "next": t, "vol0": s.vol}
+                              "end": t + rng.uniform(2400, 5400), "next": t, "vol0": s.vol,
+                              "slice": int(rng.choice((100, 200, 200, 300, 400, 500))) if fixed else None}
         if t >= pg["end"]:
             s.program = None
             s.program_next = t + rng.uniform(1800, 5400)
@@ -793,7 +797,7 @@ class DemoFeed:
         if t >= pg["next"]:
             pg["next"] = t + pg["every"] * rng.uniform(0.7, 1.3)
             traded = max(0.0, s.vol - pg["vol0"]); pg["vol0"] = s.vol
-            child = max(100, int(traded * pg["pov"] / (1 - pg["pov"]) / 100) * 100)
+            child = pg["slice"] or max(100, int(traded * pg["pov"] / (1 - pg["pov"]) / 100) * 100)
             self._market(sym, s, pg["buy"], child, t, slotted)
 
     def _dark(self, sym, s, t, dt):

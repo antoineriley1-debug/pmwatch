@@ -615,8 +615,10 @@ function instStripHTML(ic){
   const pg = ic.program, tod = ic.tod, open = store.get("instOpen", false);
   const vv = v => v == null ? "" : Math.abs(v) < 0.005 ? " · at VWAP" : ` · ${(Math.abs(v) * 100).toFixed(0)}¢ ${v < 0 ? "under" : "over"} VWAP`;
   const todTxt = tod ? `<span class="${tod.x >= 1.5 ? "hot" : tod.x <= 0.6 ? "cold" : ""}">pace ×${tod.x} for ${tod.at}</span>` : "";
-  const main = pg ? `<b class="${pg.side === "BUY" ? "b" : "s"}" title="steady one-sided flow against the market, slot after slot, at a steady share of the volume: the way a VWAP / % of volume algo works a fund's order (or several buyers / sellers pressing)">STEADY ${pg.side === "BUY" ? "BUYING" : "SELLING"}</b> <span class="sc">${pg.score}</span> · ${pg.won}/${pg.slots} slots · ~${pg.part}% of vol · since ${pg.since} · net ${pg.side === "BUY" ? "bought" : "sold"} ≈${usdK(pg.usd)}${vv(pg.vs_vwap)}`
-    : `<span class="dim">no steady one-sided flow</span>`;
+  const kd = ic.kids;
+  const kids = kd ? `<b class="${kd.side === "BUY" ? "b" : "s"} kids" title="CHILD ORDERS: the same size again and again on one side at a steady clock. One print looks like nothing; ${kd.n} of them is an algo working a ${kd.side === "BUY" ? "buyer" : "seller"}'s order. Those prints are marked ⚙ on the tape">⚙ ${kd.side === "BUY" ? "BUY" : "SELL"} PROGRAM ${kd.n}× ${sz(kd.size)} ${kd.side === "BUY" ? "at the ask" : "at the bid"} · every ${kd.every}s · ${sz(kd.shares)} sh since ${esc(kd.since || "")}</b> · ` : "";
+  const main = kids + (pg ? `<b class="${pg.side === "BUY" ? "b" : "s"}" title="steady one-sided flow against the market, slot after slot, at a steady share of the volume: the way a VWAP / % of volume algo works a fund's order (or several buyers / sellers pressing)">STEADY ${pg.side === "BUY" ? "BUYING" : "SELLING"}</b> <span class="sc">${pg.score}</span> · ${pg.won}/${pg.slots} slots · ~${pg.part}% of vol · since ${pg.since} · net ${pg.side === "BUY" ? "bought" : "sold"} ≈${usdK(pg.usd)}${vv(pg.vs_vwap)}`
+    : kd ? "" : `<span class="dim">no steady one-sided flow</span>`);
   const lv0 = (ic.levels || [])[0];
   const extra = (lv0 ? ` · <b class="${lv0.side === "bid" ? "b" : "s"}">FUND ${lv0.side === "bid" ? "BUYER" : "SELLER"} ${px(lv0.price)} ${lv0.score}</b>` : "") + (ic.walk ? ` · <b class="${ic.walk.side === "BUYER" ? "b" : "s"}">${ic.walk.side.toLowerCase()} walking ${ic.walk.dir}</b>` : "");
   const warn = ic.against ? `<div class="instwarn" data-inst="1" title="a program is running on the other side of your trade">⚠ ${esc(ic.against)}</div>` : "";
@@ -1672,6 +1674,10 @@ function speakNew(s){
     if (a.role === "trap" || a.role === "breaktrap"){ if (a.words && mine) items.push(a.words); continue; }   // trapped crowd / BREAK TRAPS: the tab you are on
     if (a.role === "inst"){ if (a.words && mine && store.get("voiceInst", true)) items.push(a.words); continue; }   // a program / fund footprint
     if (a.role === "dark"){ if (a.words && mine && store.get("voiceDark", true)) items.push(a.words); continue; }   // a large order
+    // THE PS60 STORY: your trade and your second entry first, the reload buyer / seller and the money next, the levels
+    // and the averages after that, the colour last. The tab you are on. One mouth: a bigger moment drops the smaller
+    // ones still waiting, and the colour is said at most once every voiceGapSecs
+    if (a.role === "story"){ if (a.words && mine) items.push({text: a.words, pri: +a.pri || 3, sym: a.symbol}); continue; }
     // the KEY LEVELS (rejected / bounced / took) and the PACE at them (pushing / stalling / breakout): the tab you are on
     if (a.role === "level" || a.role === "pace"){
       // AT / COMING INTO said only while it is still true: price that already left the level is not "at" it
@@ -1683,7 +1689,19 @@ function speakNew(s){
   }
   if (voiceFirst){ voiceFirst = false; return; }
   if (!store.get("voice", true)) return;
-  for (const t of items.slice(-4)) say(t);                       // a reloader AND the flow on him both get said, in order
+  // the story lines: the highest priority first; the colour (4) only when nothing bigger is in the same batch and it
+  // has been quiet for a while on that ticker
+  const story = items.filter(x => typeof x === "object").sort((a, b) => a.pri - b.pri), plain = items.filter(x => typeof x === "string");
+  for (const t of plain.slice(-4)) say(t);                       // a reloader AND the flow on him both get said, in order
+  if (story.length){
+    const top = story[0].pri, gap = (+store.get("voiceGapSecs", 20) || 20) * 1000, now = Date.now();
+    window._lastLow = window._lastLow || {};
+    for (const x of story.slice(0, 2)){
+      if (x.pri >= 4 && (x.pri > top || now - (window._lastLow[x.sym] || 0) < gap)) continue;
+      if (x.pri >= 3) window._lastLow[x.sym] = now;
+      say(x.text, false, x.pri);
+    }
+  }
 }
 function renderVoiceBtns(){
   const f = document.getElementById("voiceFlowBtn"), so = document.getElementById("soloBtn");
@@ -3032,11 +3050,23 @@ function renderStory(d){
       <div class="satt">${s.attention ? `<b class="hat">HIGH ATTENTION</b>` : `<b class="watch">WATCHING</b>`} <span>${where}</span></div>
       <div class="snow t-${esc(s.tone || "neutral")}">${esc(s.now || "")}</div>
       ${s.play ? `<div class="splay"><b>PLAY-BY-PLAY</b> ${esc(s.play)}</div>` : ""}
+      ${s.framework && s.framework.text ? `<div class="sfw"><b>THE AVERAGES</b> ${esc(s.framework.text)}</div>` : ""}
+      ${s.framework && s.framework.text ? `<div class="sfw"><b>THE AVERAGES</b> ${esc(s.framework.text)}</div>` : ""}
       <div class="sflow">${chips}</div>
       ${s.response ? `<div class="sresp t-${esc(s.response.tone)}">PRICE RESPONSE · ${esc(s.response.text)}</div>` : ""}
       ${s.edge ? `<div class="sedge">${edgeChip(s.edge)}<div class="echecks">${s.edge.checks.map(c => `<span class="ec ${c.ok === true ? "y" : c.ok === 0.5 ? "h" : c.ok === false ? "n" : "u"}" title="${esc(c.why)}"><i></i>${esc(c.k)}<em>${esc(c.why)}</em></span>`).join("")}</div></div>` : ""}
     </div>
     <div class="sbody">
+      ${s.layout ? `<div class="sth">THE MAP · supply above, demand below, the room between each</div><div class="smap">`
+        + (s.layout.above || []).slice(0, 5).reverse().map(m => `<div class="srow s"><span>${esc(m.name)}</span><i>${px(m.near)}${m.far !== m.near ? "–" + px(m.far) : ""}</i><em>$${(+m.dollars).toFixed(2)} away · room $${(+m.room).toFixed(2)}</em></div>`).join("")
+        + `<div class="srow now"><span>PRICE</span><i>${px(s.layout.last || 0) || ""}</i><em></em></div>`
+        + (s.layout.below || []).slice(0, 5).map(m => `<div class="srow b"><span>${esc(m.name)}</span><i>${px(m.near)}${m.far !== m.near ? "–" + px(m.far) : ""}</i><em>$${(+m.dollars).toFixed(2)} away · room $${(+m.room).toFixed(2)}</em></div>`).join("")
+        + `</div>` : ""}
+      ${s.layout ? `<div class="sth">MEASURED POTENTIAL · supply above, demand below, the room between each</div><div class="smap">`
+        + (s.layout.above || []).slice(0, 5).reverse().map(m => `<div class="srow s"><span>${esc(m.name)}</span><i>${px(m.near)}${m.far !== m.near ? "–" + px(m.far) : ""}</i><em>MP $${(+m.dollars).toFixed(2)} · room $${(+m.room).toFixed(2)}</em></div>`).join("")
+        + `<div class="srow now"><span>PRICE</span><i>${s.layout.last != null ? px(s.layout.last) : ""}</i><em></em></div>`
+        + (s.layout.below || []).slice(0, 5).map(m => `<div class="srow b"><span>${esc(m.name)}</span><i>${px(m.near)}${m.far !== m.near ? "–" + px(m.far) : ""}</i><em>MP $${(+m.dollars).toFixed(2)} · room $${(+m.room).toFixed(2)}</em></div>`).join("")
+        + `</div>` : ""}
       ${list("CONFLUENCE", (s.confluence || []).map(x => `<div class="srow ${x.major ? "major" : ""}">${esc(x.text)}</div>`))}
       ${list("ZONES", (s.zones || []).map(z => `<div class="srow z-${z.user ? "user" : esc(z.kind)}">${esc(z.name)}</div>`))}
       ${list("RELOADS (★ = whole / half dollar)", (s.reloads || []).map(r => `<div class="srow ${r.side === "ask" ? "s" : "b"}">${r.side === "ask" ? "Seller" : "Buyer"} reloading ${Math.abs(r.price * 2 - Math.round(r.price * 2)) < 1e-6 ? "★ " : ""}${px(r.price)} · ${esc(r.stage || "")} · ${r.side === "ask" ? "buyers absorbed" : "sellers hit him for"} ${sz(r.absorbed)}</div>`))}

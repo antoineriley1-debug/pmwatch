@@ -92,3 +92,69 @@ class GuideTests(unittest.TestCase):
 
     def test_midday_slows(self):
         self.assertTrue(any("Midday" in x for x in inst.guides({"side": "BUY"}, 25.5, 25.4, 45000, {})))
+
+
+class ChildOrderTests(unittest.TestCase):
+    """CHILD ORDERS: an algo's stream of same-size prints on one side at a steady clock, in a tape that looks normal."""
+    CFG = dict(CFG, child_minutes=12, child_min_prints=25, child_max_gap=20, child_regular=0.6, child_one_way=0.4, child_score=60)
+
+    def tape(self, now, algo=True, side="buy", size=300, every=4.0, n=150, noise=400):
+        import random
+        rng = random.Random(7)
+        rows = []
+        for i in range(noise):                         # the crowd: both sides, all sizes, random times
+            rows.append({"t": now - rng.uniform(0, 700), "price": 100 + rng.uniform(-0.2, 0.2),
+                         "size": rng.choice((100, 100, 200, 500, 700, 1000, 1500)), "side": rng.choice(("buy", "sell", "mid"))})
+        if algo:
+            for i in range(n):
+                rows.append({"t": now - n * every + i * every * rng.uniform(0.8, 1.2), "price": 100.0 + 0.01 * (i % 3), "size": size, "side": side})
+        rows.sort(key=lambda r: r["t"])
+        return rows
+
+    def test_a_buy_algo_is_found_in_a_normal_looking_tape(self):
+        k = inst.children(self.tape(1000.0), 1000.0, self.CFG)
+        self.assertIsNotNone(k); self.assertEqual(k["side"], "BUY"); self.assertEqual(k["size"], 300)
+        self.assertGreaterEqual(k["n"], 150); self.assertAlmostEqual(k["every"], 4.0, delta=1.0)
+        self.assertGreaterEqual(k["score"], 60)
+
+    def test_a_sell_algo(self):
+        k = inst.children(self.tape(1000.0, side="sell", size=200), 1000.0, self.CFG)
+        self.assertEqual(k["side"], "SELL"); self.assertEqual(k["size"], 200)
+
+    def test_a_crowd_is_not_an_algo(self):
+        self.assertIsNone(inst.children(self.tape(1000.0, algo=False, noise=900), 1000.0, self.CFG))
+
+    def test_the_same_size_both_ways_is_a_crowd(self):
+        rows = self.tape(1000.0) + [dict(r, side="sell") for r in self.tape(1000.0, noise=0)]
+        self.assertIsNone(inst.children(rows, 1000.0, self.CFG))
+
+    def test_a_burst_of_chasers_is_not_an_algo(self):
+        """150 one-hundred-lot buys in two minutes on a push, then nothing: a crowd, not an algo on a clock."""
+        import random
+        rng = random.Random(5)
+        now = 1000.0
+        rows = [{"t": now - rng.uniform(0, 700), "price": 100.0, "size": rng.choice((100, 200, 300)), "side": rng.choice(("buy", "sell"))} for _ in range(200)]
+        rows += [{"t": now - 400 + i * 0.8 * rng.uniform(0.7, 1.3), "price": 100.0, "size": 100, "side": "buy"} for i in range(150)]
+        self.assertIsNone(inst.children(rows, now, self.CFG))
+
+    def test_a_popular_size_the_crowd_also_trades(self):
+        """200 lots everywhere on both sides, and a 200-lot buy algo on top: the excess over the crowd is the stream."""
+        import random
+        rng = random.Random(3)
+        now = 1000.0
+        rows = [{"t": now - rng.uniform(0, 700), "price": 100.0, "size": 200, "side": rng.choice(("buy", "sell"))} for _ in range(220)]
+        rows += [{"t": now - 600 + i * 3.0 * rng.uniform(0.85, 1.15), "price": 100.0, "size": 200, "side": "buy"} for i in range(150)]
+        k = inst.children(rows, now, self.CFG)
+        self.assertIsNotNone(k); self.assertEqual((k["side"], k["size"]), ("BUY", 200)); self.assertGreaterEqual(k["excess"], 100)
+
+
+class ProgramSidedVolumeTests(unittest.TestCase):
+    def test_prints_inside_the_spread_do_not_hide_the_program(self):
+        # 80 % of the volume inside the spread (mid), the sided part leaning one way every slot
+        s = []
+        for i in range(10):
+            vol, buy, sell = 100000.0, 11500.0, 8500.0
+            s.append([120 + i, vol, buy, sell, 100.0 * vol])
+        p = inst.program(s, s[-1][0] + 1, 100.0, CFG)
+        self.assertIsNotNone(p); self.assertEqual(p["side"], "BUY")
+        self.assertAlmostEqual(p["part"], 15.0, delta=0.5)         # net / sided volume, not net / all volume

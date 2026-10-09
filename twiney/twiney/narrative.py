@@ -108,7 +108,7 @@ def alert_text(alert, play):
         back = alert.get("back")
         if back:
             mins = max(1, int(round(back.get("away", 0) / 60)))
-            prior = "cleaned up" if back.get("prior") == "CLEANED UP" else "pulled" if back.get("prior") == "PULLED" else "gone"
+            prior = "cleaned up" if back.get("prior") == "CLEANED UP" else "pulled" if back.get("prior") == "PULLED" else "away"
             nth = {2: "2nd", 3: "3rd"}.get(back.get("n"), f"{back.get('n')}th")
             tot = alert.get("absorbed_all") or n
             return (f"RELOAD {who(side)} BACK at {where} — the same {who(side).lower()}, {nth} visit: {prior} {mins} min ago, "
@@ -122,7 +122,7 @@ def alert_text(alert, play):
         vis = alert.get("episodes") or 0
         nth = {2: "2nd", 3: "3rd"}.get(vis, f"{vis}th")
         again = f" for now — his {nth} visit; if he is back at this price within 20 minutes the desk says so" if vis >= 2 else ""
-        return (f"CLEANED UP — the {who(side)} at {where} is gone. He had {'bought' if side == 'bid' else 'sold'} "
+        return (f"CLEANED UP — the {who(side)} at {where} is done. He had {'bought' if side == 'bid' else 'sold'} "
                 f"{shares(alert['absorbed'])} shares ({dollars(alert.get('dollars', alert['absorbed'] * float(alert['price'])))}) "
                 f"before price went through him. That {wall(side).split(' / ')[0]} is done{again}.")
 
@@ -375,7 +375,7 @@ def day_trap_flow_words(dt):
     if f["verdict"] == "PRESSES":
         return f" The option flow is pressing them, {say_money(f['presses'])} in {what}."
     if f["verdict"] == "FADES":
-        return f" Careful, the option flow is fading the trap, {say_money(f['fades'])} in {other}."
+        return f" Careful, the option flow is going against the trap, {say_money(f['fades'])} in {other}."
     return " The option flow is mixed."
 
 

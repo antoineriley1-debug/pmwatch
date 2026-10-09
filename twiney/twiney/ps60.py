@@ -246,7 +246,7 @@ def second_entry_text(se, play):
         return (f"SECOND ENTRY taken through {_px(se['second_entry'])}{depth} and it is building — price keeps "
                 f"improving. Cash flow first, then breakeven stop, runner to the measured potential.")
     if build == "early":
-        return (f"SECOND ENTRY through {_px(se['second_entry'])}{depth} just triggered. It should go now — if there "
+        return (f"SECOND ENTRY through {_px(se['second_entry'])}{depth} just went through. It should go now — if there "
                 f"is no aggressive move in the next minute or two, use breakeven as the out.")
     return (f"SECOND ENTRY through {_px(se['second_entry'])} is NOT building after two minutes — high probability "
             f"it is wrong. Out at breakeven or your max pain.")
@@ -392,7 +392,7 @@ def grade(play, price, se, mp, shares, stop_known, caps):
         return {"grade": "PASS", "why": "; ".join(reasons), "gates": gates}
     if se["state"] == SECOND_ENTRY and se["build"] != "not building":
         return {"grade": "READY", "why": f"second entry through {_px(se['second_entry'])} — "
-                + ("building" if se["build"] == "building" else "just triggered"), "gates": gates}
+                + ("building" if se["build"] == "building" else "just went through"), "gates": gates}
     why = {IDLE: f"waiting for the pivot {_px(play.get('trigger'))} to break",
            BROKE: f"pivot broke — waiting for the retrace, then the second entry through {_px(se['extreme'])}",
            RETRACE: f"retracing — the second entry is through {_px(se['extreme'])} on a new candle",
