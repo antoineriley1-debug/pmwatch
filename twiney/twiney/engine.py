@@ -293,6 +293,8 @@ class Engine:
         self.sim_broker = None  # demo-mode fill simulator, if any
         self.plays_path = None  # where to save levels added from the chart
         self.replay = None      # replay control block when replaying a recording
+        self.trainer = None     # REPLAY TRAINING (twiney.training.Trainer) while replaying with the desk up
+        self.calib_path = None  # live only: recordings/inst_calib.jsonl, every CHILD ORDERS detection on the real tape
         self.grades = {}        # alert key -> "good" | "bad" (trader's verdict on a call)
         self.voice = deque(maxlen=60)   # spoken call-outs: big size added / pulled / hit
         self.desk = None        # recording desk (REC / markers / screenshots), set by run_twiney
@@ -1098,6 +1100,7 @@ class Engine:
             if kids:
                 kids["since"] = self._hm_t(kids["t0"])
                 kids["sizes_set"] = set(kids.get("sizes") or [])
+                self._calib(st, kids, t, memo)
             memo["kids"] = kids
             # a program on the other side of YOUR trade (shares, or a call = long / a put = short)
             mine = None
@@ -1135,6 +1138,24 @@ class Engine:
         sec = int((t + ny_offset(t)) % 86400)
         h, m = sec // 3600, (sec % 3600) // 60
         return f"{(h - 1) % 12 + 1}:{m:02d}"
+
+    def _calib(self, st, kids, t, memo):
+        """The CHILD ORDERS calibration log (live tape only): one line per detection as it grows, so the thresholds
+        (size, clock, one-way share) can be tuned against what the real tape did."""
+        if not self.calib_path or self.connection.get("state") != "CONNECTED":
+            return
+        key = (kids.get("side"), kids.get("size"), kids.get("t0"), kids.get("n"))
+        if memo.get("calib_key") == key:
+            return
+        memo["calib_key"] = key
+        row = {"t": round(t, 2), "symbol": st.symbol, "price": st.price()}
+        row.update({k: v for k, v in kids.items() if k != "sizes_set" and isinstance(v, (int, float, str, list, type(None)))})
+        try:
+            import json as _json
+            with open(self.calib_path, "a", encoding="utf-8") as f:
+                f.write(_json.dumps(row, default=str) + "\n")
+        except OSError:
+            pass
 
     def _inst_calls(self, st, v, t, ic):
         said = st.__dict__.setdefault("_inst_said", {})
@@ -5511,6 +5532,7 @@ class Engine:
                                                                         "why_not": "order entry not loaded"},
                 "replay": dict(self.replay) if self.replay else None,
                 "score": self.score.view() if (self.cfg.get("score") or {}).get("enabled", True) else None,
+                "training": self.trainer.view() if self.trainer is not None else None,
                 "account": {
                     "seen": self.account_seen,
                     "pending": sorted((dict(o, state=self.order_state(o)) for o in self._pending()), key=lambda o: -o.get("first_seen", 0)),

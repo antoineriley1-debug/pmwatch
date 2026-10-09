@@ -43,7 +43,7 @@ def span(path):
     return first, last
 
 
-def replay(path, plays=None, cfg=None, speed=0.0, on_alert=None, engine_ready=None, control=None):
+def replay(path, plays=None, cfg=None, speed=0.0, on_alert=None, engine_ready=None, control=None, trainer=None):
     """Feed every recorded event into a new engine.
 
     Uses the plays/config stored in the recording header unless overridden, so a
@@ -56,9 +56,25 @@ def replay(path, plays=None, cfg=None, speed=0.0, on_alert=None, engine_ready=No
     next_tick = None
     ticks_recorded = False
     replayed = []           # every replayed alert (the engine itself keeps only the last 300)
+    trained_t = [None]
+
+    def train_hook(alert):
+        """TRAINING: a spoken call with a direction in it pauses the replay and asks you."""
+        try:
+            st = engine.syms.get(alert.get("symbol")) if engine is not None else None
+            if st is None:
+                return
+            atr = (st.__dict__.get("_story_atr") or {}).get("v") or st.play.get("atr")
+            if trainer.ask(alert, alert.get("t") or engine.last_t, st.price(), atr) and control is not None:
+                control["paused"] = True
+        except Exception:
+            pass
 
     def pace(t):
         """Real-time pacing, pause, seek and stop: for every event, ticks included. False = stop."""
+        if trainer is not None and engine is not None and (trained_t[0] is None or t - trained_t[0] >= 1.0):
+            trained_t[0] = t
+            trainer.tick(t, {sym: st.price() for sym, st in engine.syms.items() if st.price()})
         if control is not None:
             control["position"] = t
             end = control.get("pause_at")
@@ -90,6 +106,9 @@ def replay(path, plays=None, cfg=None, speed=0.0, on_alert=None, engine_ready=No
         eng.listeners.append(replayed.append)
         if on_alert:
             eng.listeners.append(on_alert)
+        if trainer is not None:
+            eng.listeners.append(train_hook)
+            eng.trainer = trainer
         if engine_ready is not None:
             engine_ready(eng)
         return eng

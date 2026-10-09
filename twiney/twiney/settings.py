@@ -182,10 +182,16 @@ def _kind(path, default):
 RETIRED = {"trading.loss_limit_live_only", "studies.label_merge_pct"}
 
 
+# what the voice says, beyond the plain "say it" switches: the story's play-by-play, the coach, the excitement, the
+# quiet chart. All under VOICE, in one place
+SAID = ("story.play_by_play", "story.coach", "story.hype", "story.pbp_quiet", "story.alerts")
+
+
 def _is_voice(path):
     """A 'say it out loud' switch that lives in another section: shown in the one VOICE section instead."""
     last = path.split(".")[-1]
-    return path.split(".")[0] not in ("speech",) and (path.startswith("voice.") or last == "voice" or last.startswith("voice_"))
+    return path.split(".")[0] not in ("speech",) and (path.startswith("voice.") or last == "voice" or last.startswith("voice_")
+                                                      or path in SAID)
 
 
 def _voice_leaves():

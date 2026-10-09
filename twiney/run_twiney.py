@@ -104,6 +104,7 @@ def run_live(cfg, plays, args):
     engine.grades_path = os.path.join(_rec_dir(cfg), "grades.jsonl")
     engine.jlog_path = os.path.join(_rec_dir(cfg), "desk.log")   # structured JSON lines: connections, orders, fills, errors
     engine.score.path = os.path.join(_rec_dir(cfg), "score.jsonl")   # THE DESK SCORE: every judged call, one line each
+    engine.calib_path = os.path.join(_rec_dir(cfg), "inst_calib.jsonl")   # CHILD ORDERS on the real tape, for tuning
     engine.load_user_alerts(os.path.join(os.path.dirname(os.path.abspath(args.plays)), "alerts.json"))
     engine.listeners.append(console_alert)
     note_stripped(engine, args)
@@ -317,6 +318,8 @@ def run_replay(cfg, plays, args):
     ref = EngineRef(box)
 
     control = {"paused": False, "speed": args.speed, "position": None, "file": os.path.basename(args.replay)}
+    from twiney.training import Trainer
+    trainer = Trainer(os.path.join(_rec_dir(cfg), "training.jsonl"), cfg.get("score") or {}) if args.speed > 0 else None
     try:                                   # the scrubber's range: first and last market time in the file
         control["start"], control["end"] = span(args.replay)
     except OSError:
@@ -355,7 +358,7 @@ def run_replay(cfg, plays, args):
                                       plays=None if use_file_settings else plays,
                                       cfg=None if use_file_settings else cfg,
                                       speed=args.speed, on_alert=console_alert, engine_ready=ready,
-                                      control=control if args.speed > 0 else None)
+                                      control=control if args.speed > 0 else None, trainer=trainer)
             if control.get("restart_at") is None:
                 control["done"] = True
                 if engine is None:

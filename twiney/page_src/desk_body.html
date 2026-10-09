@@ -69,6 +69,8 @@
   <span id="rpPos" class="mono"></span>
   <span class="dim">speed</span><input type="range" id="rpSpeed" min="1" max="50" step="1"><span id="rpSpeedV" class="mono"></span>
   <span class="rpclip"><button id="rpIn" title="clip starts here">IN</button><button id="rpOut" title="clip ends here">OUT</button><span id="rpInOut" class="mono dim"></span><button id="rpSaveClip" title="save IN → OUT to the journal as a clip">SAVE CLIP</button></span>
+  <button id="rpTrain" title="TRAINING: when the desk makes a call the replay pauses and asks you LONG / SHORT / WAIT (keys L / S / W). Five minutes of the recording later you find out. Every answer goes to recordings/training.jsonl">TRAIN</button><span id="rpTrainScore" class="mono dim"></span>
+  <div id="rpQuiz"><b>THE CALL</b><span id="rpQText"></span><button data-ans="long" title="L">LONG</button><button data-ans="short" title="S">SHORT</button><button data-ans="wait" title="W">WAIT</button><button data-ans="skip" class="dim">SKIP</button></div>
 </div>
 <div id="toasts"></div>
 <div id="settings" hidden><div class="sbox">

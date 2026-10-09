@@ -220,7 +220,7 @@ function candleHandoff(wrap, d, c){
   const rowOf = p => wrap.querySelector(`tr[data-price="${(+p).toFixed(2)}"]`) || [...wrap.querySelectorAll("tr[data-price]")].find(r => Math.abs(+r.dataset.price - p) < 0.0051);
   const rc = rowOf(closed.close); if (rc){ rc.classList.add("cclose"); setTimeout(() => rc.classList.remove("cclose"), 1400); }
   const ch = typeof charts !== "undefined" && charts.chart, g = ch && ch.view && ch.view.geom;
-  if (!g || g.sym !== key || +g.tf !== closed.tf || !ch.canvas.offsetParent) return;
+  if (!g || g.sym !== key || !ch.canvas.offsetParent) return;
   const rh = rowOf(closed.high), rl = rowOf(closed.low), ro = rowOf(closed.open);
   const col = wrap.querySelector("td.cdl"); if (!col || !(rh || rl)) return;
   const a = (rh || rl).getBoundingClientRect(), b = (rl || rh).getBoundingClientRect(), cb = col.getBoundingClientRect();
@@ -228,10 +228,19 @@ function candleHandoff(wrap, d, c){
   const up = closed.close >= closed.open, colr = up ? "#1fb86a" : "#e8404f";
   // where it lands: the chart's slot for that bucket (or the newest candle)
   const cr = ch.canvas.getBoundingClientRect();
-  const kIdx = Math.max(0, g.keys.indexOf(closed.t0) >= 0 ? g.keys.indexOf(closed.t0) : g.n - 1);
+  // the chart's slot for that bucket; on another timeframe, the chart candle(s) that hold it: a 1-minute candle lands
+  // inside its 5-minute candle; a 5-minute candle spreads over its five 1-minute candles
+  const gs = (+g.tf || closed.tf) * 60, cs = closed.tf * 60;
+  let i0 = g.keys.indexOf(closed.t0), i1 = i0;
+  if (i0 < 0){
+    if (gs > cs) i0 = i1 = g.keys.findIndex(k => k <= closed.t0 && closed.t0 < k + gs);
+    else i0 = g.keys.findIndex(k => k >= closed.t0 && k < closed.t0 + cs);
+    if (i0 < 0) i0 = i1 = g.n - 1;
+  }
+  if (gs < cs){ i1 = i0; while (i1 + 1 < g.n && g.keys[i1 + 1] < closed.t0 + cs) i1++; }
   const yC = v => cr.top + 8 + (g.hi - v) / (g.hi - g.lo) * (g.plotH - 8);
-  const xC = cr.left + g.x0 + kIdx * g.cw + g.cw / 2;
-  const dTop = yC(closed.high), dBot = yC(closed.low), dH = Math.max(3, dBot - dTop), dW = Math.max(3, g.cw * 0.76);
+  const xC = cr.left + g.x0 + (i0 + i1 + 1) / 2 * g.cw;
+  const dTop = yC(closed.high), dBot = yC(closed.low), dH = Math.max(3, dBot - dTop), dW = Math.max(3, (i1 - i0 + 1) * g.cw - g.cw * 0.24);
   const bodyTop = (closed.high - Math.max(closed.open, closed.close)) / Math.max(1e-9, closed.high - closed.low), bodyBot = (Math.min(closed.open, closed.close) - closed.low) / Math.max(1e-9, closed.high - closed.low);
   const el = document.createElement("div");
   el.className = "cfly " + (up ? "u" : "d");
@@ -2077,6 +2086,7 @@ function renderStatus(s){
     const sc = document.getElementById("rpScrub");
     if (rp.start && rp.end && !scrubbing){ sc.min = Math.floor(rp.start); sc.max = Math.ceil(rp.end); if (rp.position) sc.value = Math.round(rp.position); }
     if (rp.clip_done && !window._clipToast){ window._clipToast = true; toast("End of the clip — paused. Press space to keep going.", true); } }
+  try { renderTraining(s); } catch (e) {}
 }
 
 /* ---------- the frame: one snapshot in, each panel decides if it changes */
@@ -2231,7 +2241,32 @@ document.getElementById("replaybar").addEventListener("click", e => {
   if (e.target.id === "rpSaveClip") saveReplayClip();
   if (e.target.id === "rpStep") post("/api/replay", {step: true});
   if (e.target.id === "rpRestart") post("/api/replay", {restart: true});
+  if (e.target.id === "rpTrain"){ const tr = state && state.training; post("/api/replay", {train: !(tr && tr.on)}); }
 });
+/* REPLAY TRAINING: the desk makes a call, the replay pauses, you answer LONG / SHORT / WAIT (or the L / S / W keys), five
+   minutes of the recording later you find out */
+document.getElementById("rpQuiz").addEventListener("click", e => {
+  const b = e.target.closest("button[data-ans]"); if (!b) return;
+  post("/api/replay", b.dataset.ans === "skip" ? {skip: true} : {answer: b.dataset.ans});
+});
+document.addEventListener("keydown", e => {
+  const q = document.getElementById("rpQuiz"); if (!q.classList.contains("on") || e.ctrlKey || e.metaKey || e.altKey) return;
+  const tag = (e.target && e.target.tagName) || ""; if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+  const a = {l: "long", s: "short", w: "wait"}[e.key.toLowerCase()]; if (!a) return;
+  e.preventDefault(); post("/api/replay", {answer: a});
+});
+function renderTraining(s){
+  const tr = s && s.training, btn = document.getElementById("rpTrain"), sc = document.getElementById("rpTrainScore"), q = document.getElementById("rpQuiz");
+  if (!btn) return;
+  btn.classList.toggle("on", !!(tr && tr.on)); btn.textContent = tr && tr.on ? "TRAINING" : "TRAIN";
+  sc.textContent = tr && tr.on ? (tr.n ? `${tr.right} / ${tr.n} right · ${tr.pct}%` : "answer the calls") + (tr.pending ? ` · ${tr.pending} waiting` : "") : "";
+  const quiz = tr && tr.on && tr.quiz;
+  q.classList.toggle("on", !!quiz);
+  if (quiz){ const txt = `${quiz.symbol} · ${quiz.kind} ▸ ${quiz.text}`; const el = document.getElementById("rpQText"); if (el.textContent !== txt) el.textContent = txt; }
+  const r = tr && tr.recent && tr.recent[0];
+  if (r && r.judged && window._trainLast !== r.judged){ window._trainLast = r.judged;
+    toast(`${r.right ? "RIGHT" : "WRONG"} · ${r.symbol} ${r.kind}: you said ${r.answer.toUpperCase()}, it went ${r.went.toUpperCase()} (${r.pct >= 0 ? "+" : ""}${r.pct}% in 5 min)${r.desk_right ? " · the desk had it" : " · the desk missed it"}`, !!r.right); }
+}
 function showInOut(){ document.getElementById("rpInOut").textContent = (CLIPSEL.t0 ? nyT(CLIPSEL.t0) : "—") + " → " + (CLIPSEL.t1 ? nyT(CLIPSEL.t1) : "—"); }
 async function saveReplayClip(){
   if (!CLIPSEL.t0 || !CLIPSEL.t1){ toast("Set IN and OUT first", false); return; }

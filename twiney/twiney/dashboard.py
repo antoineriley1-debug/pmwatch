@@ -543,6 +543,20 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                         r["speed"] = max(0.25, min(100.0, float(body["speed"])))
                     except (TypeError, ValueError):
                         pass
+                tr = getattr(engine, "trainer", None)
+                if tr is not None:                  # REPLAY TRAINING: on / off, your answer, or skip the question
+                    if "train" in body:
+                        tr.on = bool(body["train"])
+                        if not tr.on:
+                            tr.skip()
+                    if body.get("answer"):
+                        if tr.answer(body["answer"]):
+                            r["paused"] = False     # answered: the replay goes on, the verdict comes five minutes later
+                    if body.get("skip"):
+                        tr.skip()
+                        r["paused"] = False
+                    if body.get("paused") is False and tr.quiz is not None:
+                        tr.skip()                   # PLAY without answering: the question is dropped
                 self._send(200, json.dumps({"ok": True, "replay": dict(r)}), "application/json")
             else:
                 self._send(404, "not found", "text/plain")

@@ -1159,3 +1159,10 @@ body.whitedesk .chart-wrap canvas,body.whitedesk img,body.whitedesk video{filter
 .screc{display:grid;grid-template-columns:62px 44px 1fr 44px 56px;white-space:nowrap;gap:6px;align-items:baseline;font:11px var(--mono);padding:2px 8px;color:#cfd6df;border-left:3px solid transparent}
 .screc.good{border-left-color:#3fb950} .screc.bad{border-left-color:#f85149} .screc i{font-style:normal;color:#9fb0c3} .screc em{font-style:normal;font-weight:800}
 .screc.good em{color:#3fb950} .screc.bad em{color:#f85149} .screc u{text-decoration:none;text-align:right}
+
+/* REPLAY TRAINING */
+#rpTrain.on{background:#5b3fd6;color:#fff;border-color:#8a74ff}
+#rpQuiz{display:none;position:fixed;left:50%;top:64px;transform:translateX(-50%);z-index:60;gap:8px;align-items:center;padding:10px 14px;background:#1a1530;border:1px solid var(--violet);border-radius:6px;box-shadow:0 8px 28px rgba(0,0,0,.55);max-width:min(900px,92vw);font:12px var(--sans);color:#e6e6ef}
+#rpQuiz.on{display:flex}
+#rpQuiz b{color:#c9b8ff;letter-spacing:.08em;white-space:nowrap} #rpQuiz span{flex:1;min-width:0;white-space:normal}
+#rpQuiz button{font-weight:800;padding:5px 12px} #rpQuiz button[data-ans=long]{color:#3fb950} #rpQuiz button[data-ans=short]{color:#f85149} #rpQuiz button[data-ans=wait]{color:#e8b931}
