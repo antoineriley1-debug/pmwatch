@@ -431,7 +431,7 @@ class SimBroker:
                              remaining=float(o["remaining"]), filled=float(o["qty"] - o["remaining"]),
                              type=o["type"], lmt=o["price"] if o["type"] in ("LMT", "STP LMT") else None,
                              aux=o["price"] if o["type"] == "STP" else o.get("aux"), tif=o["tif"], status=o["status"],
-                             role=o["role"], order_id=o["id"], sim=True, mine=True, parent=o["parent"])
+                             role=o["role"], order_id=o["id"], sim=True, mine=True, parent=o["parent"], oca=o.get("oca"))
 
     def on_market(self, symbol, now):
         """Called by the engine after each print / book update for ``symbol``."""
@@ -970,6 +970,11 @@ class Trader:
             oid, role = o.get("order_id"), str(o.get("role") or "")
             if oid is None or not role.startswith(("partial", "target", "runner", "cash_flow", "close", "stop")) or is_option_key(o.get("symbol")):
                 continue
+            if o.get("oca"):
+                # paired at the broker (an OCA reduce group): IBKR shrinks its partner itself — the desk never shrinks
+                # it a second time (that left the stop too small)
+                seen[oid] = filled(o)
+                continue
             f, prev = filled(o), seen.get(oid, 0)
             if f > prev:
                 seen[oid] = f
@@ -1073,16 +1078,20 @@ class Trader:
             return {"ok": False, "reason": "no position to take profit on"}
         if not free:
             return {"ok": False, "reason": why}
-        if shares >= abs(pos):
-            return {"ok": False, "reason": f"that is the whole position ({abs(pos)} shares) — use CLOSE or FLATTEN"}
-        shares = min(shares, free)
+        shares = min(shares, free, abs(pos))           # ALL of it at a price is a take-profit too (a resting limit)
         action = SELL if pos > 0 else BUY
         price = snap(price, -1 if action == SELL else +1, symbol)
         reason = self.gate.check_reduce(action, shares, price, now)
         if reason:
             self._note(now, f"BLOCKED partial {symbol}: {reason}", False)
             return {"ok": False, "reason": reason}
-        out = self._reduce(symbol, action, price, shares, now, "partial")
+        # PAIRED AT IBKR: the stop gives up these shares and a stop SLICE for exactly them goes in, in one OCA reduce
+        # group with this take-profit — it fills: IBKR cancels the slice; the stop hits: IBKR cancels the take-profit.
+        # With the desk off the stop is never left bigger than what you hold. (Same as a bracket's legs.)
+        oca = self._pair_stop_slice(symbol, action, shares, now)
+        out = self._reduce(symbol, action, price, shares, now, "partial", oca=oca)
+        if not out.get("ok") and oca:
+            self._unpair_stop_slice(symbol, action, oca, now)
         if out.get("ok"):
             # the target(s) give up the same shares, biggest first, so exits never add up to more than you hold
             left = shares
@@ -1101,6 +1110,63 @@ class Trader:
                 left -= cut
             out["sent"] = f"PARTIAL {action} {shares} {symbol} @ {money(price)}"
         return out
+
+    def _pair_stop_slice(self, symbol, action, n, now):
+        """Take ``n`` shares out of the working stop and put them back as their own stop (same trigger and limit) in a
+        new OCA group; returns the group for the take-profit to join, or None (no stop working: nothing to pair)."""
+        left = lambda o: int(o.get("remaining") if o.get("remaining") is not None else o.get("qty") or 0)
+        stops = sorted((o for o in self.engine._pending(symbol) if str(o.get("role") or "").startswith("stop")
+                        and o.get("action") == action and o.get("order_id") is not None and o.get("status") != "PendingCancel"),
+                       key=lambda o: -left(o))
+        if not stops or sum(left(o) for o in stops) < n:
+            return None
+        big = stops[0]
+        trig, lmt = big.get("aux"), big.get("lmt")
+        if not trig or not lmt:
+            return None
+        g = f"tp-{symbol}-{int(now * 1000) % 100000000}"
+        # the old stop shrinks FIRST (never a moment with stops for more than you hold), then the slice goes in
+        take, shrunk = n, []
+        for o in stops:
+            if take <= 0:
+                break
+            cut = min(left(o), take)
+            try:
+                if left(o) - cut <= 0:
+                    self.broker.cancel(o["order_id"], now)
+                else:
+                    self.broker.resize(o["order_id"], left(o) - cut, now)
+                shrunk.append((o, cut))
+            except Exception as exc:
+                log.warning("stop slice %s: %s", symbol, exc)
+            take -= cut
+        try:
+            self.broker.place(symbol, action, n, lmt, now, "STP LMT", None, "stop", "DAY", aux=trig, oca=g, reducing=True)
+        except Exception as exc:
+            for o, cut in shrunk:                       # could not split it: the stop goes back to what it was
+                try:
+                    self.broker.resize(o["order_id"], left(o), now)
+                except Exception:
+                    pass
+            self._note(now, f"{symbol}: could not pair the take-profit with its own stop ({exc}) — the desk shrinks the stop when it fills", False)
+            return None
+        return g
+
+    def _unpair_stop_slice(self, symbol, action, g, now):
+        """The take-profit did not go in: its stop slice folds back into the stop."""
+        left = lambda o: int(o.get("remaining") if o.get("remaining") is not None else o.get("qty") or 0)
+        pend = [o for o in self.engine._pending(symbol) if o.get("action") == action and o.get("order_id") is not None]
+        mine = lambda o: str(o.get("oca") or "").endswith(g)       # IBKR's adapter prefixes the group name
+        sl = [o for o in pend if mine(o)]
+        main = [o for o in pend if str(o.get("role") or "").startswith("stop") and not mine(o)]
+        n = sum(left(o) for o in sl)
+        try:
+            if main:
+                self.broker.resize(main[0]["order_id"], left(main[0]) + n, now)
+                for o in sl:
+                    self.broker.cancel(o["order_id"], now)
+        except Exception as exc:
+            log.warning("unpair %s: %s", symbol, exc)
 
     def breakeven(self, symbol, now=None):
         with self.lock:
@@ -1193,9 +1259,9 @@ class Trader:
         return {"ok": True, "price": be, "moved": moved, "cancelled": cancelled,
                 "sent": f"stop to breakeven {money(be)}{extra}"}
 
-    def _reduce(self, symbol, action, price, qty, now, role):
+    def _reduce(self, symbol, action, price, qty, now, role, oca=None):
         try:
-            oid = self.broker.place(symbol, action, qty, price, now, "LMT", None, role, "DAY", reducing=True)
+            oid = self.broker.place(symbol, action, qty, price, now, "LMT", None, role, "DAY", reducing=True, oca=oca)
         except Exception as exc:
             self._note(now, f"FAILED {role} {action} {qty} {symbol} @ {money(price)}: {exc}", False)
             return {"ok": False, "reason": str(exc)}

@@ -387,7 +387,7 @@ class TwineyWrapper:
             qty=num(getattr(order, "totalQuantity", None)), type=getattr(order, "orderType", None),
             lmt=num(getattr(order, "lmtPrice", None)) or None, aux=num(getattr(order, "auxPrice", None)) or None,
             tif=getattr(order, "tif", None), status=getattr(orderState, "status", None),
-            order_id=int(orderId) if mine else None, mine=mine,
+            order_id=int(orderId) if mine else None, mine=mine, oca=getattr(order, "ocaGroup", None) or None,
             role=(self.session.order_roles.get(int(orderId)) or self._role_from_ref(order)) if mine else
                  (self._role_from_ref(order) or "manual"))
 
@@ -1015,7 +1015,7 @@ class MarketDataSession:
             self.engine.on_order(f"id{oid}", now, symbol=symbol, action=action, qty=float(qty), remaining=float(qty),
                                  type=order_type, lmt=price if order_type in ("LMT", "STP LMT") else None,
                                  aux=price if order_type == "STP" else aux, tif=tif, status="PendingSubmit",
-                                 order_id=oid, role=role, mine=True, parent=parent)
+                                 order_id=oid, role=role, mine=True, parent=parent, oca=extra.get("oca"))
             self._orders_seen.add(f"id{oid}")
             self._next_orders = now + 1.0  # refresh the open-order list soon
             return oid

@@ -227,8 +227,9 @@ class PartialProfitTests(unittest.TestCase):
         tr.submit("AAA", "BUY", 10.00, 100, 2.0)
         out = tr.partial("AAA", 40, 10.50, 3.0)
         self.assertTrue(out["ok"], out)
-        roles = {o["role"]: o["remaining"] for o in pend(e)}
-        self.assertEqual(roles, {"stop": 100.0, "target": 60.0, "partial": 40.0})
+        got = sorted((o["role"], o["remaining"]) for o in pend(e))
+        # the stop splits: 60 paired with the target, 40 paired with this take-profit (OCA at the broker)
+        self.assertEqual(got, [("partial", 40.0), ("stop", 40.0), ("stop", 60.0), ("target", 60.0)])
         e.on_depth("AAA", 0, UPDATE, BID, 10.50, 500, "", 4.0)      # bid comes up: the partial fills
         self.assertEqual(broker.position("AAA"), 60)
         for t in (6.1, 8.2):
@@ -240,7 +241,7 @@ class PartialProfitTests(unittest.TestCase):
         gate.arm(True)
         self.assertFalse(tr.partial("AAA", 10, 10.5, 2.0)["ok"])          # no position
         tr.submit("AAA", "BUY", 10.00, 100, 2.0, bracket=False)
-        self.assertIn("whole position", tr.partial("AAA", 100, 10.5, 3.0)["reason"])
+        self.assertFalse(tr.partial("AAA", 0, 10.5, 3.0)["ok"])            # no size
         gate.arm(False)
         self.assertTrue(tr.partial("AAA", 30, 10.5, 3.1)["ok"])           # works disarmed, like close
         out = tr.partial("AAA", 80, 10.6, 3.2)                             # only 70 left to take

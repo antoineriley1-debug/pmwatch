@@ -306,3 +306,52 @@ class WalkingCallTests(unittest.TestCase):
             e._inst_calls(st, v, 100.0, dict(e.cfg.get("inst") or {}, voice=True))
         except TypeError as exc:
             self.fail(f"walking call crashed: {exc}")
+
+
+class PairedTakeProfitTests(unittest.TestCase):
+    """A take-profit at a price is paired at IBKR with its own stop slice (OCA reduce): with the desk OFF (no
+    watchdog, no fast path) a fill of either side leaves the other right — never a stop bigger than you hold."""
+    def setup(self):
+        e, tr, broker = make(); tr.watchdog(1.5)
+        tr.submit("AAA", "BUY", 10.0, 100, 2.0, bracket=False); quote(e, 9.99, 10.00, 3.0)
+        e.set_play_level("AAA", "stop", 9.50, 3.5, source="chart"); e.set_play_level("AAA", "target", 11.0, 3.5, source="chart"); tr.watchdog(4.0)
+        return e, tr, broker
+
+    def exits(self, e):
+        return sorted((o.get("role"), int(o.get("remaining") if o.get("remaining") is not None else o.get("qty"))) for o in e._pending("AAA"))
+
+    def test_take_profit_fills_with_the_desk_off(self):
+        e, tr, broker = self.setup()
+        self.assertTrue(tr.partial("AAA", 25, 10.30, 5.0)["ok"])
+        self.assertEqual(self.exits(e), [("partial", 25), ("stop", 25), ("stop", 75), ("target", 75)])
+        quote(e, 10.30, 10.31, 6.0)                                         # desk off: only the broker acts
+        self.assertEqual(broker.position("AAA"), 75)
+        self.assertEqual(self.exits(e), [("stop", 75), ("target", 75)])   # its stop slice went with it
+
+    def test_stop_hits_with_the_desk_off(self):
+        e, tr, broker = self.setup()
+        self.assertTrue(tr.partial("AAA", 25, 10.60, 5.0)["ok"])
+        for i, (b, a) in enumerate(((9.60, 9.61), (9.49, 9.50), (9.40, 9.41), (9.35, 9.36))):
+            quote(e, b, a, 6.0 + i)
+        self.assertEqual(broker.position("AAA"), 0)
+        self.assertEqual(self.exits(e), [])                                # take-profit and target cancelled by their stops
+
+    def test_take_profit_all_at_a_price(self):
+        e, tr, broker = self.setup()
+        out = tr.partial("AAA", 100, 10.40, 5.0)
+        self.assertTrue(out["ok"], out)
+        self.assertEqual(self.exits(e), [("partial", 100), ("stop", 100)])
+        quote(e, 10.40, 10.41, 6.0)
+        self.assertEqual(broker.position("AAA"), 0); self.assertEqual(self.exits(e), [])
+
+    def test_a_part_fill_of_a_paired_target_is_not_shrunk_twice(self):
+        e, tr, broker = self.setup()
+        tg = [o for o in broker.orders.values() if o["role"] == "target"][0]
+        tr.fast_stops(4.5)
+        broker._fill(tg, 11.0, 5.0) if False else None
+        # the broker fills 40 of the target and, the pair being OCA, takes 40 off the stop itself
+        tg["remaining"] -= 40; broker.pos["AAA"][0] -= 40
+        st = [o for o in broker.orders.values() if o["role"] == "stop"][0]; st["remaining"] -= 40
+        broker._report(tg, 5.0); broker._report(st, 5.0)
+        tr.fast_stops(5.1); tr.watchdog(5.2)
+        self.assertEqual(self.exits(e), [("stop", 60), ("target", 60)])
