@@ -922,3 +922,50 @@ class SecondEntryWatchTests(unittest.TestCase):
         for w in ws:
             for bad in ("fading", "stale", "gone", "trigger", "dark", "iceberg"):
                 self.assertNotIn(bad, w.lower(), w)
+
+
+class SessionPointsTests(unittest.TestCase):
+    def test_premarket_and_after_hours_are_places(self):
+        pts = story.session_points({"pmh": 101.2, "pml": 99.4, "ahh": 100.9, "ahl": 100.1, "open": 100.5, "pmc": 100.7})
+        self.assertEqual([(p["name"], p["kind"]) for p in pts],
+                         [("premarket high", "pmh"), ("premarket low", "pml"), ("after-hours high", "ahh"), ("after-hours low", "ahl"), ("today's open", "open")])
+        self.assertEqual(story.session_points({}), [])
+        self.assertEqual(story.session_points({"pmh": None, "ahl": 0}), [])
+
+
+class OpenReadTests(unittest.TestCase):
+    """A strong day, then selling in the extended hours: they run it low to take it high at the open (and the reverse)."""
+
+    def rows(self, o, h, l, c):
+        return daily_rows([100] * 30) + [[ny_t(2026, 10, 2, 0), o, h, l, c, 1e6]]
+
+    def test_strong_day_sold_in_the_premarket_is_the_shakeout(self):
+        r = story.prior_day_context(self.rows(100.0, 103.2, 99.8, 103.0), False, {"pmc": 102.3, "pml": 102.1, "pmh": 103.1}, 102.3, 2.0, ny_t(2026, 10, 5, 9, 10))
+        self.assertEqual(r["read"], "shake_low")
+        self.assertIn("run it low to take it high at the open", r["text"]); self.assertIn("Premarket low 102.10", r["text"])
+        self.assertIn("reclaim 103.00", r["text"]); self.assertAlmostEqual(r["watch"], 102.1)
+
+    def test_weak_day_bought_in_the_premarket_is_the_reverse(self):
+        r = story.prior_day_context(self.rows(103.0, 103.2, 99.8, 100.0), False, {"pmc": 100.8, "pml": 99.9, "pmh": 101.0}, 100.8, 2.0, ny_t(2026, 10, 5, 9, 10))
+        self.assertEqual(r["read"], "shake_high"); self.assertIn("run it up to take it down", r["text"])
+
+    def test_an_ordinary_day_says_nothing(self):
+        self.assertIsNone(story.prior_day_context(self.rows(100.0, 101.0, 99.0, 100.2), False, {"pmc": 99.9}, 99.9, 2.0, ny_t(2026, 10, 5, 9, 10)))
+        # a strong day with a flat premarket: nothing to read either
+        self.assertIsNone(story.prior_day_context(self.rows(100.0, 103.2, 99.8, 103.0), False, {"pmc": 102.9}, 102.9, 2.0, ny_t(2026, 10, 5, 9, 10)))
+
+    def test_said_once_before_the_open_and_in_the_daily_brief(self):
+        sb, t = story.Story(), ny_t(2026, 10, 5, 9, 12)
+        play = {"side": "long", "trigger": 150.0}
+        pts = story.ps60_points(play)
+        drows = self.rows(100.0, 103.2, 99.8, 103.0)
+        ctx = {"bias": "bull", "text": "Daily above the 50-day (100.00): bullish PS60, supply to supply."}
+        sess = {"pmc": 102.3, "pml": 102.1, "pmh": 103.1}
+        out = story.build(sb, t, 102.3, 0.01, 2.0, play, None, ctx, pts, [], [], story.flow_read([], t, CFG), None, [], [],
+                          [[t - 120, 102.3, 102.3, 102.3, 102.3, 1]], CFG, drows=drows, live=False, sess=sess)
+        said = [x["text"] for x in out["said"]]
+        self.assertTrue(any("shakeout" in w for w in said), said)
+        self.assertIn("shakeout", out["daily"])
+        out = story.build(sb, t + 60, 102.3, 0.01, 2.0, play, None, ctx, pts, [], [], story.flow_read([], t, CFG), None, [], [],
+                          [[t - 60, 102.3, 102.3, 102.3, 102.3, 1]], CFG, drows=drows, live=False, sess=sess)
+        self.assertFalse(any("shakeout" in x["text"] for x in out["said"] if x["topic"].startswith("openread")))

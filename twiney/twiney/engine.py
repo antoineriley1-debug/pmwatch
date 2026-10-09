@@ -871,6 +871,7 @@ class Engine:
             if same:
                 if L["short"] not in same["short"].split("/"):
                     same["short"] += "/" + L["short"]; same["name"] += " / " + L["name"]; same["say"] += " and " + L["say"]
+                    same["code"] = f"{same['code']}/{L['code']}"      # every level on the row keeps its code (PDH/PMH)
             else:
                 merged.append(dict(L))
         memo.update(t=t, v=merged)
@@ -1480,6 +1481,12 @@ class Engine:
             dc["k"] = (int(t // 15), st.hist_ver)
             dc["rows"], dc["live"] = studies.daily_series(st, t)
             dc["pts"] = story_mod.structure_points(dc["rows"], dc["live"], t)
+            try:                                                   # the premarket / after-hours highs and lows, today's open
+                dc["sess"] = studies.session_levels(st, t)
+                dc["pts"] += story_mod.session_points(dc["sess"])
+            except Exception:
+                log.exception("story session levels %s", st.symbol)
+                dc["sess"] = None
         drows, live = dc["rows"], dc["live"]
         ac = st.__dict__.setdefault("_story_atr", {})
         if ac.get("k") != (int(t // 60), st.hist_ver, st.play.get("atr")):     # the daily ATR: once a minute
@@ -1533,7 +1540,7 @@ class Engine:
                               reloads, consumed, mins, sc, traps=traps, market=self._market_read(st, t),
                               pulled={(c[1], c[2]): c[0] for c in getattr(st, "pulled", ()) if t - c[0] <= 60},
                               fw=story_mod.ma_framework(mc.get("dpack"), mc.get("dprev"), mc.get("hpack"), mc.get("hprev"), last, sc),
-                              mas=mc.get("mas"), trade=self._trade_read(st, last), h60=mc.get("h60"), drows=drows, live=live)
+                              mas=mc.get("mas"), trade=self._trade_read(st, last), h60=mc.get("h60"), drows=drows, live=live, sess=dc.get("sess"))
         out["feed"] = list(st.storybook.feed)[:30]
         out["near"] = round(story_mod.near_dist(last, atr, tick, sc), 4)
         out["atr"] = atr

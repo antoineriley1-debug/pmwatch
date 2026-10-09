@@ -566,6 +566,57 @@ def daily_brief(ctx, fw, rm_up, rm_dn, drows, live, atr, cfg):
     return ". ".join(bits) + "."
 
 
+def prior_day_context(drows, live, sess, last, atr, t):
+    """Dan's open read. A STRONG day before (closed near its high, a real gain) and then selling in the after-hours
+    / premarket is the shakeout: they run it low to take it high at the open; a WEAK day before and buying in the
+    extended hours is the reverse: they run it up to take it down. Returns {"read", "text", "watch"} or None."""
+    done = (drows[:-1] if live else drows) if drows else []
+    if not done or last is None or not atr:
+        return None
+    o, h, l, c = done[-1][1], done[-1][2], done[-1][3], done[-1][4]
+    rng_ = h - l
+    if rng_ <= 0:
+        return None
+    loc = (c - l) / rng_                                      # where it closed in its range
+    gain = (c - o) / atr
+    strong = loc >= 0.75 and gain >= 0.4
+    weak = loc <= 0.25 and gain <= -0.4
+    if not (strong or weak):
+        return None
+    ref = (sess or {}).get("pmc") or last                      # the premarket close (or the price now, before 9:30)
+    ext = (ref - c) / atr                                      # the extended hours against the close, in ATRs
+    pm = f" Premarket {'low' if ext < 0 else 'high'} {px(sess['pml'] if ext < 0 else sess['pmh'])}." if sess and sess.get("pml") and sess.get("pmh") else ""
+    if strong and ext <= -0.15:
+        return {"read": "shake_low", "watch": sess.get("pml") if sess else None,
+                "text": (f"Strong day yesterday, closed near the high at {px(c)}, and they're selling it in the extended hours, "
+                         f"{abs(ref - c) * 100:.0f} cents under the close. That's the shakeout: they run it low to take it high at the open."
+                         f"{pm} Watch the premarket low hold and the open reclaim {px(c)}: that's the long")}
+    if weak and ext >= 0.15:
+        return {"read": "shake_high", "watch": sess.get("pmh") if sess else None,
+                "text": (f"Weak day yesterday, closed near the low at {px(c)}, and they're buying it in the extended hours, "
+                         f"{abs(ref - c) * 100:.0f} cents over the close. That's the reverse shakeout: they run it up to take it down at the open."
+                         f"{pm} Watch the premarket high hold and the open lose {px(c)}: that's the short")}
+    if strong and ext >= 0.15:
+        return {"read": "follow_up", "watch": None,
+                "text": f"Strong day yesterday and they're still buying it in the extended hours, {abs(ref - c) * 100:.0f} cents over the close. Gap and go is on the table, but a gap into supply gets sold: wait for the first 60-minute candle"}
+    if weak and ext <= -0.15:
+        return {"read": "follow_down", "watch": None,
+                "text": f"Weak day yesterday and they're still selling it in the extended hours, {abs(ref - c) * 100:.0f} cents under the close. Gap and go down is on the table, but a gap into demand gets bought: wait for the first 60-minute candle"}
+    return None
+
+
+def session_points(sess):
+    """Today's premarket high / low, the last after-hours high / low and today's 9:30 open (studies.session_levels)
+    as places: the same levels the ladder tags and the chart draws, so the story, the MP map and the coach see them."""
+    out = []
+    for key, name, kind in (("pmh", "premarket high", "pmh"), ("pml", "premarket low", "pml"),
+                            ("ahh", "after-hours high", "ahh"), ("ahl", "after-hours low", "ahl"), ("open", "today's open", "open")):
+        v = (sess or {}).get(key)
+        if v:
+            out.append({"p": float(v), "name": name, "kind": kind})
+    return out
+
+
 def structure_points(drows, live, t):
     """Prior-day, prior-week, prior-month and 52-week highs and lows from the daily bars."""
     out = []
@@ -1415,7 +1466,7 @@ def _closed_n(mins, t, n):
 
 
 def build(sb, t, last, tick, atr, play, se_state, ctx, points, zones, conf, fr, pace, reloads, consumed, mins, cfg,
-          traps=None, market=None, pulled=None, fw=None, mas=None, trade=None, h60=None, drows=None, live=False):
+          traps=None, market=None, pulled=None, fw=None, mas=None, trade=None, h60=None, drows=None, live=False, sess=None):
     """One read: the line for now, plus whatever new moments go on the feed. sb: the symbol's Story.
     reloads: confirmed reloaders [{price, side, stage, absorbed}]. consumed: reloaders
     cleaned up in the last minute [{price, side}]."""
@@ -1616,10 +1667,17 @@ def build(sb, t, last, tick, atr, play, se_state, ctx, points, zones, conf, fr, 
     # structure: lower lows / higher highs on the 60 and on the Daily
     for kind, txt in structure_read(sb, t, h60, drows, live, last, fw, cfg):
         note("struct:" + kind, (kind, round(t // 60)), txt, "bear" if kind.startswith("ll") else "bull", repeat=1800, loud=True)
+    # THE OPEN READ: the prior day against the extended hours (the shakeout before the open), once a day, before 10
+    pdc = prior_day_context(drows, live, sess, last, atr, t) if sess is not None else None
+    out["open_read"] = pdc
+    if pdc and studies.ny_secs(t) < 10 * 3600 + 30 * 60:
+        note("openread", (pdc["read"], studies.day_key(t)), pdc["text"], "bull" if pdc["read"] in ("shake_low", "follow_up") else "bear", repeat=6 * 3600, loud=True)
     # THE DAILY BRIEF: the brain of the trade, said once a day and again whenever it changes (the 50, the 5 / 10, the MP)
     dr_up = room_read(True, ctx, None, points, zones, last, near, atr, cfg)
     dr_dn = room_read(False, ctx, None, points, zones, last, near, atr, cfg)
     db = daily_brief(ctx, fw, dr_up, dr_dn, drows, live, atr, cfg)
+    if db and pdc:
+        db = db.rstrip(".") + ". " + pdc["text"] + "."
     out["daily"] = db
     if db:
         # said again only when the Daily itself changes (the 50, the 5, the 10, room or thin), never because the nearest
@@ -1671,7 +1729,7 @@ def build(sb, t, last, tick, atr, play, se_state, ctx, points, zones, conf, fr, 
     parts = []
     if fresh_break:
         verb = (("reclaimed" if br["dir"] == "up" else "lost") if foc["kind"] in MA_KINDS
-                else ("cleared" if br["dir"] == "up" else "lost") if foc["kind"] in ("pdh", "pwh", "mh", "yh", "pdl", "pwl", "ml", "yl")
+                else ("cleared" if br["dir"] == "up" else "lost") if foc["kind"] in ("pdh", "pwh", "mh", "yh", "pdl", "pwl", "ml", "yl", "pmh", "pml", "ahh", "ahl", "open")
                 else ("breaking" if br["dir"] == "up" else "breaking down"))
         head = f"{where} {verb}: a candle closed {'over' if br['dir'] == 'up' else 'under'} it" + (f" at {px(cl)}" if cl is not None else "")
         tone = "bull" if br["dir"] == "up" else "bear"

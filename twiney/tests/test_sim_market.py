@@ -128,3 +128,26 @@ class PracticeClockTests(unittest.TestCase):
         f.start(t)
         self.assertEqual(f._phase(t)["name"], "midday")
         self.assertEqual(f._phase(t + 150 * 60)["name"], "close")
+
+
+class ExtendedHoursTests(unittest.TestCase):
+    def test_the_practice_desk_has_premarket_and_after_hours_levels(self):
+        from twiney import studies
+        c, ps = cfg(), plays()
+        live = Engine(ps, c, None)
+        f = DemoFeed(live, ps, seed=3)
+        t = ny(11, 0)
+        f.start(t)
+        for i in range(1, 12):                                  # a few seconds of tape: a price to tell the story from
+            f.step(t + i * 0.25)
+        sym, s = next(iter(f.state.items()))
+        st = live.syms[sym]
+        sess = studies.session_levels(st, t)
+        self.assertIsNotNone(sess["pmh"]); self.assertIsNotNone(sess["pml"]); self.assertGreater(sess["pmh"], sess["pml"])
+        self.assertIsNotNone(sess["ahh"]); self.assertIsNotNone(sess["ahl"])
+        self.assertAlmostEqual(s.pmh, sess["pmh"], places=2)
+        codes = {c for L in live.key_levels(st, t) for c in str(L["code"]).split("/")}   # levels on top of each other share a row
+        self.assertTrue({"PMH", "PML", "AHH", "AHL"} <= codes, codes)
+        live._story(st, t, c.get("story") or {})                # the story builds with them in
+        pts = [p["name"] for p in __import__("twiney.story", fromlist=["x"]).session_points(sess)]
+        self.assertIn("premarket high", pts)

@@ -130,7 +130,7 @@ class _Sym:
                  "big_home", "parts", "level_cooldown", "hidden_next", "prev", "l1", "base", "mid0", "beta", "sym", "eff", "owed",
                  "hot", "hot_dir", "mom", "spent", "now", "last_mid", "episode", "ep_next", "thin", "ep_script",
                  "program", "program_next",
-                 "vs", "vs_t", "vs_mid", "vs_norm", "pulse", "hl_t", "lv_cool", "lv_next", "day_open", "hod", "lod", "pdh", "pdl", "pdc", "vwap_pv", "vwap_v", "day_key")
+                 "vs", "vs_t", "vs_mid", "vs_norm", "pulse", "hl_t", "lv_cool", "lv_next", "day_open", "hod", "lod", "pdh", "pdl", "pdc", "pmh", "pml", "ahh", "ahl", "vwap_pv", "vwap_v", "day_key")
 
     def __init__(self, play, mid, t):
         self.play = play
@@ -177,6 +177,7 @@ class _Sym:
         self.day_open = None
         self.hod = self.lod = None
         self.pdh = self.pdl = self.pdc = None
+        self.pmh = self.pml = self.ahh = self.ahl = None
         self.vwap_pv = self.vwap_v = 0.0
         self.day_key = None
 
@@ -289,6 +290,32 @@ class DemoFeed:
                 t30 = day0 + SESSION_OPEN + 1800 * j
                 self.engine.on_study_bar(sym, "m30", t30, round(bo, 2), round(max(bh, bo, bc), 2), round(min(bl, bo, bc), 2), round(bc, 2),
                                          float(rng.randint(2000, 20000)))
+        # the extended hours: yesterday's after-hours (16:00-20:00) and today's premarket (4:00-9:30) as 5-minute bars,
+        # a quiet drift with a small range around the close, so the ladder, the chart and the story have the premarket
+        # high / low and the after-hours high / low the way they do on the live desk
+        if day_bars:
+            pc = day_bars[-1][4]
+            ah_h = ah_l = pm_h = pm_l = None
+            px2 = pc
+            for j in range(48):                                # 16:00-20:00 yesterday: 48 five-minute bars
+                t5 = day_bars[-1][0] + 16 * 3600 + 300 * j
+                o = px2; c2 = round(o + rng.gauss(0, atr_ * 0.03), 2)
+                h = round(max(o, c2) + rng.uniform(0, atr_ * 0.02), 2); l = round(min(o, c2) - rng.uniform(0, atr_ * 0.02), 2)
+                self.engine.on_study_bar(sym, "m5x", t5, o, h, l, c2, float(rng.randint(200, 3000)))
+                ah_h = h if ah_h is None else max(ah_h, h); ah_l = l if ah_l is None else min(ah_l, l)
+                px2 = c2
+            px2 = round(s.mid0 * (1 + rng.uniform(-0.006, 0.006)), 2)
+            pm_end = min(t, today0 + 34200)                       # the premarket up to now (or to 9:30)
+            for j in range(66):                                # 4:00-9:30 today: 66 five-minute bars
+                t5 = today0 + 4 * 3600 + 300 * j
+                if t5 >= pm_end:
+                    break
+                o = px2; c2 = round(o + rng.gauss(0, atr_ * 0.04), 2)
+                h = round(max(o, c2) + rng.uniform(0, atr_ * 0.03), 2); l = round(min(o, c2) - rng.uniform(0, atr_ * 0.03), 2)
+                self.engine.on_study_bar(sym, "m5x", t5, o, h, l, c2, float(rng.randint(100, 4000)))
+                pm_h = h if pm_h is None else max(pm_h, h); pm_l = l if pm_l is None else min(pm_l, l)
+                px2 = c2
+            s.pmh, s.pml, s.ahh, s.ahl = pm_h, pm_l, ah_h, ah_l
         sessions = [b[0] for b in day_bars[-5:]]
         n_total = 390 * len(sessions)
         end_px = s.mid0
@@ -831,7 +858,8 @@ class DemoFeed:
             s.lv_next = t + 20.0
             vw = s.vwap_pv / s.vwap_v if s.vwap_v > 0 else None
             held = t - (s.hl_t or t) >= 180                    # a high / low of the day that has held three minutes
-            keys = [("PDH", s.pdh), ("PDL", s.pdl), ("PDC", s.pdc), ("HOD", s.hod if held else None), ("LOD", s.lod if held else None), ("VWAP", vw)]
+            keys = [("PDH", s.pdh), ("PDL", s.pdl), ("PDC", s.pdc), ("PMH", s.pmh), ("PML", s.pml), ("AHH", s.ahh), ("AHL", s.ahl),
+                    ("HOD", s.hod if held else None), ("LOD", s.lod if held else None), ("VWAP", vw)]
             cool = s.lv_cool
             d = s.hot_dir or (1 if s.eff[0] > 0.5 else -1)
             rows = s.asks if d > 0 else s.bids
@@ -853,7 +881,7 @@ class DemoFeed:
                     if rng.random() < 0.7:
                         pt = self._new_part(s, side, lvp, t, False)
                         pt["key"] = name
-                        if name in ("PDH", "PDL", "VWAP"):     # the levels everyone watches: more often defended, bigger
+                        if name in ("PDH", "PDL", "PMH", "PML", "VWAP"):     # the levels everyone watches: more often defended, bigger
                             pt["mode"] = rng.choices(("hold", "clean", "pull"), weights=(5, 3, 2))[0]
                             pt["base"] = int(pt["base"] * 1.4 / 100) * 100 or 100
                         rows[steps][1] = _r100(pt["base"] * rng.uniform(0.7, 1.3))
