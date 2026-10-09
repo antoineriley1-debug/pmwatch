@@ -130,7 +130,7 @@ class _Sym:
                  "big_home", "parts", "level_cooldown", "hidden_next", "prev", "l1", "base", "mid0", "beta", "sym", "eff", "owed",
                  "hot", "hot_dir", "mom", "spent", "now", "last_mid", "episode", "ep_next", "thin", "ep_script",
                  "program", "program_next",
-                 "vs", "vs_t", "vs_mid", "vs_norm", "pulse", "lv_next", "day_open", "hod", "lod", "pdh", "pdl", "pdc", "vwap_pv", "vwap_v", "day_key")
+                 "vs", "vs_t", "vs_mid", "vs_norm", "pulse", "hl_t", "lv_cool", "lv_next", "day_open", "hod", "lod", "pdh", "pdl", "pdc", "vwap_pv", "vwap_v", "day_key")
 
     def __init__(self, play, mid, t):
         self.play = play
@@ -170,6 +170,8 @@ class _Sym:
         # midday, the close)
         self.vs = 1.0                # volatility state: rises on a big move or a shock, decays over minutes
         self.vs_t = None; self.vs_mid = None; self.vs_norm = 0.002
+        self.hl_t = None             # when the high / low of the day last moved
+        self.lv_cool = {}            # key level name -> not before t: one participant per level per ten minutes
         self.pulse = None            # {"mode": "push" / "pullback", "until"} inside a trend
         self.lv_next = t
         self.day_open = None
@@ -526,6 +528,8 @@ class DemoFeed:
             if s.hod is not None and s.lod is not None and s.day_open:
                 atr = max(s.tk * 20, s.day_open * 0.018)
                 stretch = (s.last - (s.hod + s.lod) / 2) / atr
+                if abs(stretch) > 1.0 and (b - 0.5) * stretch > 0:      # pushing further out: the push loses its legs
+                    b = 0.5 + (b - 0.5) * max(0.25, 1.0 - 0.6 * (abs(stretch) - 1.0))
                 if abs(stretch) > 1.2:
                     b -= (1 if stretch > 0 else -1) * 0.1 * min(1.5, abs(stretch) - 1.2)
             return min(0.9, max(0.1, b)), r * heat * s.vs ** 0.5, size * s.vs ** 0.25
@@ -826,7 +830,9 @@ class DemoFeed:
         if t >= s.lv_next:
             s.lv_next = t + 20.0
             vw = s.vwap_pv / s.vwap_v if s.vwap_v > 0 else None
-            keys = [("PDH", s.pdh), ("PDL", s.pdl), ("PDC", s.pdc), ("HOD", s.hod), ("LOD", s.lod), ("VWAP", vw)]
+            held = t - (s.hl_t or t) >= 180                    # a high / low of the day that has held three minutes
+            keys = [("PDH", s.pdh), ("PDL", s.pdl), ("PDC", s.pdc), ("HOD", s.hod if held else None), ("LOD", s.lod if held else None), ("VWAP", vw)]
+            cool = s.lv_cool
             d = s.hot_dir or (1 if s.eff[0] > 0.5 else -1)
             rows = s.asks if d > 0 else s.bids
             if rows and len(rows) > 3:
@@ -839,10 +845,11 @@ class DemoFeed:
                     if not (1 <= steps <= 3):
                         continue
                     side = ASK if d > 0 else BID
-                    if any(abs(pt["price"] - lvp) < 1e-9 for pt in s.parts) or (side, round(lvp, 4)) in s.spent:
+                    if any(abs(pt["price"] - lvp) < 1e-9 for pt in s.parts) or (side, round(lvp, 4)) in s.spent or t < cool.get(name, 0):
                         continue
                     if name in ("HOD", "LOD") and abs(lvp - (s.hod if name == "HOD" else s.lod)) < tk * 0.5 and abs(lvp - s.last) < tk * 1.5:
                         continue                               # the high of the day is the price itself right now
+                    cool[name] = t + 600.0
                     if rng.random() < 0.7:
                         pt = self._new_part(s, side, lvp, t, False)
                         pt["key"] = name
@@ -1028,6 +1035,8 @@ class DemoFeed:
                 s.day_open = s.last; s.hod = s.lod = s.last
                 s.vwap_pv = s.vwap_v = 0.0
             if s.hod is not None:
+                if s.last > s.hod or s.last < s.lod:
+                    s.hl_t = t
                 s.hod = max(s.hod, s.last); s.lod = min(s.lod, s.last)
             self._regime(s, t)
             self._episodes(s, t)
