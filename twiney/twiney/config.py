@@ -602,6 +602,11 @@ DEFAULTS = {
         "lean_hold_minutes": 10,        # ... a side keeps the tape at least this long before the other side can take it (a bounce is "trying" until then)
         "lean_neutral_minutes": 3,      # ... the reasons gone (levels recovered, flow even) this long: no side has the tape
         "lean_flow_min": 250000,        # ... puts (calls) count as a reason from this much, and at least twice the other side
+        "attempt_minutes": 8,           # THE STORYLINE: the other side is TRYING; this long to take their level back on a close, else it failed
+        "attempt_rest_minutes": 3,      # ... a rest between attempts
+        "regime_min_minutes": 45,       # THE DAY'S LEAN (trend day down / up, chop): read from this many minutes after the open
+        "regime_trend_atr": 0.45,       # ... a trend day: the day's range at least this much of the daily ATR, stepping one way, price at that end
+        "regime_chop_atr": 0.35,        # ... chop: the range at most this much of the ATR, or price back in the middle with no structure
         "hype": True,                   # THE EXCITEMENT: deep out-of-the-money calls / puts hit, or one strike pounded again and again ("they're pounding the 300s non stop!")
         "voice_hype": True,             # say it out loud (voice on)
         "hype_min_premium": 75000,      # ... at least this much on that one strike in the last couple of minutes

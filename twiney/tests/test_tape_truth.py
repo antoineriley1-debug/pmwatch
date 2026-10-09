@@ -245,3 +245,130 @@ class SuspectLiftTests(unittest.TestCase):
         self.assertNotIn("buyers stepping up", out["text"].lower())
         self.assertIn("sellers have it", out["text"].lower())
         self.assertEqual(out["tone"], "bear")
+
+
+def _ny(h, m):
+    """A New York time today-ish (a fixed trading day) in epoch seconds."""
+    from twiney import studies
+    import datetime as _dt
+    from zoneinfo import ZoneInfo
+    return _dt.datetime(2026, 10, 9, h, m, tzinfo=ZoneInfo("America/New_York")).timestamp()
+
+
+def _day(path, start=(9, 30)):
+    """One-minute bars from the open along a price path (closes), 3-cent wicks."""
+    t0 = _ny(*start)
+    return [[t0 + 60 * i, p, p + 0.03, p - 0.03, p, 1000] for i, p in enumerate(path)]
+
+
+class RegimeTests(unittest.TestCase):
+    def _cfg(self):
+        import copy
+        from twiney.config import DEFAULTS
+        return copy.deepcopy(DEFAULTS)["story"]
+
+    def test_a_trend_day_down_then_the_lean_counts_it(self):
+        from twiney import story
+        sb = story.Story(); C = self._cfg()
+        path = [230.0 - 0.06 * i for i in range(90)]                   # 90 minutes stepping down, $5.3 of range on an $8 ATR
+        mins = _day(path)
+        rg = story.day_regime(sb, mins[-1][0] + 60, mins, 8.0, C)
+        self.assertEqual(rg["kind"], "down")
+        self.assertIn("Trend day down", rg["changed"])
+        ln = story.tape_lean(sb, mins[-1][0] + 60, path[-1], mins, {}, None, False, C)
+        self.assertIn("trend day down", ln["why"])
+
+    def test_chop_and_too_early(self):
+        from twiney import story
+        sb = story.Story(); C = self._cfg()
+        import math
+        path = [230.0 + 0.4 * math.sin(i / 5.0) for i in range(90)]     # $0.8 of range on an $8 ATR, back and forth
+        mins = _day(path)
+        self.assertIsNone(story.day_regime(sb, mins[30][0] + 60, mins[:31], 8.0, C)["kind"])   # 31 minutes: too early
+        rg = story.day_regime(sb, mins[-1][0] + 60, mins, 8.0, C)
+        self.assertEqual(rg["kind"], "chop")
+        self.assertIn("Chop", rg["changed"])
+        self.assertIsNone(story.day_regime(sb, mins[-1][0] + 60, mins, 8.0, C)["changed"])     # the same minute: nothing new
+
+
+class AttemptTests(unittest.TestCase):
+    def _cfg(self):
+        import copy
+        from twiney.config import DEFAULTS
+        return copy.deepcopy(DEFAULTS)["story"]
+
+    def _bear(self, sb, C):
+        from twiney import story
+        path = [232.0 - 0.05 * i for i in range(60)]                   # down to 229.05, under the prior-day low 230
+        mins = _day(path)
+        t = mins[-1][0] + 60
+        sb.breaks["prior-day low"] = {"dir": "down", "t": t - 1200, "lo": 230.0, "hi": 230.0, "state": "broke"}
+        story.tape_lean(sb, t, 229.05, mins, {"P": {"usd": 600000}, "C": {"usd": 50000}}, None, False, C)
+        self.assertEqual(sb.lean["side"], "bear")
+        return mins, t
+
+    def test_buyers_try_and_fail(self):
+        from twiney import story
+        sb = story.Story(); C = self._cfg(); C["attempt_minutes"] = 8
+        mins, t = self._bear(sb, C)
+        quiet = {"state": "NORMAL", "buy_pct": 50, "control": None}
+        st = story.attempts(sb, t, 229.05, mins, quiet, 0.01, 8.0, C)
+        self.assertIsNone(st["open"]); self.assertIsNone(st["said"])
+        # buyers turn it up: an attempt starts, naming what they need (the prior-day low back on a close)
+        st = story.attempts(sb, t + 30, 229.40, mins, {"state": "FAST", "buy_pct": 75, "control": "buyers", "drift": 0.3}, 0.01, 8.0, C)
+        self.assertIsNotNone(st["open"])
+        self.assertEqual(st["open"]["need"]["name"], "prior-day low")
+        self.assertIn("Buyers are trying from 229.40", st["said"][0]); self.assertIn("230.00", st["said"][0]); self.assertIn("Wait", st["said"][0])
+        # eight minutes later they never closed over it: failed, sellers still have it
+        later = mins + [[t + 60 * i, 229.4, 229.6, 229.3, 229.5, 500] for i in range(9)]
+        st = story.attempts(sb, t + 30 + 8 * 60 + 1, 229.5, later, quiet, 0.01, 8.0, C)
+        self.assertIsNone(st["open"])
+        self.assertEqual(st["done"][-1]["outcome"], "failed")
+        self.assertIn("could not take back prior-day low 230.00", st["said"][0]); self.assertIn("Sellers still have the tape", st["said"][0])
+        # a rest: the next lift right away is not a new attempt
+        st = story.attempts(sb, t + 30 + 8 * 60 + 30, 229.6, later, {"state": "FAST", "buy_pct": 75, "control": "buyers"}, 0.01, 8.0, C)
+        self.assertIsNone(st["open"])
+
+    def test_buyers_try_and_a_new_low_ends_it(self):
+        from twiney import story
+        sb = story.Story(); C = self._cfg()
+        mins, t = self._bear(sb, C)
+        story.attempts(sb, t + 30, 229.40, mins, {"state": "FAST", "buy_pct": 75, "control": "buyers"}, 0.01, 8.0, C)
+        later = mins + [[t + 60, 229.4, 229.45, 228.90, 228.95, 500]]
+        st = story.attempts(sb, t + 121, 228.95, later, {"state": "FAST", "buy_pct": 20, "control": "sellers"}, 0.01, 8.0, C)
+        self.assertEqual(st["done"][-1]["outcome"], "failed")
+        self.assertIn("A new low instead", st["said"][0])
+
+    def test_buyers_take_it_back(self):
+        from twiney import story
+        sb = story.Story(); C = self._cfg()
+        mins, t = self._bear(sb, C)
+        story.attempts(sb, t + 30, 229.40, mins, {"state": "FAST", "buy_pct": 75, "control": "buyers"}, 0.01, 8.0, C)
+        later = mins + [[t + 60, 229.5, 230.3, 229.4, 230.2, 500]]     # a minute closed over 230
+        st = story.attempts(sb, t + 125, 230.2, later, {"state": "FAST", "buy_pct": 70}, 0.01, 8.0, C)
+        self.assertEqual(st["done"][-1]["outcome"], "took")
+        self.assertIn("took back prior-day low 230.00 on a close", st["said"][0])
+        self.assertIn("still have the tape until they hold it", st["said"][0])
+
+    def test_no_attempt_without_a_lean(self):
+        from twiney import story
+        sb = story.Story(); C = self._cfg()
+        mins = _day([230.0] * 40); t = mins[-1][0] + 60
+        st = story.attempts(sb, t, 230.3, mins, {"state": "FAST", "buy_pct": 80, "control": "buyers"}, 0.01, 8.0, C)
+        self.assertIsNone(st["open"])
+
+
+class StorylineLogTests(unittest.TestCase):
+    def test_lean_lines_go_to_the_storyline_file(self):
+        import os, tempfile, json
+        e = Engine(plays(), cfg(), None)
+        d = tempfile.mkdtemp(); e.storyline_path = os.path.join(d, "storylines.jsonl")
+        st = e.syms["AAA"]; st.l1["last"] = 10.0
+        sc = e.cfg["story"]
+        e._story_alert(st, {"topic": "lean", "text": "Sellers have the tape: x", "tone": "bear", "pri": 2}, 1_700_000_000.0, sc)
+        e._story_alert(st, {"topic": "pbp", "text": "noise", "tone": "neutral", "pri": 4}, 1_700_000_001.0, sc)
+        e._story_alert(st, {"topic": "attempt", "text": "Buyers are trying", "tone": "neutral", "pri": 3}, 1_700_000_002.0, sc)
+        rows = [json.loads(l) for l in open(e.storyline_path)]
+        self.assertEqual([r["topic"] for r in rows], ["lean", "attempt"])
+        self.assertEqual(rows[0]["symbol"], "AAA")
+        self.assertIn("day", rows[0])

@@ -318,6 +318,7 @@ class Engine:
         self.replay = None      # replay control block when replaying a recording
         self.trainer = None     # REPLAY TRAINING (twiney.training.Trainer) while replaying with the desk up
         self.calib_path = None  # live only: recordings/inst_calib.jsonl, every CHILD ORDERS detection on the real tape
+        self.storyline_path = None   # recordings/storylines.jsonl: every turn of the storyline (the lean, attempts, the day's regime)
         self.grades = {}        # alert key -> "good" | "bad" (trader's verdict on a call)
         self.voice = deque(maxlen=60)   # spoken call-outs: big size added / pulled / hit
         self.desk = None        # recording desk (REC / markers / screenshots), set by run_twiney
@@ -1762,6 +1763,15 @@ class Engine:
         alert["key"] = f"{round(t, 2)}|{st.symbol}|STORY|{s_['topic']}"
         self.alerts.appendleft(alert)
         self._rec(dict(alert, ev="alert"))
+        if self.storyline_path and str(s_["topic"]).split(":")[0] in ("lean", "attempt", "regime", "openread", "struct"):
+            try:                                      # the storyline, one line per turn of it: the cross-day study reads this
+                import json as _json
+                from . import studies as _studies
+                with open(self.storyline_path, "a", encoding="utf-8") as f:
+                    f.write(_json.dumps({"t": round(t, 2), "day": _studies.day_key(t), "symbol": st.symbol, "topic": s_["topic"],
+                                         "text": s_["text"], "price": alert["price"], "live": self.connection.get("state") == "CONNECTED"}) + "\n")
+            except Exception:
+                pass
         self.log(st.symbol, "STORY: " + s_["text"], t, kind="level")
         for fn in self.listeners:
             try:

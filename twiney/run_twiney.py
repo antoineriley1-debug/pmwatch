@@ -105,6 +105,7 @@ def run_live(cfg, plays, args):
     engine.jlog_path = os.path.join(_rec_dir(cfg), "desk.log")   # structured JSON lines: connections, orders, fills, errors
     engine.score.path = os.path.join(_rec_dir(cfg), "score.jsonl")   # THE DESK SCORE: every judged call, one line each
     engine.calib_path = os.path.join(_rec_dir(cfg), "inst_calib.jsonl")   # CHILD ORDERS on the real tape, for tuning
+    engine.storyline_path = os.path.join(_rec_dir(cfg), "storylines.jsonl")   # the storyline's turns, every day, for the cross-day study
     engine.load_user_alerts(os.path.join(os.path.dirname(os.path.abspath(args.plays)), "alerts.json"))
     engine.listeners.append(console_alert)
     note_stripped(engine, args)
@@ -260,6 +261,7 @@ def run_demo(cfg, plays, args):
     engine.grades_path = os.path.join(_rec_dir(cfg), "grades.jsonl")
     engine.jlog_path = os.path.join(_rec_dir(cfg), "desk.log")   # structured JSON lines: connections, orders, fills, errors
     engine.score.path = os.path.join(_rec_dir(cfg), "score.jsonl")   # THE DESK SCORE: every judged call, one line each
+    engine.storyline_path = os.path.join(_rec_dir(cfg), "storylines.jsonl")
     engine.load_user_alerts(os.path.join(os.path.dirname(os.path.abspath(args.plays)), "alerts.json"))
     engine.listeners.append(console_alert)
     note_stripped(engine, args)

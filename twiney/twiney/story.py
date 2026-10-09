@@ -1009,6 +1009,11 @@ def tape_lean(sb, t, last, mins, fr, drows, live, cfg):
         bear.append(f"puts {money(pu)} against calls {money(cu)}")
     elif cu >= fmin and cu >= 2 * pu:
         bull.append(f"calls {money(cu)} against puts {money(pu)}")
+    rg = (sb.__dict__.get("regime") or {}).get("kind")
+    if rg == "down":
+        bear.append("trend day down")
+    elif rg == "up":
+        bull.append("trend day up")
     score = len(bull) - len(bear)
     need = int(cfg.get("lean_min", 2))
     hold = float(cfg.get("lean_hold_minutes", 10)) * 60
@@ -1054,6 +1059,122 @@ def tape_lean(sb, t, last, mins, fr, drows, live, cfg):
             st["changed"] = "No side has the tape now: " + (", ".join((bear + bull)[:3]) if (bear or bull) else "the lost levels are back and the flow is even")
     st["text"] = ("SELLERS HAVE THE TAPE" if st["side"] == "bear" else "BUYERS HAVE THE TAPE" if st["side"] == "bull" else "NO SIDE HAS THE TAPE") \
         + (" · " + ", ".join(st["why"][:4]) if st["why"] else "")
+    return st
+
+
+def day_regime(sb, t, mins, atr, cfg):
+    """THE DAY'S LEAN: a trend day down (lower highs and lower lows through the session, the range a good part of the
+    ATR, price in the bottom of it), a trend day up (the mirror), or CHOP (a small range, price back in its middle,
+    no structure). Read from 10:15 on, once a minute; said when it changes. A trending day is a reason for the lean
+    (sell the bounces on a trend day down until a level is taken back); a chop day is patience."""
+    st = sb.__dict__.setdefault("regime", {"kind": None, "text": None, "since": None, "changed": None, "k": None})
+    st["changed"] = None
+    k = int(t // 60)
+    if st["k"] == k:
+        return st
+    st["k"] = k
+    rows = [r for r in (mins or []) if r and r[4] is not None]
+    dk = studies.day_key(t)
+    today = [r for r in rows if studies.day_key(r[0]) == dk and studies.ny_secs(r[0]) >= 9.5 * 3600]
+    if len(today) < int(cfg.get("regime_min_minutes", 45)):
+        return st
+    hi, lo = max(r[2] for r in today), min(r[3] for r in today)
+    rng = hi - lo
+    if rng <= 0:
+        return st
+    last = today[-1][4]
+    where = (last - lo) / rng                           # 0 = the low of the day, 1 = the high
+    n = len(today)
+    thirds = [today[: n // 3], today[n // 3: 2 * n // 3], today[2 * n // 3:]]
+    highs = [max(r[2] for r in x) for x in thirds if x]
+    lows = [min(r[3] for r in x) for x in thirds if x]
+    stepping_down = len(highs) == 3 and highs[0] > highs[1] > highs[2] and lows[0] > lows[1] > lows[2]
+    stepping_up = len(highs) == 3 and highs[0] < highs[1] < highs[2] and lows[0] < lows[1] < lows[2]
+    a = float(atr or 0) or None
+    big = a is not None and rng >= float(cfg.get("regime_trend_atr", 0.6)) * a
+    small = a is not None and rng <= float(cfg.get("regime_chop_atr", 0.35)) * a
+    kind = st["kind"]
+    if stepping_down and where <= 0.3 and (big or a is None):
+        kind = "down"
+    elif stepping_up and where >= 0.7 and (big or a is None):
+        kind = "up"
+    elif small or (0.35 <= where <= 0.65 and not stepping_down and not stepping_up):
+        kind = "chop"
+    # else: keep what it was (a trend day does not become chop on one pullback)
+    if kind != st["kind"]:
+        st["kind"], st["since"] = kind, t
+        rtxt = f"{rng:.2f} of range" + (f", {rng / a:.1f} of the ATR" if a else "")
+        if kind == "down":
+            st["changed"] = (f"Trend day down: lower highs and lower lows through the session, {rtxt}, price in the bottom of it. "
+                             f"The lean is down: bounces are for selling, supply to supply, until a level is taken back on a close")
+        elif kind == "up":
+            st["changed"] = (f"Trend day up: higher highs and higher lows through the session, {rtxt}, price at the top of it. "
+                             f"The lean is up: dips are for buying, demand to demand, until a level is lost on a close")
+        else:
+            st["changed"] = f"Chop: {rtxt}, price back in the middle, no structure either way. No lean; patience, let a side take a level first"
+    st["text"] = {"down": "TREND DAY DOWN", "up": "TREND DAY UP", "chop": "CHOP"}.get(kind)
+    return st
+
+
+def attempts(sb, t, last, mins, pace, tick, atr, cfg):
+    """THE STORYLINE against the lean: sellers have the tape and buyers start TRYING (price turning up over the 15 s
+    window, the tape lifting); the desk names what they need (the nearest lost level back on a close, else the last
+    15-minute high), waits, and then says how it went: they took it back (the first thing to go their way) or they
+    could not and the sellers still have it (a new low says so twice). One attempt at a time, a rest between. Mirror
+    for sellers trying against buyers. Returns the attempt state (sb.attempt) with "said" set when there is a line."""
+    st = sb.__dict__.setdefault("attempt", {"open": None, "done": [], "said": None, "last_end": -1e9})
+    st["said"] = None
+    ln = sb.__dict__.get("lean") or {}
+    side = ln.get("side")
+    rows = [r for r in (mins or []) if r and r[4] is not None]
+    if last is None or not rows:
+        return st
+    cmin = 60
+    closed = [r for r in rows if r[0] + cmin <= t + 1e-6]
+    od = on_dist(last, atr, tick)
+    cur = st["open"]
+    pc = pace or {}
+    if cur is not None:
+        up = cur["who"] == "buyers"
+        need = cur["need"]
+        cl = closed[-1][4] if closed and closed[-1][0] >= cur["t0"] else None
+        took = cl is not None and ((up and cl > need["p"]) or (not up and cl < need["p"]))
+        beyond = (last < cur["p0"] - od) if up else (last > cur["p0"] + od)      # the move gave it all back and more
+        if took:
+            st["said"] = (f"{'Buyers' if up else 'Sellers'} took back {need['name']} {px(need['p'])} on a close: the first thing to go their way. "
+                          f"{'Sellers' if up else 'Buyers'} still have the tape until they hold it", "bull" if up else "bear")
+            cur.update(end=t, outcome="took")
+            st["done"].append(cur); st["done"] = st["done"][-6:]; st["open"] = None; st["last_end"] = t
+        elif beyond or t - cur["t0"] >= float(cfg.get("attempt_minutes", 8)) * 60:
+            new_ext = (min(r[3] for r in rows[-3:]) <= min(r[3] for r in rows[-30:])) if up else (max(r[2] for r in rows[-3:]) >= max(r[2] for r in rows[-30:]))
+            st["said"] = (f"{'Buyers' if up else 'Sellers'} tried from {px(cur['p0'])} at {_hm(cur['t0'])}: could not take back {need['name']} {px(need['p'])}"
+                          + (f". A new {'low' if up else 'high'} instead" if (beyond and new_ext) else ". It gave it back")
+                          + f". {'Sellers' if up else 'Buyers'} still have the tape", "bear" if up else "bull")
+            cur.update(end=t, outcome="failed")
+            st["done"].append(cur); st["done"] = st["done"][-6:]; st["open"] = None; st["last_end"] = t
+        return st
+    if side not in ("bear", "bull") or t - st["last_end"] < float(cfg.get("attempt_rest_minutes", 3)) * 60:
+        return st
+    up = side == "bear"                                   # sellers have it: the buyers are the ones who could try
+    trying = (pc.get("control") == ("buyers" if up else "sellers") and not pc.get("bp_suspect")) or (
+        pc.get("state") in ("FAST", "SURGE") and pc.get("buy_pct") is not None and not pc.get("bp_suspect")
+        and ((pc["buy_pct"] >= 65) if up else (pc["buy_pct"] <= 35)))
+    if not trying:
+        return st
+    # what they need: the nearest lost level on their side, else the last 15 minutes' extreme
+    lost = [(b["lo"] if up else b["hi"], name) for name, b in sb.breaks.items()
+            if b["state"] in ("broke", "retest", "held") and b["dir"] == ("down" if up else "up") and ((b["lo"] > last) if up else (b["hi"] < last))]
+    if lost:
+        p_, name = min(lost) if up else max(lost)
+        need = {"name": name, "p": p_}
+    else:
+        ext = max(r[2] for r in rows[-15:]) if up else min(r[3] for r in rows[-15:])
+        need = {"name": "the last 15-minute high" if up else "the last 15-minute low", "p": ext}
+    if (need["p"] <= last + od) if up else (need["p"] >= last - od):
+        return st                                         # nothing to take back from here: not an attempt
+    st["open"] = {"who": "buyers" if up else "sellers", "t0": t, "p0": last, "need": need}
+    st["said"] = (f"{'Buyers' if up else 'Sellers'} are trying from {px(last)}. They need {need['name']} {px(need['p'])} back on a close to change anything; "
+                  f"{'sellers' if up else 'buyers'} have the tape. Wait", "neutral")
     return st
 
 
@@ -1647,7 +1768,7 @@ def build(sb, t, last, tick, atr, play, se_state, ctx, points, zones, conf, fr, 
 
     # what gets said first when several things happen at once (the page's one mouth): 1 your trade and your second
     # entry, 2 the reload buyer / seller and the money, 3 the levels taken, the averages, the Daily, 4 the colour
-    PRI = {"trade": 1, "se": 1, "reload": 2, "consumed": 2, "hype": 2, "coach_rl": 2, "lean": 2, "break": 3, "h60": 3, "retrace": 3, "fw": 3,
+    PRI = {"trade": 1, "se": 1, "reload": 2, "consumed": 2, "hype": 2, "coach_rl": 2, "lean": 2, "attempt": 3, "regime": 2, "break": 3, "h60": 3, "retrace": 3, "fw": 3,
            "struct": 3, "ma": 3, "daily": 3, "fail": 3, "held": 3, "maflow": 3, "flow": 3, "align": 3, "edge": 3}
 
     def note(topic, key, text, tone, repeat=600.0, loud=False):
@@ -1758,13 +1879,24 @@ def build(sb, t, last, tick, atr, play, se_state, ctx, points, zones, conf, fr, 
     out["play"] = None
     # WHO HAS THE TAPE: read before the play-by-play (which speaks against it), said out loud when it changes
     try:
+        rg = day_regime(sb, t, mins, atr, cfg)
+        if rg.get("changed"):
+            note("regime", (rg["kind"], round(t)), rg["changed"], "bear" if rg["kind"] == "down" else "bull" if rg["kind"] == "up" else "warn",
+                 repeat=60, loud=True)
         ln = tape_lean(sb, t, last, mins, fr, drows, live, cfg)
+        at = attempts(sb, t, last, mins, pace, tick, atr, cfg)
     except Exception:
-        ln = None
-    out["lean"] = {"side": ln["side"], "text": ln["text"], "why": list(ln["why"][:4]), "since": ln["since"]} if ln else None
+        rg, ln, at = None, None, None
+    out["lean"] = {"side": ln["side"], "text": ln["text"], "why": list(ln["why"][:4]), "since": ln["since"],
+                   "regime": (rg or {}).get("text"),
+                   "attempt": ({"who": at["open"]["who"], "t0": at["open"]["t0"], "p0": at["open"]["p0"], "need": at["open"]["need"]} if at and at["open"] else None),
+                   "attempts": [{"who": a["who"], "t0": a["t0"], "p0": a["p0"], "need": a["need"], "outcome": a["outcome"], "end": a["end"]}
+                                for a in (at["done"][-3:] if at else [])][::-1]} if ln else None
     if ln and ln.get("changed"):
         note("lean", (ln["side"], round(t)), ln["changed"], "bear" if ln["side"] == "bear" else "bull" if ln["side"] == "bull" else "neutral",
              repeat=60, loud=True)
+    if at and at.get("said"):
+        note("attempt", (round(t),), at["said"][0], at["said"][1], repeat=30, loud=True)
     hy = hype(fr, cfg) if cfg.get("hype", True) else None
     out["hype"] = hy["text"] if hy else None
     if hy and sb.say("hype:" + hy["cp"] + str(hy["strike"]), hy["key"], hy["text"] + ("" if hy["text"].endswith("!") else "!"),

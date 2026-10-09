@@ -1170,3 +1170,5 @@ body.whitedesk .chart-wrap canvas,body.whitedesk img,body.whitedesk video{filter
 /* WHO HAS THE TAPE */
 .slean{font:11px var(--sans);padding:4px 8px;color:#cfd6df;border-left:3px solid #7d8590} .slean b{letter-spacing:.08em;margin-right:6px;color:#9fb0c3}
 .slean.bear{border-left-color:#f85149} .slean.bear b{color:#f85149} .slean.bull{border-left-color:#3fb950} .slean.bull b{color:#3fb950}
+.slean u{text-decoration:none;font-weight:800;color:#e8b931} .slean .satt{font:11px var(--mono);padding:2px 0 0 0;color:#cfd6df} .slean .satt b{letter-spacing:.04em;margin-right:4px;color:#e8b931}
+.slean .satt.done{color:#9fb0c3} .slean .satt.done.ok b{color:#3fb950} .slean .satt.done.no b{color:#f85149}
