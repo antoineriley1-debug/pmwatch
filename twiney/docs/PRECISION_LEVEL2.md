@@ -29,8 +29,16 @@ A volume cell pulses once, 220 ms, only when the server's count for it GREW: a p
 print shrinks and pulses nothing. Reduced motion (COLS) turns both off. The numbers are the server's: a skipped
 animation never changes one.
 
+Each print also drops a token into the row it traded at: its dollars into $ HERE when that column is on, its shares
+into TRADED otherwise, red from the selling side and green from the buying side (the same drop engine the basket
+ladder used; reduced motion turns it off).
+
+Nothing sits above the rows but the data header: the story line, VWAP / 50-day, the pace bar and the off-ladder
+level pills are off on the DOM by default, so the rows never jump when a strip appears or disappears. They live on the
+chart, the STORY and the PS60 panels; COLS › "strips above the rows" brings them back on the ladder.
+
 Settings (COLS on the ladder bar): session or rolling volume, colour-blind palette (blue / orange), reduced motion,
-each column on or off, the $ column, rows, row height, text size. Everything persists in the browser.
+each column on or off, the $ column, the strips, rows, row height, text size. Everything persists in the browser.
 
 The mode button cycles DOM → CANDLE → CLEAN → PRO. Pots and baskets are retired from the cycle (the server still counts
 per-price trades the same way; the story and the scorecard use them).

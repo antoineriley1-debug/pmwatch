@@ -804,7 +804,7 @@ function tapeSpeedHTML(sp, unit){
 function applyBigSet(){ const b = document.querySelector(".pnl[data-p=book] .bigset"); if (b) b.style.display = store.get("bigset", false) === true ? "" : "none"; }
 applyBigSet();
 function applyLadCols(tbl){ if (!tbl) return; const c = store.get("ladcols", {}); const wrap = tbl.closest(".ladder-wrap"); if (wrap){ wrap.style.setProperty("--ladz", String(store.get("ladz", 1))); wrap.style.setProperty("--ladh", String(store.get("ladh", 1))); } tbl.classList.toggle("notrade", c.trade !== true); tbl.classList.toggle("nobars", c.bars === false); tbl.classList.toggle("nowho", c.who === false); tbl.classList.toggle("noflow", c.flow === false); if (tbl._applyCols) tbl._applyCols(); }
-document.getElementById("colsMenu").querySelector("button").addEventListener("click", e => { e.stopPropagation(); const m = document.getElementById("colsMenu"), open = !m.classList.contains("open"); document.querySelectorAll(".menu.open").forEach(x => x.classList.remove("open")); m.classList.toggle("open", open); const c = store.get("ladcols", {}); const rs = m.querySelector("select[data-rows]"); if (rs) rs.value = String(store.get("ladRows", 12)); const lc = m.querySelector("select[data-ladclick]"); if (lc) lc.value = store.get("ladClick", "join"); const hs = m.querySelector("select[data-ladh]"); if (hs) hs.value = String(store.get("ladh", 1)); m.querySelectorAll("input[data-col]").forEach(i => { i.checked = i.dataset.col === "trade" ? c.trade === true : c[i.dataset.col] !== false; }); const z = m.querySelector("select[data-ladz]"); if (z) z.value = String(store.get("ladz", 1)); const bs = m.querySelector("input[data-bigset]"); if (bs) bs.checked = store.get("bigset", false) === true; const sl = m.querySelector("input[data-storyline]"); if (sl) sl.checked = store.get("storyline", true) !== false; });
+document.getElementById("colsMenu").querySelector("button").addEventListener("click", e => { e.stopPropagation(); const m = document.getElementById("colsMenu"), open = !m.classList.contains("open"); document.querySelectorAll(".menu.open").forEach(x => x.classList.remove("open")); m.classList.toggle("open", open); const c = store.get("ladcols", {}); const rs = m.querySelector("select[data-rows]"); if (rs) rs.value = String(store.get("ladRows", 12)); const lc = m.querySelector("select[data-ladclick]"); if (lc) lc.value = store.get("ladClick", "join"); const hs = m.querySelector("select[data-ladh]"); if (hs) hs.value = String(store.get("ladh", 1)); m.querySelectorAll("input[data-col]").forEach(i => { i.checked = i.dataset.col === "trade" ? c.trade === true : c[i.dataset.col] !== false; }); const z = m.querySelector("select[data-ladz]"); if (z) z.value = String(store.get("ladz", 1)); const bs = m.querySelector("input[data-bigset]"); if (bs) bs.checked = store.get("bigset", false) === true; const sl = m.querySelector("input[data-storyline]"); if (sl) sl.checked = store.get("storyline", true) !== false; const ds = m.querySelector("input[data-domstrips]"); if (ds) ds.checked = store.get("domStrips", false) === true; const dm = m.querySelector("input[data-dommoney]"); if (dm) dm.checked = store.get("domMoney", false) === true; m.querySelectorAll("input[data-domcol]").forEach(i => { const c = store.get("domCols", {}); i.checked = c[i.dataset.domcol] !== false; }); });
 document.getElementById("colsPop").addEventListener("change", e => {
   if (e.target.dataset.rows != null){ store.set("ladRowsAuto", false); post("/api/ladder", {half_rows: +e.target.value}); store.set("ladRows", +e.target.value); P.book.last = null; poll(true); return; }   // your pick: the ladder stops sizing itself
   if (e.target.dataset.ladclick != null){ store.set("ladClick", e.target.value); return; }
@@ -814,6 +814,7 @@ document.getElementById("colsPop").addEventListener("change", e => {
   if (e.target.dataset.dompal != null){ store.set("domPal", e.target.value); P.book.last = null; poll(true); return; }
   if (e.target.dataset.dommotion != null){ store.set("domMotion", e.target.value); P.book.last = null; poll(true); return; }
   if (e.target.dataset.dommoney != null){ store.set("domMoney", e.target.checked); P.book.last = null; poll(true); return; }
+  if (e.target.dataset.domstrips != null){ store.set("domStrips", e.target.checked); P.book.last = null; poll(true); return; }
   if (e.target.dataset.domcol != null){ const c = store.get("domCols", {}); c[e.target.dataset.domcol] = e.target.checked; store.set("domCols", c); P.book.last = null; poll(true); return; }
   if (e.target.dataset.bigset != null){ store.set("bigset", e.target.checked); applyBigSet(); return; }
   if (e.target.dataset.ladz != null){ store.set("ladz", +e.target.value || 1); applyLadCols(P.book.pc.querySelector("table.lad")); P.book.last = null; poll(true); return; } const k = e.target.dataset.col; if (!k) return; const c = store.get("ladcols", {}); c[k] = e.target.checked; store.set("ladcols", c); applyLadCols(P.book.pc.querySelector("table.lad")); });
@@ -3347,7 +3348,10 @@ function ladderBasketHTML(L){
 const BKSEEN = new Map(); let BKLIVE = 0; const BKQ = new Map(); let BKQT = null;
 function basketFx(wrap, d){
   const L = d.ladder || {}, C = bkCfg(L), host = P.book.pc;
-  if (store.get("ladMode", "clean") !== "basket") return;
+  // the BASKET ladder and the DOM both get the drops: on the DOM a print drops its dollars into $ HERE (its shares
+  // into TRADED when the $ column is off), red from the selling side, green from the buying side
+  const mode = store.get("ladMode", "clean");
+  if (mode !== "basket" && !(mode === "dom" && store.get("domMotion", "full") !== "reduced")) return;
   const sym = d.symbol, now = Date.now(), lastDraw = BKSEEN.get(sym + "|*"), fresh = !lastDraw || now - lastDraw > 3000;
   BKSEEN.set(sym + "|*", now);
   const fast = L.pps != null && L.pps >= +C.basket_fast_pps;
@@ -3380,16 +3384,21 @@ function bkFlush(wrap, sym){
   const dur = Math.max(60, +C.basket_drop_ms || 250), pdur = Math.max(40, Math.round(dur * 0.6));
   // a PULLED change at a level row first, then your level rows, then the biggest
   items.sort((a, b) => (b.pulled ? 4 : 0) + (b.lv ? 2 : 0) - (a.pulled ? 4 : 0) - (a.lv ? 2 : 0) || (b.buy + b.sell + b.mid) - (a.buy + a.sell + a.mid));
+  const domT = wrap.querySelector("table.lad.dom"), money = !!(domT && domT.classList.contains("money"));
+  const target = domT ? (money ? "td.mn" : "td.dtr") : ".bkt";
+  const label = n => domT && money ? "+" + usdK(n * +q_price) : "+" + kfmt(n);
+  let q_price = 0;
   for (const q of items){
-    const el0 = wrap.querySelector(`tr[data-price="${q.price}"] .bkt`); if (!el0) continue;
+    q_price = +q.price;
+    const el0 = wrap.querySelector(`tr[data-price="${q.price}"] ${target}`); if (!el0) continue;
     const cr = el0.getBoundingClientRect(); if (cr.bottom < wr.top || cr.top > wr.bottom) continue;
     const x = cr.left - hr.left, y = cr.top - hr.top;
     const drops = [[q.sell, "s"], [q.buy, "b"], [q.mid, "m"]].filter(z => z[0] > 0);
     for (const [n, side] of drops){
       if (!C.basket_animate || BKLIVE >= Math.max(1, +C.basket_max_drops || 12)) break;     // beyond the cap: counted, not animated
-      const el = document.createElement("i"); el.className = "bkdrop " + side; el.textContent = "+" + kfmt(n);
+      const el = document.createElement("i"); el.className = "bkdrop " + side; el.textContent = label(n);
       el.style.left = (x - 6) + "px"; el.style.top = (y - 1) + "px"; fx.appendChild(el); BKLIVE++;
-      const row = el0.closest("tr"), cell = row && row.querySelector(side === "s" ? "td.bsz" : side === "b" ? "td.asz" : "td.px");
+      const row = el0.closest("tr"), cell = row && row.querySelector(domT ? (side === "s" ? "td.dvol.s" : side === "b" ? "td.dvol.b" : "td.px") : (side === "s" ? "td.bsz" : side === "b" ? "td.asz" : "td.px"));
       const cc = cell ? cell.getBoundingClientRect() : cr;
       const dx = side === "m" ? 0 : (cc.left + cc.width / 2) - (cr.left + cr.width / 2), dy = side === "m" ? -cr.height * 1.5 : -2;
       const a = el.animate([{transform: `translate(${dx}px,${dy}px)`, opacity: 0.2}, {opacity: 1, offset: 0.25}, {transform: "translate(0,0)", opacity: 0.9}], {duration: dur, easing: "cubic-bezier(.3,.8,.4,1)"});
@@ -3452,7 +3461,7 @@ document.addEventListener("change", async e => {
    Display only: a click on a size stages the usual order through the ticket, exactly as the other ladders do. */
 const DOMV = {prev: new Map(), pulses: 0, frames: 0, ms: 0};
 function domCfg(){ return {vol: store.get("domVol", "session"), pal: store.get("domPal", "std"), motion: store.get("domMotion", "full"),
-  money: store.get("domMoney", false), cols: store.get("domCols", {})}; }
+  money: store.get("domMoney", false), strips: store.get("domStrips", false) === true, cols: store.get("domCols", {})}; }
 function domState(d){
   const c = (state && state.connection) || {}, h = (d && d.health) || {}, rp = state && state.replay;
   let kind = rp ? "REPLAY" : c.state === "DEMO" ? "PRACTICE" : c.state === "CONNECTED" ? (c.market_data_type === 3 || c.market_data_type === 4 ? "DELAYED" : "LIVE")
@@ -3497,8 +3506,9 @@ function ladderDomHTML(L){
   let h = hdr;
   // a short panel keeps its rows: the story / refs / pace / off-ladder strips give way to the ladder itself
   // (they live on the STORY and PS60 panels too); the data header stays
+  // and on the DOM they are off unless COLS turns them on: nothing above the rows grows or shrinks, the rows never jump
   const compact = (P.book.pc.clientHeight || 1000) < 420;
-  if (!compact){
+  if (!compact && C.strips){
     if (store.get("storyline", true)) h += storyLineHTML(L.story);
     h += refsHTML(L.refs, L.story && L.story.edge);
     h += paceHTML(L.pace);
