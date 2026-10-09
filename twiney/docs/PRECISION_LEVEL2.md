@@ -97,8 +97,8 @@ draws the latest snapshot.
 
 - IBKR allows **3 depth lines** per login across every application; the desk uses up to 3 (one goes to the charted
   contract when its book is on). A refused book is said on the ladder with the reason (code 309 / 10092).
-- **SMART depth** needs NASDAQ TotalView (and ArcaBook / OpenBook) on the account; without it the single-exchange book
-  is used and the header says so.
+- **SMART depth** needs NASDAQ TotalView (and ArcaBook / OpenBook) on the account (Twiney has them); an account without
+  them gets the single-exchange book and the header says so.
 - Aggressor side is **inferred** from the quote in force (IBKR prints carry no side); prints the quote cannot read stay
   unclassified and count only in TRADED.
 - IBKR print times are whole seconds; the desk's own clock orders prints inside a second.

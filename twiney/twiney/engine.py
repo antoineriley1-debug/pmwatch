@@ -361,7 +361,8 @@ class Engine:
         from .desk import dump_state
         dump_state(self, rec, t)
 
-    LOGGED_EVENTS = ("conn", "order", "order_modify", "order_cancel", "fill", "error", "contract", "flip", "setup", "reverse")
+    LOGGED_EVENTS = ("conn", "order", "order_modify", "order_cancel", "fill", "error", "contract", "flip", "setup", "reverse",
+                     "depth_rejected", "reset", "slot")      # every refused / reset / rotated book, with IBKR's code, in recordings/desk.log
 
     def _rec(self, event):
         if self.recorder is not None:
