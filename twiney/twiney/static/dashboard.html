@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261009-1644">
+<meta name="build" content="20261009-1815">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -3061,6 +3061,9 @@ function drawOne(p, cv, v, isFoot){
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
   g.clearRect(0, 0, W, H);
   const tf = isFoot ? 5 : store.get("tf." + p.id, 1), isDaily = typeof tf === "string", span = isDaily ? 86400 : tf * 60;
+  // the ATR levels and the ATR ladder are intraday tools: on the DAILY / weekly / monthly chart they are off, automatically
+  const stud = isDaily && d.studies && d.studies.gas ? Object.assign({}, d.studies, {gas: null}) : d.studies;
+  v.atrHidden = !!(isDaily && d.studies && d.studies.gas);
   // the screen: DESK (dark) or an eSignal-style light screen — white, blue, pink or your own colour. Light screens get Dan's candles.
   const screen = isFoot ? "desk" : store.get("screen", "white");
   const SCREENS = {white: "#ffffff", blue: "#a9d1f2", pink: "#f4d3e2", custom: store.get("screenColor", "#dfe9f3")};
@@ -3092,10 +3095,10 @@ function drawOne(p, cv, v, isFoot){
   // ▶| (candles to the right edge): no room kept for the labels: the last candle at the edge, labels off the screen
   const edge = store.get("stEdge", false);
   if (edge && off < 0 && v.follow) off = 0;
-  if (!edge && !isFoot && !p.opt && d.studies && off <= 0 && typeof studyLineList === "function"){
-    const Y = studyStyle(d.studies);
+  if (!edge && !isFoot && !p.opt && stud && off <= 0 && typeof studyLineList === "function"){
+    const Y = studyStyle(stud);
     g.font = `bold ${Y.fs}px ui-monospace, Menlo, Consolas, monospace`;
-    let wmax = 0; for (const L of studyLineList(d.studies)) if (L.l) wmax = Math.max(wmax, g.measureText(L.l).width);
+    let wmax = 0; for (const L of studyLineList(stud)) if (L.l) wmax = Math.max(wmax, g.measureText(L.l).width);
     // the open space right of the last candle: the lines' run past it, the gap, the widest label (up to your % of the chart)
     stSpace = wmax ? Math.ceil((Math.min(wmax, plotW * Y.pct) + 10) / cw) + Y.fwd + Math.max(1, Y.gap) + 1 : 0;
     v.stSpace = stSpace;                                       // the labels' full room (the drag eats into it; kept while in history)
@@ -3256,8 +3259,8 @@ function drawOne(p, cv, v, isFoot){
   }
   // price pane only: candles, MAs, BB and VWAP never spill into the volume pane below
   g.save(); g.beginPath(); g.rect(0, 0, W, plotH + 1); g.clip();
-  const stCtx = (!isFoot && !p.opt && d.studies && typeof studiesBack === "function")
-    ? {g, S: d.studies, bars, x0, cw, plotW, labelW, y, lo, hi, last: d.last, lightScreen: dan, bg: C.bg || chartBg(p)} : null;
+  const stCtx = (!isFoot && !p.opt && stud && typeof studiesBack === "function")
+    ? {g, S: stud, bars, x0, cw, plotW, labelW, y, lo, hi, last: d.last, lightScreen: dan, bg: C.bg || chartBg(p)} : null;
   // premarket / after hours: shaded behind their candles like TradingView (orange before 9:30, blue after 4:00)
   if (!isDaily && !isFoot && store.get("extShade", true)){
     // one block per run of premarket (after hours) candles: a strip per candle overlaps its neighbour and leaves a line at every candle edge
@@ -3299,7 +3302,7 @@ function drawOne(p, cv, v, isFoot){
       if (tf === "D") for (const [n, col, lw] of DAN_EMA_DAILY) if (on("d" + n)) line(emaSeries(clsAll, n), col, lw, `MA(${n},C)e`);
     }
     // the studies read the chart's own MAs at the last candle (CONFLUENCE, NEXT STOP)
-    if (!p.opt && d.studies){ p.studyPack = chartPack(clsAll); const e65 = emaSeries(clsAll, 65); p.studyE65 = e65[e65.length - 1]; }
+    if (!p.opt && stud){ p.studyPack = chartPack(clsAll); const e65 = emaSeries(clsAll, 65); p.studyE65 = e65[e65.length - 1]; }
     if (p.opt ? store.get("och.bb", false) : store.get("bb", true)){ const bb = bbSeries(clsAll, 20, 2.0); const before = p.dataRows; p.dataRows = []; line(bb.up, DAN_BB, 2, "BB(20,2,C)Upr"); line(bb.dn, DAN_BB, 2, "BB(20,2,C)Lwr"); p.dataRows.push(["BB(20,2,C)Bas", DAN_BB, bb.mid[k0 + hk]]); p.dataRows = p.dataRows.concat(before); }
     g.lineWidth = 1;
     // eSignal-style value tags on the price scale, one per line, in the line's colour
@@ -3461,7 +3464,7 @@ function drawOne(p, cv, v, isFoot){
   // what each one is worth in dollars. Shown on every chart of that symbol, whichever tab you come back from.
   // your position / order lines start a few candles left of the last one (like the study lines), never across the
   // whole chart through the history and its labels
-  const ordX = Math.max(0, Math.min(plotW - 40, x0 + (bars.length - 1) * cw + cw / 2 - Math.max(4, studyStyle(d.studies).back) * cw));
+  const ordX = Math.max(0, Math.min(plotW - 40, x0 + (bars.length - 1) * cw + cw / 2 - Math.max(4, studyStyle(stud).back) * cw));
   if (bracketOn && !isFoot){
     const pos = d.position, ent = pos.avg_cost, long = pos.qty > 0, qa = Math.abs(pos.qty);
     const groups = {};
