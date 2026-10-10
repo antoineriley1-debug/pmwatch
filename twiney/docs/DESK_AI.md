@@ -26,8 +26,7 @@ supply and demand to demand, the Daily first, six 60-minute candles, pivot → c
 pay yourself → runner to measured potential, the sneaky pivot, bounce / remount / rejection, risk by trader stage,
 option flow as support never the thesis, the 5-7 minute rule, the options translation, and the desk's own words
 (reload buyer / seller, RELOADING, STILL THERE, NOT RELOADING, CLEANED UP, PULLED, large orders, the lean, the regime,
-the attempts, THE DESK SCORE). The language lock is applied to its answers too: resistance → supply, support → demand,
-dark pool → large orders, trigger → pivot.
+the attempts, THE DESK SCORE). The language lock is applied to its answers too: a word from outside PS60 is swapped for the PS60 word before you see it.
 
 ## Setting it up (once, five minutes)
 

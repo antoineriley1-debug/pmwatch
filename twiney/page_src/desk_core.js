@@ -521,7 +521,7 @@ function studiesBack(ctx){
   if (gs) for (const z of gs.zones || []){ const ya = y(z.a), yb = y(z.b); g.fillStyle = z.c; g.fillRect(xs, Math.min(ya, yb), Math.max(1, xe - xs), Math.abs(yb - ya)); }
 }
 /* YOUR zones on the stock chart (gold): a soft band with thin dashed edges and a small tag inside it at the left.
-   Only the zones you drew: no automatic support / resistance */
+   Only the zones you drew: no automatic supply / demand */
 function storyZones(ctx, zones){
   const {g, plotW, y, lo, hi} = ctx;
   for (const z of zones){

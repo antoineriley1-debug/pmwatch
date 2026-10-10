@@ -570,12 +570,12 @@ DEFAULTS = {
         "response_minutes": 5,          # PRICE RESPONSE: what price did over the last N minutes
         "retest_minutes": 30,           # a retest is watched for this long after a break
         "fw_daily_type": "SMA",         # MA FRAMEWORK: the daily 5 / 10 (who controls the 5, the 10 is the birth of the trade): SMA or EMA
-        "fw_60m_type": "SMA",           # ... the 60m 5 / 10 (rising 60-minute support / falling 60-minute resistance): SMA or EMA
+        "fw_60m_type": "SMA",           # ... the 60m 5 / 10 (rising 60-minute support / falling 60-minute supply): SMA or EMA
         "fw_daily_mas": "SMA 5, SMA 10, SMA 20, SMA 50, SMA 100, SMA 150, SMA 200, EMA 5, EMA 10, EMA 20, EMA 50, EMA 100, EMA 150, EMA 200, EMA 34, EMA 65, EMA 89",   # the daily averages whose bounce / reject / close through is called out (the chart's; 34 / 65 / 89 EMA daily only)
         "fw_60m_mas": "SMA 5, SMA 10, SMA 20, SMA 50, SMA 100, SMA 150, SMA 200, EMA 5, EMA 10, EMA 20, EMA 50, EMA 100, EMA 150, EMA 200",       # ... the 60-minute ones (the chart's)
         "ma_repeat_seconds": 600,       # one average: a new call at it at most this often
         "ma_touch_minutes": 20,         # ... a test of it is watched this long for the bounce / reject / close through
-        "retrace_repeat_minutes": 30,   # the 60-minute retrace into rising support (pop into falling resistance): said at most this often
+        "retrace_repeat_minutes": 30,   # the 60-minute retrace into rising 60-minute support (pop into falling 60-minute supply): said at most this often
         "rule57_min": 5,                # THE 5-7 MINUTE RULE: your trade not moving your way between these minutes after the entry ...
         "rule57_max": 7,                # ... a reload buyer / seller may be sitting there: think about the scratch
         "first_move_dollars": 0.25,     # FINANCE THE TRADE: the first move (at least this, or your risk): pay yourself, stop to breakeven

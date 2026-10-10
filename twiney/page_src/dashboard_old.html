@@ -2150,7 +2150,7 @@ function drawOne(p, cv, v, isFoot){
       if (col !== runCol){ shadeRun(k); runCol = col; runK = k; }
     }
   }
-  // the PS60 story's zones (support / resistance found from the 30-minute history, and yours): shaded bands behind it all
+  // the PS60 story's zones (supply / demand found from the 30-minute history, and yours): shaded bands behind it all
   if (!isFoot && !p.opt && d.story && d.story.draw_zones && store.get("zonesOn", true) && typeof storyZones === "function")
     storyZones({g, x0, cw, plotW, y, lo, hi, bars, lightScreen: dan}, d.story.zones || []);
   if (stCtx){ studiesBack(stCtx); studiesFront(stCtx); }   // the studies sit BEHIND the candles (labels in the open space right)

@@ -875,7 +875,7 @@ class Engine:
         """The levels that matter today, from the DAILY chart and the session, worked out once a second:
         prior day open / high / low / close, the premarket and after-hours high / low / close (1-minute bars, locked),
         today's open, VWAP, the 50-day, high / low of day, the DAILY reject and bounce (AIRSPACE) and the prior daily
-        highs and lows price has not been back to (prior resistance / support). Levels a tick apart are one level."""
+        highs and lows price has not been back to (old supply / demand). Levels a tick apart are one level."""
         memo = st.__dict__.setdefault("_keylv", {})
         if memo.get("t") is not None and t - memo["t"] < 1.0:
             return memo["v"]
@@ -1634,7 +1634,7 @@ class Engine:
                 log.exception("story MAs %s", st.symbol)
                 mc["v"], mc["mas"], mc["dpack"], mc["hpack"], mc["dprev"], mc["hprev"], mc["h60"] = [], [], [], [], [], [], []
         points = story_mod.ps60_points(st.play, getattr(st, "sneaky_auto", None)) + dc["pts"] + story_mod.ma_points(ctx) + mc["v"]
-        zones = story_mod.user_zones(st.play)                 # your zones only: no automatic support / resistance
+        zones = story_mod.user_zones(st.play)                 # your zones only: no automatic supply / demand
         conf = story_mod.confluence(points, zones, last, atr, tick, sc)
         prints = list(self.flow.by_symbol.get(st.symbol, ()))
         fr = story_mod.flow_read(prints, t, sc, [r[4] for r in drows[-5:]])

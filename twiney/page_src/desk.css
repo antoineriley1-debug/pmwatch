@@ -833,7 +833,7 @@ tr.pglow.s td.px{box-shadow:inset 0 0 calc(var(--heat,0)*16px) rgba(255,77,94,ca
 .sbody{padding:2px 0 8px}
 .sth{font:800 9px var(--sans);letter-spacing:.1em;color:#7d8590;padding:7px 8px 3px}
 .srow{font:11px var(--mono);padding:2px 8px;color:#cfd6df} .srow.major{color:#e8b931;font-weight:700}
-.srow.z-resistance{color:#ff8a96} .srow.z-support{color:#5fe0a0} .srow.z-user{color:#e8b931} .srow.b{color:var(--buy)} .srow.s{color:var(--sell)}
+.srow.z-supply{color:#ff8a96} .srow.z-demand{color:#5fe0a0} .srow.z-user{color:#e8b931} .srow.b{color:var(--buy)} .srow.s{color:var(--sell)}
 .sfeed{font:11px/1.35 var(--sans);padding:3px 8px 3px 6px;border-left:3px solid transparent;color:#cfd6df} .sfeed i{font:normal 10px var(--mono);color:#7d8590;margin-right:6px}
 .sfeed.t-bull{border-left-color:var(--buy)} .sfeed.t-bear{border-left-color:var(--sell)} .sfeed.t-warn{border-left-color:#e8b931;color:#f0d68a}
 .dbias{flex:0 0 auto;font:800 9px var(--sans);letter-spacing:.06em;padding:1px 4px;border-radius:2px} .dbias.bull{color:var(--buy);border:1px solid var(--buy)} .dbias.bear{color:var(--sell);border:1px solid var(--sell)}

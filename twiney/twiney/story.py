@@ -7,7 +7,7 @@ board and every call the desk already makes stay exactly as they are. This layer
     DAILY CONTEXT  -> above the daily 50-day: the bullish PS60 framework, the prior-day high is the objective;
                       below it: the bearish framework, the prior-day low is the objective
     LOCATIONS      -> the PS60 levels (pivot, 2nd entry, sneaky pivots, target) + prior-day / prior-week / month /
-                      52-week highs and lows + your own lines and zones (no automatic support / resistance)
+                      52-week highs and lows + your own lines and zones (no automatic supply / demand)
     CONFLUENCE     -> locations that sit together are one place, not four: "MAJOR PS60 CONFLUENCE around $145.00"
     HIGH ATTENTION -> price close to any of them: everything below is read against THAT place
     RELOADS        -> every confirmed reload buyer / seller counts; a whole / half dollar only gets a gold star
@@ -171,7 +171,7 @@ def ma_framework(dpack, dprev, hpack, hprev, last, cfg):
     """Dan's read of the averages. The 50-day says bullish or bearish territory (the Daily context). Whoever controls
     the daily 5 controls the short-term sentiment; the 10 is the birth of the trade. Strong plays come into RISING
     60-minute support, the 60m 5 and 10: in an uptrend wait for the 60-minute retrace into them to buy (falling
-    60-minute resistance to short, the reverse). dprev / hprev: the packs one bar back (are they rising?)."""
+    60-minute supply to short, the reverse). dprev / hprev: the packs one bar back (are they rising?)."""
     if last is None:
         return None
     dt, ht = cfg.get("fw_daily_type", "SMA"), cfg.get("fw_60m_type", "SMA")
@@ -193,7 +193,7 @@ def ma_framework(dpack, dprev, hpack, hprev, last, cfg):
             out["bits"].append(f"Rising 60-minute support at the 60m 5 / 10 ({px(h5)} / {px(h10)}): wait for the 60-minute retrace into it to buy")
         elif h5 < h5p and h10 < h10p and h5 <= h10:
             out["h60"] = "falling"
-            out["bits"].append(f"Falling 60-minute resistance at the 60m 5 / 10 ({px(h5)} / {px(h10)}): wait for the 60-minute pop into it to short")
+            out["bits"].append(f"Falling 60-minute supply at the 60m 5 / 10 ({px(h5)} / {px(h10)}): wait for the 60-minute pop into it to short")
         else:
             out["h60"] = "flat"
             out["bits"].append(f"60m 5 / 10 ({px(h5)} / {px(h10)}) flat and tangled: no clean 60-minute trend")
@@ -1227,7 +1227,7 @@ def play_by_play(sb, t, foc, last, near, pace, fr, reloads, consumed, cfg):
         pos, d = "below", lo - last
     else:
         pos, d = "on", 0.0
-    # the side price CLOSED on: above the place it is support, below it resistance. Trading through it without a
+    # the side price CLOSED on: above the place it is demand, below it supply. Trading through it without a
     # candle close there does not change that
     closed_side = sb.side.get(foc["name"])
     if closed_side not in ("above", "below"):
@@ -1943,7 +1943,7 @@ def build(sb, t, last, tick, atr, play, se_state, ctx, points, zones, conf, fr, 
                    ("ten", "over"): f"Back over the 10-day {px(fw['d10'])}. That's the birth of the long trade",
                    ("ten", "under"): f"Under the 10-day {px(fw['d10'])}. That's the birth of the short trade",
                    ("h60", "rising"): f"The 60m 5 and 10 are rising: rising 60-minute support at {px(fw['h5'])} / {px(fw['h10'])}. Strong plays come into it, wait for the retrace",
-                   ("h60", "falling"): f"The 60m 5 and 10 are falling: falling 60-minute resistance at {px(fw['h5'])} / {px(fw['h10'])}. Wait for the pop into it to short",
+                   ("h60", "falling"): f"The 60m 5 and 10 are falling: falling 60-minute supply at {px(fw['h5'])} / {px(fw['h10'])}. Wait for the pop into it to short",
                    ("h60", "flat"): "The 60m 5 and 10 flattened out. No clean 60-minute trend right now"}[(k_, now_)]
             note("fw:" + k_, now_, txt, "bull" if now_ in ("buyers", "over", "rising") else "bear" if now_ in ("sellers", "under", "falling") else "neutral",
                  repeat=900, loud=True)
@@ -1958,7 +1958,7 @@ def build(sb, t, last, tick, atr, play, se_state, ctx, points, zones, conf, fr, 
                      (f"Here's the 60-minute retrace into rising support, the 60m 5 / 10 at {px(fw['h5'])} / {px(fw['h10'])}. "
                       "This is where we look to buy: technical buyers meeting emotional sellers. Wait for the reload buyer or a close off it")
                      if rising else
-                     (f"Here's the 60-minute pop into falling resistance, the 60m 5 / 10 at {px(fw['h5'])} / {px(fw['h10'])}. "
+                     (f"Here's the 60-minute pop into falling 60-minute supply, the 60m 5 / 10 at {px(fw['h5'])} / {px(fw['h10'])}. "
                       "This is where we look to short: technical sellers meeting emotional buyers. Wait for the reload seller or a close off it"),
                      "bull" if rising else "bear", repeat=1800, loud=True)
     # structure: lower lows / higher highs on the 60 and on the Daily

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261010-0053">
+<meta name="build" content="20261010-0143">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -1145,7 +1145,7 @@ tr.pglow.s td.px{box-shadow:inset 0 0 calc(var(--heat,0)*16px) rgba(255,77,94,ca
 .sbody{padding:2px 0 8px}
 .sth{font:800 9px var(--sans);letter-spacing:.1em;color:#7d8590;padding:7px 8px 3px}
 .srow{font:11px var(--mono);padding:2px 8px;color:#cfd6df} .srow.major{color:#e8b931;font-weight:700}
-.srow.z-resistance{color:#ff8a96} .srow.z-support{color:#5fe0a0} .srow.z-user{color:#e8b931} .srow.b{color:var(--buy)} .srow.s{color:var(--sell)}
+.srow.z-supply{color:#ff8a96} .srow.z-demand{color:#5fe0a0} .srow.z-user{color:#e8b931} .srow.b{color:var(--buy)} .srow.s{color:var(--sell)}
 .sfeed{font:11px/1.35 var(--sans);padding:3px 8px 3px 6px;border-left:3px solid transparent;color:#cfd6df} .sfeed i{font:normal 10px var(--mono);color:#7d8590;margin-right:6px}
 .sfeed.t-bull{border-left-color:var(--buy)} .sfeed.t-bear{border-left-color:var(--sell)} .sfeed.t-warn{border-left-color:#e8b931;color:#f0d68a}
 .dbias{flex:0 0 auto;font:800 9px var(--sans);letter-spacing:.06em;padding:1px 4px;border-radius:2px} .dbias.bull{color:var(--buy);border:1px solid var(--buy)} .dbias.bear{color:var(--sell);border:1px solid var(--sell)}
@@ -3343,7 +3343,7 @@ function drawOne(p, cv, v, isFoot){
       if (col !== runCol){ shadeRun(k); runCol = col; runK = k; }
     }
   }
-  // the PS60 story's zones (support / resistance found from the 30-minute history, and yours): shaded bands behind it all
+  // the PS60 story's zones (supply / demand found from the 30-minute history, and yours): shaded bands behind it all
   if (!isFoot && !p.opt && d.story && d.story.draw_zones && store.get("zonesOn", true) && typeof storyZones === "function")
     storyZones({g, x0, cw, plotW, y, lo, hi, bars, lightScreen: dan}, d.story.zones || []);
   if (stCtx){ studiesBack(stCtx); studiesFront(stCtx); }   // the studies sit BEHIND the candles (labels in the open space right)
@@ -4577,7 +4577,7 @@ function studiesBack(ctx){
   if (gs) for (const z of gs.zones || []){ const ya = y(z.a), yb = y(z.b); g.fillStyle = z.c; g.fillRect(xs, Math.min(ya, yb), Math.max(1, xe - xs), Math.abs(yb - ya)); }
 }
 /* YOUR zones on the stock chart (gold): a soft band with thin dashed edges and a small tag inside it at the left.
-   Only the zones you drew: no automatic support / resistance */
+   Only the zones you drew: no automatic supply / demand */
 function storyZones(ctx, zones){
   const {g, plotW, y, lo, hi} = ctx;
   for (const z of zones){

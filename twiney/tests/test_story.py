@@ -86,13 +86,13 @@ class ZoneTests(unittest.TestCase):
 class ConfluenceTests(unittest.TestCase):
     def test_four_levels_at_145_are_one_major_place(self):
         pts = [{"p": 145.03, "name": "prior-day high", "kind": "pdh"}, {"p": 145.00, "name": "PS60 pivot", "kind": "pivot"}]
-        zones = [{"lo": 144.90, "hi": 145.10, "kind": "resistance", "short": "resistance zone 144.90–145.10", "held": 4}]
+        zones = [{"lo": 144.90, "hi": 145.10, "kind": "supply", "short": "supply zone 144.90–145.10", "held": 4}]
         c = story.confluence(pts, zones, 144.70, 3.0, 0.01, CFG)
         self.assertEqual(len(c), 1)
         self.assertTrue(c[0]["major"])
         self.assertEqual(c[0]["p"], 145.0)
         self.assertTrue(c[0]["text"].startswith("Major PS60 confluence around 145.00"))
-        for nm in ("prior-day high 145.03", "PS60 pivot 145.00", "whole dollar 145.00", "resistance zone 144.90–145.10"):
+        for nm in ("prior-day high 145.03", "PS60 pivot 145.00", "whole dollar 145.00", "supply zone 144.90–145.10"):
             self.assertIn(nm, c[0]["text"])
 
     def test_a_lone_level_is_not_confluence(self):
