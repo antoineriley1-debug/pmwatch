@@ -12,6 +12,7 @@ It reads what the desk recorded and writes it up for you.
 | **EXPLAIN** | the ticker on screen: its levels, story and calls | why the desk said what it said, in plain words, and what it does not mean yet |
 | **CLEAN NOTES** | your notes and mic markers today | a clean journal, every ticker and level kept |
 | **STUDY DAYS** | the storyline and the score over the recorded days (SETTINGS › AI › days read) | the patterns that repeat, the bias to carry, what to tune |
+| **MY TRADES** | every closed round trip in the journal (practice, paper or live, said which) with the plan's lines, the fills, the result and R, the option flow at entry, the desk's calls around the entry, your own words | each trade graded against PS60 (the setup, the entry type, the management, the verdict), the patterns across the trades, the numbers by setup / side / hour, three rules to carry |
 | **ASK** | today's data, briefly | an answer to your question |
 
 After the close (16:05 ET by default), on a day the desk was connected, the recap and tomorrow's plan are written on

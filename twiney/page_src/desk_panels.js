@@ -3735,7 +3735,8 @@ const AIV = {built: false, job: null, shown: null, polling: null, out: null, giv
 const AI_JOBS = [["recap", "RECAP + TOMORROW", "today's recap and tomorrow's plan, from the desk's own records (the story, the calls, THE DESK SCORE, the levels, the 60-minute candles, the option flow, your notes and fills)"],
                  ["explain", "EXPLAIN", "why the desk said what it said on the ticker on screen, in plain words"],
                  ["notes", "CLEAN NOTES", "your notes and mic markers today, cleaned up into a journal"],
-                 ["study", "STUDY DAYS", "the cross-day study: the storyline and the score over the recorded days"]];
+                 ["study", "STUDY DAYS", "the cross-day study: the storyline and the score over the recorded days"],
+                 ["trades", "MY TRADES", "every closed trade in the journal graded against PS60: the setup, the entry type, the management, the verdict, the patterns, three rules to carry"]];
 function aiShell(){
   return `<div class="aibar">${AI_JOBS.map(([j, t, tip]) => `<button data-aijob="${j}" title="${esc(tip)}">${t}</button>`).join("")}<span class="sp"></span><button data-aifiles="1" title="earlier answers, saved under recordings/ai">SAVED</button></div>
     <div class="aiask"><input id="aiAsk" placeholder="ask about today · Enter" maxlength="400"><button data-aijob="ask" title="a question about today, answered from the desk's own data and PS60">ASK</button></div>

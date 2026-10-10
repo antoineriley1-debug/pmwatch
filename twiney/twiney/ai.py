@@ -19,7 +19,7 @@ import urllib.request
 
 KNOWLEDGE = os.path.join(os.path.dirname(__file__), "knowledge", "ps60.md")
 
-JOBS = ("recap", "explain", "notes", "study", "ask")
+JOBS = ("recap", "explain", "notes", "study", "trades", "ask")
 
 # the language lock, applied to the model's words too (it slips even when taught)
 LANGUAGE = [(re.compile(r"\bresistance\b", re.I), "supply"), (re.compile(r"\bsupport levels?\b", re.I), "demand"),
@@ -256,6 +256,9 @@ class DeskAI:
         if job == "study":
             days = int(kw.get("days") or self.ac().get("days_back") or 20)
             return (f"Cross-day study ({days} days)", self.packet_study(t, days), ASK_STUDY)
+        if job == "trades":
+            days = int(kw.get("days") or self.ac().get("days_back") or 20)
+            return (f"Your trades, graded against PS60 ({days} days)", self.packet_trades(t, days), ASK_TRADES)
         q = str(kw.get("text") or "").strip()[:2000]
         return ("Your question", self.packet_day(t, brief=True), ASK_QUESTION + "\n\nTWINEY ASKS: " + q)
 
@@ -429,6 +432,67 @@ class DeskAI:
             lines.append("  (no notes or markers today)")
         return "\n".join(lines)
 
+    def packet_trades(self, t, days=20, limit=40):
+        """Every closed round trip from the journal in the last N days (practice, paper or live, said which), with the
+        plan it was taken against, the fills, the result and R, the option flow at entry, the desk's calls on the stock
+        around the entry, and your own words; then the totals by setup, side and hour."""
+        from . import studies
+        eng = self.engine
+        desk = getattr(eng, "desk", None)
+        rows = list(desk.trades) if desk is not None else []
+        rows = [tr for tr in rows if tr.get("closed") and t - float(tr["closed"]) <= days * 86400][-limit:]
+        lines = [f"TWINEY'S TRADES, the last {days} days, from the desk's journal ({len(rows)} closed round trips)."
+                 "\nPRACTICE = the synthetic practice market (plumbing, not the market). PAPER = IBKR paper, real prices, no money."
+                 "\nR = the result against the stop Twiney planned (1R = one stop distance). The plan's R:R = target distance / stop distance at entry."]
+        if not rows:
+            lines.append("No closed trades in the journal for these days.")
+            return "\n".join(lines)
+        for i, tr in enumerate(rows, 1):
+            kind = "PRACTICE" if str(tr.get("rec") or "").startswith("demo") else "PAPER / LIVE"
+            plan = tr.get("plan") or {}
+            lines.append(f"\n--- TRADE {i}: {tr.get('name')} [{kind}] ---")
+            lines.append(f"  {tr.get('underlying') or tr.get('symbol')} {str(tr.get('side') or '').upper()}{' (option ' + str(tr.get('symbol')) + ')' if tr.get('opt') else ''}"
+                         f" · in {_hm(tr.get('opened'))} out {_hm(tr.get('closed'))} ({tr.get('minutes')} min) · {tr.get('shares')} {'contracts' if tr.get('opt') else 'shares'}")
+            lines.append(f"  entry {_px(tr.get('entry'))} exit {_px(tr.get('exit'))}" + (f" · stock {_px(tr.get('u_entry'))} to {_px(tr.get('u_exit'))}" if tr.get("opt") else "")
+                         + f" · RESULT {tr.get('result')} {tr.get('pnl'):+,.2f} ({tr.get('pnl_pct')}%)" + (f" · {tr['r']:+.2f}R" if tr.get("r") is not None else " · R unknown (no stop planned)"))
+            if plan:
+                lines.append("  THE PLAN (Twiney's lines): " + " · ".join(f"{k.replace('trigger', 'pivot').replace('_', ' ')} {_px(v)}" for k, v in plan.items())
+                             + (f" · plan R:R {tr['plan_rr']}" if tr.get("plan_rr") else ""))
+            else:
+                lines.append("  THE PLAN: no lines drawn (no pivot, no second entry, no stop, no target)")
+            if tr.get("setup"):
+                lines.append(f"  setup named: {tr['setup']}")
+            if tr.get("flow"):
+                lines.append(f"  option flow at entry: {str(tr['flow'])[:200]}")
+            if tr.get("grade") or tr.get("note"):
+                lines.append(f"  Twiney's own grade / note: {tr.get('grade') or '-'} · {str(tr.get('note') or '')[:300]}")
+            if tr.get("log"):
+                lines.append(f"  the trade log: {str(tr['log'])[:700]}")
+            if tr.get("transcript"):
+                lines.append("  Twiney said (mic): " + " | ".join(str(x.get("text") or "")[:120] for x in tr["transcript"][-6:]))
+            calls = [a for a in list(eng.alerts) if a.get("symbol") == (tr.get("underlying") or tr.get("symbol"))
+                     and float(tr.get("opened") or 0) - 900 <= float(a.get("t") or 0) <= float(tr.get("closed") or 0) + 60]
+            if calls:
+                lines.append("  the desk's calls from 15 min before the entry to the exit: " + " | ".join(f"{_hm(a['t'])} {a['label']} {str(a.get('text') or '')[:90]}" for a in calls[::-1][:12]))
+        # the totals
+        n = len(rows); wins = [r for r in rows if r.get("result") == "WIN"]; losses = [r for r in rows if r.get("result") == "LOSS"]
+        pnl = sum(float(r.get("pnl") or 0) for r in rows)
+        rs = [float(r["r"]) for r in rows if r.get("r") is not None]
+        lines.append(f"\n=== TOTALS === {n} trades · {len(wins)} wins / {len(losses)} losses / {n - len(wins) - len(losses)} scratch · P&L {pnl:+,.2f}"
+                     + (f" · average {sum(rs) / len(rs):+.2f}R over {len(rs)} trades with a planned stop" if rs else " · no trade had a planned stop")
+                     + f" · {sum(1 for r in rows if not r.get('plan'))} trades with no lines drawn"
+                     + f" · average hold {sum(float(r.get('minutes') or 0) for r in rows) / n:.0f} min")
+        by = {}
+        for r in rows:
+            by.setdefault(f"setup '{r.get('setup') or 'none'}'", []).append(r)
+            by.setdefault(f"side {r.get('side')}", []).append(r)
+            by.setdefault(f"hour {_hm(r.get('opened'))[:2]}:00", []).append(r)
+            by.setdefault("options" if r.get("opt") else "stock", []).append(r)
+        for k, v in sorted(by.items()):
+            w = sum(1 for r in v if r.get("result") == "WIN")
+            lines.append(f"  {k}: {len(v)} trades, {w} wins, P&L {sum(float(r.get('pnl') or 0) for r in v):+,.2f}")
+        return "\n".join(lines)
+
     def packet_study(self, t, days=20):
         """The storyline, the score and the daily bars over the last N recorded days."""
         from . import studies
@@ -503,6 +567,25 @@ ASK_STUDY = """From the storyline turns and scores above, write the cross-day st
 2. The bias a trader should carry into the next day from these days, and what would flip it.
 3. What to tune on the desk (thresholds, patience, which calls to trust), with the day and the turn that shows it.
 Count where you can; say "too few days" where the sample is thin. Name the days you lean on."""
+
+ASK_TRADES = """Grade every trade above against PS60, the way Dan would, one short block per trade, then the whole:
+
+PER TRADE (number it):
+- THE SETUP: was there a valid pivot (a macro edge or a sneaky pivot), was it CONFIRMED by another candle, was the
+  entry a SECOND ENTRY (new extreme, retrace, back through it), a remount, or the first touch / a chase? Was there
+  Daily room, MP against ATR CLEAR or THIN? Did the option flow support the side? Use the plan's lines, the desk's
+  calls and the log; say "the data does not show it" where it does not.
+- THE MANAGEMENT: did he pay himself and go to breakeven, did he honour the 5-7 minute rule, did the exit come at the
+  planned max pain or somewhere else, did he fight a reload buyer / seller, was the plan's R:R worth the trade?
+- THE VERDICT: A / B / C / PASS-should-have-been, in PS60 words, one line on what to do differently.
+
+THE WHOLE:
+- The patterns across the trades (entering early, no lines drawn, chasing, no room, holding losers past max pain,
+  cutting winners before the runner, trading the wrong side of the Daily, trading without flow).
+- The numbers that matter: wins vs losses by setup, side and hour; trades with no stop planned; average R.
+- THREE RULES to carry into the next session, each tied to a trade above by its number.
+PRACTICE trades are on a synthetic market: grade the process, not the market. End with one short line that this is
+analysis for Twiney's own judgment, not advice."""
 
 ASK_QUESTION = """Answer Twiney's question below from the data above and PS60. Short. If the data does not show it,
 say what you would need to see."""

@@ -281,3 +281,38 @@ class KnowledgeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TradesPacketTests(unittest.TestCase):
+    def test_trades_packet_grades_the_journal(self):
+        eng, c, _ = desk()
+        t = time.time()
+
+        class D:
+            trades = [{"id": "AAA-1", "name": "AAA LONG · 2nd entry 10/09 10:12", "symbol": "AAA", "underlying": "AAA", "side": "long", "opt": False,
+                       "opened": t - 1500, "closed": t - 600, "shares": 100.0, "entry": 10.02, "exit": 10.32, "pnl": 30.0, "pnl_pct": 2.994, "r": 1.5,
+                       "plan": {"trigger": 10.0, "second_entry": 10.1, "stop": 9.82, "target": 10.5}, "plan_rr": 2.4, "setup": "2nd entry", "result": "WIN",
+                       "minutes": 15.0, "rec": "demo-20261009-101200.jsonl", "flow": "calls $240K at the ask, 3 prints", "grade": "A", "note": "waited for the retrace",
+                       "log": "10:11 FILL BOUGHT 100 AAA @ 10.02 | 10:26 FILL SOLD 100 AAA @ 10.32", "transcript": [{"t": t - 1400, "text": "reload byer still there"}]},
+                      {"id": "BBB-2", "name": "BBB SHORT 10/09 11:00", "symbol": "BBB", "underlying": "BBB", "side": "short", "opt": False,
+                       "opened": t - 300, "closed": t - 60, "shares": 50.0, "entry": 50.0, "exit": 50.4, "pnl": -20.0, "pnl_pct": -0.8, "plan": {}, "setup": "",
+                       "result": "LOSS", "minutes": 4.0, "rec": "twiney-20261009.jsonl", "flow": ""}]
+        eng.desk = D()
+        eng.alerts[0]["t"] = t - 1200                   # the desk's RELOAD BUYER call, inside the first trade
+        a = DeskAI(eng, c, None)
+        p = a.packet_trades(t, 5)
+        for w in ("2 closed round trips", "TRADE 1: AAA LONG", "[PRACTICE]", "[PAPER / LIVE]", "pivot 10.00", "second entry 10.10", "stop 9.82",
+                  "RESULT WIN +30.00", "+1.50R", "no lines drawn", "R unknown (no stop planned)", "calls $240K at the ask", "reload byer still there",
+                  "the desk's calls from 15 min before", "RELOAD BUYER", "=== TOTALS === 2 trades · 1 wins / 1 losses", "1 trades with no lines drawn",
+                  "setup '2nd entry': 1 trades", "side short: 1 trades"):
+            self.assertIn(w, p, w)
+        self.assertNotIn("trigger 10.00", p)
+        title, given, ask = a.prepare("trades", t, days=5)
+        self.assertIn("graded against PS60", title)
+        self.assertIn("THREE RULES", ask)
+        self.assertIn("SECOND ENTRY", ask)
+
+    def test_no_trades(self):
+        eng, c, _ = desk()
+        a = DeskAI(eng, c, None)
+        self.assertIn("No closed trades", a.packet_trades(time.time(), 5))
