@@ -2170,7 +2170,7 @@ function render(s){
   renderQuote(d);
   charts.chart.el.classList.toggle("clean", store.get("clean", true));
   drawChart(charts.chart); drawChart(charts.foot); drawChart(charts.chart2); drawChart(charts.chart3); renderFast(d);
-  renderBook(d); renderTape(d); renderSetup(d); renderPS60(d); renderReloads(d); renderConviction(d); renderStory(d); renderScore(s);
+  renderBook(d); renderTape(d); renderSetup(d); renderPS60(d); renderReloads(d); renderConviction(d); renderStory(d); renderScore(s); try { renderAI(s); } catch (e) {}
   renderTicket(s, d);
   renderWatch(s); renderCalls(s); renderPositions(s); renderOrders(s);
   renderDesk(s); renderTrades(s); renderFlow(s); renderFlowScope(s); renderEquity(s); renderMyAlerts(s); renderUrgency(s); renderBigMoney(curData());
@@ -3727,3 +3727,92 @@ window.addEventListener("resize", () => { ladFitT = 0; });
 { const cv = document.getElementById("cvStrip");
   if (cv){ cv.style.cursor = "pointer"; cv.title = "the 8 PS60 checks, left to right: DAILY MP · PIVOT · CONFIRM · 2ND ENTRY · BUILD · FLOW SIDE · FLOW QUALITY · CORRELATION. Green = met, yellow = getting there, red = not yet. Hover a dot for that check; click for the CONVICTION panel with all of them.";
     cv.addEventListener("click", () => { if (typeof showPanel === "function") showPanel("conviction"); }); } }
+
+/* ===================== DESK AI: a local Ollama model, taught PS60, reading the desk's own records =====================
+   Never in the live read. The shell (buttons, status, output) is built once; the status line follows the state; the
+   output is fetched when a job finishes. Everything the model was given sits behind WHAT IT WAS GIVEN. */
+const AIV = {built: false, job: null, shown: null, polling: null, out: null, given: false, files: []};
+const AI_JOBS = [["recap", "RECAP + TOMORROW", "today's recap and tomorrow's plan, from the desk's own records (the story, the calls, THE DESK SCORE, the levels, the 60-minute candles, the option flow, your notes and fills)"],
+                 ["explain", "EXPLAIN", "why the desk said what it said on the ticker on screen, in plain words"],
+                 ["notes", "CLEAN NOTES", "your notes and mic markers today, cleaned up into a journal"],
+                 ["study", "STUDY DAYS", "the cross-day study: the storyline and the score over the recorded days"]];
+function aiShell(){
+  return `<div class="aibar">${AI_JOBS.map(([j, t, tip]) => `<button data-aijob="${j}" title="${esc(tip)}">${t}</button>`).join("")}<span class="sp"></span><button data-aifiles="1" title="earlier answers, saved under recordings/ai">SAVED</button></div>
+    <div class="aiask"><input id="aiAsk" placeholder="ask about today · Enter" maxlength="400"><button data-aijob="ask" title="a question about today, answered from the desk's own data and PS60">ASK</button></div>
+    <div class="aist" id="aiStatus"></div>
+    <div class="aiout" id="aiOut"><div class="dim" style="padding:6px 8px">Nothing written yet. RECAP + TOMORROW after the close, or ASK anything about today.</div></div>`;
+}
+function aiFmt(text){
+  // the model's markdown-ish text as safe HTML: headings, bold, bullets, paragraphs
+  const lines = String(text || "").split(/\r?\n/); let h = "", ul = false;
+  const inl = s => esc(s).replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>").replace(/`([^`]+)`/g, "<code>$1</code>");
+  for (const raw of lines){
+    const l = raw.trim();
+    if (/^[-*•] /.test(l)){ if (!ul){ h += "<ul>"; ul = true; } h += `<li>${inl(l.slice(2))}</li>`; continue; }
+    if (ul){ h += "</ul>"; ul = false; }
+    if (!l){ continue; }
+    const m = /^(#{1,4})\s+(.*)$/.exec(l);
+    if (m){ h += `<h5>${inl(m[2])}</h5>`; continue; }
+    if (/^(PART|TODAY|TOMORROW|[A-Z][A-Z0-9 '+&/—–-]{3,}:?)$/.test(l) && l.length < 60){ h += `<h5>${inl(l)}</h5>`; continue; }
+    h += `<p>${inl(l)}</p>`;
+  }
+  if (ul) h += "</ul>";
+  return h;
+}
+function renderAI(s){
+  if (!P.ai) return;
+  const a = s && s.ai;
+  if (!AIV.built){ P.ai.pc.innerHTML = aiShell(); AIV.built = true; aiWire(); }
+  const st = document.getElementById("aiStatus"); if (!st) return;
+  let line;
+  if (!a) line = `<b class="bad">DESK AI not loaded</b>`;
+  else if (!a.enabled) line = `<b class="off">OFF</b> <span>SETTINGS › AI (Ollama): switch it on, pick the model</span>`;
+  else if (a.busy) line = `<b class="run">WRITING ${esc(a.busy.toUpperCase())}…</b> <span>${a.since ? Math.round((s.now - a.since)) + "s" : ""} · the model is reading the desk; a laptop takes a minute or three</span>`;
+  else if (a.reachable === false) line = `<b class="bad">OLLAMA NOT ANSWERING</b> <span>${esc(a.reach_error || "")}</span>`;
+  else if (a.reachable && a.model_ok === false) line = `<b class="bad">MODEL MISSING</b> <span>Ollama has ${esc((a.models || []).join(", ") || "no model")}: in a terminal run  ollama pull ${esc(a.model || "")}</span>`;
+  else line = `<b class="${a.reachable ? "ok" : ""}">${a.reachable ? "READY" : "ON"}</b> <span>${esc(a.model || "")} · local, nothing leaves this computer${a.error ? " · last: " + esc(a.error) : ""}</span>`;
+  const last = a && a.last ? Object.entries(a.last).map(([j, r]) => `<i title="${esc(r.error || r.title || "")}" data-aishow="${j}" class="${r.error ? "bad" : ""}">${j} ${typeof nyHM12 === "function" ? nyHM12(r.t) : ""}</i>`).join("") : "";
+  const h = line + (last ? `<span class="ailast">${last}</span>` : "");
+  if (st.dataset.h !== h){ st.dataset.h = h; st.innerHTML = h; }
+  P.ai.pc.querySelectorAll("button[data-aijob]").forEach(b => { b.disabled = !!(a && a.busy); });
+  // a job just finished: show it
+  if (a && !a.busy && AIV.job && a.last && a.last[AIV.job] && a.last[AIV.job].t >= (AIV.started || 0)){ const j = AIV.job; AIV.job = null; aiShow(j); }
+}
+async function aiShow(job){
+  AIV.shown = job;
+  const out = document.getElementById("aiOut"); if (!out) return;
+  let r = null;
+  try { r = await (await fetch("/api/ai/result?job=" + encodeURIComponent(job))).json(); } catch (e) { r = null; }
+  const res = r && r.result;
+  if (!res){ out.innerHTML = `<div class="dim" style="padding:6px 8px">nothing for ${esc(job)} yet</div>`; return; }
+  const when = typeof nyHM12 === "function" ? nyHM12(res.t) : "";
+  out.innerHTML = `<div class="aihd"><b>${esc(res.title || job)}</b><span class="dim">${when}${res.ms ? " · " + Math.round(res.ms / 1000) + "s" : ""}${res.file ? " · saved" : ""}</span><span class="sp"></span><button data-aigiven="1">${AIV.given ? "HIDE" : "WHAT IT WAS GIVEN"}</button></div>
+    ${res.error ? `<div class="aierr">${esc(res.error)}</div>` : `<div class="aitxt">${aiFmt(res.text)}</div>`}
+    <pre class="aigiven" style="display:${AIV.given ? "block" : "none"}">${esc(res.given || "")}</pre>`;
+}
+async function aiFiles(){
+  const out = document.getElementById("aiOut"); if (!out) return;
+  let r = null; try { r = await (await fetch("/api/ai/list")).json(); } catch (e) { r = null; }
+  const files = (r && r.files) || [];
+  out.innerHTML = `<div class="aihd"><b>SAVED ANSWERS</b><span class="dim">recordings/ai</span></div>` + (files.length ? `<div class="aifiles">${files.map(f => `<a href="/api/ai/file?name=${encodeURIComponent(f.name)}" target="_blank">${esc(f.job)} · ${esc(f.day)} · ${esc(f.name.split("-")[2] || "").replace(".md", "")}</a>`).join("")}</div>` : `<div class="dim" style="padding:6px 8px">none yet</div>`);
+}
+function aiWire(){
+  P.ai.pc.addEventListener("click", async e => {
+    const jb = e.target.closest("button[data-aijob]");
+    if (jb){
+      const job = jb.dataset.aijob, body = {job};
+      if (job === "explain") body.symbol = curSym;
+      if (job === "ask"){ const q = (document.getElementById("aiAsk").value || "").trim(); if (!q) return; body.text = q; }
+      AIV.job = job; AIV.started = (state && state.now) || Date.now() / 1000;
+      const out = document.getElementById("aiOut"); if (out) out.innerHTML = `<div class="dim" style="padding:6px 8px">reading the desk and writing the ${esc(job)}…</div>`;
+      const r = await post("/api/ai/run", body);
+      if (!r.ok){ AIV.job = null; if (out) out.innerHTML = `<div class="aierr">${esc(r.reason || "could not start")}</div>`; }
+      return;
+    }
+    if (e.target.closest("button[data-aifiles]")){ aiFiles(); return; }
+    if (e.target.closest("button[data-aigiven]")){ AIV.given = !AIV.given; if (AIV.shown) aiShow(AIV.shown); return; }
+    const sh = e.target.closest("i[data-aishow]"); if (sh){ aiShow(sh.dataset.aishow); return; }
+  });
+  const ask = document.getElementById("aiAsk");
+  if (ask) ask.addEventListener("keydown", e => { e.stopPropagation(); if (e.key === "Enter"){ const b = P.ai.pc.querySelector('button[data-aijob="ask"]'); if (b && !b.disabled) b.click(); } });
+}

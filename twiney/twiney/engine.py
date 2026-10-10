@@ -3502,6 +3502,13 @@ class Engine:
                     self.score.tick(t, {sym: st.price() for sym, st in self.syms.items() if st.price()})
                 except Exception:
                     log.exception("scorecard tick")
+            ai = getattr(self, "ai", None)
+            if ai is not None and t - getattr(self, "_ai_t", -1e9) >= 60.0:   # DESK AI: the close recap on its own
+                self._ai_t = t
+                try:
+                    ai.tick(t)
+                except Exception:
+                    log.exception("desk ai tick")
             rc = self.cfg["reload"]
             if self.desk is not None and t - getattr(self, "_recon_t", -1e9) >= 5:
                 self._recon_t = t
@@ -5650,6 +5657,7 @@ class Engine:
                 "replay": dict(self.replay) if self.replay else None,
                 "score": self.score.view() if (self.cfg.get("score") or {}).get("enabled", True) else None,
                 "training": self.trainer.view() if self.trainer is not None else None,
+                "ai": self.ai.status() if getattr(self, "ai", None) is not None else None,
                 "account": {
                     "seen": self.account_seen,
                     "pending": sorted((dict(o, state=self.order_state(o)) for o in self._pending()), key=lambda o: -o.get("first_seen", 0)),

@@ -1,6 +1,6 @@
 /* ===================== TED — TWINEY EXECUTION DESK: panel pool ===================== */
 const PANELS = {
-  chart: "CHART", chart2: "CHART 2", chart3: "CHART 3", ochart: "OPTION CHART", obook: "OPTION LEVEL II", otape: "OPTION T&S", obig: "OPTION BIG TAPE", foot: "FOOTPRINT 5m", book: "LEVEL II", tape: "TIME & SALES", bigtape: "BIG TAPE", options: "OPTION CHAIN", setup: "PLAY SETUP", ps60: "PS60", conviction: "CONVICTION", story: "PS60 STORY", score: "DESK SCORE", reload: "RELOADS",
+  chart: "CHART", chart2: "CHART 2", chart3: "CHART 3", ochart: "OPTION CHART", obook: "OPTION LEVEL II", otape: "OPTION T&S", obig: "OPTION BIG TAPE", foot: "FOOTPRINT 5m", book: "LEVEL II", tape: "TIME & SALES", bigtape: "BIG TAPE", options: "OPTION CHAIN", setup: "PLAY SETUP", ps60: "PS60", conviction: "CONVICTION", story: "PS60 STORY", score: "DESK SCORE", ai: "DESK AI", reload: "RELOADS",
   ticket: "ORDER ENTRY", positions: "POSITIONS", orders: "ORDERS", watch: "WATCHLIST", calls: "CALLS",
   flow: "OPTION FLOW", eqflow: "EQUITY FLOW", urgency: "URGENT FLOW", bigmoney: "BIG MONEY 30D", myalerts: "ALERTS", desk: "DESK", journal: "JOURNAL", messages: "MESSAGES"};
 const SYMBOL_LINKED = new Set(["chart", "chart2", "chart3", "foot", "book", "tape", "bigtape", "options", "ps60", "reload", "ticket", "calls", "setup", "bigmoney", "conviction", "story"]);

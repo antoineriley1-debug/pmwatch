@@ -624,6 +624,20 @@ DEFAULTS = {
                                         # with speed, programs, calls / puts pounded, the open read) judged 5 and 15 minutes later
         "hit_atr": 0.10,                # a HIT: price moved at least this much of the daily ATR the call's way at 15 minutes (a MISS: the other way)
     },
+    "ai": {
+        # DESK AI: a local Ollama model taught PS60 (the way Dan reads the market) that reads the desk's own records AFTER
+        # the fact: the day's recap and tomorrow's plan, why a call was made, your notes cleaned up, the cross-day study.
+        # Never in the live read: nothing it writes becomes a call, a voice line or a trade. Nothing leaves this computer.
+        "enabled": False,
+        "url": "http://127.0.0.1:11434",  # where Ollama answers on this computer (its default)
+        "model": "llama3.1:8b",           # the model Ollama has pulled (in a terminal: ollama pull llama3.1:8b); a 3B model is quicker on a laptop
+        "timeout_s": 300,                 # a laptop CPU writes the recap in one to three minutes: how long to wait
+        "num_ctx": 8192,                  # the model's reading window (tokens); 8192 holds a full day for 6 stocks
+        "temperature": 0.3,               # 0 = the same words every time, 1 = loose; low keeps it to the data
+        "recap_at_close": True,           # the day's recap + tomorrow's plan on its own after the close, on a day the desk was connected
+        "recap_minutes_after_close": 5,   # ... this many minutes after 16:00 ET
+        "days_back": 20,                  # the cross-day study reads this many recorded days
+    },
     "studies": {
         "gas": True,                    # GAS + ATR (new PS60 Gas + ATR)
         "airspace": True,               # AIRSPACE (PS60 MP Airspace)

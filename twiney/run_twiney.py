@@ -23,6 +23,7 @@ from twiney.config import LOAD_WARNINGS, PLACEHOLDERS_STRIPPED, ConfigError, bui
 from twiney.dashboard import Dashboard, EngineRef
 from twiney.desk import Desk
 from twiney.engine import Engine
+from twiney.ai import DeskAI
 from twiney.recorder import Recorder
 from twiney.replay import compare, replay, session_header, span
 from twiney.trading import IbkrBroker, SimBroker, Trader, TradingGate
@@ -106,6 +107,7 @@ def run_live(cfg, plays, args):
     engine.score.path = os.path.join(_rec_dir(cfg), "score.jsonl")   # THE DESK SCORE: every judged call, one line each
     engine.calib_path = os.path.join(_rec_dir(cfg), "inst_calib.jsonl")   # CHILD ORDERS on the real tape, for tuning
     engine.storyline_path = os.path.join(_rec_dir(cfg), "storylines.jsonl")   # the storyline's turns, every day, for the cross-day study
+    engine.ai = DeskAI(engine, cfg, _rec_dir(cfg))   # DESK AI (Ollama): the recap, tomorrow's plan, explanations, notes, the study
     engine.load_user_alerts(os.path.join(os.path.dirname(os.path.abspath(args.plays)), "alerts.json"))
     engine.listeners.append(console_alert)
     note_stripped(engine, args)
@@ -262,6 +264,7 @@ def run_demo(cfg, plays, args):
     engine.jlog_path = os.path.join(_rec_dir(cfg), "desk.log")   # structured JSON lines: connections, orders, fills, errors
     engine.score.path = os.path.join(_rec_dir(cfg), "score.jsonl")   # THE DESK SCORE: every judged call, one line each
     engine.storyline_path = os.path.join(_rec_dir(cfg), "storylines.jsonl")
+    engine.ai = DeskAI(engine, cfg, _rec_dir(cfg))   # DESK AI (Ollama) on the practice desk too: same buttons, practice numbers
     engine.load_user_alerts(os.path.join(os.path.dirname(os.path.abspath(args.plays)), "alerts.json"))
     engine.listeners.append(console_alert)
     note_stripped(engine, args)
@@ -337,6 +340,7 @@ def run_replay(cfg, plays, args):
         nonlocal dash
         if args.speed > 0:
             engine.replay = control
+            engine.ai = DeskAI(engine, cfg, _rec_dir(cfg))   # DESK AI on a replayed day too (never the close recap: not a live day)
             # practice orders fill against the replayed book, exactly like the demo
             gate = TradingGate(cfg)
             gate.set_sim()

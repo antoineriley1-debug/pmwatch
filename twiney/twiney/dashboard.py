@@ -310,6 +310,28 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                     self._send(200, audio, "audio/mpeg")
                 except tts.TTSError as e:
                     self._send(502, json.dumps({"ok": False, "reason": str(e)}), "application/json")
+            elif path.startswith("/api/ai/"):
+                # DESK AI: status (with a live check of Ollama), the latest answer for a job, the saved answers
+                ai = getattr(engine, "ai", None)
+                q = parse_qs(urlparse(self.path).query, keep_blank_values=True)
+                if ai is None:
+                    self._send(404, json.dumps({"ok": False, "reason": "DESK AI is not loaded"}), "application/json")
+                elif path == "/api/ai/status":
+                    ai.check(force=bool(q.get("force", [""])[0]))
+                    self._send(200, json.dumps(dict(ai.status(), ok=True)), "application/json")
+                elif path == "/api/ai/result":
+                    r = ai.result(q.get("job", ["recap"])[0])
+                    self._send(200, json.dumps({"ok": r is not None, "result": r, "busy": ai.busy}), "application/json")
+                elif path == "/api/ai/list":
+                    self._send(200, json.dumps({"ok": True, "files": ai.files()}), "application/json")
+                elif path == "/api/ai/file":
+                    text = ai.read(q.get("name", [""])[0])
+                    if text is None:
+                        self._send(404, "not found", "text/plain")
+                    else:
+                        self._send(200, text, "text/markdown; charset=utf-8")
+                else:
+                    self._send(404, "not found", "text/plain")
             elif path == "/healthz":
                 self._send(200, json.dumps({"ok": True, "connection": engine.connection["state"]}),
                            "application/json")
@@ -510,6 +532,15 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                     out = {"ok": False, "reason": str(exc)}
                 self._send(200, json.dumps(out), "application/json")
                 return
+            elif path == "/api/ai/run":
+                # DESK AI: start a job (recap / explain / notes / study / ask) in the background; the page polls the result
+                ai = getattr(engine, "ai", None)
+                if ai is None:
+                    self._send(404, json.dumps({"ok": False, "reason": "DESK AI is not loaded"}), "application/json")
+                    return
+                out = ai.run(str(body.get("job") or "recap"), t=clock(), symbol=body.get("symbol"), text=body.get("text"),
+                             key=body.get("key"), days=body.get("days"))
+                self._send(200, json.dumps(out), "application/json")
             elif path == "/api/replay":
                 r = engine.replay
                 if r is None:

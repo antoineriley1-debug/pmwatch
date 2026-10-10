@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261009-2102">
+<meta name="build" content="20261010-0053">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -1534,6 +1534,23 @@ body.whitedesk .chart-wrap canvas,body.whitedesk img,body.whitedesk video{filter
 .pnl[data-p="book"].short .eatbar .pinbox .txt{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .eatbar{max-height:38%;overflow:hidden}
 
+/* ---------- DESK AI */
+.pnl[data-p="ai"] .pc{display:flex;flex-direction:column;overflow:hidden}
+.aibar{display:flex;gap:4px;align-items:center;padding:4px 6px;border-bottom:1px solid var(--line);background:#0e1114;flex-wrap:wrap}
+.aibar .sp,.aihd .sp{flex:1}
+.aibar button,.aiask button,.aihd button{font:800 9.5px var(--sans);letter-spacing:.06em;padding:3px 7px;border:1px solid #2a3340;border-radius:3px;background:#161b22;color:#cfd6df;cursor:pointer}
+.aibar button:hover,.aiask button:hover,.aihd button:hover{background:#1f2730} .aibar button:disabled{opacity:.45;cursor:default}
+.aiask{display:flex;gap:4px;padding:4px 6px;border-bottom:1px solid var(--line)} .aiask input{flex:1;min-width:0;font:11px var(--sans);padding:3px 6px;background:#0b0f16;border:1px solid #2a3340;border-radius:3px;color:#e6edf3}
+.aist{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:3px 8px;font:10.5px var(--sans);color:#9fb0c3;border-bottom:1px solid var(--line)}
+.aist b{font:800 9.5px var(--sans);letter-spacing:.08em;padding:0 5px;border-radius:2px;border:1px solid #2a3340} .aist b.ok{color:#3fb950;border-color:#1f5a30} .aist b.bad{color:#f85149;border-color:#6a1f24} .aist b.run{color:#e8b931;border-color:#5a4a12;animation:livepulse 1.2s infinite} .aist b.off{color:#7d8590}
+.aist .ailast{display:inline-flex;gap:6px;margin-left:auto} .aist .ailast i{font:10px var(--mono);font-style:normal;color:#9fb0c3;cursor:pointer;text-decoration:underline dotted} .aist .ailast i.bad{color:#f85149}
+.aiout{flex:1;min-height:0;overflow:auto;padding:0 0 8px}
+.aihd{display:flex;gap:8px;align-items:center;padding:6px 8px 2px;font:800 11px var(--sans);letter-spacing:.04em;color:#e6edf3}
+.aitxt{padding:2px 10px;font:12px/1.5 var(--sans);color:#d7dee7} .aitxt h5{margin:10px 0 3px;font:800 10px var(--sans);letter-spacing:.1em;color:#e8b931} .aitxt p{margin:4px 0} .aitxt ul{margin:2px 0 4px 16px;padding:0} .aitxt li{margin:2px 0} .aitxt code{font:11px var(--mono);color:#9fb0c3}
+.aierr{margin:6px 8px;padding:6px 8px;border:1px solid #6a1f24;border-radius:3px;color:#ff8a95;font:11px var(--sans)}
+.aigiven{margin:6px 8px;padding:6px 8px;background:#0b0f16;border:1px solid #2a3340;border-radius:3px;font:10px/1.4 var(--mono);color:#9fb0c3;white-space:pre-wrap;word-break:break-word;max-height:50%;overflow:auto}
+.aifiles{display:flex;flex-direction:column;gap:2px;padding:4px 10px} .aifiles a{font:11px var(--mono);color:#9fb0c3} .aifiles a:hover{color:#e6edf3}
+
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
   --buy:#3fb56f;--sell:#d9534f;--gold:#e3a83a;--cyan:#5aa9d6;--violet:#a48bd6;--warn:#d9a441;
@@ -1931,6 +1948,7 @@ body.resizing .zbody{pointer-events:none}
   <div class="pnl" data-p="conviction"><div class="pc"><div id="cvPanel"></div></div></div>
   <div class="pnl" data-p="story"><div class="pc"></div></div>
   <div class="pnl" data-p="score"><div class="pc"></div></div>
+  <div class="pnl" data-p="ai"><div class="pc"></div></div>
   <div class="pnl" data-p="options"><div class="pc"><div class="oc"><div class="oc-hd">
     <span class="sym" id="ocSym"></span><select id="ocExp" title="expiry"></select>
     <span class="cp"><button data-right="C" class="on">CALLS</button><button data-right="P">PUTS</button></span>
@@ -2204,7 +2222,7 @@ function makeColsResizable(table){
 
 /* ===================== TED — TWINEY EXECUTION DESK: panel pool ===================== */
 const PANELS = {
-  chart: "CHART", chart2: "CHART 2", chart3: "CHART 3", ochart: "OPTION CHART", obook: "OPTION LEVEL II", otape: "OPTION T&S", obig: "OPTION BIG TAPE", foot: "FOOTPRINT 5m", book: "LEVEL II", tape: "TIME & SALES", bigtape: "BIG TAPE", options: "OPTION CHAIN", setup: "PLAY SETUP", ps60: "PS60", conviction: "CONVICTION", story: "PS60 STORY", score: "DESK SCORE", reload: "RELOADS",
+  chart: "CHART", chart2: "CHART 2", chart3: "CHART 3", ochart: "OPTION CHART", obook: "OPTION LEVEL II", otape: "OPTION T&S", obig: "OPTION BIG TAPE", foot: "FOOTPRINT 5m", book: "LEVEL II", tape: "TIME & SALES", bigtape: "BIG TAPE", options: "OPTION CHAIN", setup: "PLAY SETUP", ps60: "PS60", conviction: "CONVICTION", story: "PS60 STORY", score: "DESK SCORE", ai: "DESK AI", reload: "RELOADS",
   ticket: "ORDER ENTRY", positions: "POSITIONS", orders: "ORDERS", watch: "WATCHLIST", calls: "CALLS",
   flow: "OPTION FLOW", eqflow: "EQUITY FLOW", urgency: "URGENT FLOW", bigmoney: "BIG MONEY 30D", myalerts: "ALERTS", desk: "DESK", journal: "JOURNAL", messages: "MESSAGES"};
 const SYMBOL_LINKED = new Set(["chart", "chart2", "chart3", "foot", "book", "tape", "bigtape", "options", "ps60", "reload", "ticket", "calls", "setup", "bigmoney", "conviction", "story"]);
@@ -4055,7 +4073,7 @@ function normalize(l){
   const placed = new Set([].concat(...ZONES.map(z => out.zones[z])).concat(Object.keys(out.floats || {})));
   // a panel new in a build docks itself once (ALERTS beside the watchlist, EQUITY FLOW beside the option flow), so it is
   // not lost behind the PANELS menu; a panel you hid yourself stays hidden
-  const NEW_PANELS = {myalerts: "TL", eqflow: "BC", urgency: "BC", bigmoney: "BC", conviction: "BC", bigtape: "BX", options: "BC", ochart: "BC", story: "BL", score: "BL"};
+  const NEW_PANELS = {myalerts: "TL", eqflow: "BC", urgency: "BC", bigmoney: "BC", conviction: "BC", bigtape: "BX", options: "BC", ochart: "BC", story: "BL", score: "BL", ai: "BL"};
   out.seen = Array.isArray(out.seen) ? out.seen : Object.keys(P).filter(id => !(id in NEW_PANELS));
   for (const id of Object.keys(NEW_PANELS)) if (P[id] && !out.seen.includes(id)){ out.seen.push(id); if (!placed.has(id)){ out.zones[NEW_PANELS[id]].push(id); placed.add(id); } }
   out.hidden = Object.keys(P).filter(id => !placed.has(id));
@@ -6953,7 +6971,7 @@ function render(s){
   renderQuote(d);
   charts.chart.el.classList.toggle("clean", store.get("clean", true));
   drawChart(charts.chart); drawChart(charts.foot); drawChart(charts.chart2); drawChart(charts.chart3); renderFast(d);
-  renderBook(d); renderTape(d); renderSetup(d); renderPS60(d); renderReloads(d); renderConviction(d); renderStory(d); renderScore(s);
+  renderBook(d); renderTape(d); renderSetup(d); renderPS60(d); renderReloads(d); renderConviction(d); renderStory(d); renderScore(s); try { renderAI(s); } catch (e) {}
   renderTicket(s, d);
   renderWatch(s); renderCalls(s); renderPositions(s); renderOrders(s);
   renderDesk(s); renderTrades(s); renderFlow(s); renderFlowScope(s); renderEquity(s); renderMyAlerts(s); renderUrgency(s); renderBigMoney(curData());
@@ -8510,6 +8528,95 @@ window.addEventListener("resize", () => { ladFitT = 0; });
 { const cv = document.getElementById("cvStrip");
   if (cv){ cv.style.cursor = "pointer"; cv.title = "the 8 PS60 checks, left to right: DAILY MP · PIVOT · CONFIRM · 2ND ENTRY · BUILD · FLOW SIDE · FLOW QUALITY · CORRELATION. Green = met, yellow = getting there, red = not yet. Hover a dot for that check; click for the CONVICTION panel with all of them.";
     cv.addEventListener("click", () => { if (typeof showPanel === "function") showPanel("conviction"); }); } }
+
+/* ===================== DESK AI: a local Ollama model, taught PS60, reading the desk's own records =====================
+   Never in the live read. The shell (buttons, status, output) is built once; the status line follows the state; the
+   output is fetched when a job finishes. Everything the model was given sits behind WHAT IT WAS GIVEN. */
+const AIV = {built: false, job: null, shown: null, polling: null, out: null, given: false, files: []};
+const AI_JOBS = [["recap", "RECAP + TOMORROW", "today's recap and tomorrow's plan, from the desk's own records (the story, the calls, THE DESK SCORE, the levels, the 60-minute candles, the option flow, your notes and fills)"],
+                 ["explain", "EXPLAIN", "why the desk said what it said on the ticker on screen, in plain words"],
+                 ["notes", "CLEAN NOTES", "your notes and mic markers today, cleaned up into a journal"],
+                 ["study", "STUDY DAYS", "the cross-day study: the storyline and the score over the recorded days"]];
+function aiShell(){
+  return `<div class="aibar">${AI_JOBS.map(([j, t, tip]) => `<button data-aijob="${j}" title="${esc(tip)}">${t}</button>`).join("")}<span class="sp"></span><button data-aifiles="1" title="earlier answers, saved under recordings/ai">SAVED</button></div>
+    <div class="aiask"><input id="aiAsk" placeholder="ask about today · Enter" maxlength="400"><button data-aijob="ask" title="a question about today, answered from the desk's own data and PS60">ASK</button></div>
+    <div class="aist" id="aiStatus"></div>
+    <div class="aiout" id="aiOut"><div class="dim" style="padding:6px 8px">Nothing written yet. RECAP + TOMORROW after the close, or ASK anything about today.</div></div>`;
+}
+function aiFmt(text){
+  // the model's markdown-ish text as safe HTML: headings, bold, bullets, paragraphs
+  const lines = String(text || "").split(/\r?\n/); let h = "", ul = false;
+  const inl = s => esc(s).replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>").replace(/`([^`]+)`/g, "<code>$1</code>");
+  for (const raw of lines){
+    const l = raw.trim();
+    if (/^[-*•] /.test(l)){ if (!ul){ h += "<ul>"; ul = true; } h += `<li>${inl(l.slice(2))}</li>`; continue; }
+    if (ul){ h += "</ul>"; ul = false; }
+    if (!l){ continue; }
+    const m = /^(#{1,4})\s+(.*)$/.exec(l);
+    if (m){ h += `<h5>${inl(m[2])}</h5>`; continue; }
+    if (/^(PART|TODAY|TOMORROW|[A-Z][A-Z0-9 '+&/—–-]{3,}:?)$/.test(l) && l.length < 60){ h += `<h5>${inl(l)}</h5>`; continue; }
+    h += `<p>${inl(l)}</p>`;
+  }
+  if (ul) h += "</ul>";
+  return h;
+}
+function renderAI(s){
+  if (!P.ai) return;
+  const a = s && s.ai;
+  if (!AIV.built){ P.ai.pc.innerHTML = aiShell(); AIV.built = true; aiWire(); }
+  const st = document.getElementById("aiStatus"); if (!st) return;
+  let line;
+  if (!a) line = `<b class="bad">DESK AI not loaded</b>`;
+  else if (!a.enabled) line = `<b class="off">OFF</b> <span>SETTINGS › AI (Ollama): switch it on, pick the model</span>`;
+  else if (a.busy) line = `<b class="run">WRITING ${esc(a.busy.toUpperCase())}…</b> <span>${a.since ? Math.round((s.now - a.since)) + "s" : ""} · the model is reading the desk; a laptop takes a minute or three</span>`;
+  else if (a.reachable === false) line = `<b class="bad">OLLAMA NOT ANSWERING</b> <span>${esc(a.reach_error || "")}</span>`;
+  else if (a.reachable && a.model_ok === false) line = `<b class="bad">MODEL MISSING</b> <span>Ollama has ${esc((a.models || []).join(", ") || "no model")}: in a terminal run  ollama pull ${esc(a.model || "")}</span>`;
+  else line = `<b class="${a.reachable ? "ok" : ""}">${a.reachable ? "READY" : "ON"}</b> <span>${esc(a.model || "")} · local, nothing leaves this computer${a.error ? " · last: " + esc(a.error) : ""}</span>`;
+  const last = a && a.last ? Object.entries(a.last).map(([j, r]) => `<i title="${esc(r.error || r.title || "")}" data-aishow="${j}" class="${r.error ? "bad" : ""}">${j} ${typeof nyHM12 === "function" ? nyHM12(r.t) : ""}</i>`).join("") : "";
+  const h = line + (last ? `<span class="ailast">${last}</span>` : "");
+  if (st.dataset.h !== h){ st.dataset.h = h; st.innerHTML = h; }
+  P.ai.pc.querySelectorAll("button[data-aijob]").forEach(b => { b.disabled = !!(a && a.busy); });
+  // a job just finished: show it
+  if (a && !a.busy && AIV.job && a.last && a.last[AIV.job] && a.last[AIV.job].t >= (AIV.started || 0)){ const j = AIV.job; AIV.job = null; aiShow(j); }
+}
+async function aiShow(job){
+  AIV.shown = job;
+  const out = document.getElementById("aiOut"); if (!out) return;
+  let r = null;
+  try { r = await (await fetch("/api/ai/result?job=" + encodeURIComponent(job))).json(); } catch (e) { r = null; }
+  const res = r && r.result;
+  if (!res){ out.innerHTML = `<div class="dim" style="padding:6px 8px">nothing for ${esc(job)} yet</div>`; return; }
+  const when = typeof nyHM12 === "function" ? nyHM12(res.t) : "";
+  out.innerHTML = `<div class="aihd"><b>${esc(res.title || job)}</b><span class="dim">${when}${res.ms ? " · " + Math.round(res.ms / 1000) + "s" : ""}${res.file ? " · saved" : ""}</span><span class="sp"></span><button data-aigiven="1">${AIV.given ? "HIDE" : "WHAT IT WAS GIVEN"}</button></div>
+    ${res.error ? `<div class="aierr">${esc(res.error)}</div>` : `<div class="aitxt">${aiFmt(res.text)}</div>`}
+    <pre class="aigiven" style="display:${AIV.given ? "block" : "none"}">${esc(res.given || "")}</pre>`;
+}
+async function aiFiles(){
+  const out = document.getElementById("aiOut"); if (!out) return;
+  let r = null; try { r = await (await fetch("/api/ai/list")).json(); } catch (e) { r = null; }
+  const files = (r && r.files) || [];
+  out.innerHTML = `<div class="aihd"><b>SAVED ANSWERS</b><span class="dim">recordings/ai</span></div>` + (files.length ? `<div class="aifiles">${files.map(f => `<a href="/api/ai/file?name=${encodeURIComponent(f.name)}" target="_blank">${esc(f.job)} · ${esc(f.day)} · ${esc(f.name.split("-")[2] || "").replace(".md", "")}</a>`).join("")}</div>` : `<div class="dim" style="padding:6px 8px">none yet</div>`);
+}
+function aiWire(){
+  P.ai.pc.addEventListener("click", async e => {
+    const jb = e.target.closest("button[data-aijob]");
+    if (jb){
+      const job = jb.dataset.aijob, body = {job};
+      if (job === "explain") body.symbol = curSym;
+      if (job === "ask"){ const q = (document.getElementById("aiAsk").value || "").trim(); if (!q) return; body.text = q; }
+      AIV.job = job; AIV.started = (state && state.now) || Date.now() / 1000;
+      const out = document.getElementById("aiOut"); if (out) out.innerHTML = `<div class="dim" style="padding:6px 8px">reading the desk and writing the ${esc(job)}…</div>`;
+      const r = await post("/api/ai/run", body);
+      if (!r.ok){ AIV.job = null; if (out) out.innerHTML = `<div class="aierr">${esc(r.reason || "could not start")}</div>`; }
+      return;
+    }
+    if (e.target.closest("button[data-aifiles]")){ aiFiles(); return; }
+    if (e.target.closest("button[data-aigiven]")){ AIV.given = !AIV.given; if (AIV.shown) aiShow(AIV.shown); return; }
+    const sh = e.target.closest("i[data-aishow]"); if (sh){ aiShow(sh.dataset.aishow); return; }
+  });
+  const ask = document.getElementById("aiAsk");
+  if (ask) ask.addEventListener("keydown", e => { e.stopPropagation(); if (e.key === "Enter"){ const b = P.ai.pc.querySelector('button[data-aijob="ask"]'); if (b && !b.disabled) b.click(); } });
+}
 
 
 /* ---------- command bar wiring */
