@@ -1,0 +1,1240 @@
+
+/* ===== PS60 EXECUTION DESK — application shell ===== */
+html,body{height:100%} body{overflow:hidden;font-size:12px}
+#app{display:grid;grid-template-rows:34px 26px minmax(0,1fr) 22px;height:100vh}
+#cmd{display:flex;align-items:center;gap:6px;padding:0 8px;background:#0b0f15;border-bottom:1px solid var(--line);white-space:nowrap;overflow:hidden}
+#cmd > *{flex:0 0 auto}
+#cmd button{padding:2px 7px;font-size:11px;border-radius:3px}
+#cmd label{display:inline-flex;align-items:center;gap:3px;font-size:11px;color:var(--dim)}
+#brand{font-size:12px;font-weight:800;letter-spacing:.14em;color:var(--gold);margin-right:4px}
+#symbox{display:flex;align-items:center;gap:2px}
+#symIn{width:96px;font:700 14px var(--mono);letter-spacing:.06em;text-transform:uppercase;background:#05070b;color:var(--gold);border:1px solid #3b3410;border-radius:3px;padding:3px 6px}
+#symIn:focus{outline:1px solid var(--gold)}
+#symIn::placeholder{color:#4a5566;font:400 11px system-ui;letter-spacing:0;text-transform:none}
+#symHist{font:inherit;font-size:11px;background:#05070b;color:var(--dim);border:1px solid var(--line);border-radius:3px;max-width:40px}
+#cmd .spacer{flex:1 1 0 !important;min-width:4px}
+#cmd .sep{width:1px;height:18px;background:var(--line);margin:0 3px}
+.led{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--dim);margin-right:4px;vertical-align:middle}
+.led.ok{background:var(--buy);box-shadow:0 0 5px var(--buy)} .led.warn{background:var(--warn)} .led.bad{background:var(--sell)}
+#armBtn{font-weight:800;letter-spacing:.06em} #armBtn.armed{background:#0f3d25;border-color:var(--buy);color:#dfffee} #armBtn.off{color:var(--dim)}
+#armBtn.locked{background:#5a1218;border-color:var(--sell);color:#fff}
+#sideBtn{font-weight:800;padding:2px 7px;min-width:0;margin-left:2px} #sideBtn.long{background:#0f3d25;border-color:var(--buy);color:#dfffee} #sideBtn.short{background:#5a1218;border-color:var(--sell);color:#fff} #sideBtn:disabled{opacity:.4}
+/* workspace tab bar */
+#wsbar{display:flex;align-items:center;gap:2px;padding:0 6px;background:#0d121a;border-bottom:1px solid var(--line);white-space:nowrap;overflow:hidden}
+.stab{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;font:700 12px var(--mono);letter-spacing:.06em;color:var(--dim);border:1px solid transparent;border-bottom:0;border-radius:3px 3px 0 0;cursor:pointer;height:24px;box-sizing:border-box}
+.stab.on{background:var(--panel);color:var(--gold);border-color:var(--line)}
+.stab .x{font-size:10px;color:var(--dim);padding:0 2px} .stab .x:hover{color:var(--sell)}
+.stab .v{font-size:10px;opacity:.7}
+#wsbar .add{padding:1px 8px;font-size:12px;border-radius:3px}
+#wsbar .right{margin-left:auto;display:flex;gap:4px;align-items:center}
+#wsbar select,#wsbar button{font-size:11px;padding:1px 6px;border-radius:3px}
+/* docking workspace */
+#work{position:relative;display:grid;min-height:0;min-width:0;background:#070a0f;
+  grid-template-columns:var(--c1,0px) var(--g1,0px) minmax(0,1fr) var(--g2,0px) var(--c3,0px) var(--g3,0px) var(--c4,0px);
+  grid-template-rows:minmax(0,1fr) var(--gr,0px) var(--r2,0px)}
+.zone{display:flex;flex-direction:column;min-height:0;min-width:0;position:relative;background:var(--panel);border:1px solid var(--line);margin:1px}
+.zone.empty{display:none}
+.zone[data-zone="TL"]{grid-column:1;grid-row:1} .zone[data-zone="TC"]{grid-column:3;grid-row:1} .zone[data-zone="TR"]{grid-column:5;grid-row:1} .zone[data-zone="TX"]{grid-column:7;grid-row:1}
+.zone[data-zone="BL"]{grid-column:1;grid-row:3} .zone[data-zone="BC"]{grid-column:3;grid-row:3} .zone[data-zone="BR"]{grid-column:5;grid-row:3} .zone[data-zone="BX"]{grid-column:7;grid-row:3}
+.zone.tall{grid-row:1/4}   /* a column with only one zone in it runs the full height */
+.zone.drop{outline:2px solid var(--gold);outline-offset:-2px}
+.ztabs{display:flex;align-items:stretch;height:22px;flex:0 0 auto;background:#0f141c;border-bottom:1px solid var(--line);overflow:hidden}
+.ztab{display:inline-flex;align-items:center;gap:6px;padding:0 8px;font-size:10.5px;letter-spacing:.08em;color:var(--dim);cursor:grab;border-right:1px solid var(--line);user-select:none;white-space:nowrap}
+.ztab.on{background:var(--panel);color:var(--text);font-weight:700}
+.ztab .sym{color:var(--gold);font-family:var(--mono);letter-spacing:.02em;font-weight:700}
+.ztab .ctl{display:none;gap:2px;margin-left:2px} .ztab.on .ctl{display:inline-flex}
+.ztab .ctl span{cursor:pointer;padding:0 3px;color:var(--dim)} .ztab .ctl span:hover{color:var(--text)}
+.zbody{flex:1 1 0;min-height:0;position:relative}
+.pnl{position:absolute;inset:0;display:none;min-height:0;overflow:hidden;flex-direction:column}
+.pnl.on{display:flex}
+.pnl > .pc{flex:1 1 0;min-height:0;overflow:auto;position:relative}
+.pnl > .pc.nos{overflow:hidden}
+.gut{background:transparent;z-index:3} .gut:hover{background:rgba(255,197,61,.35)}
+.gut.v{cursor:col-resize;grid-row:1/4} .gut.h{cursor:row-resize;grid-column:1/8;grid-row:2}
+#g1{grid-column:2} #g2{grid-column:4}
+/* floating panel */
+.float{position:absolute;z-index:8;background:var(--panel);border:1px solid var(--gold);box-shadow:0 8px 30px rgba(0,0,0,.6);display:flex;flex-direction:column;min-width:240px;min-height:120px;resize:both;overflow:hidden}
+.float .ztabs{cursor:move}
+.max{position:absolute !important;inset:2px !important;z-index:9;width:auto !important;height:auto !important}
+/* chart / foot in panels */
+.pnl .chart-wrap{position:absolute;inset:0;border:0;border-radius:0}
+/* ticket */
+.ticket{display:grid;grid-template-columns:auto 1fr;gap:4px 8px;padding:6px 8px;align-items:center;font-size:12px}
+.ticket label{color:var(--dim);font-size:10.5px;letter-spacing:.06em;text-align:right}
+.ticket input,.ticket select{font:inherit;font-family:var(--mono);background:#05070b;color:var(--text);border:1px solid var(--line);border-radius:3px;padding:3px 6px;width:100%;box-sizing:border-box}
+.ticket .row{display:flex;gap:4px;align-items:center} .ticket .row input{flex:1}
+.ticket .row button{padding:2px 6px;font-size:10.5px;border-radius:3px}
+.ticket .sides{display:flex;gap:4px} .ticket .sides button{flex:1;font-weight:800;letter-spacing:.08em;padding:5px 0;border-radius:3px;opacity:.5}
+.ticket .sides button.on{opacity:1} .ticket .sides .b.on{background:#0f3d25;border-color:var(--buy);color:#dfffee} .ticket .sides .s.on{background:#4a161b;border-color:var(--sell);color:#ffe3e6}
+.ticket .go{grid-column:1/3;display:flex;gap:6px;align-items:center;margin-top:2px}
+.ticket .go button.tx{flex:1;font-weight:800;letter-spacing:.1em;padding:6px 0;border-radius:3px;font-size:13px}
+.ticket .go button.tx.b{background:#0f3d25;border-color:var(--buy);color:#dfffee} .ticket .go button.tx.s{background:#4a161b;border-color:var(--sell);color:#ffe3e6}
+.ticket .go button.tx:disabled{opacity:.35;cursor:not-allowed}
+.ticket .why{grid-column:1/3;font-size:11px;color:var(--warn);min-height:14px}
+.ticket .st{grid-column:1/3;font-family:var(--mono);font-size:11px;color:var(--dim);border-top:1px solid var(--line);padding-top:4px;max-height:80px;overflow:auto}
+.ticket .st b{color:var(--text)}
+.ticket .qbtn{padding:2px 6px}
+.ticket .val{font-family:var(--mono)} .ticket .opts{grid-column:1/3;display:flex;gap:12px;color:var(--dim);font-size:11px}
+/* tables */
+.grid{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:11.5px;font-variant-numeric:tabular-nums}
+.grid th{position:sticky;top:0;background:#0f141c;color:var(--dim);font-weight:500;font-size:10px;letter-spacing:.06em;padding:3px 6px;text-align:right;border-bottom:1px solid var(--line)}
+.grid td{padding:2px 6px;text-align:right;border-bottom:1px solid #131923;white-space:nowrap}
+.grid th:first-child,.grid td:first-child{text-align:left}
+.grid tr.sel td{background:#1a2230} .grid tr:hover td{background:#141b26}
+.grid td.l{text-align:left} .grid .b{color:var(--buy)} .grid .s{color:var(--sell)}
+.grid button{padding:1px 6px;font-size:10.5px;border-radius:3px}
+.grid button.danger{border-color:var(--sell);color:var(--sell)} .grid button.danger:hover{background:#4a161b;color:#fff}
+.stt{font-size:10px;font-weight:700;letter-spacing:.06em;padding:0 5px;border-radius:2px;background:#1a2230}
+.stt.FILLED{color:var(--buy)} .stt.CANCELED,.stt.REJECTED{color:var(--sell)} .stt.ACKNOWLEDGED{color:var(--cyan)} .stt.SUBMITTED,.stt.CREATED,.stt.CANCEL{color:var(--warn)} .stt.PARTIALLY{color:var(--gold)}
+.pct.up{color:var(--buy)} .pct.dn{color:var(--sell)}
+/* quote strip inside the chart panel */
+.qs{display:flex;gap:10px;align-items:center;padding:2px 8px;font-family:var(--mono);font-size:12px;white-space:nowrap;overflow:hidden;background:#0f141c;border-bottom:1px solid var(--line);flex:0 0 auto;height:22px}
+.qs .sym{font-weight:800;color:var(--gold);font-size:13px} .qs .dim{font-size:11px}
+/* status bar */
+#status{display:flex;align-items:center;gap:14px;padding:0 10px;background:#0b0f15;border-top:1px solid var(--line);font-family:var(--mono);font-size:11px;color:var(--dim);white-space:nowrap;overflow:hidden}
+#status b{color:var(--text)} #status .spacer{flex:1}
+/* PS60 panel */
+.ps60p{padding:6px 10px;font-size:12px} .ps60p .hl{font-size:13px;font-weight:600;margin-bottom:4px}
+.ps60p ul{margin:2px 0 6px 16px;padding:0;color:#c4cddb} .ps60p li{margin:1px 0}
+.ps60p .kv{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;font-family:var(--mono);font-size:11.5px;margin:4px 0}
+.ps60p .kv span:nth-child(odd){color:var(--dim);letter-spacing:.06em;font-size:10px}
+.reloads{display:grid;gap:4px;padding:6px 10px}
+.rl{display:grid;grid-template-columns:auto 1fr;gap:1px 10px;padding:6px 10px;border-left:4px solid var(--dim);background:var(--panel2);font-family:var(--mono)}
+.rl.buyer{border-color:var(--buy)} .rl.seller{border-color:var(--sell)} .rl.gone{opacity:.55}
+.rl .t{grid-column:1/3;font-weight:800;letter-spacing:.08em;font-size:12px} .rl.buyer .t{color:var(--buy)} .rl.seller .t{color:var(--sell)}
+.rl .k{color:var(--dim);font-size:10px;letter-spacing:.06em} .rl .v{font-size:12px;color:var(--text)}
+/* menus */
+.menu .pop{min-width:200px}
+.pop .row{display:flex;gap:6px;align-items:center;padding:2px 0} .pop input{font:inherit;font-size:11px;background:#05070b;color:var(--text);border:1px solid var(--line);border-radius:3px;padding:2px 5px}
+.pop button{font-size:11px;padding:1px 6px;border-radius:3px}
+/* hotkeys */
+.hk{width:100%;border-collapse:collapse;font-size:12px} .hk td{padding:3px 6px;border-bottom:1px solid #131923} .hk td.k{font-family:var(--mono);color:var(--gold);width:120px}
+.hk td.k.cap{outline:1px solid var(--gold)} .hk .danger{color:var(--sell);font-size:10px}
+.ladder-wrap{border:0;border-radius:0;height:100%}
+.lad{font-size:11.5px} .lad td{height:18px}
+#modal .box{border-radius:4px}
+.legend{display:none}
+.toast{border-radius:3px}
+.pane .chart-hint{display:none}
+.dz{position:absolute;inset:0;z-index:5;pointer-events:none}
+.wlrow{display:grid;grid-template-columns:1fr auto auto;gap:6px;padding:3px 8px;font-family:var(--mono);font-size:11.5px;cursor:pointer;border-bottom:1px solid #131923;align-items:center}
+.wlrow:hover{background:#141b26} .wlrow.cur{background:#1a2230;box-shadow:inset 3px 0 0 var(--gold)}
+.wlrow .g{font-size:9.5px;font-weight:700;padding:0 5px;border-radius:2px}
+.wlrow .g.READY{background:#163a28;color:var(--buy)} .wlrow .g.WATCH{background:#3a3016;color:var(--gold)} .wlrow .g.PASS{background:#3a1a1e;color:var(--sell)}
+.wlrow .w{grid-column:1/4;font-size:10px;color:var(--dim);font-family:system-ui;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* PLAY SETUP: the trader's inputs; everything else derives from them */
+.setup .hdr{grid-column:1/3;display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--dim);letter-spacing:.06em}
+.setup .hdr b{color:var(--gold);font-size:13px;letter-spacing:0}
+.setup input.bad{border-color:var(--sell)}
+.setup .derived{grid-column:1/3;display:grid;grid-template-columns:auto 1fr;gap:2px 10px;font-family:var(--mono);font-size:11.5px;background:#0a0e15;border:1px solid var(--line);border-radius:3px;padding:5px 8px;margin-top:2px}
+.setup .derived span:nth-child(odd){color:var(--dim);letter-spacing:.06em;font-size:10px}
+.setup .derived .ok{color:var(--buy)} .setup .derived .no{color:var(--sell)} .setup .derived .gold{color:var(--gold)}
+.setup .go button.save{flex:1;font-weight:800;letter-spacing:.1em;padding:6px 0;border-radius:3px;background:#2a2410;border-color:var(--gold);color:#ffeeb0}
+.setup .go button.save:disabled{opacity:.35}
+.setup .msg{grid-column:1/3;font-size:11px;min-height:14px}
+.ticket .risk{display:flex;gap:4px;align-items:center;font-size:11px} .ticket .risk input{width:70px;flex:none} .ticket .risk .out{color:var(--gold);font-family:var(--mono)}
+
+/* big size on the ladder: adjustable bar, stronger tint the more it matters */
+.ladbar{display:flex;align-items:center;gap:6px;padding:2px 8px;height:22px;flex:0 0 auto;background:#0f1012;border-bottom:1px solid #202124;font:500 9.5px var(--sans);letter-spacing:.12em;text-transform:uppercase;color:#7d7f85}
+.ladbar input{width:64px;height:17px;font:11px var(--mono);background:#0a0a0b;color:var(--gold);border:1px solid #26282c;padding:0 4px}
+.ladbar button{padding:0 6px;font-size:9px;height:17px}
+.lad td.sz.big{background:rgba(227,168,58,.16);color:#f2d59a;font-weight:600}
+.lad td.sz.huge{background:rgba(227,168,58,.34);color:#fff;font-weight:700;box-shadow:inset 0 0 0 1px rgba(227,168,58,.6)}
+.lad td.bsz.big,.lad td.bsz.huge{box-shadow:inset 3px 0 0 var(--buy)} .lad td.asz.big,.lad td.asz.huge{box-shadow:inset -3px 0 0 var(--sell)}
+.lad .bigx{display:inline-block;margin:0 3px;padding:0 3px;font:700 9px var(--sans);letter-spacing:.04em;background:var(--gold);color:#0c0c0d;vertical-align:middle}
+.lad .sz{width:auto;min-width:58px;white-space:nowrap}
+
+/* tape speed meter (top of TIME & SALES) */
+.tspeed{display:grid;grid-template-columns:auto auto 1fr;grid-template-rows:auto 26px;gap:2px 10px;align-items:baseline;padding:5px 6px 6px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel);z-index:2}
+.tspeed .tsv{display:flex;gap:4px;align-items:baseline}
+.tspeed .tsv b{font:600 13px var(--mono,monospace)} .tspeed .tsv i{font-style:normal;font-size:9px;letter-spacing:.08em;color:var(--dim)}
+.tspeed .tst{justify-self:end;font-size:10px;font-weight:600;letter-spacing:.08em;color:var(--dim)} .tspeed .tst em{font-style:normal;opacity:.75}
+.tspeed.up .tst{color:var(--gold)} .tspeed.down .tst{color:var(--cyan)}
+.tspeed svg{grid-column:1/-1;width:100%;height:26px;display:block}
+/* ladder: compact but never clipped (column floors come from the header's data-min) */
+.ladbar{letter-spacing:.06em;gap:5px;padding:2px 6px}
+.ladbar input{width:58px}
+.ladder-wrap{overflow-x:auto}
+.lad td.sz{font-variant-numeric:tabular-nums}
+.lad td.whoc{padding:0 1px;text-align:center}
+.lad td.whoc .who{margin:0}
+.lad td.bars .bar-n{font-size:10px}
+.lad td.act{font-size:9.5px;letter-spacing:.02em}
+.lad th:last-child .colgrip{display:none}
+.lad td.px{position:relative}
+.lad td.px .lt{position:absolute;left:1px;top:50%;transform:translateY(-50%);font:700 7.5px var(--sans);letter-spacing:0;line-height:9px;padding:0 1px;background:#d6d6d3;color:#0c0c0d}
+.lad td.px.tagged{text-align:right;padding-left:13px;padding-right:2px}
+.lad td.whoc .pips,.lad td.whoc .bigx{font:600 9px var(--mono);letter-spacing:-.02em;margin:0;padding:0 1px}
+.lad td.whoc .pips.b{color:var(--buy)} .lad td.whoc .pips.a{color:var(--sell)}
+.lad td.whoc .bigx{background:none;color:var(--gold)}
+.lad td.bars{padding:0 2px}
+.lad td.act{padding:0 1px}
+td.bars.l .bar-n{margin-right:1px} td.bars.r .bar-n{margin-left:1px}
+.lad .bar{max-width:calc(100% - 4px)}
+.lad td.whoc .pips{letter-spacing:-.06em}
+/* watchlist add / remove, alerts, equity flow */
+.wlx{margin-left:6px;color:var(--dim);cursor:pointer;font-size:10px;visibility:hidden} .wlrow:hover .wlx,.alrow:hover .wlx{visibility:visible} .wlx:hover{color:var(--sell)}
+.alform{display:flex;flex-wrap:wrap;gap:4px;padding:6px 8px;border-bottom:1px solid var(--line);align-items:center;font:11px var(--sans)}
+.alform input,.alform select{height:20px;font:11px var(--mono);background:#0a0a0b;color:var(--text);border:1px solid #26282c;padding:0 4px}
+.alform #alSym{width:70px;text-transform:uppercase} .alform #alVal{width:90px} .alform label{color:var(--dim);white-space:nowrap}
+.alrow{display:grid;grid-template-columns:auto 1fr auto;gap:8px;padding:3px 8px;font:11.5px var(--mono);border-bottom:1px solid #131923;align-items:center}
+.alrow b{color:var(--gold)} .alrow i{font-style:normal}
+.fl.eq .venue{font:700 9.5px var(--sans);letter-spacing:.08em;padding:1px 6px;border-radius:3px;background:#2c2e33;color:#d6d6d3} .fl.eq .venue.dk{background:#3b2a52;color:#e2d4ff}
+.fl.eq.dk .tk{background:#5a3f86} .fl.eq.lt .tk{background:#3a4658} .fl.eq.c .tk{background:#17a86a} .fl.eq.p .tk{background:#d64541}
+.cmenu .balert{background:#3a2e12;border-color:var(--gold);color:#f2d59a}
+/* ladder option-flow marks */
+.lad th.flow,.lad td.flow{display:none} .lad.flowcol th.flow,.lad.flowcol td.flow{display:table-cell} .lad.flowcol .fdot{display:none}
+.lad td.flow{padding:0 2px;text-align:left;font:600 9.5px var(--mono);white-space:nowrap;overflow:hidden}
+.lad .fm b{padding:0 2px;border-radius:2px;margin-right:2px} .lad .fm b.c{background:rgba(63,181,111,.25);color:#9fe0bd} .lad .fm b.p{background:rgba(217,83,79,.25);color:#f5b3b0}
+.lad .fm i{font-style:normal;color:var(--dim);margin-right:2px} .lad .fm u{text-decoration:none;color:var(--gold)}
+.lad .fm.hot b,.lad .fdot.hot{box-shadow:0 0 0 1px var(--gold),0 0 6px var(--gold);animation:flowring 1.4s infinite}
+@keyframes flowring{0%,100%{box-shadow:0 0 0 1px var(--gold),0 0 4px var(--gold)}50%{box-shadow:0 0 0 1px var(--gold),0 0 10px var(--gold)}}
+.lad .fdot{font-size:10px;line-height:1;border-radius:50%} .lad .fdot.c{color:var(--buy)} .lad .fdot.p{color:var(--sell)} .lad .fdot u{text-decoration:none;font-size:8px;color:var(--gold);vertical-align:top}
+/* urgent flow */
+.fl .urg{font:700 9.5px var(--sans);letter-spacing:.08em;padding:1px 6px;border-radius:3px;background:var(--gold);color:#0c0c0d;margin-left:6px}
+.fl .acc{font:700 9.5px var(--sans);letter-spacing:.06em;color:var(--gold);margin-left:6px}
+.fl.ur .bar{flex:1;height:6px;background:#263043;border-radius:3px;overflow:hidden;margin-left:8px} .fl.ur .bar i{display:block;height:100%;background:var(--gold)}
+.fl.ur.p .bar i{background:#d64541} .fl.ur.hot{box-shadow:inset 3px 0 0 var(--gold)}
+.lad .fm em.urg{font-style:normal;color:var(--gold);margin-right:1px}
+/* the tag column holds R16 and a ghost C / P / A: compact, never clipped; the SOMEBODY KNOWS bolt beside it only when the ladder is wide (the gold price outline says it otherwise) */
+.lad td.whoc .who.big{font-size:9.5px;padding:0 2px;letter-spacing:0} .lad td.whoc .who.gone,.lad td.whoc .who.was{padding:0 3px}
+.lad:not(.flowcol) td.whoc .knows{display:none}
+/* trade log under the play setup */
+.setup .row .suclr{padding:0 6px;font-size:10px;margin-left:4px;color:var(--dim)} .setup .row .suclr:hover{color:var(--sell);border-color:var(--sell)}
+.tlog{margin:8px 6px 6px;border-top:1px solid var(--line);padding-top:6px}
+.tlog-hd{display:flex;justify-content:space-between;align-items:baseline;font:600 10px var(--sans);letter-spacing:.12em;color:var(--dim)} .tlog-hd b{color:var(--gold);margin-left:6px}
+.tlog-in{display:flex;gap:4px;margin:5px 0} .tlog-in input{flex:1;height:22px;font:11.5px var(--mono);background:#0a0a0b;color:var(--text);border:1px solid #26282c;padding:0 6px}
+.tlog-in button{height:22px;padding:0 8px;font-size:10px;white-space:nowrap} .tlog-in button.on{background:#3d1c1c;border-color:#ff2d55;color:#ffb3bb}
+.tlog-list{max-height:220px;overflow-y:auto}
+.tl{display:grid;grid-template-columns:auto auto 1fr;gap:6px;padding:3px 2px;border-bottom:1px solid #131923;font:11.5px var(--mono);align-items:start}
+.tl .tm{color:var(--dim);font-size:10.5px} .tl .ic{width:14px;text-align:center} .tl .tx{white-space:normal;line-height:1.35}
+.tl.level .tx{color:var(--gold)} .tl.voice .tx{color:var(--text)} .tl.typed .tx{color:#b8b8b4}
+/* reload buyer / seller: unmistakable on the ladder */
+.lad td.bars.rlw{font:800 9px var(--sans);letter-spacing:.06em;color:#fff;text-align:center;padding:0;overflow:hidden}
+.lad td.bars.rlw.b{background:var(--buy)} .lad td.bars.rlw.s{background:var(--sell)}
+.lad tr.rl-bid td.bsz{background:rgba(63,181,111,.85);color:#fff;font-weight:700} .lad tr.rl-ask td.asz{background:rgba(217,83,79,.85);color:#fff;font-weight:700}
+.lad tr.rl-bid td.px,.lad tr.rl-ask td.px{font-weight:800}
+.lad tr.rl-bid td:first-child{box-shadow:inset 3px 0 0 var(--buy)} .lad tr.rl-ask td:last-child{box-shadow:inset -3px 0 0 var(--sell)}
+.lad tr.flash td{animation:rlflash 0.5s 6}
+@keyframes rlflash{0%,100%{filter:none}50%{filter:brightness(2.2)}}
+/* the banner over the ladder */
+.rlban{display:none;flex-wrap:wrap;gap:4px;padding:3px 6px;background:#0f1012;border-bottom:1px solid #202124}
+.rlban.on{display:flex}
+.rlb{font:800 10px var(--sans);letter-spacing:.08em;padding:2px 7px;border-radius:3px;cursor:pointer;color:#fff;white-space:nowrap}
+.rlb.b{background:var(--buy)} .rlb.s{background:var(--sell)} .rlb.on{opacity:.9} .rlb.up,.rlb.down{animation:rlflash 1.2s infinite}
+/* ladder text size (COLS -> Text size) */
+.ladder-wrap{--ladz:1}
+.lad{font-size:calc(11.5px * var(--ladz))} .lad td{height:calc(18px * var(--ladz))} .lad th{font-size:calc(9px * var(--ladz))}
+.lad td.whoc .who.big,.lad td.whoc .pips,.lad td.whoc .bigx{font-size:calc(9.5px * var(--ladz))} .lad td.bars .bar-n{font-size:calc(10px * var(--ladz))}
+.lad td.act{font-size:calc(9.5px * var(--ladz))} .lad td.flow{font-size:calc(9.5px * var(--ladz))} .lad td.bars.rlw{font-size:calc(9px * var(--ladz))}
+.lad td.px .lt{font-size:calc(7.5px * var(--ladz))}
+.lad.zoomtrim th.act,.lad.zoomtrim td.act{display:none}
+.setup .auto{grid-column:1/3;display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;font-family:var(--mono);font-size:11px;background:#0a0e15;border:1px solid var(--line);border-radius:3px;padding:5px 8px}
+.setup .auto label{display:flex;gap:5px;align-items:center;font-size:10px;letter-spacing:.06em;color:var(--gold);white-space:nowrap;cursor:pointer}
+.setup .auto.off label{color:var(--dim)} .setup .auto .ok{color:var(--buy)} .setup .auto .gold{color:var(--gold)} .setup .auto .dim{color:var(--dim)}
+.setup .go #suClear{padding:6px 10px;font-size:10.5px;letter-spacing:.08em}
+.setup .auto .no{color:var(--sell)}
+.qs .qgear{padding:0 7px;font-size:14px;line-height:18px;margin-left:4px}
+.cs-pop{display:block;position:fixed;z-index:70;width:330px;max-height:78vh;overflow:auto;padding:8px 10px;font-size:11.5px}
+.cs-pop .cs-hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+.cs-pop .cs-hd button{margin-left:4px;padding:1px 7px}
+.cs-pop h5{margin:9px 0 3px;font-size:10px;letter-spacing:.12em;color:var(--gold)}
+.cs-pop .cs-row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:2px 0}
+.cs-pop .cs-row input[type=color]{width:34px;height:20px;padding:0;border:1px solid var(--line);background:none}
+.cs-pop .cs-row input[type=range]{width:110px}
+.cs-pop .cs-row button{padding:0 5px;font-size:10px}
+.cs-pop{background:#0e1117;border:1px solid #2a3548;border-radius:4px;box-shadow:0 10px 30px rgba(0,0,0,.6);color:#d6d6d3}
+.cs-pop .cs-row span:first-child{color:#c9ced6}
+
+/* Level II, traditional and compact: buyers left, sellers right; columns shrink to a few px and the text clips */
+.lad.lad3{font-size:calc(11px * var(--ladz,1));border-collapse:collapse}
+.lad.lad3 td{height:calc(15px * var(--ladz,1));padding:0 2px;white-space:nowrap;overflow:hidden;text-overflow:clip;line-height:1}
+.lad.lad3 th{font-size:calc(9px * var(--ladz,1));padding:1px 2px;white-space:nowrap;overflow:hidden;letter-spacing:.04em;position:relative}
+.lad.lad3 th.flow,.lad.lad3 td.flow{display:table-cell} .lad.lad3.noflow th.flow,.lad.lad3.noflow td.flow{display:none}
+.lad.lad3 td.flow{font:600 calc(9.5px * var(--ladz,1)) var(--mono);text-align:center}
+.lad.lad3 td.fc{background:rgba(38,208,124,.04)} .lad.lad3 td.fp{background:rgba(255,77,94,.04)}
+.lad.lad3 .fs.c{color:#3ee08f} .lad.lad3 .fs.p{color:#ff6b78} .lad.lad3 .fs u{text-decoration:none;opacity:.7;font-size:.85em;margin-left:1px}
+.lad.lad3 .fs.hot{outline:1px solid currentColor;outline-offset:-1px;border-radius:2px;padding:0 1px}
+.lad.lad3 td.sz.click{cursor:pointer} .lad.lad3 td.sz.click:hover{outline:1px solid rgba(255,255,255,.35);outline-offset:-1px}
+.lad.lad3 td.sz .mine{margin-left:2px} .lad.lad3 td.sz .mine .chip{font-size:.85em;padding:0 2px}
+.lad.lad3 td.bars.rlw{font:700 calc(10px * var(--ladz,1)) var(--mono);letter-spacing:0;text-align:center}
+.lad.lad3 td.bars .bar-n{font-size:calc(9.5px * var(--ladz,1))}
+.lad.lad3 td.act{font-size:calc(9px * var(--ladz,1))}
+.lad.lad3 .colgrip{width:7px;right:-3px}
+body.colresizing,body.colresizing *{cursor:col-resize!important;user-select:none}
+.legend.lg3{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center;font-size:10px;padding:3px 4px}
+.legend.lg3 .howto{padding:0 6px;font-size:9.5px;margin-left:auto}
+.howto-pop{display:block;position:fixed;z-index:75;width:400px;max-width:calc(100vw - 16px);background:#0e1117;border:1px solid #2a3548;border-radius:4px;box-shadow:0 10px 30px rgba(0,0,0,.6);padding:8px 12px;font-size:12px;line-height:1.45;color:#d6d6d3}
+.howto-pop p{margin:6px 0} .howto-pop .cs-hd{display:flex;justify-content:space-between;align-items:center}
+/* the header (and its column grips) stays pinned to the top of the ladder while the rows scroll */
+.lad.lad3 tr:first-child th{position:sticky;top:0;z-index:5;background:#0d1016;box-shadow:inset 0 -1px 0 #2a3548}
+
+.bm-hd{display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 10px;padding:4px 6px;font-size:10.5px;letter-spacing:.06em;border-bottom:1px solid var(--line)}
+.bm-list{overflow:auto;max-height:100%}
+.bm{display:grid;grid-template-columns:auto auto auto 1fr;gap:1px 8px;padding:4px 6px;border-bottom:1px solid #1a2130;font:11px var(--mono);border-left:3px solid #3a4558}
+.bm.good{border-left-color:var(--buy)} .bm.bad{border-left-color:var(--sell)}
+.bm .amt{font-weight:700;color:var(--gold)} .bm .ct.c{color:#3ee08f} .bm .ct.p{color:#ff6b78} .bm .ag{color:var(--dim)}
+.bm .st{font-weight:700;letter-spacing:.04em} .bm.good .st{color:var(--buy)} .bm.bad .st{color:var(--sell)}
+.bm .tx{grid-column:1/-1;color:#c9ced6;font-family:var(--sans);font-size:11.5px}
+.bm .st{background:none!important;border:0!important;padding:0!important;margin:0!important;box-shadow:none!important}
+
+.fa-sub .ur-search{display:inline-flex;gap:3px;align-items:center;margin-left:auto}
+.fa-sub .ur-search input{width:64px;text-transform:uppercase;font:600 11px var(--mono);padding:1px 4px}
+.fa-sub .ur-search button{padding:0 5px;font-size:10px}
+.ur-head{padding:5px 8px;font-size:11.5px;border-bottom:1px solid var(--line)} .ur-head .c{color:#3ee08f} .ur-head .p{color:#ff6b78}
+.ur-sec{padding:4px 8px 2px;font-size:9.5px;letter-spacing:.14em;color:var(--gold)}
+.ur-h{display:grid;grid-template-columns:44px 1fr 30px 56px 44px 44px 14px;gap:4px;padding:2px 8px;font:11px var(--mono);border-bottom:1px solid #161c27;align-items:center}
+.ur-h.c .ct{color:#3ee08f} .ur-h.p .ct{color:#ff6b78} .ur-h .tm,.ur-h .k,.ur-h .dte{color:var(--dim)} .ur-h .pr{color:var(--gold);text-align:right} .ur-h .otm{text-align:right;color:#c9ced6}
+.setup .derived .gold,.kv .gold{color:var(--gold)} .kv .ok{color:var(--buy)} .kv .no{color:var(--sell)}
+
+/* CONVICTION BOARD strip over the chart and panel */
+.cvstrip{display:none;align-items:center;gap:10px;padding:2px 8px;font:11.5px var(--mono);height:20px;border-bottom:1px solid var(--line);background:#0f141c;white-space:nowrap;overflow:hidden}
+.cvstrip.pass,.cvstrip.watch,.cvstrip.armed,.cvstrip.ready_to_go,.cvstrip.invalidated{display:flex}
+.cvstrip .cvv{font-weight:800;letter-spacing:.06em} .cvstrip .cvs{font-weight:700;color:var(--gold)}
+.cvstrip.ready_to_go .cvv{color:#dfffee;background:#0f3d25;padding:0 6px;border-radius:2px;animation:cvpulse 1.2s ease-in-out infinite}
+.cvstrip.armed .cvv{color:var(--gold)} .cvstrip.watch .cvv{color:#c9ced6} .cvstrip.pass .cvv{color:var(--dim)}
+.cvstrip.invalidated .cvv{color:#ffe3e6;background:#4a161b;padding:0 6px;border-radius:2px;animation:cvpulse 1.2s ease-in-out infinite}
+@keyframes cvpulse{0%,100%{box-shadow:0 0 0 0 rgba(255,255,255,0)}50%{box-shadow:0 0 0 3px rgba(255,255,255,.18)}}
+.gates b{font-weight:700;color:var(--dim);margin-right:8px;letter-spacing:.04em} .gates b.on{color:var(--buy)} .gates.big{margin-top:5px;font:12px var(--mono)}
+i.tl{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:3px;vertical-align:middle;background:#3a4558} i.tl.green{background:var(--buy)} i.tl.yellow{background:var(--gold)} i.tl.red{background:var(--sell)}
+.cvstrip .lanes{display:inline-flex;gap:2px} .cvstrip .lanes i.tl{margin:0}
+.cvhead{padding:8px 10px;border-bottom:1px solid var(--line)} .cvhead .v{font:800 15px var(--sans);letter-spacing:.06em} .cvhead .s{font:12px var(--mono);margin-top:2px}
+.cvhead.ready_to_go .v{color:var(--buy)} .cvhead.armed .v{color:var(--gold)} .cvhead.watch .v{color:#c9ced6} .cvhead.pass .v{color:var(--dim)} .cvhead.invalidated .v{color:var(--sell)}
+.cvrows{padding:4px 0} .cvr{display:grid;grid-template-columns:116px 1fr;gap:6px;padding:3px 10px;font:11.5px var(--mono);border-left:3px solid #2a3548;border-bottom:1px solid #161c27}
+.cvr.green{border-left-color:var(--buy)} .cvr.yellow{border-left-color:var(--gold)} .cvr.red{border-left-color:var(--sell)} .cvr .n{font-weight:700;letter-spacing:.04em} .cvr .t{color:#c9ced6;font-family:var(--sans);white-space:normal}
+
+/* TIGHT ladder: bid · price · ask, reloaders as colour + tag, one FLOW column */
+.lad.lad3.tight td{height:calc(14px * var(--ladz,1));padding:0 2px}
+.lad.lad3.tight td.px{text-align:center;font-weight:600}
+.lad.lad3.tight .rtag{display:inline-block;font:700 8.5px var(--sans);letter-spacing:.02em;padding:0 2px;border-radius:2px;background:rgba(0,0,0,.35);color:#fff;margin:0 2px;vertical-align:middle}
+.lad.lad3.tight td.bsz{text-align:right} .lad.lad3.tight td.asz{text-align:left}
+.lad.lad3.tight td.bars .bar-n{font-size:calc(9px * var(--ladz,1))}
+.lad.lad3.tight td.flow.fc{text-align:right;padding-right:3px} .lad.lad3.tight td.flow.fp{text-align:left;padding-left:3px}
+#ladMode{font-size:10px;padding:1px 6px;letter-spacing:.08em;font-weight:700;color:var(--gold)}
+/* tape: price and size only */
+.p-tape .t.tape2 td{padding:0 6px;height:14px;line-height:14px;font-size:11px} .p-tape .t.tape2 th{font-size:9px;padding:1px 6px}
+.p-tape .t.tape2 tr.buy td{background:rgba(63,181,111,.06)} .p-tape .t.tape2 tr.sell td{background:rgba(217,83,79,.06)}
+.p-tape .t.tape2 td.large{font-weight:800}
+/* compact ticket */
+.ticket.compact{display:block;padding:4px 6px;font-size:11px}
+.ticket.compact .trow{display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin:2px 0}
+.ticket.compact .trow.sub{font-size:10.5px;color:var(--dim)}
+.ticket.compact .sym{color:var(--gold);font-weight:800;font-size:13px} .ticket.compact .q{font-family:var(--mono);font-size:10.5px}
+.ticket.compact .sides{display:inline-flex;gap:2px} .ticket.compact .sides button{padding:2px 10px;height:22px;font-size:11px;letter-spacing:.1em}
+.ticket.compact input,.ticket.compact select{height:22px;font-size:11px;padding:0 4px} .ticket.compact input#tkQty{width:62px} .ticket.compact input#tkPx,.ticket.compact input#tkAux{width:76px} .ticket.compact input#tkRisk{width:56px}
+.ticket.compact .row{display:inline-flex;gap:2px;align-items:center} .ticket.compact .row button,.ticket.compact .qbtn{padding:1px 5px;font-size:10px;height:22px}
+.ticket.compact .tx{font-weight:800;letter-spacing:.12em;padding:0 14px;height:24px;font-size:12px;border-radius:3px;margin-left:auto}
+.ticket.compact .tx.b{background:#0f3d25;border-color:var(--buy);color:#dfffee} .ticket.compact .tx.s{background:#4a161b;border-color:var(--sell);color:#ffe3e6} .ticket.compact .tx:disabled{opacity:.35}
+.ticket.compact .risk{display:inline-flex;gap:4px;align-items:center} .ticket.compact .risk label{font-size:9.5px;letter-spacing:.1em} .ticket.compact .szb{padding:1px 6px;font-size:10.5px;color:var(--gold);font-weight:700}
+.ticket.compact .opts{display:inline-flex;gap:8px} .ticket.compact .opts label{font-size:10.5px;color:var(--dim)}
+.ticket.compact .posbox{display:inline-flex;gap:4px;align-items:center;font-size:11px;margin:0} .ticket.compact .posbox button{padding:1px 6px;font-size:10px}
+.ticket.compact .takeoff{display:inline-flex;flex-wrap:wrap;gap:3px;align-items:center;font-size:10px;margin-left:6px}
+.ticket.compact .takeoff button{padding:1px 5px;font-size:10px}
+.ticket.compact .why{font-size:10.5px;color:var(--warn)} .ticket.compact .st{font-family:var(--mono);font-size:10px;color:var(--dim);border-top:1px solid var(--line);margin-top:2px;padding-top:2px}
+/* compact positions */
+.grid.pos2{font-size:11px} .grid.pos2 td{padding:1px 5px} .grid.pos2 th{padding:2px 5px;font-size:9px}
+.grid.pos2 td.ctl button{padding:0 5px;font-size:10px;margin-right:2px;height:18px;line-height:16px}
+.ticket.compact select{width:auto;max-width:110px} .grid.pos2 th{white-space:nowrap}
+
+/* pin box: what you clicked, held still under the panel */
+.pinbox{display:none;position:sticky;bottom:0;background:#0b0f16;border-top:1px solid var(--line);padding:3px 6px;font:10.5px var(--sans);color:var(--text);line-height:1.3}
+.pinbox.on{display:flex;gap:6px;align-items:flex-start} .pinbox .txt{flex:1;white-space:normal} .pinbox .x{padding:0 4px;font-size:10px;line-height:14px}
+.grid.pos2 td.ctl .sep{display:inline-block;width:6px} .grid.pos2 tr.opt td:first-child b{color:var(--gold)}
+
+/* the orders being taken: size as a bar against its 90 s peak, a flash and a floating −n when prints eat it */
+.lad td.sz{position:relative;--fill:100%}
+.lad td.sz.eat::before{content:"";position:absolute;top:1px;bottom:1px;width:var(--fill);pointer-events:none;opacity:.35}
+.lad td.bsz.eat::before{right:0;background:linear-gradient(to left,rgba(63,181,111,.55),rgba(63,181,111,.15))}
+.lad td.asz.eat::before{left:0;background:linear-gradient(to right,rgba(217,83,79,.55),rgba(217,83,79,.15))}
+.lad td.sz > *{position:relative}
+.lad td.sz.hit{animation:eathit .6s 1} .lad td.sz.refill{animation:eatrefill .8s 1}
+@keyframes eathit{0%{background:rgba(255,255,255,.35)}100%{background:transparent}}
+@keyframes eatrefill{0%{background:rgba(227,168,58,.6)}100%{background:transparent}}
+.lad td.sz .ghost{position:absolute;right:2px;top:-9px;font:700 9px var(--mono);font-style:normal;pointer-events:none;animation:ghost 1.4s 1 forwards;padding:0 2px;border-radius:2px;background:#0b0f16}
+.lad td.bsz .ghost{right:auto;left:2px} .lad td.sz .ghost.dn{color:#fff} .lad td.sz .ghost.up{color:var(--gold)}
+@keyframes ghost{0%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(-10px)}}
+.eatbar{display:flex;flex-direction:column;gap:1px;position:sticky;bottom:0;z-index:9;background:#0b0f16;border-top:1px solid var(--line);padding:3px 6px;font:11px var(--mono);overflow:hidden} .eatbar .lstory{white-space:normal;line-height:1.35;color:#e8e8e6} .eatbar .ltouch{display:flex;justify-content:space-between;gap:8px;white-space:nowrap;font-size:10px} .eatbar .up{color:var(--buy)} .eatbar .pl{color:#b48cff}
+.eatbar .b{color:var(--buy)} .eatbar .s{color:var(--sell)} .eatbar b{font-weight:800}
+
+/* BIG TAPE: its own panel */
+.p-bigtape{display:flex;flex-direction:column;height:100%}
+.p-bigtape .bt-hd{display:flex;justify-content:flex-end;padding:1px 4px;background:#0f141c} .p-bigtape .bt-hd button{font-size:9.5px;padding:0 6px}
+.p-bigtape .t.bt{table-layout:auto}
+.p-bigtape .bt-body{flex:1 1 0;overflow:auto}
+.p-bigtape .t.bt{width:100%;table-layout:fixed} .p-bigtape .t.bt td{padding:0 4px;height:14px;line-height:14px;font-size:11px;white-space:nowrap;overflow:hidden}
+.p-bigtape .t.bt td.px{font-weight:800} .p-bigtape .t.bt tr.cols th{font-size:9px;padding:0 4px;color:var(--dim);text-align:left}
+.p-bigtape .t.bt th.sec{text-align:left;font-size:9px;letter-spacing:.1em;padding:2px 4px;background:#0f141c;color:var(--gold)}
+.p-bigtape .t.bt tr.buy td{background:rgba(63,181,111,.08)} .p-bigtape .t.bt tr.sell td{background:rgba(217,83,79,.08)}
+.p-bigtape .t.bt tr.bld.live td{font-weight:700} .p-bigtape .t.bt tr.bld.live td:first-child{box-shadow:inset 3px 0 0 var(--gold)}
+.p-bigtape .t.bt td.buy{color:var(--buy)} .p-bigtape .t.bt td.sell{color:var(--sell)}
+
+/* SIMPLE ladder: bid · price · ask, order flow only */
+.lad.lad3.simple td{height:calc(15px * var(--ladz,1));padding:0 3px}
+.lad.lad3.simple td.px{text-align:center;font-weight:600}
+.lad.lad3.simple td.sz{font-size:calc(11.5px * var(--ladz,1))} .lad.lad3.simple td.bsz{text-align:right} .lad.lad3.simple td.asz{text-align:left}
+.lad.lad3.simple td.sz.fake .szn{opacity:.4;font-weight:400} .lad.lad3.simple td.sz.big .szn{font-weight:800} .lad.lad3.simple td.sz.huge .szn{font-weight:800;color:var(--gold)}
+.lad.lad3.simple td.sz.big,.lad.lad3.simple td.sz.huge{background:none;box-shadow:none;color:inherit}
+.lad.lad3.simple td.sz.rf-REAL .szn,.lad.lad3.simple td.sz.rf-MIXED .szn,.lad.lad3.simple td.sz.rf-FAKE .szn{box-shadow:none;text-decoration:none}
+.lad.lad3.simple td.sz .abs{position:absolute;bottom:0;height:2px;background:currentColor;opacity:.55;pointer-events:none} .lad.lad3.simple td.bsz .abs{right:0;color:var(--buy)} .lad.lad3.simple td.asz .abs{left:0;color:var(--sell)}
+.lad.lad3.simple td.sz .rl{font:700 9px var(--sans);letter-spacing:.02em;margin:0 3px;color:#fff;opacity:.95}
+.lad.lad3.simple tr.rl-bid td.bsz,.lad.lad3.simple tr.rl-ask td.asz{color:#fff}
+.lad.lad3.simple td.sz .fmk{position:absolute;top:2px;bottom:2px;width:3px;pointer-events:auto} .lad.lad3.simple td.bsz .fmk{left:0;background:#3ee08f} .lad.lad3.simple td.asz .fmk{right:0;background:#ff6b78}
+.lad.lad3.simple td.sz .fmk.big{width:5px} .lad.lad3.simple td.sz .fmk.hot{box-shadow:0 0 4px 1px currentColor;color:inherit}
+.lad.lad3.simple tr.rl-bid td:first-child,.lad.lad3.simple tr.rl-ask td:last-child{box-shadow:none}
+
+/* ladder status strip, qty box, avg row, context menu */
+.ladstat{display:flex;gap:7px;align-items:center;padding:2px 6px;font:11px var(--sans);background:#0b0f16;border-bottom:1px solid var(--line);white-space:nowrap;overflow:hidden}
+.ladstat .sym{color:var(--gold);font-weight:800;font-size:12px} .ladstat .mono{font-family:var(--mono)} .ladstat .up{color:var(--buy)} .ladstat .dn{color:var(--sell)} .ladstat i{font-style:normal} .ladstat i.b{color:var(--buy)} .ladstat i.s{color:var(--sell)}
+.ladstat .pos{font-weight:800;font-family:var(--mono)} .ladstat .pos.b{color:var(--buy)} .ladstat .pos.s{color:var(--sell)}
+.ladstat .led{display:inline-block;width:7px;height:7px;border-radius:50%;background:#555} .ladstat .led.ok{background:var(--buy)} .ladstat .led.warn{background:var(--gold)} .ladstat .led.bad{background:var(--sell)}
+.ladstat .mode{font:800 9.5px var(--sans);letter-spacing:.12em;padding:0 5px;border:1px solid var(--line);border-radius:2px;color:var(--dim)} .ladstat .mode.live{background:#5a1218;border-color:var(--sell);color:#fff;animation:livepulse 1.2s infinite}
+@keyframes livepulse{50%{background:#8a1a24}}
+.qtybox{display:inline-flex;gap:3px;align-items:center;font-size:10px;color:var(--dim)} .qtybox input{width:54px;height:18px;font:11px var(--mono);padding:0 4px}
+.qtybox button{padding:0 4px;font-size:9.5px;height:18px} .qtybox button.on{color:var(--gold);border-color:var(--gold)}
+.lad tr.avgrow td.px{box-shadow:inset 0 0 0 1px var(--gold)} .lad .avgtag{display:inline-block;font:800 8px var(--sans);letter-spacing:.06em;padding:0 3px;margin-right:3px;border-radius:2px;background:var(--gold);color:#0c0c0d;vertical-align:middle}
+.lad tr.avgrow.long td.px{box-shadow:inset 0 0 0 1px var(--buy)} .lad tr.avgrow.short td.px{box-shadow:inset 0 0 0 1px var(--sell)}
+.cmenu.lmenu{min-width:250px} .cmenu .sep{height:1px;background:var(--line);margin:3px 0}
+.lad{--ladh:1} .lad.lad3 td{height:calc(15px * var(--ladz,1) * var(--ladh,1))}
+.cat{display:inline-block;font:700 8.5px var(--sans);letter-spacing:.06em;padding:0 4px;border-radius:2px;background:#26303f;color:#cfd8e6;margin-right:2px}
+.cat-order-rejection,.cat-fatal{background:#5a1218;color:#fff} .cat-permission,.cat-connection{background:#3a2e12;color:#f2d59a} .cat-market-data{background:#1a3350;color:#cfe4ff}
+#tkTpl{height:20px;font-size:10.5px;max-width:110px}
+
+/* OPTION CHAIN */
+.oc{display:flex;flex-direction:column;height:100%} .oc-hd{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;padding:3px 6px;font:10.5px var(--sans);background:#0f141c;border-bottom:1px solid var(--line)}
+.oc-hd .sym{color:var(--gold);font-weight:800;font-size:12px} .oc-hd select{height:20px;font-size:11px} .oc-hd .cp button{padding:1px 8px;font-size:10px;letter-spacing:.08em} .oc-hd .cp button.on{color:var(--gold);border-color:var(--gold)}
+.oc-hd .qty{display:inline-flex;gap:3px;align-items:center;color:var(--dim)} .oc-hd .qty input{width:54px;height:18px;font:11px var(--mono)}
+.oc-body{flex:1 1 0;overflow:auto} .oct{width:100%;table-layout:fixed} .oct th{font-size:9px;letter-spacing:.08em;color:var(--dim);padding:1px 4px;text-align:right;position:sticky;top:0;background:#0b0f16} .oct th:first-child{text-align:left}
+.oct td{padding:0 4px;height:16px;line-height:16px;font:11px var(--mono);text-align:right;white-space:nowrap;overflow:hidden} .oct td.k{text-align:left;font-weight:700}
+.oct tr.itm td.k{color:var(--gold)} .oct tr.atm td{background:rgba(227,168,58,.10)} .oct tr.held td{background:rgba(63,181,111,.08)} .oct td.b{color:var(--buy)} .oct td.s{color:var(--sell)}
+.oct td.act{text-align:right} .oct td.act button{padding:0 5px;font-size:9.5px;height:15px;line-height:13px;margin-left:2px} .oct .ob{color:var(--buy);border-color:var(--buy)} .oct .os{color:var(--sell);border-color:var(--sell)}
+.oct .hold{font:700 9px var(--sans);padding:0 3px;border-radius:2px;background:#26303f;margin-left:2px} .oct .hold.b{color:var(--buy)} .oct .hold.s{color:var(--sell)}
+.oc .wks{border-top:1px solid var(--line);padding:2px 6px;font:10.5px var(--mono)} .oc .wk{display:flex;gap:6px;align-items:center} .oc .wk button{padding:0 4px;font-size:9px}
+.rlb.ord{background:#0b0d10 !important;border:1px dashed;animation:none;font-family:var(--mono);letter-spacing:0} .rlb.ord.b{color:var(--buy);border-color:var(--buy)} .rlb.ord.s{color:var(--sell);border-color:var(--sell)}
+.lad.lad3.simple td.sz .rl.back,.lad.lad3 .rtag.back{background:var(--gold);color:#0c0c0d}
+/* the same reloader on both screens: a glowing border on his ladder row while he is active, and on every print that hits him */
+.lad tr.rl-bid.cv-active td.bsz{box-shadow:inset 0 0 0 1px #7dffb8,0 0 7px 1px rgba(63,181,111,.8) !important} .lad tr.rl-ask.cv-active td.asz{box-shadow:inset 0 0 0 1px #ffa0a8,0 0 7px 1px rgba(217,83,79,.8) !important}
+.p-tape .t.tape2 tr.rlhit td{box-shadow:inset 0 0 0 1px rgba(255,255,255,.25)} .p-tape .t.tape2 tr.rlhit.b td{background:rgba(63,181,111,.28);box-shadow:inset 0 0 0 1px #7dffb8} .p-tape .t.tape2 tr.rlhit.s td{background:rgba(217,83,79,.28);box-shadow:inset 0 0 0 1px #ffa0a8}
+.p-tape .t.tape2 tr.rlhit td:first-child{border-left:3px solid currentColor}
+
+.keyst{font:bold 11px ui-monospace,Menlo,Consolas,monospace;margin:0 0 4px;padding:3px 6px;border-radius:3px}.keyst.ok{color:#0b8f55;background:rgba(11,143,85,.12)}.keyst.no{color:#c4283a;background:rgba(196,40,58,.12)}
+
+/* OPTION FLOW: somebody may know something */
+.fl.know{border-left:3px solid var(--gold);background:rgba(230,193,90,.08)}
+.fl .kn{font:bold 10px ui-monospace,Menlo,Consolas,monospace;color:#111;background:var(--gold);border-radius:3px;padding:1px 5px;margin-left:6px;letter-spacing:.3px}
+.fl .kn.rep{background:#ff8a3d}
+
+/* RELOADER ROW: a glowing outline, never a solid fill — the size, the drain bar and the money badge all stay readable */
+.lad tr.rl-bid td.bsz{background:rgba(63,181,111,.18);color:var(--buy);font-weight:800;box-shadow:inset 0 0 0 1px var(--buy)}
+.lad tr.rl-ask td.asz{background:rgba(217,83,79,.18);color:var(--sell);font-weight:800;box-shadow:inset 0 0 0 1px var(--sell)}
+.lad.lad3.simple tr.rl-bid td.bsz,.lad.lad3.simple tr.rl-ask td.asz{color:inherit}
+.lad.lad3.simple tr.rl-bid td.bsz .szn{color:var(--buy)} .lad.lad3.simple tr.rl-ask td.asz .szn{color:var(--sell)}
+.lad.lad3.simple td.sz .rl{font:700 9px var(--sans);letter-spacing:.02em;color:#0c0c0d;background:var(--buy);border-radius:3px;padding:0 4px;margin:0 4px;opacity:.95;white-space:nowrap}
+.lad.lad3.simple td.asz .rl{background:var(--sell)}
+.lad.lad3.simple td.sz .abs{height:3px;opacity:.9}
+
+.bt-hd .btflt{font:10px var(--sans);letter-spacing:.08em;color:var(--dim);margin-right:auto}.bt-hd .btflt input{width:46px;font:11px var(--mono);background:#0b0f16;color:var(--text);border:1px solid var(--line);border-radius:3px;padding:1px 4px}
+.lad.lad3.simple td.sz .rl .rlm{display:none}
+
+#stCycle{font:10px var(--mono);color:var(--dim);margin-left:6px}#stCycle.warn{color:var(--gold)}#stCycle.bad{color:var(--sell);font-weight:800}
+
+.ticket .sides button.opt{flex:0 0 auto;margin-left:8px;opacity:1;color:var(--gold);border-color:var(--gold);font-size:10px;padding:2px 8px}
+
+/* BIG TAPE: columns size to their numbers and never clip; a panel too narrow scrolls sideways instead of cutting */
+.p-bigtape .t.bt{table-layout:auto;width:100%;min-width:max-content} .p-bigtape .t.bt td{overflow:visible;text-align:right;padding:0 5px}
+.p-bigtape .t.bt td.px{text-align:left} .p-bigtape .t.bt td:last-child{padding-right:6px}
+.p-tape .t.tape2 td{white-space:nowrap;overflow:visible}
+
+/* the "eaten / refilled" flash on a ladder row: big enough to read, holds 2.5 s, says what happened */
+.lad td.sz .ghost{top:0;bottom:0;display:flex;align-items:center;font:800 11px var(--mono);line-height:1;padding:0 5px;border-radius:3px;background:rgba(5,8,12,.92);animation:ghost 2.6s 1 forwards;z-index:3}
+.lad td.sz .ghost.dn{color:#ff6b7a;border:1px solid rgba(255,77,94,.7)} .lad td.sz .ghost.up{color:#7dffb8;border:1px solid rgba(38,208,124,.7)}
+.lad td.asz .ghost{right:2px;left:auto} .lad td.bsz .ghost{left:2px;right:auto}
+@keyframes ghost{0%{opacity:1;transform:none}75%{opacity:1;transform:none}100%{opacity:0;transform:none}}
+
+.fl .itm{font:bold 10px ui-monospace,Menlo,Consolas,monospace;color:#9fb4d0;border:1px solid #4a5a70;border-radius:3px;padding:0 5px;margin-left:6px}
+
+#voiceFlowBtn.off{color:var(--sell);border-color:var(--sell)} #soloBtn.on{color:var(--gold);border-color:var(--gold)}
+
+/* SCALE PLAN in the ticket */
+.ticket .scale{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;width:100%;margin:4px 0 2px;padding:4px 6px;border:1px solid var(--line);border-radius:4px;font-size:10.5px}
+.ticket .scale.on{border-color:rgba(230,193,90,.45)}
+.ticket .scale .spk button,.ticket .scale .spc button{padding:2px 7px;font-size:10px} .ticket .scale .spc input{width:44px;font:11px var(--mono);padding:1px 3px} .ticket .scale .spc select{font-size:10px}
+.ticket .scale .spst b.b{color:var(--buy)} .ticket .scale .spst b.s{color:var(--sell)}
+.ticket .scale .spleft{position:relative;flex:1 1 140px;height:14px;background:#0b0f16;border:1px solid var(--line);border-radius:3px;overflow:hidden}
+.ticket .scale .spleft i{position:absolute;left:0;top:0;bottom:0;background:rgba(230,193,90,.35)} .ticket .scale .spleft b{position:absolute;left:6px;top:0;line-height:12px;font:800 10px var(--mono);color:var(--text)}
+.ticket .scale button[data-sp-auto].on{color:var(--gold);border-color:var(--gold)}
+.ticket .scale .sprs{width:100%;display:grid;gap:2px}
+.ticket .scale .spr{display:grid;grid-template-columns:52px 70px 1fr auto;gap:6px;align-items:center;padding:1px 4px;border-radius:3px;font:11px var(--mono)}
+.ticket .scale .spr.next{background:rgba(230,193,90,.08)} .ticket .scale .spr.ready{background:rgba(230,193,90,.22);animation:spready 1s infinite alternate} .ticket .scale .spr.done{opacity:.55}
+.ticket .scale .spr.add span{color:var(--buy)} .ticket .scale .spr i{font-style:normal;color:var(--dim)} .ticket .scale .spr button{padding:1px 6px;font-size:10px}
+@keyframes spready{from{box-shadow:inset 0 0 0 1px rgba(230,193,90,.4)}to{box-shadow:inset 0 0 0 1px var(--gold)}}
+
+/* OPTION CHAIN: say why nothing sends; a selected strike */
+.oc .ocwarn{margin:2px 4px 4px;padding:4px 8px;border:1px solid var(--sell);border-radius:4px;color:#ffd0d5;background:rgba(196,40,58,.15);font:700 11px var(--sans);letter-spacing:.04em}
+.oc .ocwarn.q{border-color:var(--gold);color:var(--gold);background:rgba(230,193,90,.08)} .oc .ocwarn button{padding:1px 10px;font-weight:800;color:var(--gold);border-color:var(--gold)}
+.oc .oct tr[data-strike]{cursor:pointer} .oc .oct tr.sel td{background:rgba(230,193,90,.18)!important} .oc .oct tr.sel td.k{box-shadow:inset 3px 0 0 var(--gold)}
+.oc .oct button.off{opacity:.45}
+#armBtn[data-pulse]{animation:armpulse .4s 6 alternate} @keyframes armpulse{from{box-shadow:0 0 0 0 var(--gold)}to{box-shadow:0 0 0 4px var(--gold);color:var(--gold)}}
+
+/* POSITION box in ORDER ENTRY: small, everything on two lines */
+.ticket .pm{margin-top:3px;padding:3px 5px;border:1px solid var(--line);border-radius:4px;font:11px var(--mono);display:grid;gap:3px}
+.ticket .pm .pmr{display:flex;flex-wrap:wrap;gap:3px 6px;align-items:center}
+.ticket .pm .b{color:var(--buy)} .ticket .pm .s{color:var(--sell)} .ticket .pm b{font-weight:800}
+.ticket .pm .pmstop{padding:0 5px;border:1px solid var(--sell);border-radius:3px;color:#ffd0d5} .ticket .pm .pmstop i{font-style:normal;opacity:.8}
+.ticket .pm .pmstop.none{border-color:var(--gold);color:var(--gold);animation:spready 1s infinite alternate}
+.ticket .pm .pmbtn{margin-left:auto;display:inline-flex;gap:3px}
+.ticket .pm button{padding:1px 6px;font-size:10px;height:20px} .ticket .pm label{font:700 9.5px var(--sans);letter-spacing:.08em;color:var(--dim)} .ticket .pm label.tl{margin-left:6px}
+.ticket .pm input{width:62px;height:20px;font:11px var(--mono);padding:0 3px} .ticket .pm #pmTrail{width:44px}
+.ticket .pm button[data-pmtrail].on{color:var(--gold);border-color:var(--gold)}
+.ticket .pm .scale,.ticket .pm .takeoff,.ticket .pm .pp{margin:0;padding:2px 4px;font-size:10px}
+.ticket .pm .scale .tohead,.ticket .pm .takeoff .tohead{padding:0 4px;font-size:10px}
+
+/* ORDER ENTRY as a small square: the option row on one line, normal-size checkboxes */
+.ticket.compact .trow.sub{display:flex;flex-wrap:wrap;gap:3px 8px;align-items:center}
+.ticket.compact .trow.sub .opts{display:inline-flex;flex-wrap:wrap;gap:3px 8px;align-items:center}
+.ticket.compact .trow.sub .opts label{display:inline-flex!important;flex-direction:row!important;align-items:center;gap:3px;font:700 9.5px var(--sans)!important;letter-spacing:.06em}
+.ticket.compact input[type=checkbox]{width:13px!important;height:13px!important;margin:0!important;transform:none!important}
+.ticket.compact .trow.sub select{height:20px;font-size:10px;padding:0 2px}
+.ticket.compact .trow.sub #tkCxl{padding:1px 6px;font-size:10px;height:20px}
+.ticket.compact .trow{gap:3px 4px} .ticket.compact .trow .row{gap:2px}
+
+.ticket .pm.opm{border-color:rgba(123,108,246,.5)} .ticket .pm.opm .pmr b{font-weight:800}
+
+/* SIMPLE ORDER ENTRY: what you have, big; BUY / SELL; SELL 5 / 10 / 20 / ALL */
+.ticket .simple{display:grid;gap:4px;margin:0 0 5px;padding:5px 6px;border:1px solid var(--line);border-radius:5px;background:#0d1219}
+.ticket .simple .have{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 9px;font:13px var(--mono)}
+.ticket .simple .have .lbl{font:800 9.5px var(--sans);letter-spacing:.12em;color:var(--dim)}
+.ticket .simple .have b{font:800 15px var(--mono)} .ticket .simple .have b.b{color:var(--buy)} .ticket .simple .have b.s{color:var(--sell)}
+.ticket .simple .have.flat b{color:var(--dim);font-size:12px}
+.ticket .simple .bs{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+.ticket .simple .big{height:36px;font:900 15px var(--sans);letter-spacing:.06em;border-radius:5px;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.05}
+.ticket .simple .big i{font:600 10px var(--mono);font-style:normal;opacity:.85}
+.ticket .simple .big.b{background:#0f3d25;border:1px solid var(--buy);color:#dfffee} .ticket .simple .big.s{background:#4a161b;border:1px solid var(--sell);color:#ffe3e6}
+.ticket .simple .big:hover{filter:brightness(1.25)}
+.ticket .simple .mgr{display:flex;flex-wrap:wrap;gap:4px}
+.ticket .simple .mgr button{flex:1 1 0;min-width:58px;height:26px;font:800 11px var(--sans);letter-spacing:.04em;border-radius:4px}
+.ticket .simple .mgr button.s{background:#2a1013;border:1px solid var(--sell);color:#ffd0d5} .ticket .simple .mgr button.b{background:#0c2a1a;border:1px solid var(--buy);color:#d4ffe6}
+.ticket .simple .mgr button.all{flex:1.4 1 0;font-weight:900} .ticket .simple .mgr button.add{flex:1.2 1 0;opacity:.85}
+.ticket .simple .mgr button:disabled{opacity:.35}
+.ticket .simple.opm{border-color:rgba(123,108,246,.55)} .ticket .simple.opm .have b{font-size:13px}
+.ticket .simple .mgr button{white-space:nowrap;padding:0 4px;min-width:0;letter-spacing:0;font-size:11px}
+.ticket .simple .have{white-space:nowrap;overflow:hidden}
+
+/* right-click: both sides' levels */
+.lvl2{display:grid;gap:3px;margin:4px 0;padding:4px;border:1px solid var(--line);border-radius:4px}
+.lvl2>div{display:flex;gap:3px;align-items:center} .lvl2 b{width:58px;font:800 10px var(--sans);letter-spacing:.06em} .lvl2 b.b{color:var(--buy)} .lvl2 b.s{color:var(--sell)}
+.lvl2 .blvl{flex:1;padding:2px 4px;font-size:10px;white-space:nowrap}
+
+.auto.other{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center;margin-top:4px;font:11px var(--mono)} .auto.other b.s{color:var(--sell)} .auto.other b.b{color:var(--buy)} .auto.other button{margin-left:auto;padding:0 6px}
+
+.rlb.nobook{background:#2a2306;color:var(--gold);border:1px solid var(--gold);white-space:normal;cursor:default;animation:none}
+
+.lad td.sz .ghost.pl{color:#d6c2ff;border:1px solid #b48cff;background:#1d1430}
+
+.simple.contract{border-color:var(--gold)} .simple .clink{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;padding:2px 0 4px;border-bottom:1px dashed #3a3320;margin-bottom:4px}
+.simple .clink b{font-size:13px} .simple .clink button{margin-left:auto;padding:0 8px;height:20px}
+.simple .cq{display:flex;align-items:center;gap:4px;margin:4px 0} .simple .cq button{padding:0 8px;height:22px} .simple .cq button.on{color:var(--gold);border-color:var(--gold)} .simple .cq input{width:54px;height:22px;font:12px var(--mono)}
+.oct tr.linked td{box-shadow:inset 0 1px 0 var(--gold),inset 0 -1px 0 var(--gold)} .oct tr.linked td.k{color:var(--gold)}
+.pos2 td.gold{color:var(--gold)} .pos2 tr.wk td{background:rgba(255,200,60,.05)}
+
+.simple .cwk{display:flex;align-items:center;gap:8px;margin:3px 0;font:11px var(--mono)} .simple .cwk button{margin-left:auto;padding:0 6px;height:18px}
+
+.pnl[data-p="ochart"].on{display:flex;flex-direction:column} .pnl[data-p="ochart"] .pc{flex:1;min-height:0} .pnl[data-p="ochart"] .chart-wrap{height:100%}
+.ochead{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;padding:3px 6px;font:11px var(--mono);border-bottom:1px solid var(--line);background:#0b0f16}
+.ochead b{font-size:12px} .ochead .b{color:var(--buy)} .ochead .s{color:var(--sell)} .ochead button{height:20px;padding:0 7px}
+.ochead button.on{color:var(--gold);border-color:var(--gold)} .ochead button.b{color:var(--buy);border-color:var(--buy)} .ochead button.s{color:var(--sell);border-color:var(--sell)}
+.ochead .tfs,.ochead .cn{display:inline-flex;gap:2px} .ochead .hint{font-size:10px}
+#chartsPop button{display:block;width:100%;text-align:left;margin:2px 0}
+.oct td.act button.och{padding:0 4px}
+
+.ztab.on2{color:var(--text);border-bottom:2px solid #5a6b85} .zsplit{cursor:pointer;margin-left:auto;padding:0 6px;color:var(--dim);font-size:12px} .zsplit.on{color:var(--gold)}
+.ohd{padding:3px 6px;font:11px var(--mono);border-bottom:1px solid var(--line);background:#0b0f16;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ohd b{letter-spacing:.08em} .ohd .b{color:var(--buy)} .ohd .s{color:var(--sell)}
+.pnl[data-p="obook"] .pc,.pnl[data-p="otape"] .pc,.pnl[data-p="obig"] .pc{overflow:auto}
+.olad{width:100%;border-collapse:collapse;font:12px var(--mono)} .olad th{font:600 9.5px var(--sans);letter-spacing:.1em;color:var(--dim);padding:2px 4px;position:sticky;top:0;background:#0b0f16}
+.olad td{position:relative;padding:1px 4px;text-align:right;height:17px} .olad td.px{text-align:center;color:#e8e8e6;background:#11151c;width:22%}
+.olad td i{position:absolute;top:2px;bottom:2px;opacity:.35} .olad td.sz.b i,.olad td.tr.b i{background:var(--buy)} .olad td.sz.s i,.olad td.tr.s i{background:var(--sell)}
+.olad td.sz.b i,.olad td.tr.s i{right:0} .olad td.sz.s i,.olad td.tr.b i{left:0} .olad td span{position:relative}
+.olad td.sz.s,.olad td.tr.b{text-align:left} .olad td.tr{color:var(--dim);font-size:11px}
+.olad tr.bb td.px{background:#0f3b26;color:#fff} .olad tr.ba td.px{background:#4a1520;color:#fff} .olad tr[data-oprice]{cursor:pointer} .olad tr[data-oprice]:hover td{background:#1a2230}
+.ofoot{padding:4px 6px;font-size:10.5px}
+.otp{width:100%;border-collapse:collapse;font:12px var(--mono)} .otp th{font:600 9.5px var(--sans);letter-spacing:.1em;color:var(--dim);padding:2px 4px;text-align:right;position:sticky;top:0;background:#0b0f16}
+.otp td{padding:1px 4px;text-align:right} .otp tr.b td{color:var(--buy)} .otp tr.s td{color:var(--sell)} .otp tr.big td{font-weight:800;background:rgba(255,200,60,.07)}
+.fast{display:flex;align-items:center;gap:6px;padding:2px 6px;background:#0b0f16;border-bottom:1px solid var(--line);font:11px var(--mono)}
+.fast:empty{display:none} .fast button,.ochead button.big,.ochead button.out{height:22px;padding:0 10px;font-weight:800}
+.fast button.b,.ochead button.big.b{background:#0f3b26;color:#fff;border-color:var(--buy)} .fast button.s,.ochead button.big.s{background:#4a1520;color:#fff;border-color:var(--sell)}
+.fast button.out,.ochead button.out{background:#2a2306;color:var(--gold);border-color:var(--gold)} .fast button.out.all,.ochead button.out.all{background:#5a1218;color:#fff;border-color:var(--sell)}
+.fast span.b{color:var(--buy);font-weight:800} .fast span.s{color:var(--sell);font-weight:800}
+
+.ostopbox{display:inline-flex;align-items:center;gap:4px} .ostopbox select,.ostopbox input{height:20px;font:11px var(--mono);background:#0a0a0b;color:var(--text);border:1px solid #26282c}
+.ostopbox input{width:64px} .ostop{font-weight:800;padding:0 6px;border-radius:3px} .ostop.set{color:#fff;background:#7a1a2a} .ostop.chart{color:#ffb3bb;border:1px solid #ff4d5e} .ostop.none{color:var(--gold);border:1px dashed var(--gold)}
+
+.tgauge{display:flex;align-items:center;gap:6px;padding:3px 6px;font:700 10.5px var(--mono);border-bottom:1px solid var(--line);background:#0b0f16;white-space:nowrap}
+.tgauge .b{color:var(--buy)} .tgauge .s{color:var(--sell)} .tgauge .bar{flex:1;display:flex;height:8px;border-radius:2px;overflow:hidden;background:#1a1f28}
+.tgauge .bar i{display:block;height:100%} .tgauge .bar i.b{background:var(--buy)} .tgauge .bar i.s{background:var(--sell)}
+.flychip{position:fixed;z-index:9999;pointer-events:none;min-width:100px;white-space:nowrap;text-align:center;font:800 11px var(--mono);padding:2px 4px;border-radius:3px;
+  background:#2a2306;color:var(--gold);border:1px solid var(--gold);transition:left .42s cubic-bezier(.3,.7,.3,1),top .42s cubic-bezier(.3,.7,.3,1),opacity .42s ease-in;box-shadow:0 4px 14px rgba(0,0,0,.6)}
+.flychip.b{background:#0f3b26;color:#fff;border-color:var(--buy)} .flychip.s{background:#4a1520;color:#fff;border-color:var(--sell)}
+
+#modal.shortopen .box{border:2px solid var(--sell);box-shadow:0 0 0 4px rgba(255,77,94,.25)} #modal.shortopen h2{color:#fff;background:#7a1a2a;padding:4px 8px;border-radius:3px}
+
+.exptoday{background:#7a1a2a;color:#fff;font-weight:800;padding:0 6px;border-radius:3px;animation:livepulse 1.4s infinite}
+.haltbadge{background:#ff2d55;color:#fff;font:800 10px var(--sans);letter-spacing:.1em;padding:1px 6px;border-radius:3px;animation:livepulse 1s infinite}
+.ochead button.risksz{color:var(--gold);border-color:var(--gold)}
+
+.pnl[data-p="book"].cmode .ladstat,.pnl[data-p="book"].cmode .ladbar,.pnl[data-p="book"].cmode .rlban,.pnl[data-p="book"].cmode .ladder-wrap,.pnl[data-p="book"].cmode .eatbar,.pnl[data-p="book"].cmode .bkfx{display:none !important}
+.pnl[data-p="tape"].cmode .p-tape{display:none !important}
+.cbook,.ctape{display:none} .cmode .cbook,.cmode .ctape{display:flex;flex-direction:column;height:100%}
+.cbook .obook.cb,.ctape .otape.cb{flex:1;overflow:auto;min-height:0}
+.cbar{display:flex;flex-wrap:wrap;align-items:center;gap:3px 8px;padding:4px 6px;background:#2a2306;border-bottom:1px solid var(--gold);font:11px var(--mono)}
+.cbar .lbl{font:800 9.5px var(--sans);letter-spacing:.12em;color:var(--gold)} .cbar b{font-size:12.5px} .cbar b.b{color:var(--buy)} .cbar b.s{color:var(--sell)}
+.cbar button{margin-left:auto;height:20px;padding:0 8px}
+
+.cbar .cbtns{margin-left:auto;display:inline-flex;gap:4px} .cbar .cbtns button{margin-left:0}
+.cswitch{display:flex;align-items:center;gap:8px;padding:2px 6px;background:#1c1806;border-bottom:1px solid #6b5a1a;font:10.5px var(--mono);color:var(--gold)}
+.cswitch span{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .cswitch button{height:18px;padding:0 6px;font-size:10px;color:var(--gold);border-color:var(--gold)}
+
+.tmode{display:flex;gap:0;margin:0 0 6px} .tmode button{flex:1;height:28px;font:800 11.5px var(--sans);letter-spacing:.1em;border-radius:0}
+.tmode button:first-child{border-radius:3px 0 0 3px} .tmode button:last-child{border-radius:0 3px 3px 0}
+.tmode button.on{background:#2a2306;color:var(--gold);border-color:var(--gold)}
+.tmore{display:flex;align-items:center;gap:8px;margin:6px 0 2px;font-size:10.5px} .tmore button{height:20px;padding:0 8px;font-size:10px}
+.trow.hidden{display:none !important}
+.simple.pick .prow{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:6px} .simple.pick select{height:22px;font:11px var(--mono);background:#0a0a0b;color:var(--text);border:1px solid #26282c}
+.simple.pick .cp{display:inline-flex} .simple.pick .cp button{height:22px;padding:0 10px} .simple.pick .cp button.on.b{background:#0f3b26;color:#fff} .simple.pick .cp button.on.s{background:#4a1520;color:#fff}
+.pgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-bottom:4px} .pgrid .pk{display:flex;flex-direction:column;align-items:center;height:auto;padding:3px 2px;font:800 12px var(--mono)}
+.pgrid .pk i{font:400 10px var(--mono);color:var(--dim);font-style:normal} .pgrid .pk.itm{background:#13202c} .pgrid .pk.atm{border-color:var(--gold);color:var(--gold)}
+.simple .cq input#sbQty{width:64px}
+
+.ohd{display:flex;align-items:center;gap:6px} .ohd .ohbtn{margin-left:auto;display:inline-flex;gap:4px} .ohd .ohbtn button{height:18px;padding:0 6px;font-size:9.5px}
+.ohd{flex-wrap:wrap;white-space:normal;row-gap:2px}
+
+.olw{height:auto !important;overflow:visible !important}
+/* STOCK or OPTIONS for a new 2nd entry */
+#modal.tradeas .box{min-width:520px}
+#modal.tradeas .ta{display:flex;gap:10px;margin:8px 0}
+#modal.tradeas .pick{flex:1;display:flex;flex-direction:column;align-items:flex-start;gap:4px;padding:12px;border:1px solid #3a3d44;background:#16181c;text-align:left;cursor:pointer}
+#modal.tradeas .pick b{font-size:18px;letter-spacing:.06em}
+#modal.tradeas .pick span{font-size:12px;color:#b9bec8;line-height:1.4}
+#modal.tradeas .pick.stock:hover,#modal.tradeas .pick.stock.on{border-color:#e8b931}
+#modal.tradeas .pick.opt:hover,#modal.tradeas .pick.opt.on{border-color:#8f6bff;background:#1d1830}
+#modal.tradeas .pick[disabled]{opacity:.45;cursor:default}
+#modal.tradeas .pick input{width:46px}
+#ochHead .olink{border-color:#5b3fa8;color:#cbb8ff} #ochHead .olink.on{background:#5b3fa8;color:#fff;font-weight:700}
+/* the ORDER BAR on the stock chart */
+#fastStock{display:flex;flex-wrap:wrap;align-items:center;gap:4px;padding:3px 6px}
+#fastStock .qbmode{display:inline-flex;border:1px solid #3a3d44;border-radius:3px;overflow:hidden;margin-right:4px}
+#fastStock .qbmode button{border:0;border-radius:0;padding:3px 8px;font-weight:700}
+#fastStock .qbmode button.on{background:#e8b931;color:#111}
+#fastStock .qbmode button[data-qbm="option"].on{background:#8f6bff;color:#fff}
+#fastStock #qbQty{width:64px;font-weight:700;text-align:right}
+#fastStock .big{min-width:64px;font-weight:800}
+#fastStock .close{font-weight:700;border-color:#c4283a;color:#ffd5da}
+#fastStock .qbpos{margin-left:6px;font-weight:700}
+#fastStock button{padding:2px 7px;font-size:11px}
+#fastStock .big{padding:2px 10px;font-size:12px}
+#fastStock .qbout{margin-left:6px;font-weight:700;font-size:11px;color:#c8ccd4}
+#fastStock .out[data-qb^="P"]{min-width:42px}
+/* ===== PRO LADDER ===== */
+table.lad.pro{--se:#3fd0ff;--tg:#26d07c;--sl:#ff4d5e;--pv:#dbe3ee;--sn:#f0a8ff;--stc:#2fe0a8;--stp:#ff7a9a;--hl:#e8b931;--ex:#9aa4b4}
+table.lad.pro td,table.lad.pro th{padding:0 3px}
+table.lad.pro td.lvc{font-size:calc(10px * var(--ladz,1));font-weight:700;letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:110px;text-align:left}
+table.lad.pro td.lvc .rlv{display:inline-block;margin-left:3px;padding:0 4px;border-radius:2px;font-size:calc(9.5px * var(--ladz,1))}
+table.lad.pro td.lvc .rlv.b{background:#0b7a4b;color:#fff} table.lad.pro td.lvc .rlv.s{background:#b3123a;color:#fff}
+table.lad.pro tr.lvrow td{border-top:1px solid var(--lvc);border-bottom:1px solid var(--lvc);background-image:linear-gradient(var(--lvt),var(--lvt))}
+table.lad.pro tr.lvrow td.lvc{color:var(--lvc);border-left:3px solid var(--lvc)}
+table.lad.pro tr.lv-se{--lvc:var(--se);--lvt:rgba(63,208,255,.10)} table.lad.pro tr.lv-tg{--lvc:var(--tg);--lvt:rgba(38,208,124,.10)}
+table.lad.pro tr.lv-sl{--lvc:var(--sl);--lvt:rgba(255,77,94,.10)} table.lad.pro tr.lv-pv{--lvc:var(--pv);--lvt:rgba(219,227,238,.08)}
+table.lad.pro tr.lv-sn{--lvc:var(--sn);--lvt:rgba(240,168,255,.09)} table.lad.pro tr.lv-stc{--lvc:var(--stc);--lvt:rgba(47,224,168,.08)}
+table.lad.pro tr.lv-stp{--lvc:var(--stp);--lvt:rgba(255,122,154,.08)} table.lad.pro tr.lv-hl{--lvc:var(--hl);--lvt:rgba(232,185,49,.06)}
+table.lad.pro tr.lv-ex{--lvc:var(--ex);--lvt:rgba(154,164,180,.06)}
+table.lad.pro tr.lvalt td.lvc{border-left-style:dashed}
+table.lad.pro tr.atlv td{animation:atlv 1s ease-in-out infinite alternate}
+@keyframes atlv{from{background-color:transparent}to{background-color:rgba(255,255,255,.10)}}
+table.lad.pro tr.atlv td.lvc b{color:#fff;background:var(--lvc);padding:0 3px;border-radius:2px}
+table.lad.pro td.stk{font-size:calc(10.5px * var(--ladz,1));text-align:center;font-variant-numeric:tabular-nums}
+table.lad.pro td.stk.add.bid{color:#7cf0b4} table.lad.pro td.stk.add.ask{color:#ff9aa8}
+table.lad.pro td.stk.pull{color:#8a90a0;font-style:italic}
+table.lad.pro td.stk.lit.bid{background:#0b7a4b;color:#fff;font-weight:800} table.lad.pro td.stk.lit.ask{background:#b3123a;color:#fff;font-weight:800}
+table.lad.pro td.stk.litp{background:#3a3d44;color:#e2e4ea;font-weight:700}
+table.lad.pro td.vis{position:relative;font-size:calc(10.5px * var(--ladz,1));text-align:center;font-variant-numeric:tabular-nums}
+table.lad.pro td.vis .vb{position:absolute;top:2px;bottom:2px;opacity:.35}
+table.lad.pro td.vis.bid .vb{right:0;background:#ff4d5e} table.lad.pro td.vis.ask .vb{left:0;background:#26d07c}
+table.lad.pro td.vis b{position:relative;font-weight:700} table.lad.pro td.vis.bid b{color:#ffb3bb} table.lad.pro td.vis.ask b{color:#9fffcf}
+table.lad.pro td.vis.past{opacity:.45}
+table.lad.pro td.px sup{font-size:calc(8.5px * var(--ladz,1));color:#e8b931;margin-left:2px;font-weight:700}
+.lvstrip{position:sticky;z-index:3;display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding:2px 4px;background:#101216;border:1px solid #23262c;font-size:10px}
+.lvstrip.top{top:0} .lvstrip.bot{bottom:0}
+.lvstrip .sp{flex:1} .lvstrip button{font-size:9.5px;padding:0 5px}
+.lvp{padding:0 5px;border-radius:2px;border:1px solid var(--c,#555);color:var(--c,#ccc);white-space:nowrap;font-weight:700}
+.lvp i{font-style:normal;color:#aab0bb;font-weight:400}
+.lvp.se{--c:#3fd0ff} .lvp.tg{--c:#26d07c} .lvp.sl{--c:#ff4d5e} .lvp.pv{--c:#dbe3ee} .lvp.sn{--c:#f0a8ff} .lvp.stc{--c:#2fe0a8} .lvp.stp{--c:#ff7a9a} .lvp.hl{--c:#e8b931} .lvp.ex{--c:#9aa4b4}
+.lvp.rb{--c:#2fd38a;background:#0b3a25} .lvp.ra{--c:#ff6b7d;background:#3a0f18}
+#optPosStrip{display:flex;flex-direction:column;gap:2px;padding:0 6px}
+#optPosStrip:empty{display:none}
+#optPosStrip .op{display:flex;flex-wrap:wrap;gap:10px;align-items:center;font-size:11.5px;padding:2px 6px;background:#1d1830;border:1px solid #5b3fa8;border-radius:3px}
+#optPosStrip .op .tg{color:#26d07c} #optPosStrip .op .sl{color:#ff4d5e}
+/* ===== TRADE JOURNAL ===== */
+.jopen{border:1px solid #2fd38a;background:#0d1a14;border-radius:3px;margin:4px 0;padding:4px 6px}
+.jopen .jh{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:12px}
+.jopen .live{color:#2fd38a;font-weight:800;animation:atlv 1s ease-in-out infinite alternate}
+.jopen input,.trades input.jname{min-width:180px;font-weight:700}
+.jdet{display:grid;grid-template-columns:1fr 1fr 1.3fr;gap:10px;font-size:11px;margin-top:4px;max-height:220px;overflow:auto}
+.jdet b{display:block;font-size:10px;letter-spacing:.06em;color:#c8ccd4;margin-bottom:2px}
+.jdet .jl{padding:1px 0;border-bottom:1px solid #1c1f24} .jdet .jl i{font-style:normal;color:#e8b931;margin-right:4px}
+.trades .res{padding:0 5px;border-radius:2px;font-weight:800;font-size:10px}
+.trades .res.win{background:#0b7a4b;color:#fff} .trades .res.loss{background:#b3123a;color:#fff} .trades .res.scratch{background:#3a3d44;color:#ddd}
+.trades .jx{padding:0 4px;font-size:10px} .trades tr.jdetrow td{background:#101216}
+/* ===== POLISH: one clean screen ===== */
+/* the data window: small, top left, out of the candles' way */
+.datawin{top:4px;left:4px;bottom:auto;width:118px}
+/* PRO ladder: smaller, even type so every column reads without widening the panel */
+table.lad.pro{font-size:calc(11px * var(--ladz,1))}
+table.lad.pro th{font:600 calc(8.5px * var(--ladz,1)) var(--sans);letter-spacing:.06em;padding:1px 2px;top:22px !important}
+table.lad.pro td.lvc{font-size:calc(9px * var(--ladz,1));max-width:none}
+table.lad.pro td.lvc .rlv{font-size:calc(8.5px * var(--ladz,1));padding:0 3px}
+table.lad.pro td.stk, table.lad.pro td.vis{font-size:calc(10px * var(--ladz,1))}
+.lvstrip{height:22px;flex-wrap:nowrap;overflow:hidden;white-space:nowrap}
+.lvp{font-size:9.5px}
+/* the flashes (−300 SOLD, PULLED, +REFILL): a small tag in the corner of the size cell, never over the number */
+.lad td.sz .ghost{top:0;bottom:auto;height:auto;display:block;font:700 8px/10px var(--mono);padding:0 2px;border-radius:2px;border-width:0 !important;background:rgba(5,8,12,.85);z-index:3}
+.lad td.asz .ghost{right:1px;left:auto} .lad td.bsz .ghost{left:1px;right:auto}
+.lad td.sz .ghost.dn{color:#ff8a96} .lad td.sz .ghost.up{color:#7dffb8} .lad td.sz .ghost.pl{color:#d6c2ff;background:#1d1430}
+.eatbar{font-size:10px} .eatbar .ltouch{font-size:9.5px}
+/* POSITIONS in a narrow column: the essentials fit, the rest waits for room */
+.pnl[data-p="positions"] .pc{container-type:inline-size}
+@container (max-width: 560px){
+  .pos2 th:nth-child(2), .pos2 td:nth-child(2), .pos2 th:nth-child(5), .pos2 td:nth-child(5){display:none}
+  .pos2 td.ctl button[data-add], .pos2 td.ctl button[data-oadd], .pos2 td.ctl button[data-partial], .pos2 td.ctl .sep, .pos2 td.ctl button[data-n="ask"]{display:none}
+  .pos2 th:last-child{font-size:0} .pos2 th:last-child::after{content:"OUT 25 · 50 · 75 · X";font-size:9px}
+  .pos2 td, .pos2 th{padding:1px 3px}
+}
+/* the ORDER BAR on a laptop screen: one line */
+.pnl[data-p="chart"]{container-type:inline-size}
+@container (max-width: 1000px){
+  #fastStock{gap:2px;padding:2px 4px}
+  #fastStock button{padding:1px 5px;font-size:10px}
+  #fastStock .big{min-width:44px;padding:1px 7px;font-size:11px}
+  #fastStock .qbmode button{padding:2px 5px}
+  #fastStock #qbQty{width:52px}
+  #fastStock .qbout{margin-left:2px}
+  #fastStock .qbpos{display:none}
+}
+.datawin .one{display:flex;gap:5px;align-items:center;padding:1px 5px;font:600 9.5px var(--mono);white-space:nowrap;background:rgba(0,0,0,.78)}
+.datawin.min{width:auto;background:transparent;border-color:#333}
+.datawin .one .mn{cursor:pointer;color:#7dffb8;font-weight:900;margin-left:4px}
+.lad td.sz .ghost{max-width:calc(100% - 2px);overflow:hidden;white-space:nowrap}
+.lvstrip button{margin-left:2px}
+.ohbtn button{font-size:9px;padding:1px 5px;white-space:nowrap}
+@container (max-width: 1000px){ #fastStock .qsym{display:none} #fastStock .qbout{display:none} }
+#fastStock i.qsym{font-style:normal}
+.datawin.min{width:auto !important;height:auto !important;border:0 !important;box-shadow:none;background:transparent;resize:none}
+@container (max-width: 1000px){
+  #fastStock button[data-qb^="P"]{min-width:0;padding:1px 4px}
+  #fastStock > .dim{display:none}
+  #fastStock .close{padding:1px 5px}
+}
+table.lad.pro tr.atlv td.px{animation:none}
+table.lad.pro tr.atlv td{box-shadow:inset 0 1px 0 var(--lvc), inset 0 -1px 0 var(--lvc)}
+@container (min-width: 880px){ #fastStock .qsym{display:inline !important} #fastStock .qbout{display:inline !important} }
+/* ARM: impossible to miss */
+#armBtn.off:not([disabled]){background:#e8b931;border-color:#e8b931;color:#111;font-weight:900}
+#armBtn[disabled]{background:#2a1418;border-color:#7a2a35;color:#ff9aa6;opacity:1}
+#armBtn.locked:not([disabled]){background:#e8b931;color:#111}
+#armWhy{font-size:10.5px;font-weight:700;margin:0 6px 0 2px;white-space:nowrap;max-width:420px;overflow:hidden;text-overflow:ellipsis}
+#armWhy.go{color:#e8b931} #armWhy.bad{color:#ff6b7d} #armWhy.ok{color:#2fd38a}
+#fastStock .qbarm{background:#e8b931;border-color:#e8b931;color:#111;font-weight:900;padding:2px 10px}
+#fastStock .qbwhy{color:#ff6b7d;font-weight:700;font-size:10.5px;margin-right:4px}
+.oct td.act .ldbtn{font-size:9.5px;font-weight:700;color:#cbb8ff;border:1px solid #5b3fa8;border-radius:2px;padding:0 5px;cursor:pointer;white-space:nowrap}
+.oct tr.linked td.act .ldbtn, .oct tr.sel td.act .ldbtn{background:#5b3fa8;color:#fff}
+.ocload{font-size:10px}
+.oct td.act .ldbtn{padding:0 4px;font-size:11px}
+@container (max-width: 879px){ #fastStock .qbarm{display:none} #fastStock .qbwhy{display:none} }
+#restartBanner{position:fixed;left:50%;top:6px;transform:translateX(-50%);z-index:99;background:#b3123a;color:#fff;padding:8px 14px;border-radius:4px;font-size:13px;max-width:900px;box-shadow:0 4px 20px rgba(0,0,0,.6)}
+
+/* after hours on paper: simulated option data is yellow, never mistaken for the real market */
+.simtag{background:#e0b000;color:#111;font-weight:700;padding:0 5px;border-radius:3px;margin-left:6px;white-space:nowrap;font-size:10px;letter-spacing:.03em}
+.pnl.simmode{box-shadow:inset 0 0 0 1px #e0b000}
+
+/* the data box's MORE / LESS: a real button, not a speck */
+.datawin .mn{display:inline-block;background:#1b5e20;color:#fff !important;border-radius:3px;padding:0 4px !important;font:800 9px/12px var(--mono) !important;cursor:pointer;margin-left:6px}
+.datawin .ok .mn{background:#000;color:#0f0 !important}
+.datawin.min{width:118px !important;background:#000 !important;border:1px solid #444 !important;box-shadow:0 4px 14px rgba(0,0,0,.45)}
+
+/* the chart studies' boards (stock charts only): AIRSPACE top left beside the data box, GAS + the 2nd entry bottom
+   right above the volume, so the right side stays clear for price and the level labels. Each starts small: MORE opens it */
+.stbd{position:absolute;z-index:6;font:600 9px/1.25 ui-monospace,Menlo,Consolas,monospace;color:#fff;background:rgba(11,14,17,.94);border:1px solid rgba(120,144,156,.5);max-width:calc(100% - 230px);pointer-events:auto}
+.stbd.air{top:4px;left:128px}
+.stbd.gas{bottom:58px;right:92px;max-width:calc(100% - 240px)}
+.stbd .sth{display:flex;gap:8px;align-items:center;padding:1px 4px;background:#1c232c;color:#9fb0c3;font-weight:800;letter-spacing:.04em;white-space:nowrap}
+.stbd .sth .mini{color:#e8eef6;font-weight:700;letter-spacing:0;overflow:hidden;text-overflow:ellipsis}
+.stbd .stmin{cursor:pointer;background:#000;color:#0f0;border-radius:3px;padding:0 4px;margin-left:auto}
+.stbd .stbody{max-height:42vh;overflow:auto}
+.stbd.air .stbody{max-height:min(46vh,calc(100% - 40px))}
+.stbd table{border-collapse:collapse;width:100%}
+.stbd td{padding:1px 4px;border:1px solid rgba(120,144,156,.25);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px}
+.stbd td.big{font-size:10px;font-weight:800}
+.stbd .r{padding:1px 5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stbd .sthide{cursor:pointer;color:#ff8a80;padding:0 3px;margin-left:2px}
+/* the data box is pinned at its TOP only: pinned at both ends it stretched, and LESS left a tall empty black box */
+.datawin{bottom:auto !important}
+/* the open / close arrows: big enough to hit */
+.datawin .mn{font-size:11px !important;padding:0 5px !important} .stbd .stmin{font-size:11px;padding:0 5px}
+.stbd .stgear{cursor:pointer;color:#9fb0c3;padding:0 3px}
+.stset{display:block;margin:4px 0 6px;padding:3px 8px;background:#1b5e20;color:#fff;border:0;border-radius:3px;font-weight:800;cursor:pointer}
+
+/* PACE OF TAPE: the strip on the ladder and the T&S, the call at a level, the glowing last-price row */
+.pacebar{display:flex;align-items:center;gap:6px;padding:2px 6px;font:700 10px/14px var(--mono);background:#10161f;border-bottom:1px solid #22303f;white-space:nowrap;overflow:hidden}
+.pacebar .pst{min-width:64px;letter-spacing:.04em}
+.pacebar .pg{flex:0 0 70px;height:7px;background:#1d2733;border-radius:4px;overflow:hidden}
+.pacebar .pg i{display:block;height:100%;transition:width .35s ease,background .35s ease;background:#5f7189}
+.pacebar .prt{min-width:34px;text-align:right}
+.pacebar .pacc{width:10px}
+.pacebar .pbs{flex:0 0 46px;height:7px;display:flex;border-radius:3px;overflow:hidden}
+.pacebar .pbs i{display:block;height:100%;transition:width .35s ease} .pacebar .pbs .b{background:#26d07c} .pacebar .pbs .s{background:#ff4d5e}
+.pacebar .pkn{overflow:hidden;text-overflow:ellipsis;padding:0 5px;border-radius:3px;font-weight:800}
+.pacebar .pkn.c{background:rgba(38,208,124,.18);color:#5dffa8} .pacebar .pkn.p{background:rgba(255,77,94,.18);color:#ff8a95}
+.pacebar.s-surge{background:#2a1405} .pacebar.s-surge .pst{color:#ffb300} .pacebar.s-surge .pg i{background:#ffb300;box-shadow:0 0 6px #ffb300}
+.pacebar.s-fast .pst{color:#ffd54f} .pacebar.s-fast .pg i{background:#ffd54f}
+.pacebar.s-norm .pst{color:#9fb0c3}
+.pacebar.s-slow .pst{color:#7aa2d6} .pacebar.s-slow .pg i{background:#3d6fb0}
+.pacebar.s-dry .pst{color:#8aa0b8} .pacebar.s-dry .pg i{background:#2e4a6e}
+.pacebar.s-warm .pst{color:#6b7c90}
+.pacebar.s-surge,.pacebar.s-fast{animation:pacepulse 1.2s ease-in-out infinite}
+@keyframes pacepulse{50%{background:#1f2a12}}
+.pcall{padding:2px 6px;font:800 10.5px/15px var(--mono);background:#18202b;color:#e6edf6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-bottom:1px solid #22303f}
+.pcall.good{background:#0f3d22;color:#7dffb8} .pcall.warn{background:#3d2c08;color:#ffd166}
+.pcall b{color:#fff}
+tr.pglow td.px{transition:box-shadow .3s ease}
+tr.pglow.b td.px{box-shadow:inset 0 0 calc(var(--heat,0)*16px) rgba(38,208,124,calc(.25 + var(--heat,0)*.6))}
+tr.pglow.s td.px{box-shadow:inset 0 0 calc(var(--heat,0)*16px) rgba(255,77,94,calc(.25 + var(--heat,0)*.6))}
+
+/* the conviction dots with their names under them; DETAILS opens the CONVICTION panel */
+.cvstrip .lanes{display:inline-flex;gap:5px;align-items:flex-start}
+.cvstrip .lane{display:inline-flex;flex-direction:column;align-items:center;line-height:9px}
+.cvstrip .lane em{font:700 7.5px/9px var(--mono);font-style:normal;color:#8fa1b6;letter-spacing:.02em}
+.cvstrip .cvmore{margin-left:8px;font:800 9px var(--mono);color:#7dffb8;cursor:pointer}
+/* ===== PS60 STORY: the line over the LEVEL II and its own window ===== */
+.storyln{display:flex;flex-wrap:wrap;align-items:center;gap:3px 6px;padding:3px 6px;border-bottom:1px solid var(--line);background:#101318;font:600 10.5px var(--sans);line-height:1.3;cursor:pointer;color:#cfd6df}
+.storyln .stx{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;flex:1 1 100%;min-width:0}
+.storyln.t-bull{border-left:3px solid var(--buy)} .storyln.t-bear{border-left:3px solid var(--sell)} .storyln.t-warn{border-left:3px solid #e8b931} .storyln.t-neutral{border-left:3px solid #3a4150}
+.storyln.att{background:#1d1a0c}
+.hat{flex:0 0 auto;font:800 9px var(--sans);letter-spacing:.08em;padding:1px 5px;border-radius:2px;background:#e8b931;color:#111;animation:hatpulse 1.6s ease-in-out infinite}
+@keyframes hatpulse{50%{opacity:.6}}
+.fst{flex:0 0 auto;font:800 9px var(--sans);letter-spacing:.06em;padding:1px 5px;border-radius:2px;border:1px solid #3a4150;color:#9aa4b4;white-space:nowrap}
+.fst.dev{border-color:#e8b931;color:#e8b931} .fst.conf{border-color:var(--buy);color:#fff;background:#0b7a4b} .fst.cfl{border-color:var(--sell);color:#fff;background:#b3123a}
+#storyPanel,.pnl[data-p="story"] .pc{overflow:auto}
+.sthead{padding:6px 8px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:5px;background:#0f1216}
+.sctx{font:11px var(--sans);color:#cfd6df} .sctx b{font:800 10px var(--sans);letter-spacing:.06em;margin-right:4px} .sctx.bull b{color:var(--buy)} .sctx.bear b{color:var(--sell)}
+.satt{display:flex;align-items:center;gap:6px;font:11px var(--sans);color:#9aa4b4} .satt .watch{font:800 9px var(--sans);letter-spacing:.08em;padding:1px 5px;border:1px solid #3a4150;border-radius:2px;color:#9aa4b4}
+.snow{font:700 13px/1.35 var(--sans);color:#e8edf3;padding:4px 6px;border-left:3px solid #3a4150;background:#151a21}
+.snow.t-bull{border-left-color:var(--buy)} .snow.t-bear{border-left-color:var(--sell)} .snow.t-warn{border-left-color:#e8b931}
+.sflow{display:flex;flex-wrap:wrap;gap:4px} .sflow .fst{opacity:.45} .sflow .fst.on{opacity:1;box-shadow:0 0 0 1px currentColor}
+.sresp{font:600 11px var(--sans);color:#cfd6df} .sresp.t-warn{color:#e8b931} .sresp.t-bull{color:var(--buy)} .sresp.t-bear{color:var(--sell)}
+.sbody{padding:2px 0 8px}
+.sth{font:800 9px var(--sans);letter-spacing:.1em;color:#7d8590;padding:7px 8px 3px}
+.srow{font:11px var(--mono);padding:2px 8px;color:#cfd6df} .srow.major{color:#e8b931;font-weight:700}
+.srow.z-supply{color:#ff8a96} .srow.z-demand{color:#5fe0a0} .srow.z-user{color:#e8b931} .srow.b{color:var(--buy)} .srow.s{color:var(--sell)}
+.sfeed{font:11px/1.35 var(--sans);padding:3px 8px 3px 6px;border-left:3px solid transparent;color:#cfd6df} .sfeed i{font:normal 10px var(--mono);color:#7d8590;margin-right:6px}
+.sfeed.t-bull{border-left-color:var(--buy)} .sfeed.t-bear{border-left-color:var(--sell)} .sfeed.t-warn{border-left-color:#e8b931;color:#f0d68a}
+.dbias{flex:0 0 auto;font:800 9px var(--sans);letter-spacing:.06em;padding:1px 4px;border-radius:2px} .dbias.bull{color:var(--buy);border:1px solid var(--buy)} .dbias.bear{color:var(--sell);border:1px solid var(--sell)}
+.stbd .sth{cursor:move;user-select:none} .stbd.dragging{opacity:.85;box-shadow:0 4px 16px rgba(0,0,0,.5)} .stbd.moved{max-width:calc(100% - 8px)}
+/* VWAP + 50-DAY on the T&S and the LEVEL II (the same colours as the chart's VWAP and 50 SMA) */
+.refstrip{display:flex;flex-wrap:wrap;gap:2px 10px;align-items:center;padding:2px 6px;border-bottom:1px solid var(--line);background:#0e1114;font:600 10.5px var(--mono);white-space:nowrap}
+.refstrip .rf b{font:800 9px var(--sans);letter-spacing:.06em;margin-right:2px} .refstrip .vw b{color:#e8a0ff} .refstrip .d50 b{color:#1fc6fc}
+.refstrip i{font-style:normal;font-size:9.5px} .refstrip i.up{color:var(--buy)} .refstrip i.dn{color:var(--sell)}
+table.lad.pro tr.lv-vw{--lvc:#e8a0ff;--lvt:rgba(232,160,255,.08)} table.lad.pro tr.lv-d50{--lvc:#1fc6fc;--lvt:rgba(31,198,252,.08)}
+.lvp.vw{--c:#e8a0ff} .lvp.d50{--c:#1fc6fc}
+/* THE EDGE: seven reads agreeing */
+.edge{flex:0 0 auto;font:800 9px var(--sans);letter-spacing:.05em;padding:1px 5px;border-radius:2px;cursor:pointer;white-space:nowrap;margin-left:auto}
+.edge.lo{border:1px solid #3a4150;color:#9aa4b4} .edge.bd{border:1px solid #e8b931;color:#e8b931}
+.edge.hp.lg{background:#0b7a4b;color:#fff;border:1px solid var(--buy)} .edge.hp.sh{background:#b3123a;color:#fff;border:1px solid var(--sell)}
+.sedge{display:flex;flex-direction:column;gap:4px} .sedge .edge{margin-left:0;align-self:flex-start;font-size:10px}
+.echecks{display:grid;grid-template-columns:1fr;gap:1px}
+.ec{display:flex;gap:6px;align-items:baseline;font:700 10px var(--sans);letter-spacing:.04em;color:#cfd6df}
+.ec i{width:8px;height:8px;border-radius:50%;flex:0 0 auto;background:#3a4150;transform:translateY(1px)}
+.ec.y i{background:var(--buy)} .ec.h i{background:#e8b931} .ec.n i{background:var(--sell)}
+.ec em{font:400 10.5px var(--sans);letter-spacing:0;color:#9aa4b4;font-style:normal}
+/* GLOW: the VWAP (pink) and the daily 50-day (blue) rows on the LEVEL II, prints at them on the T&S, and their strip */
+@keyframes gvw{0%,100%{box-shadow:inset 0 0 0 1px rgba(232,160,255,.85),inset 0 0 10px rgba(232,160,255,.35)}50%{box-shadow:inset 0 0 0 1px rgba(232,160,255,1),inset 0 0 18px rgba(232,160,255,.6)}}
+@keyframes gd50{0%,100%{box-shadow:inset 0 0 0 1px rgba(31,198,252,.85),inset 0 0 10px rgba(31,198,252,.35)}50%{box-shadow:inset 0 0 0 1px rgba(31,198,252,1),inset 0 0 18px rgba(31,198,252,.6)}}
+table.lad tr.g-vw td{animation:gvw 2s ease-in-out infinite;background-color:rgba(232,160,255,.10)}
+table.lad tr.g-d50 td{animation:gd50 2s ease-in-out infinite;background-color:rgba(31,198,252,.10)}
+table.lad tr.g-vw.g-d50 td{background-color:rgba(150,180,255,.14)}
+table.tape2 tr.g-vw td{animation:gvw 2s ease-in-out infinite;background-color:rgba(232,160,255,.12)}
+table.tape2 tr.g-d50 td{animation:gd50 2s ease-in-out infinite;background-color:rgba(31,198,252,.12)}
+.gtag{font:800 8.5px var(--sans);letter-spacing:.04em;padding:0 3px;border-radius:2px;margin-left:3px;vertical-align:1px}
+.gtag.vw{background:#e8a0ff;color:#111} .gtag.d50{background:#1fc6fc;color:#111}
+.refstrip .rf.vw{text-shadow:0 0 6px rgba(232,160,255,.7)} .refstrip .rf.d50{text-shadow:0 0 6px rgba(31,198,252,.7)}
+
+/* THE CLEAN LADDER */
+table.lad.clean td{padding:0 4px;height:calc(18px * var(--ladh,1));position:relative}
+table.lad.clean td.ug{position:relative;font-size:calc(10px * var(--ladz,1));color:#e6edf6}
+table.lad.clean td.ug i{position:absolute;top:2px;bottom:2px;opacity:.85;border-radius:2px}
+table.lad.clean td.ug.u_s i{right:0;background:linear-gradient(90deg,rgba(255,77,94,.25),#ff4d5e)}
+table.lad.clean td.ug.u_b i{left:0;background:linear-gradient(90deg,#26d07c,rgba(38,208,124,.25))}
+table.lad.clean td.ug span{position:relative;font-weight:700}
+table.lad.clean td.ug.u_s{text-align:right}
+table.lad.clean td.sz{position:relative}
+table.lad.clean td.sz .pb{position:absolute;top:3px;bottom:3px;border-radius:2px;opacity:.22}
+table.lad.clean td.bsz .pb{right:0;background:#26d07c}
+table.lad.clean td.asz .pb{left:0;background:#ff4d5e}
+table.lad.clean td.sz .szn{position:relative;color:#c9d4e3}
+table.lad.clean td.sz.stk .pb{opacity:.55}
+table.lad.clean td.sz.stk .szn{color:#fff;font-weight:800}
+table.lad.clean td.sz.pul .pb{opacity:.10}
+table.lad.clean td.sz.pul .szn{color:#7b889e;text-decoration:line-through}
+table.lad.clean td.sz .rlb{position:relative;display:inline-block;font-size:calc(9px * var(--ladz,1));font-weight:800;padding:0 3px;margin:0 3px;border-radius:3px;background:#e8b931;color:#111}
+table.lad.clean td.sz.rl.fading .rlb{background:#b08a2a}
+table.lad.clean td.sz.rl.stale .rlb{background:#5c5236;color:#ddd}
+table.lad.clean td.px{text-align:center;white-space:nowrap}
+table.lad.clean td.px .kts{margin-left:4px}
+table.lad.clean .kt{display:inline-block;font-size:calc(8.5px * var(--ladz,1));font-weight:800;padding:0 3px;margin-left:2px;border-radius:3px;line-height:1.35;vertical-align:1px}
+@keyframes keyhot{from{background:rgba(255,200,60,.05)}to{background:rgba(255,200,60,.22)}}
+table.lad.clean tr.best-bid td.bsz{box-shadow:inset 0 0 0 1px rgba(38,208,124,.7)}
+table.lad.clean tr.best-ask td.asz{box-shadow:inset 0 0 0 1px rgba(255,77,94,.7)}
+table.lad.clean tr.lastpx td.px{background:#e8b931;color:#111;font-weight:800}
+.legend.lgc{display:flex;justify-content:space-between;gap:8px;font-size:10.5px;padding:3px 6px;flex-wrap:wrap}
+.kstrip{display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding:3px 6px;font-size:calc(10px * var(--ladz,1));color:#9aa6b8;position:sticky;z-index:3;background:var(--panel,#10141c)}
+.kstrip.up{top:0;border-bottom:1px solid rgba(255,255,255,.08)} .kstrip.dn{bottom:0;border-top:1px solid rgba(255,255,255,.08)}
+.kstrip .kp{display:inline-flex;gap:4px;align-items:baseline;padding:0 5px;border-radius:3px;white-space:nowrap}
+.kstrip .kp b{font-weight:800} .kstrip .kp i{font-style:normal;opacity:.8}
+.kstrip .kp.res{background:rgba(255,77,94,.14);color:#ff8a96;border:1px solid rgba(255,77,94,.4)}
+.kstrip .kp.sup{background:rgba(38,208,124,.12);color:#5fe0a0;border:1px solid rgba(38,208,124,.4)}
+.kstrip .kp.mine{background:rgba(232,185,49,.14);color:#e8b931;border:1px solid rgba(232,185,49,.5)}
+/* levels on the CLEAN ladder: the price cell outlined, nothing across the row */
+table.lad.clean tr.keyrow td.px{outline:1.5px solid var(--klc);outline-offset:-2px;border-radius:3px}
+table.lad.clean tr.keyrow.kl-near td.px{outline-width:2.5px;animation:klnear .9s ease-in-out infinite alternate}
+table.lad.clean tr.keyrow.kl-at td.px{outline-width:3px;background:var(--klf);color:#fff;font-weight:800;animation:klnear .5s ease-in-out infinite alternate}
+@keyframes klnear{from{outline-color:var(--klc);box-shadow:0 0 0 0 transparent}to{outline-color:#fff;box-shadow:0 0 10px 2px var(--klc)}}
+table.lad.clean tr.keyhot td.px{box-shadow:0 0 12px 3px var(--klc)}
+table.lad.clean tr.lastpx.keyrow td.px{background:#e8b931;color:#111}
+table.lad.clean .kt{color:var(--kc);border:1px solid var(--kc);background:color-mix(in srgb, var(--kc) 22%, transparent)}
+table.lad.clean tr.lastpx .kt{background:#111}
+.oct .ldbtn{cursor:pointer;display:inline-block;padding:0 4px;border-radius:3px}
+.oct .ldbtn.on{background:#26d07c;color:#06140d;font-weight:800}
+.oct .ldbtn.on:hover{background:#ff4d5e;color:#fff}
+.oct .ldbtn.on:hover::after{content:" off"}
+
+/* IND MINI: the small floating indicator pill and its menu */
+.indmini{position:absolute;left:6px;bottom:34px;z-index:7;font:10px ui-monospace,Menlo,Consolas,monospace}
+.indmini .im-pill{background:#11161dcc;color:#cfd8e3;border:1px solid #3a4656;border-radius:9px;padding:1px 7px;font:inherit;font-size:10px;cursor:pointer;line-height:15px;white-space:nowrap}
+.indmini .im-pill:hover{border-color:var(--gold);color:#fff} .indmini .im-pill.tpl{color:var(--gold)}
+.indmini .im-pop{display:none;position:absolute;bottom:calc(100% + 4px);left:0;width:232px;overflow:auto;background:#11161d;border:1px solid #2c3644;border-radius:6px;padding:5px 7px 7px;box-shadow:0 8px 24px #000a;color:#cfd8e3}
+.indmini.open .im-pop{display:block}
+.indmini .im-h{display:flex;justify-content:space-between;font-weight:700;color:#fff;margin-bottom:2px} .indmini .im-x{cursor:pointer;color:var(--dim)}
+.indmini h6{margin:6px 0 2px;font-size:9px;color:var(--gold);letter-spacing:.06em}
+.indmini label{display:flex;align-items:center;gap:4px;cursor:pointer;line-height:15px;white-space:nowrap}
+.indmini label input{margin:0;width:11px;height:11px} .indmini label i{display:inline-block;width:10px;height:3px;border-radius:1px}
+.indmini .im-ma{display:flex;flex-wrap:wrap;gap:0 6px;align-items:center;margin:1px 0} .indmini .im-ma span{width:34px;color:var(--dim);font-size:9px}
+.indmini .im-ma label{gap:2px}
+.indmini .im-tpl>div{display:flex;align-items:center;gap:4px;margin:1px 0} .indmini .im-tpl button{flex:1;text-align:left;font:inherit;padding:1px 5px;background:#1a222c;border:1px solid #2c3644;color:#cfd8e3;border-radius:3px;cursor:pointer}
+.indmini .im-tpl>div.on button{border-color:var(--gold);color:var(--gold)} .indmini .im-tpl kbd{font-size:9px;color:var(--dim)} .indmini .im-tpl b{cursor:pointer;color:var(--dim)} .indmini .im-tpl b:hover{color:var(--sell)}
+.indmini .im-save{display:flex;gap:4px;margin-top:4px} .indmini .im-save input{flex:1;min-width:0;font:inherit;background:#0b0f14;border:1px solid #2c3644;color:#fff;padding:1px 4px;border-radius:3px}
+.indmini .im-save button{font:inherit;padding:1px 6px;background:#1f6b45;border:1px solid #2a8a5a;color:#fff;border-radius:3px;cursor:pointer}
+
+/* RELOAD buyer / seller on the clean ladder: dark when he is not there, a steady glow while he is there with price on
+   him, brighter while prints are hitting him (steady, not pulsing: the ladder redraws many times a second) */
+table.lad.clean td.sz.bsz.rl.rl-idle{background:#0c2418} table.lad.clean td.sz.asz.rl.rl-idle{background:#2a0e12}
+table.lad.clean td.sz.bsz.rl.rl-live{background:#14532f;box-shadow:inset 0 0 0 1px #37e08c,0 0 8px #26d07c99;z-index:1}
+table.lad.clean td.sz.asz.rl.rl-live{background:#5a1820;box-shadow:inset 0 0 0 1px #ff6b7a,0 0 8px #ff4d5e99;z-index:1}
+table.lad.clean td.sz.bsz.rl.rl-hit{background:#1c7a44;box-shadow:inset 0 0 0 2px #6dffb4,0 0 16px #26d07cee}
+table.lad.clean td.sz.asz.rl.rl-hit{background:#86202c;box-shadow:inset 0 0 0 2px #ff9aa5,0 0 16px #ff4d5eee}
+table.lad.clean td.sz.rl.rl-live .szn{color:#fff;font-weight:800}
+
+/* a reloader's fill: it flies off his ladder row glowing gold, and sits on the tape glowing like his row */
+.flychip.rl{border:2px solid #ffd54a;box-shadow:0 0 14px #ffd54acc,0 4px 14px rgba(0,0,0,.6);min-width:150px}
+.p-tape .t.tape2 tr.rlhit.b td{background:rgba(38,208,124,.32);box-shadow:inset 0 0 0 1px #7dffb8,inset 0 0 10px rgba(38,208,124,.55)}
+.p-tape .t.tape2 tr.rlhit.s td{background:rgba(255,77,94,.32);box-shadow:inset 0 0 0 1px #ffa0a8,inset 0 0 10px rgba(255,77,94,.55)}
+.p-tape .t.tape2 tr.rlhit td{color:#fff;font-weight:800}
+.p-tape .t.tape2 .rltag{display:inline-block;font:800 9px var(--sans);padding:0 3px;margin-right:4px;border-radius:2px;background:#e8b931;color:#111;vertical-align:1px}
+
+/* RELOAD BASKET: the R$ pill on the Level II bar and its little reload-only Level II */
+#rlBasket .rbk-pill{font:700 10px var(--mono);padding:1px 6px;border-radius:9px;white-space:nowrap} #rlBasket .rbk-pill b{font-weight:800} #rlBasket .rbk-pill .b{color:var(--buy)} #rlBasket .rbk-pill .s{color:var(--sell)}
+.rbk-pop{min-width:290px;padding:5px 6px !important;font:11px var(--mono)}
+.rbk-pop .rbk-h{display:flex;justify-content:space-between;font-weight:800;color:#fff;margin-bottom:3px;letter-spacing:.04em}
+.rbk-t{width:100%;border-collapse:collapse} .rbk-t th{font-size:9px;color:var(--dim);font-weight:700;padding:1px 4px;text-align:center}
+.rbk-t td{padding:1px 5px;text-align:right;white-space:nowrap;border-top:1px solid #1b222c} .rbk-t td.px{text-align:center;color:#fff;font-weight:700;background:#141a22}
+.rbk-t td.b{color:var(--buy)} .rbk-t td.s{color:var(--sell);text-align:left} .rbk-t td.usd{font-weight:800}
+.rbk-t td.gone{opacity:.45} .rbk-t td i{display:block;font-style:normal;font-size:9px;color:#fff;opacity:.85}
+.rbk-t td.b.here{background:#14532f;box-shadow:inset 0 0 0 1px #37e08c} .rbk-t td.s.here{background:#5a1820;box-shadow:inset 0 0 0 1px #ff6b7a}
+.rbk-t tr.atpx td.px{background:#e8b931;color:#111} .rbk-t tr.tot td{border-top:1px solid #3a4656;font-weight:800;padding-top:3px}
+
+/* whole / half dollars: a small gold star by the price (emphasis only) */
+table.lad .rstar{color:#ffcc33;font-size:calc(9px * var(--ladz,1));margin-right:3px;text-shadow:0 0 4px #ffcc3399;vertical-align:1px}
+
+/* LARGE ORDERS (off-exchange): purple. The L tag and glow on the T&S; the LARGE ORDERS strip; L $ on the ladder */
+.p-tape .t.tape2 .dktag{display:inline-block;font:800 9px var(--sans);padding:0 3px;margin-right:4px;border-radius:2px;background:#7c4dff;color:#fff;vertical-align:1px}
+.p-tape .t.tape2 tr.dkbig td{background:rgba(124,77,255,.30);box-shadow:inset 0 0 0 1px #b39dff,inset 0 0 10px rgba(124,77,255,.55);color:#fff;font-weight:800}
+.dkstrip{font:11px var(--mono);padding:2px 6px;border-bottom:1px solid #202124;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#d9ccff}
+.dkstrip b{color:#fff} .dkstrip > b:first-child{color:#b39dff;letter-spacing:.06em;margin-right:4px} .dkstrip .dkcar{float:right;color:var(--dim)}
+.dkbox{padding:3px 6px 6px;background:#120d1f;border-bottom:1px solid #2c2140;font:11px var(--mono)}
+.dkt{width:100%;border-collapse:collapse} .dkt th{font-size:9px;color:var(--dim);text-align:left;padding:0 3px} .dkt td{padding:1px 3px;white-space:nowrap}
+.dkt td.b{color:var(--buy)} .dkt td.s{color:var(--sell)} .dkh{font-size:9px;color:#b39dff;letter-spacing:.06em;margin:5px 0 1px}
+table.lad .dkl{display:inline-block;margin-left:4px;font:800 calc(8.5px * var(--ladz,1)) var(--mono);padding:0 3px;border-radius:2px;background:#4527a0;color:#fff;vertical-align:1px}
+
+/* INST: the institutional footprint strip on the T&S */
+.instrip{font:11px var(--mono);padding:2px 6px;border-bottom:1px solid #202124;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#cfd8e3}
+.instrip .ih{color:#e8b931;letter-spacing:.06em;margin-right:4px} .instrip .b{color:var(--buy)} .instrip .s{color:var(--sell)} .instrip .sc{font-size:9px;padding:0 3px;border-radius:2px;background:#2c3644;color:#fff}
+.instrip .hot{color:#ffb347} .instrip .cold{color:#7b889e} .instrip .dkcar{float:right;color:var(--dim)}
+.inbox{background:#16130a;border-bottom-color:#3a3214} .inbox .dkh{color:#e8b931}
+
+/* FUND score tag on the ladder; the program-against-you warning and the guide on the T&S */
+table.lad .fdl{display:inline-block;margin-left:4px;font:800 calc(8.5px * var(--ladz,1)) var(--mono);padding:0 3px;border-radius:2px;color:#fff;vertical-align:1px}
+table.lad .fdl.b{background:#1b7a43;box-shadow:0 0 6px #26d07c88} table.lad .fdl.s{background:#9a2433;box-shadow:0 0 6px #ff4d5e88}
+.instwarn{font:800 11px var(--mono);padding:3px 6px;background:#5a1820;color:#fff;border-bottom:1px solid #ff4d5e;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.instguide{font:10.5px var(--mono);padding:1px 6px 2px;color:#e8d9a8;border-bottom:1px solid #202124;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+/* SETTINGS > Voice: TEST VOICE, and the VOICE button when ElevenLabs failed */
+.vtest { margin: 6px 0 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.vtest button { font-weight: 700; }
+.vtest .vok { color: #26a69a; font-weight: 600; }
+.vtest .vbad { color: #ef5350; font-weight: 600; }
+#voiceBtn.vfail { color: #ef5350; }
+/* THE BASKET LADDER (LAYOUT: BASKET): $ BID │ BID │ PRICE + BASKET │ ASK │ $ ASK */
+table.lad.basket2 td.mny{font-size:calc(9.5px * var(--ladz,1));color:#9aa4b4;white-space:nowrap}
+table.lad.basket2 td.mny.bid{text-align:right} table.lad.basket2 td.mny.ask{text-align:left}
+table.lad.basket2 td.bkpx{text-align:left;white-space:nowrap;padding:0 4px;overflow:hidden}
+table.lad.basket2 td.bkpx .pxv{display:inline-block;min-width:48px;text-align:right;font-weight:700}
+table.lad.basket2 tr.lastpx td.bkpx .pxv{color:#111}
+table.lad.basket2 .bkt{position:relative;display:inline-block;width:20px;height:12px;margin:0 5px;vertical-align:-1px;box-sizing:border-box;border:1.5px solid #4a5568}
+table.lad.basket2 .bkt.up{border-top:0;border-radius:0 0 4px 4px}            /* a reload buyer's basket opens upward */
+table.lad.basket2 .bkt.dn{border-bottom:0;border-radius:4px 4px 0 0}         /* a reload seller's is mirrored */
+table.lad.basket2 .bkt .bkfl{position:absolute;left:0;right:0;height:var(--fill,0%)}
+table.lad.basket2 .bkt.up .bkfl{bottom:0} table.lad.basket2 .bkt.dn .bkfl{top:0}
+table.lad.basket2 .bkt.bk-empty{border-color:#39414e}
+table.lad.basket2 .bkt.bk-amber{border-color:#e8b931} table.lad.basket2 .bkt.bk-amber .bkfl{background:#e8b931aa}
+table.lad.basket2 .bkt.bk-green{border-color:#26d07c} table.lad.basket2 .bkt.bk-green .bkfl{background:#26d07ccc}
+table.lad.basket2 .bkt.bk-green.glw{box-shadow:0 0 calc(2px + 10px * var(--glow)) calc(2px * var(--glow)) rgba(38,208,124,calc(0.25 + 0.75 * var(--glow)))}
+table.lad.basket2 .bkt.bk-flip{border-color:#ff4d5e;animation:bkflash .45s steps(2,end) infinite} table.lad.basket2 .bkt.bk-flip .bkfl{background:#ff4d5e}
+table.lad.basket2 .bkt.bk-gray{border-style:dashed;border-color:#7b889e} table.lad.basket2 .bkt.bk-gray .bkfl{background:#7b889e55}
+@keyframes bkflash{0%{opacity:1;box-shadow:0 0 10px 2px #ff4d5e}50%{opacity:.35;box-shadow:none}}
+table.lad.basket2 .bkn{font-style:normal;font-size:calc(9px * var(--ladz,1));color:#e9d9a6;margin-right:3px}
+table.lad.basket2 .tch{font-style:normal;font-size:calc(8.5px * var(--ladz,1));color:#9ad2ff}
+table.lad.basket2 .bls{margin-left:4px}
+table.lad.basket2 .bl{display:inline-block;font-size:calc(8.5px * var(--ladz,1));font-weight:800;padding:0 3px;margin-left:2px;border-radius:3px;line-height:1.35;border:1px solid}
+table.lad.basket2 .bl.trg{color:#ffd34d;border-color:#ffd34d;background:#3a2f0b}
+table.lad.basket2 .bl.ext{color:#7cc4ff;border-color:#3fa0ff;background:#0f2a44}
+table.lad.basket2 .bl.se{color:#6dffb4;border-color:#26d07c;background:#0f3322}
+table.lad.basket2 .bl.tp{color:#9ad2ff;border-color:#3fa0ff;background:#0f2a44}
+table.lad.basket2 .bl.sl{color:#ffb3bb;border-color:#ff4d5e;background:#3a1218}
+table.lad.basket2 .bl.flp{color:#fff;border-color:#ff4d5e;background:#c4283a}
+table.lad.basket2 .bl.pul{color:#c9d4e3;border-color:#7b889e;background:#2a3140}
+table.lad.basket2 .bl.lst{color:#111;border-color:#e8b931;background:#e8b931}
+/* your levels pop: bold label and a coloured row outline */
+table.lad.basket2 tr.manual.lvp-se td{box-shadow:inset 0 1.5px 0 #26d07c,inset 0 -1.5px 0 #26d07c}
+table.lad.basket2 tr.manual.lvp-tp td{box-shadow:inset 0 1.5px 0 #3fa0ff,inset 0 -1.5px 0 #3fa0ff}
+table.lad.basket2 tr.manual.lvp-sl td{box-shadow:inset 0 1.5px 0 #ff4d5e,inset 0 -1.5px 0 #ff4d5e}
+table.lad.basket2 tr.lvp-trg td.bkpx{box-shadow:inset 0 0 0 1.5px #ffd34d}
+table.lad.basket2 tr.newext td.bkpx{background:#0f2a44}
+table.lad.basket2 tr.flipr td{background:rgba(196,40,58,.22)}
+table.lad.basket2 td.sz.struck .szn{text-decoration:line-through;color:#8a93a3}
+table.lad.basket2 td.sz.bold .szn{font-weight:900;color:#fff}
+table.lad.basket2 tr.pullr td{filter:grayscale(.85) brightness(.85)}
+table.lad.basket2 td.sz.pulg .szn{color:#7b889e} table.lad.basket2 td.sz.pulg .pb{background:#7b889e;opacity:.18}
+table.lad.basket2 td.sz{white-space:nowrap;overflow:hidden}
+table.lad.basket2 td.sz .pgv{position:relative;font-style:normal;font-size:calc(8px * var(--ladz,1));color:#8a93a3;margin:0 2px;vertical-align:1px}
+table.lad.basket2 th .fastchip{font-style:normal;background:#ff8a00;color:#111;border-radius:3px;padding:0 3px;margin-left:3px}
+table.lad.basket2 th .bkgear{background:none;border:0;color:#9aa4b4;cursor:pointer;padding:0 2px;margin-left:3px}
+.bkseq{display:flex;flex-wrap:wrap;gap:4px;align-items:center;padding:3px 6px;font-size:10px;background:#10151d;border-bottom:1px solid #222b38;position:sticky;top:0;z-index:4}
+.bkseq .st{padding:1px 5px;border-radius:3px;border:1px solid #2a3446;color:#7b889e;white-space:nowrap}
+.bkseq .st b{margin-right:3px}
+.bkseq .st.done{color:#9aa4b4;border-color:#39465a}
+.bkseq .st.on{color:#111;background:#e8b931;border-color:#e8b931;font-weight:800}
+.bkseq .vd{font-style:normal;padding:0 3px;border-radius:2px;margin-left:2px}
+.bkseq .vd.g{background:#145c34;color:#fff} .bkseq .vd.g2{background:#1d3a28;color:#9ff0c4} .bkseq .vd.a{background:#5c4a12;color:#ffd34d} .bkseq .vd.x{background:#2a3140;color:#c9d4e3}
+.bkseq .sqn{color:#9aa4b4;flex-basis:100%;font-size:9.5px}
+.bkflip{position:sticky;top:0;z-index:5;background:#c4283a;color:#fff;font-weight:800;padding:2px 6px;font-size:11px;letter-spacing:.03em;animation:bkflash 1s steps(2,end) infinite}
+.bkfx{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:6}
+.bkfx .bkdrop{position:absolute;font-style:normal;font-weight:800;font-size:9.5px;padding:0 3px;border-radius:3px;will-change:transform,opacity;white-space:nowrap}
+.bkfx .bkdrop.b{color:#062b17;background:#26d07cdd} .bkfx .bkdrop.s{color:#2b0609;background:#ff4d5edd} .bkfx .bkdrop.m{color:#1d1a10;background:#e8b931dd}
+.bkfx .bkpulse{position:absolute;border-radius:4px;will-change:transform,opacity}
+.bkfx .bkpulse.b{box-shadow:0 0 0 2px #37e08c,0 0 8px #26d07c} .bkfx .bkpulse.s{box-shadow:0 0 0 2px #ff6b7a,0 0 8px #ff4d5e}
+.bkfx .bkpulse.rf{box-shadow:0 0 0 2px #6dffb4,0 0 12px #26d07c} .bkfx .bkpulse.r{box-shadow:0 0 0 2px #ff4d5e,0 0 12px #ff4d5e} .bkfx .bkpulse.g{box-shadow:0 0 0 2px #9aa4b4,0 0 8px #7b889e}
+#bkgear{position:fixed;z-index:70;width:250px;background:#10151d;border:1px solid #39465a;border-radius:6px;box-shadow:0 6px 24px #000a;padding:6px 8px;font-size:11px;color:#dbe3ee}
+#bkgear .bkgt{font-weight:800;color:#e8b931;margin-bottom:4px;display:flex} #bkgear .bkgt .x{margin-left:auto;cursor:pointer;color:#9aa4b4}
+#bkgear label{display:flex;align-items:center;gap:6px;padding:2px 0} #bkgear label.rng input{flex:1} #bkgear label.rng i{font-style:normal;color:#9aa4b4;min-width:62px;text-align:right}
+/* BREAK TRAPS: the small floating box */
+.btrap{position:fixed;right:18px;top:120px;z-index:60;width:300px;background:#10151d;border:1px solid #39465a;border-radius:6px;box-shadow:0 6px 24px #000a;font-size:11px;color:#dbe3ee}
+.btrap .bth{display:flex;align-items:center;gap:6px;padding:3px 6px;background:#1a2230;border-radius:6px 6px 0 0;cursor:move;user-select:none}
+.btrap .bth b{color:#e8b931;letter-spacing:.08em} .btrap .bth .bts{flex:1;color:#9aa4b4}
+.btrap .bth button{background:none;border:0;color:#9aa4b4;cursor:pointer;padding:0 3px;font-size:12px}
+.btrap.min .btb{display:none}
+.btrap .btb{padding:4px 6px;max-height:300px;overflow:auto}
+.btrap .bti{padding:3px 0;border-bottom:1px solid #222b38} .btrap .bti:last-child{border-bottom:0}
+.btrap .btl{display:flex;gap:5px;align-items:baseline;white-space:nowrap} .btrap .btl i{margin-left:auto;color:#7b889e;font-style:normal}
+.btrap .btl .btn{overflow:hidden;text-overflow:ellipsis;min-width:0;flex:0 1 auto} .btrap .btl .btp{color:#9aa4b4;flex:none} .btrap .btl .btw{flex:none}
+.btrap .btr.out{color:#e8b931} .btrap .btr.out b{color:#ffd34d}
+.btrap .btl .btw{font-weight:800;padding:0 4px;border-radius:3px}
+.btrap .btl.brk .btw{background:#2a3446;color:#cfd8e6} .btrap .btl.trp.up .btw{background:#7a1c26;color:#fff} .btrap .btl.trp.dn .btw{background:#145c34;color:#fff}
+.btrap .btl.ext .btw{background:#e8b931;color:#111} .btrap .btl.hld .btw{background:#1d3a28;color:#9ff0c4}
+.btrap .btr{display:flex;flex-wrap:wrap;gap:8px;color:#c9d4e3;line-height:1.5} .btrap .btr.dim{color:#7b889e} .btrap .btr.uw b{color:#ff8b96}
+/* OPTION FLOW receipts: the call you clicked, the prints it added up, and one ticker's live read */
+.fref{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:6px 8px;margin:2px 0 6px;border:1px solid var(--gold);border-radius:4px;background:rgba(255,193,7,.08);font:12px var(--sans)}
+.fref b{color:var(--gold);letter-spacing:.06em} .fref .frb{margin-left:auto;display:flex;gap:4px}
+.fref button,.fread button{font:700 10.5px var(--sans);padding:2px 7px;border-radius:3px;border:1px solid #3a3d44;background:#1b1d21;color:#d6d6d3;cursor:pointer}
+.fread{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:5px 8px;margin:2px 0 6px;border:1px solid #2c2f35;border-radius:4px;font:11px var(--sans);color:#a9adb5}
+.fread button.c{border-color:#17a86a;color:#3fe09a} .fread button.p{border-color:#d64541;color:#ff7b74} .fread button.kn{background:rgba(255,193,7,.15)}
+.fread button[disabled]{opacity:.45;cursor:default}
+.fl.said{outline:2px solid var(--gold);outline-offset:-2px;background:rgba(255,193,7,.07)}
+.say .fbtn{font:700 9.5px var(--sans);padding:0 5px;margin:0 6px 0 2px;border-radius:3px;border:1px solid var(--gold);background:transparent;color:var(--gold);cursor:pointer}
+
+/* PLAY-BY-PLAY: the live read at the place */
+.splay{margin:4px 0;padding:5px 8px;border-left:3px solid var(--gold,#d4a017);background:rgba(212,160,23,.08);font-size:12px;line-height:1.35}
+.splay b{color:var(--gold,#d4a017);font-size:10px;letter-spacing:.06em;margin-right:4px}
+.storyln b.pbp{background:#d4a017;color:#111;padding:0 4px;border-radius:3px;font-size:9px;margin-right:4px}
+
+.sfw{margin:4px 0;padding:5px 8px;border-left:3px solid #5b8def;background:rgba(91,141,239,.08);font-size:12px;line-height:1.35}
+.sfw b{color:#5b8def;font-size:10px;letter-spacing:.06em;margin-right:4px}
+.smap .srow{display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:baseline}
+.smap .srow i{font-style:normal;font-variant-numeric:tabular-nums}
+.smap .srow em{font-style:normal;opacity:.75;font-size:11px}
+.smap .srow.s span{color:#e05561}.smap .srow.b span{color:#26a65b}
+.smap .srow.now{border-top:1px dashed currentColor;border-bottom:1px dashed currentColor;font-weight:700}
+
+.sfw{margin:4px 0;padding:5px 8px;border-left:3px solid #5b8def;background:rgba(91,141,239,.08);font-size:12px;line-height:1.35}
+.sfw b{color:#5b8def;font-size:10px;letter-spacing:.06em;margin-right:4px}
+.smap .srow{display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:baseline}
+.smap .srow i{font-style:normal;font-variant-numeric:tabular-nums}
+.smap .srow em{font-style:normal;opacity:.75;font-size:11px}
+.smap .srow.s span{color:#e05561}.smap .srow.b span{color:#26a65b}
+.smap .srow.now{border-top:1px dashed currentColor;border-bottom:1px dashed currentColor;font-weight:700}
+
+/* CHILD ORDERS: an algo's same-size prints stick out on the tape */
+.tape2 tr.kid td{background:rgba(91,141,239,.14)}
+.tape2 .kidtag{display:inline-block;margin-right:3px;color:#5b8def;font-weight:700}
+.instrip b.kids{background:rgba(91,141,239,.16);padding:0 5px;border-radius:3px}
+
+/* THE CANDLE LADDER: the 5-minute candle drawn down the rows (CANDLE on the LEVEL II bar) */
+.lad.candle td.cdl{width:20px;min-width:20px;padding:0;position:relative;border-right:1px solid var(--line)}
+.lad.candle th.cdl{font-size:9px}.lad.candle th.cdl i{display:block;font-style:normal;font-size:8px;opacity:.75}
+.lad.candle td.cdl i{position:absolute;display:block}
+.lad.candle tr.c-up{--cc:#1fb86a}.lad.candle tr.c-dn{--cc:#e8404f}
+.lad.candle tr.cw td.cdl i.wk{left:50%;top:0;bottom:0;width:2px;margin-left:-1px;background:var(--cc)}
+.lad.candle tr.c-high.cw td.cdl i.wk{top:50%}.lad.candle tr.c-low.cw td.cdl i.wk{bottom:50%}
+.lad.candle tr.cb td.cdl i.bd{left:4px;right:4px;top:0;bottom:0;background:var(--cc);opacity:.92}
+.lad.candle tr.cb.c-high td.cdl i.bd{top:35%}.lad.candle tr.cb.c-low td.cdl i.bd{bottom:35%}
+.lad.candle tr.c-open td.cdl i.bd{border-top:2px solid rgba(255,255,255,.95)}
+.lad.candle tr.c-last td.cdl i.bd{box-shadow:0 0 7px 2px var(--cc)}
+.lad.candle tr.p-up{--pc:#1fb86a}.lad.candle tr.p-dn{--pc:#e8404f}
+.lad.candle tr.pw td.cdl i.pg{left:2px;top:0;bottom:0;width:0;border-left:1px dotted var(--pc);opacity:.6}
+.lad.candle tr.pb td.cdl i.pg{left:1px;top:0;bottom:0;width:3px;background:var(--pc);opacity:.35}
+.lad.candle tr.lastpx td.cdl{background:rgba(255,197,61,.10)}
+
+/* THE WHITE DESK (DESK WHITE on the toolbar): the whole desk on a light screen. Every colour keeps its hue (green
+   stays green, red stays red, gold stays gold), only light and dark trade places; the charts keep their own screen
+   colour (they are flipped back) */
+body.whitedesk{filter:invert(1) hue-rotate(180deg);background:#000}
+body.whitedesk .chart-wrap canvas,body.whitedesk img,body.whitedesk video{filter:invert(1) hue-rotate(180deg)}
+
+/* THE HAND-OFF: the ladder's candle flies to the chart when it closes */
+.lad.candle th.cdl i.oc{display:block;font-style:normal;font-size:8px;line-height:1.1;opacity:.9;letter-spacing:0}
+.lad.candle th.cdl i.oc.u{color:#1fb86a}.lad.candle th.cdl i.oc.d{color:#e8404f}
+.lad.candle tr.cclose td.cdl{animation:cclose 1.4s ease-out}
+@keyframes cclose{0%{box-shadow:inset 0 0 0 2px var(--cc),0 0 12px 2px var(--cc)}100%{box-shadow:none}}
+.cfly{position:fixed;z-index:9999;pointer-events:none;will-change:left,top,width,height,opacity;opacity:1;
+  transition:left .68s cubic-bezier(.22,.9,.25,1),top .68s cubic-bezier(.22,.9,.25,1),width .68s cubic-bezier(.22,.9,.25,1),height .68s cubic-bezier(.22,.9,.25,1),opacity .35s ease .95s;
+  filter:drop-shadow(0 0 3px var(--cc)) drop-shadow(0 0 9px var(--cc))}
+.cfly i{position:absolute;display:block}
+.cfly i.wk{left:50%;top:0;bottom:0;width:2px;margin-left:-1px;background:var(--cc)}
+.cfly i.bd{left:12%;right:12%;background:var(--cc);border-radius:1px;box-shadow:0 0 10px 1px var(--cc)}
+.cfly b{position:absolute;right:100%;margin-right:6px;font:700 10px/1 var(--mono);color:var(--cc);white-space:nowrap;text-shadow:0 0 6px rgba(0,0,0,.6);transition:opacity .3s}
+.cfly b.o{top:-2px}.cfly b.c{bottom:-2px}
+.cfly.go b{opacity:.0}
+.cfly.land{opacity:0}
+.cland{position:fixed;z-index:9998;pointer-events:none;width:28px;height:28px;border-radius:50%;border:2px solid var(--cc);box-shadow:0 0 16px 4px var(--cc);animation:cland .8s ease-out forwards}
+@keyframes cland{0%{transform:scale(.4);opacity:1}100%{transform:scale(2.2);opacity:0}}
+
+/* the candle's range on the ladder: a wick you can see, H / L marks at its ends, O H L C R in the header */
+.lad.candle td.cdl{width:26px;min-width:26px}
+.lad.candle tr.cw td.cdl i.wk{width:3px;margin-left:-1.5px}
+.lad.candle tr.c-high td.cdl i.wk::before,.lad.candle tr.c-low td.cdl i.wk::after{content:"";position:absolute;left:-4px;width:11px;height:2px;background:var(--cc)}
+.lad.candle tr.c-high td.cdl i.wk::before{top:0}.lad.candle tr.c-low td.cdl i.wk::after{bottom:0}
+.lad.candle td.cdl em.hl{position:absolute;right:1px;top:1px;font:700 8px/1 var(--mono);color:var(--cc);font-style:normal}
+.lad.candle td.cdl em.hl.l{top:auto;bottom:1px}
+.lad.candle th.cdl i.oc.h,.lad.candle th.cdl i.oc.l{opacity:.8}.lad.candle th.cdl i.oc.r{opacity:.7}
+
+/* THE DESK SCORE */
+.scrow{display:grid;grid-template-columns:minmax(120px,1fr) 28px 40px 60px auto;white-space:nowrap;gap:6px;align-items:baseline;font:11px var(--mono);padding:2px 8px;color:#cfd6df}
+.scrow i{font-style:normal;color:#9fb0c3;text-align:right} .scrow b{text-align:right} .scrow b.good{color:#3fb950} .scrow b.bad{color:#f85149}
+.scrow em{font-style:normal;color:#7d8590} .scrow u{text-decoration:none;color:#9fb0c3}
+.screc{display:grid;grid-template-columns:62px 44px 1fr 44px 56px;white-space:nowrap;gap:6px;align-items:baseline;font:11px var(--mono);padding:2px 8px;color:#cfd6df;border-left:3px solid transparent}
+.screc.good{border-left-color:#3fb950} .screc.bad{border-left-color:#f85149} .screc i{font-style:normal;color:#9fb0c3} .screc em{font-style:normal;font-weight:800}
+.screc.good em{color:#3fb950} .screc.bad em{color:#f85149} .screc u{text-decoration:none;text-align:right}
+
+/* REPLAY TRAINING */
+#rpTrain.on{background:#5b3fd6;color:#fff;border-color:#8a74ff}
+#rpQuiz{display:none;position:fixed;left:50%;top:64px;transform:translateX(-50%);z-index:60;gap:8px;align-items:center;padding:10px 14px;background:#1a1530;border:1px solid var(--violet);border-radius:6px;box-shadow:0 8px 28px rgba(0,0,0,.55);max-width:min(900px,92vw);font:12px var(--sans);color:#e6e6ef}
+#rpQuiz.on{display:flex}
+#rpQuiz b{color:#c9b8ff;letter-spacing:.08em;white-space:nowrap} #rpQuiz span{flex:1;min-width:0;white-space:normal}
+#rpQuiz button{font-weight:800;padding:5px 12px} #rpQuiz button[data-ans=long]{color:#3fb950} #rpQuiz button[data-ans=short]{color:#f85149} #rpQuiz button[data-ans=wait]{color:#e8b931}
+
+/* WHO HAS THE TAPE */
+.slean{font:11px var(--sans);padding:4px 8px;color:#cfd6df;border-left:3px solid #7d8590} .slean b{letter-spacing:.08em;margin-right:6px;color:#9fb0c3}
+.slean.bear{border-left-color:#f85149} .slean.bear b{color:#f85149} .slean.bull{border-left-color:#3fb950} .slean.bull b{color:#3fb950}
+.slean u{text-decoration:none;font-weight:800;color:#e8b931} .slean .satt{font:11px var(--mono);padding:2px 0 0 0;color:#cfd6df} .slean .satt b{letter-spacing:.04em;margin-right:4px;color:#e8b931}
+.slean .satt.done{color:#9fb0c3} .slean .satt.done.ok b{color:#3fb950} .slean .satt.done.no b{color:#f85149}
+
+/* ================= TWINEY'S PRECISION LEVEL 2 (the DOM) ================= */
+.lad.dom{--wb:38,181,111;--ws:217,83,79;--vb:38,181,111;--vs:217,83,79;--tr:150,160,175}
+.lad.dom.cb{--wb:70,140,255;--ws:255,150,40;--vb:70,140,255;--vs:255,150,40}
+.lad.dom td{position:relative;font-variant-numeric:tabular-nums;height:calc(16px * var(--ladz,1) * var(--ladh,1))}
+.lad.dom td.sz,.lad.dom td.dvol,.lad.dom td.dtr{padding:0 3px}
+.lad.dom td.bsz,.lad.dom td.dvol.s{text-align:right} .lad.dom td.asz,.lad.dom td.dvol.b,.lad.dom td.dtr{text-align:left}
+.lad.dom td.px{text-align:center;font-weight:700;color:#e6e9ef;background:rgba(255,255,255,.025);width:58px}
+.lad.dom td.px sup{font-size:.7em;color:var(--dim);margin-left:2px}
+.lad.dom i.dbar{position:absolute;top:2px;bottom:2px;width:0;pointer-events:none;border-radius:1px;transition:width 160ms cubic-bezier(.2,.7,.3,1)}
+.lad.dom.still i.dbar{transition:none}
+.lad.dom td.bsz i.dbar{right:0;background:linear-gradient(to left,rgba(var(--wb),.42),rgba(var(--wb),.10))}
+.lad.dom td.asz i.dbar{left:0;background:linear-gradient(to right,rgba(var(--ws),.42),rgba(var(--ws),.10))}
+.lad.dom td.dvol.s i.dbar{right:0;background:rgba(var(--vs),.22)} .lad.dom td.dvol.b i.dbar{left:0;background:rgba(var(--vb),.22)}
+.lad.dom td.dtr i.dbar{left:0;background:rgba(var(--tr),.16)}
+.lad.dom td.sz .szn,.lad.dom td.dvol .vn,.lad.dom td.dtr .vn{position:relative;z-index:1}
+.lad.dom td.dvol.s .vn{color:rgb(var(--vs))} .lad.dom td.dvol.b .vn{color:rgb(var(--vb))} .lad.dom td.dtr .vn{color:#b9c2d0}
+.lad.dom td.dvol.pulse,.lad.dom td.dtr.pulse{animation:dompulse 220ms 1}
+@keyframes dompulse{0%{box-shadow:inset 0 0 0 2px rgba(255,255,255,.55)}100%{box-shadow:inset 0 0 0 0 rgba(255,255,255,0)}}
+.lad.dom td.sz.eat::before{display:none}                         /* the DOM draws its own bar: no second fill under it */
+.lad.dom tr.lastpx td{background:rgba(232,185,49,.07)} .lad.dom tr.lastpx td.px{outline:1px solid rgba(232,185,49,.55);outline-offset:-1px;color:#ffd866}
+.lad.dom tr.best-bid td.bsz .szn{color:#dff3e6} .lad.dom tr.best-ask td.asz .szn{color:#ffe0e0}
+.lad.dom tr.best-bid td.bsz,.lad.dom tr.best-ask td.asz{box-shadow:inset 0 -1px 0 rgba(255,255,255,.18)}
+.lad.dom td.rail{padding:0 2px;white-space:nowrap;overflow:hidden;font:700 calc(8.5px * var(--ladz,1)) var(--sans);letter-spacing:.02em;text-align:center;width:52px;max-width:52px}
+.lad.dom td.rail.has .lvm{max-width:calc(100% - 4px)} .lad.dom td.rail.has .rcl ~ .rcl{margin-left:1px}
+.lad.dom td.rail.has:has(.rcl) .lvm{max-width:46%}                     /* a marker and a cluster share the rail: the marker shortens, the cluster never crosses into the price */
+.lad.dom td.rail .lvm{display:inline-block;padding:0 3px;border-radius:2px;line-height:calc(12px * var(--ladz,1));background:rgba(255,255,255,.08);color:#dfe5ee;max-width:100%;overflow:hidden;text-overflow:ellipsis;vertical-align:middle}
+.lad.dom td.rail .lvm u{text-decoration:none;margin-left:2px;color:var(--gold)}
+.lad.dom td.rail .lvm.trg{background:rgba(232,185,49,.25);color:#ffe08a} .lad.dom td.rail .lvm.se{background:rgba(90,150,255,.25);color:#bcd4ff}
+.lad.dom td.rail .lvm.tp{background:rgba(38,181,111,.25);color:#b9f0d0} .lad.dom td.rail .lvm.sl{background:rgba(217,83,79,.25);color:#ffc2c0}
+.lad.dom td.rail .lvmore{display:none;position:fixed;z-index:60;background:#12161d;border:1px solid var(--line);padding:3px;box-shadow:0 4px 12px rgba(0,0,0,.5);white-space:nowrap}
+.lad.dom td.rail .lvmore .lvm{display:block;max-width:none;margin:1px 0;text-align:left}
+.lad.dom td.rail.open .lvmore{display:block}
+.lad.dom td.rail .rcl{display:inline-block;margin-left:2px;padding:0 3px;border-radius:8px;font:800 calc(8.5px * var(--ladz,1)) var(--mono);line-height:calc(12px * var(--ladz,1));vertical-align:middle;box-shadow:0 0 0 calc(1px + var(--n,0) * .35px) currentColor inset}
+.lad.dom td.rail .rcl.b{color:rgb(var(--wb));background:rgba(var(--wb),.14)} .lad.dom td.rail .rcl.s{color:rgb(var(--ws));background:rgba(var(--ws),.14)}
+.lad.dom td.rail .rcl.still{opacity:.8} .lad.dom td.rail .rcl.not{opacity:.55;box-shadow:none;text-decoration:line-through} .lad.dom td.rail .rcl.gone{opacity:.45;box-shadow:none}
+.lad.dom.no-sell th.volh.s,.lad.dom.no-sell td.dvol.s,.lad.dom.no-buy th.volh.b,.lad.dom.no-buy td.dvol.b,.lad.dom.no-rail th.railh,.lad.dom.no-rail td.rail,.lad.dom.no-traded th.trh,.lad.dom.no-traded td.dtr{display:none}
+.lad.dom td.mn{color:#9fb0c3;font-size:.9em;padding:0 3px}
+.lad.dom td.sz.fake .szn{text-decoration:line-through;opacity:.7}
+.lad.dom td.sz.big .szn{color:#f2d59a} .lad.dom td.sz.huge .szn{color:#fff;font-weight:800}
+.domhdr{display:flex;gap:8px;align-items:center;padding:2px 6px;font:10px var(--sans);color:#9fb0c3;background:#0b0f16;border-bottom:1px solid var(--line);white-space:nowrap;overflow:hidden}
+.domhdr .st{letter-spacing:.1em;padding:0 5px;border-radius:2px;background:#1c232c;color:#cfd6df} .domhdr.ok .st{background:#153a26;color:#7dffb8} .domhdr.warn .st{background:#3a2e12;color:#ffd866} .domhdr.bad .st{background:#3a1515;color:#ff8a96}
+.domhdr .src{overflow:hidden;text-overflow:ellipsis} .domhdr .age{font-family:var(--mono);color:#7d8590} .domhdr .stale{color:#ff8a96;letter-spacing:.08em}
+.domhdr .sp{flex:1} .domhdr .domrc{display:none;font:800 9px var(--sans);padding:0 6px;height:16px;line-height:16px} .domhdr .domrc.on{display:inline-block}
+.eatbar .pinbox{position:static;display:none;border-top:1px dashed var(--line);margin-top:2px;padding:2px 0 0 0;background:transparent} .eatbar .pinbox.on{display:flex}
+.lad.dom th .short{display:none} .lad.dom.narrow th .full{display:none} .lad.dom.narrow th .short{display:inline}
+.pnl[data-p="book"].short .eatbar .ltouch{display:none} .pnl[data-p="book"].short .eatbar .lstory{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-height:14px}
+.pnl[data-p="book"].short .eatbar .pinbox .txt{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.eatbar{max-height:38%;overflow:hidden}
+
+/* ---------- DESK AI */
+.pnl[data-p="ai"] .pc{display:flex;flex-direction:column;overflow:hidden}
+.aibar{display:flex;gap:4px;align-items:center;padding:4px 6px;border-bottom:1px solid var(--line);background:#0e1114;flex-wrap:wrap}
+.aibar .sp,.aihd .sp{flex:1}
+.aibar button,.aiask button,.aihd button{font:800 9.5px var(--sans);letter-spacing:.06em;padding:3px 7px;border:1px solid #2a3340;border-radius:3px;background:#161b22;color:#cfd6df;cursor:pointer}
+.aibar button:hover,.aiask button:hover,.aihd button:hover{background:#1f2730} .aibar button:disabled{opacity:.45;cursor:default}
+.aiask{display:flex;gap:4px;padding:4px 6px;border-bottom:1px solid var(--line)} .aiask input{flex:1;min-width:0;font:11px var(--sans);padding:3px 6px;background:#0b0f16;border:1px solid #2a3340;border-radius:3px;color:#e6edf3}
+.aist{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:3px 8px;font:10.5px var(--sans);color:#9fb0c3;border-bottom:1px solid var(--line)}
+.aist b{font:800 9.5px var(--sans);letter-spacing:.08em;padding:0 5px;border-radius:2px;border:1px solid #2a3340} .aist b.ok{color:#3fb950;border-color:#1f5a30} .aist b.bad{color:#f85149;border-color:#6a1f24} .aist b.run{color:#e8b931;border-color:#5a4a12;animation:livepulse 1.2s infinite} .aist b.off{color:#7d8590}
+.aist .ailast{display:inline-flex;gap:6px;margin-left:auto} .aist .ailast i{font:10px var(--mono);font-style:normal;color:#9fb0c3;cursor:pointer;text-decoration:underline dotted} .aist .ailast i.bad{color:#f85149}
+.aiout{flex:1;min-height:0;overflow:auto;padding:0 0 8px}
+.aihd{display:flex;gap:8px;align-items:center;padding:6px 8px 2px;font:800 11px var(--sans);letter-spacing:.04em;color:#e6edf3}
+.aitxt{padding:2px 10px;font:12px/1.5 var(--sans);color:#d7dee7} .aitxt h5{margin:10px 0 3px;font:800 10px var(--sans);letter-spacing:.1em;color:#e8b931} .aitxt p{margin:4px 0} .aitxt ul{margin:2px 0 4px 16px;padding:0} .aitxt li{margin:2px 0} .aitxt code{font:11px var(--mono);color:#9fb0c3}
+.aierr{margin:6px 8px;padding:6px 8px;border:1px solid #6a1f24;border-radius:3px;color:#ff8a95;font:11px var(--sans)}
+.aigiven{margin:6px 8px;padding:6px 8px;background:#0b0f16;border:1px solid #2a3340;border-radius:3px;font:10px/1.4 var(--mono);color:#9fb0c3;white-space:pre-wrap;word-break:break-word;max-height:50%;overflow:auto}
+.aifiles{display:flex;flex-direction:column;gap:2px;padding:4px 10px} .aifiles a{font:11px var(--mono);color:#9fb0c3} .aifiles a:hover{color:#e6edf3}

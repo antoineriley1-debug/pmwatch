@@ -1,0 +1,128 @@
+
+<div id="app">
+<div id="cmd">
+  <span id="brand"><i></i><b>TED</b><span class="long"> TWINEY EXECUTION DESK</span></span>
+  <span id="symbox"><input id="symIn" placeholder="SYMBOL" autocomplete="off" spellcheck="false"><select id="symHist" title="recent symbols"><option value="">RECENT</option></select></span>
+  <span class="sep"></span>
+  <button id="armBtn" class="off" title="Arm order entry. Disarmed at every launch.">ARM</button><span id="armWhy"></span>
+  <button id="sideBtn" class="long" title="LONG / SHORT for the ticker on screen. Click to flip; your levels stay. Drawing a stop and a target sets it on its own (stop above target = short).">L</button>
+  <label title="Skip the confirmation box on every order"><input type="checkbox" id="oneclick"> one-click</label>
+  <label title="Attach the play's stop and target to every entry"><input type="checkbox" id="bracket"> stop+target</label>
+  <label title="PS60 exits: cash-flow scale-outs, runner to target, stop to breakeven after the first cash flow"><input type="checkbox" id="scale"> PS60 exits</label>
+  <span class="sep"></span>
+  <button id="recBtn" title="Record this session (space)">REC</button>
+  <button id="markBtn" title="Marker (M)">MARK</button>
+  <button id="shotBtn" title="Screenshot (P)">SNAP</button>
+  <button id="micBtn" title="Voice note: press, talk, press again. What you say becomes a journal entry stamped at this moment of the recording (the audio is kept too)">MIC</button>
+  <span class="clipgrp"><button id="clipBtn" title="Save the last minutes of this recording to the journal as a clip">CLIP</button><select id="clipLen" title="how far back the clip reaches"><option value="60">1m</option><option value="120" selected>2m</option><option value="300">5m</option><option value="600">10m</option></select></span>
+  <span class="sep"></span>
+  <button id="trainBtn" title="Training: no reload calls, tags or voice. You read the tape; REVEAL in the RELOADS window checks your call.">TRAIN OFF</button>
+  <button id="deskTheme" title="the desk itself: WHITE (light) or DARK. The chart has its own screen colour (the select on the chart)">DESK WHITE</button><button id="replayBtn" title="Say the last call again (in case you missed it)">🔁 LAST CALL</button><button id="voiceBtn" title="Voice on / off">VOICE ON</button><button id="voiceFlowBtn" title="Option flow in the voice: unusual calls / puts, repeat flow, the dough. Off = you hear reload buyers and sellers only">FLOW VOICE</button><button id="soloBtn" title="THIS TICKER: the voice and the OPTION FLOW panel follow the tab you are on and nothing else">ALL TICKERS</button>
+  <input type="range" id="voiceVol" min="0" max="1" step="0.1" style="width:60px" title="voice volume">
+  <button id="soundBtn" title="beep on calls (active tab)">BEEP</button>
+  <span class="spacer"></span>
+  <span class="menu" id="chartsMenu"><button title="bring a chart back, or open one; the contract's Level II and T&S too">CHARTS</button><div class="pop" id="chartsPop"><h5>CHARTS</h5>
+    <button data-showp="chart">STOCK CHART</button><button data-showp="chart2">CHART 2 (opens on 5 min)</button><button data-showp="chart3">CHART 3 (opens on 15 min)</button><button data-showp="foot">FOOTPRINT 5m</button><button data-showp="ochart">OPTION CHART</button><h5 style="margin-top:6px">THE CONTRACT</h5><button data-showp="obook">OPTION LEVEL II</button><button data-showp="otape">OPTION T&amp;S</button><button data-showp="obig">OPTION BIG TAPE</button><button data-showp="optall">ALL THREE + OPTION CHART</button>
+    <div class="dim" style="font-size:10.5px;margin-top:4px">Click one to put it up: a closed chart comes back as a floating window. Drag it by its tab; DOCK ▾ on the tab pins it to a spot (it stays there), ⧉ floats it again. OPTION CHART charts the contract you pick in the OPTION CHAIN.</div></div></span>
+  <span class="menu" id="panelsMenu"><button>PANELS</button><div class="pop" id="panelsPop"></div></span>
+  <span class="menu" id="hkMenu"><button>Hotkeys</button><div class="pop" id="hkPop"></div></span>
+  <button id="setBtn" title="Every setting on the desk">SETTINGS</button>
+  <button id="rotate" title="Auto-rotate the other ladders to the plays closest to their pivots">ROTATE ON</button>
+</div>
+<div id="wsbar">
+  <span id="symTabs"></span>
+  <button class="add" id="addTab" title="new symbol tab">+</button>
+  <span class="right">
+    <span class="dim" style="font-size:10.5px;letter-spacing:.06em">LAYOUT</span>
+    <select id="layoutSel" title="saved layouts"></select>
+    <span class="menu" id="layoutMenu"><button>MENU</button><div class="pop" id="layoutPop"></div></span>
+  </span>
+</div>
+<div id="work">
+  <div class="col" data-col="L"><div class="zone" data-zone="TL"><div class="ztabs"></div><div class="zbody"></div></div><div class="gut h" data-gut="h" data-col="L" title="drag to size this column's top and bottom windows"></div><div class="zone" data-zone="BL"><div class="ztabs"></div><div class="zbody"></div></div></div>
+  <div class="gut v" id="g1" data-gut="c1"></div>
+  <div class="col" data-col="C"><div class="zone" data-zone="TC"><div class="ztabs"></div><div class="zbody"></div></div><div class="gut h" data-gut="h" data-col="C" title="drag to size this column's top and bottom windows"></div><div class="zone" data-zone="BC"><div class="ztabs"></div><div class="zbody"></div></div></div>
+  <div class="gut v" id="g2" data-gut="c3"></div>
+  <div class="col" data-col="R"><div class="zone" data-zone="TR"><div class="ztabs"></div><div class="zbody"></div></div><div class="gut h" data-gut="h" data-col="R" title="drag to size this column's top and bottom windows"></div><div class="zone" data-zone="BR"><div class="ztabs"></div><div class="zbody"></div></div></div>
+  <div class="gut v" id="g3" data-gut="c4"></div>
+  <div class="col" data-col="X"><div class="zone" data-zone="TX"><div class="ztabs"></div><div class="zbody"></div></div><div class="gut h" data-gut="h" data-col="X" title="drag to size this column's top and bottom windows"></div><div class="zone" data-zone="BX"><div class="ztabs"></div><div class="zbody"></div></div></div>
+</div>
+<div id="status">
+  <span id="stConn"><span class="led"></span>FEED <b>…</b></span>
+  <span id="stData">DATA <b>—</b></span>
+  <span id="stOrders"><span class="led"></span>ORDERS <b>—</b></span>
+  <span id="stLadders">LADDERS <b>—</b></span>
+  <span id="stRec"></span>
+  <span class="spacer"></span>
+  <span id="stLoss" title="day loss lock: realized + open P&L against your daily limit">DAY LOSS LIMIT <b>—</b></span>
+  <span id="leds"><span class="ld" id="ledMkt"><i></i>MKT</span><span class="ld" id="ledOpt"><i></i>OPT</span></span>
+  <span id="stBuild" title="the build of this page; the desk reloads itself when a newer build starts">BUILD <b>—</b></span> <span id="stCycle" title="how long one update takes on this machine: the answer from TED plus the draw"></span>
+  <span id="stClock"></span>
+</div>
+</div>
+<div id="replaybar">
+  <b>REPLAY</b> <span id="rpFile" class="dim"></span>
+  <button id="rpRestart" title="back to the start of the recording">⟲</button><button id="rpBack30" data-jump="-30" title="back 30 seconds (Shift+←)">⏪ 30s</button><button data-jump="-5" title="back 5 seconds">◀ 5s</button>
+  <button id="rpPlay" title="play / pause (space)">PAUSE</button><button id="rpStep" title="one event forward, then paused">STEP ▸</button>
+  <button data-jump="5" title="forward 5 seconds">5s ▶</button><button data-jump="30" title="forward 30 seconds (Shift+→)">30s ⏩</button>
+  <input type="range" id="rpScrub" min="0" max="1" step="1" value="0" title="drag to any moment of the recording">
+  <span id="rpPos" class="mono"></span>
+  <span class="dim">speed</span><input type="range" id="rpSpeed" min="1" max="50" step="1"><span id="rpSpeedV" class="mono"></span>
+  <span class="rpclip"><button id="rpIn" title="clip starts here">IN</button><button id="rpOut" title="clip ends here">OUT</button><span id="rpInOut" class="mono dim"></span><button id="rpSaveClip" title="save IN → OUT to the journal as a clip">SAVE CLIP</button></span>
+  <button id="rpTrain" title="TRAINING: when the desk makes a call the replay pauses and asks you LONG / SHORT / WAIT (keys L / S / W). Five minutes of the recording later you find out. Every answer goes to recordings/training.jsonl">TRAIN</button><span id="rpTrainScore" class="mono dim"></span>
+  <div id="rpQuiz"><b>THE CALL</b><span id="rpQText"></span><button data-ans="long" title="L">LONG</button><button data-ans="short" title="S">SHORT</button><button data-ans="wait" title="W">WAIT</button><button data-ans="skip" class="dim">SKIP</button></div>
+</div>
+<div id="toasts"></div>
+<div id="settings" hidden><div class="sbox">
+  <div class="shead"><b>SETTINGS</b><input id="setFind" placeholder="find a setting" spellcheck="false" autocomplete="off"><span class="spacer"></span><span class="dim" id="setMsg"></span><button id="setSave" class="save" disabled>SAVE</button><button id="setRestart" hidden title="Restart TED now so the settings marked RESTART take effect. The page reconnects by itself.">RESTART NOW</button><button id="setClose">CLOSE</button></div>
+  <div class="sbody"><div class="snav" id="setNav"></div><div class="sform" id="setForm"></div></div>
+</div></div>
+<template id="tplPanels">
+  <div class="pnl" data-p="obook"><div class="ohd" id="obookHd"></div><div class="pc"><div class="obook"></div></div></div>
+  <div class="pnl" data-p="otape"><div class="ohd" id="otapeHd"></div><div class="pc"><div class="otape"></div></div></div>
+  <div class="pnl" data-p="obig"><div class="ohd" id="obigHd"></div><div class="pc"><div class="obig"></div></div></div>
+  <div class="pnl" data-p="chart2"><div class="pc nos"><div class="chart-wrap"><div class="chart-tools"></div><canvas></canvas></div></div></div>
+  <div class="pnl" data-p="chart3"><div class="pc nos"><div class="chart-wrap"><div class="chart-tools"></div><canvas></canvas></div></div></div>
+  <div class="pnl" data-p="ochart"><div class="ochead" id="ochHead"></div><div class="pc nos"><div class="chart-wrap"><canvas></canvas></div></div></div>
+  <div class="pnl" data-p="chart"><div class="qs"></div><div class="fast" id="fastStock"></div><div class="optpos" id="optPosStrip"></div><div class="cvstrip" id="cvStrip"></div><div class="pc nos"><div class="chart-wrap"><div class="chart-tools"></div><canvas></canvas></div></div></div>
+  <div class="pnl" data-p="foot"><div class="pc nos"><div class="chart-wrap"><div class="chart-tools"><span class="dim" style="font-size:10.5px;background:rgba(17,22,31,.85);padding:1px 6px">5m FOOTPRINT · SELLERS HIT BID × BUYERS PAID UP</span></div><canvas></canvas></div></div></div>
+  <div class="pnl" data-p="book"><div class="ladstat" id="ladStat"></div><div class="ladbar"><span class="bigset"><span>BIG ≥</span><input id="bigIn" type="number" min="100" step="500" title="shares that count as big on this symbol's ladder. Highlighted when showing; ×N = how many separate times it has shown up at that price today"><span class="dim">sh</span><button id="bigReset" title="back to the config default">DEFAULT</button><span class="dim" id="bigHint"></span></span><span class="qtybox" title="shares per ladder click (the ticket follows)"><span>QTY</span><input id="ladQty" type="number" min="1" step="1"><span id="ladPresets"></span></span><span class="spacer"></span><span class="menu rbk" id="rlBasket"><button class="rbk-pill" title="RELOAD BASKET: the dollars the reload buyers bought and the reload sellers sold today on this stock. Click: their own little Level II, price by price">R$ —</button><div class="pop rbk-pop"></div></span><button id="ladMode" title="the ladder: DOM (Precision Level 2: waiting buyers · actual selling · levels · price · actual buying · waiting sellers · traded) · CANDLE (the bar on the rows) · CLEAN · PRO. Click to cycle">DOM</button><span class="menu" id="colsMenu"><button title="columns">COLS</button><div class="pop" id="colsPop"><h5>LEVEL II COLUMNS</h5><button class="howto" data-howto="1" style="margin-bottom:4px">HOW TO READ IT</button><label><input type="checkbox" data-col="trade" checked> BUY / SELL buttons</label><label><input type="checkbox" data-col="bars" checked> flow bars (sold into bid / bought at ask)</label><label><input type="checkbox" data-col="who" checked> reload tags</label><label><input type="checkbox" data-col="flow" checked> option flow marks (where the stock was when big flow hit)</label><label><input type="checkbox" data-col="center" checked> auto-centre on price</label><label><input type="checkbox" data-storyline> PS60 story line over the ladder</label><h5 style="margin-top:6px">PRECISION LEVEL 2 (DOM)</h5><label>Actual selling / buying <select data-domvol><option value="session">this SESSION (resets with the day)</option><option value="rolling">this VISIT (rolling)</option></select></label><label>Colours <select data-dompal><option value="std">green buyers / red sellers</option><option value="cb">colour-blind safe (blue / orange)</option></select></label><label>Motion <select data-dommotion><option value="full">bars ease, prints pulse</option><option value="reduced">reduced: no animation</option></select></label><label><input type="checkbox" data-domcol="sell" checked> ACTUAL SELLING column</label><label><input type="checkbox" data-domcol="buy" checked> ACTUAL BUYING column</label><label><input type="checkbox" data-domcol="rail" checked> level rail</label><label><input type="checkbox" data-domcol="traded" checked> TRADED AT PRICE column</label><label><input type="checkbox" data-dommoney> $ resting here column</label><label><input type="checkbox" data-domstrips> strips above the rows (story line, VWAP / 50-day, pace, levels off the ladder) — off keeps the rows still</label><label><input type="checkbox" data-bigset> show the BIG size setting (BIG ≥ · DEFAULT · huge)</label><label>Click a size <select data-ladclick><option value="join">JOIN: bid side = BUY there, ask side = SELL there</option><option value="hit">HIT: bid side = SELL into it, ask side = BUY from it</option></select></label><label>Rows above / below <select data-rows><option value="8">8</option><option value="12" selected>12</option><option value="20">20</option><option value="30">30</option></select></label><label>Row height <select data-ladh><option value="1">normal</option><option value="0.85">tight</option><option value="1.2">tall</option></select></label><label style="margin-top:6px">Text size <select data-ladz><option value="0.75">tiny</option><option value="0.88">small</option><option value="1">normal</option><option value="1.2">bigger</option><option value="1.4">biggest (widen the LEVEL II pane)</option></select></label><div class="dim" style="font-size:10.5px;margin-top:6px">Drag the grip at the right edge of any header to resize. Double-click a grip to reset.</div></div></span></div><div class="rlban" id="rlBan"></div><div class="pc"><div class="ladder-wrap"></div></div></div>
+  <div class="pnl" data-p="tape"><div class="pc"><div class="p-tape"></div></div></div>
+  <div class="pnl" data-p="bigtape"><div class="pc"><div class="p-bigtape"><div class="bt-hd"><span class="btflt" title="show only prints and builders at least this big: shares and dollars (blank = the configured bar)">MIN <input id="btMinSh" type="text" inputmode="numeric" placeholder="sh"> <input id="btMinUsd" type="text" inputmode="numeric" placeholder="$"></span><span class="menu" id="btMenu"><button title="columns">COLS</button><div class="pop" id="btPop"><h5>BIG TAPE COLUMNS</h5><label><input type="checkbox" data-btc="who"> who (PAID UP / HIT)</label><label><input type="checkbox" data-btc="times" checked> how many times</label><label><input type="checkbox" data-btc="shares" checked> shares</label><label><input type="checkbox" data-btc="usd"> dollars</label><label><input type="checkbox" data-btc="age" checked> LIVE / seconds</label><label><input type="checkbox" data-btc="blocks" checked> BLOCKS (single big prints)</label></div></span></div><div class="bt-body"></div></div></div></div>
+  <div class="pnl" data-p="setup"><div class="pc"></div></div>
+  <div class="pnl" data-p="ps60"><div class="pc ps60p"></div></div>
+  <div class="pnl" data-p="reload"><div class="pc reloads"></div></div>
+  <div class="pnl" data-p="ticket"><div class="pc"></div></div>
+  <div class="pnl" data-p="positions"><div class="pc"></div></div>
+  <div class="pnl" data-p="orders"><div class="pc"></div></div>
+  <div class="pnl" data-p="watch"><div class="ladbar"><input id="wlAdd" placeholder="ADD TICKER" maxlength="10" spellcheck="false" autocomplete="off" style="width:96px;color:var(--text);letter-spacing:.06em"><button id="wlAddBtn" title="add this ticker to your watchlist: quotes, flow and alerts for it from now on">ADD</button><span class="dim" id="wlHint">type a ticker, Enter</span></div><div class="pc"></div></div>
+  <div class="pnl" data-p="myalerts"><div class="ladbar"><span>NEW ALERT</span><span class="spacer"></span></div><div class="pc"><div id="alForm" class="alform">
+      <input id="alSym" placeholder="TICKER" maxlength="10" spellcheck="false" autocomplete="off">
+      <select id="alKind"><option value="price">PRICE hits</option><option value="above">PRICE goes above</option><option value="below">PRICE goes below</option><option value="flow">OPTION FLOW ≥ $</option><option value="flowC">CALL flow ≥ $</option><option value="flowP">PUT flow ≥ $</option><option value="equity">EQUITY print ≥ $</option></select>
+      <input id="alVal" type="number" step="any" min="0" placeholder="price or $">
+      <label title="off: fires once and is gone · on: keeps firing (with a cooldown)"><input type="checkbox" id="alRepeat"> every time</label>
+      <button id="alAdd">ADD ALERT</button><span class="dim" id="alMsg"></span></div><div id="alList"></div></div></div>
+  <div class="pnl" data-p="conviction"><div class="pc"><div id="cvPanel"></div></div></div>
+  <div class="pnl" data-p="story"><div class="pc"></div></div>
+  <div class="pnl" data-p="score"><div class="pc"></div></div>
+  <div class="pnl" data-p="ai"><div class="pc"></div></div>
+  <div class="pnl" data-p="options"><div class="pc"><div class="oc"><div class="oc-hd">
+    <span class="sym" id="ocSym"></span><select id="ocExp" title="expiry"></select>
+    <span class="cp"><button data-right="C" class="on">CALLS</button><button data-right="P">PUTS</button></span>
+    <span class="dim" id="ocSpot"></span><span class="spacer"></span>
+    <span class="dim ocload" title="the chain only LOADS a contract: click a strike and it goes on the OPTION CHART and into ORDER ENTRY. Orders are sent from there, never from the chain">click a strike → chart + order form</span>
+    <input id="ocQty" type="hidden" value="1"><input id="ocPx" type="hidden" value="">
+    <span class="dim" id="ocSrc"></span></div><div class="oc-body"></div></div></div></div>
+  <div class="pnl" data-p="bigmoney"><div class="pc"><div class="bm-hd"><span><b id="bmSym"></b> BIG OPTION MONEY · last 30 days</span><span class="dim">how the people who paid are doing now · hover for the numbers</span></div><div class="bm-list" id="bmList"></div></div></div>
+  <div class="pnl fa" data-p="urgency"><div class="fa-top"><div class="fa-tabs"><span class="off" data-go="flow">OPTION FLOW</span><span class="on">URGENT FLOW</span></div>
+    <div class="fa-sub"><span title="short-dated, out-of-the-money contracts being bought at the ask again and again, ranked by dollars per minute, sweeps and whether it is speeding up">Short-dated · out of the money · bought in a hurry</span><label><input type="checkbox" id="urMine"> Watchlist</label><label><input type="checkbox" id="urHot"> Called only</label><span class="ur-search"><input id="urQ" placeholder="TICKER" maxlength="8" spellcheck="false" title="one ticker: everything chased on it right now, and everything that came in earlier this session"><button id="urThis" title="the ticker on your chart">CHART</button><button id="urClr" title="back to the whole market">✕</button></span></div></div><div class="pc"><div id="urList"></div></div></div>
+  <div class="pnl fa" data-p="eqflow"><div class="fa-top"><div class="fa-tabs"><span class="off" data-go="flow" title="option flow">OPTION FLOW</span><span class="on">EQUITY FLOW</span></div>
+    <div class="fa-sub"><span>Big stock prints · on and off the exchanges</span><label><input type="checkbox" id="eqDark"> Off-exchange only</label><label><input type="checkbox" id="eqMine"> Watchlist</label><span class="src" id="eqSrc"></span></div></div><div class="pc"><div id="eqList"></div></div></div>
+  <div class="pnl" data-p="calls"><div class="pc" style="padding:6px"><div id="feedBody"></div></div></div>
+  <div class="pnl fa" data-p="flow"><div class="fa-top"><div class="fa-tabs"><span class="on">OPTION FLOW</span><span class="off" data-go="eqflow" title="big stock prints, on and off the exchanges">EQUITY FLOW</span></div>
+    <div class="fa-search"><input id="flowFilter" placeholder="Filter by ticker..." spellcheck="false" autocomplete="off"><span class="mag">&#9906;</span></div>
+    <div class="fa-sub"><span>Realtime Option Flow</span><button id="flowScope" class="fsw" title="WHOLE MARKET on: the feed pulls every ticker's option flow. Off: only your watchlist is pulled (lighter on the Quant Data limit). UNUSUAL calls are watchlist-only either way.">WHOLE MARKET <b>ON</b></button><button id="flowAlerts" class="fsw" title="UNUSUAL alerts and voice: WATCHLIST = your symbols only; ALL = every ticker in the feed. Index products (SPY, QQQ, SPX, IWM ...) need far more premium to count: set it in SETTINGS, Option flow alerts.">ALERTS <b>WATCHLIST</b></button><label><input type="checkbox" id="flowUnusual"> Unusual only</label><label><input type="checkbox" id="flowMine" checked> Watchlist</label><span class="src" id="flowSrc"></span></div></div><div class="pc"><div id="flowList"></div></div></div>
+  <div class="pnl" data-p="desk"><div class="pc"><div id="deskBody"></div></div></div>
+  <div class="pnl" data-p="journal"><div class="pc"><div id="journalBody"><div class="jform"><input id="jText" placeholder="journal note · Enter"><button id="jAdd">add</button></div><div id="jTrades"></div><div id="jList"></div></div></div></div>
+  <div class="pnl" data-p="messages"><div class="pc" style="padding:6px"><div id="messages"></div></div></div>
+</template>

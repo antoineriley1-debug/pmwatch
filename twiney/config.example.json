@@ -1,0 +1,42 @@
+{
+  "_note": "Copy to config.json. Ports: 7497 TWS paper, 7496 TWS live, 4002 IB Gateway paper, 4001 IB Gateway live. Every key is optional; omitted keys use the defaults in twiney/config.py.",
+  "ibkr": {
+    "host": "127.0.0.1",
+    "port": 7497,
+    "client_id": 61,
+    "market_data_type": 1
+  },
+  "dashboard": {
+    "host": "127.0.0.1",
+    "port": 8765,
+    "open_browser": true
+  },
+  "depth": {
+    "slots": 3,
+    "rows_requested": 10,
+    "rows_displayed": 5,
+    "smart_depth": true,
+    "rotate_hysteresis": 0.15,
+    "min_hold_seconds": 20
+  },
+  "reload": {
+    "level_band_ticks": 0,
+    "window_seconds": 120,
+    "min_refreshes": 2,
+    "min_absorbed_shares": 1000,
+    "absorbed_multiple": 1.5,
+    "min_display_shares": 100,
+    "consumed_exec_window_seconds": 5,
+    "consumed_min_exec_fraction": 0.5,
+    "pull_grace_seconds": 3,
+    "clear_confirm_seconds": 3,
+    "through_timeout_seconds": 10,
+    "auto_levels": true,
+    "max_auto_levels": 6,
+    "auto_min_display_shares": 2000
+  },
+  "recording": {
+    "enabled": true,
+    "dir": "recordings"
+  }
+}

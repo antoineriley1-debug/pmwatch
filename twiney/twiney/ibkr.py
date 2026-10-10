@@ -1,0 +1,1476 @@
+"""IBKR adapter (TWS API ``ibapi``).
+
+Market data: reqMarketDataType, reqMktData, reqMktDepth, reqTickByTickData,
+reqHistoricalData. Account view: reqAllOpenOrders, reqPositions, reqExecutions.
+Order entry: placeOrder / cancelOrder — ONLY via ``send_order`` / ``cancel_order``
+below, which are only reachable through ``trading.TradingGate`` (paper-only
+lock, size caps, armed switch). Nothing else in this package sends orders.
+
+Callback signatures follow TWS API 10.x; ``error`` accepts both the pre-10.35
+form (reqId, code, msg[, json]) and the newer one (reqId, errorTime, code, msg[, json]).
+"""
+
+import logging
+import threading
+import time
+
+log = logging.getLogger("twiney.ibkr")
+
+# tickPrice / tickSize types -> engine L1 field (live and delayed variants)
+PRICE_TICKS = {1: "bid", 2: "ask", 4: "last", 6: "high", 7: "low", 9: "close", 14: "open",
+               66: "bid", 67: "ask", 68: "last", 72: "high", 73: "low", 75: "close", 76: "open"}
+SIZE_TICKS = {0: "bid_size", 3: "ask_size", 5: "last_size", 8: "volume",
+              69: "bid_size", 70: "ask_size", 71: "last_size", 74: "volume"}
+
+INFO_CODES = {2104, 2106, 2107, 2108, 2119, 2158, 2150, 2174, 2176}
+# order-level errors: the order is not working (rejected / cancelled by IBKR)
+ORDER_DEAD_CODES = {103, 104, 105, 106, 107, 109, 110, 111, 113, 116, 117, 118, 119, 120, 121, 122, 133, 135, 136,
+                    137, 140, 141, 146, 147, 151, 153, 154, 155, 156, 157, 158, 159, 160, 161, 163, 164, 166, 167,
+                    168, 200, 201, 202, 203, 10147, 10148, 10149, 10006, 10005, 10268, 10318}
+# print conditions that are not a regular last sale (average price, derivatively priced, out of sequence, prior
+# reference, next day, cash, contingent...): they never move the last price, bars, the retire check or the reload read
+IRREGULAR_PRINT = set("BW4789CGHMNPQRUVZ")
+
+
+def cancel_arg():
+    """cancelOrder's second argument: an OrderCancel object on ibapi 10.2x+, an empty string before."""
+    try:
+        from ibapi.order_cancel import OrderCancel
+        return OrderCancel()
+    except ImportError:
+        return ""
+
+
+def ny_midnight(yyyymmdd):
+    """'20260929' -> epoch seconds of that day's midnight in New York (daily bars are New York trading days)."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    d = datetime.strptime(str(yyyymmdd)[:8], "%Y%m%d")
+    return datetime(d.year, d.month, d.day, tzinfo=ZoneInfo("America/New_York")).timestamp()
+
+
+def ny_today(t):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    return datetime.fromtimestamp(t, ZoneInfo("America/New_York")).strftime("%Y%m%d")
+
+
+def stock(contract):
+    """Only the stock itself: an option / future on the same symbol must never land on the stock's position."""
+    sec = getattr(contract, "secType", "STK") or "STK"
+    return sec == "STK"
+
+
+def option(contract):
+    return (getattr(contract, "secType", "") or "") == "OPT"
+
+
+def opt_key(contract):
+    """One name for an option contract: 'TSLA 20261003 240C' (symbol, expiry, strike, right)."""
+    strike = num(getattr(contract, "strike", 0)) or 0
+    return f"{getattr(contract, 'symbol', '?')} {getattr(contract, 'lastTradeDateOrContractMonth', '')} {strike:g}{(getattr(contract, 'right', '') or '')[:1]}"
+
+
+def opt_fields(contract):
+    strike = num(getattr(contract, "strike", 0)) or 0
+    mult = num(getattr(contract, "multiplier", 100)) or 100
+    return {"symbol": getattr(contract, "symbol", "?"), "expiry": getattr(contract, "lastTradeDateOrContractMonth", ""),
+            "strike": strike, "right": (getattr(contract, "right", "") or "")[:1], "mult": mult,
+            "local": getattr(contract, "localSymbol", "") or ""}
+FARM_WARN_CODES = {2103, 2105, 2157, 2152}
+DEPTH_REJECT_CODES = {309, 10092}
+SUBSCRIPTION_CODES = {354, 10089, 10090, 10168, 10186, 10197, 322, 10190, 200}
+PERMISSION_CODES = {10197, 10168, 354, 10089, 10090, 10186, 2152, 10189}
+CONNECTION_CODES = {502, 504, 326, 1100, 1101, 1102, 2110, 2103, 2105, 2157, 2104, 2106, 2158, 2107, 2108, 2119}
+FATAL_CODES = {501, 503, 320, 321}
+# IBKR refused a Time & Sales (tick-by-tick) feed: too many at once, another login, no subscription
+TAPE_REFUSED = {10190, 10197, 354, 10089, 10090, 10168, 10186, 322, 200, 10189}
+
+
+def categorize(code, req_kind=None, order=False):
+    """Every IBKR error lands in one bucket for the MESSAGES panel and the log:
+    INFORMATION · WARNING · MARKET DATA · ORDER REJECTION · CONNECTION · PERMISSION · FATAL."""
+    try:
+        code = int(code)
+    except (TypeError, ValueError):
+        return "WARNING"
+    if code in FATAL_CODES:
+        return "FATAL"
+    if code in (2104, 2106, 2158, 2107, 2108, 2119, 1102) or code in INFO_CODES:
+        return "INFORMATION"
+    if code in CONNECTION_CODES:
+        return "CONNECTION"
+    if code in PERMISSION_CODES:
+        return "PERMISSION"
+    if order or code in ORDER_DEAD_CODES or (100 <= code < 200) or 10000 <= code < 10100 and req_kind is None:
+        return "ORDER REJECTION"
+    if req_kind in ("l1", "depth", "hist", "daily", "opt", "cd", "m30", "m5x", "m5") or code in DEPTH_REJECT_CODES or code == 317:
+        return "MARKET DATA"
+    return "WARNING" if code >= 2000 else "ORDER REJECTION" if code < 1000 else "WARNING"
+
+
+def num(x):
+    """IBKR Decimal / float -> float, mapping UNSET sentinels to None."""
+    if x is None:
+        return None
+    try:
+        v = float(x)
+    except (TypeError, ValueError):
+        return None
+    if v != v or abs(v) >= 1e30:
+        return None
+    return v
+
+
+def parse_error_args(args):
+    """Normalise ``error`` callback args -> (req_id, code, message)."""
+    args = list(args)
+    req_id = args[0] if args else -1
+    if len(args) >= 4 and isinstance(args[2], int) and isinstance(args[3], str):
+        return req_id, args[2], args[3]  # (reqId, errorTime, code, msg, ...)
+    code = args[1] if len(args) > 1 else 0
+    msg = args[2] if len(args) > 2 else ""
+    return req_id, code, str(msg)
+
+
+class TwineyWrapper:
+    """EWrapper callbacks translated into engine events. Pure Python; testable."""
+
+    def __init__(self, engine, session, clock=time.time):
+        self.engine = engine
+        self.session = session
+        self.clock = clock
+        self.req = {}  # reqId -> (kind, symbol)
+
+    # connection -----------------------------------------------------------
+    def nextValidId(self, orderId):
+        self.session.handle_ready(int(orderId))
+
+    def managedAccounts(self, accountsList):
+        self.session.handle_accounts([a.strip() for a in str(accountsList).split(",") if a.strip()])
+
+    def connectionClosed(self):
+        self.session.handle_closed("connection closed by TWS / Gateway")
+
+    def marketDataType(self, reqId, marketDataType):
+        kind, sym = self.req.get(reqId, (None, None))
+        self.engine.on_market_data_type(marketDataType, self.clock(), sym)
+        if kind == "l1" and int(marketDataType) == 1 and getattr(self.session, "_delayed_fallback", False):
+            self.session.live_back()
+
+    def error(self, *args):
+        req_id, code, msg = parse_error_args(args)
+        t = self.clock()
+        kind, sym = self.req.get(req_id, (None, None))
+        if kind is None and req_id in self.session.my_orders and code < 2000:
+            # an order of ours was refused or cancelled by IBKR: say so on the order, never leave it "working"
+            info = self.session.my_orders[req_id]
+            if code == 110 and info.get("opt") and not info.get("_dime"):
+                # the price is not on this option's step (quieter names: dimes at $3 and up): once, on the dime,
+                # rounded toward a fill (up to buy, down to sell)
+                import math as _m
+                px0 = float(info.get("price") or 0)
+                dime = round((_m.ceil(px0 * 10 - 1e-9) if info["action"] == "BUY" else max(1, _m.floor(px0 * 10 + 1e-9))) / 10.0, 2)
+                info["_dime"] = True
+                try:
+                    if info.get("_mod_t") is not None and self.clock() - info["_mod_t"] < 10:
+                        info.pop("_mod_t", None)
+                        self.session.modify_order(req_id, dime, t)
+                        self.engine.on_error(info["symbol"], code, f"order {req_id}: IBKR wants dimes on this contract — moved to {dime:.2f}", t, level="warn", category="ORDER")
+                    else:
+                        self.engine.on_order(self.session.perm_ids.get(req_id) or f"id{req_id}", t, status="Inactive", order_id=req_id, error=f"{code}: {msg}")
+                        nid = self.session.send_option_order(info["symbol"], info["action"], int(info["qty"]), dime, t,
+                                                             reducing=bool(info.get("reducing")), role=info.get("role") or "option")
+                        self.session.my_orders[nid]["_dime"] = True
+                        self.engine.on_error(info["symbol"], code, f"order {req_id}: IBKR wants dimes on this contract — re-sent at {dime:.2f} (order {nid})", t, level="warn", category="ORDER")
+                    return
+                except Exception as exc:
+                    self.engine.on_error(info["symbol"], code, f"order {req_id}: re-send on the dime failed: {exc}", t, level="error", category="ORDER REJECTION")
+            if info.get("_mod_t") is not None and self.clock() - info["_mod_t"] < 10 and code != 202:
+                # IBKR refused a MOVE: the order is still working where it was. Put our record back, say so
+                prev = info.pop("_prev", None)
+                info.pop("_mod_t", None)
+                if prev:
+                    info["aux"], info["price"], info["qty"] = prev
+                    self.engine.on_order(self.session.perm_ids.get(req_id) or f"id{req_id}", t, order_id=req_id,
+                                         lmt=prev[1] if info["type"] in ("LMT", "STP LMT") else None,
+                                         aux=prev[0] if info["type"] in ("STP", "STP LMT") else None)
+                self.engine.on_error(info["symbol"], code, f"move of order {req_id} refused, it is still working at its old price: {msg}", t, level="error", category="ORDER REJECTION")
+                return
+            if code in ORDER_DEAD_CODES:
+                self.engine.on_order(self.session.perm_ids.get(req_id) or f"id{req_id}", t,
+                                     status="Cancelled" if code == 202 else "Inactive", order_id=req_id,
+                                     error=f"{code}: {msg}")
+            self.engine.on_error(info["symbol"], code, f"order {req_id}: {msg}", t, level="info" if code == 202 else "error", category="INFORMATION" if code == 202 else "ORDER REJECTION")
+            return
+        if kind == "odepth" and (code == 317 or code in DEPTH_REJECT_CODES or code in (200, 354, 10089, 10090, 10168, 10186)):
+            if code == 317:
+                self.engine.on_opt_depth_reset(sym)
+            else:
+                self.session.mark_dead(req_id)
+                self.session.opt_depth = None
+                self.engine.on_opt_depth_refused(sym, code, msg, t)
+            return
+        if kind in ("hist", "daily", "m30", "m5x", "m5") and code in self.session.HIST_RETRY_CODES:
+            if code in (2104, 2106):
+                return                                    # "market data farm connection is OK": not a refusal
+            self.req.pop(req_id, None)
+            self.session._hist_refused(kind, sym, code, msg, t)
+            return
+        if kind == "tape" and code in TAPE_REFUSED:
+            self.session.tape_refused(sym, req_id, code, msg)
+            return
+        if code == 317 and kind == "depth":
+            self.engine.on_depth_reset(sym, t, "317")
+        elif code in DEPTH_REJECT_CODES and kind == "depth":
+            self.session.mark_dead(req_id)
+            self.engine.on_depth_rejected(sym, code, msg, t)
+        elif code in (1100, 2110):
+            # TWS itself lost its link to IBKR (every data farm drops with it): nothing on this side can fix it
+            self.engine.on_connection("FEED_DOWN", f"[{code}] TWS lost its link to IBKR's servers — in TWS click the DATA box top right, "
+                                                   f"then Reconnect All Farms; if it keeps dropping, your internet is dropping. {msg}", t)
+        elif code == 1101:
+            self.session.handle_data_lost(msg)
+        elif code == 1102:
+            self.engine.on_connection("CONNECTED", "[1102] restored, data maintained", t)
+        elif code in (502, 504, 326):
+            self.session.handle_closed(f"[{code}] {msg}")
+        elif code in INFO_CODES:
+            self.engine.on_error(sym, code, msg, t, level="info", category=categorize(code, kind))
+            if code in (2104, 2106, 2158) and self.engine.connection["state"] == "FEED_DOWN":
+                # a data farm is back: TWS has its link again. Reconnect All Farms sends these, not a 1102, so
+                # the light would otherwise stay FEED DOWN with data flowing
+                self.engine.on_connection("CONNECTED", f"[{code}] a data farm is back: {msg}", t)
+        elif code in FARM_WARN_CODES:
+            self.engine.on_error(sym, code, msg, t, level="warn", category="CONNECTION")
+        elif code in SUBSCRIPTION_CODES:
+            self.engine.on_error(sym, code, msg, t, level="error", category=categorize(code, kind))
+            if kind == "l1" and code in (354, 10089, 10090, 10168, 10197):
+                self.session.handle_no_subscription(code, msg, sym)
+        else:
+            self.engine.on_error(sym, code, msg, t, level="warn" if code >= 2000 else "error", category=categorize(code, kind))
+
+    # contract details: the instrument is valid, and this is its minimum tick -------------------
+    def contractDetails(self, reqId, details):
+        kind, sym = self.req.get(reqId, (None, None))
+        if kind != "cd":
+            return
+        c = getattr(details, "contract", None)
+        self.engine.on_contract(sym, {"min_tick": num(getattr(details, "minTick", None)), "con_id": getattr(c, "conId", None) if c else None,
+                                      "long_name": getattr(details, "longName", "") or "", "exchange": getattr(c, "primaryExchange", "") if c else "",
+                                      "currency": getattr(c, "currency", "") if c else ""}, self.clock())
+
+    def contractDetailsEnd(self, reqId):
+        self.req.pop(reqId, None)
+
+    # the Greeks IBKR computes with every option quote (tick types 10 bid / 11 ask / 12 last / 13 model)
+    def tickOptionComputation(self, reqId, tickType, *rest):
+        kind, key = self.req.get(reqId, (None, None))
+        if kind != "opt":
+            return
+        # ibapi 9.8x: (impliedVol, delta, optPrice, pvDividend, gamma, vega, theta, undPrice)
+        # ibapi 10.x: (tickAttrib, impliedVol, delta, optPrice, pvDividend, gamma, vega, theta, undPrice)
+        vals = list(rest[1:]) if len(rest) >= 9 else list(rest)
+        if len(vals) < 7:
+            return
+        iv, delta, _px, _pv, gamma, vega, theta = [num(v) for v in vals[:7]]
+        if tickType not in (13, 12, 11, 10) or (delta is None and iv is None):
+            return
+        if getattr(self, "_greek_pref", {}).get(key, 13) < tickType:
+            return                               # the model tick (13) wins over bid / ask / last when both come
+        self._greek_pref = getattr(self, "_greek_pref", {})
+        self._greek_pref[key] = tickType
+        self.engine.on_opt_greeks(key, {"iv": None if iv is None or iv < 0 else round(iv, 3), "delta": None if delta is None or abs(delta) > 1 else round(delta, 3),
+                                        "gamma": None if gamma is None or gamma < 0 else round(gamma, 4), "vega": None if vega is None or vega < 0 else round(vega, 3),
+                                        "theta": None if theta is None else round(theta, 3)}, self.clock())
+
+    # the option chain: expiries and strikes from IBKR (secDefOptParams), SMART's answer
+    def securityDefinitionOptionParameter(self, reqId, exchange, underlyingConId, tradingClass, multiplier, expirations, strikes):
+        kind, sym = self.req.get(reqId, (None, None))
+        if kind != "chain" or exchange != "SMART":
+            return
+        # IBKR sends ONE ROW PER OPTION CLASS (TSLA has its standard class and odd ones: an adjusted class after a
+        # split, a single strike and expiry). They are gathered here and the chain is picked at the End
+        self.__dict__.setdefault("_chain_rows", {}).setdefault(reqId, []).append(
+            (str(tradingClass or ""), list(expirations), [num(x) for x in strikes], num(multiplier) or 100, underlyingConId))
+
+    def securityDefinitionOptionParameterEnd(self, reqId):
+        kind, sym = self.req.pop(reqId, (None, None))
+        rows = self.__dict__.get("_chain_rows", {}).pop(reqId, [])
+        if kind == "chain" and rows:
+            cls, exps, strikes, mult, con_id = pick_chain_class(sym, rows)
+            self.engine.on_opt_chain(sym, exps, strikes, mult, con_id, self.clock())
+
+    # L1 -------------------------------------------------------------------
+    def tickPrice(self, reqId, tickType, price, attrib):
+        field = PRICE_TICKS.get(tickType)
+        kind, sym = self.req.get(reqId, (None, None))
+        if field is not None and kind == "opt":
+            if self.engine.opt_sim(self.clock()):
+                return                          # after hours on paper: the SIM model prices the contracts, not stale IBKR ticks
+            v = num(price)
+            self.engine.on_opt_quote(sym, field, None if v is None or v <= 0 else v, self.clock())
+            return
+        if field is None or kind != "l1":
+            return
+        if self.engine.connection["state"] in ("FEED_DOWN", "DATA_LOST") and num(price) not in (None, -1):
+            self.engine.on_connection("CONNECTED", "a live tick arrived: the feed is back", self.clock())   # data speaks louder than any message
+        v = num(price)
+        if v is not None and v == -1 and field in ("bid", "ask"):
+            self.engine.on_l1(sym, field, None, self.clock())   # -1 = no bid / no offer (halt): clear it
+            return
+        if v is None or v <= 0:
+            return
+        self.engine.on_l1(sym, field, v, self.clock())
+
+    def tickGeneric(self, reqId, tickType, value):
+        """Tick 49 = halted (1 halted, 2 volatility pause, 0 trading): said on the desk."""
+        kind, sym = self.req.get(reqId, (None, None))
+        if tickType == 49 and kind == "l1":
+            v = num(value)
+            if v is not None and v >= 0:
+                self.engine.on_halt(sym, v, self.clock())
+
+    def tickSize(self, reqId, tickType, size):
+        field = SIZE_TICKS.get(tickType)
+        kind, sym = self.req.get(reqId, (None, None))
+        if field is not None and kind == "opt":
+            v = num(size)
+            if v is not None and v >= 0 and not self.engine.opt_sim(self.clock()):
+                self.engine.on_opt_size(sym, field, v, self.clock())
+            return
+        if field is None or kind != "l1":
+            return
+        v = num(size)
+        if v is not None:
+            self.engine.on_l1(sym, field, v, self.clock())
+
+    # depth ----------------------------------------------------------------
+    NASDAQ_DEPTH = ("ISLAND", "NASDAQ", "NSDQ")
+
+    def mktDepthExchanges(self, depthMktDataDescriptions):
+        """The LEVEL II venues IBKR gives THIS login for stocks. Nasdaq (TotalView) missing = the subscription is not
+        reaching this login (a paper account must share the live account's market data)."""
+        ex = sorted({str(getattr(d, "exchange", "") or "").upper() for d in (depthMktDataDescriptions or [])
+                     if str(getattr(d, "secType", "") or "").upper() in ("STK", "")} - {""})
+        self.engine.depth_venues = ex
+        if not ex:
+            return
+        nas = any(e in self.NASDAQ_DEPTH for e in ex)
+        msg = f"LEVEL II venues IBKR gives this login: {', '.join(ex)}"
+        if not nas:
+            msg += (" — NO NASDAQ (TotalView): the Level II misses Nasdaq's book. On a PAPER login: Client Portal, Settings, "
+                    "Paper Trading Account, share the live account's market data (takes up to a day), and log TWS in again")
+        self.engine._message("info" if nas else "warn", msg, self.clock())
+
+    def updateMktDepth(self, reqId, position, operation, side, price, size):
+        self.updateMktDepthL2(reqId, position, "", operation, side, price, size, False)
+
+    def updateMktDepthL2(self, reqId, position, marketMaker, operation, side, price, size, isSmartDepth=True):
+        kind, sym = self.req.get(reqId, (None, None))
+        if kind == "odepth":
+            self.engine.on_opt_depth(sym, int(position), int(operation), int(side), num(price) or 0.0, num(size) or 0.0,
+                                     marketMaker or "", self.clock())
+            return
+        if kind != "depth":
+            return
+        self.engine.on_depth(sym, int(position), int(operation), int(side),
+                             num(price) or 0.0, num(size) or 0.0, marketMaker or "", self.clock())
+
+    # account view (read-only) ------------------------------------------------
+    def openOrder(self, orderId, contract, order, orderState):
+        if not stock(contract) and not option(contract):
+            return
+        client = getattr(order, "clientId", None)
+        mine = self.session.is_mine(orderId, client)
+        key = self.session.order_key(orderId, getattr(order, "permId", 0), mine)
+        self.session.order_seen(key)
+        if mine and int(orderId) in self.session.my_orders:
+            info = self.session.my_orders[int(orderId)]
+            info["qty"] = num(getattr(order, "totalQuantity", None)) or info["qty"]   # IBKR's current size (OCA reduce)
+        self.engine.on_order(
+            key, self.clock(), symbol=opt_key(contract) if option(contract) else getattr(contract, "symbol", "?"), action=getattr(order, "action", None),
+            qty=num(getattr(order, "totalQuantity", None)), type=getattr(order, "orderType", None),
+            lmt=num(getattr(order, "lmtPrice", None)) or None, aux=num(getattr(order, "auxPrice", None)) or None,
+            tif=getattr(order, "tif", None), status=getattr(orderState, "status", None),
+            order_id=int(orderId) if mine else None, mine=mine, oca=getattr(order, "ocaGroup", None) or None,
+            role=(self.session.order_roles.get(int(orderId)) or self._role_from_ref(order)) if mine else
+                 (self._role_from_ref(order) or "manual"))
+
+    @staticmethod
+    def _role_from_ref(order):
+        ref = str(getattr(order, "orderRef", "") or "")
+        return ref.split(":", 1)[1] if ref.startswith("twiney:") else None
+
+    def orderStatus(self, orderId, status, filled, remaining, avgFillPrice, permId, *rest):
+        client = rest[2] if len(rest) > 2 else None     # rest = parentId, lastFillPrice, clientId, whyHeld, ...
+        mine = self.session.is_mine(orderId, client)
+        key = self.session.order_key(orderId, permId, mine)
+        self.engine.on_order(key, self.clock(), status=status, filled=num(filled),
+                             remaining=num(remaining), avg_fill=num(avgFillPrice) or None,
+                             order_id=int(orderId) if mine else None)
+
+    def openOrderEnd(self):
+        self.session.orders_refreshed()
+
+    def position(self, account, contract, position, avgCost):
+        if option(contract):
+            key = opt_key(contract)
+            self.session.opt_contract(key, contract)
+            self.engine.on_opt_position(account, key, opt_fields(contract), num(position) or 0.0,
+                                        num(avgCost) or 0.0, self.clock())
+            if num(position):
+                self.session.subscribe_opt(key)
+            return
+        if not stock(contract):
+            return
+        self.engine.on_position(account, getattr(contract, "symbol", "?"), num(position) or 0.0,
+                                num(avgCost) or 0.0, self.clock())
+
+    def positionEnd(self):
+        pass
+
+    def execDetails(self, reqId, contract, execution):
+        if option(contract):
+            self.engine.on_opt_fill(getattr(execution, "execId", ""), opt_key(contract), getattr(execution, "side", ""),
+                                    num(getattr(execution, "shares", 0)) or 0.0, num(getattr(execution, "price", 0)) or 0.0,
+                                    self.clock())
+            return
+        if not stock(contract):
+            return
+        self.engine.on_fill(getattr(execution, "execId", ""), getattr(contract, "symbol", "?"),
+                            getattr(execution, "side", ""), num(getattr(execution, "shares", 0)) or 0.0,
+                            num(getattr(execution, "price", 0)) or 0.0, getattr(execution, "time", ""),
+                            self.clock())
+
+    def execDetailsEnd(self, reqId):
+        pass
+
+    def commissionReport(self, report):
+        self.engine.on_commission(getattr(report, "execId", ""), num(getattr(report, "commission", None)))
+
+    def commissionAndFeesReport(self, report):   # ibapi 10.3x+ name
+        self.engine.on_commission(getattr(report, "execId", ""), num(getattr(report, "commissionAndFees", None)))
+
+    # chart history ----------------------------------------------------------
+    def historicalData(self, reqId, bar):
+        kind, sym = self.req.get(reqId, (None, None))
+        if kind == "daily":
+            d = str(bar.date).strip()
+            try:
+                # daily bars come back as "yyyymmdd" (a New York trading day) even with formatDate=2
+                t0 = ny_midnight(d) if len(d) >= 8 and d[:8].isdigit() else float(d)
+            except (TypeError, ValueError):
+                return
+            if d[:8] == ny_today(self.clock()):
+                return   # today's bar is still forming: the chart builds it live from the minute bars, ATR skips it
+            self.engine.on_daily_bar(sym, t0, num(bar.open), num(bar.high), num(bar.low), num(bar.close), num(getattr(bar, "volume", None)))
+            return
+        if kind == "ohistv":
+            try:
+                self.engine.on_opt_hist_vol(sym, float(bar.date), num(bar.volume))
+            except (TypeError, ValueError):
+                pass
+            return
+        if kind == "ohist":             # TRADES minutes: the same prices the OPTION T&S prints, and their volume
+            try:
+                self.engine.on_opt_hist_bar(sym, float(bar.date), num(bar.open), num(bar.high), num(bar.low), num(bar.close))
+                self.engine.on_opt_hist_vol(sym, float(bar.date), num(getattr(bar, "volume", None)))
+            except (TypeError, ValueError):
+                pass
+            return
+        if kind in ("m30", "m5x", "m5"):     # the chart studies' native bars (epoch seconds with formatDate=2)
+            try:
+                t0 = float(bar.date)
+            except (TypeError, ValueError):
+                return
+            self.engine.on_study_bar(sym, kind, t0, num(bar.open), num(bar.high), num(bar.low), num(bar.close), num(getattr(bar, "volume", None)))
+            return
+        if kind != "hist":
+            return
+        try:
+            t0 = float(bar.date)  # formatDate=2 -> epoch seconds
+        except (TypeError, ValueError):
+            return
+        o, h, l, c = num(bar.open), num(bar.high), num(bar.low), num(bar.close)
+        if None in (o, h, l, c):
+            return
+        self.engine.on_hist_bar(sym, t0, o, h, l, c, num(bar.volume))
+
+    def historicalDataEnd(self, reqId, start, end):
+        if (self.req.get(reqId) or (None,))[0] == "m5x":
+            return                     # kept up to date: historicalDataUpdate keeps coming on this id
+        self.req.pop(reqId, None)
+
+    def historicalDataUpdate(self, reqId, bar):
+        """keepUpToDate: the 5-minute extended-hours bar being built right now (premarket high / low, 9:30 open)."""
+        self.historicalData(reqId, bar)
+
+    # tape -----------------------------------------------------------------
+    def tickByTickAllLast(self, reqId, tickType, time_, price, size, tickAttribLast, exchange, specialConditions):
+        kind, sym = self.req.get(reqId, (None, None))
+        if kind != "tape":
+            return
+        self.session.tape_bad.pop(sym, None)
+        if getattr(tickAttribLast, "unreported", False):
+            return
+        conds = specialConditions or ""
+        if IRREGULAR_PRINT.intersection(conds.replace(" ", "")):
+            return        # not a regular last sale: it never traded at the market you see
+        xt = num(time_)
+        self.engine.on_print(sym, num(price), num(size), exchange or "", self.clock(), conds,
+                             xt if xt and xt > 1e9 else None)
+
+
+def pick_chain_class(symbol, rows):
+    """The option class the chain shows: the standard one (its trading class is the symbol, 100 shares), else the
+    standard-size class with the most strikes, else the class with the most strikes."""
+    sym = str(symbol or "").upper()
+    full = [r for r in rows if (r[3] or 100) == 100] or rows
+    # the fullest chain (expiries x strikes) wins: TSLA's standard class over its one-strike odd class, SPXW (dailies)
+    # over SPX (monthlies); on a tie the class named after the symbol
+    return max(full, key=lambda r: (len(r[1]) * len(r[2]), r[0].upper() == sym))
+
+
+def execution_filter():
+    try:
+        from ibapi.execution import ExecutionFilter
+        return ExecutionFilter()
+    except ImportError:  # tests run without ibapi
+        return None
+
+
+def make_contract(play):
+    from ibapi.contract import Contract
+    c = Contract()
+    c.symbol = play["symbol"]
+    c.secType = "STK"
+    c.exchange = play.get("exchange") or "SMART"
+    c.currency = play.get("currency") or "USD"
+    if play.get("primary_exchange"):
+        c.primaryExchange = play["primary_exchange"]
+    return c
+
+
+def make_option_contract(symbol, expiry, strike, right, mult=100, exchange="SMART", currency="USD"):
+    from ibapi.contract import Contract
+    c = Contract()
+    c.symbol = symbol
+    c.secType = "OPT"
+    c.lastTradeDateOrContractMonth = expiry
+    c.strike = float(strike)
+    c.right = right[:1].upper()
+    c.multiplier = str(int(mult))
+    c.exchange = exchange
+    c.currency = currency
+    return c
+
+
+def make_order(action, qty, order_type, price, tif="DAY", parent_id=None, transmit=True, aux=None, oca=None, outside_rth=False):
+    from ibapi.order import Order
+    o = Order()
+    o.action = action
+    o.totalQuantity = qty
+    o.orderType = order_type
+    if order_type == "LMT":
+        o.lmtPrice = price
+    elif order_type == "STP":
+        o.auxPrice = price
+    elif order_type == "STP LMT":
+        o.auxPrice = aux      # the stop trigger
+        o.lmtPrice = price    # the limit once triggered (never a naked stop)
+    if oca:
+        o.ocaGroup = oca
+        o.ocaType = 2         # reduce: a fill of one exit of the pair (target / its stop) reduces the other by the same shares
+    o.tif = tif
+    o.transmit = transmit
+    if outside_rth:
+        o.outsideRth = True     # works (and triggers, for a stop-limit) in the premarket / after hours too
+    if parent_id is not None:
+        o.parentId = parent_id
+    # IBKR 10.x rejects orders that still carry the legacy defaults for these
+    for attr in ("eTradeOnly", "firmQuoteOnly"):
+        if hasattr(o, attr):
+            setattr(o, attr, False)
+    return o
+
+
+def ibapi_app_factory():
+    """Return a factory building the real TWS API client."""
+    from ibapi.client import EClient
+    from ibapi.wrapper import EWrapper
+
+    class TwineyApp(TwineyWrapper, EWrapper, EClient):
+        def __init__(self, engine, session):
+            EWrapper.__init__(self)
+            EClient.__init__(self, wrapper=self)
+            TwineyWrapper.__init__(self, engine, session)
+
+        def connect(self, host, port, client_id):
+            """IBKR's own connect and message loop, untouched (they change between ibapi versions). Only the step that
+            hands one message to TED is guarded: ibapi's loop ends, and drops the connection, on ANY error in a
+            handler, which reads as 'connection closed by TWS'. Here one message that fails is logged and said on the
+            desk, and the feed keeps running."""
+            out = EClient.connect(self, host, port, client_id)
+            dec = getattr(self, "decoder", None)
+            if dec is not None and not getattr(dec, "_twiney_guard", False):
+                inner = dec.interpret
+
+                def interpret(*args, **kwargs):
+                    try:
+                        return inner(*args, **kwargs)
+                    except (KeyboardInterrupt, SystemExit):
+                        raise
+                    except Exception as exc:
+                        if type(exc).__name__ == "BadMessage":
+                            raise
+                        self._handler_failed(exc)
+                dec.interpret = interpret
+                dec._twiney_guard = True
+            return out
+
+        def _handler_failed(self, exc):
+            log.exception("an IBKR message failed in TED (the feed keeps running)")
+            now = self.clock()
+            if now - getattr(self, "_fail_said", -1e9) > 30.0:
+                self._fail_said = now
+                try:
+                    self.engine._message("warn", f"TED could not handle one IBKR message ({type(exc).__name__}: {exc}) — "
+                                                 f"the feed keeps running; details in the console / desk.log", now)
+                except Exception:
+                    pass
+
+    return TwineyApp
+
+
+class MarketDataSession:
+    """Owns the connection, reconnect backoff and all subscriptions."""
+
+    def __init__(self, engine, cfg, plays, app_factory, contract_factory=make_contract, clock=time.time,
+                 order_factory=make_order, gate=None):
+        self.engine = engine
+        self.order_factory = order_factory
+        self.gate = gate
+        self.next_order_id = None
+        self.order_roles = {}   # orderId -> entry / stop / target
+        self.perm_ids = {}      # orderId -> permId (stable key once TWS assigns it)
+        self.my_orders = {}     # orderId -> (symbol, parent orderId)
+        self.cfg = cfg
+        self.plays = {p["symbol"]: p for p in plays if p["active"]}
+        self.app_factory = app_factory
+        self.contract_factory = contract_factory
+        self.clock = clock
+        self.app = None
+        self.ready = False
+        self.connecting_since = None
+        self.backoff = cfg["ibkr"]["reconnect_initial_seconds"]
+        self.next_attempt = 0.0
+        self._next_id = 90000000   # data request ids live far above order ids, so an error is never misread
+        self.l1_ids = {}      # symbol -> reqId
+        self.opt_contracts = {}   # option key -> the IBKR contract it came in as (positions): orders go out on it
+        self.opt_ids = {}         # option key -> quote reqId
+        self.depth_ids = {}   # symbol -> (depth reqId, tape reqId)
+        self.dead = set()
+        self.tape_bad = {}        # symbol -> when to ask IBKR for its Time & Sales again (it was refused)
+        self.charted = []         # the last option contracts charted (newest last): they keep their quotes
+        self.chain_watch = set()  # the chain rows the page is looking at
+        self._lines_note = float("-inf")
+        self._orders_seen = set()
+        self._next_orders = 0.0
+        self._next_fills = 0.0
+        self.accounts = []
+        self._lock = threading.RLock()
+        self._stop = threading.Event()
+        self.thread = None
+
+    def _rid(self):
+        self._next_id += 1
+        return self._next_id
+
+    # lifecycle -------------------------------------------------------------
+    def start(self):
+        self.thread = threading.Thread(target=self._loop, name="twiney-session", daemon=True)
+        self.thread.start()
+
+    def stop(self):
+        self._stop.set()
+        with self._lock:
+            app = self.app
+        if app is not None:
+            try:
+                app.disconnect()
+            except Exception:
+                pass
+
+    def _loop(self):
+        while not self._stop.is_set():
+            try:
+                self.step(self.clock())
+            except Exception:
+                log.exception("session step failed")
+            self._stop.wait(0.25)
+
+    def step(self, now):
+        with self._lock:
+            if self.app is None and now >= self.next_attempt:
+                self._connect(now)
+            elif self.app is not None and not self.ready and self.connecting_since is not None \
+                    and now - self.connecting_since > 15.0:
+                self.handle_closed("no nextValidId within 15s (check API settings / client id)")
+            if self.ready:
+                self._study_step(now)
+                self._hist_retry_step(now)
+                self._study_new_day(now)
+                self.engine.tick(now)
+                self.reconcile_opt_depth(now)
+                self.reconcile_depth()
+                self.refresh_account(now)
+                self._live_probe(now)
+            else:
+                self.engine.tick(now, allocate_slots=False)
+
+    def _connect(self, now):
+        ib = self.cfg["ibkr"]
+        self.engine.on_connection("RECONNECTING" if self.engine.connection.get("ever_connected") else "CONNECTING",
+                                  f"{ib['host']}:{ib['port']} client {ib['client_id']}", now)
+        app = self.app_factory(self.engine, self)
+        self.app = app
+        self.connecting_since = now
+        try:
+            app.connect(ib["host"], ib["port"], ib["client_id"])
+        except Exception as exc:  # socket refused etc.
+            self.handle_closed(f"connect failed: {exc}")
+            return
+        if hasattr(app, "isConnected") and not app.isConnected():
+            self.handle_closed("connect failed: TWS / Gateway not reachable")
+            return
+        if hasattr(app, "run"):
+            threading.Thread(target=app.run, name="twiney-ibapi-reader", daemon=True).start()
+
+    # callbacks from the wrapper ---------------------------------------------
+    def handle_accounts(self, accounts):
+        with self._lock:
+            self.accounts = accounts
+            if self.gate is not None:
+                self.gate.set_accounts(accounts)
+            self.engine._message("info", f"account{'s' if len(accounts) != 1 else ''}: {', '.join(accounts)}"
+                                 + ("  (PAPER)" if accounts and all(a.upper().startswith("D") for a in accounts)
+                                    else "  (LIVE)" if accounts else ""), self.clock())
+
+    def handle_ready(self, order_id=None):
+        with self._lock:
+            if self.app is None:
+                return
+            if order_id is not None:
+                self.next_order_id = max(order_id, self.next_order_id or 0)
+            if self.ready:
+                return  # a later nextValidId only refreshes the order id
+            self.ready = True
+            self.connecting_since = None
+            self.backoff = self.cfg["ibkr"]["reconnect_initial_seconds"]
+            mdt = self.cfg["ibkr"]["market_data_type"]
+            self.app.reqMarketDataType(mdt)
+            self.engine.on_connection("CONNECTED", "", self.clock(), market_data_type=mdt)
+            self.subscribe_l1()
+            try:
+                self.app.reqMktDepthExchanges()      # which LEVEL II venues this login gets (said on the desk)
+            except Exception:
+                pass
+            if self.cfg["account"]["show"] or self.cfg["trading"]["enabled"]:
+                self.engine.clear_positions()   # IBKR re-sends every open position right after this
+                self.app.reqPositions()  # streams position updates
+            self._next_orders = self._next_fills = 0.0
+
+    NO_DATA_FIX = ("IBKR is not sending this desk live quotes: the paper account has no API market data. Fix in Client Portal: "
+                   "Settings > User Settings > Market Data Subscriptions (add US Securities Snapshot and Futures Value Bundle, plus "
+                   "NASDAQ TotalView or NYSE OpenBook for depth), then Settings > Paper Trading Account > Share real-time market data "
+                   "subscriptions with paper = YES. It takes effect the next trading day.")
+
+    def handle_no_subscription(self, code, msg, sym):
+        """IBKR refused live quotes (354 / 10089 / 10168 / 10197). Say in plain words what to fix, and fall back to
+        DELAYED data (15 minutes, no depth) once so the desk at least moves and paper orders can be tested."""
+        with self._lock:
+            t = self.clock()
+            if getattr(self, "_probing", False):
+                # trying live again was refused (the other login is still on): back to delayed, quietly
+                self._probing = False
+                self.app.reqMarketDataType(3)
+                self._resubscribe_l1()
+                return
+            if code == 10197:
+                why = ("another login with this IBKR username (the IBKR phone app, the website, or TWS on another computer) is "
+                       "taking the live data (10197). Log out of the other one — the desk tries live again every minute and "
+                       "switches back by itself")
+                self.engine.set_data_problem(f"NO LIVE DATA from IBKR for {sym}: {why}.", t)
+            else:
+                why = "no live market data subscription for the API"
+                self.engine.set_data_problem(f"NO LIVE DATA from IBKR for {sym}: {why}. {self.NO_DATA_FIX}", t)
+            if self.app is None or self.cfg["ibkr"]["market_data_type"] != 1 or getattr(self, "_delayed_fallback", False):
+                return
+            self._delayed_fallback = True
+            self._live_probe_at = t + float(self.cfg["ibkr"].get("live_retry_seconds", 60.0))
+            self.app.reqMarketDataType(3)
+            for s, rid in list(self.l1_ids.items()):     # live requests were refused: ask again, now as delayed
+                try:
+                    self.app.cancelMktData(rid)
+                except Exception:
+                    pass
+                self.app.req.pop(rid, None)
+            self.l1_ids.clear()
+            self.engine.on_connection("CONNECTED", "no live subscription: switched to DELAYED data (15 min, no depth)", t, market_data_type=3)
+            self.engine._message("error", "SWITCHED TO DELAYED DATA (15 minutes behind, no Level II, no Time & Sales): IBKR refused live "
+                                          "quotes for the API. Order flow reads are not valid on delayed data. "
+                                          + ("Log out of the other IBKR login; the desk goes back to live by itself." if code == 10197 else self.NO_DATA_FIX), t)
+            self.subscribe_l1()
+
+    def _resubscribe_l1(self):
+        for s, rid in list(self.l1_ids.items()):
+            try:
+                self.app.cancelMktData(rid)
+            except Exception:
+                pass
+            self.app.req.pop(rid, None)
+        self.l1_ids.clear()
+        self.subscribe_l1()
+
+    def _live_probe(self, now):
+        """On DELAYED because another login took the live data: every minute ask for live again. If the other login
+        is still on, IBKR refuses (10197) and the desk stays delayed, quietly; if it is gone, live_back() runs."""
+        if not getattr(self, "_delayed_fallback", False) or self.cfg["ibkr"]["market_data_type"] != 1:
+            return
+        if now < getattr(self, "_live_probe_at", 0.0) or getattr(self, "_probing", False) and now < self._live_probe_at + 15:
+            return
+        self._probing = True
+        self._live_probe_at = now + float(self.cfg["ibkr"].get("live_retry_seconds", 60.0))
+        self.app.reqMarketDataType(1)
+        self._resubscribe_l1()
+
+    def live_back(self):
+        """IBKR is sending LIVE data again: clear the warning and ask again for every book and Time & Sales feed."""
+        with self._lock:
+            if not getattr(self, "_delayed_fallback", False) or self.app is None:
+                return
+            t = self.clock()
+            self._delayed_fallback = False
+            self._probing = False
+            self.engine.data_problem = ""
+            dc = self.cfg["depth"]
+            for sym, (d_id, t_id) in list(self.depth_ids.items()):
+                for rid, cancel in ((d_id, lambda r: self.app.cancelMktDepth(r, dc["smart_depth"])), (t_id, self.app.cancelTickByTickData)):
+                    if rid not in self.dead:
+                        try:
+                            cancel(rid)
+                        except Exception:
+                            pass
+                    self.app.req.pop(rid, None)
+                    self.dead.discard(rid)
+                self.engine.on_depth_reset(sym, t, reason="live data back")
+            self.depth_ids.clear()          # reconcile_depth asks for them again on this pass
+            self.tape_bad.clear()
+            self.engine.on_connection("CONNECTED", "LIVE data is back", t, market_data_type=1)
+            self.engine._message("info", "LIVE DATA BACK: the other IBKR login is gone. Level II and Time & Sales are asked for again.", t)
+
+    def tape_refused(self, sym, req_id, code, msg):
+        """IBKR refused (or cut) a Time & Sales feed. Say why once, then ask again every few seconds."""
+        with self._lock:
+            self.mark_dead(req_id)
+            t = self.clock()
+            first = sym not in self.tape_bad
+            self.tape_bad[sym] = t + float(self.cfg["ibkr"].get("tape_retry_seconds", 20.0))
+            if not first:
+                return
+            why = {10190: "IBKR allows only a few Time & Sales feeds at once on this account and they are all in use "
+                          "(close Time & Sales windows in TWS)",
+                   10197: "another login with this username is taking the live data",
+                   322: "IBKR refused the request (too many requests at once)"}.get(code, "no live data for it")
+            self.engine.on_error(sym, code, f"{sym}: NO TIME & SALES — {why}. Asking again every "
+                                            f"{self.cfg['ibkr'].get('tape_retry_seconds', 20.0):.0f} s. [{msg}]", t,
+                                 level="error", category="MARKET DATA")
+
+    def lines_used(self):
+        """Market data lines this desk holds open: quotes (stocks and option contracts) and Time & Sales feeds."""
+        return len(self.l1_ids) + len(self.opt_ids) + len(self.depth_ids) + len(self.__dict__.get("study_live") or {})
+
+    def lines_budget(self):
+        ib = self.cfg["ibkr"]
+        return max(10, int(ib.get("max_lines", 100)) - int(ib.get("lines_reserve", 15)))
+
+    def _keep_quote(self, key):
+        """A contract quote that stays on whatever the chain shows: held, or one of the last two charted."""
+        return key in self.engine.opt_positions or key in self.charted[-2:] \
+            or (getattr(self, "opt_depth", None) or (None,))[0] == key
+
+    def _drop_quote(self, key):
+        rid = self.opt_ids.pop(key, None)
+        if rid is None:
+            return
+        try:
+            self.app.cancelMktData(rid)
+        except Exception:
+            pass
+        self.app.req.pop(rid, None)
+
+    def _forget_opt_quotes(self):
+        """A reconnect (or lost data) ends every option quote stream: forget them, so each contract you hold, chart
+        or watch asks again (positions re-subscribe as IBKR re-sends them; charts and the chain on their next poll)."""
+        for rid in list(self.opt_ids.values()):
+            if self.app is not None:
+                self.app.req.pop(rid, None)
+        self.opt_ids.clear()
+        self.opt_hist_asked = set()
+        self.charted = []
+        self.chain_watch = set()
+        self.tape_bad = {}
+        self.opt_depth = None
+
+    def handle_data_lost(self, msg):
+        with self._lock:
+            t = self.clock()
+            self.engine.on_connection("DATA_LOST", f"[1101] {msg}", t)
+            self.depth_ids.clear()
+            self.l1_ids.clear()
+            self._forget_opt_quotes()
+            self._forget_ids()
+            if self.app is not None:
+                self.subscribe_l1()
+                for key in list(self.engine.opt_positions):      # the contracts you hold get their quotes back now
+                    self.subscribe_opt(key)
+            self.engine.on_connection("CONNECTED", "[1101] restored, resubscribed", t)
+
+    def handle_closed(self, reason):
+        with self._lock:
+            app = self.app
+            if app is None:
+                return  # already closed (disconnect() re-enters via connectionClosed)
+            self.app = None
+            self.ready = False
+            self.connecting_since = None
+            self.depth_ids.clear()
+            self.l1_ids.clear()
+            self._forget_opt_quotes()
+            self.__dict__.pop("study_live", None)       # the old connection's requests are gone with it
+            if getattr(self, "study_q", None):
+                self.study_q.clear()
+            if self.gate is not None:     # nothing trades until IBKR says again which account this is
+                self.gate.arm(False)
+                self.gate.set_accounts([])
+            now = self.clock()
+            self.next_attempt = now + self.backoff
+            detail = f"{reason}; retry in {self.backoff:.0f}s"
+            self.backoff = min(self.backoff * 2, self.cfg["ibkr"]["reconnect_max_seconds"])
+            self.engine.on_connection("DISCONNECTED", detail, now)
+        if app is not None:
+            try:
+                app.disconnect()
+            except Exception:
+                pass
+
+    # order entry (only reachable through trading.TradingGate) -----------------
+    def is_mine(self, order_id, client_id=None):
+        """Orders this desk placed: same API client id and a real order id. Orders typed in TWS (order id 0) or
+        placed by another API client are shown, never cancelled or modified from here."""
+        order_id = int(order_id)
+        if order_id <= 0:
+            return False
+        if client_id is not None:
+            try:
+                return int(client_id) == int(self.cfg["ibkr"]["client_id"])
+            except (TypeError, ValueError):
+                return False
+        return order_id in self.my_orders
+
+    def order_key(self, order_id, perm_id, mine=True):
+        """permId is IBKR's unique id for an order; the order id is only unique per client."""
+        order_id = int(order_id)
+        if perm_id:
+            if mine and order_id > 0 and order_id not in self.perm_ids:
+                self.perm_ids[order_id] = perm_id
+                self.engine.rename_order(f"id{order_id}", perm_id)
+            return perm_id
+        return (self.perm_ids.get(order_id) or f"id{order_id}") if mine else f"x{order_id}"
+
+    def _ext_hours(self, order_type):
+        """Stock limit / stop-limit orders carry IBKR's outsideRth (SETTINGS > Trading: Work orders outside regular
+        hours): otherwise a premarket entry, flatten or stop just sits in TWS until 9:30 while the desk says SENT."""
+        return order_type in ("LMT", "STP LMT") and bool(self.cfg.get("trading", {}).get("outside_rth", True))
+
+    def send_order(self, symbol, action, qty, price, order_type, parent, role, tif, now, aux=None, oca=None,
+                   transmit=True, reducing=False):
+        with self._lock:
+            if self.app is None or not self.ready or self.next_order_id is None:
+                raise RuntimeError("not connected to TWS")
+            if self.gate is None or not (self.gate.can_trade() or (reducing and self.gate.can_reduce())):
+                raise RuntimeError("trading gate closed")
+            oid = self.next_order_id
+            self.next_order_id += 1
+            play = self.plays[symbol]
+            # a bracket goes out as one family: the entry and every leg but the last are sent with transmit=False,
+            # so TWS holds them and releases the whole family when the last leg arrives
+            extra = {}
+            if order_type == "STP LMT":
+                extra["aux"] = aux
+            if oca:
+                extra["oca"] = f"twiney{parent}-{oca}"
+            if self._ext_hours(order_type):
+                extra["outside_rth"] = True
+            order = self.order_factory(action, qty, order_type, price, tif, parent, transmit=transmit, **extra)
+            self.order_roles[oid] = role
+            self.my_orders[oid] = {"symbol": symbol, "parent": parent, "action": action, "qty": qty,
+                                   "type": order_type, "tif": tif, "aux": aux, "price": price,
+                                   "oca": extra.get("oca")}
+            self.app.placeOrder(oid, self.contract_factory(play), order)
+            self.engine.on_order(f"id{oid}", now, symbol=symbol, action=action, qty=float(qty), remaining=float(qty),
+                                 type=order_type, lmt=price if order_type in ("LMT", "STP LMT") else None,
+                                 aux=price if order_type == "STP" else aux, tif=tif, status="PendingSubmit",
+                                 order_id=oid, role=role, mine=True, parent=parent, oca=extra.get("oca"))
+            self._orders_seen.add(f"id{oid}")
+            self._next_orders = now + 1.0  # refresh the open-order list soon
+            return oid
+
+    def modify_order(self, oid, price, now, remaining=None):
+        """IBKR modifies an order by re-sending placeOrder with the same id. It keeps the order's OCA group and
+        sends its CURRENT size (filled so far + what is left), never the size it was first sent with.
+        ``price`` None keeps the price (a resize); ``remaining`` None keeps the size."""
+        with self._lock:
+            info = self.my_orders.get(int(oid))
+            if self.app is None or not self.ready or info is None:
+                return False
+            if self.gate is None or not (self.gate.can_trade() or self.gate.can_reduce()):
+                raise RuntimeError("trading gate closed")
+            live = self._live_order(int(oid))
+            filled = float(live.get("filled") or 0) if live else 0.0
+            left = live.get("remaining") if live else None
+            if remaining is not None:
+                left = remaining
+            qty = filled + float(left) if left is not None else float(info["qty"])
+            if qty <= filled:
+                self.app.cancelOrder(int(oid), cancel_arg())
+                return True
+            extra = {"oca": info.get("oca")} if info.get("oca") else {}
+            if not info.get("opt") and self._ext_hours(info["type"]):
+                extra["outside_rth"] = True      # a moved order keeps working outside regular hours
+            info["_prev"], info["_mod_t"] = (info.get("aux"), info["price"], info["qty"]), now
+            if info["type"] == "STP LMT":
+                if price is None:
+                    price = info["aux"]
+                # moving a stop-limit moves both the trigger and the limit by the same amount
+                shift = price - (info.get("aux") or price)
+                lmt = round(info["price"] + shift, 4)
+                order = self.order_factory(info["action"], qty, info["type"], lmt, info["tif"],
+                                           info["parent"], transmit=True, aux=price, **extra)
+                info["aux"], info["price"] = price, lmt
+            else:
+                if price is None:
+                    price = info["price"]
+                order = self.order_factory(info["action"], qty, info["type"], price, info["tif"],
+                                           info["parent"], transmit=True, **extra)
+                info["price"] = price
+            info["qty"] = qty
+            contract = self.opt_contracts.get(info["symbol"]) if info.get("opt") else self.contract_factory(self.plays[info["symbol"]])
+            self.app.placeOrder(int(oid), contract, order)
+            key = self.perm_ids.get(int(oid)) or f"id{oid}"
+            self.engine.on_order(key, now, lmt=info["price"] if info["type"] in ("LMT", "STP LMT") else None,
+                                 aux=info.get("aux") if info["type"] in ("STP", "STP LMT") else None,
+                                 qty=qty, remaining=qty - filled)
+            self._next_orders = now + 1.0
+            return True
+
+    def _live_order(self, oid):
+        with self.engine.lock:
+            for o in self.engine.orders.values():
+                if o.get("order_id") == oid:
+                    return dict(o)
+        return None
+
+    def cancel_order(self, oid, now):
+        with self._lock:
+            if self.app is None or not self.ready or int(oid) not in self.my_orders and int(oid) <= 0:
+                return False
+            self.app.cancelOrder(int(oid), cancel_arg())
+            self._next_orders = now + 1.0
+            return True
+
+    def cancel_all(self, now, symbol=None):
+        """Cancel this desk's working orders (never an order typed in TWS or placed by another program)."""
+        with self._lock:
+            if self.app is None or not self.ready:
+                return 0
+            with self.engine.lock:
+                mine = [o.get("order_id") for o in self.engine._pending(symbol) if o.get("mine") and o.get("order_id")]
+            for oid in mine:
+                self.app.cancelOrder(int(oid), cancel_arg())
+            self._next_orders = now + 1.0
+            return len(mine)
+
+    def refresh_account(self, now):
+        """Poll open orders and today's fills for the display (read-only requests)."""
+        if not (self.cfg["account"]["show"] or self.cfg["trading"]["enabled"]) or self.app is None:
+            return
+        if now >= self._next_orders:
+            self._next_orders = now + self.cfg["account"]["orders_refresh_seconds"]
+            self._orders_seen = set()
+            self.app.reqAllOpenOrders()
+        if now >= self._next_fills:
+            self._next_fills = now + self.cfg["account"]["fills_refresh_seconds"]
+            self.app.reqExecutions(self._rid(), execution_filter())
+
+    def order_seen(self, key):
+        self._orders_seen.add(key)
+
+    def orders_refreshed(self):
+        self.engine.on_orders_snapshot_end(set(self._orders_seen), self.clock())
+
+    def mark_dead(self, req_id):
+        self.dead.add(req_id)
+
+    def _forget_ids(self):
+        if self.app is not None and hasattr(self.app, "req"):
+            self.app.req.clear()
+
+    # subscriptions -----------------------------------------------------------
+    def add_play(self, play):
+        with self._lock:
+            self.plays[play["symbol"]] = play
+            if self.app is not None and self.ready:
+                self.subscribe_l1()
+
+    def remove_play(self, symbol):
+        """The ticker left the desk: its quotes go, its depth is released by the engine's slot command."""
+        with self._lock:
+            self.plays.pop(symbol, None)
+            rid = self.l1_ids.pop(symbol, None)
+            if rid is not None and self.app is not None:
+                try:
+                    self.app.cancelMktData(rid)
+                except Exception:
+                    pass
+                self.app.req.pop(rid, None)
+
+    def opt_contract(self, key, contract):
+        with self._lock:
+            self.opt_contracts[key] = contract
+
+    def subscribe_opt(self, key):
+        """Quotes for an option contract you hold (bid / ask / last), so it can be scaled at the touch."""
+        with self._lock:
+            if self.app is None or not self.ready or key in self.opt_ids or key not in self.opt_contracts:
+                return
+            rid = self._rid()
+            self.app.req[rid] = ("opt", key)
+            self.opt_ids[key] = rid
+            try:
+                self.app.reqMktData(rid, self.opt_contracts[key], "", False, False, [])
+            except Exception as exc:
+                log.warning("option quote request failed for %s: %s", key, exc)
+
+    def chart_option(self, key):
+        """The OPTION CHART on a contract: its quotes, and once its minutes so far (MIDPOINT, 2 days)."""
+        from .options import parse_key
+        with self._lock:
+            if self.app is None or not self.ready:
+                return
+            if key not in self.opt_contracts:
+                try:
+                    sym, exp, strike, right = parse_key(key)
+                except (ValueError, IndexError):
+                    return
+                ch = self.engine.opt_chain.get(sym) or {}
+                self.opt_contracts[key] = make_option_contract(sym, exp, strike, right, ch.get("mult") or 100)
+            asked = getattr(self, "opt_hist_asked", None)
+            if asked is None:
+                asked = self.opt_hist_asked = set()
+            hist = key not in asked
+            asked.add(key)
+            if key in self.charted:
+                self.charted.remove(key)
+            self.charted.append(key)
+            for old in self.charted[:-2]:            # an older chart lets its quote go (unless held or on the chain)
+                if old not in self.chain_watch and not self._keep_quote(old):
+                    self._drop_quote(old)
+            del self.charted[:-2]
+        self.subscribe_opt(key)
+        if hist:
+            with self._lock:
+                rid = self._rid()
+                self.app.req[rid] = ("ohist", key)
+                try:
+                    self.app.reqHistoricalData(rid, self.opt_contracts[key], "", "2 D", "1 min", "TRADES", 1, 2, False, [])
+                except Exception as exc:
+                    log.warning("option history request failed for %s: %s", key, exc)
+
+    def request_chain(self, symbol):
+        """Ask IBKR for the symbol's option chain (needs the underlying conId from contract details)."""
+        with self._lock:
+            st = self.engine.syms.get(symbol)
+            con_id = (getattr(st, "contract", None) or {}).get("con_id") if st else None
+            if self.app is None or not self.ready or not con_id:
+                return False
+            rid = self._rid()
+            self.app.req[rid] = ("chain", symbol)
+            self.app.reqSecDefOptParams(rid, symbol, "", "STK", int(con_id))
+            return True
+
+    def watch_option_quotes(self, symbol, keys, mult=100):
+        """Quote the chain rows the page is looking at (nearest the price first) and drop every chain quote it left,
+        on ANY stock (unless held or charted), so switching stocks never piles up lines. Stops short of the line
+        budget: IBKR refuses everything over the account's limit (100), Time & Sales included."""
+        with self._lock:
+            if self.app is None or not self.ready:
+                return
+            keys = list(keys)[: max(0, int(self.cfg["ibkr"].get("chain_quote_rows", 10)))]
+            want = set(keys)
+            self.chain_watch = want
+            for key in list(self.opt_ids):
+                if key not in want and not self._keep_quote(key):
+                    self._drop_quote(key)
+            held_back = 0
+            for key in keys:
+                if key in self.opt_ids:
+                    continue
+                if self.lines_used() >= self.lines_budget():
+                    held_back += 1
+                    continue
+                if key not in self.opt_contracts:
+                    sym, exp, strike, right = key.split(" ")[0], key.split(" ")[1], float(key.split(" ")[2][:-1]), key.split(" ")[2][-1]
+                    self.opt_contracts[key] = make_option_contract(sym, exp, strike, right, mult)
+                rid = self._rid()
+                self.app.req[rid] = ("opt", key)
+                self.opt_ids[key] = rid
+                try:
+                    self.app.reqMktData(rid, self.opt_contracts[key], "", False, False, [])
+                except Exception as exc:
+                    log.warning("option quote request failed for %s: %s", key, exc)
+            t = self.clock()
+            if held_back and t - self._lines_note > 120:
+                self._lines_note = t
+                self.engine._message("warn", f"{held_back} chain strikes not quoted: the desk is at its market data line limit "
+                                             f"({self.lines_used()} of {self.lines_budget()}; IBKR allows "
+                                             f"{self.cfg['ibkr'].get('max_lines', 100)} and TWS's own windows use some)", t)
+
+    def send_option_order(self, key, action, qty, price, now, reducing=False, role="option", order_type="LMT", aux=None, tif="DAY"):
+        """A LIMIT DAY order on an option contract you hold (scale in / out, close). Same gate as a stock order:
+        reducing (taking the position down) is never blocked; adding goes through the caps, in real dollars."""
+        with self._lock:
+            if self.app is None or not self.ready or self.next_order_id is None:
+                raise RuntimeError("not connected to TWS")
+            contract = self.opt_contracts.get(key)
+            if contract is None:
+                raise RuntimeError(f"no contract on file for {key}")
+            if self.gate is None or not (self.gate.can_trade() or (reducing and self.gate.can_reduce())):
+                raise RuntimeError("trading gate closed")
+            oid = self.next_order_id
+            self.next_order_id += 1
+            # LMT (scale in / out, close) or STP LMT (the BACKUP STOP: held at IBKR, works with the desk off)
+            order = self.order_factory(action, qty, order_type, price, tif, None, transmit=True,
+                                       **({"aux": aux} if order_type == "STP LMT" else {}))
+            try:
+                order.orderRef = f"twiney:{role}"      # IBKR keeps it: a GTC backup stop is still known as one after a restart
+            except Exception:
+                pass
+            self.order_roles[oid] = role
+            self.my_orders[oid] = {"symbol": key, "parent": None, "action": action, "qty": qty, "type": order_type,
+                                   "tif": tif, "aux": aux, "price": price, "oca": None, "opt": True,
+                                   "reducing": reducing, "role": role}
+            self.app.placeOrder(oid, contract, order)
+            self.engine.on_order(f"id{oid}", now, symbol=key, action=action, qty=float(qty), remaining=float(qty),
+                                 type=order_type, lmt=price, aux=aux, tif=tif, status="PendingSubmit",
+                                 order_id=oid, role=role, mine=True, parent=None, opt=True)
+            self._orders_seen.add(f"id{oid}")
+            self._next_orders = now + 1.0
+            return oid
+
+    def subscribe_l1(self):
+        for sym, play in self.plays.items():
+            if sym in self.l1_ids:
+                continue
+            rid = self._rid()
+            self.app.req[rid] = ("l1", sym)
+            self.l1_ids[sym] = rid
+            self.app.reqMktData(rid, self.contract_factory(play), "", False, False, [])
+            if not getattr(self.engine.syms.get(sym), "contract", None):
+                cid = self._rid()                       # resolve the instrument: valid? and its real tick size
+                self.app.req[cid] = ("cd", sym)
+                self.app.reqContractDetails(cid, self.contract_factory(play))
+            if self.cfg["chart"]["history"]:
+                hid = self._rid()
+                self.app.req[hid] = ("hist", sym)
+                self.app.reqHistoricalData(hid, self.contract_factory(play), "", "5 D", "1 min", "TRADES",
+                                           1 if self.cfg["chart"]["regular_hours_only"] else 0, 2, False, [])
+                did = self._rid()
+                self.app.req[did] = ("daily", sym)
+                # 10 years: the Daily and Weekly 200 EMAs settle to TradingView's values (an EMA needs history)
+                self.app.reqHistoricalData(did, self.contract_factory(play), "", "10 Y", "1 day", "TRADES",
+                                           1, 2, False, [])
+                self._queue_studies(sym, play)
+
+    # the chart studies' histories go out one at a time (IBKR flags 6+ requests on one contract within 2 s), and again
+    # each new trading day so yesterday's completed bars join the sample
+    # the 5-minute chart and the premarket / after-hours shading come first (what you see when you open a chart);
+    # the year of 30-minute bars for the 60-minute averages last
+    STUDY_REQS = (("m5x", "3 D", "5 mins", 0, True), ("m5", "2 M", "5 mins", None, False), ("m30", "1 Y", "30 mins", 1, False))
+
+    def _queue_studies(self, sym, play):
+        from collections import deque
+        q = self.__dict__.setdefault("study_q", deque())
+        for spec in self.STUDY_REQS:
+            q.append((sym, play, spec))
+        self.__dict__.setdefault("study_day", {})[sym] = ny_today(self.clock())
+
+    def _study_step(self, now):
+        q = getattr(self, "study_q", None)
+        if not q or now - getattr(self, "_study_t", 0.0) < 0.6 or self.app is None:
+            return
+        self._study_t = now
+        sym, play, (kind, dur, size, rth, keep) = q.popleft()
+        if rth is None:                                   # the chart's own session (regular hours or not)
+            rth = 1 if self.cfg["chart"]["regular_hours_only"] else 0
+        live = self.__dict__.setdefault("study_live", {})
+        old = live.pop((sym, kind), None)
+        if old is not None:                       # a kept-up-to-date request is replaced: stop the old one
+            try:
+                self.app.cancelHistoricalData(old)
+            except Exception:
+                pass
+            self.app.req.pop(old, None)
+        rid = self._rid()
+        self.app.req[rid] = (kind, sym)
+        if keep:
+            live[(sym, kind)] = rid
+        try:
+            self.app.reqHistoricalData(rid, self.contract_factory(play), "", dur, size, "TRADES", rth, 2, keep, [])
+        except Exception as exc:
+            log.warning("study history %s %s: %s", sym, kind, exc)
+
+    HIST_RETRY_CODES = {162, 165, 366, 420, 10197, 2104, 2106}   # pacing / "no market data permissions yet" / service messages
+    HIST_SPECS = {"hist": ("5 D", "1 min", None, False), "daily": ("10 Y", "1 day", 1, False)}
+
+    def _hist_refused(self, kind, sym, code, msg, now):
+        """A history request IBKR refused (a pacing violation, the service not ready): asked again a little later, a
+        few times, so a chart never stays empty until tomorrow because the first request landed in a burst."""
+        if kind not in ("hist", "daily") and kind not in dict((k, 1) for k, *_r in self.STUDY_REQS):
+            return False
+        tries = self.__dict__.setdefault("hist_tries", {})
+        n = tries.get((kind, sym), 0)
+        if n >= 3:
+            return True
+        tries[(kind, sym)] = n + 1
+        from collections import deque
+        self.__dict__.setdefault("hist_retry", deque()).append((now + 15.0 * (n + 1), kind, sym))
+        log.warning("history %s %s refused (%s %s): retry %d in %ds", kind, sym, code, msg, n + 1, 15 * (n + 1))
+        return True
+
+    def _hist_retry_step(self, now):
+        q = getattr(self, "hist_retry", None)
+        if not q or self.app is None or now < q[0][0]:
+            return
+        _at, kind, sym = q.popleft()
+        play = self.plays.get(sym)
+        if play is None:
+            return
+        if kind in self.HIST_SPECS:
+            dur, size, rth, keep = self.HIST_SPECS[kind]
+            if rth is None:
+                rth = 1 if self.cfg["chart"]["regular_hours_only"] else 0
+            rid = self._rid()
+            self.app.req[rid] = (kind, sym)
+            try:
+                self.app.reqHistoricalData(rid, self.contract_factory(play), "", dur, size, "TRADES", rth, 2, keep, [])
+            except Exception as exc:
+                log.warning("history retry %s %s: %s", sym, kind, exc)
+        else:
+            spec = next((sp for sp in self.STUDY_REQS if sp[0] == kind), None)
+            if spec:
+                self.__dict__.setdefault("study_q", __import__("collections").deque()).appendleft((sym, play, spec))
+
+    def _study_new_day(self, now):
+        """Once a new New York trading day is past 9:25, every symbol's study histories (and daily bars) are asked
+        again so yesterday's completed session is in the sample."""
+        if now - getattr(self, "_study_day_t", 0.0) < 60 or not self.cfg["chart"]["history"]:
+            return
+        self._study_day_t = now
+        from .ps60 import ny_seconds
+        today = ny_today(now)
+        if ny_seconds(now) < 9 * 3600 + 25 * 60:
+            return
+        for sym, play in self.plays.items():
+            if sym in self.l1_ids and getattr(self, "study_day", {}).get(sym) not in (None, today):
+                did = self._rid()
+                self.app.req[did] = ("daily", sym)
+                self.app.reqHistoricalData(did, self.contract_factory(play), "", "10 Y", "1 day", "TRADES", 1, 2, False, [])
+                self._queue_studies(sym, play)
+
+    def reconcile_opt_depth(self, now):
+        """The charted contract's book: subscribe it (market depth on the option), drop the old one when you chart another.
+        Released BEFORE stock depth is reconciled, so a freed line goes back to the stock ladders on the same pass."""
+        if self.app is None or not self.ready:
+            return
+        want = self.engine.opt_depth_wanted(now)
+        cur = getattr(self, "opt_depth", None)
+        if cur is not None and cur[0] != want:
+            key, rid = cur
+            if rid not in self.dead:
+                try:
+                    self.app.cancelMktDepth(rid, self.cfg["depth"]["smart_depth"])
+                except Exception as exc:
+                    log.warning("cancel option depth %s: %s", key, exc)
+            self.app.req.pop(rid, None)
+            self.dead.discard(rid)
+            self.opt_depth = cur = None
+        if want is not None and cur is None and want in self.opt_contracts:
+            rid = self._rid()
+            self.app.req[rid] = ("odepth", want)
+            self.opt_depth = (want, rid)
+            try:
+                self.app.reqMktDepth(rid, self.opt_contracts[want], self.cfg["depth"]["rows_requested"], self.cfg["depth"]["smart_depth"], [])
+            except Exception as exc:
+                log.warning("option depth %s: %s", want, exc)
+                self.opt_depth = None
+
+    def reconcile_depth(self):
+        """Make IBKR depth + tape subscriptions match the engine's slots."""
+        if self.app is None or not self.ready:
+            return
+        dc = self.cfg["depth"]
+        # BOOK CHECK: a book the engine found out of step with the tape is asked for again, fresh
+        for sym, (d_id, _t_id) in list(self.depth_ids.items()):
+            st = self.engine.syms.get(sym)
+            if st is not None and getattr(st, "resub_depth", False):
+                st.resub_depth = False
+                if d_id not in self.dead:
+                    self.app.cancelMktDepth(d_id, dc["smart_depth"])
+                self.app.req.pop(d_id, None)
+                self.dead.discard(d_id)
+                new_id = self._rid()
+                self.app.req[new_id] = ("depth", sym)
+                self.depth_ids[sym] = (new_id, _t_id)
+                self.engine.on_depth_reset(sym, self.clock(), reason="book out of step with the tape")
+                self.app.reqMktDepth(new_id, self.contract_factory(self.plays[sym]), dc["rows_requested"], dc["smart_depth"], [])
+        now = self.clock()
+        for sym, (d_id, t_id) in list(self.depth_ids.items()):
+            if t_id in self.dead and sym in self.tape_bad and now >= self.tape_bad[sym]:
+                self.app.req.pop(t_id, None)
+                self.dead.discard(t_id)
+                new_t = self._rid()
+                self.app.req[new_t] = ("tape", sym)
+                self.depth_ids[sym] = (d_id, new_t)
+                self.tape_bad[sym] = now + float(self.cfg["ibkr"].get("tape_retry_seconds", 20.0))
+                self.app.reqTickByTickData(new_t, self.contract_factory(self.plays[sym]), "AllLast", 0, False)
+        wanted = set(self.engine.slots)
+        for sym in [s for s in self.depth_ids if s not in wanted]:
+            d_id, t_id = self.depth_ids.pop(sym)
+            if d_id not in self.dead:
+                self.app.cancelMktDepth(d_id, dc["smart_depth"])
+            if t_id not in self.dead:
+                self.app.cancelTickByTickData(t_id)
+            self.app.req.pop(d_id, None)
+            self.app.req.pop(t_id, None)
+            self.dead.discard(d_id); self.dead.discard(t_id)
+            self.tape_bad.pop(sym, None)
+        for sym in sorted(wanted - set(self.depth_ids)):
+            c = self.contract_factory(self.plays[sym])
+            d_id, t_id = self._rid(), self._rid()
+            self.app.req[d_id] = ("depth", sym)
+            self.app.req[t_id] = ("tape", sym)
+            self.depth_ids[sym] = (d_id, t_id)
+            self.app.reqMktDepth(d_id, c, dc["rows_requested"], dc["smart_depth"], [])
+            self.app.reqTickByTickData(t_id, c, "AllLast", 0, False)
