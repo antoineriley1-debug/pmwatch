@@ -20,7 +20,7 @@ Six aligned columns, one price a row, the price column fixed in the centre:
 | $ HERE (optional) | (buyers + sellers showing) × price | |
 
 A header line above the rows says what the data is: **LIVE / DELAYED / PRACTICE / REPLAY / DISCONNECTED**, SMART DEPTH
-(every venue IBKR quotes) or ONE EXCHANGE'S BOOK or NO BOOK, the age of the quote and of the book, STALE when the feed
+(every venue IBKR quotes) or ONE EXCHANGE'S BOOK or NO BOOK, the age of the quote and of the book, FEED OLD when the feed
 is old, REFUSED with the reason when IBKR refused the book (and SETTINGS says what fixes it). ⌖ RECENTER appears when
 you scrolled away from price and brings it back.
 
@@ -66,7 +66,7 @@ per-price trades the same way; the story and the scorecard use them).
 | 5 | a run through five rows | `Scenario5_FastRun` | each row keeps exactly its volume, one last-price row |
 | 6 | session and prior-day levels | `Scenario6_SessionLevels` | the ladder's marks equal `key_levels` (one registry) |
 | 7 | overlapping levels on one price | `Scenario7_OverlappingLevels` | all three kept on the row |
-| 8 | no book / reconnect / stale feed | `Scenario8_Degradation` | trades counted without a book, rebuild files nothing, STALE reported |
+| 8 | no book / reconnect / old feed | `Scenario8_Degradation` | trades counted without a book, rebuild files nothing, FEED OLD reported |
 | 9 | 5,000-print burst | `Scenario9_HeavyBurst` | every share counted once; ladder build < 250 ms (measured 1.6–3.2 ms) |
 | 10 | resize and theme while animating | browser probe at four viewports | see below |
 

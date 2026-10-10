@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261010-0151">
+<meta name="build" content="20261010-0512">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -8301,8 +8301,8 @@ function ladderDomHTML(L){
     const inner = first ? `<b class="lvm ${lvCls(first)}" title="${esc(tipAll)}">${esc(lvWords(first, true))}${lv.length > 1 ? `<u>+${lv.length - 1}</u>` : ""}</b>` : "";
     const more = lv.length > 1 ? `<span class="lvmore">${lv.slice(1).map(m => `<b class="lvm ${lvCls(m)}">${esc(lvWords(m, true))}</b>`).join("")}</span>` : "";
     return `<td class="rail${lv.length > 1 ? " many" : ""}${lv.length ? " has" : ""}" data-n="${lv.length}">${inner}${more}${cluster(r, "bid")}${cluster(r, "ask")}</td>`; };
-  const hdr = `<div class="domhdr ${S.cls}" title="${esc(S.refused || (S.stale ? "the feed is stale: these numbers are old" : "what the data on this ladder is"))}">
-      <b class="st">${esc(S.kind)}</b><span class="src">${esc(S.src)}</span><span class="age">quote ${S.l1} · book ${S.depth}</span>${S.stale ? `<b class="stale">STALE</b>` : ""}${S.refused ? `<b class="stale">REFUSED</b>` : ""}
+  const hdr = `<div class="domhdr ${S.cls}" title="${esc(S.refused || (S.stale ? "the feed is old: these numbers are behind" : "what the data on this ladder is"))}">
+      <b class="st">${esc(S.kind)}</b><span class="src">${esc(S.src)}</span><span class="age">quote ${S.l1} · book ${S.depth}</span>${S.stale ? `<b class="stale">FEED OLD</b>` : ""}${S.refused ? `<b class="stale">REFUSED</b>` : ""}
       <span class="sp"></span><button class="domrc" data-domrc="1" title="back to the price (the ladder follows price again)">⌖ RECENTER</button></div>`;
   let h = hdr;
   // a short panel keeps its rows: the story / refs / pace / off-ladder strips give way to the ladder itself

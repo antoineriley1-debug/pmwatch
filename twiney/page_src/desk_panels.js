@@ -3500,8 +3500,8 @@ function ladderDomHTML(L){
     const inner = first ? `<b class="lvm ${lvCls(first)}" title="${esc(tipAll)}">${esc(lvWords(first, true))}${lv.length > 1 ? `<u>+${lv.length - 1}</u>` : ""}</b>` : "";
     const more = lv.length > 1 ? `<span class="lvmore">${lv.slice(1).map(m => `<b class="lvm ${lvCls(m)}">${esc(lvWords(m, true))}</b>`).join("")}</span>` : "";
     return `<td class="rail${lv.length > 1 ? " many" : ""}${lv.length ? " has" : ""}" data-n="${lv.length}">${inner}${more}${cluster(r, "bid")}${cluster(r, "ask")}</td>`; };
-  const hdr = `<div class="domhdr ${S.cls}" title="${esc(S.refused || (S.stale ? "the feed is stale: these numbers are old" : "what the data on this ladder is"))}">
-      <b class="st">${esc(S.kind)}</b><span class="src">${esc(S.src)}</span><span class="age">quote ${S.l1} · book ${S.depth}</span>${S.stale ? `<b class="stale">STALE</b>` : ""}${S.refused ? `<b class="stale">REFUSED</b>` : ""}
+  const hdr = `<div class="domhdr ${S.cls}" title="${esc(S.refused || (S.stale ? "the feed is old: these numbers are behind" : "what the data on this ladder is"))}">
+      <b class="st">${esc(S.kind)}</b><span class="src">${esc(S.src)}</span><span class="age">quote ${S.l1} · book ${S.depth}</span>${S.stale ? `<b class="stale">FEED OLD</b>` : ""}${S.refused ? `<b class="stale">REFUSED</b>` : ""}
       <span class="sp"></span><button class="domrc" data-domrc="1" title="back to the price (the ladder follows price again)">⌖ RECENTER</button></div>`;
   let h = hdr;
   // a short panel keeps its rows: the story / refs / pace / off-ladder strips give way to the ladder itself
