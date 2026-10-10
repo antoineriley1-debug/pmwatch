@@ -80,7 +80,7 @@ class LevelTracker:
         self.prints = deque()  # (t, size) executions against this side at the level
         self._psum = 0.0       # running total of self.prints (a busy level must not cost more with every print)
         self.refresh_times = deque()
-        self.refill_sizes = deque(maxlen=80)   # the size shown right after each refill (an iceberg shows the same every time)
+        self.refill_sizes = deque(maxlen=80)   # the size shown right after each refill (fund-style large size shows the same every time)
         self.exec_since_refresh = 0.0
         self.confirmed_at = None
         self.gone_at = None

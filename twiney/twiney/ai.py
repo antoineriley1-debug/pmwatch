@@ -24,14 +24,14 @@ JOBS = ("recap", "explain", "notes", "study", "ask")
 # the language lock, applied to the model's words too (it slips even when taught)
 LANGUAGE = [(re.compile(r"\bresistance\b", re.I), "supply"), (re.compile(r"\bsupport levels?\b", re.I), "demand"),
             (re.compile(r"\bsupport\b(?! the)", re.I), "demand"), (re.compile(r"\bdark[ -]pool\b", re.I), "large orders"),
-            (re.compile(r"\biceberg\b", re.I), "large size"), (re.compile(r"\btrigger(?:ed|s)?\b", re.I), "pivot")]
+            (re.compile(r"\btrigger(?:ed|s)?\b", re.I), "pivot")]
 
 
 def language(text):
     out = str(text or "")
     for rx, word in LANGUAGE:
         out = rx.sub(lambda m, w=word: w.upper() if m.group(0).isupper() else w, out)
-    out = re.sub(r"\ban (large|pivot|supply|demand)\b", r"a \1", out)       # "an iceberg" became "a large size"
+    out = re.sub(r"\ban (large|pivot|supply|demand)\b", r"a \1", out)       # the article after a swapped word
     out = re.sub(r"\bAn (large|pivot|supply|demand)\b", r"A \1", out)
     return out
 

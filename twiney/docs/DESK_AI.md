@@ -27,7 +27,7 @@ pay yourself → runner to measured potential, the sneaky pivot, bounce / remoun
 option flow as support never the thesis, the 5-7 minute rule, the options translation, and the desk's own words
 (reload buyer / seller, RELOADING, STILL THERE, NOT RELOADING, CLEANED UP, PULLED, large orders, the lean, the regime,
 the attempts, THE DESK SCORE). The language lock is applied to its answers too: resistance → supply, support → demand,
-dark pool → large orders, iceberg → large size, trigger → pivot.
+dark pool → large orders, trigger → pivot.
 
 ## Setting it up (once, five minutes)
 

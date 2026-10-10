@@ -94,8 +94,8 @@ class OllamaClientTests(unittest.TestCase):
 
 class LanguageTests(unittest.TestCase):
     def test_lock(self):
-        self.assertEqual(language("Resistance at 100, support at 90, a dark pool print, the trigger fired, an iceberg"),
-                         "supply at 100, demand at 90, a large orders print, the pivot fired, a large size")
+        self.assertEqual(language("Resistance at 100, support at 90, a dark pool print, the trigger fired"),
+                         "supply at 100, demand at 90, a large orders print, the pivot fired")
         self.assertEqual(language("RESISTANCE"), "SUPPLY")
         self.assertIn("support the", language("flow must support the thesis"))   # the verb stays
 
@@ -276,7 +276,7 @@ class KnowledgeTests(unittest.TestCase):
         for w in ("supply", "demand", "second entry", "measured potential", "sneaky pivot", "reload buyer", "RELOADING", "STILL THERE",
                   "CLEANED UP", "PULLED", "option flow", "736.70", "50-day", "6 candles" if "6 candles" in k else "six 60-minute candles"):
             self.assertIn(w, k, w)
-        self.assertNotIn("iceberg trader", k)
+        self.assertNotIn("iceberg", k.lower())
 
 
 if __name__ == "__main__":

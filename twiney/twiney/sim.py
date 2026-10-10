@@ -837,18 +837,18 @@ class DemoFeed:
     # ---- the PS60 participant at the pivot ---------------------------------------------
 
     def _new_part(self, s, side, price, t, pivot):
-        """A participant working a price. Not two alike: iceberg (small shows, deep reserve), block
+        """A participant working a price. Not two alike: large size (small shows, deep reserve), block
         (bigger shows), or a shallow one that pulls; refills vary; some hold, some get run over."""
         rng = self.rng
         r = roundness(price)
         # at a round number the one working the level is usually bigger and more often there to stay
         mode = rng.choices(("hold", "clean", "pull"), weights=(4 * r, 4, 2))[0]
-        iceberg = rng.random() < 0.45
-        base = rng.choice((200, 300, 400, 500, 700)) if iceberg else rng.choice((900, 1200, 1500, 2000, 2800, 3500))
+        fund = rng.random() < 0.45                  # fund-style large size: the same small show every refill
+        base = rng.choice((200, 300, 400, 500, 700)) if fund else rng.choice((900, 1200, 1500, 2000, 2800, 3500))
         base = int(base * r ** 0.6 / 100) * 100 or 100
         reserve = {"hold": rng.randint(30000, 120000), "clean": rng.randint(3000, 18000), "pull": rng.randint(4000, 12000)}[mode]
         reserve = int(reserve * r ** 0.8)
-        return {"side": side, "price": price, "mode": mode, "base": base, "reserve": reserve, "hit": 0, "refills": 0, "iceberg": iceberg,
+        return {"side": side, "price": price, "mode": mode, "base": base, "reserve": reserve, "hit": 0, "refills": 0, "fund": fund,
                 "refill_at": None, "done": None, "started": t, "pivot": pivot,
                 "hold_after": rng.randint(4, 10), "pull_after": rng.randint(2, 6)}
 
@@ -971,8 +971,8 @@ class DemoFeed:
                 if lv["mode"] == "pull" and lv["refills"] >= lv["pull_after"]:
                     lv["done"] = "pull"
                 else:
-                    # an iceberg shows the same display size every time (the fund-style fingerprint); others vary
-                    refill = min(lv["reserve"], lv["base"] if lv.get("iceberg") else _r100(lv["base"] * rng.uniform(0.5, 1.4)))
+                    # fund-style large size shows the same display size every time (the fingerprint); others vary
+                    refill = min(lv["reserve"], lv["base"] if lv.get("fund") else _r100(lv["base"] * rng.uniform(0.5, 1.4)))
                     lv["reserve"] -= refill
                     rows[idx][1] = refill
             if idx is not None and rows[idx][1] <= 0 and lv["refill_at"] is None and lv["reserve"] <= 0:
