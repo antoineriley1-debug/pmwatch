@@ -1,0 +1,23 @@
+[Unit]
+Description=IB Gateway (headless, kept logged in by IBC)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=ted
+Group=ted
+Environment=DISPLAY=:1
+Environment=TWS_MAJOR_VRSN=__GW_VER__
+Environment=IBC_INI=/home/ted/ibc/config.ini
+Environment=IBC_PATH=/opt/ibc
+Environment=TWS_PATH=/home/ted/Jts
+Environment=LOG_PATH=/home/ted/ibc/logs
+Environment=TWS_SETTINGS_PATH=/home/ted/Jts
+# a virtual display: the Gateway is a desktop program even with no one looking
+ExecStartPre=/bin/sh -c 'pgrep -f "Xvfb :1" >/dev/null || (Xvfb :1 -screen 0 1280x800x24 >/dev/null 2>&1 &) ; sleep 2'
+ExecStart=/opt/ibc/scripts/ibcstart.sh __GW_VER__ --gateway --mode=paper --tws-path=/home/ted/Jts --ibc-path=/opt/ibc --ibc-ini=/home/ted/ibc/config.ini --tws-settings-path=/home/ted/Jts
+Restart=always
+RestartSec=20
+
+[Install]
+WantedBy=multi-user.target

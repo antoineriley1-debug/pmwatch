@@ -1,0 +1,26 @@
+# IBC config for TED's IB Gateway (filled in by install.sh from /etc/ted/ibc.env; lives at /home/ted/ibc/config.ini)
+# Full reference: https://github.com/IbcAlpha/IBC/blob/master/userguide.md
+LogToConsole=no
+FIX=no
+IbLoginId=__IB_USER__
+IbPassword=__IB_PASSWORD__
+TradingMode=__TRADING_MODE__
+# the second factor: IBC cannot answer it for you; it waits for your tap in IBKR Mobile and retries the login
+SecondFactorAuthenticationExit=no
+ReloginAfterSecondFactorAuthenticationTimeout=yes
+SecondFactorAuthenticationTimeout=180
+# the API: on, port 4002 (paper) / 4001 (live), only this computer, orders allowed (TED's own gate keeps it paper)
+OverrideTwsApiPort=4002
+ReadOnlyApi=no
+AcceptIncomingConnectionAction=accept
+TrustedTwsApiClientIPs=127.0.0.1
+# the dialogs IBC answers for you
+AcceptNonBrokerageAccountWarning=yes
+ExistingSessionDetectedAction=primary
+AllowBlindTrading=no
+DismissPasswordExpiryWarning=yes
+DismissNSEComplianceNotice=yes
+MinimizeMainWindow=no
+# IBKR resets every Sunday: restart the Gateway on its own on that day, after the reset window
+ClosedownAt=Sunday 03:30
+AutoRestartTime=
