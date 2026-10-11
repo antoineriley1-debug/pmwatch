@@ -6,7 +6,9 @@ slot commands ("depth_on"/"depth_off") which the market-data adapter executes.
 """
 
 from . import board, options, orderflow
+import json
 import logging
+import os
 import threading
 import time
 from collections import deque
@@ -319,6 +321,11 @@ class Engine:
         self.trainer = None     # REPLAY TRAINING (twiney.training.Trainer) while replaying with the desk up
         self.calib_path = None  # live only: recordings/inst_calib.jsonl, every CHILD ORDERS detection on the real tape
         self.storyline_path = None   # recordings/storylines.jsonl: every turn of the storyline (the lean, attempts, the day's regime)
+        # OPEN INTEREST per contract: the number IBKR sends (overnight, once a day), the first one seen each day kept as
+        # THIS MORNING's, and yesterday's morning for the change; recordings/oi.jsonl carries them across restarts
+        self.oi_path = None
+        self.opt_oi = {}             # key -> {"oi", "t"}
+        self.opt_oi_days = {}        # day -> {key -> the morning open interest}
         self.grades = {}        # alert key -> "good" | "bad" (trader's verdict on a call)
         self.voice = deque(maxlen=60)   # spoken call-outs: big size added / pulled / hit
         self.desk = None        # recording desk (REC / markers / screenshots), set by run_twiney
@@ -2338,7 +2345,63 @@ class Engine:
                     "expires_today": exp == time.strftime("%Y%m%d", time.gmtime(t + options_ny_off(t))),
                     "dte": options.dte(exp, t),
                     "chart_stop": self._chart_stop_for(sym, right),
-                    "tape": self.option_tape(key, t)}
+                    "tape": self.option_tape(key, t),
+                    "oi": self.oi_view(key, t)}
+
+    # ---- open interest --------------------------------------------------------------------------------------
+    def on_opt_oi(self, key, oi, t):
+        """A contract's open interest (IBKR tick 27 / 28, or the practice model). The first number of each day is
+        kept as THIS MORNING's open interest; yesterday's morning number gives the overnight change."""
+        from . import studies
+        with self.lock:
+            oi = int(oi)
+            self.opt_oi[key] = {"oi": oi, "t": t}
+            day = studies.day_key(t)
+            today = self.opt_oi_days.setdefault(day, {})
+            if key not in today:
+                today[key] = oi
+                if self.oi_path:
+                    try:
+                        with open(self.oi_path, "a", encoding="utf-8") as f:
+                            f.write(json.dumps({"day": day, "key": key, "oi": oi}) + "\n")
+                    except OSError:
+                        pass
+
+    def load_oi(self, path=None):
+        """The morning open interest of earlier days from recordings/oi.jsonl (yesterday's for the change)."""
+        path = path or self.oi_path
+        if not path or not os.path.exists(path):
+            return 0
+        n = 0
+        try:
+            with open(path, encoding="utf-8") as f:
+                for line in f:
+                    try:
+                        r = json.loads(line)
+                        self.opt_oi_days.setdefault(int(r["day"]), {}).setdefault(str(r["key"]), int(r["oi"]))
+                        n += 1
+                    except (ValueError, KeyError, TypeError):
+                        continue
+        except OSError:
+            return 0
+        return n
+
+    def oi_view(self, key, t):
+        """Open interest for one contract, in the words the chain and the option chart show: the open interest this
+        morning, the overnight change against yesterday's morning, the contracts traded today, and the read:
+        MORE (traded more than were open: new positions, no doubt) or LESS."""
+        from . import studies
+        day = studies.day_key(t)
+        cur = (self.opt_oi.get(key) or {}).get("oi")
+        morning = (self.opt_oi_days.get(day) or {}).get(key, cur)
+        prev_days = sorted(d for d in self.opt_oi_days if d < day and key in self.opt_oi_days[d])
+        prev = self.opt_oi_days[prev_days[-1]][key] if prev_days else None
+        vol = self.opt_vol.get(key)
+        read = None
+        if morning is not None and vol is not None:
+            read = "MORE" if vol > morning else "LESS"
+        return {"oi": morning, "oi_prev": prev, "oi_change": (morning - prev) if (morning is not None and prev is not None) else None,
+                "vol": vol, "open_read": read}
 
     def on_opt_greeks(self, key, greeks, t):
         """Delta / gamma / theta / vega / implied vol for a contract (IBKR's tickOptionComputation, or the practice model)."""
@@ -2445,14 +2508,20 @@ class Engine:
                         for f in ("bid", "ask", "last"):
                             self.on_opt_quote(k, f, q[f], t)
                         self.on_opt_greeks(k, options.bs_greeks(spot, strike, days or 0, right), t)
+                    if k not in self.opt_oi:                    # practice open interest: a steady number per strike, more near the money
+                        near = max(0.0, 1.0 - abs(strike - spot) / max(spot * 0.08, 0.01))
+                        self.on_opt_oi(k, int(400 + 18000 * near * (0.6 + 0.8 * ((hash(k) & 0xff) / 255.0))), t)
+                    if self.opt_vol.get(k) is None:
+                        self.opt_vol[k] = int((self.opt_oi[k]["oi"]) * (0.1 + 1.3 * ((hash(k + "v") & 0xff) / 255.0)))
             rows = []
             for k, strike in zip(keys, strikes):
                 q = self.opt_quotes.get(k) or {}
                 pos = self.opt_positions.get(k)
-                rows.append({"key": k, "strike": strike, "bid": q.get("bid"), "ask": q.get("ask"), "last": q.get("last"),
-                             "delta": q.get("delta"), "gamma": q.get("gamma"), "theta": q.get("theta"), "vega": q.get("vega"), "iv": q.get("iv"),
-                             "qty": pos["qty"] if pos else 0, "dte": options.dte(expiry, t) if expiry else None,
-                             "otm_pct": round((strike - spot) / spot * 100 * (1 if right == "C" else -1), 1) if spot else None})
+                rows.append(dict({"key": k, "strike": strike, "bid": q.get("bid"), "ask": q.get("ask"), "last": q.get("last"),
+                                  "delta": q.get("delta"), "gamma": q.get("gamma"), "theta": q.get("theta"), "vega": q.get("vega"), "iv": q.get("iv"),
+                                  "qty": pos["qty"] if pos else 0, "dte": options.dte(expiry, t) if expiry else None,
+                                  "otm_pct": round((strike - spot) / spot * 100 * (1 if right == "C" else -1), 1) if spot else None},
+                                 **self.oi_view(k, t)))
             return {"symbol": symbol, "spot": spot, "available": True, "source": "SIM" if sim else ch["source"], "sim": sim,
                     "sim_why": self.SIM_WHY if sim else None, "expiries": ch["expiries"],
                     "expiry": expiry, "right": right, "mult": ch["mult"], "rows": rows,
@@ -2547,6 +2616,22 @@ class Engine:
             self._rec({"ev": "flow_scope", "t": t or self.last_t, "scope": scope})
         return scope
 
+    def _opening(self, p, t):
+        """NEW on a print whose size is more than the contract's open interest this morning: it has to be a new
+        position (you cannot close more than exist). Smaller prints are not called either way: the tape does not say."""
+        try:
+            exp = str(p.get("expiry") or "").replace("-", "")[:8]
+            key = options.key_of(p["symbol"], exp, p["strike"], p["cp"]) if exp and p.get("strike") is not None and p.get("cp") else None
+        except (TypeError, ValueError):
+            key = None
+        oi = p.get("oi")
+        if oi is None and key:
+            oi = self.oi_view(key, t)["oi"]
+            if oi is not None:
+                p["oi"] = oi
+        size = p.get("size") or 0
+        p["opening"] = "NEW" if (oi is not None and size and size > oi) else None
+
     def on_flow(self, p, t=None):
         """One option print. Every ticker goes into the feed; only watchlist symbols run the unusual detector."""
         with self.lock:
@@ -2558,6 +2643,7 @@ class Engine:
                 p["spot"] = sp
                 p["otm_pct"] = round(((p["strike"] - sp) if p["cp"] == "C" else (sp - p["strike"])) / sp * 100.0, 2)
             self._clock(t)
+            self._opening(p, t)
             self._rec({"ev": "flow", "t": t, "p": p})
             self.flow.add(p)
             if self.bigmoney is not None:

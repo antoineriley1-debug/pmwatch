@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261011-1815">
+<meta name="build" content="20261011-1820">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -858,6 +858,15 @@ i.tl{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:3p
 .ochead .tfs,.ochead .cn{display:inline-flex;gap:2px} .ochead .hint{font-size:10px}
 #chartsPop button{display:block;width:100%;text-align:left;margin:2px 0}
 .oct td.act button.och{padding:0 4px}
+.oct td.oi{color:#9fb0c3} .oct td.oi i,.ochoi i{font-style:normal;font-size:9px;margin-left:3px} .oct td.oi i.up,.ochoi i.up{color:var(--buy)} .oct td.oi i.dn,.ochoi i.dn{color:var(--sell)}
+.oct td.ov b{font:800 9px var(--sans);letter-spacing:.06em;margin-left:4px;padding:0 4px;border-radius:2px;border:1px solid #2a3340;color:#7d8590;display:inline-block;min-width:12px;text-align:center}
+.oct td.ov.more b{color:#0b2b17;background:#3fb950;border-color:#3fb950} .oct td.ov.less b{color:#9fb0c3}
+.oct th.oih,.oct td.oi{width:13%} .oct th.ovh,.oct td.ov{width:19%}
+.pnl[data-p="options"] .pc{container-type:inline-size}
+@container (max-width: 520px){ .oct td.ov b .w{display:none} .oct td.oi i{display:none} }
+.ochoi{font:11px var(--mono);color:#9fb0c3;margin-left:8px} .ochoi b{font:800 9.5px var(--sans);letter-spacing:.06em;padding:0 5px;border-radius:2px;border:1px solid #2a3340;color:#9fb0c3}
+.ochoi.more b{color:#0b2b17;background:#3fb950;border-color:#3fb950}
+.fl .newpos{font:800 9px var(--sans);letter-spacing:.08em;padding:0 5px;border-radius:2px;background:#3fb950;color:#0b2b17;margin-left:4px}
 
 .ztab.on2{color:var(--text);border-bottom:2px solid #5a6b85} .zsplit{cursor:pointer;margin-left:auto;padding:0 6px;color:var(--dim);font-size:12px} .zsplit.on{color:var(--gold)}
 .ohd{padding:3px 6px;font:11px var(--mono);border-bottom:1px solid var(--line);background:#0b0f16;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -5180,6 +5189,13 @@ async function pollChain(){
   catch (e) {} finally { OC.busy = false; }
 }
 setInterval(pollChain, 1000);
+function oiTip(r){
+  if (r.oi == null) return "no open interest yet (IBKR sends it with the quote; practice makes one up)";
+  const ch = r.oi_change == null ? "no earlier morning to compare with yet" : r.oi_change === 0 ? "unchanged since yesterday morning" : `${r.oi_change > 0 ? "up" : "down"} ${kfmt(Math.abs(r.oi_change))} since yesterday morning (${kfmt(r.oi_prev)})`;
+  const rd = r.open_read === "MORE" ? `▲ MORE THAN OPEN: ${kfmt(r.vol)} traded today against ${kfmt(r.oi)} open this morning. More traded than existed: new positions, no doubt about it`
+    : r.open_read === "LESS" ? `LESS THAN OPEN: ${kfmt(r.vol)} traded today against ${kfmt(r.oi)} open this morning. Could be opening or closing; tomorrow morning's number says which` : "nothing traded today yet";
+  return `OPEN INTEREST this morning ${kfmt(r.oi)} · ${ch} · ${rd}`;
+}
 function renderChain(){
   const box = P.options && P.options.pc.querySelector(".oc"); if (!box) return;
   const d = OC.data, body = box.querySelector(".oc-body");
@@ -5202,13 +5218,15 @@ function renderChain(){
       <td class="k">${r.strike % 1 ? r.strike.toFixed(2) : r.strike}${held ? ` <span class="hold ${held > 0 ? "b" : "s"}">${held > 0 ? "+" : ""}${held}</span>` : ""}</td>
       <td class="b">${r.bid == null ? "—" : r.bid.toFixed(2)}</td><td class="s">${r.ask == null ? "—" : r.ask.toFixed(2)}</td><td class="dim">${r.last == null ? "—" : r.last.toFixed(2)}</td>
       <td class="dl" title="delta: how much the contract moves per $1 in the stock">${r.delta == null ? "—" : r.delta.toFixed(2)}</td><td class="dim" title="implied volatility">${r.iv == null ? "—" : Math.round(r.iv * 100) + "%"}</td>
+      <td class="oi" title="${esc(oiTip(r))}">${r.oi == null ? "—" : kfmt(r.oi)}${r.oi_change == null || !r.oi_change ? "" : `<i class="${r.oi_change > 0 ? "up" : "dn"}">${r.oi_change > 0 ? "▲" : "▼"}${kfmt(Math.abs(r.oi_change))}</i>`}</td>
+      <td class="ov ${r.open_read === "MORE" ? "more" : r.open_read === "LESS" ? "less" : ""}" title="${esc(oiTip(r))}">${r.vol == null ? "—" : kfmt(r.vol)}${r.open_read === "MORE" ? `<b>▲<span class="w"> MORE</span></b>` : r.open_read === "LESS" ? `<b>▼<span class="w"> LESS</span></b>` : ""}</td>
       <td class="act">${OC.link && OC.link.key === r.key
         ? `<span class="ldbtn on" title="loaded on the OPTION CHART — click the ✓ to take it off the chart (no order is touched)">✓</span>`
         : `<span class="ldbtn" title="load ${esc(curSym)} ${r.strike % 1 ? r.strike.toFixed(2) : r.strike}${d.right} onto the OPTION CHART and ORDER ENTRY (no order is sent)">📈</span>`}</td></tr>`; }).join("");
   const working = (d.orders || []).map(o => `<div class="wk"><span class="${o.action === "BUY" ? "b" : "s"}">${esc(o.action)} ${o.remaining ?? o.qty} ${esc(o.symbol)} @ ${o.lmt}</span> <span class="dim">${esc(o.status || "")}</span> <button data-cxl="${o.order_id}" class="danger">✕</button></div>`).join("");
   const noQ = d.rows.length && d.rows.every(r => r.bid == null && r.ask == null);
   const banner = noQ ? `<div class="ocwarn q">NO QUOTES on this chain (market closed, or no option data on this login) — click a strike and type your limit in PX</div>` : "";
-  const html = banner + `<table class="t oct"><tr><th>STRIKE</th><th>BID</th><th>ASK</th><th>LAST</th><th>Δ</th><th>IV</th><th></th></tr>${rows}</table>${working ? `<div class="wks">${working}</div>` : ""}`;
+  const html = banner + `<table class="t oct"><tr><th>STRIKE</th><th>BID</th><th>ASK</th><th>LAST</th><th>Δ</th><th>IV</th><th class="oih" title="OPEN INTEREST this morning (IBKR's overnight number) · ▲▼ the change against yesterday morning">OPEN INT</th><th class="ovh" title="contracts TRADED TODAY against this morning's open interest: ▲ MORE = more traded than were open, new positions for sure · LESS = fewer, opening or closing, the tape does not say">TRADED TODAY</th><th></th></tr>${rows}</table>${working ? `<div class="wks">${working}</div>` : ""}`;
   if (body.dataset.h === html) return; body.dataset.h = html;
   const keep = body.scrollTop; body.innerHTML = html; body.scrollTop = keep;
 }
@@ -6676,7 +6694,7 @@ function renderFlow(s){
     const deep = p.otm_pct != null && p.otm_pct <= -3 ? `${Math.abs(p.otm_pct).toFixed(0)}% IN THE MONEY` : "";
     return `<div class="fl ${cp === "C" ? "c" : "p"} ${p.away ? "away" : ""} ${soon || rep ? "know" : ""} ${FLOWREF && FLOWREF.idset.has(p.id) ? "said" : ""}" title="${p.side === "ask" ? "bought at the ask" : p.side === "bid" ? "sold at the bid" : "mid"}${p.otm_pct != null ? ` · ${p.otm_pct > 0 ? p.otm_pct.toFixed(1) + "% out of the money" : Math.abs(p.otm_pct).toFixed(1) + "% in the money"}` : ""}${soon ? " · size this close to expiry: somebody may know something" : ""}${rep ? " · the same far-out strike keeps getting bought with size" : ""}${deep ? " · deep in the money: delta near one, moves dollar for dollar with the stock. That is a hedge or stock replacement, not a bet on a move — not the short-dated out-of-the-money dough we wait for" : ""}">
       <div class="tm">${nyHM12(p.t)}</div>
-      <div class="top"><span class="tk">${esc(p.symbol)}</span><span class="prem">${kfmt$(p.premium)}</span><span class="dots ${p.side === "ask" ? "a" : ""}">${p.kind === "sweep" || p.kind === "split" ? "<i></i><i></i>" : p.kind === "block" ? "<i></i>" : ""}</span>${soon ? `<span class="kn">${soon}</span>` : ""}${rep ? `<span class="kn rep">${rep}</span>` : ""}${deep ? `<span class="itm">${deep}</span>` : ""}${p.away && !rep ? `<span class="aw">WAYS AWAY</span>` : ""}${urg ? `<span class="urg" title="this contract is being bought in a hurry: short-dated, out of the money, print after print">⚡ URGENT</span>` : ""}</div>
+      <div class="top"><span class="tk">${esc(p.symbol)}</span><span class="prem">${kfmt$(p.premium)}</span><span class="dots ${p.side === "ask" ? "a" : ""}">${p.kind === "sweep" || p.kind === "split" ? "<i></i><i></i>" : p.kind === "block" ? "<i></i>" : ""}</span>${soon ? `<span class="kn">${soon}</span>` : ""}${rep ? `<span class="kn rep">${rep}</span>` : ""}${deep ? `<span class="itm">${deep}</span>` : ""}${p.away && !rep ? `<span class="aw">WAYS AWAY</span>` : ""}${urg ? `<span class="urg" title="this contract is being bought in a hurry: short-dated, out of the money, print after print">⚡ URGENT</span>` : ""}${p.opening === "NEW" ? `<span class="newpos" title="NEW: ${sz(p.size)} contracts in this print against ${kfmt(p.oi)} open this morning. More than existed: a new position, no doubt">NEW</span>` : ""}</div>
       <div class="cols"><span><i>EXP</i>${exp(p.expiry)}</span><span><i>STRIKE</i>${strike(p.strike)}</span><span><i>C/P</i>${cp}</span><span><i>SPOT</i>${p.spot != null ? (+p.spot).toFixed(2) : NA}</span><span><i>TYPE</i><span class="ty">${typ(p)}</span></span><span><i>DETAILS</i>${sz(p.size)} @ ${p.price != null ? p.price.toFixed(2) : NA}</span></div></div>`; }).join("")
     : `<div class="dim" style="padding:10px">${(s.flow || []).length ? "Nothing matches the filter." : (s.connection && s.connection.state === "DEMO" ? "Practice flow is warming up." : "No option flow. Add your Quant Data key in SETTINGS, Quant Data, then RESTART NOW.")}</div>`;
   const out = head + html;
@@ -7351,7 +7369,7 @@ function renderOchHead(){
   if (!OCH.key) html = `<span class="dim">No contract yet — open OPTIONS, click a strike (or 📈 on its row) and it charts here.</span><button data-och="chain">OPTIONS</button>`;
   else { const pos = d && d.position, q = pos ? Math.abs(pos.qty) : 0, long = pos && pos.qty > 0;
     const rs = d ? optRiskSize(d) : null;
-    html = `<b class="${d && d.right === "P" ? "s" : "b"}">${esc(d ? d.label : OCH.key)}</b>${d && d.expires_today ? `<span class="exptoday" title="expires at 4:00 today: a long one in the money is exercised into shares; the desk calls it out at 3:30 and closes it at 3:50 (SETTINGS, Trading)">EXPIRES TODAY</span>` : d && d.dte != null && d.dte < 7 ? `<span class="dim">${d.dte.toFixed(1)}d left</span>` : ""}<span class="dim">bid ${f(d && d.bid)} / ask ${f(d && d.ask)}${d && d.delta != null ? ` · Δ ${(+d.delta).toFixed(2)}` : ""}${d && d.source === "PRACTICE" ? " · practice model" : ""}</span>${d && d.sim ? `<span class="simtag" title="options market closed: this contract's price is SIMULATED from the stock (paper only); option orders wait for the 9:30 open">SIM · market closed</span>` : ""}
+    html = `<b class="${d && d.right === "P" ? "s" : "b"}">${esc(d ? d.label : OCH.key)}</b>${d && d.expires_today ? `<span class="exptoday" title="expires at 4:00 today: a long one in the money is exercised into shares; the desk calls it out at 3:30 and closes it at 3:50 (SETTINGS, Trading)">EXPIRES TODAY</span>` : d && d.dte != null && d.dte < 7 ? `<span class="dim">${d.dte.toFixed(1)}d left</span>` : ""}<span class="dim">bid ${f(d && d.bid)} / ask ${f(d && d.ask)}${d && d.delta != null ? ` · Δ ${(+d.delta).toFixed(2)}` : ""}${d && d.source === "PRACTICE" ? " · practice model" : ""}</span>${d && d.oi && d.oi.oi != null ? `<span class="ochoi ${d.oi.open_read === "MORE" ? "more" : d.oi.open_read === "LESS" ? "less" : ""}" title="${esc(oiTip(d.oi))}">OPEN INT ${kfmt(d.oi.oi)}${d.oi.oi_change ? ` <i class="${d.oi.oi_change > 0 ? "up" : "dn"}">${d.oi.oi_change > 0 ? "▲" : "▼"}${kfmt(Math.abs(d.oi.oi_change))}</i>` : ""} · TRADED ${d.oi.vol == null ? "—" : kfmt(d.oi.vol)}${d.oi.open_read === "MORE" ? " <b>▲ MORE THAN OPEN</b>" : d.oi.open_read === "LESS" ? " <b>LESS THAN OPEN</b>" : ""}</span>` : ""}${d && d.sim ? `<span class="simtag" title="options market closed: this contract's price is SIMULATED from the stock (paper only); option orders wait for the 9:30 open">SIM · market closed</span>` : ""}
       ${rs ? `<button class="risksz" data-ochn="${rs.n}" title="${esc(rs.why)}">RISK $${riskDollars()} → ${rs.n} ct</button>` : d ? `<span class="dim" title="draw a STOP on the stock chart (or set this contract's stop) and the desk sizes contracts from your RISK $">no stop to size from</span>` : ""}
       ${q ? `<span class="${long ? "b" : "s"}">YOU HAVE ${q}${pos.pnl != null ? ` · ${pos.pnl >= 0 ? "+" : "−"}$${sz(Math.abs(Math.round(pos.pnl)))}` : ""}</span>` : ""}
       <span class="tfs">${[1, 5, 15].map(m => `<button data-ochtf="${m}" class="${tf === m ? "on" : ""}">${m}m</button>`).join("")}<button data-ochind="mas" class="${store.get("och.mas", false) ? "on" : ""}" title="moving averages on the OPTION CHART (the stock chart keeps its own)">MAS</button><button data-ochind="bb" class="${store.get("och.bb", false) ? "on" : ""}" title="Bollinger Bands on the OPTION CHART">BB</button></span>

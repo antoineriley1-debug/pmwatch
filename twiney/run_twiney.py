@@ -118,6 +118,8 @@ def run_live(cfg, plays, args):
     engine.score.path = os.path.join(_rec_dir(cfg), "score.jsonl")   # THE DESK SCORE: every judged call, one line each
     engine.calib_path = os.path.join(_rec_dir(cfg), "inst_calib.jsonl")   # CHILD ORDERS on the real tape, for tuning
     engine.storyline_path = os.path.join(_rec_dir(cfg), "storylines.jsonl")   # the storyline's turns, every day, for the cross-day study
+    engine.oi_path = os.path.join(_rec_dir(cfg), "oi.jsonl")   # OPEN INTEREST: each contract's morning number, day by day
+    engine.load_oi()
     engine.ai = DeskAI(engine, cfg, _rec_dir(cfg))   # DESK AI (Ollama): the recap, tomorrow's plan, explanations, notes, the study
     engine.macro = start_market(cfg, "live")         # the MARKET page: your boards on IBKR daily closes + FRED
     engine.load_user_alerts(os.path.join(os.path.dirname(os.path.abspath(args.plays)), "alerts.json"))
@@ -277,6 +279,8 @@ def run_demo(cfg, plays, args):
     engine.jlog_path = os.path.join(_rec_dir(cfg), "desk.log")   # structured JSON lines: connections, orders, fills, errors
     engine.score.path = os.path.join(_rec_dir(cfg), "score.jsonl")   # THE DESK SCORE: every judged call, one line each
     engine.storyline_path = os.path.join(_rec_dir(cfg), "storylines.jsonl")
+    engine.oi_path = os.path.join(_rec_dir(cfg), "oi.jsonl")
+    engine.load_oi()
     engine.ai = DeskAI(engine, cfg, _rec_dir(cfg))   # DESK AI (Ollama) on the practice desk too: same buttons, practice numbers
     engine.macro = start_market(cfg, "practice")     # the MARKET page on synthetic closes (labelled PRACTICE)
     engine.load_user_alerts(os.path.join(os.path.dirname(os.path.abspath(args.plays)), "alerts.json"))

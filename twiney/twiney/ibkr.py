@@ -21,6 +21,11 @@ PRICE_TICKS = {1: "bid", 2: "ask", 4: "last", 6: "high", 7: "low", 9: "close", 1
                66: "bid", 67: "ask", 68: "last", 72: "high", 73: "low", 75: "close", 76: "open"}
 SIZE_TICKS = {0: "bid_size", 3: "ask_size", 5: "last_size", 8: "volume",
               69: "bid_size", 70: "ask_size", 71: "last_size", 74: "volume"}
+# option contracts: generic tick 100 = the contract's day volume (ticks 29 call / 30 put), 101 = open interest (27 / 28).
+# Both ride the quote request already open for the contract: no extra market data line
+OPT_GENERIC_TICKS = "100,101"
+OPT_OI_TICKS = {27, 28}
+OPT_VOL_TICKS = {29, 30}
 
 INFO_CODES = {2104, 2106, 2107, 2108, 2119, 2158, 2150, 2174, 2176}
 # order-level errors: the order is not working (rejected / cancelled by IBKR)
@@ -342,6 +347,16 @@ class TwineyWrapper:
     def tickSize(self, reqId, tickType, size):
         field = SIZE_TICKS.get(tickType)
         kind, sym = self.req.get(reqId, (None, None))
+        if kind == "opt" and tickType in OPT_OI_TICKS:
+            v = num(size)
+            if v is not None and v >= 0:
+                self.engine.on_opt_oi(sym, v, self.clock())
+            return
+        if kind == "opt" and tickType in OPT_VOL_TICKS:
+            v = num(size)
+            if v is not None and v >= 0 and not self.engine.opt_sim(self.clock()):
+                self.engine.on_opt_size(sym, "volume", v, self.clock())
+            return
         if field is not None and kind == "opt":
             v = num(size)
             if v is not None and v >= 0 and not self.engine.opt_sim(self.clock()):
@@ -1183,7 +1198,7 @@ class MarketDataSession:
             self.app.req[rid] = ("opt", key)
             self.opt_ids[key] = rid
             try:
-                self.app.reqMktData(rid, self.opt_contracts[key], "", False, False, [])
+                self.app.reqMktData(rid, self.opt_contracts[key], OPT_GENERIC_TICKS, False, False, [])
             except Exception as exc:
                 log.warning("option quote request failed for %s: %s", key, exc)
 
@@ -1261,7 +1276,7 @@ class MarketDataSession:
                 self.app.req[rid] = ("opt", key)
                 self.opt_ids[key] = rid
                 try:
-                    self.app.reqMktData(rid, self.opt_contracts[key], "", False, False, [])
+                    self.app.reqMktData(rid, self.opt_contracts[key], OPT_GENERIC_TICKS, False, False, [])
                 except Exception as exc:
                     log.warning("option quote request failed for %s: %s", key, exc)
             t = self.clock()
