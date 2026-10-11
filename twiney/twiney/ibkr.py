@@ -211,6 +211,14 @@ class TwineyWrapper:
                 self.session.opt_depth = None
                 self.engine.on_opt_depth_refused(sym, code, msg, t)
             return
+        if kind == "macro":
+            if code >= 2100:
+                return                                    # a farm status message, not about this request
+            self.req.pop(req_id, None)
+            macro = getattr(self.session, "macro", None)
+            if macro is not None:
+                macro.on_error(req_id, code, msg)
+            return
         if kind in ("hist", "daily", "m30", "m5x", "m5") and code in self.session.HIST_RETRY_CODES:
             if code in (2104, 2106):
                 return                                    # "market data farm connection is OK": not a refusal
@@ -455,6 +463,11 @@ class TwineyWrapper:
     # chart history ----------------------------------------------------------
     def historicalData(self, reqId, bar):
         kind, sym = self.req.get(reqId, (None, None))
+        if kind == "macro":               # MARKET ANALYSIS DETAILED REPORT: daily closes for the boards
+            macro = getattr(self.session, "macro", None)
+            if macro is not None:
+                macro.on_bar(reqId, bar)
+            return
         if kind == "daily":
             d = str(bar.date).strip()
             try:
@@ -498,6 +511,12 @@ class TwineyWrapper:
         self.engine.on_hist_bar(sym, t0, o, h, l, c, num(bar.volume))
 
     def historicalDataEnd(self, reqId, start, end):
+        if (self.req.get(reqId) or (None,))[0] == "macro":
+            self.req.pop(reqId, None)
+            macro = getattr(self.session, "macro", None)
+            if macro is not None:
+                macro.on_end(reqId)
+            return
         if (self.req.get(reqId) or (None,))[0] == "m5x":
             return                     # kept up to date: historicalDataUpdate keeps coming on this id
         self.req.pop(reqId, None)
@@ -721,6 +740,11 @@ class MarketDataSession:
                 self._study_step(now)
                 self._hist_retry_step(now)
                 self._study_new_day(now)
+                if getattr(self, "macro", None) is not None:
+                    try:
+                        self.macro.step(now, self)       # the market report's daily bars, a few at a time
+                    except Exception:
+                        log.exception("market report load step")
                 self.engine.tick(now)
                 self.reconcile_opt_depth(now)
                 self.reconcile_depth()

@@ -48,3 +48,7 @@ build = datetime.datetime.utcnow().strftime("%Y%m%d-%H%M")
 html = html.replace("<title>", f'<meta name="build" content="{build}">\n<title>', 1)
 open(os.path.join(SP, "..", "twiney", "static", "dashboard.html"), "w", encoding="utf-8").write(html)
 print("written", len(html))
+# the MARKET ANALYSIS DETAILED REPORT page: its own page (the MARKET button), same build stamp
+mk = open(os.path.join(SP, "market.html"), encoding="utf-8").read().replace("<title>", f'<meta name="build" content="{build}">\n<title>', 1)
+open(os.path.join(SP, "..", "twiney", "static", "market.html"), "w", encoding="utf-8").write(mk)
+print("written market", len(mk), "build", build)

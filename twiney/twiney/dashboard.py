@@ -12,6 +12,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 STATIC = os.path.join(os.path.dirname(__file__), "static", "dashboard.html")
+MARKET_PAGE = os.path.join(os.path.dirname(__file__), "static", "market.html")
 
 
 def _static_build():
@@ -133,6 +134,25 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
             if path in ("/", "/index.html"):
                 with open(STATIC, "rb") as fh:
                     self._send(200, fh.read(), "text/html; charset=utf-8")
+            elif path == "/market":
+                # MARKET ANALYSIS DETAILED REPORT: its own page, opened from the desk's MARKET button
+                try:
+                    with open(MARKET_PAGE, "rb") as fh:
+                        self._send(200, fh.read(), "text/html; charset=utf-8")
+                except OSError:
+                    self._send(404, "the market page is not built: python page_src/build_page.py", "text/plain")
+            elif path == "/api/market":
+                mk = getattr(engine, "macro", None)
+                q = parse_qs(urlparse(self.path).query, keep_blank_values=True)
+                if mk is None:
+                    self._send(200, json.dumps({"ok": False, "reason": "the market report is off (SETTINGS > Market report)"}), "application/json")
+                else:
+                    snap = mk.snapshot(full=q.get("lite", [""])[0] != "1")
+                    ai = getattr(engine, "ai", None)
+                    snap["ai"] = ai.status() if ai is not None else None
+                    snap["build"] = BUILD
+                    snap["ok"] = True
+                    self._send(200, json.dumps(snap, default=str, separators=(",", ":")), "application/json")
             elif path == "/api/stream":
                 # STREAMING: the ticker on screen, pushed the moment its book, tape or quote changes (Server-Sent
                 # Events). Checked every 40 ms, at most ~25 sends a second; the regular refresh carries the rest
@@ -530,6 +550,29 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                         return
                 except (ValueError, TypeError, OSError) as exc:
                     out = {"ok": False, "reason": str(exc)}
+                self._send(200, json.dumps(out), "application/json")
+                return
+            elif path == "/api/market/refresh":
+                mk = getattr(engine, "macro", None)
+                if mk is None:
+                    self._send(200, json.dumps({"ok": False, "reason": "the market report is off"}), "application/json")
+                    return
+                if mk.mode == "live":
+                    mk.request_refresh()
+                    threading.Thread(target=lambda: (mk.load_fred(), mk.build()), daemon=True).start()
+                    out = {"ok": True, "reason": "asking IBKR for any missing days and FRED for the economy numbers"}
+                else:
+                    mk.build_async()
+                    out = {"ok": True, "reason": "rebuilt from " + ("the practice closes" if mk.mode == "practice" else "what is on disk")}
+                self._send(200, json.dumps(out), "application/json")
+                return
+            elif path == "/api/market/members":
+                mk = getattr(engine, "macro", None)
+                try:
+                    n = mk.refresh_members() if mk is not None and mk.mode == "live" else None
+                    out = {"ok": n is not None, "reason": f"{n} S&P members saved; their daily bars load next" if n else "live desk only"}
+                except Exception as exc:
+                    out = {"ok": False, "reason": f"could not fetch the S&P list: {exc}"}
                 self._send(200, json.dumps(out), "application/json")
                 return
             elif path == "/api/ai/run":

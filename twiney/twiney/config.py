@@ -638,6 +638,30 @@ DEFAULTS = {
         "recap_minutes_after_close": 5,   # ... this many minutes after 16:00 ET
         "days_back": 20,                  # the cross-day study reads this many recorded days
     },
+    "market": {
+        # MARKET ANALYSIS DETAILED REPORT (the MARKET button): your Recession Steps, Market State, Relationships,
+        # Rate Baskets and who-is-carrying-it boards rebuilt on daily closes, plus the 500 S&P members by name. Daily
+        # bars come from your IBKR login (no extra market data), the economy numbers from FRED (free, no key). The
+        # backdrop only: it sets how much and which way you lean, never when you enter.
+        "enabled": True,                  # build the report (live: IBKR + FRED; practice: synthetic closes)
+        "members": True,                  # breadth, leaders and the stocks lagging from the ~500 S&P members (about 500 IBKR history requests the first time: a few minutes)
+        "years": 20,                      # years of daily bars asked the first time (the history counts start June 2007)
+        "in_flight": 4,                   # IBKR history requests out at once for this page (kept low so the desk's own charts never wait)
+        "fred": True,                     # rates, jobs, claims, oil and the credit spread from FRED
+        "confirm_days": 2,                # Market State: days a new state must hold before it switches (one state at a time)
+        "hold_days": 5,                   # Market State: extra days step 2 must stay on before State 3
+        "follow_window": 40,              # history: trading days after a step turns on for the next step to count as following it
+        "tie_points": 0.25,               # Rate Baskets: top two baskets within this many points = no clear winner
+        "rate_move": 0.05,                # Rate Baskets: a 10-year move bigger than this (points) in a week counts as up or down
+        "carried_points": 1.5,            # who is carrying it: the average stock this many points behind the S&P over a month = a few huge names carry it
+        "bank_fund": "XLF",               # the bank fund for step 3 (your boards use XLF)
+        "copper": "HG",                   # copper: HG = the COMEX continuous future (your boards), or a fund symbol such as CPER
+        "chip_fund": "SMH",               # the chip fund on the who-is-carrying-it row
+        "big_names": ["NVDA", "AVGO", "MSFT", "AAPL", "AMZN", "META", "GOOGL", "TSLA"],  # the big names shown with the chip fund
+        "ai_after_refresh": True,         # DESK AI writes the market report on its own after each day's refresh (when DESK AI is on)
+        "practice_members": 200,          # practice desk: how many synthetic members it counts
+        "practice_seed": 11,              # practice desk: the synthetic market's seed
+    },
     "studies": {
         "gas": True,                    # GAS + ATR (new PS60 Gas + ATR)
         "airspace": True,               # AIRSPACE (PS60 MP Airspace)

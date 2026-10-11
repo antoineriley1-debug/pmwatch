@@ -3507,6 +3507,8 @@ class Engine:
                 self._ai_t = t
                 try:
                     ai.tick(t)
+                    if not ai.busy:
+                        ai.market_tick(t)        # the market report after the day's refresh (live desk only)
                 except Exception:
                     log.exception("desk ai tick")
             rc = self.cfg["reload"]

@@ -29,6 +29,17 @@ from twiney.replay import compare, replay, session_header, span
 from twiney.trading import IbkrBroker, SimBroker, Trader, TradingGate
 
 
+def start_market(cfg, mode):
+    """MARKET ANALYSIS DETAILED REPORT: the daily-close boards (live: IBKR + FRED, practice: synthetic, replay: what is
+    on disk). Its closes live in the data folder (history/macro), never in a zip or git."""
+    from twiney.macrofeed import MacroFeed
+    try:
+        return MacroFeed(cfg, mode=mode, cache_dir=os.path.join(_paths.history_dir(), "macro")).start()
+    except Exception:
+        logging.getLogger("twiney").exception("market report")
+        return None
+
+
 def console_alert(alert):
     stamp = time.strftime("%H:%M:%S", time.localtime(alert["t"]))
     print(f"{stamp}  {alert['symbol']:<6} {alert['label']:<24} @ {alert['price']}  "
@@ -108,6 +119,7 @@ def run_live(cfg, plays, args):
     engine.calib_path = os.path.join(_rec_dir(cfg), "inst_calib.jsonl")   # CHILD ORDERS on the real tape, for tuning
     engine.storyline_path = os.path.join(_rec_dir(cfg), "storylines.jsonl")   # the storyline's turns, every day, for the cross-day study
     engine.ai = DeskAI(engine, cfg, _rec_dir(cfg))   # DESK AI (Ollama): the recap, tomorrow's plan, explanations, notes, the study
+    engine.macro = start_market(cfg, "live")         # the MARKET page: your boards on IBKR daily closes + FRED
     engine.load_user_alerts(os.path.join(os.path.dirname(os.path.abspath(args.plays)), "alerts.json"))
     engine.listeners.append(console_alert)
     note_stripped(engine, args)
@@ -119,6 +131,7 @@ def run_live(cfg, plays, args):
     gate = TradingGate(cfg)
     session = MarketDataSession(engine, cfg, plays, factory, gate=gate)
     engine.session = session
+    session.macro = engine.macro
     engine.play_listeners.append(session.add_play)
     engine.remove_listeners.append(session.remove_play)
     trader = Trader(engine, cfg, IbkrBroker(engine, session), gate) if cfg["trading"]["enabled"] else None
@@ -265,6 +278,7 @@ def run_demo(cfg, plays, args):
     engine.score.path = os.path.join(_rec_dir(cfg), "score.jsonl")   # THE DESK SCORE: every judged call, one line each
     engine.storyline_path = os.path.join(_rec_dir(cfg), "storylines.jsonl")
     engine.ai = DeskAI(engine, cfg, _rec_dir(cfg))   # DESK AI (Ollama) on the practice desk too: same buttons, practice numbers
+    engine.macro = start_market(cfg, "practice")     # the MARKET page on synthetic closes (labelled PRACTICE)
     engine.load_user_alerts(os.path.join(os.path.dirname(os.path.abspath(args.plays)), "alerts.json"))
     engine.listeners.append(console_alert)
     note_stripped(engine, args)
@@ -334,8 +348,13 @@ def run_replay(cfg, plays, args):
     if args.end:
         control["pause_at"] = float(args.end)
 
+    market = []
+
     def ready(engine):
         box["engine"] = engine
+        if not market:
+            market.append(start_market(cfg, "cache"))   # the MARKET page from what is on disk: nothing is asked
+        engine.macro = market[0]
         engine.connection.update(state="REPLAY", detail=args.replay)
         nonlocal dash
         if args.speed > 0:

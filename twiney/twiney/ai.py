@@ -19,12 +19,13 @@ import urllib.request
 
 KNOWLEDGE = os.path.join(os.path.dirname(__file__), "knowledge", "ps60.md")
 
-JOBS = ("recap", "explain", "notes", "study", "trades", "ask")
+JOBS = ("recap", "explain", "notes", "study", "trades", "ask", "market", "marketask")
 
 # the language lock, applied to the model's words too (it slips even when taught)
 LANGUAGE = [(re.compile(r"\bresistance\b", re.I), "supply"), (re.compile(r"\bsupport levels?\b", re.I), "demand"),
             (re.compile(r"\bsupport\b(?! the)", re.I), "demand"), (re.compile(r"\bdark[ -]pool\b", re.I), "large orders"),
-            (re.compile(r"\btrigger(?:ed|s)?\b", re.I), "pivot")]
+            (re.compile(r"\btrigger(?:ed|s)?\b", re.I), "pivot"), (re.compile(r"\bfading\b", re.I), "losing ground"),
+            (re.compile(r"\bstale\b", re.I), "old"), (re.compile(r"\bzones?\b", re.I), "area")]
 
 
 def language(text):
@@ -165,7 +166,8 @@ class DeskAI:
         title, given, ask = "", "", ""
         try:
             title, given, ask = self.prepare(job, t, **kw)
-            text = language(self._client().generate(knowledge(), given + "\n\n" + ask))
+            system = knowledge() + (MARKET_SYSTEM if job in ("market", "marketask") else "")
+            text = language(self._client().generate(system, given + "\n\n" + ask))
             if not text:
                 raise RuntimeError("the model answered with nothing")
             rec = {"t": t, "title": title, "text": text, "given": given + "\n\n" + ask, "ms": int((time.time() - t0) * 1000), "error": None}
@@ -243,6 +245,21 @@ class DeskAI:
         self.recap_day = day
         return self.run("recap", t=t).get("ok", False)
 
+    def market_tick(self, t):
+        """After each day's market refresh on the live desk, the market report is written on its own (SETTINGS >
+        Market report > DESK AI writes it after the refresh)."""
+        mk = getattr(self.engine, "macro", None)
+        if mk is None or mk.mode != "live" or not self.enabled() or not (self.cfg.get("market") or {}).get("ai_after_refresh", True):
+            return False
+        rep = mk.report or {}
+        if not rep.get("ok") or mk.loading or mk.building:
+            return False
+        day = rep.get("as_of")
+        if day == getattr(self, "market_day", None) or self.busy:
+            return False
+        self.market_day = day
+        return self.run("market", t=t).get("ok", False)
+
     # ---- the packets: what the model is given -----------------------------------------------------------------
     def prepare(self, job, t, **kw):
         """(title, the data packet, the ask)."""
@@ -259,8 +276,22 @@ class DeskAI:
         if job == "trades":
             days = int(kw.get("days") or self.ac().get("days_back") or 20)
             return (f"Your trades, graded against PS60 ({days} days)", self.packet_trades(t, days), ASK_TRADES)
+        if job == "market":
+            return ("Market analysis detailed report", self.packet_market(), ASK_MARKET)
+        if job == "marketask":
+            q = str(kw.get("text") or "").strip()[:2000]
+            return ("Your market question", self.packet_market(), ASK_MARKET_Q + "\n\nTWINEY ASKS: " + q)
         q = str(kw.get("text") or "").strip()[:2000]
         return ("Your question", self.packet_day(t, brief=True), ASK_QUESTION + "\n\nTWINEY ASKS: " + q)
+
+    def packet_market(self):
+        """Everything on the MARKET page, as text: the state, the five steps, breadth, the sixteen relationships, the
+        rate baskets, who is carrying it, the leaders and the stocks lagging, the history counts, the scenarios."""
+        mk = getattr(self.engine, "macro", None)
+        rep = (mk.snapshot()["report"] if mk is not None else None) or {}
+        if not rep.get("ok"):
+            raise RuntimeError("the market report has no data yet (MARKET page: it fills once IBKR and FRED answer)")
+        return market_packet(rep)
 
     def _symbols(self):
         eng = self.engine
@@ -587,6 +618,41 @@ THE WHOLE:
 PRACTICE trades are on a synthetic market: grade the process, not the market. End with one short line that this is
 analysis for Twiney's own judgment, not advice."""
 
+MARKET_SYSTEM = """
+
+THE MARKET BACKDROP (Twiney's own boards, rebuilt on daily closes)
+These boards are the backdrop, never a call. They decide how much and which way Twiney leans; his PS60 setup decides
+when. The five recession steps run in order: 1 lenders nervous (junk bonds), 2 fewer stocks (breadth under 30 for 5
+days), 3 banks lag (2 of 3 bank clues), 4 recession warning (3 warning points), 5 jobs (the Sahm rule). The Market
+State turns them into CLEAR / CAUTION / CONFIRMED / LATE, each with its action. The sixteen relationships each have a
+line and a cushion. The rate baskets say where money is moving. Use the numbers and counts exactly as given; never
+invent a number, a date or a count. Say "smaller, not short" where the state says it. A count from history is a
+count, not a promise: say "N of M times", never "will". Plain English, short sentences, the way Twiney's boards talk:
+name every sign and say plainly whether it is ON or OFF. Never use the words resistance, support, trigger, zone, box,
+stack, door, fading, stale, gone, or any indicator name that is not on these boards."""
+
+ASK_MARKET = """WRITE THE MARKET ANALYSIS DETAILED REPORT from the data above only. Plain English, short sentences.
+
+1. THE CALL IN ONE PARAGRAPH: the Market State and what it tells Twiney to do with size and side today, the step the
+   sequence is on, and the one thing that matters most right now.
+2. WHAT IS DRIVING IT: credit (junk bonds and the spread), breadth (how many stocks are taking part, short-term and
+   long-term, and what the gap says), banks, rates and the curve, jobs. Name each sign ON or OFF with its number.
+3. WHERE THE MONEY IS GOING: the winning rate basket, the rotation and blueprint, the tells, who is carrying the
+   index (the average stock vs the S&P, chips and the big names), the sectors and the members leading and lagging.
+4. THE RELATIONSHIPS: the ones past their line and the ones on WATCH, each with its cushion and which way it moved.
+5. SCENARIOS: for each scenario given above, what has to happen (the exact number and line), how many times it has
+   happened before (N of M, and the percent), and what Twiney does if it comes (the state's action). Add a short
+   "what would surprise" line: the reading that would most change the picture.
+6. WHAT TO WATCH THIS WEEK: three to six lines, each a number and its line.
+7. FOR THE PS60 DESK: how this backdrop should shape his day trades (size, which side lines up with the backdrop,
+   which sectors and names to favor or avoid), and that every entry still needs its pivot, confirmation and second
+   entry.
+End with one short line: a backdrop for Twiney's own judgment, not advice."""
+
+ASK_MARKET_Q = """Answer Twiney's question below from the market data above only. Short and plain. Name the numbers and
+lines you lean on, give history counts as N of M times, and say what you would need to see where the data does not
+show it."""
+
 ASK_QUESTION = """Answer Twiney's question below from the data above and PS60. Short. If the data does not show it,
 say what you would need to see."""
 
@@ -632,3 +698,62 @@ def _read_jsonl(path, limit):
     except OSError:
         return []
     return out[-limit:]
+
+
+def _f(v, places=2):
+    try:
+        return "n/a" if v is None else f"{float(v):.{places}f}"
+    except (TypeError, ValueError):
+        return "n/a"
+
+
+def market_packet(rep):
+    """The MARKET page as plain text lines for the model (every number it may use, nothing else)."""
+    L = []
+    st = rep["state"]
+    rec = rep["recession"]
+    hist = rep["history"]
+    L.append(f"MARKET REPORT as of {rep['as_of_text']} (source: {rep['source']})")
+    L.append(f"MARKET STATE: {st['now']}")
+    L.append(f"WHAT TO DO IN THIS STATE: {st['do']}")
+    L.append(f"WHAT FLIPS NEXT: {st['flips']}")
+    L.append("STATE HISTORY: " + "; ".join(f"State {x['n']} {x['name']}: {x['pct_days']}% of days, entered {x['entered']} times, last {x['last_text']}" for x in st["ladder"]))
+    L.append(f"RECESSION SEQUENCE: {rec['where']['text']}")
+    L.append(f"BREADTH: {rec['rows']['breadth']['text']}")
+    for k in ("1", "2", "3", "4", "5"):
+        row = rec["rows"].get(k) or rec["rows"].get(int(k))
+        L.append(f"{row['label']}: {row['text']}")
+    L.append(f"WHAT TO WATCH NEXT: {rec['next']}")
+    L.append(f"HISTORY: {rec['history_text']}")
+    for k, h in sorted(hist["steps"].items(), key=lambda kv: int(kv[0])):
+        L.append(f"STEP {k} HISTORY: turned on {h['turned_on']} times, ended {h['episodes']} times, about {h['avg_days']} days on average, longest {h['longest']}, "
+                 f"next step followed within {hist['follow_window']} days {h['next_followed']} times, on now: {h['on_now']} ({h['run_now']} days)")
+    rel = rep["relationships"]
+    L.append("RELATIONSHIPS: " + ", ".join(f"{k} {v}" for k, v in rel["counts"].items()))
+    for r in rel["rows"]:
+        L.append(f"  {r['n']}. {r['label']}: {r['state']}; now {_f(r['gap'])}{r['unit']}, line {_f(r['line'])}{r['unit']}, cushion {_f(r['cushion'])}, "
+                 f"week ago cushion {_f(r['cushion_week_ago'])}, moving {r['direction'] or 'n/a'}. {r['crossed']} {r.get('agree', '')}".rstrip())
+    b = rep["baskets"]
+    L.append(f"RATE BASKETS: winner this week {b['winner']}. {b['rate_text']} {b['meaning']}")
+    L.append(f"ROTATION: {b['rotation']['state']}. {b['rotation']['why']}  BLUEPRINT: {b['blueprint']['state']}. {b['blueprint']['why']}")
+    L.append(f"{b['winner_vs_loser']} {b['strength']} {b['turn']}")
+    L.append(f"TELLS: {b['tells']}")
+    for row in b["rows"]:
+        L.append(f"  {row['name']} {row['tag']}: week {_f(row['w'], 1)} month {_f(row['m'], 1)} year {_f(row['y'], 1)} (points vs the S&P)")
+        for sct in row["sectors"]:
+            L.append(f"    {sct['name']} ({sct['fund']}): week {_f(sct['w'], 1)} month {_f(sct['m'], 1)} year {_f(sct['y'], 1)}")
+    ld = rep["leaders"]
+    L.append(ld["carry_text"])
+    L.append(ld["chips_text"])
+    L.append("CHIPS AND BIG NAMES (week / month %): " + ", ".join(f"{x['sym']} {_f(x['w'], 1)}/{_f(x['m'], 1)}" for x in ld["big_names"]))
+    L.append("SECTORS TODAY, TOP: " + ", ".join(f"{x['name']} {_f(x['d1'], 1)}%" for x in ld["sector_top"]) + "; BOTTOM: " + ", ".join(f"{x['name']} {_f(x['d1'], 1)}%" for x in ld["sector_bottom"]))
+    L.append("SECTOR BREADTH (% of members above 50-day / 200-day): " + ", ".join(f"{x['sector']} {x['pct50']}/{x['pct200']}" for x in ld["sector_breadth"]))
+    L.append(f"NEW 52-WEEK HIGHS {ld['new_highs']}, NEW 52-WEEK LOWS {ld['new_lows']}")
+    L.append("MEMBERS LEADING THIS MONTH: " + ", ".join(f"{x['sym']} {_f(x['m'], 1)}%" for x in ld["members_month_top"][:10]))
+    L.append("MEMBERS LAGGING THIS MONTH: " + ", ".join(f"{x['sym']} {_f(x['m'], 1)}%" for x in ld["members_month_bottom"][:10]))
+    L.append("SCENARIOS:")
+    for sc in rep["scenarios"]:
+        L.append(f"  {sc['name']} ({sc['kind']}): needs: {sc['needs']} history: {sc['history']} if it comes: {sc['means']}")
+    L.append(f"FEEDS: {rep['feeds']['text']}")
+    L.append(f"NOTE: {rep['note']}")
+    return "\n".join(L)

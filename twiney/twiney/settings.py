@@ -38,6 +38,7 @@ SECTIONS = [
     ("story", "PS60 story", "The Daily chart, your PS60 places, zones, the tape, reload buyers / sellers, option flow and price response told as one running story."),
     ("score", "Desk score", "THE DESK SCORE: every call with a direction in it (second entry live, CLEANED UP, a level taken on a close, a breakout with speed, a program, calls / puts pounded, the open read) judged 5 and 15 minutes later. Which calls earn their airtime."),
     ("ai", "AI (Ollama)", "DESK AI: a local model (Ollama, on this computer) taught PS60 the way Dan reads the market. It reads the desk's own records after the fact and writes the day's recap and tomorrow's plan, explains a call, cleans up your notes, does the cross-day study. Never a call, never a voice line, never a trade. Install Ollama from ollama.com, then in a terminal: ollama pull llama3.1:8b"),
+    ("market", "Market report", "MARKET ANALYSIS DETAILED REPORT (the MARKET button): your Recession Steps, Market State, Relationships Board, Rate Baskets and who-is-carrying-it boards rebuilt inside TED on daily closes, the 500 S&P members by name, and DESK AI's write-up with the scenarios and how often each one has happened. IBKR daily bars (no extra market data) and FRED (free, no key). It sets how much and which way you lean; PS60 sets when."),
     ("studies", "Chart studies", "GAS + ATR, AIRSPACE and UNVISITED HIGHS / LOWS on the stock chart (never the option chart). Each switches off on its own."),
     ("account", "Account", "Orders, positions and fills."),
     ("health", "Feed health", "When a feed counts as stale."),
@@ -70,6 +71,8 @@ CHOICES = {
     "studies.lbl_color_mode": [("line", "the line's colour"), ("one", "one colour for every label")],
     "trading.option_target_take_pct": [(100, "100% · every contract"), (75, "75%"), (50, "50% · half at the target, the rest runs"), (33, "33%"), (25, "25%")],
     "trading.option_backup_tif": [("GTC", "GTC · stays at IBKR across days"), ("DAY", "DAY · ends at the close")],
+    "market.copper": [("HG", "HG · COMEX copper future (your boards)"), ("CPER", "CPER · copper fund")],
+    "market.bank_fund": [("XLF", "XLF · financials (your boards)"), ("KBE", "KBE · bank fund")],
     "studies.atr_smoothing": [("RMA", "RMA · Wilder (TradingView ATR)"), ("EMA", "EMA"), ("SMA", "SMA"), ("WMA", "WMA")],
 }
 
