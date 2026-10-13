@@ -410,6 +410,11 @@ DEFAULTS = {
         "basket_flip_alerts": True,     # FLIP calls and the FLIP banner
         "basket_touch_counter": True,   # the small counter on the trigger / second entry rows (resets each touch)
         "basket_sequence": True,        # the PS60 SEQUENCE over the ladder
+        # LARGE SIZE: a print bigger than what the book showed at that price (at least this many times it, and at least a
+        # fifth of BIG): size that traded without ever showing. Called, marked on the ladder row, and said
+        "large_size_ratio": 2.0,
+        "large_size_seconds": 120,      # the LARGE SIZE mark stays on the row this long
+        "voice_large_size": True,       # say LARGE SIZE out loud
         "basket_manual_pop": True,      # your SECOND ENTRY / TAKE PROFIT / STOP rows pop (display only, never an order)
         "flip_min_shares": 1000,        # FLIP: at least this much size from the other side at the price ...
         "flip_hold_seconds": 2,         # ... held this long (a thin print never flips a level) ...

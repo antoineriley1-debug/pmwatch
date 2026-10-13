@@ -1220,6 +1220,27 @@ body.whitedesk .chart-wrap canvas,body.whitedesk img,body.whitedesk video{filter
 .lad.dom.no-sell th.volh.s,.lad.dom.no-sell td.dvol.s,.lad.dom.no-buy th.volh.b,.lad.dom.no-buy td.dvol.b,.lad.dom.no-rail th.railh,.lad.dom.no-rail td.rail,.lad.dom.no-traded th.trh,.lad.dom.no-traded td.dtr{display:none}
 .lad.dom td.mn{color:#9fb0c3;font-size:.9em;padding:0 3px}
 .lad.dom td.sz.fake .szn{text-decoration:line-through;opacity:.7}
+/* the inside bid / ask rows: outlined on their side, named at the price */
+.lad.dom tr.best-bid td.bsz{box-shadow:inset 0 0 0 1px rgba(38,208,124,.85)} .lad.dom tr.best-ask td.asz{box-shadow:inset 0 0 0 1px rgba(255,77,94,.85)}
+.lad.dom td.px u{position:absolute;left:2px;top:50%;transform:translateY(-50%);font:800 7px var(--sans);letter-spacing:.06em;text-decoration:none;padding:0 2px;border-radius:2px;line-height:10px}
+.lad.dom td.px u.inb{color:#0b2b17;background:#26d07c} .lad.dom td.px u.ina{color:#2b0609;background:#ff4d5e}
+.lad.dom td.px{position:relative}
+/* a narrow ladder: the word would sit on the price, so the inside row keeps a coloured edge instead */
+.lad.dom.narrow td.px u{width:3px;height:70%;padding:0;font-size:0;left:0;border-radius:0}
+.lad.dom tr.best-bid td.px,.lad.dom tr.best-ask td.px{padding-left:4px}
+/* the last print's size at the price, for a second */
+.lad.dom td.px em.lastpr{position:absolute;right:3px;top:50%;transform:translateY(-50%);font:800 9px var(--mono);font-style:normal;padding:0 3px;border-radius:2px;animation:lastpr 1.1s ease-out forwards}
+.lad.dom td.px em.lastpr.b{color:#0b2b17;background:#26d07c} .lad.dom td.px em.lastpr.s{color:#2b0609;background:#ff4d5e}
+@keyframes lastpr{0%{opacity:1;transform:translateY(-50%) scale(1.15)}70%{opacity:1;transform:translateY(-50%) scale(1)}100%{opacity:0;transform:translateY(-50%) scale(.9)}}
+.lad.dom.still td.px em.lastpr{animation:none}
+/* LARGE SIZE: a print bigger than the book showed */
+.lad.dom td.dvol b.lrg{position:absolute;left:2px;top:50%;transform:translateY(-50%);z-index:2;font:800 9px var(--mono);padding:0 3px;border-radius:2px;background:#e8b931;color:#1d1a10;white-space:nowrap;max-width:62%;overflow:hidden;text-overflow:ellipsis}
+.lad.dom td.dvol b.lrg i{font-style:normal;font-weight:600;font-size:8px;margin-left:3px;opacity:.85}
+.lad.dom.narrow td.dvol b.lrg i{display:none} .lad.dom.narrow td.dvol b.lrg{max-width:48%}
+.lad.dom td.dvol{position:relative}
+/* the +/- columns: off unless COLS turns them on */
+.lad.dom th.dpsh,.lad.dom td.dps{display:none} .lad.dom.ps th.dpsh,.lad.dom.ps td.dps{display:table-cell}
+.lad.dom td.dps{font:700 10px var(--mono);text-align:center;padding:0 2px;color:#7d8590} .lad.dom td.dps.add{color:#5dffa8} .lad.dom td.dps.pull{color:#ff8a95}
 .lad.dom td.sz.big .szn{color:#f2d59a} .lad.dom td.sz.huge .szn{color:#fff;font-weight:800}
 .domhdr{display:flex;gap:8px;align-items:center;padding:2px 6px;font:10px var(--sans);color:#9fb0c3;background:#0b0f16;border-bottom:1px solid var(--line);white-space:nowrap;overflow:hidden}
 .domhdr .st{letter-spacing:.1em;padding:0 5px;border-radius:2px;background:#1c232c;color:#cfd6df} .domhdr.ok .st{background:#153a26;color:#7dffb8} .domhdr.warn .st{background:#3a2e12;color:#ffd866} .domhdr.bad .st{background:#3a1515;color:#ff8a96}

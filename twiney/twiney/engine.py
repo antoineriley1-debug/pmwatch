@@ -671,6 +671,7 @@ class Engine:
                 if len(st.foot) > 240:
                     del st.foot[min(st.foot)]
             self._visit(st, k, rec["side"], size, t)
+            self._large_size(st, t, k, price, size, rec["side"])
             # THE BASKET: every confirmed trade at this price today, added ONCE, here, as it arrives:
             # [total, bought, sold, sequence]. The page shows these numbers (never its own count) and animates the new part
             bday = ps60.ny_day(t)
@@ -1260,6 +1261,44 @@ class Engine:
                     fn(alert)
                 except Exception:
                     pass
+
+    def _large_size(self, st, t, k, price, size, side):
+        """LARGE SIZE: a print that traded more than the book showed at that price on that side. The tape shows the
+        trade; the Level II never showed the order. Marked on the row for a while and called once a minute per price."""
+        if side not in ("buy", "sell") or st.book is None:
+            return
+        lc = self.cfg.get("ladder") or {}
+        ratio = float(lc.get("large_size_ratio", 2.0))
+        if ratio <= 0:
+            return
+        big = self.big_shares_for(st)
+        if size < big * 0.2:
+            return
+        sd = BID if side == "sell" else ASK
+        shown = float(st.book.size_at(sd, price) or 0.0)
+        if size < ratio * max(shown, 100.0):
+            return
+        rec = {"t": t, "k": k, "price": fmt_price(price), "size": int(size), "shown": int(shown), "side": side}
+        st.__dict__.setdefault("large_prints", deque(maxlen=80)).append(rec)
+        lastc = st.__dict__.setdefault("_large_called", {})
+        if t - lastc.get(k, -1e9) < 60.0:
+            return
+        lastc[k] = t
+        who = "sold into a bid" if side == "sell" else "bought from an offer"
+        text = f"LARGE SIZE · {int(size):,} {who} showing {int(shown):,} @ {fmt_price(price)} · the book never showed it"
+        words = (f"{st.symbol}. Large size at {fmt_price(price)}: {int(size):,} {'sold' if side == 'sell' else 'bought'}, the book showed {int(shown):,}."
+                 if lc.get("voice_large_size", True) else None)
+        alert = {"t": t, "symbol": st.symbol, "label": "LARGE SIZE", "price": fmt_price(price), "side": "bid" if side == "sell" else "ask",
+                 "role": "large", "text": text, "words": words, "shares": int(size), "shown": int(shown), "pri": 2}
+        alert["key"] = f"{round(t, 2)}|{st.symbol}|LARGE|{price}|{int(size)}"
+        self.alerts.appendleft(alert)
+        self._rec(dict(alert, ev="alert"))
+        self.log(st.symbol, text, t, kind="level")
+        for fn in self.listeners:
+            try:
+                fn(alert)
+            except Exception:
+                log.exception("alert listener")
 
     def _dark_print(self, st, t, price, size, exchange, bid, ask):
         """DARK POOL: every print counts toward the day's volume; an off-exchange one goes into the dark book, and a
@@ -4947,6 +4986,7 @@ class Engine:
         vopen = getattr(st, "visit_open", None) or set()
         lc = self.cfg.get("ladder", {})
         sw = float(lc.get("stack_seconds", 60))
+        lsec = float(lc.get("large_size_seconds", 120))
         mine = {}
         for o in self._pending(st.symbol):
             # a stop / stop-limit sits on the ladder at its TRIGGER (where it fires), a limit at its limit
@@ -5003,6 +5043,9 @@ class Engine:
                     row["ps_" + side] = ps
             if k in lvmap:
                 row["lv"] = lvmap[k]
+            lp = [x for x in (st.__dict__.get("large_prints") or ()) if x["k"] == k and t - x["t"] <= lsec]
+            if lp:
+                row["large"] = [{"size": x["size"], "shown": x["shown"], "side": x["side"], "age": round(t - x["t"])} for x in lp[-3:]]
             for side in ("bid", "ask"):
                 sd = BID if side == "bid" else ASK
                 rec = st.big[sd].get(dk[k])
