@@ -1238,6 +1238,35 @@ body.whitedesk .chart-wrap canvas,body.whitedesk img,body.whitedesk video{filter
 .lad.dom td.dvol b.lrg i{font-style:normal;font-weight:600;font-size:8px;margin-left:3px;opacity:.85}
 .lad.dom.narrow td.dvol b.lrg i{display:none} .lad.dom.narrow td.dvol b.lrg{max-width:48%}
 .lad.dom td.dvol{position:relative}
+/* THE INSIDE COLUMNS, the two beside the price (ACTUAL SELLING · ACTUAL BUYING): what is trading right now, where
+   the reading is. Lit against the rest of the ladder so the eye lands there; at the inside bid / ask rows the
+   numbers are bigger still (Jigsaw's current trades at the inside) */
+.lad.dom tr:first-child th.volh{background:#2b2512;color:#ffd866;box-shadow:inset 0 -2px 0 rgba(232,185,49,.85)}
+.lad.dom tr:first-child th.pxh{background:#1f1c12;color:#ffd866;box-shadow:inset 0 -2px 0 rgba(232,185,49,.85)}
+.lad.dom td.dvol{background:rgba(232,185,49,.045)}
+.lad.dom td.dvol .vn{font-weight:800}
+.lad.dom tr.best-bid td.dvol.s .vn,.lad.dom tr.best-ask td.dvol.b .vn{font-size:1.15em;text-shadow:0 0 6px rgba(255,255,255,.25)}
+.lad.dom tr.best-bid td.dvol.s,.lad.dom tr.best-ask td.dvol.b{background:rgba(232,185,49,.12)}
+.lad.dom td.sz .szn{color:#b9c2d0;font-weight:600}
+/* the Jigsaw-style order columns, BUY far left and SELL far right: off unless COLS turns them on */
+.lad.dom th.odh,.lad.dom td.od{display:none} .lad.dom.orders th.odh,.lad.dom.orders td.od{display:table-cell}
+.lad.dom th.odh{font:800 9px var(--sans);letter-spacing:.08em;text-align:center}
+.lad.dom tr:first-child th.odh.b{color:rgb(var(--wb));background:#12201a} .lad.dom tr:first-child th.odh.s{color:rgb(var(--ws));background:#241416}
+.lad.dom td.od{text-align:center;padding:0 2px;cursor:pointer;width:40px}
+.lad.dom td.od.b{background:rgba(var(--wb),.05);box-shadow:inset -1px 0 0 rgba(var(--wb),.25)} .lad.dom td.od.s{background:rgba(var(--ws),.05);box-shadow:inset 1px 0 0 rgba(var(--ws),.25)}
+.lad.dom td.od.b:hover{background:rgba(var(--wb),.28)} .lad.dom td.od.s:hover{background:rgba(var(--ws),.28)}
+.lad.dom td.od i{font-style:normal;font-size:8px;opacity:.35} .lad.dom td.od:hover i{opacity:1}
+.lad.dom td.od.stop.b:hover::after,.lad.dom td.od.stop.s:hover::after{content:"STOP";font:800 8px var(--sans);letter-spacing:.06em;margin-left:2px}
+.lad.dom td.od .mine{display:inline-flex;gap:2px} .lad.dom td.od .chip{position:static;display:inline-block}
+/* NET at price (bought − sold): off unless COLS turns it on */
+.lad.dom th.neth,.lad.dom td.dnet{display:none} .lad.dom.net th.neth,.lad.dom.net td.dnet{display:table-cell}
+.lad.dom td.dnet{font:700 10px var(--mono);text-align:right;padding:0 4px;color:#7d8590} .lad.dom td.dnet.b{color:rgb(var(--vb))} .lad.dom td.dnet.s{color:rgb(var(--vs))}
+/* the session summary line under the data header */
+.domsum{display:flex;gap:5px;align-items:center;padding:2px 6px;font:10px var(--sans);color:#9fb0c3;background:#0d1118;border-bottom:1px solid var(--line);white-space:nowrap;overflow:hidden}
+.domsum .k{letter-spacing:.08em;color:#7d8590;font-size:9px} .domsum b{font:800 11px var(--mono);color:#cfd6df;margin-right:6px}
+.domsum b.b{color:#5dffa8} .domsum b.s{color:#ff8a95} .domsum b.hl{color:#ffd866} .domsum .sp{flex:1}
+.domsum button{font:800 9px var(--sans);padding:0 5px;height:15px;line-height:15px}
+.pnl.short .domsum{display:none}
 /* the +/- columns: off unless COLS turns them on */
 .lad.dom th.dpsh,.lad.dom td.dps{display:none} .lad.dom.ps th.dpsh,.lad.dom.ps td.dps{display:table-cell}
 .lad.dom td.dps{font:700 10px var(--mono);text-align:center;padding:0 2px;color:#7d8590} .lad.dom td.dps.add{color:#5dffa8} .lad.dom td.dps.pull{color:#ff8a95}

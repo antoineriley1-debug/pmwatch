@@ -119,3 +119,27 @@ draws the latest snapshot.
 - No order placement was added: a click on a size stages the usual order through the existing ticket, exactly as before.
 - No plain-English battle read on the DOM rows (it lives on the story and the voice).
 - Venue attribution per print beyond IBKR's exchange code is not available from the feed.
+
+## The Jigsaw layout (COLS › JIGSAW LAYOUT)
+
+One click puts the ladder in the Jigsaw Depth & Sales shape, twelve columns, the price still fixed in the centre:
+
+| BUY | WAITING BUYERS | +/− | ACTUAL SELLING | LEVELS | PRICE | ACTUAL BUYING | +/− | WAITING SELLERS | SELL | TRADED | NET |
+
+- **BUY / SELL order columns** on the edges. A click on a row is an order at that price: at or under the offer in the BUY
+  column a limit, above the offer (▲) a BUY STOP that fires when price trades there; at or over the bid in the SELL
+  column a limit, below the bid (▼) a SELL STOP. A stop goes out as a stop-limit, its limit `stop_limit_ticks` through
+  the stop, never a naked stop. The same gates, caps and confirmation as every other order; your working orders sit in
+  these columns (click to cancel, drag to move).
+- **ACTUAL SELLING / ACTUAL BUYING beside the price read THIS VISIT** (they reset when price leaves the row by three
+  ticks and comes back), **TRADED and NET read the session**. NET = bought (lifted the offer) − sold (hit the bid).
+- **The summary line** under the data header: BOUGHT · SOLD · NET · TRADED for the whole session, the high and low of
+  day, and CLR ▲ / CLR ▼ (clear the counts above the offer after a move down, below the bid after a move up).
+- **Where to look: the inside columns.** The two columns beside the price are lit in gold on every DOM, and at the inside
+  bid / ask rows (named BID and ASK at the price) their numbers are bigger. That is what is trading right now.
+- Every piece is its own switch in COLS (order columns, NET, the summary line, +/−, this visit / this session), and the
+  seven-column DOM is unchanged when they are off. Twelve columns want a Level II panel at least ~430 px wide; narrower,
+  the ladder keeps its floors and scrolls sideways.
+
+Server: `_memory_ladder` returns `sum` (`_ladder_sum`: traded, bought, sold, net, prints, hod, lod, last; memoised a
+second; a CLR takes the cleared prices out). Tests: `tests/test_dom_summary.py`. Browser: `scratchpad/jig.js`, 14 checks.

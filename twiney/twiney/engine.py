@@ -5103,7 +5103,25 @@ class Engine:
                 "memory_minutes": MEMORY_SECONDS // 60, "big_shares": big_bar, "big_default": st.big_shares is None,
                 "huge_shares": big_bar * huge_x, "marks": marks, "last": last, "tick": tk,
                 "visit_away": int(lc.get("visit_away_ticks", 3)), "stack_seconds": int(sw),
-                "basket": dict({k: v for k, v in lc.items() if k.startswith("basket_")}, norm=self._basket_norm(st, t))}
+                "basket": dict({k: v for k, v in lc.items() if k.startswith("basket_")}, norm=self._basket_norm(st, t)),
+                "sum": self._ladder_sum(st, t)}
+
+    def _ladder_sum(self, st, t):
+        """The whole session in one line (the DOM's summary): every print at every price today, bought (lifted the
+        offer), sold (hit the bid), the difference, the count, plus the high / low of day and the last price. Read
+        from the per-price baskets, so a CLR on the ladder takes the cleared prices out of the totals too."""
+        memo = st.__dict__.setdefault("_ladsum", [None, None])
+        if memo[0] is not None and t - memo[0] < 1.0:
+            return memo[1]
+        tot = bought = sold = 0.0
+        n = 0
+        for v in (st.__dict__.get("basket") or {}).values():
+            tot += v[0]; bought += v[1]; sold += v[2]; n += v[3]
+        out = {"traded": round(tot), "bought": round(bought), "sold": round(sold), "net": round(bought - sold), "prints": n,
+               "hod": st.day_hi[0] if st.day_hi else None, "lod": st.day_lo[0] if st.day_lo else None,
+               "last": st.l1.get("last")}
+        memo[0], memo[1] = t, out
+        return out
 
     def _basket_norm(self, st, t):
         """A price's NORMAL volume today (the median of every traded price's total): a full basket is
