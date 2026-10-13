@@ -643,6 +643,8 @@ class Trader:
         self.scale_plans = {}          # symbol -> SCALE PLAN on the position (rungs from the average entry)
         self.trails = {}               # symbol -> {"dist", "best", "side"}: a trailing stop riding the STOP line
         self.opt_stops = {}            # option key -> {"price", "on": "stock" | "option"}: a stop you set on a contract
+        self.opt_watches = []          # the DOM in contract mode: BUY / SELL the picked contract when the STOCK trades a price
+        self._opt_watch_seq = 0
         self.opt_levels = {}           # option key -> lines drawn on the OPTION CHART at the contract's own price:
                                        #   {"second_entry": {"price", "n", "from"}, "target": price, "stop": price}
         self.opt_stop_fired = {}       # option key -> t it fired (no double sends while the close works)
@@ -2017,6 +2019,10 @@ class Trader:
             except Exception as exc:
                 log.warning("option stop: %s", exc)
             try:
+                self._opt_watch_tick(now or time.time())
+            except Exception as exc:
+                log.warning("contract watch: %s", exc)
+            try:
                 self._stop_follows_fills(now or time.time())
             except Exception as exc:
                 log.warning("stop follows fills: %s", exc)
@@ -2032,6 +2038,10 @@ class Trader:
             self._scale_tick(now or time.time())
         except Exception as exc:
             log.warning("scale plan: %s", exc)
+        try:
+            self._opt_watch_tick(now or time.time())
+        except Exception as exc:
+            log.warning("contract watch: %s", exc)
         try:
             self._trail_tick(now or time.time())
         except Exception as exc:
@@ -2984,6 +2994,66 @@ class Trader:
                               "aux": None, "tif": "DAY", "legs": [], "id": oid, "role": "option"})
             return {"ok": True, "id": oid, "key": key, "sent": f"{action} {n} {key} @ {money(price)}"}
 
+    def opt_watch(self, symbol, expiry, strike, right, action, contracts, px, when, now=None):
+        """The DOM in contract mode, a click above the offer / below the bid: BUY or SELL ``contracts`` of the picked
+        contract the moment the STOCK trades ``px`` (``when`` = "above": at or over it; "below": at or under it). The
+        contract order goes out then, at the touch, through the same gate as every option order. A plan, not an
+        order: nothing rests at the broker, and it goes with the session."""
+        from . import options as _o
+        with self.lock:
+            now = now or time.time()
+            symbol = str(symbol).upper()
+            if symbol not in self.engine.syms:
+                return {"ok": False, "reason": f"{symbol} is not one of your plays"}
+            try:
+                n, strike, px = int(contracts), float(strike), float(px)
+            except (TypeError, ValueError):
+                return {"ok": False, "reason": "contracts, strike and price must be numbers"}
+            if n <= 0 or px <= 0:
+                return {"ok": False, "reason": "how many contracts, at what stock price?"}
+            when = "below" if str(when) == "below" else "above"
+            right = "P" if str(right).upper().startswith("P") else "C"
+            action = BUY if str(action).upper() == BUY else SELL
+            ch = self.engine.opt_chain.get(symbol) or {}
+            if expiry not in (ch.get("expiries") or []):
+                return {"ok": False, "reason": f"{expiry} is not an expiry on the {symbol} chain"}
+            key = _o.key_of(symbol, expiry, strike, right)
+            last = self.engine.syms[symbol].price()
+            if last and ((when == "above" and last >= px) or (when == "below" and last <= px)):
+                return {"ok": False, "reason": f"the stock is already {'at or over' if when == 'above' else 'at or under'} {money(px)} — click BUY / SELL now instead"}
+            self._opt_watch_seq += 1
+            w = {"id": self._opt_watch_seq, "symbol": symbol, "expiry": expiry, "strike": strike, "right": right, "key": key,
+                 "action": action, "contracts": n, "px": round(px, 4), "when": when, "t": now}
+            self.opt_watches.append(w)
+            self._note(now, f"WATCH {action} {n} {key} when {symbol} trades {money(px)}", True)
+            return {"ok": True, "id": w["id"], "watch": dict(w)}
+
+    def opt_unwatch(self, wid, now=None):
+        with self.lock:
+            for i, w in enumerate(self.opt_watches):
+                if w["id"] == int(wid):
+                    del self.opt_watches[i]
+                    self._note(now or time.time(), f"watch off: {w['action']} {w['contracts']} {w['key']} at {money(w['px'])}", True)
+                    return {"ok": True}
+            return {"ok": False, "reason": "no such watch"}
+
+    def _opt_watch_tick(self, now):
+        """Every price: a watch whose stock price has traded fires its contract order once and goes."""
+        if not self.opt_watches:
+            return
+        for w in list(self.opt_watches):
+            st = self.engine.syms.get(w["symbol"])
+            last = st.price() if st else None
+            if not last:
+                continue
+            hit = last >= w["px"] if w["when"] == "above" else last <= w["px"]
+            if not hit:
+                continue
+            self.opt_watches.remove(w)
+            out = self.opt_open(w["symbol"], w["expiry"], w["strike"], w["right"], w["action"], w["contracts"], None, now)
+            if not out.get("ok"):
+                self._note(now, f"WATCH at {money(w['px'])} fired, {w['action']} {w['contracts']} {w['key']} NOT sent: {out.get('reason')}", False)
+
     def _opt_working(self, key, action):
         """Contracts of ``key`` already working on this side (orders not being cancelled). The BACKUP STOP resting at
         IBKR is not a close: it never counts (the desk's own stop still fires, a close still goes out)."""
@@ -3256,6 +3326,7 @@ class Trader:
                  bracket_template=self.bracket_template, bracket_templates=list(self.bracket_templates().keys()),
                  scale_plans={sym: self._plan_view(sym, pl, time.time()) for sym, pl in self.scale_plans.items()},
                  trails={sym: dict(tr) for sym, tr in self.trails.items()},
+                 opt_watches=[dict(w) for w in self.opt_watches],
                  opt_stops=self._opt_stop_view(), opt_links=self._opt_link_view(), opt_indep=sorted(self.opt_indep), opt_levels=self._opt_level_view(),
                  allow_sell_to_open=bool(self.cfg.get("allow_sell_to_open", False)),
                  scale_templates={k: v for k, v in (self.cfg["scale_plan"].get("templates") or {}).items()},

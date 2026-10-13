@@ -143,3 +143,25 @@ One click puts the ladder in the Jigsaw Depth & Sales shape, twelve columns, the
 
 Server: `_memory_ladder` returns `sum` (`_ladder_sum`: traded, bought, sold, net, prints, hod, lod, last; memoised a
 second; a CLR takes the cleared prices out). Tests: `tests/test_dom_summary.py`. Browser: `scratchpad/jig.js`, 14 checks.
+
+## CONTRACT MODE on the DOM (a contract picked on the OPTION CHAIN)
+
+Pick a strike on the OPTION CHAIN and the DOM keeps the stock's rows (the reading is the stock's) but every click on
+it trades the contract, the count the OPTION CHART's 1 / 2 / 5 / 10 buttons set. The data header says
+`ORDERS → 2 × AAPL 10/16 295 CALL`, the order columns read `BUY 2×295C` / `SELL 2×295C`, and a strip over the ladder
+says "DOM on AAPL shares · every click trades 2 × …" with a button for the contract's own book instead.
+
+- At or under the offer in BUY (at or over the bid in SELL): the contract NOW, at its touch (`opt_open`, the same
+  order every other contract click sends).
+- Above the offer in BUY / below the bid in SELL: a **WATCH**: the contract order goes out the moment the STOCK
+  trades that price. BUY above the offer is the pivot entry; SELL below the bid is the stop on the stock that takes
+  the contract off. A watch is a plan on the desk, nothing rests at the broker until it fires; it goes with the
+  session. It shows as a gold chip `2c▲` / `2c▼` on its row; click it to take it off. A price the stock is already
+  past is refused ("click BUY / SELL now instead").
+- The size cells route the same way (NOW).
+- The same gate and confirmation as every order (one-click skips the confirmation, like everywhere). Pick STOCK on the chain
+  and the columns read BUY / SELL again, shares.
+
+Server: `Trader.opt_watch / opt_unwatch / _opt_watch_tick` (checked on every price with the desk's own stops, and
+on the watchdog), `opt_watches` in the trading snapshot, `/api/trade/opt_watch` and `opt_unwatch`. Tests:
+`tests/test_opt_watch.py`. Browser: `scratchpad/jigopt.js`, 12 checks.

@@ -1297,3 +1297,10 @@ body.whitedesk .chart-wrap canvas,body.whitedesk img,body.whitedesk video{filter
 .aierr{margin:6px 8px;padding:6px 8px;border:1px solid #6a1f24;border-radius:3px;color:#ff8a95;font:11px var(--sans)}
 .aigiven{margin:6px 8px;padding:6px 8px;background:#0b0f16;border:1px solid #2a3340;border-radius:3px;font:10px/1.4 var(--mono);color:#9fb0c3;white-space:pre-wrap;word-break:break-word;max-height:50%;overflow:auto}
 .aifiles{display:flex;flex-direction:column;gap:2px;padding:4px 10px} .aifiles a{font:11px var(--mono);color:#9fb0c3} .aifiles a:hover{color:#e6edf3}
+/* CONTRACT MODE on the DOM: the order columns and the data header say the clicks trade the contract */
+.domhdr .cmode{letter-spacing:.04em;padding:0 6px;border-radius:2px;background:#3a2a0e;color:#ffd866;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46%}
+.lad.dom tr:first-child th.odh.opt{font-size:8px;letter-spacing:.02em} .lad.dom tr:first-child th.odh.b.opt{background:#2a2a12;color:#ffd866} .lad.dom tr:first-child th.odh.s.opt{background:#2a2012;color:#ffb366}
+.lad.dom td.od.opt.b{background:rgba(232,185,49,.05)} .lad.dom td.od.opt.s{background:rgba(232,140,49,.05)}
+.lad.dom td.od.opt.b:hover{background:rgba(232,185,49,.3)} .lad.dom td.od.opt.s:hover{background:rgba(232,140,49,.3)}
+.lad.dom td.od.opt.stop.b:hover::after,.lad.dom td.od.opt.stop.s:hover::after{content:"WATCH"}
+.lad.dom td.od .chip.w{background:#e8b931;color:#1d1a10;font-size:9px;padding:0 4px}

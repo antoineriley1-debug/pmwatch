@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261013-0253">
+<meta name="build" content="20261013-1811">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -1609,6 +1609,13 @@ body.whitedesk .chart-wrap canvas,body.whitedesk img,body.whitedesk video{filter
 .aierr{margin:6px 8px;padding:6px 8px;border:1px solid #6a1f24;border-radius:3px;color:#ff8a95;font:11px var(--sans)}
 .aigiven{margin:6px 8px;padding:6px 8px;background:#0b0f16;border:1px solid #2a3340;border-radius:3px;font:10px/1.4 var(--mono);color:#9fb0c3;white-space:pre-wrap;word-break:break-word;max-height:50%;overflow:auto}
 .aifiles{display:flex;flex-direction:column;gap:2px;padding:4px 10px} .aifiles a{font:11px var(--mono);color:#9fb0c3} .aifiles a:hover{color:#e6edf3}
+/* CONTRACT MODE on the DOM: the order columns and the data header say the clicks trade the contract */
+.domhdr .cmode{letter-spacing:.04em;padding:0 6px;border-radius:2px;background:#3a2a0e;color:#ffd866;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46%}
+.lad.dom tr:first-child th.odh.opt{font-size:8px;letter-spacing:.02em} .lad.dom tr:first-child th.odh.b.opt{background:#2a2a12;color:#ffd866} .lad.dom tr:first-child th.odh.s.opt{background:#2a2012;color:#ffb366}
+.lad.dom td.od.opt.b{background:rgba(232,185,49,.05)} .lad.dom td.od.opt.s{background:rgba(232,140,49,.05)}
+.lad.dom td.od.opt.b:hover{background:rgba(232,185,49,.3)} .lad.dom td.od.opt.s:hover{background:rgba(232,140,49,.3)}
+.lad.dom td.od.opt.stop.b:hover::after,.lad.dom td.od.opt.stop.s:hover::after{content:"WATCH"}
+.lad.dom td.od .chip.w{background:#e8b931;color:#1d1a10;font-size:9px;padding:0 4px}
 
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
@@ -6525,13 +6532,31 @@ P.ps60.el.addEventListener("click", async e => { const b = e.target.closest("but
   wrap.addEventListener("contextmenu", e => { const row = e.target.closest("tr[data-price]"); const d = curData(); if (!row || !d) return; e.preventDefault(); ladderMenu(d, +row.dataset.price, e.clientX, e.clientY, e.target.closest(".chip[data-id]")); });
   wrap.addEventListener("mousedown", e => { if (e.button !== 0) return; const cell = e.target.closest("td[data-act]"); const d = curData();
     const flip = store.get("ladClick", "join") === "hit" && cell && cell.matches("td.sz");   // HIT mapping: a size cell trades against it
-    bookHold = cell && d ? {side: flip ? (cell.dataset.act === "BUY" ? "SELL" : "BUY") : cell.dataset.act, px: +cell.dataset.px, sym: d.symbol, cell, stop: cell.dataset.stop === "1"} : {cell: null}; });
+    bookHold = cell && d ? {side: flip ? (cell.dataset.act === "BUY" ? "SELL" : "BUY") : cell.dataset.act, px: +cell.dataset.px, sym: d.symbol, cell, stop: cell.dataset.stop === "1", opt: cell.dataset.opt === "1"} : {cell: null}; });
   window.addEventListener("mouseup", () => setTimeout(() => { bookHold = null; }, 0));
   wrap.addEventListener("mouseleave", () => { if (bookHold && !bookHold.cell) bookHold = null; });
-  wrap.addEventListener("click", e => { if (bookDragging) return; const h = bookHold; const chip = e.target.closest(".chip[data-id]"); if (chip){ if (chip.dataset.id && chip.dataset.id !== "null") cancelMine(+chip.dataset.id); return; }
+  wrap.addEventListener("click", e => { if (bookDragging) return; const h = bookHold;
+    const wchip = e.target.closest(".chip[data-wid]"); if (wchip){ post("/api/trade/opt_unwatch", {id: +wchip.dataset.wid}).then(out => { toast(out.ok ? "Watch off" : "Not taken off: " + (out.reason || ""), out.ok); poll(true); }); return; }
+    const chip = e.target.closest(".chip[data-id]"); if (chip){ if (chip.dataset.id && chip.dataset.id !== "null") cancelMine(+chip.dataset.id); return; }
     const cell = e.target.closest("td[data-act]"); const d = curData();
     if (!cell || !d || !h || h.cell !== cell || h.sym !== d.symbol) return;   // pressed one row, released on another: nothing
-    if (h.stop) sendStop(h.sym, h.side, h.px); else sendOrder(h.sym, h.side, h.px); });
+    if (h.opt) sendContract(h.sym, h.side, h.px, h.stop); else if (h.stop) sendStop(h.sym, h.side, h.px); else sendOrder(h.sym, h.side, h.px); });
+}
+/* CONTRACT MODE on the DOM: the click trades the contract picked on the OPTION CHAIN. Now = at the contract's touch
+   (the same opt_open every other contract order uses); a watch = the contract order goes out the moment the STOCK
+   trades that price. Same gate, same confirmation (one-click skips it, like every order) */
+async function sendContract(symbol, action, price, watch){
+  const l = OC.link; if (!l || l.sym !== symbol){ toast("No contract picked for " + symbol, false); return; }
+  if (!canTrade()){ toast("Can't trade: " + whyNot(), false); return; }
+  const n = OCH.n || l.n || 1, name = contractName(l), t = T();
+  const go = async () => {
+    const out = watch ? await post("/api/trade/opt_watch", {symbol, expiry: l.expiry, strike: l.strike, right: l.right, action, contracts: n, px: price, when: action === "BUY" ? "above" : "below"})
+                      : await post("/api/trade/opt_open", {symbol, expiry: l.expiry, strike: l.strike, right: l.right, action, contracts: n, price: null});
+    toast(out.ok ? (watch ? `Watching: ${action} ${n} × ${name} when ${symbol} trades ${px(price)}` : "Sent: " + (out.sent || `${action} ${n} × ${name}`)) : "Blocked: " + (out.reason || ""), out.ok); poll(true); };
+  if (t.one_click) return go();
+  confirmBox(watch ? `${action} ${n} × ${name} WHEN ${symbol} TRADES ${px(price)}` : `${action} ${n} × ${name} NOW`,
+    watch ? `a watch on the stock's price: the contract order goes out at the touch the moment ${symbol} trades ${px(price)} · nothing rests at the broker until then` : `at the contract's touch (${action === "BUY" ? "the offer" : "the bid"}), ${n} contract${n > 1 ? "s" : ""}`,
+    action === "BUY" ? "b" : "s", go);
 }
 /* a STOP from the DOM's order columns (BUY above the offer, SELL below the bid): a stop-limit that fires when price
    trades at the row, its limit a few ticks through it so it fills on the way (never a naked stop). The same gates,
@@ -7698,6 +7723,9 @@ function contractMode(which){
   if (!(OC.link && OC.link.sym === curSym)) return false;
   const sd = paneFor(curSym); if (sd && sd.position && sd.position.qty) return false;   // holding the shares: the stock's Level II / T&S stay the stock's
   if (CPIN[which] === "stock") return false;
+  // the DOM stays the stock's rows with a contract picked: its clicks trade the contract (CONTRACT MODE on the ladder
+  // itself). "show the contract's own book here" (pin = contract) still flips this window to the contract's ladder
+  if (which === "book" && CPIN.book !== "contract" && store.get("ladMode", "dom") === "dom") return false;
   const own = P[which === "tape" ? "otape" : "obook"];
   return !(own && own.el.offsetParent !== null);
 }
@@ -7795,10 +7823,12 @@ document.addEventListener("contextmenu", e => {
 function renderSwitchStrips(){
   for (const [which, pid] of [["book", "book"], ["tape", "tape"]]){
     const pc = P[pid].pc; let el = pc.querySelector(":scope > .cswitch");
-    const show = OC.link && OC.link.sym === curSym && CPIN[which] === "stock";
+    const domKeeps = which === "book" && CPIN.book !== "stock" && !contractMode("book") && store.get("ladMode", "dom") === "dom";
+    const show = OC.link && OC.link.sym === curSym && (CPIN[which] === "stock" || domKeeps);
     if (!show){ if (el) el.remove(); continue; }
     if (!el){ el = document.createElement("div"); el.className = "cswitch"; pc.prepend(el); }
-    const h = `<span>${which === "tape" ? "T&S" : "LEVEL II"} on ${esc(OC.link.sym)} shares · ORDER ENTRY trades ${esc(contractName(OC.link))}</span><button data-pin="${which}" data-pinv="auto">show the contract here</button>`;
+    const h = domKeeps ? `<span>DOM on ${esc(OC.link.sym)} shares · every click trades ${OCH.n || OC.link.n || 1} × ${esc(contractName(OC.link))}</span><button data-pin="book" data-pinv="contract">show the contract's own book here</button>`
+      : `<span>${which === "tape" ? "T&S" : "LEVEL II"} on ${esc(OC.link.sym)} shares · ORDER ENTRY trades ${esc(contractName(OC.link))}</span><button data-pin="${which}" data-pinv="${which === "book" ? "contract" : "auto"}">show the contract here</button>`;
     if (el.dataset.h !== h){ el.dataset.h = h; el.innerHTML = h; }
   }
 }
@@ -8380,10 +8410,23 @@ function ladderDomHTML(L){
   // limit. Your working orders sit in these columns when they are on
   const bestA = (rows.find(r => r.best_ask) || {}).price, bestB = (rows.find(r => r.best_bid) || {}).price;
   const askPx = bestA != null ? +bestA : (d.ask || 0), bidPx = bestB != null ? +bestB : (d.bid || 0);
+  // CONTRACT MODE: a contract picked on the OPTION CHAIN for this stock turns the DOM's orders into contract orders.
+  // The rows stay the stock's (the reading is the stock's); a click at / under the offer BUYS the contract now, at its
+  // touch; above the offer it is a WATCH: BUY the contract the moment the STOCK trades that price (the pivot). SELL
+  // is the mirror: now at / over the bid, a WATCH under it (the stop on the stock, the contract comes off)
+  const link = OC.link && OC.link.sym === sym ? OC.link : null, cn = link ? (OCH.n || link.n || 1) : 0, cname = link ? contractName(link) : "";
+  const cshort = link ? `${link.strike % 1 ? link.strike.toFixed(2) : link.strike}${link.right}` : "";
+  const watches = link ? (T().opt_watches || []).filter(w => w.symbol === sym && w.key === link.key) : [];
+  const wchips = (r, side) => watches.filter(w => (w.action === "BUY") === (side === "b") && Math.abs(w.px - +r.price) < (L.tick || 0.01) / 2).map(w =>
+    `<span class="chip ${side} w" data-wid="${w.id}" title="WATCH: ${w.action} ${w.contracts} ${esc(cname)} when ${esc(sym)} trades ${px(w.px)} — click to take it off">${w.contracts}c${w.when === "above" ? "▲" : "▼"}</span>`).join(" ");
   const ocol = (r, side) => { const p = +r.price, stop = side === "b" ? (askPx && p > askPx) : (bidPx && p < bidPx);
-    const act = side === "b" ? "BUY" : "SELL", word = stop ? `${act} STOP at ${px(p)}: fires when price trades here${tt}` : `${act} limit at ${px(p)}${tt}`;
-    return `<td class="od ${side} click ${stop ? "stop" : "lmt"}" data-act="${act}" data-px="${r.price}" data-stop="${stop ? 1 : 0}" title="${esc(word)}">${stop ? `<i>${act === "BUY" ? "▲" : "▼"}</i>` : ""}${C.cols.orders ? `<span class="mine">${chips(r, side)}</span>` : ""}</td>`; };
+    const act = side === "b" ? "BUY" : "SELL";
+    const word = link ? (stop ? `${act} ${cn} × ${cname} WHEN ${sym} TRADES ${px(p)} (a watch on the stock's price; the contract order goes out at the touch then)${tt}`
+                              : `${act} ${cn} × ${cname} NOW, at the contract's touch${tt}`)
+                      : (stop ? `${act} STOP at ${px(p)}: fires when price trades here${tt}` : `${act} limit at ${px(p)}${tt}`);
+    return `<td class="od ${side} click ${stop ? "stop" : "lmt"}${link ? " opt" : ""}" data-act="${act}" data-px="${r.price}" data-stop="${stop ? 1 : 0}"${link ? ` data-opt="1"` : ""} title="${esc(word)}">${stop ? `<i>${act === "BUY" ? "▲" : "▼"}</i>` : ""}${C.cols.orders ? `<span class="mine">${link ? wchips(r, side) : chips(r, side)}</span>` : ""}</td>`; };
   const sizeChips = (r, side) => C.cols.orders ? "" : chips(r, side);    // with the order columns on, the chips live there
+  const optAttr = link ? ` data-opt="1"` : "";                                // the size cells trade the contract too, now
   const cluster = (r, side) => {
     const st_ = r[side + "_state"], proven = r[side + "_proven"], stg = r[side + "_stage"] || "";
     if (!(st_ === "RELOAD" || proven) && !/CLEANED UP|PULLED/.test(stg)) return "";
@@ -8400,6 +8443,7 @@ function ladderDomHTML(L){
     return `<td class="rail${lv.length > 1 ? " many" : ""}${lv.length ? " has" : ""}" data-n="${lv.length}">${inner}${more}${cluster(r, "bid")}${cluster(r, "ask")}</td>`; };
   const hdr = `<div class="domhdr ${S.cls}" title="${esc(S.refused || (S.stale ? "the feed is old: these numbers are behind" : "what the data on this ladder is"))}">
       <b class="st">${esc(S.kind)}</b><span class="src">${esc(S.src)}</span><span class="age">quote ${S.l1} · book ${S.depth}</span>${S.stale ? `<b class="stale">FEED OLD</b>` : ""}${S.refused ? `<b class="stale">REFUSED</b>` : ""}
+      ${OC.link && OC.link.sym === sym ? `<b class="cmode" title="CONTRACT MODE: every click on this ladder trades ${esc(contractName(OC.link))}, ${OCH.n || OC.link.n || 1} at a time (the rows stay the stock's). Pick STOCK on the chain to trade the shares again">ORDERS → ${OCH.n || OC.link.n || 1} × ${esc(contractName(OC.link))}</b>` : ""}
       <span class="sp"></span><button class="domrc" data-domrc="1" title="back to the price (the ladder follows price again)">⌖ RECENTER</button></div>`;
   let h = hdr;
   // a short panel keeps its rows: the story / refs / pace / off-ladder strips give way to the ladder itself
@@ -8439,7 +8483,8 @@ function ladderDomHTML(L){
       <span class="sp"></span><button data-lclr="above" title="clear SOLD / BOUGHT / +/− above the offer (after a move down)">CLR ▲</button><button data-lclr="below" title="clear SOLD / BOUGHT / +/− below the bid (after a move up)">CLR ▼</button></div>`;
   }
   h += `<table class="${cl}" data-cols="laddom"><tr>
-    <th class="odh b" data-w="40" data-min="26" title="BUY column (Jigsaw-style order entry): click a row to BUY ${esc(sz((T().default_shares || 0)))} there. At or under the offer: a limit. Above the offer (▲): a BUY STOP that fires when price trades there. Your working buys sit here; click one to cancel, drag to move${esc(tt)}">BUY</th>
+    ${link ? `<th class="odh b opt" data-w="40" data-min="26" title="CONTRACT MODE — BUY ${cn} × ${esc(cname)}: click a row at or under the offer to buy the contract NOW at its touch; above the offer (▲) a WATCH that buys it the moment ${esc(sym)} trades that price. Your watches sit here; click one to take it off${esc(tt)}">BUY ${cn}×${esc(cshort)}</th>`
+           : `<th class="odh b" data-w="40" data-min="26" title="BUY column (Jigsaw-style order entry): click a row to BUY ${esc(sz((T().default_shares || 0)))} there. At or under the offer: a limit. Above the offer (▲): a BUY STOP that fires when price trades there. Your working buys sit here; click one to cancel, drag to move${esc(tt)}">BUY</th>`}
     <th class="szh wb" data-w="64" data-min="26" title="WAITING BUYERS: shares resting to buy at this price right now (the book). The bar is against the biggest size on screen; it shrinks on a cancel and on a trade alike. Click: BUY there${esc(tt)}"><span class="full">WAITING BUYERS</span><span class="short">BUYERS</span></th>
     <th class="dpsh" data-w="34" data-min="14" title="+/− on the BID, last ${L.stack_seconds || 60}s: + size ADDED by buyers, − size PULLED without trading (COLS)">+/−</th>
     <th class="volh s" data-w="58" data-min="22" title="ACTUAL SELLING: shares that HIT THE BID at this price ${volWord} (aggressive sellers, read off the tape against the quote in force). Pulses only when a print lands here"><span class="full">ACTUAL SELLING</span><span class="short">SOLD</span></th>
@@ -8448,7 +8493,8 @@ function ladderDomHTML(L){
     <th class="volh b" data-w="58" data-min="22" title="ACTUAL BUYING: shares that LIFTED THE OFFER at this price ${volWord} (aggressive buyers). Pulses only when a print lands here"><span class="full">ACTUAL BUYING</span><span class="short">BOUGHT</span></th>
     <th class="dpsh" data-w="34" data-min="14" title="+/− on the ASK, last ${L.stack_seconds || 60}s: + size ADDED by sellers, − size PULLED without trading (COLS)">+/−</th>
     <th class="szh ws" data-w="64" data-min="26" title="WAITING SELLERS: shares resting to sell at this price right now (the book). Click: SELL there${esc(tt)}"><span class="full">WAITING SELLERS</span><span class="short">SELLERS</span></th>
-    <th class="odh s" data-w="40" data-min="26" title="SELL column (Jigsaw-style order entry): click a row to SELL ${esc(sz((T().default_shares || 0)))} there. At or over the bid: a limit. Below the bid (▼): a SELL STOP that fires when price trades there. Your working sells sit here; click one to cancel, drag to move${esc(tt)}">SELL</th>
+    ${link ? `<th class="odh s opt" data-w="40" data-min="26" title="CONTRACT MODE — SELL ${cn} × ${esc(cname)}: click a row at or over the bid to sell the contract NOW at its touch; below the bid (▼) a WATCH that sells it the moment ${esc(sym)} trades that price (your stop on the stock). Your watches sit here; click one to take it off${esc(tt)}">SELL ${cn}×${esc(cshort)}</th>`
+           : `<th class="odh s" data-w="40" data-min="26" title="SELL column (Jigsaw-style order entry): click a row to SELL ${esc(sz((T().default_shares || 0)))} there. At or over the bid: a limit. Below the bid (▼): a SELL STOP that fires when price trades there. Your working sells sit here; click one to cancel, drag to move${esc(tt)}">SELL</th>`}
     <th class="trh" data-w="58" data-min="22" title="TRADED AT PRICE: every confirmed trade at this price today (bought + sold + the prints no side could be read for). Resets with the session"><span class="full">TRADED</span><span class="short">TRD</span></th>
     <th class="neth" data-w="44" data-min="38" title="NET at this price today: bought (lifted the offer) minus sold (hit the bid). Green = more buying, red = more selling (COLS)">NET</th>
     ${C.money ? `<th class="mnh" data-w="52" data-min="22" title="$ resting here: (buyers + sellers showing) × price">$ HERE</th>` : ""}</tr>`;
@@ -8472,14 +8518,14 @@ function ladderDomHTML(L){
     const glow = r.last && L.pace && L.pace.heat ? `;--heat:${L.pace.heat}` : "";
     h += `<tr class="${cls}" data-price="${r.price}" style="${glow.slice(1)}">
       ${ocol(r, "b")}
-      <td class="sz bsz click${fakeB}${bigB}" data-act="BUY" data-px="${r.price}" title="${esc(tB)}">${bar(k + "|wb", 100 * (r.bid || 0) / maxSz, "b")}<span class="szn">${r.bid ? kfmt(r.bid) : ""}</span>${sizeChips(r, "b") ? `<span class="mine">${sizeChips(r, "b")}</span>` : ""}</td>
+      <td class="sz bsz click${fakeB}${bigB}" data-act="BUY" data-px="${r.price}"${optAttr} title="${esc(tB)}">${bar(k + "|wb", 100 * (r.bid || 0) / maxSz, "b")}<span class="szn">${r.bid ? kfmt(r.bid) : ""}</span>${sizeChips(r, "b") ? `<span class="mine">${sizeChips(r, "b")}</span>` : ""}</td>
       ${stk(r, "b")}
       <td class="dvol s" data-v="${v.s}" title="${esc(tS)}">${bar(k + "|s", 100 * v.s / maxV, "s")}<span class="vn">${v.s ? kfmt(v.s) : ""}</span>${lrg(r, "s")}</td>
       ${rail(r)}
       <td class="px" title="${esc(tT)}">${r.best_bid ? `<u class="inb" title="the INSIDE BID: the best price a buyer is resting at right now">BID</u>` : r.best_ask ? `<u class="ina" title="the INSIDE ASK: the best price a seller is resting at right now">ASK</u>` : ""}${px(r.price)}${r.vn > 1 ? `<sup title="price has been back here ${r.vn} times">×${r.vn}</sup>` : ""}</td>
       <td class="dvol b" data-v="${v.b}" title="${esc(tBuy)}">${bar(k + "|b", 100 * v.b / maxV, "b")}<span class="vn">${v.b ? kfmt(v.b) : ""}</span>${lrg(r, "b")}</td>
       ${stk(r, "a")}
-      <td class="sz asz click${fakeA}${bigA}" data-act="SELL" data-px="${r.price}" title="${esc(tA)}">${bar(k + "|ws", 100 * (r.ask || 0) / maxSz, "s")}<span class="szn">${r.ask ? kfmt(r.ask) : ""}</span>${sizeChips(r, "s") ? `<span class="mine">${sizeChips(r, "s")}</span>` : ""}</td>
+      <td class="sz asz click${fakeA}${bigA}" data-act="SELL" data-px="${r.price}"${optAttr} title="${esc(tA)}">${bar(k + "|ws", 100 * (r.ask || 0) / maxSz, "s")}<span class="szn">${r.ask ? kfmt(r.ask) : ""}</span>${sizeChips(r, "s") ? `<span class="mine">${sizeChips(r, "s")}</span>` : ""}</td>
       ${ocol(r, "s")}
       <td class="dtr" data-v="${v.t}" title="${esc(tT)}">${bar(k + "|t", 100 * v.t / maxT, "t")}<span class="vn">${v.t ? kfmt(v.t) : ""}</span></td>
       ${netCell(r)}
