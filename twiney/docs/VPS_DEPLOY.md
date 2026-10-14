@@ -40,6 +40,15 @@ over an SSH tunnel. Nothing on the VPS is exposed to the internet but SSH.
    and go to `http://127.0.0.1:8765` in the browser while that terminal stays open. On the phone, an SSH app that
    does port forwarding (Termius) does the same.
 
+## The practice desk on the VPS
+
+The PRACTICE button on the live desk starts a second TED on the next port (8766) on the practice market and opens it
+in a new tab. Through the tunnel that port has to be forwarded too:
+```
+ssh -L 8765:127.0.0.1:8765 -L 8766:127.0.0.1:8766 ted@srv1720022.hstgr.cloud
+```
+It stops with the live desk, or from the practice tab's own RESTART / close.
+
 ## Every new build
 
 Drop the new `TWINEY.zip` at `/opt/ted/TWINEY.zip`, then `sudo bash /root/vps/update.sh`. The data folder is

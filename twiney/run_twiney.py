@@ -60,6 +60,72 @@ def layout_file(args):
     return os.path.join(os.path.dirname(os.path.abspath(args.config)), "layout.json")
 
 
+class PracticeLauncher:
+    """THE PRACTICE DESK from the live desk: a second TED on the next port, on the practice market (synthetic tape,
+    book and option flow, orders filled by the simulator), the same settings and plays. Started from the PRACTICE
+    button, opened in its own tab; stopped from there or when the live desk stops."""
+
+    def __init__(self, config_path, port, spawn=None, probe=None):
+        self.config_path, self.port = config_path, int(port)
+        self.spawn = spawn or self._spawn
+        self.probe = probe or self._probe
+        self.proc = None
+
+    def command(self):
+        here = os.path.abspath(__file__)
+        cmd = [sys.executable, here, "--demo", "--no-browser", "--port", str(self.port)]
+        if self.config_path:
+            cmd += ["--config", self.config_path]
+        return cmd
+
+    def _spawn(self, cmd):
+        import subprocess
+        env = dict(os.environ, TWINEY_PRACTICE="1")
+        return subprocess.Popen(cmd, env=env)
+
+    def _probe(self):
+        import urllib.request
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/api/state", timeout=1.5) as r:
+                return r.status == 200
+        except Exception:
+            return False
+
+    @property
+    def url(self):
+        return f"http://127.0.0.1:{self.port}"
+
+    def running(self):
+        return self.proc is not None and self.proc.poll() is None
+
+    def status(self):
+        return {"running": self.running(), "url": self.url, "port": self.port}
+
+    def start(self, wait_s=12.0):
+        if not self.running():
+            self.proc = self.spawn(self.command())
+        t0 = time.time()
+        ready = self.probe()
+        while not ready and time.time() - t0 < wait_s and self.running():
+            time.sleep(0.5)
+            ready = self.probe()
+        return dict(self.status(), ok=self.running(), ready=ready,
+                    reason=None if self.running() else "the practice desk did not start (see the console)")
+
+    def stop(self):
+        if self.running():
+            try:
+                self.proc.terminate()
+                self.proc.wait(timeout=8)
+            except Exception:
+                try:
+                    self.proc.kill()
+                except Exception:
+                    pass
+        self.proc = None
+        return dict(self.status(), ok=True)
+
+
 def restart_process(stop=None):
     """RESTART from the desk: stop cleanly (IBKR session, recording), then start again with the same arguments.
     The browser tab stays and reconnects by itself."""
@@ -181,8 +247,14 @@ def run_live(cfg, plays, args):
         session.stop()
         dash.stop()
         desk.stop()
-    dash.hooks["restart"] = lambda: restart_process(stop)
-    wait_forever(stop)
+    practice = PracticeLauncher(args.config, int(cfg["dashboard"]["port"]) + 1)
+    dash.hooks["practice"] = practice
+
+    def stop_all():
+        practice.stop()
+        stop()
+    dash.hooks["restart"] = lambda: restart_process(stop_all)
+    wait_forever(stop_all)
     return 0
 
 

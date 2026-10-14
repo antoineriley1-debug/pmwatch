@@ -2144,6 +2144,8 @@ function renderStatus(s){
   document.getElementById("stRec").innerHTML = s.desk && s.desk.recording ? `<span class="led bad"></span>REC <b>${fmtDur(s.now - (s.desk.started || s.now))}</b>` : "";
   if (t.pnl) document.querySelector("#stLoss b").textContent = `${t.pnl.total >= 0 ? "+" : "−"}$${sz(Math.abs(t.pnl.total).toFixed(0))}` + (t.loss_lock_on ? ` / −$${sz(t.max_daily_loss || 0)}` : " · no lock (paper)");
   document.getElementById("stClock").textContent = nyT(Date.now() / 1000) + " ET";
+  const pb = document.getElementById("practiceBtn");
+  if (pb){ const demo = (s.connection || {}).state === "DEMO" || !!s.replay; if (pb.hidden !== demo) pb.hidden = demo; }   // the practice desk never offers itself
   const mb = document.getElementById("modeBtn");
   if (mb){ const demo = (s.connection || {}).state === "DEMO"; const lbl = t.mode === "SIM" ? (demo ? "PRACTICE" : "SIM") : t.mode === "LIVE" ? "LIVE" : "PAPER";
     if (mb.textContent !== lbl) mb.textContent = lbl; mb.className = t.mode === "SIM" ? "sim" : t.mode === "LIVE" ? "live" : "paper"; mb.disabled = demo || t.mode === "NONE"; }

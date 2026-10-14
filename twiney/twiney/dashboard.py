@@ -485,6 +485,17 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                 except (ConfigError, OSError, ValueError) as exc:
                     self._send(400, json.dumps({"ok": False, "reason": str(exc)}), "application/json")
                 return
+            elif path == "/api/practice":
+                # THE PRACTICE DESK: start it (a second TED on the next port, on the practice market) and hand back
+                # its address; stop it; or just its status
+                pr = hooks.get("practice")
+                if pr is None:
+                    self._send(400, json.dumps({"ok": False, "reason": "the practice desk is started from the LIVE desk (this one is the practice desk, or a replay)"}), "application/json")
+                    return
+                act = str(body.get("action") or "status")
+                out = pr.start() if act == "start" else pr.stop() if act == "stop" else dict(pr.status(), ok=True)
+                self._send(200, json.dumps(out), "application/json")
+                return
             elif path == "/api/restart":
                 if not hooks.get("restart"):
                     self._send(400, json.dumps({"ok": False, "reason": "restart is not available here"}), "application/json")

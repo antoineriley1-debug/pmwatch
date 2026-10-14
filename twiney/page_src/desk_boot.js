@@ -4,6 +4,16 @@ document.getElementById("armBtn").addEventListener("click", async () => {
   if (T().locked && !(T().mode === "LIVE" && T().allow_live)){ const u = await post("/api/trade/unlock", {});
     toast(!u.ok ? "Not unlocked: " + (u.reason || "") : u.can_trade ? "Loss lock lifted — now click ARM" : "Loss lock lifted, but TED can't trade yet: " + (u.why_not || ""), u.ok && u.can_trade); poll(true); return; }
   const out = await post("/api/trade/arm", {on: !T().armed}); if (!out.ok) toast("ARM REFUSED · " + out.reason, false); else toast(out.armed ? "ARMED — orders will transmit" : "Disarmed", true); poll(true); });
+document.getElementById("practiceBtn").addEventListener("click", async () => {
+  const b = document.getElementById("practiceBtn"); b.disabled = true; b.textContent = "STARTING…";
+  toast("Starting the practice desk (its own tab, the practice market)…", true);
+  const out = await post("/api/practice", {action: "start"});
+  b.disabled = false; b.textContent = "PRACTICE";
+  if (!out.ok){ toast("Practice desk: " + (out.reason || "did not start"), false); return; }
+  // the page is reached through whatever host serves it (the SSH tunnel on the VPS): same host, the next port
+  const url = location.protocol + "//" + location.hostname + ":" + out.port + "/";
+  const w = window.open(url, "ted-practice"); if (!w) toast("Open " + url + " in a new tab (the browser blocked the pop-up)", false);
+  else if (!out.ready) toast("The practice desk is still coming up: give the new tab a few seconds", true); });
 document.getElementById("modeBtn").addEventListener("click", async () => {
   const t = T(), toSim = t.mode !== "SIM";
   if (t.mode === "LIVE" && !toSim) return;
