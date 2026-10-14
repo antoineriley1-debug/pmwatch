@@ -20,7 +20,7 @@ The agent that runs TED on the VPS tested it end to end against the paper accoun
 | 13 | heavy polling (169 KB every 250 ms) | **mostly** | every JSON answer over 2 KB is gzip-compressed when the browser accepts it: the snapshot went 274 KB → 43 KB on the practice desk. Diffs per pane are not built |
 | 14 | error 162 (another login) silent | **yes** | a 162 "connected from a different IP" says, once a minute, ANOTHER IBKR LOGIN is taking the data, as a CONNECTION error; the DOM header shows OTHER LOGIN for five minutes; 10197 does the same |
 | 15 | grade of an unknown key ok; raw Python error on a bad price; garbled bracket text | **yes** | `/api/grade` answers 400 for a call the desk never made; a price or size that is not a number answers "price must be a number, not 'abc'" / "shares must be a whole number"; the SENT line reads `cash flow 1: 50 sh @ 10.49 + runner: 25 sh @ 10.60` |
-| 16 | futures (ES / MES, NQ / MNQ) | no | not built: contracts, multipliers, tick sizes, contract-sized caps and paper routing are a build of their own |
+| 16 | futures | no | not wanted on this desk (Twiney: stocks and options only) |
 
 Tests: `tests/test_audit_vps.py` (13: sizes and prices, the bare bracket, the two move guards, flatten when flat,
 flatten all, the OCA partner re-sent, the grade key, 399 / 10326 / 162 in the adapter, the crossed book and
