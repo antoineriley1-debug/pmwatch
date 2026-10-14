@@ -322,10 +322,15 @@ def apply(cfg, config_path, changes):
             raise ConfigError(LOCKED[path])
     if config_path:
         tmp = config_path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as fh:
-            json.dump(new_file, fh, indent=2)
-            fh.write("\n")
-        os.replace(tmp, config_path)
+        try:
+            with open(tmp, "w", encoding="utf-8") as fh:
+                json.dump(new_file, fh, indent=2)
+                fh.write("\n")
+            os.replace(tmp, config_path)
+        except OSError as exc:
+            # said in words, never applied in memory only (it would look saved and be lost at the next start)
+            raise ConfigError(f"NOT SAVED: config.json cannot be written ({config_path}): {exc}. The user TED runs as must own "
+                              f"that file and its folder (on the VPS: sudo chown -R ted:ted {os.path.dirname(config_path) or '.'})")
     for path, value in clean.items():      # in place: the running desk sees it at once
         _set(cfg, path, value)
     restart = [p for p in clean if p.startswith(RESTART) or p in RESTART]

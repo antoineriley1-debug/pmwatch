@@ -470,6 +470,12 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                         engine._rec({"ev": "settings", "t": clock(), "changes": {p: _settings._get(engine.cfg, p) for p in applied
                                                                                   if p not in _settings.SECRET}})
                     engine._message("info", f"settings saved: {', '.join(applied)}" if applied else "settings: nothing changed", clock())
+                    if any(p.startswith("speech.") for p in applied):
+                        sc = engine.cfg.get("speech") or {}
+                        if sc.get("api_key") and not sc.get("voice_id"):
+                            engine._message("warn", "ElevenLabs: the key is saved; add the Voice ID too, or the browser voice keeps speaking", clock())
+                        elif sc.get("api_key"):
+                            engine._message("info", "ElevenLabs: key and voice saved in config.json; the voice uses them now and after every restart", clock())
                     if any(p.startswith("quantdata.") for p in applied) and hooks.get("flow_restart"):
                         hooks["flow_restart"]()        # the key you just saved is used now, no restart
                         engine._message("info", "Quant Data: key saved and the feed restarted with it" if engine.cfg["quantdata"].get("api_key")

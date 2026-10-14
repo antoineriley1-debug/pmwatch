@@ -1185,7 +1185,8 @@ body.whitedesk .chart-wrap canvas,body.whitedesk img,body.whitedesk video{filter
 /* ================= TWINEY'S PRECISION LEVEL 2 (the DOM) ================= */
 .lad.dom{--wb:38,181,111;--ws:217,83,79;--vb:38,181,111;--vs:217,83,79;--tr:150,160,175}
 .lad.dom.cb{--wb:70,140,255;--ws:255,150,40;--vb:70,140,255;--vs:255,150,40}
-.lad.dom td{position:relative;font-variant-numeric:tabular-nums;height:calc(16px * var(--ladz,1) * var(--ladh,1))}
+.lad.dom{font-size:calc(10px * var(--ladz,1))} .lad.dom tr:first-child th{font-size:calc(8px * var(--ladz,1))}
+.lad.dom td{position:relative;font-variant-numeric:tabular-nums;height:calc(14px * var(--ladz,1) * var(--ladh,1))}
 .lad.dom td.sz,.lad.dom td.dvol,.lad.dom td.dtr{padding:0 3px}
 .lad.dom td.bsz,.lad.dom td.dvol.s{text-align:right} .lad.dom td.asz,.lad.dom td.dvol.b,.lad.dom td.dtr{text-align:left}
 .lad.dom td.px{text-align:center;font-weight:700;color:#e6e9ef;background:rgba(255,255,255,.025);width:58px}
@@ -1321,3 +1322,14 @@ body.whitedesk .chart-wrap canvas,body.whitedesk img,body.whitedesk video{filter
 #modeBtn{font-weight:800;letter-spacing:.06em} #modeBtn.sim{background:#3a2e12;border-color:var(--gold);color:#ffd866} #modeBtn.paper{color:#9fb0c3} #modeBtn.live{background:#5a1218;border-color:var(--sell);color:#fff}
 /* the feed banner */
 #feedBanner{position:sticky;top:0;z-index:200;background:#5a1218;color:#fff;font:700 12px var(--sans);padding:5px 10px;letter-spacing:.03em;border-bottom:2px solid var(--sell)}
+
+/* the Level II and the T&S keep their size: nothing above the rows grows or shrinks */
+.domhdr .cbk{font:800 8px var(--sans);padding:0 5px;height:14px;line-height:14px;margin-left:4px}
+.domhdr{height:18px;font-size:9px} .domsum{height:17px}
+.pnl[data-p="tape"] .pc{position:relative}
+.pnl[data-p="tape"] .cswitch{position:absolute;left:0;right:0;top:0;z-index:6;height:18px;overflow:hidden;opacity:.95}
+.tstrips{height:134px;overflow:hidden;flex:0 0 auto}
+.tstrips .refstrip,.tstrips .tgauge,.tstrips .dkstrip,.tstrips .instrip,.tstrips .pacebar{height:18px;box-sizing:border-box;overflow:hidden;flex-wrap:nowrap}
+.tstrips .tspeed{height:44px;box-sizing:border-box;overflow:hidden;position:static}
+.tstrips .tph{background:#0b0f16;border-bottom:1px solid var(--line)}
+.qs .tfsel{font:700 11px var(--mono);height:18px;padding:0 4px;background:#141a24;color:#ffd866;border:1px solid var(--line);border-radius:3px}

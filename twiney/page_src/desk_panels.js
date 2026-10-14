@@ -10,10 +10,9 @@ function renderQuote(d){
   const chg = d.last && day.prev_close ? d.last - day.prev_close : null;
   const tfNow = store.get("tf.chart", 1);
   const TFP = [["1", 1], ["5", 5], ["1H", 60], ["4H", 240], ["1D", "D"], ["1W", "W"], ["1M", "M"], ["1Y", "12M"]];
-  const html = `<span class="sym">${esc(d.symbol)}</span><span class="tfp" title="timeframe · or click the chart and type: 5, 1H, 1D, 1W, 5M, or a ticker">${TFP.map(([l, v]) => `<button data-tfp="${v}" class="${String(tfNow) === String(v) ? "on" : ""}">${l}</button>`).join("")}</span><span class="tfn">${tfLabel(tfNow)}</span>
+  const html = `<span class="sym">${esc(d.symbol)}</span><select class="tfsel" data-tfsel="1" title="timeframe · or click the chart and type: 5, 1H, 1D, 1W, 5M, or a ticker">${TFP.map(([l, v]) => `<option value="${v}" ${String(tfNow) === String(v) ? "selected" : ""}>${l}</option>`).join("")}</select><span class="tfn">${tfLabel(tfNow)}</span>
     <span>LAST <b style="color:var(--gold)">${px(d.last)}</b>${chg != null ? ` <span class="${chg >= 0 ? "buy" : "sell"}">${chg >= 0 ? "+" : ""}${chg.toFixed(2)} ${(chg / day.prev_close * 100).toFixed(2)}%</span>` : ""}</span>
     <span><span class="buy">${px(d.bid)}</span><span class="dim">${day.bid_size ? "×" + kfmt(day.bid_size) : ""}</span> / <span class="sell">${px(d.ask)}</span><span class="dim">${day.ask_size ? "×" + kfmt(day.ask_size) : ""}</span></span>
-    <span class="dim">O ${px(day.open)} H ${px(day.high)} L ${px(day.low)} V ${day.volume ? kfmt(day.volume) : NA}</span>
     <span class="dim">PIVOT <b style="color:#dbe3ee">${px(pl.trigger)}</b> 2ND <b style="color:var(--cyan)">${px(pl.second_entry)}</b> TGT <b style="color:var(--buy)">${px(pl.target)}</b> STOP <b style="color:var(--sell)">${px(pl.stop)}</b></span>
     ${g ? `<span class="p-ps60" style="margin:0;height:auto;overflow:visible"><span class="g ${g.grade}" title="${esc(g.why)}">${g.grade}</span></span>` : ""}
     <span class="dim">${esc(d.health.status)}${d.pinned ? " · PINNED" : ""}${(d.book && (d.book.bids.length || d.book.asks.length)) ? "" : " · no depth"}</span>`;
@@ -81,7 +80,7 @@ function csOpen(btn){
 }
 P.chart.el.querySelector(".qs").addEventListener("click", e => { if (e.target.dataset.gear) csOpen(e.target); });
 let bookUserScroll = 0, bookDragging = false, bookHold = null;   // bookHold: the row you pressed {side, px, sym}
-P.chart.el.querySelector(".qs").addEventListener("change", e => { if (!e.target.dataset.qscreen) return; store.set("screen", e.target.value); P.chart.last = null; drawChart(charts.chart); renderTools(charts.chart); });
+P.chart.el.querySelector(".qs").addEventListener("change", e => { if (e.target.dataset.tfsel){ const v = e.target.value; setChartTf(/^\d+$/.test(v) ? +v : v); return; } if (!e.target.dataset.qscreen) return; store.set("screen", e.target.value); P.chart.last = null; drawChart(charts.chart); renderTools(charts.chart); });
 function setChartTf(tf){ store.set("tf.chart", tf); const c = charts.chart; c.view.offset = restOffset(); c.view.follow = true; c.view.autoY = null; c.view.yLo = c.view.yHi = null; if (typeof tf === "string" && c.view.cw < 6) c.view.cw = 8; drawChart(c); renderTools(c); P.chart.last = null; renderQuote(curData()); }
 P.chart.el.querySelector(".qs").addEventListener("click", e => {
   if (e.target.dataset.tfp){ const v = e.target.dataset.tfp; setChartTf(/^\d+$/.test(v) ? +v : v); return; }
@@ -672,7 +671,11 @@ function renderTape(d){
   const el = P.tape.pc.querySelector(".p-tape");
   renderContractTape(); renderSwitchStrips(); if (contractMode("tape")){ renderBigTape(d); return; }
   if (!d){ el.innerHTML = `<div class="dim" style="padding:8px">${NA}</div>`; P.tape.last = null; renderBigTape(null); return; }
-  const html = refsHTML(null, d.story && d.story.edge) + tapeGaugeHTML(d.tape) + darkStripHTML(d.dark) + instStripHTML(d.inst) + tapeSpeedHTML(d.tape.speed) + paceHTML(d.tape.pace) + tapeHTML(d.tape, d.ladder); if (P.tape.last !== html){ P.tape.last = html;
+  // nothing above the prints unless COLS says so; then every strip at its own fixed height, a placeholder when empty,
+  // so the prints never move when a strip comes or goes
+  const strips = store.get("tapeStrips", false) === true;
+  const fixed = (h, cls) => h || `<div class="${cls} tph dim"></div>`;
+  const html = (strips ? `<div class="tstrips">` + fixed(refsHTML(null, d.story && d.story.edge), "refstrip") + fixed(tapeGaugeHTML(d.tape), "tgauge") + fixed(darkStripHTML(d.dark), "dkstrip") + fixed(instStripHTML(d.inst), "instrip") + fixed(tapeSpeedHTML(d.tape.speed), "tspeed") + fixed(paceHTML(d.tape.pace), "pacebar") + `</div>` : "") + tapeHTML(d.tape, d.ladder); if (P.tape.last !== html){ P.tape.last = html;
     const keep = el.scrollTop; el.innerHTML = html; el.scrollTop = keep; makeColsResizable(el.querySelector("table")); }
   renderBigTape(d); flyBigPrints(d);
 }
@@ -813,12 +816,12 @@ function tapeSpeedHTML(sp, unit){
 function applyBigSet(){ const b = document.querySelector(".pnl[data-p=book] .bigset"); if (b) b.style.display = store.get("bigset", false) === true ? "" : "none"; }
 applyBigSet();
 function applyLadCols(tbl){ if (!tbl) return; const c = store.get("ladcols", {}); const wrap = tbl.closest(".ladder-wrap"); if (wrap){ wrap.style.setProperty("--ladz", String(store.get("ladz", 1))); wrap.style.setProperty("--ladh", String(store.get("ladh", 1))); } tbl.classList.toggle("notrade", c.trade !== true); tbl.classList.toggle("nobars", c.bars === false); tbl.classList.toggle("nowho", c.who === false); tbl.classList.toggle("noflow", c.flow === false); if (tbl._applyCols) tbl._applyCols(); }
-document.getElementById("colsMenu").querySelector("button").addEventListener("click", e => { e.stopPropagation(); const m = document.getElementById("colsMenu"), open = !m.classList.contains("open"); document.querySelectorAll(".menu.open").forEach(x => x.classList.remove("open")); m.classList.toggle("open", open); const c = store.get("ladcols", {}); const rs = m.querySelector("select[data-rows]"); if (rs) rs.value = String(store.get("ladRows", 12)); const lc = m.querySelector("select[data-ladclick]"); if (lc) lc.value = store.get("ladClick", "join"); const hs = m.querySelector("select[data-ladh]"); if (hs) hs.value = String(store.get("ladh", 1)); m.querySelectorAll("input[data-col]").forEach(i => { i.checked = i.dataset.col === "trade" ? c.trade === true : c[i.dataset.col] !== false; }); const z = m.querySelector("select[data-ladz]"); if (z) z.value = String(store.get("ladz", 1)); const bs = m.querySelector("input[data-bigset]"); if (bs) bs.checked = store.get("bigset", false) === true; const sl = m.querySelector("input[data-storyline]"); if (sl) sl.checked = store.get("storyline", true) !== false; const ds = m.querySelector("input[data-domstrips]"); if (ds) ds.checked = store.get("domStrips", false) === true; const dm = m.querySelector("input[data-dommoney]"); if (dm) dm.checked = store.get("domMoney", false) === true; m.querySelectorAll("input[data-domcol]").forEach(i => { const c = store.get("domCols", {}); i.checked = /^(ps|orders|net)$/.test(i.dataset.domcol) ? c[i.dataset.domcol] === true : c[i.dataset.domcol] !== false; }); const dv = m.querySelector("select[data-domvol]"); if (dv) dv.value = store.get("domVol", "session"); });
+document.getElementById("colsMenu").querySelector("button").addEventListener("click", e => { e.stopPropagation(); const m = document.getElementById("colsMenu"), open = !m.classList.contains("open"); document.querySelectorAll(".menu.open").forEach(x => x.classList.remove("open")); m.classList.toggle("open", open); const c = store.get("ladcols", {}); const rs = m.querySelector("select[data-rows]"); if (rs) rs.value = String(store.get("ladRows", 12)); const lc = m.querySelector("select[data-ladclick]"); if (lc) lc.value = store.get("ladClick", "join"); const hs = m.querySelector("select[data-ladh]"); if (hs) hs.value = String(store.get("ladh", 1)); m.querySelectorAll("input[data-col]").forEach(i => { i.checked = i.dataset.col === "trade" ? c.trade === true : c[i.dataset.col] !== false; }); const z = m.querySelector("select[data-ladz]"); if (z) z.value = String(store.get("ladz", 1)); const bs = m.querySelector("input[data-bigset]"); if (bs) bs.checked = store.get("bigset", false) === true; const sl = m.querySelector("input[data-storyline]"); if (sl) sl.checked = store.get("storyline", true) !== false; const ds = m.querySelector("input[data-domstrips]"); if (ds) ds.checked = store.get("domStrips", false) === true; const ts = m.querySelector("input[data-tapestrips]"); if (ts) ts.checked = store.get("tapeStrips", false) === true; const dm = m.querySelector("input[data-dommoney]"); if (dm) dm.checked = store.get("domMoney", false) === true; m.querySelectorAll("input[data-domcol]").forEach(i => { const c = store.get("domCols", {}); i.checked = /^(ps|orders|net)$/.test(i.dataset.domcol) ? c[i.dataset.domcol] === true : c[i.dataset.domcol] !== false; }); const dv = m.querySelector("select[data-domvol]"); if (dv) dv.value = store.get("domVol", "session"); });
 // JIGSAW LAYOUT, one click: the order columns on the edges, +/− each side, SOLD / BOUGHT this visit beside the price,
 // TRADED + NET for the session, the summary line; nothing above the rows
 document.getElementById("colsPop").addEventListener("click", e => { const b = e.target.closest("button[data-domjig]"); if (!b) return; e.stopPropagation();
   store.set("domCols", Object.assign({}, store.get("domCols", {}), {orders: true, net: true, ps: true, sum: true, sell: true, buy: true, traded: true})); store.set("domVol", "rolling"); store.set("domStrips", false); store.set("domMoney", false); store.set("ladMode", "dom");
-  P.book.last = null; poll(true); toast("Jigsaw layout: BUY · buyers · +/− · SOLD · levels · PRICE · BOUGHT · +/− · sellers · SELL · TRADED · NET", true); });
+  P.book.last = null; poll(true); toast("Jigsaw layout: BUY · buyers · +/− · LEVELS · SOLD · PRICE · BOUGHT · +/− · sellers · SELL · TRADED · NET", true); });
 document.getElementById("colsPop").addEventListener("change", e => {
   if (e.target.dataset.rows != null){ store.set("ladRowsAuto", false); post("/api/ladder", {half_rows: +e.target.value}); store.set("ladRows", +e.target.value); P.book.last = null; poll(true); return; }   // your pick: the ladder stops sizing itself
   if (e.target.dataset.ladclick != null){ store.set("ladClick", e.target.value); return; }
@@ -829,6 +832,7 @@ document.getElementById("colsPop").addEventListener("change", e => {
   if (e.target.dataset.dommotion != null){ store.set("domMotion", e.target.value); P.book.last = null; poll(true); return; }
   if (e.target.dataset.dommoney != null){ store.set("domMoney", e.target.checked); P.book.last = null; poll(true); return; }
   if (e.target.dataset.domstrips != null){ store.set("domStrips", e.target.checked); P.book.last = null; poll(true); return; }
+  if (e.target.dataset.tapestrips != null){ store.set("tapeStrips", e.target.checked); P.tape.last = null; poll(true); return; }
   if (e.target.dataset.domcol != null){ const c = store.get("domCols", {}); c[e.target.dataset.domcol] = e.target.checked; store.set("domCols", c); P.book.last = null; poll(true); return; }
   if (e.target.dataset.bigset != null){ store.set("bigset", e.target.checked); applyBigSet(); return; }
   if (e.target.dataset.ladz != null){ store.set("ladz", +e.target.value || 1); applyLadCols(P.book.pc.querySelector("table.lad")); P.book.last = null; poll(true); return; } const k = e.target.dataset.col; if (!k) return; const c = store.get("ladcols", {}); c[k] = e.target.checked; store.set("ladcols", c); applyLadCols(P.book.pc.querySelector("table.lad")); });
@@ -3008,7 +3012,8 @@ function renderSwitchStrips(){
   for (const [which, pid] of [["book", "book"], ["tape", "tape"]]){
     const pc = P[pid].pc; let el = pc.querySelector(":scope > .cswitch");
     const domKeeps = which === "book" && CPIN.book !== "stock" && !contractMode("book") && store.get("ladMode", "dom") === "dom";
-    const show = OC.link && OC.link.sym === curSym && (CPIN[which] === "stock" || domKeeps);
+    // the DOM says it in its own data header (ORDERS -> the contract, and the button): no strip, nothing above the rows moves
+    const show = OC.link && OC.link.sym === curSym && (CPIN[which] === "stock" || domKeeps) && !(which === "book" && domKeeps);
     if (!show){ if (el) el.remove(); continue; }
     if (!el){ el = document.createElement("div"); el.className = "cswitch"; pc.prepend(el); }
     const h = domKeeps ? `<span>DOM on ${esc(OC.link.sym)} shares · every click trades ${OCH.n || OC.link.n || 1} × ${esc(contractName(OC.link))}</span><button data-pin="book" data-pinv="contract">show the contract's own book here</button>`
@@ -3629,7 +3634,7 @@ function ladderDomHTML(L){
     return `<td class="rail${lv.length > 1 ? " many" : ""}${lv.length ? " has" : ""}" data-n="${lv.length}">${inner}${more}${cluster(r, "bid")}${cluster(r, "ask")}</td>`; };
   const hdr = `<div class="domhdr ${S.cls}" title="${esc(S.refused || (S.stale ? "the feed is old: these numbers are behind" : "what the data on this ladder is"))}">
       <b class="st">${esc(S.kind)}</b><span class="src">${esc(S.src)}</span><span class="age">quote ${S.l1} · book ${S.depth}</span>${S.stale ? `<b class="stale">FEED OLD</b>` : ""}${S.refused ? `<b class="stale">REFUSED</b>` : ""}${S.crossed ? `<b class="stale" title="the book's best bid is at or over its best offer: one venue's side is behind, or venues are missing from SMART depth. Read the sizes with care; the quote line is the truth">CROSSED BOOK</b>` : ""}${S.other ? `<b class="stale" title="another IBKR login with this username is taking the data (TWS on the laptop, the mobile app, another Gateway): history and quotes are refused here until it logs out">OTHER LOGIN</b>` : ""}
-      ${OC.link && OC.link.sym === sym ? `<b class="cmode" title="CONTRACT MODE: every click on this ladder trades ${esc(contractName(OC.link))}, ${OCH.n || OC.link.n || 1} at a time (the rows stay the stock's). Pick STOCK on the chain to trade the shares again">ORDERS → ${OCH.n || OC.link.n || 1} × ${esc(contractName(OC.link))}</b>` : ""}
+      ${OC.link && OC.link.sym === sym ? `<b class="cmode" title="CONTRACT MODE: every click on this ladder trades ${esc(contractName(OC.link))}, ${OCH.n || OC.link.n || 1} at a time (the rows stay the stock's). Pick STOCK on the chain to trade the shares again">ORDERS → ${OCH.n || OC.link.n || 1} × ${esc(contractName(OC.link))}</b><button class="cbk" data-pin="book" data-pinv="contract" title="show the contract's own book in this window instead of the stock's DOM">BOOK</button>` : ""}
       <span class="sp"></span><button class="domrc" data-domrc="1" title="back to the price (the ladder follows price again)">⌖ RECENTER</button></div>`;
   let h = hdr;
   // a short panel keeps its rows: the story / refs / pace / off-ladder strips give way to the ladder itself
@@ -3673,8 +3678,8 @@ function ladderDomHTML(L){
            : `<th class="odh b" data-w="40" data-min="26" title="BUY column (Jigsaw-style order entry): click a row to BUY ${esc(sz((T().default_shares || 0)))} there. At or under the offer: a limit. Above the offer (▲): a BUY STOP that fires when price trades there. Your working buys sit here; click one to cancel, drag to move${esc(tt)}">BUY</th>`}
     <th class="szh wb" data-w="64" data-min="26" title="WAITING BUYERS: shares resting to buy at this price right now (the book). The bar is against the biggest size on screen; it shrinks on a cancel and on a trade alike. Click: BUY there${esc(tt)}"><span class="full">WAITING BUYERS</span><span class="short">BUYERS</span></th>
     <th class="dpsh" data-w="34" data-min="14" title="+/− on the BID, last ${L.stack_seconds || 60}s: + size ADDED by buyers, − size PULLED without trading (COLS)">+/−</th>
-    <th class="volh s" data-w="58" data-min="22" title="ACTUAL SELLING: shares that HIT THE BID at this price ${volWord} (aggressive sellers, read off the tape against the quote in force). Pulses only when a print lands here"><span class="full">ACTUAL SELLING</span><span class="short">SOLD</span></th>
     <th class="railh" data-w="52" data-min="18" title="the level rail: every level on this price (your lines, the day's levels, the daily chart's, VWAP, strikes getting the money), stacked; hover for all of them. The reload buyer / seller cluster sits here too: ↻N = refilled N times"><span class="full">LEVELS</span><span class="short">LVL</span></th>
+    <th class="volh s" data-w="58" data-min="22" title="ACTUAL SELLING: shares that HIT THE BID at this price ${volWord} (aggressive sellers, read off the tape against the quote in force). Pulses only when a print lands here"><span class="full">ACTUAL SELLING</span><span class="short">SOLD</span></th>
     <th class="pxh" data-w="58" data-min="30">PRICE</th>
     <th class="volh b" data-w="58" data-min="22" title="ACTUAL BUYING: shares that LIFTED THE OFFER at this price ${volWord} (aggressive buyers). Pulses only when a print lands here"><span class="full">ACTUAL BUYING</span><span class="short">BOUGHT</span></th>
     <th class="dpsh" data-w="34" data-min="14" title="+/− on the ASK, last ${L.stack_seconds || 60}s: + size ADDED by sellers, − size PULLED without trading (COLS)">+/−</th>
@@ -3706,8 +3711,8 @@ function ladderDomHTML(L){
       ${ocol(r, "b")}
       <td class="sz bsz click${fakeB}${bigB}" data-act="BUY" data-px="${r.price}"${optAttr} title="${esc(tB)}">${bar(k + "|wb", 100 * (r.bid || 0) / maxSz, "b")}<span class="szn">${r.bid ? kfmt(r.bid) : ""}</span>${sizeChips(r, "b") ? `<span class="mine">${sizeChips(r, "b")}</span>` : ""}</td>
       ${stk(r, "b")}
-      <td class="dvol s" data-v="${v.s}" title="${esc(tS)}">${bar(k + "|s", 100 * v.s / maxV, "s")}<span class="vn">${v.s ? kfmt(v.s) : ""}</span>${lrg(r, "s")}</td>
       ${rail(r)}
+      <td class="dvol s" data-v="${v.s}" title="${esc(tS)}">${bar(k + "|s", 100 * v.s / maxV, "s")}<span class="vn">${v.s ? kfmt(v.s) : ""}</span>${lrg(r, "s")}</td>
       <td class="px" title="${esc(tT)}">${r.best_bid ? `<u class="inb" title="the INSIDE BID: the best price a buyer is resting at right now">BID</u>` : r.best_ask ? `<u class="ina" title="the INSIDE ASK: the best price a seller is resting at right now">ASK</u>` : ""}${px(r.price)}${r.vn > 1 ? `<sup title="price has been back here ${r.vn} times">×${r.vn}</sup>` : ""}</td>
       <td class="dvol b" data-v="${v.b}" title="${esc(tBuy)}">${bar(k + "|b", 100 * v.b / maxV, "b")}<span class="vn">${v.b ? kfmt(v.b) : ""}</span>${lrg(r, "b")}</td>
       ${stk(r, "a")}

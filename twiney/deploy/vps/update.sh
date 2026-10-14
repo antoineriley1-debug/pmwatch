@@ -22,3 +22,4 @@ systemctl restart ted
 sleep 3
 systemctl --no-pager status ted | head -5
 grep -o 'name="build" content="[^"]*"' "$TED_DIR/app/twiney/static/dashboard.html" || true
+chown -R ted:ted "$TED_HOME" 2>/dev/null || true   # the data folder (config.json with your keys) stays the service user's

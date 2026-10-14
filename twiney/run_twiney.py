@@ -112,6 +112,9 @@ def run_live(cfg, plays, args):
         recorder.write(session_header(plays, cfg, __version__))
         print(f"Recording raw events to {recorder.path}", flush=True)
     engine = Engine(plays, cfg, recorder)
+    if globals().get("_CONFIG_READONLY"):
+        engine._message("error", f"config.json is read-only for this user ({args.config}): SETTINGS and keys will not be kept. "
+                        f"Fix the folder's owner (on the VPS: sudo chown -R ted:ted {os.path.dirname(os.path.abspath(args.config))})", time.time(), category="FATAL")
     engine.study_async = True          # chart studies off the engine lock: the book and the tape never wait on them
     engine.plays_path = args.plays
     engine.grades_path = os.path.join(_rec_dir(cfg), "grades.jsonl")
@@ -277,6 +280,9 @@ def run_demo(cfg, plays, args):
         recorder.write(session_header(plays, cfg, __version__))
         print(f"Recording the demo to {recorder.path} (replay it or grade its calls for tune.py)", flush=True)
     engine = Engine(plays, cfg, recorder)
+    if globals().get("_CONFIG_READONLY"):
+        engine._message("error", f"config.json is read-only for this user ({args.config}): SETTINGS and keys will not be kept. "
+                        f"Fix the folder's owner (on the VPS: sudo chown -R ted:ted {os.path.dirname(os.path.abspath(args.config))})", time.time(), category="FATAL")
     engine.study_async = True          # chart studies off the engine lock: the book and the tape never wait on them
     engine.plays_path = args.plays if os.path.exists(args.plays) and not args.plays.endswith("plays.example.json") else None
     engine.grades_path = os.path.join(_rec_dir(cfg), "grades.jsonl")
@@ -441,6 +447,13 @@ def main(argv=None):
     if args.plays is None:
         args.plays = _paths.ensure_plays(program_dir)
     print(f"Your settings, key, plays and layout: {os.path.dirname(os.path.abspath(args.config))}", flush=True)
+    _cfg_dir = os.path.dirname(os.path.abspath(args.config))
+    if not os.access(_cfg_dir, os.W_OK) or (os.path.exists(args.config) and not os.access(args.config, os.W_OK)):
+        print(f"WARNING: {args.config} is not writable by this user: SETTINGS (keys included) will NOT be kept. "
+              f"Fix the owner of {_cfg_dir} (on the VPS: sudo chown -R ted:ted {_cfg_dir})", flush=True)
+        _CONFIG_READONLY = True
+    else:
+        _CONFIG_READONLY = False
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.WARNING,
                         format="%(asctime)s %(name)s %(levelname)s %(message)s")
     try:

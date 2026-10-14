@@ -456,8 +456,7 @@ function renderDataWin(p){
 function renderTools(v){
   if (!v.tools || v.type !== "chart") return;
   const tf = store.get("tf." + v.id, 1);
-  v.tools.innerHTML = [1, 5, 15, 60, "D"].map(m => `<button data-tf="${m}" class="${String(tf)===String(m)?"on":""}">${m === "D" ? "D" : m + "m"}</button>`).join("")
-    + `<button data-fit="1">fit</button><button data-vwap="1" class="${store.get("vwapOn", false) ? "on" : ""}">VWAP</button><button data-stEdge="1" class="${store.get("stEdge", false) ? "on" : ""}" title="candles to the right edge: the study labels go off the screen to the right, just the market. Click again to bring them back">▶|</button>`
+  v.tools.innerHTML = `<button data-fit="1">fit</button><button data-vwap="1" class="${store.get("vwapOn", false) ? "on" : ""}">VWAP</button><button data-stEdge="1" class="${store.get("stEdge", false) ? "on" : ""}" title="candles to the right edge: the study labels go off the screen to the right, just the market. Click again to bring them back">▶|</button>`
     + `<button data-mas="1" class="${store.get("mas", true) ? "on" : ""}" title="Dan's moving averages: SMA 5/10/20/50/100/150/200, EMA 5/10/20/50/100/150/200, plus 34/65/89 EMA on Daily only">MAS</button>`
     + `<button data-bb="1" class="${store.get("bb", true) ? "on" : ""}" title="Bollinger Bands 20 / 2.0">BB</button>`
     + `<select data-screen="1" class="${store.get("screen", "white") !== "desk" ? "on" : ""}" title="the screen: dark desk, or an eSignal-style light screen with Dan's candles">${[["desk", "DESK"], ["white", "WHITE"], ["blue", "BLUE"], ["pink", "PINK"], ["custom", "CUSTOM"]].map(([v, l]) => `<option value="${v}" ${store.get("screen", "white") === v ? "selected" : ""}>${l}</option>`).join("")}</select>`
