@@ -394,6 +394,7 @@ const store = {
   clear(){ try { Object.keys(localStorage).filter(k => k.startsWith("twiney.")).forEach(k => localStorage.removeItem(k)); } catch(e){} }
 };
 let state = null;
+const CID = Math.random().toString(36).slice(2, 12) + Date.now().toString(36);   // this page, to the server: it sends only what changed
 
 async function post(path, body){
   let out = null;

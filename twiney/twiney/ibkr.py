@@ -1062,6 +1062,23 @@ class MarketDataSession:
         hours): otherwise a premarket entry, flatten or stop just sits in TWS until 9:30 while the desk says SENT."""
         return order_type in ("LMT", "STP LMT") and bool(self.cfg.get("trading", {}).get("outside_rth", True))
 
+    @staticmethod
+    def overnight_window(now):
+        """IBKR's OVERNIGHT session for US stocks: 8:00 PM to 3:50 AM ET, Sunday evening through Friday morning. A
+        stock limit order placed then goes to the OVERNIGHT venue instead of waiting for 4:00 AM."""
+        from .studies import ny
+        d = ny(now)
+        m = d.hour * 60 + d.minute
+        if m >= 20 * 60:
+            return d.weekday() <= 3 or d.weekday() == 6          # Sun-Thu evenings (Fri evening: no session until Sunday)
+        if m < 3 * 60 + 50:
+            return d.weekday() <= 4                               # Mon-Fri small hours
+        return False
+
+    def _overnight(self, order_type, parent, now):
+        return (order_type == "LMT" and parent is None and bool(self.cfg.get("trading", {}).get("overnight_venue", True))
+                and self.overnight_window(now))
+
     def send_order(self, symbol, action, qty, price, order_type, parent, role, tif, now, aux=None, oca=None,
                    transmit=True, reducing=False):
         with self._lock:
@@ -1081,16 +1098,25 @@ class MarketDataSession:
                 extra["oca"] = f"twiney{parent}-{oca}"
             if self._ext_hours(order_type):
                 extra["outside_rth"] = True
+            overnight = self._overnight(order_type, parent, now)
+            if overnight:
+                tif = "DAY"                                  # the OVERNIGHT venue takes DAY limits that work outside RTH
+                extra["outside_rth"] = True
             order = self.order_factory(action, qty, order_type, price, tif, parent, transmit=transmit, **extra)
             self.order_roles[oid] = role
             self.my_orders[oid] = {"symbol": symbol, "parent": parent, "action": action, "qty": qty,
                                    "type": order_type, "tif": tif, "aux": aux, "price": price,
-                                   "oca": extra.get("oca")}
-            self.app.placeOrder(oid, self.contract_factory(play), order)
+                                   "oca": extra.get("oca"), "overnight": overnight}
+            self.app.placeOrder(oid, self.contract_factory(dict(play, exchange="OVERNIGHT") if overnight else play), order)
             self.engine.on_order(f"id{oid}", now, symbol=symbol, action=action, qty=float(qty), remaining=float(qty),
                                  type=order_type, lmt=price if order_type in ("LMT", "STP LMT") else None,
                                  aux=price if order_type == "STP" else aux, tif=tif, status="PendingSubmit",
-                                 order_id=oid, role=role, mine=True, parent=parent, oca=extra.get("oca"))
+                                 order_id=oid, role=role, mine=True, parent=parent, oca=extra.get("oca"),
+                                 venue="OVERNIGHT" if overnight else None)
+            if overnight:
+                self.engine.on_error(symbol, 0, f"order {oid} routed to IBKR's OVERNIGHT venue (8 PM - 3:50 AM ET); a stop-limit would wait for 4 AM", now, level="info", category="INFORMATION")
+            elif order_type == "STP LMT" and self.overnight_window(now):
+                self.engine.on_error(symbol, 0, f"order {oid} is a stop-limit: IBKR holds it until the 4:00 AM ET session (the OVERNIGHT venue takes limits only)", now, level="info", category="INFORMATION")
             self._orders_seen.add(f"id{oid}")
             self._next_orders = now + 1.0  # refresh the open-order list soon
             return oid
@@ -1134,7 +1160,8 @@ class MarketDataSession:
                                            info["parent"], transmit=True, **extra)
                 info["price"] = price
             info["qty"] = qty
-            contract = self.opt_contracts.get(info["symbol"]) if info.get("opt") else self.contract_factory(self.plays[info["symbol"]])
+            contract = (self.opt_contracts.get(info["symbol"]) if info.get("opt") else
+                        self.contract_factory(dict(self.plays[info["symbol"]], exchange="OVERNIGHT") if info.get("overnight") else self.plays[info["symbol"]]))
             self.app.placeOrder(int(oid), contract, order)
             key = self.perm_ids.get(int(oid)) or f"id{oid}"
             self.engine.on_order(key, now, lmt=info["price"] if info["type"] in ("LMT", "STP LMT") else None,

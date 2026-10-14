@@ -36,3 +36,13 @@ Drop the new `TWINEY.zip` at `/opt/ted/TWINEY.zip`, run `sudo bash /root/vps/upd
 3. Cancel one leg of a QUARTERS bracket from ORDERS: the other leg comes back on its own, the answer says so.
 4. FLATTEN with buys working and no position: they are cancelled.
 5. Watch the DOM header: SOME VENUES MISSING until TotalView / OpenBook are on the API login.
+
+## Round two (BUILD 20261014-0147 and later)
+
+| # | finding | done | what changed |
+|---|---|---|---|
+| 7 | no overnight stock venue | **yes** | 8:00 PM to 3:50 AM ET, Sunday evening through Friday morning, a stock LIMIT goes to IBKR's OVERNIGHT venue (DAY, outside RTH) and the desk says so; a stop-limit stays on SMART and the desk says it waits for the 4:00 AM session. SETTINGS › Trading › "Overnight (8 PM - 3:50 AM ET): stock limits go to IBKR's OVERNIGHT venue" (`trading.overnight_venue`). A moved overnight order stays on the venue |
+| 12 | market page slow | **yes** | an unanswered history request is asked again after 40 s (twice) instead of failed for the day; six in flight, 0.2 s apart (`market.in_flight`, `send_gap_s`, `timeout_s`); the daily cache already carried across restarts |
+| 13 | heavy polling | **yes** | the page tells the server who it is and gets only the pieces that changed: every top-level piece and every pane field by field (the ladder and the tape move every tick, the studies, story and levels hardly at all); gzip on top. Practice desk: 274 KB a poll → 53 KB the first time, then ~10 KB |
+
+Tests: `tests/test_vps_round2.py` (the window, the routing, the switch, the diffs). Browser: the DOM probes 14/14 and 12/12 on the diffed page.

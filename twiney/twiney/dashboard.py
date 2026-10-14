@@ -89,6 +89,7 @@ class EngineRef:
 
 _SNAP_LOCK = threading.Lock()
 _SNAP_CACHE = {}
+_DIFF_SEEN = {}        # client id -> {top-level key: hash of its last JSON}: what each page already holds
 
 
 def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_path=None, config_path=None, hooks=None):
@@ -203,16 +204,46 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                 except ValueError:
                     tv = None
                 key = (tuple(extra), tuple(sorted(full)) if full is not None else None, tv)
+                client = (q.get("c", [""])[0] or "")[:40]            # the page's own id: it gets only the keys that changed
                 now = time.monotonic()
                 with _SNAP_LOCK:
                     hit = _SNAP_CACHE.get(key)
                     if hit and now - hit[0] < 0.2:
-                        body = hit[1]
+                        parts, whole = hit[1]
                     else:
                         snap = engine.snapshot(clock(), extra, full, tv)
                         snap["build"] = BUILD
-                        body = json.dumps(snap, default=str)
-                        _SNAP_CACHE.clear(); _SNAP_CACHE[key] = (now, body)
+                        # every top-level key as its own JSON piece: a client that polled before gets only the pieces
+                        # that changed, and the names of the ones it already holds
+                        parts = {}
+                        for k, v in snap.items():
+                            if k == "panes" and isinstance(v, list):
+                                # a pane field by field: the ladder and the tape move every tick, the studies, the
+                                # story and the levels hardly at all
+                                parts["panes/n"] = json.dumps(len(v))
+                                for i, d in enumerate(v):
+                                    for f, x in (d or {}).items():
+                                        parts[f"panes/{i}/{f}"] = json.dumps(x, default=str)
+                            else:
+                                parts[k] = json.dumps(v, default=str)
+                        _SNAP_CACHE.clear(); _SNAP_CACHE[key] = (now, (parts, json.dumps(snap, default=str)))
+                        whole = _SNAP_CACHE[key][1][1]
+                    if client:
+                        seen = _DIFF_SEEN.setdefault(client, {})
+                        keep, send = [], []
+                        for k, js in parts.items():
+                            h = hash(js)
+                            if seen.get(k) == h:
+                                keep.append(k)
+                            else:
+                                seen[k] = h
+                                send.append(f"{json.dumps(k)}:{js}")
+                        send.append(f'"_keep":{json.dumps(keep)}')
+                        body = "{" + ",".join(send) + "}"
+                        if len(_DIFF_SEEN) > 24:                        # pages come and go: the oldest forgotten
+                            _DIFF_SEEN.pop(next(iter(_DIFF_SEEN)), None)
+                    else:
+                        body = whole
                 self._send(200, body, "application/json")
             elif path == "/api/flow/symbol":
                 q = parse_qs(urlparse(self.path).query, keep_blank_values=True)

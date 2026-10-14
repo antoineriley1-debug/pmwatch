@@ -232,6 +232,7 @@ DEFAULTS = {
         "auto_stop_dollars": 1.0,
         "sim_options_after_hours": True,
         "outside_rth": True,            # stock limit / stop-limit orders work in the premarket and after hours too (IBKR outsideRth)
+        "overnight_venue": True,        # 8 PM - 3:50 AM ET: a stock limit goes to IBKR's OVERNIGHT venue instead of waiting for 4 AM
         "sim_options_force": False,
         # when an auto-entry trade goes flat (stopped out, target, flatten) its 2nd entry, stop and target lines go
         "clear_lines_when_flat": True,
@@ -651,7 +652,9 @@ DEFAULTS = {
         "enabled": True,                  # build the report (live: IBKR + FRED; practice: synthetic closes)
         "members": True,                  # breadth, leaders and the stocks lagging from the ~500 S&P members (about 500 IBKR history requests the first time: a few minutes)
         "years": 20,                      # years of daily bars asked the first time (the history counts start June 2007)
-        "in_flight": 4,                   # IBKR history requests out at once for this page (kept low so the desk's own charts never wait)
+        "in_flight": 6,                   # IBKR history requests out at once for this page (kept low so the desk's own charts never wait)
+        "send_gap_s": 0.2,                # seconds between two history requests of this page
+        "timeout_s": 40,                  # a request IBKR has not answered in this long is asked again (twice), then noted
         "fred": True,                     # rates, jobs, claims, oil and the credit spread from FRED
         "confirm_days": 2,                # Market State: days a new state must hold before it switches (one state at a time)
         "hold_days": 5,                   # Market State: extra days step 2 must stay on before State 3

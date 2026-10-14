@@ -366,14 +366,19 @@ class MacroFeed:
                         self.build_async()
                     return
             # time out a request IBKR never answered
+            tmo = float(self.mc().get("timeout_s", 40) or 40)
             for rid, r in list(self.inflight.items()):
-                if now - r["t"] > 90:
+                if now - r["t"] > tmo:
                     self.inflight.pop(rid, None)
                     session.app.req.pop(rid, None)
-                    self.failed[r["key"]] = "IBKR did not answer in 90 s"
+                    if r["tries"] < 2:                                   # asked again at the back of the line, twice
+                        self.queue.append((r["key"], dict(r["spec"], tries=r["tries"] + 1)))
+                        continue
+                    self.failed[r["key"]] = f"IBKR did not answer in {tmo:.0f} s, three times"
                     self.done += 1
-            limit = max(1, int(self.mc().get("in_flight", 4) or 4))
-            while self.queue and len(self.inflight) < limit and now - self._last_send >= 0.35:
+            limit = max(1, int(self.mc().get("in_flight", 6) or 6))
+            gap = float(self.mc().get("send_gap_s", 0.2) or 0.2)
+            while self.queue and len(self.inflight) < limit and now - self._last_send >= gap:
                 key, spec = self.queue.pop(0)
                 rid = session._rid()
                 session.app.req[rid] = ("macro", key)

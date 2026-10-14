@@ -2251,9 +2251,18 @@ async function poll(now){
     const need = [...new Set(TABS.list.concat(curSym ? [curSym] : []).concat((state && state.symbols) || []))].filter(s => !BARS[s] || (HVER[s] != null && BARS[s].ver !== HVER[s]));
     const ac = new AbortController(), to = setTimeout(() => ac.abort(), 15000);   // a hung request never freezes the desk; a slow one is still an answer
     const t0 = performance.now();
-    const r = await fetch("/api/state?extra=" + encodeURIComponent(extra) + "&full=" + encodeURIComponent(need.join(",")) + (JOURNAL.ver != null ? "&tv=" + JOURNAL.ver : ""), {cache: "no-store", signal: ac.signal});
+    const r = await fetch("/api/state?c=" + CID + "&extra=" + encodeURIComponent(extra) + "&full=" + encodeURIComponent(need.join(",")) + (JOURNAL.ver != null ? "&tv=" + JOURNAL.ver : ""), {cache: "no-store", signal: ac.signal});
     clearTimeout(to);
     const txt = await r.text(); CYCLE.bytes = txt.length; const s = JSON.parse(txt);
+    // only the pieces that changed come down the wire; the rest is what this page already holds. The panes come
+    // field by field ("panes/2/ladder"): put back together here
+    if (s._keep){ const prev = state || {}; let n = null;
+      const put = (k, v) => { const [top, i, f] = k.split("/"); if (top !== "panes") return false; if (i === "n"){ n = +v; return true; } (s.panes[+i] = s.panes[+i] || {})[f] = v; return true; };
+      s.panes = [];
+      for (const k of Object.keys(s)) if (k.includes("/")){ const v = s[k]; delete s[k]; put(k, v); }
+      for (const k of s._keep){ if (k.includes("/")){ const [top, i, f] = k.split("/"); if (top === "panes"){ if (i === "n") n = (prev.panes || []).length; else put(k, prev.panes && prev.panes[+i] ? prev.panes[+i][f] : undefined); } } else if (k in prev) s[k] = prev[k]; }
+      if (n != null) s.panes.length = n;
+      delete s._keep; }
     // the trade journal only comes when it changed: keep the last one
     if (s.desk){ if (s.desk.trades == null) s.desk.trades = JOURNAL.trades; else { JOURNAL.trades = s.desk.trades; JOURNAL.ver = s.desk.trades_ver; } }
     CYCLE.fetch = Math.round(performance.now() - t0);
@@ -3521,7 +3530,7 @@ function domState(d){
   const cls = kind === "LIVE" ? "ok" : kind === "DELAYED" || kind === "PRACTICE" || kind === "REPLAY" ? "warn" : "bad";
   const smart = state && state.depth_smart !== false;
   const partial = !!(state && state.depth_partial);
-  const src = h.depth_refused ? "NO BOOK" : d && d.book && (d.book.bids.length || d.book.asks.length) ? (smart ? (partial ? "SMART DEPTH · SOME VENUES MISSING (not subscribed for the API)" : "SMART DEPTH · every venue IBKR quotes") : "ONE EXCHANGE'S BOOK") : "NO BOOK · quote + tape only";
+  const src = h.depth_refused ? "NO BOOK" : d && d.book && (d.book.bids.length || d.book.asks.length) ? (smart ? (partial ? "SMART DEPTH · " + String(state.depth_partial).replace(/^.*exchanges?:\s*/i, "").replace(/\.$/, "") : "SMART DEPTH · every venue IBKR quotes") : "ONE EXCHANGE'S BOOK") : "NO BOOK · quote + tape only";
   const age = v => v == null ? "—" : v < 1 ? "<1s" : v < 60 ? Math.round(v) + "s" : Math.round(v / 60) + "m";
   const stale = h.status === "STALE" || h.tape_stale;
   return {kind, cls, src, smart, stale, refused: h.depth_refused || null, l1: age(h.l1_age), depth: age(h.depth_age), status: h.status || "", crossed: !!h.crossed, partial,
