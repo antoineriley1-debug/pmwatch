@@ -2140,6 +2140,9 @@ function renderStatus(s){
   document.getElementById("stRec").innerHTML = s.desk && s.desk.recording ? `<span class="led bad"></span>REC <b>${fmtDur(s.now - (s.desk.started || s.now))}</b>` : "";
   if (t.pnl) document.querySelector("#stLoss b").textContent = `${t.pnl.total >= 0 ? "+" : "−"}$${sz(Math.abs(t.pnl.total).toFixed(0))}` + (t.loss_lock_on ? ` / −$${sz(t.max_daily_loss || 0)}` : " · no lock (paper)");
   document.getElementById("stClock").textContent = nyT(Date.now() / 1000) + " ET";
+  const mb = document.getElementById("modeBtn");
+  if (mb){ const demo = (s.connection || {}).state === "DEMO"; const lbl = t.mode === "SIM" ? (demo ? "PRACTICE" : "SIM") : t.mode === "LIVE" ? "LIVE" : "PAPER";
+    if (mb.textContent !== lbl) mb.textContent = lbl; mb.className = t.mode === "SIM" ? "sim" : t.mode === "LIVE" ? "live" : "paper"; mb.disabled = demo || t.mode === "NONE"; }
   const arm = document.getElementById("armBtn");
   // always visible: ARM / ARMED; LOCKED on a live account; on paper a lock is one click away from gone (UNLOCK)
   const paperLock = t.locked && !(t.mode === "LIVE" && t.allow_live);
@@ -2148,7 +2151,7 @@ function renderStatus(s){
   // the reason, in words, right beside the button — never only in a hover
   const why = document.getElementById("armWhy");
   if (why){ const acct = (t.accounts || []).filter(a => a && a !== "SIM").join(", ");
-    const who = `${t.mode === "SIM" ? "PRACTICE" : t.mode === "NONE" ? "NO ACCOUNT YET" : t.mode}${acct ? " " + acct : ""}`;
+    const who = `${t.mode === "SIM" ? ((s.connection || {}).state === "DEMO" ? "PRACTICE" : "SIMULATION · live data, nothing to IBKR") : t.mode === "NONE" ? "NO ACCOUNT YET" : t.mode}${acct ? " " + acct : ""}`;
     const txt = t.armed ? `${who} · orders go out`
       : paperLock ? `${who} · loss lock on — click UNLOCK`
       : t.can_trade ? `${who} · ← click ARM to trade`
@@ -2219,8 +2222,21 @@ function streamDraw(){
     if (now - STREAM.chartT > 120){ STREAM.chartT = now; drawChart(charts.chart); }     // the candle: ~8 a second is plenty
   } catch (e){ console.error("TED stream draw", e); }
 }
+/* the feed banner: the page always opens (TED serves it), but with the Gateway not connected there is no data and no
+   orders. Said at the top, in words, with what to do, until the feed is back */
+function feedBanner(s){
+  let el = document.getElementById("feedBanner");
+  const c = s.connection || {}, st = c.state || "";
+  const bad = !["CONNECTED", "DEMO", "REPLAY"].includes(st);
+  if (!bad){ if (el) el.remove(); return; }
+  if (!el){ el = document.createElement("div"); el.id = "feedBanner"; document.body.prepend(el); }
+  const txt = st === "CONNECTING" ? `CONNECTING TO IB GATEWAY… TED retries on its own. No data and no orders until it is up.`
+    : `NO IBKR DATA — the Gateway is ${esc(st.replace(/_/g, " "))}${c.detail ? ": " + esc(c.detail) : ""}. TED keeps retrying. On the VPS: systemctl status ibgateway · journalctl -u ibgateway -f · the second factor in IBKR Mobile after a Gateway restart.`;
+  if (el.innerHTML !== txt) el.innerHTML = txt;
+}
 function render(s){
   state = s;
+  try { feedBanner(s); } catch (e) {}
   // the ticker on screen owns a ladder: after a TED restart (or any drift) claim it again
   if (curSym && s.focus !== curSym && (s.symbols || []).includes(curSym) && Date.now() - focusAsked > 3000){ focusAsked = Date.now(); post("/api/play", {symbol: curSym, action: "focus"}); }
   if (!TABS.list.length && s.symbols && s.symbols.length){ TABS.list = (PREFS.tabs || []).filter(x => s.symbols.includes(x)); if (!TABS.list.length) TABS.list = [s.focus || s.symbols[0]]; TABS.active = (PREFS.active && TABS.list.includes(PREFS.active)) ? PREFS.active : TABS.list[0]; curSym = TABS.active; renderTabs(); }

@@ -793,6 +793,14 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                     out = tr.flatten(sym, now)
                 elif action == "flatten_all":
                     out = tr.flatten_all(now)
+                elif action == "mode":
+                    out = tr.set_mode(body.get("mode"), now)
+                    if out.get("ok") and body.get("remember", True) and config_path:
+                        try:
+                            from . import settings as _settings
+                            _settings.apply(engine.cfg, config_path, {"trading.start_mode": "sim" if out.get("mode") == "SIM" else "paper"})
+                        except Exception as exc:
+                            out["remembered"] = str(exc)
                 elif action == "reverse":
                     out = tr.reverse(sym, now)
                 elif action == "cancel_side":

@@ -140,6 +140,8 @@ def run_live(cfg, plays, args):
     engine.remove_listeners.append(session.remove_play)
     trader = Trader(engine, cfg, IbkrBroker(engine, session), gate) if cfg["trading"]["enabled"] else None
     engine.trader = trader
+    if trader is not None and str(cfg["trading"].get("start_mode", "paper")).lower() == "sim":
+        trader.set_mode("SIM")                 # SETTINGS > Trading > Start in: simulation on live data, nothing to IBKR
     start_watchdog(lambda: trader)
     desk = Desk(engine, cfg, plays, __version__, prefix="twiney", base_dir=os.path.dirname(os.path.abspath(__file__)))
     if recorder:

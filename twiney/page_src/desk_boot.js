@@ -4,6 +4,13 @@ document.getElementById("armBtn").addEventListener("click", async () => {
   if (T().locked && !(T().mode === "LIVE" && T().allow_live)){ const u = await post("/api/trade/unlock", {});
     toast(!u.ok ? "Not unlocked: " + (u.reason || "") : u.can_trade ? "Loss lock lifted — now click ARM" : "Loss lock lifted, but TED can't trade yet: " + (u.why_not || ""), u.ok && u.can_trade); poll(true); return; }
   const out = await post("/api/trade/arm", {on: !T().armed}); if (!out.ok) toast("ARM REFUSED · " + out.reason, false); else toast(out.armed ? "ARMED — orders will transmit" : "Disarmed", true); poll(true); });
+document.getElementById("modeBtn").addEventListener("click", async () => {
+  const t = T(), toSim = t.mode !== "SIM";
+  if (t.mode === "LIVE" && !toSim) return;
+  const words = toSim ? "SIMULATION: orders fill on this desk against the live tape, nothing goes to IBKR. Flat first." : "PAPER: orders go to the IBKR paper account. Flat first.";
+  if (!confirm(words + "\n\nThis becomes the start mode next time TED opens.")) return;
+  const out = await post("/api/trade/mode", {mode: toSim ? "SIM" : "PAPER", remember: true});
+  toast(out.ok ? (out.mode === "SIM" ? "SIMULATION on: live data, orders stay on this desk. ARM to trade" : `${out.mode}: orders go to IBKR. ARM to trade`) : "Not switched: " + (out.reason || ""), out.ok); poll(true); });
 document.getElementById("oneclick").addEventListener("change", e => post("/api/trade/oneclick", {on: e.target.checked}));
 document.getElementById("bracket").addEventListener("change", e => post("/api/trade/bracket", {on: e.target.checked}));
 document.getElementById("scale").addEventListener("change", e => post("/api/trade/scale", {on: e.target.checked}));

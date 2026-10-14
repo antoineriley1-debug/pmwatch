@@ -83,6 +83,7 @@ class TradingGate:
         self.armed = False
         self.one_click = False
         self.accounts = []           # account ids reported by the broker
+        self.real_accounts = []      # IBKR's account ids, kept while the desk is in SIM
         self.mode = "NONE"           # NONE | SIM | PAPER | LIVE
         self.recent = deque()        # timestamps of accepted orders (rate limit)
         self.blocked = deque(maxlen=50)
@@ -93,6 +94,9 @@ class TradingGate:
     # ---- state ------------------------------------------------------------
     def set_accounts(self, accounts):
         with self.lock:
+            self.real_accounts = [a for a in accounts if a]        # IBKR's, kept while the desk is in SIM
+            if self.mode == "SIM":
+                return
             self.accounts = [a for a in accounts if a]
             if self.mode != "SIM":
                 # IBKR paper accounts all start with D (DU…, DF… for a paper advisor account, DI…)
@@ -103,6 +107,13 @@ class TradingGate:
         with self.lock:
             self.mode = "SIM"
             self.accounts = ["SIM"]
+
+    def leave_sim(self):
+        """Back from SIM to the IBKR account (paper or live by the account's own letters)."""
+        with self.lock:
+            self.mode = "NONE"
+            self.accounts = []
+        self.set_accounts(list(getattr(self, "real_accounts", None) or []))
 
     def lock_out(self, reason):
         """Disarm and refuse to re-arm until restart (daily loss limit)."""
@@ -1070,6 +1081,48 @@ class Trader:
     def flatten(self, symbol, now=None):
         with self.lock:
             return self._flatten_unlocked(symbol, now)
+
+    def set_mode(self, mode, now=None):
+        """SIM or PAPER on a live desk. SIM: orders fill on this desk against the live tape (the practice simulator),
+        nothing goes to IBKR, IBKR keeps feeding the data. PAPER: the IBKR paper account again. Never with a position
+        or a working order on the side you are leaving: flat first, so nothing is left behind unmanaged."""
+        mode = str(mode or "").upper()
+        with self.lock:
+            now = now or time.time()
+            cur = self.gate.mode
+            if mode not in ("SIM", "PAPER"):
+                return {"ok": False, "reason": "SIM or PAPER"}
+            if mode == cur:
+                return {"ok": True, "mode": cur}
+            held = [s for s in self.engine.syms if int(self.broker.position(s))]
+            working = [o for o in self.engine._pending() if o.get("order_id") is not None and o.get("status") != "PendingCancel"]
+            if held or working:
+                what = (f"holding {', '.join(held)}" if held else "") + (" and " if held and working else "") + (f"{len(working)} working order{'s' if len(working) != 1 else ''}" if working else "")
+                reason = f"flatten and cancel first: {what} on {cur}"
+                self._note(now, f"mode stays {cur}: {reason}", False)
+                return {"ok": False, "reason": reason}
+            if mode == "SIM":
+                if not isinstance(self.broker, SimBroker):
+                    self._ibkr_broker = self.broker
+                sim = SimBroker(self.engine)
+                self.broker = sim
+                self.engine.sim_broker = sim
+                self.gate.set_sim()
+                self.gate.arm(False)
+                self._note(now, "SIMULATION: orders fill on this desk against the live tape; nothing goes to IBKR. ARM to trade", True)
+            else:
+                real = getattr(self, "_ibkr_broker", None)
+                if real is None:
+                    return {"ok": False, "reason": "no IBKR account on this desk (the practice feed): PAPER needs the Gateway"}
+                self.broker = real
+                self.engine.sim_broker = None
+                self.gate.leave_sim()
+                self.gate.arm(False)
+                if self.gate.mode != "PAPER":
+                    self._note(now, f"back to the IBKR account: {self.gate.mode} ({', '.join(self.gate.accounts) or 'no account yet'})", self.gate.mode != "NONE")
+                else:
+                    self._note(now, f"PAPER: orders go to the IBKR paper account {', '.join(self.gate.accounts)}. ARM to trade", True)
+            return {"ok": True, "mode": self.gate.mode}
 
     def flatten_all(self, now=None):
         """Every working order cancelled, every position closed at the market: the panic button."""

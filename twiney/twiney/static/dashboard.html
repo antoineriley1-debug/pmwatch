@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261014-0208">
+<meta name="build" content="20261014-0237">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -1629,6 +1629,11 @@ body.whitedesk .chart-wrap canvas,body.whitedesk img,body.whitedesk video{filter
 .danfh{padding:3px 8px 1px;font:9px var(--sans);letter-spacing:.1em;color:#7d8590}
 .danfl{padding:1px 8px;font:10.5px var(--mono);color:#b9c2d0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .danfl.c b{color:#7dffb8} .danfl.p b{color:#ff8a96}
 
+/* SIM / PAPER beside ARM */
+#modeBtn{font-weight:800;letter-spacing:.06em} #modeBtn.sim{background:#3a2e12;border-color:var(--gold);color:#ffd866} #modeBtn.paper{color:#9fb0c3} #modeBtn.live{background:#5a1218;border-color:var(--sell);color:#fff}
+/* the feed banner */
+#feedBanner{position:sticky;top:0;z-index:200;background:#5a1218;color:#fff;font:700 12px var(--sans);padding:5px 10px;letter-spacing:.03em;border-bottom:2px solid var(--sell)}
+
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
   --buy:#3fb56f;--sell:#d9534f;--gold:#e3a83a;--cyan:#5aa9d6;--violet:#a48bd6;--warn:#d9a441;
@@ -1925,7 +1930,7 @@ body.resizing .zbody{pointer-events:none}
   <span id="brand"><i></i><b>TED</b><span class="long"> TWINEY EXECUTION DESK</span></span>
   <span id="symbox"><input id="symIn" placeholder="SYMBOL" autocomplete="off" spellcheck="false"><select id="symHist" title="recent symbols"><option value="">RECENT</option></select></span>
   <span class="sep"></span>
-  <button id="armBtn" class="off" title="Arm order entry. Disarmed at every launch.">ARM</button><span id="armWhy"></span>
+  <button id="modeBtn" class="paper" title="SIM / PAPER: where your orders go. SIM = simulation on this desk against the live tape, nothing to IBKR. PAPER = the IBKR paper account. Flat first; the pick is remembered as the start mode (SETTINGS > Trading)">PAPER</button><button id="armBtn" class="off" title="Arm order entry. Disarmed at every launch.">ARM</button><span id="armWhy"></span>
   <button id="sideBtn" class="long" title="LONG / SHORT for the ticker on screen. Click to flip; your levels stay. Drawing a stop and a target sets it on its own (stop above target = short).">L</button>
   <label title="Skip the confirmation box on every order"><input type="checkbox" id="oneclick"> one-click</label>
   <label title="Attach the play's stop and target to every entry"><input type="checkbox" id="bracket"> stop+target</label>
@@ -7021,6 +7026,9 @@ function renderStatus(s){
   document.getElementById("stRec").innerHTML = s.desk && s.desk.recording ? `<span class="led bad"></span>REC <b>${fmtDur(s.now - (s.desk.started || s.now))}</b>` : "";
   if (t.pnl) document.querySelector("#stLoss b").textContent = `${t.pnl.total >= 0 ? "+" : "−"}$${sz(Math.abs(t.pnl.total).toFixed(0))}` + (t.loss_lock_on ? ` / −$${sz(t.max_daily_loss || 0)}` : " · no lock (paper)");
   document.getElementById("stClock").textContent = nyT(Date.now() / 1000) + " ET";
+  const mb = document.getElementById("modeBtn");
+  if (mb){ const demo = (s.connection || {}).state === "DEMO"; const lbl = t.mode === "SIM" ? (demo ? "PRACTICE" : "SIM") : t.mode === "LIVE" ? "LIVE" : "PAPER";
+    if (mb.textContent !== lbl) mb.textContent = lbl; mb.className = t.mode === "SIM" ? "sim" : t.mode === "LIVE" ? "live" : "paper"; mb.disabled = demo || t.mode === "NONE"; }
   const arm = document.getElementById("armBtn");
   // always visible: ARM / ARMED; LOCKED on a live account; on paper a lock is one click away from gone (UNLOCK)
   const paperLock = t.locked && !(t.mode === "LIVE" && t.allow_live);
@@ -7029,7 +7037,7 @@ function renderStatus(s){
   // the reason, in words, right beside the button — never only in a hover
   const why = document.getElementById("armWhy");
   if (why){ const acct = (t.accounts || []).filter(a => a && a !== "SIM").join(", ");
-    const who = `${t.mode === "SIM" ? "PRACTICE" : t.mode === "NONE" ? "NO ACCOUNT YET" : t.mode}${acct ? " " + acct : ""}`;
+    const who = `${t.mode === "SIM" ? ((s.connection || {}).state === "DEMO" ? "PRACTICE" : "SIMULATION · live data, nothing to IBKR") : t.mode === "NONE" ? "NO ACCOUNT YET" : t.mode}${acct ? " " + acct : ""}`;
     const txt = t.armed ? `${who} · orders go out`
       : paperLock ? `${who} · loss lock on — click UNLOCK`
       : t.can_trade ? `${who} · ← click ARM to trade`
@@ -7100,8 +7108,21 @@ function streamDraw(){
     if (now - STREAM.chartT > 120){ STREAM.chartT = now; drawChart(charts.chart); }     // the candle: ~8 a second is plenty
   } catch (e){ console.error("TED stream draw", e); }
 }
+/* the feed banner: the page always opens (TED serves it), but with the Gateway not connected there is no data and no
+   orders. Said at the top, in words, with what to do, until the feed is back */
+function feedBanner(s){
+  let el = document.getElementById("feedBanner");
+  const c = s.connection || {}, st = c.state || "";
+  const bad = !["CONNECTED", "DEMO", "REPLAY"].includes(st);
+  if (!bad){ if (el) el.remove(); return; }
+  if (!el){ el = document.createElement("div"); el.id = "feedBanner"; document.body.prepend(el); }
+  const txt = st === "CONNECTING" ? `CONNECTING TO IB GATEWAY… TED retries on its own. No data and no orders until it is up.`
+    : `NO IBKR DATA — the Gateway is ${esc(st.replace(/_/g, " "))}${c.detail ? ": " + esc(c.detail) : ""}. TED keeps retrying. On the VPS: systemctl status ibgateway · journalctl -u ibgateway -f · the second factor in IBKR Mobile after a Gateway restart.`;
+  if (el.innerHTML !== txt) el.innerHTML = txt;
+}
 function render(s){
   state = s;
+  try { feedBanner(s); } catch (e) {}
   // the ticker on screen owns a ladder: after a TED restart (or any drift) claim it again
   if (curSym && s.focus !== curSym && (s.symbols || []).includes(curSym) && Date.now() - focusAsked > 3000){ focusAsked = Date.now(); post("/api/play", {symbol: curSym, action: "focus"}); }
   if (!TABS.list.length && s.symbols && s.symbols.length){ TABS.list = (PREFS.tabs || []).filter(x => s.symbols.includes(x)); if (!TABS.list.length) TABS.list = [s.focus || s.symbols[0]]; TABS.active = (PREFS.active && TABS.list.includes(PREFS.active)) ? PREFS.active : TABS.list[0]; curSym = TABS.active; renderTabs(); }
@@ -8852,6 +8873,13 @@ document.getElementById("armBtn").addEventListener("click", async () => {
   if (T().locked && !(T().mode === "LIVE" && T().allow_live)){ const u = await post("/api/trade/unlock", {});
     toast(!u.ok ? "Not unlocked: " + (u.reason || "") : u.can_trade ? "Loss lock lifted — now click ARM" : "Loss lock lifted, but TED can't trade yet: " + (u.why_not || ""), u.ok && u.can_trade); poll(true); return; }
   const out = await post("/api/trade/arm", {on: !T().armed}); if (!out.ok) toast("ARM REFUSED · " + out.reason, false); else toast(out.armed ? "ARMED — orders will transmit" : "Disarmed", true); poll(true); });
+document.getElementById("modeBtn").addEventListener("click", async () => {
+  const t = T(), toSim = t.mode !== "SIM";
+  if (t.mode === "LIVE" && !toSim) return;
+  const words = toSim ? "SIMULATION: orders fill on this desk against the live tape, nothing goes to IBKR. Flat first." : "PAPER: orders go to the IBKR paper account. Flat first.";
+  if (!confirm(words + "\n\nThis becomes the start mode next time TED opens.")) return;
+  const out = await post("/api/trade/mode", {mode: toSim ? "SIM" : "PAPER", remember: true});
+  toast(out.ok ? (out.mode === "SIM" ? "SIMULATION on: live data, orders stay on this desk. ARM to trade" : `${out.mode}: orders go to IBKR. ARM to trade`) : "Not switched: " + (out.reason || ""), out.ok); poll(true); });
 document.getElementById("oneclick").addEventListener("change", e => post("/api/trade/oneclick", {on: e.target.checked}));
 document.getElementById("bracket").addEventListener("change", e => post("/api/trade/bracket", {on: e.target.checked}));
 document.getElementById("scale").addEventListener("change", e => post("/api/trade/scale", {on: e.target.checked}));

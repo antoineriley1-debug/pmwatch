@@ -166,6 +166,9 @@ DEFAULTS = {
         # OFF: orders go only to a PAPER account (DU…), a live account is refused. ON: with TWS logged into your
         # live account (port 7496) orders are REAL MONEY and the status strip pulses LIVE TRADING. After RESTART NOW.
         "allow_live": False,
+        # where the desk starts with the Gateway connected: "paper" = the IBKR paper account, "sim" = SIMULATION (orders
+        # fill on this desk against the live tape, nothing goes to IBKR). The SIM / PAPER button remembers your pick
+        "start_mode": "paper",
         "default_shares": 100,
         "max_shares_per_order": 500,
         "max_dollars_per_order": 25000,

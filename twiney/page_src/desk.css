@@ -1316,3 +1316,8 @@ body.whitedesk .chart-wrap canvas,body.whitedesk img,body.whitedesk video{filter
 .danrow .st{color:#ffd866;font-size:10px;letter-spacing:-1px} .danrow .add{font:800 11px var(--sans);color:#9fb0c3;width:12px;text-align:center} .danrow.on .add{color:#5dffa8}
 .danfh{padding:3px 8px 1px;font:9px var(--sans);letter-spacing:.1em;color:#7d8590}
 .danfl{padding:1px 8px;font:10.5px var(--mono);color:#b9c2d0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .danfl.c b{color:#7dffb8} .danfl.p b{color:#ff8a96}
+
+/* SIM / PAPER beside ARM */
+#modeBtn{font-weight:800;letter-spacing:.06em} #modeBtn.sim{background:#3a2e12;border-color:var(--gold);color:#ffd866} #modeBtn.paper{color:#9fb0c3} #modeBtn.live{background:#5a1218;border-color:var(--sell);color:#fff}
+/* the feed banner */
+#feedBanner{position:sticky;top:0;z-index:200;background:#5a1218;color:#fff;font:700 12px var(--sans);padding:5px 10px;letter-spacing:.03em;border-bottom:2px solid var(--sell)}
