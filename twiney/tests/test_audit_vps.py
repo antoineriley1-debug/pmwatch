@@ -57,10 +57,15 @@ class BracketTests(unittest.TestCase):
         e, tr, _ = make(); T = time.time(); quote(e, 9.99, 10.00, T, first=True)
         e.set_play_level("AAA", "stop", None, T, source="chart"); e.set_play_level("AAA", "target", None, T, source="chart")
         tr.bracket = True; tr.bracket_template = "PLAY"
-        out = tr.submit("AAA", "BUY", 10.0, 100, T)
+        # the desk's default: a stop auto_stop_dollars away goes with it
+        out = tr.submit("AAA", "BUY", 9.90, 100, T)
+        self.assertTrue(out["ok"], out.get("reason")); self.assertIn("stop 8.90", out["sent"])
+        self.assertTrue(any(o.get("role") == "stop" for o in pending(e)))
+        # with that fallback off, the bare order is refused
+        tr.cfg["auto_stop_dollars"] = 0
+        out = tr.submit("AAA", "BUY", 9.80, 100, T + 1)
         self.assertFalse(out["ok"]); self.assertIn("nothing to attach", out["reason"])
-        self.assertEqual(pending(e), [])
-        self.assertTrue(tr.submit("AAA", "BUY", 10.0, 100, T, bracket=False)["ok"])     # bare on purpose is allowed
+        self.assertTrue(tr.submit("AAA", "BUY", 9.80, 100, T + 1, bracket=False)["ok"])     # bare on purpose is allowed
 
 
 class ModifyTests(unittest.TestCase):

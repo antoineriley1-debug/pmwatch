@@ -844,6 +844,15 @@ class Trader:
         tpl = self.bracket_templates().get(self.bracket_template) if self.bracket_template != "PLAY" else None
         legs = (template_legs(tpl, action, qty, ref, self.cfg["stop_limit_ticks"], symbol) if tpl
                 else bracket_legs(play, action, qty, ref, self.cfg["stop_limit_ticks"], plan)) if use_bracket and ref else []
+        if use_bracket and ref and not legs and not joins and not flip and not auto and self.bracket_template == "PLAY" and play is not None:
+            # no stop and no target drawn: never a bare order by accident. A stop trading.auto_stop_dollars away goes
+            # with it (the same fallback the wrong-side stop gets); the target you draw later joins it
+            d = float(self.cfg.get("auto_stop_dollars") or 0)
+            if d > 0:
+                play = dict(play, stop=snap(ref - d if action == BUY else ref + d, -1 if action == BUY else 1), target=None, mp=None)
+                legs = bracket_legs(play, action, qty, ref, self.cfg["stop_limit_ticks"], plan)
+                if legs:
+                    self._note(now, f"{symbol}: no stop drawn — {action} {qty} goes out with a stop ${d:g} {'under' if action == BUY else 'over'} at {money(play['stop'])}; draw your stop and target and they take over", True)
         if use_bracket and ref and not legs and not joins and not flip and not auto:
             reason = ("the bracket has nothing to attach: no stop and no target on the chart (draw them, or pick a bracket "
                       "template, or switch the bracket off to send a bare order on purpose)")

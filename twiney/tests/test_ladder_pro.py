@@ -110,7 +110,8 @@ class ReverseAndCancelSideTests(unittest.TestCase):
     def test_cancel_one_side(self):
         e, tr = sim()
         e.on_l1("AAA", "bid", 9.99, 1.0); e.on_l1("AAA", "ask", 10.0, 1.0); e.tick(1.0)
-        tr.submit("AAA", "BUY", 9.90, 100, 2.0); tr.submit("AAA", "BUY", 9.80, 100, 2.1); tr.submit("AAA", "SELL", 10.20, 100, 2.2)
+        # bare resting orders on purpose (with the bracket on, each would carry its auto stop)
+        tr.submit("AAA", "BUY", 9.90, 100, 2.0, bracket=False); tr.submit("AAA", "BUY", 9.80, 100, 2.1, bracket=False); tr.submit("AAA", "SELL", 10.20, 100, 2.2, bracket=False)
         self.assertEqual(len(e._pending("AAA")), 3)
         self.assertEqual(tr.cancel_side("AAA", "bid", 3.0)["cancelled"], 2)
         left = [o for o in e._pending("AAA") if o.get("status") not in ("Cancelled", "PendingCancel")]
