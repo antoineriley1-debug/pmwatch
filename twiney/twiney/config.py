@@ -630,6 +630,16 @@ DEFAULTS = {
                                         # with speed, programs, calls / puts pounded, the open read) judged 5 and 15 minutes later
         "hit_atr": 0.10,                # a HIT: price moved at least this much of the daily ATR the call's way at 15 minutes (a MISS: the other way)
     },
+    "gmail": {
+        # DAN'S DAILY: the Market Notes email (Access A Trader) read from your Gmail over IMAP. The app password goes
+        # here and nowhere else (Google account › Security › 2-Step Verification › App passwords; never your real one)
+        "enabled": False,
+        "user": "",
+        "app_password": "",
+        "sender": "support@accessatrader.com",
+        "subject": "Watchlist",
+        "times": ["06:30", "19:45"],      # New York: when the desk reads it (plus once at startup and the REFRESH button)
+    },
     "ai": {
         # DESK AI: a local Ollama model taught PS60 (the way Dan reads the market) that reads the desk's own records AFTER
         # the fact: the day's recap and tomorrow's plan, why a call was made, your notes cleaned up, the cross-day study.

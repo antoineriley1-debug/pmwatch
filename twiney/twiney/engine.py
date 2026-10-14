@@ -3631,6 +3631,13 @@ class Engine:
                     self.score.tick(t, {sym: st.price() for sym, st in self.syms.items() if st.price()})
                 except Exception:
                     log.exception("scorecard tick")
+            dan = getattr(self, "dan", None)
+            if dan is not None and t - getattr(self, "_dan_t", -1e9) >= 60.0:   # DAN'S DAILY: the email on its schedule
+                self._dan_t = t
+                try:
+                    dan.tick(t)
+                except Exception:
+                    log.exception("dan mail tick")
             ai = getattr(self, "ai", None)
             if ai is not None and t - getattr(self, "_ai_t", -1e9) >= 60.0:   # DESK AI: the close recap on its own
                 self._ai_t = t
@@ -5825,6 +5832,7 @@ class Engine:
                 "score": self.score.view() if (self.cfg.get("score") or {}).get("enabled", True) else None,
                 "training": self.trainer.view() if self.trainer is not None else None,
                 "ai": self.ai.status() if getattr(self, "ai", None) is not None else None,
+                "dan": self.dan.view() if getattr(self, "dan", None) is not None else None,
                 "account": {
                     "seen": self.account_seen,
                     "pending": sorted((dict(o, state=self.order_state(o)) for o in self._pending()), key=lambda o: -o.get("first_seen", 0)),

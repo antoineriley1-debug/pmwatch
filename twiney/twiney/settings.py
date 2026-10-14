@@ -37,6 +37,7 @@ SECTIONS = [
     ("pace", "Pace of tape", "How fast each stock trades against its own normal, and the calls at your levels: stalling, pressing, breakout with speed (+ flow)."),
     ("story", "PS60 story", "The Daily chart, your PS60 places, zones, the tape, reload buyers / sellers, option flow and price response told as one running story."),
     ("score", "Desk score", "THE DESK SCORE: every call with a direction in it (second entry live, CLEANED UP, a level taken on a close, a breakout with speed, a program, calls / puts pounded, the open read) judged 5 and 15 minutes later. Which calls earn their airtime."),
+    ("gmail", "Gmail (Dan's Market Notes)", "DAN'S DAILY: the Market Notes email from Access A Trader read from your Gmail every day and put on the WATCHLIST panel: the pivot watchlist (ticker, pivot, Short, stars) and the option flow lines. Watch only, nothing is traded from it. Needs a Gmail APP PASSWORD (Google account › Security › 2-Step Verification › App passwords), never your real password; it lives only in your private config."),
     ("ai", "AI (Ollama)", "DESK AI: a local model (Ollama, on this computer) taught PS60 the way Dan reads the market. It reads the desk's own records after the fact and writes the day's recap and tomorrow's plan, explains a call, cleans up your notes, does the cross-day study. Never a call, never a voice line, never a trade. Install Ollama from ollama.com, then in a terminal: ollama pull llama3.1:8b"),
     ("market", "Market report", "MARKET ANALYSIS DETAILED REPORT (the MARKET button): your Recession Steps, Market State, Relationships Board, Rate Baskets and who-is-carrying-it boards rebuilt inside TED on daily closes, the 500 S&P members by name, and DESK AI's write-up with the scenarios and how often each one has happened. IBKR daily bars (no extra market data) and FRED (free, no key). It sets how much and which way you lean; PS60 sets when."),
     ("studies", "Chart studies", "GAS + ATR, AIRSPACE and UNVISITED HIGHS / LOWS on the stock chart (never the option chart). Each switches off on its own."),
@@ -56,7 +57,7 @@ LOCKED = {
     "dashboard.host": "Locked: the desk only listens on this computer.",
 }
 
-SECRET = {"quantdata.api_key", "speech.api_key"}
+SECRET = {"quantdata.api_key", "speech.api_key", "gmail.app_password"}
 
 CHOICES = {
     "ibkr.port": [(7497, "7497 · TWS paper"), (7496, "7496 · TWS live"), (4002, "4002 · Gateway paper"), (4001, "4001 · Gateway live")],
@@ -94,7 +95,7 @@ LABELS = {
     "flow_short_dte": "Short-dated = days to expiry ≤", "flow_repeat_prints": "Repeat = prints on one strike",
     "flow_repeat_minutes": "…inside (min)", "flow_repeat_cooldown_minutes": "Repeat call cooldown (min)",
     "url": "Ollama address", "model": "Model (as Ollama names it)", "timeout_s": "Wait for an answer up to (s)", "num_ctx": "Reading window (tokens)",
-    "temperature": "Temperature (0 = strict to the data)", "recap_at_close": "Recap + tomorrow's plan on its own after the close",
+    "user": "Gmail address", "app_password": "Gmail app password", "sender": "Dan's sender address", "subject": "Word in the subject (blank = any from the sender)", "times": "Read times, New York (HH:MM, comma-separated)", "temperature": "Temperature (0 = strict to the data)", "recap_at_close": "Recap + tomorrow's plan on its own after the close",
     "recap_minutes_after_close": "... minutes after 16:00 ET", "days_back": "Cross-day study: days read",
     "stale_seconds": "NOT RELOADING on time alone (s)",
     "stale_multiple": "NOT RELOADING = traded through × what he puts back per reload",

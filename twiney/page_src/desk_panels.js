@@ -1094,8 +1094,34 @@ function renderReloads(d){
   }).join("");
   panelHTML("reload", rows || `<div class="dim">No confirmed reload buyer or seller on ${esc(d.symbol)} right now.</div>`);
 }
+/* DAN'S DAILY: the Market Notes email read from Gmail, on top of the WATCHLIST panel. A click puts the name on the
+   desk with Dan's pivot (added if it is not there yet) and opens it. Watch only */
+function danHTML(dn){
+  if (!dn) return "";
+  const st = dn.status || {}, when = dn.fetched ? ago(((state && state.now) || Date.now() / 1000) - dn.fetched) + " ago" : "";
+  const stars = n => n ? "★".repeat(Math.min(5, n)) : "";
+  const head = `<div class="danhd"><b>DAN'S DAILY</b><span>${esc(dn.date || (dn.subject || "").replace(/^.*Watchlist\s*/i, "") || "")}</span>${when ? `<i class="dim">read ${esc(when)}</i>` : ""}<span class="sp"></span><button data-danref="1" title="read the newest Market Notes email from Gmail now (otherwise at ${esc((dn.times || []).join(", "))} New York and at startup)">${st.busy ? "READING…" : "REFRESH"}</button></div>`;
+  if (!dn.enabled) return `<div class="danbox off">${head}<div class="dim" style="padding:2px 8px 4px">Gmail is off. SETTINGS › Gmail (Dan's Market Notes): your Gmail address and an app password, then on.</div></div>`;
+  const err = st.error ? `<div class="danerr">${esc(st.error)}</div>` : "";
+  const rows = (dn.rows || []).map(r => { const on = (state.symbols || []).includes(r.symbol);
+    return `<div class="danrow ${r.side === "short" ? "s" : "b"} ${on ? "on" : ""}" data-dan="${esc(r.symbol)}" data-pivot="${r.pivots[0]}" data-side="${r.side}" title="${esc(r.line)} — click: ${on ? "open it" : "put it on the desk with this pivot and open it"}">
+      <b>${esc(r.symbol)}</b><span class="pv">${r.pivots.map(px).join(" & ")}</span><span class="sd">${r.side === "short" ? "SHORT" : "LONG"}</span><span class="st">${stars(r.stars)}</span><span class="add" title="${on ? "on the desk" : "put it on the desk with this pivot"}">${on ? "✓" : "+"}</span></div>`; }).join("");
+  const flow = (dn.flow || []).slice(0, 10).map(f => `<div class="danfl ${f.right === "C" ? "c" : "p"}" title="${esc(f.line)}">${esc(f.who)} ${f.size.toLocaleString("en-US")} <b>${esc(f.symbol)}</b> ${esc(f.expiry)} ${f.strike % 1 ? f.strike.toFixed(2) : f.strike}${esc(f.right)}${f.price != null ? " @ " + f.price.toFixed(2) : ""}${f.premium ? " · " + esc(f.premium) : ""}</div>`).join("");
+  return `<div class="danbox">${head}${err}${rows || `<div class="dim" style="padding:2px 8px">no names in the newest email</div>`}${flow ? `<div class="danfh">OPTION FLOW IN THE NOTES</div>${flow}` : ""}</div>`;
+}
+async function danOpen(sym, pivot, side){
+  const on = (state.symbols || []).includes(sym);
+  if (!on){ const out = await post("/api/play", {symbol: sym, action: "add"}); if (!out.ok){ toast(sym + " could not be added", false); return; }
+    const st = await post("/api/play", {symbol: sym, action: "setup", fields: {trigger: pivot, side}}); toast(st.ok ? `${sym} on the desk: pivot ${px(pivot)}, ${side.toUpperCase()}` : `${sym} added; pivot not set: ${st.reason || ""}`, st.ok); }
+  else { const d = paneFor(sym); if (d && d.play && !d.play.trigger){ const st = await post("/api/play", {symbol: sym, action: "setup", fields: {trigger: pivot, side}}); if (st.ok) toast(`${sym}: Dan's pivot ${px(pivot)} set`, true); } }
+  openTab(sym, !on); poll(true);
+}
+document.addEventListener("click", async e => {
+  const b = e.target.closest("button[data-danref]"); if (b){ e.stopPropagation(); b.textContent = "READING…"; const out = await post("/api/dan/refresh", {}); if (!out.ok) toast("Dan's daily: " + (out.reason || "not read"), false); setTimeout(() => poll(true), 2500); return; }
+  const r = e.target.closest(".danrow[data-dan]"); if (r){ e.stopPropagation(); danOpen(r.dataset.dan, +r.dataset.pivot, r.dataset.side); }
+});
 function renderWatch(s){
-  panelHTML("watch", (s.ranking || []).map(r => `<div class="wlrow ${r.symbol === curSym ? "cur" : ""}" data-sym="${esc(r.symbol)}">
+  panelHTML("watch", danHTML(s.dan) + (s.ranking || []).map(r => `<div class="wlrow ${r.symbol === curSym ? "cur" : ""}" data-sym="${esc(r.symbol)}">
     <span><b>${esc(r.symbol)}</b>${r.depth ? ' <span style="color:var(--gold)">◆</span>' : ""}<span class="wlx" data-rm="${esc(r.symbol)}" title="take ${esc(r.symbol)} off the watchlist">✕</span></span><span style="color:var(--gold)">${px(r.last)}</span>
     <span class="gw"><span class="g ${r.ps60 ? r.ps60.grade : ""}">${r.ps60 ? r.ps60.grade : ""}</span>${r.ps60 && r.ps60.flow && r.ps60.flow.bias != null && Math.abs(r.ps60.flow.bias) >= 0.3 ? ` <span class="fb ${r.ps60.flow.bias > 0 ? "c" : "p"}" title="option flow last 30 min: ${r.ps60.flow.bias > 0 ? "call" : "put"} heavy">${r.ps60.flow.bias > 0 ? "C" : "P"}${Math.round(Math.abs(r.ps60.flow.bias) * 100)}</span>` : ""}</span>
     <span class="w">${r.rank ? "#" + r.rank + " · " : ""}${r.side} · ${esc(r.retired ? "RETIRED" : r.status)}</span></div>`).join("") || `<div class="dim" style="padding:8px">No plays.</div>`);

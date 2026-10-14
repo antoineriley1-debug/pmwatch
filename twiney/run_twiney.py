@@ -24,6 +24,7 @@ from twiney.dashboard import Dashboard, EngineRef
 from twiney.desk import Desk
 from twiney.engine import Engine
 from twiney.ai import DeskAI
+from twiney.danmail import DanMail
 from twiney.recorder import Recorder
 from twiney.replay import compare, replay, session_header, span
 from twiney.trading import IbkrBroker, SimBroker, Trader, TradingGate
@@ -121,6 +122,7 @@ def run_live(cfg, plays, args):
     engine.oi_path = os.path.join(_rec_dir(cfg), "oi.jsonl")   # OPEN INTEREST: each contract's morning number, day by day
     engine.load_oi()
     engine.ai = DeskAI(engine, cfg, _rec_dir(cfg))   # DESK AI (Ollama): the recap, tomorrow's plan, explanations, notes, the study
+    engine.dan = DanMail(engine, cfg, _paths.data_dir())   # DAN'S DAILY: the Market Notes email from Gmail, on its schedule
     engine.macro = start_market(cfg, "live")         # the MARKET page: your boards on IBKR daily closes + FRED
     engine.load_user_alerts(os.path.join(os.path.dirname(os.path.abspath(args.plays)), "alerts.json"))
     engine.listeners.append(console_alert)
@@ -282,6 +284,7 @@ def run_demo(cfg, plays, args):
     engine.oi_path = os.path.join(_rec_dir(cfg), "oi.jsonl")
     engine.load_oi()
     engine.ai = DeskAI(engine, cfg, _rec_dir(cfg))   # DESK AI (Ollama) on the practice desk too: same buttons, practice numbers
+    engine.dan = DanMail(engine, cfg, _paths.data_dir())   # DAN'S DAILY on the practice desk too (the real email, when Gmail is set)
     engine.macro = start_market(cfg, "practice")     # the MARKET page on synthetic closes (labelled PRACTICE)
     engine.load_user_alerts(os.path.join(os.path.dirname(os.path.abspath(args.plays)), "alerts.json"))
     engine.listeners.append(console_alert)

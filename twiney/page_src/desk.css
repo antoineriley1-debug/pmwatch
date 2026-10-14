@@ -1304,3 +1304,15 @@ body.whitedesk .chart-wrap canvas,body.whitedesk img,body.whitedesk video{filter
 .lad.dom td.od.opt.b:hover{background:rgba(232,185,49,.3)} .lad.dom td.od.opt.s:hover{background:rgba(232,140,49,.3)}
 .lad.dom td.od.opt.stop.b:hover::after,.lad.dom td.od.opt.stop.s:hover::after{content:"WATCH"}
 .lad.dom td.od .chip.w{background:#e8b931;color:#1d1a10;font-size:9px;padding:0 4px}
+
+/* DAN'S DAILY on the WATCHLIST panel */
+.danbox{border-bottom:2px solid rgba(232,185,49,.45);margin-bottom:3px;background:rgba(232,185,49,.03)}
+.danhd{display:flex;gap:6px;align-items:center;padding:3px 8px 2px;font:10px var(--sans);color:#9fb0c3} .danhd b{color:#ffd866;letter-spacing:.1em} .danhd .sp{flex:1}
+.danhd button{font:800 9px var(--sans);padding:0 6px;height:16px;line-height:16px}
+.danerr{padding:1px 8px 3px;font:10px var(--sans);color:#ff8a95}
+.danrow{display:grid;grid-template-columns:auto 1fr auto auto auto;gap:6px;padding:2px 8px;font:11.5px var(--mono);cursor:pointer;border-bottom:1px solid #131923;align-items:center}
+.danrow:hover{background:rgba(255,255,255,.04)} .danrow b{color:#e6e9ef} .danrow .pv{color:#ffd866;font-weight:700}
+.danrow .sd{font:800 9px var(--sans);letter-spacing:.06em;padding:0 4px;border-radius:2px} .danrow.b .sd{background:#163a28;color:#7dffb8} .danrow.s .sd{background:#3a1515;color:#ff8a96}
+.danrow .st{color:#ffd866;font-size:10px;letter-spacing:-1px} .danrow .add{font:800 11px var(--sans);color:#9fb0c3;width:12px;text-align:center} .danrow.on .add{color:#5dffa8}
+.danfh{padding:3px 8px 1px;font:9px var(--sans);letter-spacing:.1em;color:#7d8590}
+.danfl{padding:1px 8px;font:10.5px var(--mono);color:#b9c2d0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .danfl.c b{color:#7dffb8} .danfl.p b{color:#ff8a96}

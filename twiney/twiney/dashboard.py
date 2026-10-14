@@ -614,6 +614,13 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                     out = {"ok": False, "reason": f"could not fetch the S&P list: {exc}"}
                 self._send(200, json.dumps(out), "application/json")
                 return
+            elif path == "/api/dan/refresh":
+                dan = getattr(engine, "dan", None)
+                if dan is None:
+                    self._send(404, json.dumps({"ok": False, "reason": "DAN'S DAILY is not loaded"}), "application/json")
+                    return
+                st = dan.refresh(clock())
+                self._send(200, json.dumps({"ok": not st.get("error"), "status": st, "reason": st.get("error")}), "application/json")
             elif path == "/api/ai/run":
                 # DESK AI: start a job (recap / explain / notes / study / ask) in the background; the page polls the result
                 ai = getattr(engine, "ai", None)
