@@ -240,8 +240,8 @@ class PS60ExitTests(unittest.TestCase):
         tr.scale = True
         out = tr.submit("AAA", "BUY", 9.99, 100, 2.0)
         self.assertTrue(out["ok"], out)
-        self.assertIn("cash flow 1 50 @ 10.49", out["sent"])
-        self.assertIn("runner 25 @ 10.60", out["sent"])
+        self.assertIn("cash flow 1: 50 sh @ 10.49", out["sent"])
+        self.assertIn("runner: 25 sh @ 10.60", out["sent"])
         e.on_depth("AAA", 0, UPDATE, ASK, 9.99, 300, "", 3.0)   # entry fills
         orders = e.snapshot(3.5)["panes"][0]["orders"]
         # every exit piece has its own stop for the same shares: 50 + 25 + 25 covers the 100

@@ -116,7 +116,15 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
 
         def _send(self, code, body, ctype):
             data = body if isinstance(body, bytes) else body.encode("utf-8")
-            self.send_response(code)
+            # the desk polls a big snapshot a few times a second: gzip takes it down ~8x on the wire
+            if len(data) > 2048 and "gzip" in str(self.headers.get("Accept-Encoding", "")) and ctype.startswith(("application/json", "text/")):
+                import gzip as _gz
+                data = _gz.compress(data, compresslevel=3)
+                self.send_response(code)
+                self.send_header("Content-Encoding", "gzip")
+                self.send_header("Vary", "Accept-Encoding")
+            else:
+                self.send_response(code)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(data)))
             self.send_header("Cache-Control", "no-store")
@@ -745,6 +753,8 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                     out = tr.cancel_all(sym or None, now)
                 elif action == "flatten":
                     out = tr.flatten(sym, now)
+                elif action == "flatten_all":
+                    out = tr.flatten_all(now)
                 elif action == "reverse":
                     out = tr.reverse(sym, now)
                 elif action == "cancel_side":
@@ -789,6 +799,9 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                 else:
                     self._send(404, json.dumps({"ok": False, "reason": f"unknown order action '{action}' — restart TED after an update"}), "application/json")
                     return
+            except (TypeError, ValueError) as exc:          # a price / size that is not a number: a plain refusal, not a crash
+                self._send(400, json.dumps({"ok": False, "reason": f"check the numbers on the order: {exc}"}), "application/json")
+                return
             except Exception as exc:  # never let a broker error kill the dashboard
                 out = {"ok": False, "reason": str(exc)}
             self._send(200, json.dumps(out, default=str), "application/json")

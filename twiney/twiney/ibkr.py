@@ -29,6 +29,9 @@ OPT_VOL_TICKS = {29, 30}
 
 INFO_CODES = {2104, 2106, 2107, 2108, 2119, 2158, 2150, 2174, 2176}
 # order-level errors: the order is not working (rejected / cancelled by IBKR)
+# information about a working order, never a rejection: 399 queued until the session opens, 2109 outside-RTH note,
+# 2161 price capped by IBKR's band (the order works at the capped price)
+ORDER_INFO_CODES = {399, 2109, 2161}
 ORDER_DEAD_CODES = {103, 104, 105, 106, 107, 109, 110, 111, 113, 116, 117, 118, 119, 120, 121, 122, 133, 135, 136,
                     137, 140, 141, 146, 147, 151, 153, 154, 155, 156, 157, 158, 159, 160, 161, 163, 164, 166, 167,
                     168, 200, 201, 202, 203, 10147, 10148, 10149, 10006, 10005, 10268, 10318}
@@ -167,7 +170,17 @@ class TwineyWrapper:
         req_id, code, msg = parse_error_args(args)
         t = self.clock()
         kind, sym = self.req.get(req_id, (None, None))
-        if kind is None and req_id in self.session.my_orders and code < 2000:
+        if kind is None and req_id in self.session.my_orders and code in ORDER_INFO_CODES:
+            info = self.session.my_orders[req_id]
+            if code == 399:
+                info.pop("_mod_t", None); info.pop("_prev", None)
+                self.engine.on_error(info["symbol"], code, f"order {req_id} is QUEUED by IBKR (it works when the session opens): {msg}", t, level="info", category="INFORMATION")
+            elif code == 2161:
+                self.engine.on_error(info["symbol"], code, f"order {req_id}: IBKR CAPPED the price (price-cap band): {msg}", t, level="warn", category="WARNING")
+            else:
+                self.engine.on_error(info["symbol"], code, f"order {req_id}: {msg}", t, level="info", category="INFORMATION")
+            return
+        if kind is None and req_id in self.session.my_orders and (code < 2000 or code >= 10000):
             # an order of ours was refused or cancelled by IBKR: say so on the order, never leave it "working"
             info = self.session.my_orders[req_id]
             if code == 110 and info.get("opt") and not info.get("_dime"):
@@ -227,6 +240,16 @@ class TwineyWrapper:
         if kind in ("hist", "daily", "m30", "m5x", "m5") and code in self.session.HIST_RETRY_CODES:
             if code in (2104, 2106):
                 return                                    # "market data farm connection is OK": not a refusal
+            if code == 162 and "different IP" in str(msg):
+                last = getattr(self.session, "_other_login_t", -1e9)
+                if t - last > 60:
+                    self.session._other_login_t = t
+                    self.engine.on_error(None, code, "ANOTHER IBKR LOGIN with this username is connected from another computer: history and "
+                                         "data are refused here until it logs out (TWS on the laptop, the mobile app, another Gateway)", t, level="error", category="CONNECTION")
+                    try:
+                        self.engine.other_login_t = t
+                    except Exception:
+                        pass
             self.req.pop(req_id, None)
             self.session._hist_refused(kind, sym, code, msg, t)
             return
@@ -411,6 +434,12 @@ class TwineyWrapper:
         if mine and int(orderId) in self.session.my_orders:
             info = self.session.my_orders[int(orderId)]
             info["qty"] = num(getattr(order, "totalQuantity", None)) or info["qty"]   # IBKR's current size (OCA reduce)
+            real_oca = getattr(order, "ocaGroup", None) or None
+            if real_oca and real_oca != info.get("oca"):
+                info["oca"] = real_oca            # a move re-sends THIS group: IBKR refuses any other (10326)
+            pid = getattr(order, "permId", None)
+            if pid:
+                info["perm_id"] = int(pid)
         self.engine.on_order(
             key, self.clock(), symbol=opt_key(contract) if option(contract) else getattr(contract, "symbol", "?"), action=getattr(order, "action", None),
             qty=num(getattr(order, "totalQuantity", None)), type=getattr(order, "orderType", None),

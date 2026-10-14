@@ -2251,7 +2251,7 @@ class Engine:
         return lines.get("stop")
 
     SIM_WHY = ("options market closed: option prices are SIMULATED from the stock (paper only) — "
-               "option orders are held until the 9:30 ET open")
+               "a contract order is refused now, nothing is queued; send it after the 9:30 ET open")
 
     def opt_sim(self, t=None):
         """After hours on a PAPER account: the options market is closed (IBKR has no live option quotes), so the
@@ -3431,6 +3431,10 @@ class Engine:
             st = self._st(symbol) if symbol else None
             if st is not None:
                 st.last_error = f"{code}: {msg}"
+            if code == 2152:                              # SMART depth is missing venues this login is not subscribed to
+                self.depth_partial = str(msg)[:160]
+            if code == 10197:
+                self.other_login_t = t
             self._message(level, f"{symbol + ': ' if symbol else ''}[{code}] {msg}", t, symbol, category=category)
 
     def _message(self, level, text, t, symbol=None, category=None):
@@ -4595,6 +4599,8 @@ class Engine:
         with self.lock:
             if verdict not in ("good", "bad", None):
                 return False
+            if not key or not any(a.get("key") == key for a in self.alerts):
+                return False                               # not a call the desk made
             if verdict is None:
                 self.grades.pop(key, None)
             else:
@@ -4754,7 +4760,17 @@ class Engine:
             "anomalies": st.book.anomalies if st.book else 0,
             "last_error": st.last_error,
             "depth_refused": getattr(st, "depth_refused", None) if st.rejected_until > t else None,
+            "crossed": self._crossed(st),
         }
+
+    @staticmethod
+    def _crossed(st):
+        """The book's best bid at or over its best offer: a crossed / locked book, read with care (one venue is behind
+        side, or venues missing from SMART depth)."""
+        if st.book is None or not st.book.synced:
+            return False
+        b, a = st.book.best(BID), st.book.best(ASK)
+        return bool(b and a and b >= a)
 
     def _user_levels(self, play):
         out = [{"price": play["trigger"], "role": "trigger", "label": "PIVOT"}] if play.get("trigger") else []
@@ -5790,6 +5806,8 @@ class Engine:
                 "studies_on": {k: bool((self.cfg.get("studies") or {}).get(k)) for k in ("gas", "airspace", "unvisited", "air_board", "gas_readout", "whole_numbers", "atr_zones")},
                 "slots": self.cfg["depth"]["slots"],
                 "depth_smart": bool(self.cfg["depth"].get("smart_depth", True)),
+                "depth_partial": self.__dict__.get("depth_partial"),
+                "other_login": (self.__dict__.get("other_login_t") is not None and t - self.__dict__["other_login_t"] < 300),
                 "auto_rotate": self.auto_rotate,
                 "ranking": ranking,
                 "user_alerts": [dict(a) for a in self.user_alerts],

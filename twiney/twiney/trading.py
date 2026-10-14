@@ -695,10 +695,19 @@ class Trader:
             return self._submit_unlocked(symbol, action, price, qty, now, bracket, order_type, aux, tif, nonce, flip=flip)
 
     def _submit_unlocked(self, symbol, action, price, qty=None, now=None, bracket=None, order_type="LMT", aux=None,
-               tif="DAY", nonce=None, levels=None, flip=False):
+               tif="DAY", nonce=None, levels=None, flip=False, auto=False):
         """``levels``: the stop / target the bracket uses when it is not the play's own side (its OTHER SIDE)."""
         now = now or time.time()
-        qty = int(qty or self.default_shares)
+        if qty in (None, ""):
+            qty = self.default_shares
+        else:
+            try:
+                qf = float(qty)
+            except (TypeError, ValueError):
+                return {"ok": False, "reason": f"shares must be a whole number, not {qty!r}"}
+            if qf <= 0 or qf != int(qf):
+                return {"ok": False, "reason": f"shares must be a whole number above zero, not {qty}"}
+            qty = int(qf)
         play = self.engine.syms[symbol].play if symbol in self.engine.syms else None
         if play is not None and levels is not None:
             play = dict(play, side=levels.get("side", play.get("side")), stop=levels.get("stop"), target=levels.get("target"),
@@ -716,7 +725,11 @@ class Trader:
             if seen is not None:
                 return dict(seen, duplicate=True)
             self.nonces[nonce] = {"ok": False, "reason": "this ticket is already being sent"}   # reserved
-        price = snap(round(float(price or 0), 4), symbol=symbol)          # a price the exchange takes
+        try:
+            price = snap(round(float(price or 0), 4), symbol=symbol)      # a price the exchange takes
+        except (TypeError, ValueError):
+            self.nonces.pop(nonce, None) if nonce else None
+            return {"ok": False, "reason": f"price must be a number, not {price!r}"}
         if order_type == "STP LMT":
             try:
                 aux = snap(round(float(aux), 4), symbol=symbol)
@@ -831,6 +844,13 @@ class Trader:
         tpl = self.bracket_templates().get(self.bracket_template) if self.bracket_template != "PLAY" else None
         legs = (template_legs(tpl, action, qty, ref, self.cfg["stop_limit_ticks"], symbol) if tpl
                 else bracket_legs(play, action, qty, ref, self.cfg["stop_limit_ticks"], plan)) if use_bracket and ref else []
+        if use_bracket and ref and not legs and not joins and not flip and not auto:
+            reason = ("the bracket has nothing to attach: no stop and no target on the chart (draw them, or pick a bracket "
+                      "template, or switch the bracket off to send a bare order on purpose)")
+            self._note(now, f"BLOCKED {action} {qty} {symbol} @ {money(price)}: {reason}", False)
+            if nonce:
+                self.nonces.pop(nonce, None)
+            return {"ok": False, "reason": reason}
         try:
             # the family goes out together: the entry is held until its last leg is sent
             parent_id = self.broker.place(symbol, action, qty, price, now, order_type, None, "entry", tif, aux=aux,
@@ -855,7 +875,7 @@ class Trader:
         if legs:
             what += " + " + " + ".join(
                 f"stop {money(l['aux'])} (limit {money(l['price'])})" if l["role"] == "stop"
-                else f"{l['role'].replace('_', ' ')} {l['qty']} @ {money(l['price'])}" for l in legs)
+                else f"{l['role'].replace('_', ' ')}: {l['qty']} sh @ {money(l['price'])}" for l in legs)
         if joins:
             what += " — adds to your working stop and take profit (they grow when it fills)"
         self._note(now, f"SENT {what}", True)
@@ -882,6 +902,7 @@ class Trader:
         o = self._order_by_id(oid)
         if by_hand and o is not None and o.get("status") in self.engine.DONE_STATUSES + ("Done",):
             return {"ok": False, "reason": f"order #{oid} is already {str(o.get('status')).lower()}"}
+        partners = self._oca_partners(o) if by_hand and o is not None else []   # read BEFORE the cancel takes them with it
         ok = self.broker.cancel(oid, now)
         self._note(now, f"cancel {oid}: {'sent' if ok else 'nothing to cancel'}", ok)
         if not ok:
@@ -893,7 +914,42 @@ class Trader:
                     live["status"] = "PendingCancel"
             if by_hand:
                 self._hand_cancel_exit(o, now)
+                warn = self._keep_oca_partner(o, partners, now)
+                if warn:
+                    return {"ok": True, "warning": warn}
         return {"ok": True}
+
+    def _oca_partners(self, o):
+        oca, sym = o.get("oca"), o.get("symbol")
+        if not oca or sym not in self.engine.syms or is_option_key(sym):
+            return []
+        return [dict(x) for x in self.engine._pending(sym) if x.get("oca") == oca and x.get("order_id") not in (None, o.get("order_id"))
+                and x.get("status") != "PendingCancel" and str(x.get("role") or "") != str(o.get("role") or "")]
+
+    def _keep_oca_partner(self, o, partners, now):
+        """A STOP and its TARGET are one-cancels-the-other at IBKR: cancelling one by hand cancels the other too, and
+        the position would be left with no exit. The partner is re-sent on its own (no group), same side, size and
+        price, so what you did not cancel keeps working."""
+        sym = o.get("symbol")
+        if not partners:
+            return None
+        kept = []
+        for x in partners:
+            left = int(x.get("remaining") if x.get("remaining") is not None else x.get("qty") or 0)
+            if left <= 0:
+                continue
+            typ = str(x.get("type") or "LMT")
+            try:
+                nid = self.broker.place(sym, x.get("action"), left, x.get("lmt") or x.get("aux"), now, typ, None, x.get("role") or "exit",
+                                        aux=x.get("aux") if typ in ("STP", "STP LMT") else None)
+                kept.append(f"{x.get('role')} {left} @ {money(x.get('aux') if typ in ('STP', 'STP LMT') else x.get('lmt'))} re-sent as order {nid}")
+            except Exception as exc:
+                self._note(now, f"{sym}: the {x.get('role')} paired with the cancelled {o.get('role')} could NOT be re-sent: {exc} — the position is UNPROTECTED on that side", False)
+                return f"the paired {x.get('role')} is cancelled with it and could not be re-sent — set it again"
+        if kept:
+            self._note(now, f"{sym}: cancelling the {o.get('role')} also cancels its paired exit at IBKR (one cancels the other): " + "; ".join(kept), True)
+            return "its paired exit was re-sent on its own so you stay protected"
+        return None
 
     def _hand_cancel_exit(self, o, now):
         """A STOP or TARGET order cancelled by hand from ORDERS: its line comes off the chart too, so the chart never
@@ -1006,14 +1062,34 @@ class Trader:
         with self.lock:
             return self._flatten_unlocked(symbol, now)
 
+    def flatten_all(self, now=None):
+        """Every working order cancelled, every position closed at the market: the panic button."""
+        with self.lock:
+            now = now or time.time()
+            n = self.broker.cancel_all(now, None)
+            out = {}
+            for sym in list(self.engine.syms):
+                if int(self.broker.position(sym)):
+                    out[sym] = self._flatten_unlocked(sym, now)
+            self._note(now, f"FLATTEN ALL: {n} orders cancelled, {len(out)} position{'s' if len(out) != 1 else ''} closing", True)
+            return {"ok": all(v.get("ok") for v in out.values()) if out else True, "cancelled": n, "positions": out}
+
     def _flatten_unlocked(self, symbol, now=None, keep_entries=False):
         """Close the position with a marketable limit (through the spread by a few ticks). Works disarmed, locked
         for the day and over the caps: getting out is never blocked. One flatten at a time per symbol."""
         now = now or time.time()
         pos = int(self.broker.position(symbol))
         if not pos:
-            self._note(now, f"{symbol}: already flat", True)
-            return {"ok": True, "flat": True}
+            n = 0
+            if not keep_entries:
+                for o in self.engine._pending(symbol):          # flat, but entries still working: FLATTEN takes them off too
+                    if o.get("order_id") is not None and o.get("status") != "PendingCancel":
+                        try:
+                            self.broker.cancel(o["order_id"], now); n += 1
+                        except Exception as exc:
+                            log.warning("cancel %s for flatten: %s", o.get("order_id"), exc)
+            self._note(now, f"{symbol}: already flat" + (f" — {n} working order{'s' if n != 1 else ''} cancelled" if n else ""), True)
+            return {"ok": True, "flat": True, "cancelled": n}
         if any(o.get("role") == "flatten" for o in self.engine._pending(symbol)):
             self._note(now, f"{symbol}: a flatten order is already working", False)
             return {"ok": False, "reason": "a flatten order is already working"}
@@ -1294,6 +1370,23 @@ class Trader:
             reason = self.gate.check_reduce(info.get("action"), qty, price, now)
         else:
             reason = self.gate.check(info.get("action"), qty, price, now, order_type=info.get("type", "LMT"), mult=100 if opt else 1)
+        if not reason and not opt and info.get("symbol") in self.engine.syms:
+            st_ = self.engine.syms[info["symbol"]]
+            bid, ask = st_.bbo()
+            act, typ = info.get("action"), str(info.get("type") or "LMT")
+            if typ in ("STP", "STP LMT"):
+                # a stop moved through the market fires at once and dumps the position: never
+                if act == SELL and bid and price >= bid:
+                    reason = f"a SELL stop at {money(price)} is at or over the bid {money(bid)}: it would fire at once"
+                elif act == BUY and ask and price <= ask:
+                    reason = f"a BUY stop at {money(price)} is at or under the offer {money(ask)}: it would fire at once"
+            elif typ == "LMT" and role not in self.EXIT_ROLES and not role.startswith("cash_flow"):
+                ref_last = st_.l1.get("last") or st_.l1.get("close")
+                a_, b_ = ask or ref_last, bid or ref_last
+                if act == BUY and a_ and price > a_ * 1.05:
+                    reason = f"BUY limit {money(price)} is {100 * (price / a_ - 1):.1f}% over {money(a_)} — check the price"
+                elif act == SELL and b_ and price < b_ * 0.95:
+                    reason = f"SELL limit {money(price)} is {100 * (1 - price / b_):.1f}% under {money(b_)} — check the price"
         if reason:
             self._note(now, f"BLOCKED move of order {oid} to {money(price)}: {reason}", False)
             return {"ok": False, "reason": reason}
@@ -1303,9 +1396,9 @@ class Trader:
             return {"ok": False, "reason": str(exc)}
         if not ok:
             return {"ok": False, "reason": "order is no longer working"}
-        self._note(now, f"MOVED {info.get('action')} {qty} {info.get('symbol')} to {money(price)}", True)
+        self._note(now, f"MOVE SENT {info.get('action')} {qty} {info.get('symbol')} to {money(price)} (IBKR confirms, or refuses and the old price stands)", True)
         self.engine._rec({"ev": "order_modify", "t": now, "id": oid, "px": price})
-        return {"ok": True, "price": price}
+        return {"ok": True, "price": price, "pending": True}
 
     def day_pnl(self):
         return self.engine.day_pnl()
@@ -2710,7 +2803,7 @@ class Trader:
             return
         out = self._submit_unlocked(sym, want["action"], want["price"], want["qty"], now, True, want["type"],
                                     want["aux"] if want["type"] == "STP LMT" else None, "DAY",
-                                    levels=play if k != sym else None)
+                                    levels=play if k != sym else None, auto=True)
         if out.get("ok"):
             self.auto[k] = dict(want, id=out["id"], t=now, by_desk=False)
             self.auto_fail.pop(k, None)
@@ -2942,6 +3035,8 @@ class Trader:
             symbol = str(symbol).upper()
             if not (self.gate.can_trade() and self.gate.armed):
                 return {"ok": False, "reason": self.gate.why_not() or "disarmed"}
+            if self.engine.opt_sim(now):
+                return {"ok": False, "reason": "the options market is closed: a contract order is REFUSED now, nothing is queued — send it after the 9:30 ET open"}
             try:
                 n = int(contracts)
                 strike = float(strike)

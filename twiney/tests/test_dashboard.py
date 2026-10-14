@@ -56,6 +56,10 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(self.engine.syms["AAA"].retired["reason"], "retired by you")
         self.post("/api/play", {"symbol": "AAA", "action": "reactivate"})
         self.assertIsNone(self.engine.syms["AAA"].retired)
+        with self.assertRaises(urllib.error.HTTPError) as ctx:          # a key the desk never called: refused
+            self.post("/api/grade", {"key": "1|AAA|X|1", "verdict": "bad"})
+        self.assertEqual(ctx.exception.code, 400)
+        self.engine.alerts.appendleft({"key": "1|AAA|X|1", "symbol": "AAA", "label": "X", "t": 1.0})
         self.assertEqual(self.post("/api/grade", {"key": "1|AAA|X|1", "verdict": "bad"}).status, 200)
         self.assertEqual(self.engine.grades["1|AAA|X|1"], "bad")
         with self.assertRaises(urllib.error.HTTPError) as ctx:

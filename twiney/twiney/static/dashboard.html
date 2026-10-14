@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261013-1811">
+<meta name="build" content="20261014-0126">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -6575,7 +6575,7 @@ async function sendStop(symbol, action, price, qty){
 /* ---------- hotkeys: configurable, dangerous ones unassigned until you set them */
 const HK_ACTIONS = [["focusSymbol", "Focus symbol box", false], ["focusTicket", "Focus order ticket", false], ["qtyUp", "Increase quantity", false], ["qtyDown", "Decrease quantity", false],
   ["buy", "BUY at ticket price (or bid)", true], ["sell", "SELL at ticket price (or ask)", true], ["joinBid", "Join the bid (BUY at bid)", true], ["joinAsk", "Join the ask (SELL at ask)", true],
-  ["cancelSel", "Cancel selected order", true], ["cancelSym", "Cancel symbol orders (emergency)", true], ["cancelAll", "Cancel EVERY working order", true], ["flatten", "FLATTEN current symbol", true], ["reverse", "REVERSE current position", true],
+  ["cancelSel", "Cancel selected order", true], ["cancelSym", "Cancel symbol orders (emergency)", true], ["cancelAll", "Cancel EVERY working order", true], ["flatten", "FLATTEN current symbol", true], ["flattenAll", "FLATTEN ALL: cancel every order, close every position", true], ["reverse", "REVERSE current position", true],
   ["optBuy", "OPTION: BUY (contracts on the option chart) now", true], ["optSell", "OPTION: SELL now", true], ["optHalf", "OPTION: ½ OUT now", true], ["optOut", "OPTION: ALL OUT now", true],
   ["rec", "Record on / off", false], ["mark", "Marker", false], ["shot", "Screenshot", false], ["arm", "Arm / disarm", false], ["mic", "Voice note (mic) on / off", false], ["clip", "Clip the last minutes", false]];
 const HK_DEFAULT = {focusSymbol: "Ctrl+L", focusTicket: "T", qtyUp: "+", qtyDown: "-", rec: " ", mark: "M", shot: "P", arm: "A", cancelSym: "Escape"};
@@ -6618,6 +6618,7 @@ function runHotkey(e){
     case "cancelSel": if (selOrder) cancelMine(selOrder); else toast("select an order first", false); break;
     case "cancelSym": if (document.querySelector(".menu.open, #cmenu, .confirm")) return false; if (d && d.orders && d.orders.length) cancelAll(d.symbol); break;
     case "cancelAll": post("/api/trade/cancel_all", {}).then(out => toast(`Cancelled ${out.cancelled} working order${out.cancelled === 1 ? "" : "s"}`, true)); break;
+    case "flattenAll": confirmBox("FLATTEN ALL", "every working order cancelled, every position closed at the market", "s", () => post("/api/trade/flatten_all", {}).then(out => { toast(out.ok ? `Flatten all: ${out.cancelled} orders cancelled, ${Object.keys(out.positions || {}).length} positions closing` : "Flatten all: " + JSON.stringify(out.positions || out.reason), out.ok); poll(true); })); break;
     case "flatten": if (d) flatten(d.symbol); break;
     case "reverse": if (d && d.position && d.position.qty) confirmBox(`REVERSE ${d.symbol}`, "closes the position and opens the same size the other way", "s", async () => { const out = await post("/api/trade/reverse", {symbol: d.symbol}); toast(out.ok ? "Reverse sent" : "Blocked: " + (out.reason || ""), out.ok); }); break;
     case "joinBid": if (d && d.bid) sendOrder(d.symbol, "BUY", d.bid); break;
@@ -8387,10 +8388,12 @@ function domState(d){
     : c.state === "REPLAY" ? "REPLAY" : /FEED_DOWN|DISCONNECTED|DATA_LOST/.test(c.state || "") ? "DISCONNECTED" : (c.state || "—");
   const cls = kind === "LIVE" ? "ok" : kind === "DELAYED" || kind === "PRACTICE" || kind === "REPLAY" ? "warn" : "bad";
   const smart = state && state.depth_smart !== false;
-  const src = h.depth_refused ? "NO BOOK" : d && d.book && (d.book.bids.length || d.book.asks.length) ? (smart ? "SMART DEPTH · every venue IBKR quotes" : "ONE EXCHANGE'S BOOK") : "NO BOOK · quote + tape only";
+  const partial = !!(state && state.depth_partial);
+  const src = h.depth_refused ? "NO BOOK" : d && d.book && (d.book.bids.length || d.book.asks.length) ? (smart ? (partial ? "SMART DEPTH · SOME VENUES MISSING (not subscribed for the API)" : "SMART DEPTH · every venue IBKR quotes") : "ONE EXCHANGE'S BOOK") : "NO BOOK · quote + tape only";
   const age = v => v == null ? "—" : v < 1 ? "<1s" : v < 60 ? Math.round(v) + "s" : Math.round(v / 60) + "m";
   const stale = h.status === "STALE" || h.tape_stale;
-  return {kind, cls, src, smart, stale, refused: h.depth_refused || null, l1: age(h.l1_age), depth: age(h.depth_age), status: h.status || ""};
+  return {kind, cls, src, smart, stale, refused: h.depth_refused || null, l1: age(h.l1_age), depth: age(h.depth_age), status: h.status || "", crossed: !!h.crossed, partial,
+    other: !!(state && state.other_login)};
 }
 function ladderDomHTML(L){
   const rows = L.rows; if (!rows.length) return `<div class="empty">Waiting for the book…</div>`;
@@ -8442,7 +8445,7 @@ function ladderDomHTML(L){
     const more = lv.length > 1 ? `<span class="lvmore">${lv.slice(1).map(m => `<b class="lvm ${lvCls(m)}">${esc(lvWords(m, true))}</b>`).join("")}</span>` : "";
     return `<td class="rail${lv.length > 1 ? " many" : ""}${lv.length ? " has" : ""}" data-n="${lv.length}">${inner}${more}${cluster(r, "bid")}${cluster(r, "ask")}</td>`; };
   const hdr = `<div class="domhdr ${S.cls}" title="${esc(S.refused || (S.stale ? "the feed is old: these numbers are behind" : "what the data on this ladder is"))}">
-      <b class="st">${esc(S.kind)}</b><span class="src">${esc(S.src)}</span><span class="age">quote ${S.l1} · book ${S.depth}</span>${S.stale ? `<b class="stale">FEED OLD</b>` : ""}${S.refused ? `<b class="stale">REFUSED</b>` : ""}
+      <b class="st">${esc(S.kind)}</b><span class="src">${esc(S.src)}</span><span class="age">quote ${S.l1} · book ${S.depth}</span>${S.stale ? `<b class="stale">FEED OLD</b>` : ""}${S.refused ? `<b class="stale">REFUSED</b>` : ""}${S.crossed ? `<b class="stale" title="the book's best bid is at or over its best offer: one venue's side is behind, or venues are missing from SMART depth. Read the sizes with care; the quote line is the truth">CROSSED BOOK</b>` : ""}${S.other ? `<b class="stale" title="another IBKR login with this username is taking the data (TWS on the laptop, the mobile app, another Gateway): history and quotes are refused here until it logs out">OTHER LOGIN</b>` : ""}
       ${OC.link && OC.link.sym === sym ? `<b class="cmode" title="CONTRACT MODE: every click on this ladder trades ${esc(contractName(OC.link))}, ${OCH.n || OC.link.n || 1} at a time (the rows stay the stock's). Pick STOCK on the chain to trade the shares again">ORDERS → ${OCH.n || OC.link.n || 1} × ${esc(contractName(OC.link))}</b>` : ""}
       <span class="sp"></span><button class="domrc" data-domrc="1" title="back to the price (the ladder follows price again)">⌖ RECENTER</button></div>`;
   let h = hdr;
