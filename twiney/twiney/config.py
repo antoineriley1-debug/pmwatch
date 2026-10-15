@@ -169,6 +169,10 @@ DEFAULTS = {
         # where the desk starts with the Gateway connected: "paper" = the IBKR paper account, "sim" = SIMULATION (orders
         # fill on this desk against the live tape, nothing goes to IBKR). The SIM / PAPER button remembers your pick
         "start_mode": "paper",
+        # SIM's data: "live" = IBKR's tape (nothing to IBKR on orders), "practice" = the built-in practice market (no
+        # IBKR at all: use it when the market is closed), "recorded" = a recorded day replayed in real time
+        "sim_data": "live",
+        "sim_recording": "",             # the recording file for "recorded" (a name in the recordings folder)
         "default_shares": 100,
         "max_shares_per_order": 500,
         "max_dollars_per_order": 25000,

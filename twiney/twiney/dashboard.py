@@ -340,6 +340,20 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
             elif path == "/api/clips":
                 from . import clips as _clips
                 self._send(200, json.dumps(_clips.load(rec_dir or "recordings")), "application/json")
+            elif path == "/api/datasource":
+                tc = engine.cfg.get("trading") or {}
+                recs = []
+                rd = rec_dir or "recordings"
+                if os.path.isdir(rd):
+                    for n in sorted(os.listdir(rd), reverse=True):
+                        rec = getattr(getattr(engine, "recorder", None), "path", None)   # never the file being written right now
+                        if rec and os.path.basename(rec) == n:
+                            continue
+                        if n.endswith(".jsonl") and not n.endswith(".marks.jsonl") and "-" in n and n[0].isalpha() and os.path.getsize(os.path.join(rd, n)) > 20000:
+                            recs.append({"name": n, "size_mb": round(os.path.getsize(os.path.join(rd, n)) / 1e6, 1)})
+                self._send(200, json.dumps({"ok": True, "source": hooks.get("source"), "can_switch": bool(hooks.get("datasource")),
+                                            "start_mode": tc.get("start_mode"), "sim_data": tc.get("sim_data"),
+                                            "sim_recording": tc.get("sim_recording"), "recordings": recs[:30]}), "application/json")
             elif path == "/api/desk/list":
                 self._send(200, json.dumps(desk.list_recordings() if desk else []), "application/json")
             elif path == "/api/tts/test":
@@ -484,6 +498,18 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                                                 "sections": _settings.schema(engine.cfg)}, default=str), "application/json")
                 except (ConfigError, OSError, ValueError) as exc:
                     self._send(400, json.dumps({"ok": False, "reason": str(exc)}), "application/json")
+                return
+            elif path == "/api/datasource":
+                # the SIM menu: PAPER / SIM on LIVE data / the PRACTICE market / a RECORDED day; saved, then TED restarts
+                ds = hooks.get("datasource")
+                if ds is None:
+                    self._send(400, json.dumps({"ok": False, "reason": "this desk was started on a fixed feed (start_demo / --replay): close it and start TED normally to switch"}), "application/json")
+                    return
+                try:
+                    out = ds(body.get("source"), body.get("recording"))
+                except Exception as exc:
+                    out = {"ok": False, "reason": str(exc)}
+                self._send(200 if out.get("ok") else 400, json.dumps(out), "application/json")
                 return
             elif path == "/api/practice":
                 # THE PRACTICE DESK: start it (a second TED on the next port, on the practice market) and hand back

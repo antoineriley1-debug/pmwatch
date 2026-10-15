@@ -14,13 +14,44 @@ document.getElementById("practiceBtn").addEventListener("click", async () => {
   const url = location.protocol + "//" + location.hostname + ":" + out.port + "/";
   const w = window.open(url, "ted-practice"); if (!w) toast("Open " + url + " in a new tab (the browser blocked the pop-up)", false);
   else if (!out.ready) toast("The practice desk is still coming up: give the new tab a few seconds", true); });
-document.getElementById("modeBtn").addEventListener("click", async () => {
-  const t = T(), toSim = t.mode !== "SIM";
-  if (t.mode === "LIVE" && !toSim) return;
-  const words = toSim ? "SIMULATION: orders fill on this desk against the live tape, nothing goes to IBKR. Flat first." : "PAPER: orders go to the IBKR paper account. Flat first.";
-  if (!confirm(words + "\n\nThis becomes the start mode next time TED opens.")) return;
-  const out = await post("/api/trade/mode", {mode: toSim ? "SIM" : "PAPER", remember: true});
-  toast(out.ok ? (out.mode === "SIM" ? "SIMULATION on: live data, orders stay on this desk. ARM to trade" : `${out.mode}: orders go to IBKR. ARM to trade`) : "Not switched: " + (out.reason || ""), out.ok); poll(true); });
+/* the SIM / PAPER menu: where orders go AND where the data comes from. PAPER and SIM on LIVE data switch on the spot;
+   the PRACTICE market and a RECORDED day restart TED on that feed (saved, so the next start opens there too) */
+async function modeMenu(){
+  let m = document.getElementById("modeMenu"); if (m){ m.remove(); return; }
+  const ds = await fetch("/api/datasource", {cache: "no-store"}).then(r => r.json()).catch(() => ({}));
+  const t = T(), cur = ds.source === "practice" || ds.source === "recorded" ? ds.source : (t.mode === "SIM" ? "live" : "paper");
+  const recs = (ds.recordings || []).map(r => `<option value="${esc(r.name)}" ${r.name === ds.sim_recording ? "selected" : ""}>${esc(r.name)} · ${r.size_mb} MB</option>`).join("");
+  m = document.createElement("div"); m.id = "modeMenu"; m.className = "pop modemenu";
+  const opt = (k, title, sub) => `<button data-src="${k}" class="${cur === k ? "on" : ""}"><b>${title}</b><span>${sub}</span></button>`;
+  m.innerHTML = `<div class="mmhd">ORDERS + DATA</div>`
+    + opt("paper", "PAPER", "IBKR's data · orders to the IBKR paper account")
+    + opt("live", "SIM · LIVE DATA", "IBKR's data · orders fill on this desk, nothing to IBKR")
+    + opt("practice", "SIM · PRACTICE MARKET", "the built-in market, moving any hour · no IBKR · TED restarts on it")
+    + opt("recorded", "SIM · RECORDED DAY", "a day you recorded, replayed in real time · TED restarts on it")
+    + `<select id="mmRec" ${recs ? "" : "disabled"}>${recs || `<option>no recordings yet</option>`}</select>`
+    + (ds.can_switch === false && (cur === "practice" || cur === "recorded") ? `<div class="mmnote">this desk was started on a fixed feed: close it and start TED normally to switch</div>` : "")
+    + `<div class="mmnote">Flat first. PRACTICE and RECORDED stay on until you pick PAPER or SIM · LIVE DATA here.</div>`;
+  document.body.appendChild(m);
+  const b = document.getElementById("modeBtn").getBoundingClientRect(); m.style.left = Math.max(8, b.left) + "px"; m.style.top = (b.bottom + 4) + "px";
+  m.addEventListener("click", async e => {
+    const x = e.target.closest("button[data-src]"); if (!x) return;
+    const src = x.dataset.src, held = ((state && state.account && state.account.positions) || []).length;
+    if (src === cur && src !== "recorded"){ m.remove(); return; }
+    if (held && !confirm("You hold a position. Switching leaves it where it is (PAPER positions stay at IBKR, SIM positions are dropped). Switch anyway?")) return;
+    const needsRestart = src === "practice" || src === "recorded" || cur === "practice" || cur === "recorded";
+    if (needsRestart){
+      const rec = src === "recorded" ? document.getElementById("mmRec").value : null;
+      const out = await post("/api/datasource", {source: src, recording: rec});
+      m.remove();
+      if (!out.ok){ toast("Not switched: " + (out.reason || ""), false); return; }
+      toast(`Switching to ${x.querySelector("b").textContent}: TED restarts, the page comes back by itself`, true);
+      setTimeout(() => location.reload(), 6000); return; }
+    const out = await post("/api/trade/mode", {mode: src === "live" ? "SIM" : "PAPER", remember: true});
+    m.remove();
+    toast(out.ok ? (out.mode === "SIM" ? "SIM on LIVE DATA: orders stay on this desk. ARM to trade" : `${out.mode}: orders go to IBKR. ARM to trade`) : "Not switched: " + (out.reason || ""), out.ok); poll(true); });
+}
+document.getElementById("modeBtn").addEventListener("click", e => { e.stopPropagation(); modeMenu(); });
+document.addEventListener("click", e => { const m = document.getElementById("modeMenu"); if (m && !e.target.closest("#modeMenu") && !e.target.closest("#modeBtn")) m.remove(); });
 document.getElementById("oneclick").addEventListener("change", e => post("/api/trade/oneclick", {on: e.target.checked}));
 document.getElementById("bracket").addEventListener("change", e => post("/api/trade/bracket", {on: e.target.checked}));
 document.getElementById("scale").addEventListener("change", e => post("/api/trade/scale", {on: e.target.checked}));

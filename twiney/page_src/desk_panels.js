@@ -2147,8 +2147,9 @@ function renderStatus(s){
   const pb = document.getElementById("practiceBtn");
   if (pb){ const demo = (s.connection || {}).state === "DEMO" || !!s.replay; if (pb.hidden !== demo) pb.hidden = demo; }   // the practice desk never offers itself
   const mb = document.getElementById("modeBtn");
-  if (mb){ const demo = (s.connection || {}).state === "DEMO"; const lbl = t.mode === "SIM" ? (demo ? "PRACTICE" : "SIM") : t.mode === "LIVE" ? "LIVE" : "PAPER";
-    if (mb.textContent !== lbl) mb.textContent = lbl; mb.className = t.mode === "SIM" ? "sim" : t.mode === "LIVE" ? "live" : "paper"; mb.disabled = demo || t.mode === "NONE"; }
+  if (mb){ const st = (s.connection || {}).state, demo = st === "DEMO", rp = !!s.replay;
+    const lbl = rp ? "SIM · RECORDED ▾" : demo ? "SIM · PRACTICE ▾" : t.mode === "SIM" ? "SIM · LIVE DATA ▾" : t.mode === "LIVE" ? "LIVE" : "PAPER ▾";
+    if (mb.textContent !== lbl) mb.textContent = lbl; mb.className = (t.mode === "SIM" || demo || rp) ? "sim" : t.mode === "LIVE" ? "live" : "paper"; mb.disabled = t.mode === "LIVE"; }
   const arm = document.getElementById("armBtn");
   // always visible: ARM / ARMED; LOCKED on a live account; on paper a lock is one click away from gone (UNLOCK)
   const paperLock = t.locked && !(t.mode === "LIVE" && t.allow_live);
@@ -2157,7 +2158,7 @@ function renderStatus(s){
   // the reason, in words, right beside the button — never only in a hover
   const why = document.getElementById("armWhy");
   if (why){ const acct = (t.accounts || []).filter(a => a && a !== "SIM").join(", ");
-    const who = `${t.mode === "SIM" ? ((s.connection || {}).state === "DEMO" ? "PRACTICE" : "SIMULATION · live data, nothing to IBKR") : t.mode === "NONE" ? "NO ACCOUNT YET" : t.mode}${acct ? " " + acct : ""}`;
+    const who = `${t.mode === "SIM" ? (s.replay ? "SIM · RECORDED DAY" : (s.connection || {}).state === "DEMO" ? "SIM · PRACTICE MARKET" : "SIM · LIVE DATA, nothing to IBKR") : t.mode === "NONE" ? "NO ACCOUNT YET" : t.mode}${acct ? " " + acct : ""}`;
     const txt = t.armed ? `${who} · orders go out`
       : paperLock ? `${who} · loss lock on — click UNLOCK`
       : t.can_trade ? `${who} · ← click ARM to trade`

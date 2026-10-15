@@ -40,6 +40,21 @@ over an SSH tunnel. Nothing on the VPS is exposed to the internet but SSH.
    and go to `http://127.0.0.1:8765` in the browser while that terminal stays open. On the phone, an SSH app that
    does port forwarding (Termius) does the same.
 
+## SIM and where its data comes from
+
+The button beside ARM opens a menu, ORDERS + DATA:
+
+| choice | data | orders | restart |
+|---|---|---|---|
+| PAPER | IBKR | the IBKR paper account | no |
+| SIM · LIVE DATA | IBKR | fill on the desk, nothing to IBKR | no |
+| SIM · PRACTICE MARKET | the built-in practice market, moving any hour | fill on the desk | yes |
+| SIM · RECORDED DAY | a recording you pick, replayed in real time | fill on the desk | yes |
+
+The pick is saved (`trading.start_mode`, `trading.sim_data`, `trading.sim_recording`), so the next start opens on it.
+PRACTICE and RECORDED do not talk to IBKR at all; the Gateway keeps running on its own service and the desk goes
+back to it when you pick PAPER or SIM · LIVE DATA. A desk started with `--demo` or `--replay` stays on that feed.
+
 ## The practice desk on the VPS
 
 The PRACTICE button on the live desk starts a second TED on the next port (8766) on the practice market and opens it

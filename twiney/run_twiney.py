@@ -60,6 +60,37 @@ def layout_file(args):
     return os.path.join(os.path.dirname(os.path.abspath(args.config)), "layout.json")
 
 
+SOURCE = [None]   # where this launch's data comes from when it was picked by SETTINGS: live | practice | recorded
+
+
+def _recording_path(cfg, name):
+    """A recording in the recordings folder by its name (never a path outside it)."""
+    if not name:
+        return None
+    base = os.path.basename(str(name))
+    path = os.path.join(_rec_dir(cfg), base)
+    return path if base.endswith(".jsonl") and os.path.isfile(path) else None
+
+
+def datasource_hook(cfg, config_path, restart):
+    """The SIM menu's DATA choice: saved in config.json (start mode + data + the recorded day), then TED restarts on it."""
+    def switch(source, recording=None):
+        from twiney import settings as _settings
+        source = str(source or "").lower()
+        if source not in ("paper", "live", "practice", "recorded"):
+            return {"ok": False, "reason": "PAPER, LIVE, PRACTICE or RECORDED"}
+        if source == "recorded" and not _recording_path(cfg, recording):
+            return {"ok": False, "reason": "pick a recording first"}
+        changes = {"trading.start_mode": "paper" if source == "paper" else "sim",
+                   "trading.sim_data": "live" if source == "paper" else source}
+        if source == "recorded":
+            changes["trading.sim_recording"] = os.path.basename(recording)
+        _settings.apply(cfg, config_path, changes)
+        threading.Timer(0.6, restart).start()
+        return {"ok": True, "source": source, "restarting": True}
+    return switch
+
+
 class PracticeLauncher:
     """THE PRACTICE DESK from the live desk: a second TED on the next port, on the practice market (synthetic tape,
     book and option flow, orders filled by the simulator), the same settings and plays. Started from the PRACTICE
@@ -249,6 +280,9 @@ def run_live(cfg, plays, args):
         desk.stop()
     practice = PracticeLauncher(args.config, int(cfg["dashboard"]["port"]) + 1)
     dash.hooks["practice"] = practice
+    if SOURCE[0]:
+        dash.hooks["datasource"] = datasource_hook(cfg, args.config, lambda: restart_process(stop_all))
+        dash.hooks["source"] = SOURCE[0]
 
     def stop_all():
         practice.stop()
@@ -414,6 +448,9 @@ def run_demo(cfg, plays, args):
     threading.Thread(target=loop, daemon=True).start()
     start_watchdog(lambda: trader)
     dash.hooks["restart"] = lambda: restart_process(lambda: (stop_evt.set(), dash.stop(), desk.stop()))
+    if SOURCE[0]:
+        dash.hooks["datasource"] = datasource_hook(cfg, args.config, dash.hooks["restart"])
+        dash.hooks["source"] = SOURCE[0]
     wait_forever(lambda: (stop_evt.set(), dash.stop(), desk.stop()))
     return 0
 
@@ -456,7 +493,12 @@ def run_replay(cfg, plays, args):
             if dash is None:
                 dash = Dashboard(ref, cfg["dashboard"]["host"], cfg["dashboard"]["port"],
                                  clock=lambda: box["engine"].last_t, trader=None, rec_dir=_rec_dir(cfg),
-                                 layout_path=layout_file(args)).start()
+                                 layout_path=layout_file(args), config_path=args.config).start()
+                if SOURCE[0]:
+                    _d = dash
+                    dash.hooks["restart"] = lambda: restart_process(lambda: _d.stop())
+                    dash.hooks["datasource"] = datasource_hook(cfg, args.config, dash.hooks["restart"])
+                    dash.hooks["source"] = SOURCE[0]
                 open_dashboard(dash, cfg, args)
             dash.trader = engine.trader
             if not control.get("_watchdog"):
@@ -546,6 +588,27 @@ def main(argv=None):
             return run_replay(cfg, plays, args)
         cfg = load_config(args.config)
         if args.port: cfg["dashboard"]["port"] = args.port
+        # SIM on the practice market or a recorded day (SETTINGS, or the SIM menu on the desk): this launch runs that
+        # feed instead of IBKR. The command line never changes, so a restart reads the setting again
+        tc = cfg.get("trading") or {}
+        src = str(tc.get("sim_data") or "live").lower() if str(tc.get("start_mode") or "paper").lower() == "sim" else "live"
+        if src == "practice":
+            print("SIM on the PRACTICE MARKET (SETTINGS > Trading > SIM data): no IBKR this session", flush=True)
+            SOURCE[0] = "practice"
+            plays = load_plays(args.plays)
+            CLEANED[0] = clean_chart(plays, {"trading": {"clean_chart_on_start": True}})
+            for p in plays:
+                p["extra_levels"], p["sneaky_levels"], p["zones"] = [], [], []
+            return run_demo(cfg, plays, args)
+        if src == "recorded":
+            path = _recording_path(cfg, tc.get("sim_recording"))
+            if path:
+                print(f"SIM on a RECORDED DAY: {os.path.basename(path)} replayed in real time (no IBKR this session)", flush=True)
+                SOURCE[0] = "recorded"
+                args.replay, args.speed = path, 1.0
+                return run_replay(cfg, None, args)
+            print("SIM recorded day: no recording picked or the file is missing: starting on LIVE data", flush=True)
+        SOURCE[0] = "live"
         plays = load_plays(args.plays)
         CLEANED[0] = clean_chart(plays, cfg, args.plays)
         return run_live(cfg, plays, args)

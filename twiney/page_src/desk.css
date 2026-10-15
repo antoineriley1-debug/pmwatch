@@ -1333,3 +1333,11 @@ body.whitedesk .chart-wrap canvas,body.whitedesk img,body.whitedesk video{filter
 .tstrips .tspeed{height:44px;box-sizing:border-box;overflow:hidden;position:static}
 .tstrips .tph{background:#0b0f16;border-bottom:1px solid var(--line)}
 .qs .tfsel{font:700 11px var(--mono);height:18px;padding:0 4px;background:#141a24;color:#ffd866;border:1px solid var(--line);border-radius:3px}
+
+/* the SIM / PAPER menu */
+.modemenu{position:fixed;z-index:300;display:flex;flex-direction:column;gap:3px;padding:6px;min-width:300px;background:#12161d;border:1px solid var(--line);box-shadow:0 6px 18px rgba(0,0,0,.55)}
+.modemenu .mmhd{font:800 9px var(--sans);letter-spacing:.12em;color:#7d8590;padding:0 2px 2px}
+.modemenu button{display:flex;flex-direction:column;align-items:flex-start;text-align:left;padding:4px 8px;height:auto;line-height:1.25}
+.modemenu button b{font:800 11px var(--sans);letter-spacing:.05em} .modemenu button span{font:10px var(--sans);color:#9fb0c3;text-transform:none;letter-spacing:0}
+.modemenu button.on{border-color:var(--gold);background:#2b2512} .modemenu button.on b{color:#ffd866}
+.modemenu select{font:10.5px var(--mono);margin:0 0 2px 8px} .modemenu .mmnote{font:10px var(--sans);color:#7d8590;padding:2px}
