@@ -226,7 +226,28 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                 pass
             return out
 
+        def _relay_update(self, method, body):
+            """The practice desk's UPDATE: asked of the live desk on this machine, with the same sign-in."""
+            import urllib.request
+            qs = urlparse(self.path).query
+            req = urllib.request.Request(hooks["update_relay"] + "/api/update" + ("?" + qs if qs else ""), method=method,
+                                         data=json.dumps(body or {}).encode() if method == "POST" else None,
+                                         headers={"Cookie": self.headers.get("Cookie") or "", "Content-Type": "application/json"})
+            try:
+                with urllib.request.urlopen(req, timeout=20) as r:
+                    code, data = r.status, r.read()
+            except urllib.error.HTTPError as e:
+                code, data = e.code, e.read()
+                if code == 401:                  # signed out over there: say so here, never send this page to sign in
+                    code, data = 200, json.dumps({"ok": False, "enabled": False, "reason": "sign in on the live desk to update"}).encode()
+            except Exception as e:
+                code, data = 200, json.dumps({"ok": False, "enabled": False, "reason": f"the live desk did not answer ({e})"}).encode()
+            self._send(code, data, "application/json")
+
         def _update(self, body):
+            if hooks.get("update_relay") and not hooks.get("update"):
+                self._relay_update("POST", body)
+                return
             up = hooks.get("update")
             if up is None or not up.enabled():
                 self._send(400, json.dumps({"ok": False, "reason": "updating from the desk works on the VPS install only"}), "application/json")
@@ -308,6 +329,9 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                         self._send(200, fh.read(), "text/html; charset=utf-8")
                 except OSError:
                     self._send(404, "the show page is not built: python page_src/build_page.py", "text/plain")
+                return
+            if path == "/api/update" and hooks.get("update_relay") and not hooks.get("update"):
+                self._relay_update("GET", None)
                 return
             if path == "/api/update":
                 up = hooks.get("update")

@@ -85,7 +85,11 @@ contract menu:
 
 ## UPDATE (the VPS)
 
-When a newer build is on GitHub, an orange **UPDATE · build** button shows in the header. Click it and confirm: TED
+The button is always in the header on the server: grey **UP TO DATE** when you have the newest build (click it to check
+GitHub again), orange **UPDATE · build** when a newer one is out. The PRACTICE desk has it too: it asks the live desk,
+which installs the build and restarts both (the practice desk comes back by itself).
+
+When a newer build is on GitHub, the orange **UPDATE · build** button shows in the header. Click it and confirm: TED
 downloads the build, checks that it starts, swaps it in and restarts (about 20 seconds), and the page comes back by
 itself. Your settings, keys, plays, layouts and password stay. It refuses while you hold shares or contracts or have
 working orders ("close out first"). The previous build is kept as `/opt/ted/app.prev` for a rollback by hand.
@@ -111,3 +115,15 @@ choice and every other dropdown on the desk. The panel catches up the moment you
 When you hold a position, every story line reads the market from your side. In a short you hear about demand under
 you, never "supply to supply" over you. The Daily and the last break no longer talk over the trade. The 2nd-entry
 watch and FLOW WATCH for a play on the other side stay quiet while you are in the trade.
+
+## Time & Sales, OPTION FLOW, the CANDLE ladder, the chart wheel
+
+- **T&S** gets the last 150 prints (it used to get 14): pull the window taller and it fills. SETTINGS › Time & Sales ›
+  rows sent.
+- **OPTION FLOW** text is smaller, with tighter rows, so more prints fit.
+- **The CANDLE on the Level II** is the chart's candle, number for number (checked against the chart: same open, high,
+  low and close). Green while the last price is at or over the candle's open, red under it; the body runs from the open
+  to the last price. When the candle runs past the rows on the ladder, the top or bottom row of the candle column says
+  where it goes (▲ O 200.54 · H 200.56), so a column that is all one colour still reads as a candle.
+- **The chart's mouse wheel** zooms smoothly around the mouse and re-fits the prices every time, so nothing goes off the
+  top or bottom; a trackpad zooms a little at a time.

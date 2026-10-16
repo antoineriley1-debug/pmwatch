@@ -122,6 +122,7 @@ DEFAULTS = {
         "control_ratio": 0.65,
         "large_print_shares": 5000,
         "keep_prints": 200,
+        "rows_sent": 150,               # prints sent to T&S: pull the window taller and it fills
         # the BIG TAPE: a second time & sales filtered to large orders and position builders
         "big_tape_shares": 10000,       # a print this big (shares) makes the big tape
         "big_tape_dollars": 1000000,    # ... or this much money in one print (a block)

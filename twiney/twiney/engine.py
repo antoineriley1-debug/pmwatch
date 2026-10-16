@@ -5683,7 +5683,7 @@ class Engine:
                     "ladder": self._memory_ladder(st, t, user_levels),
                     "recent": [{"age": round(t - p["t"], 1), "price": fmt_price(p["price"]), "size": round(p["size"]),
                                 "side": p["side"], "large": p["large"], "exchange": p["exchange"], "at": at_level(p["price"])}
-                               for p in st.tape.recent(14)],
+                               for p in st.tape.recent(int(self.cfg["tape"].get("rows_sent", 150)))],
                     "bar": bar}
 
     def stream_ver(self, sym):
@@ -5773,7 +5773,7 @@ class Engine:
                 {"age": round(t - p["t"], 1), "price": fmt_price(p["price"]), "size": round(p["size"]),
                  "side": p["side"], "large": p["large"], "exchange": p["exchange"], "at": at_level(p["price"]),
                  "kid": bool(kids_ and p["side"] == kids_["side"].lower() and int(p["size"]) in kids_["sizes_set"] and p["t"] >= kids_["t0"])}
-                for p in st.tape.recent(14)]),
+                for p in st.tape.recent(int(self.cfg["tape"].get("rows_sent", 150)))]),
             "levels": levels,
             "trap": trap,
             "reloaders": reloaders,

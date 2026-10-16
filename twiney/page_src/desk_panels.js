@@ -2186,12 +2186,16 @@ document.getElementById("signOutBtn").addEventListener("click", () => signOut(fa
 /* UPDATE (the VPS): a newer build on GitHub lights this button; one click installs it and TED restarts */
 async function updCheck(force){
   try { const j = await (await fetch("/api/update" + (force ? "?force=1" : ""), {cache: "no-store"})).json(); const b = document.getElementById("updBtn");
-    b.hidden = !(j.enabled && (j.newer || j.state === "downloading" || j.state === "installing" || j.state === "restarting"));
-    b.textContent = j.state === "downloading" || j.state === "installing" ? "UPDATING…" : j.state === "restarting" ? "RESTARTING…" : `UPDATE · ${j.latest || ""}`;
+    // always on the header when TED can update itself: orange with the new build when one is out, grey "UP TO DATE" when not
+    const busy = j.state === "downloading" || j.state === "installing" || j.state === "restarting";
+    b.hidden = !j.enabled; b.classList.toggle("current", !(j.newer || busy)); b.dataset.newer = j.newer ? "1" : "";
+    b.textContent = j.state === "downloading" || j.state === "installing" ? "UPDATING…" : j.state === "restarting" ? "RESTARTING…" : j.newer ? `UPDATE · ${j.latest || ""}` : "UP TO DATE";
+    b.title = j.newer ? "a newer TED build is out: click to install it (TED restarts in about 20 seconds; waits until you are flat)" : "this is the newest TED build. Click to check GitHub again";
     b.dataset.latest = j.latest || ""; return j; } catch (e) { return null; }
 }
 document.getElementById("updBtn").addEventListener("click", async () => {
   const b = document.getElementById("updBtn");
+  if (!b.dataset.newer){ b.textContent = "CHECKING…"; const j = await updCheck(true); toast(j && j.newer ? `New build ${j.latest} is out: click UPDATE` : "TED is up to date", true); return; }
   if (!confirm(`Install TED build ${b.dataset.latest}?\n\nTED restarts (about 20 seconds); the page comes back by itself. Your settings, keys, plays and layouts stay.`)) return;
   const out = await post("/api/update", {});
   if (!out.ok){ toast(out.reason || "Update refused", false); return; }

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261016-0526">
+<meta name="build" content="20261016-0623">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script>(function(){const f=window.fetch.bind(window);window.fetch=async function(){const r=await f.apply(null,arguments);if(r.status===401&&!window._tedOut){window._tedOut=1;location.replace("/login?next="+encodeURIComponent(location.pathname));}return r;};})();</script>
@@ -1479,6 +1479,7 @@ body.whitedesk .chart-wrap canvas,body.whitedesk img,body.whitedesk video{filter
 .lad.candle tr.c-high td.cdl i.wk::before{top:0}.lad.candle tr.c-low td.cdl i.wk::after{bottom:0}
 .lad.candle td.cdl em.hl{position:absolute;right:1px;top:1px;font:700 8px/1 var(--mono);color:var(--cc);font-style:normal}
 .lad.candle td.cdl em.hl.l{top:auto;bottom:1px}
+.lad.candle td.cdl em.hl.off{left:0;right:0;top:0;bottom:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.72);color:#fff;font:700 8px/1 var(--mono);white-space:nowrap;overflow:hidden;z-index:2}
 .lad.candle th.cdl i.oc.h,.lad.candle th.cdl i.oc.l{opacity:.8}.lad.candle th.cdl i.oc.r{opacity:.7}
 
 /* THE DESK SCORE */
@@ -1670,6 +1671,7 @@ body.whitedesk .chart-wrap canvas,body.whitedesk img,body.whitedesk video{filter
 .simple .tprow input{width:64px} .simple .tprow .go{font-weight:700}
 .cmenu.copt > .lvl2:not(.heldopt){display:none}      /* contract mode: the share setup grid steps aside */
 #updBtn{background:#e3a83a;color:#111;font-weight:800;letter-spacing:.08em;border-color:#e3a83a} #updBtn[hidden]{display:none}
+#updBtn.current{background:transparent;color:var(--dim,#8e9096);border-color:var(--line,#2c2e33);font-weight:700}
 .qs .qclr,.qs .qflat{font:700 10.5px var(--mono);height:18px;padding:0 7px;letter-spacing:.06em}
 .qs .qflat,.simple .mgr .flat{color:#ff8a80;border-color:#7a2a2a} .qs .qclr,.simple .mgr .clr{color:#b0b0ad}
 
@@ -1833,7 +1835,11 @@ input:focus,select:focus,textarea:focus{outline:1px solid var(--gold);outline-of
 
 .wlrow .gw{display:inline-flex;align-items:center;gap:3px;justify-self:end}
 .pnl.fa{container-type:inline-size}
-@container (max-width: 420px){ .fl .cols{gap:2px 9px;font-size:11.5px} .fl{padding:7px 10px 9px} .fa-sub{gap:8px} }
+/* smaller flow text (Twiney): more prints on screen, same layout */
+.fl{padding:5px 10px 6px} .fl .tm{font-size:9.5px;margin-bottom:3px} .fl .top{gap:9px}
+.fl .tk{font-size:10.5px;padding:1px 7px;min-width:30px} .fl .prem{font-size:12.5px}
+.fl .cols{gap:1px 11px;margin-top:5px;font-size:10.5px} .fl .cols i{font-size:7.5px;margin-bottom:1px}
+@container (max-width: 420px){ .fl .cols{gap:1px 8px;font-size:10px} .fl{padding:5px 8px 6px} .fa-sub{gap:8px} }
 
 .fa-sub .fsw{background:#0f1522;border:1px solid #2a3344;border-radius:10px;color:#8b95a7;font:600 9.5px "IBM Plex Sans","Segoe UI",sans-serif;letter-spacing:.08em;padding:1px 8px;height:18px;text-transform:none}
 .fa-sub .fsw b{color:#8b95a7;margin-left:3px} .fa-sub .fsw.on{border-color:#17a86a;color:#e6e9ef} .fa-sub .fsw.on b{color:#2ec27e}
@@ -2400,14 +2406,17 @@ function wireChart(p, cv, v, saveView, isFoot){
     } else if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)){   // shift+wheel or trackpad sideways: pan
       const d = (e.deltaX || e.deltaY) / v.cw;
       v.offset = Math.max(minOff(), v.offset - d); v.follow = v.offset < 0.5; v.rightT = null;
+      v.yLo = v.yHi = null;                      // the prices re-fit to what is on screen: nothing slides off the top or bottom
     } else {                                     // zoom, keeping the bar under the cursor where it is
-      const f = e.deltaY > 0 ? 1 / 1.2 : 1.2;
+      // smooth: a notch of a mouse wheel is ~18%, a trackpad's small steps zoom a little at a time
+      const dy = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY, f = Math.exp(-Math.max(-300, Math.min(300, dy)) * 0.0017);
+      v.yLo = v.yHi = null;                      // the prices re-fit to what is on screen: nothing slides off the top or bottom
       const plotW = r.width - 86, barsRight = (plotW - x) / v.cw;   // bars between cursor and right edge
       v.cw = Math.max(isFoot ? 34 : 2, Math.min(isFoot ? 120 : 60, v.cw * f));
       v.offset = Math.max(minOff(), v.offset + barsRight - (plotW - x) / v.cw);
       v.follow = v.offset < 0.5; v.rightT = null;
     }
-    saveView(); drawChart(p);
+    saveView(); if (!v._wraf) v._wraf = requestAnimationFrame(() => { v._wraf = 0; drawChart(p); });   // one draw per frame
   }, {passive: false});
   // the line under a price: one of your level lines (stop, target, 2nd entry, pivot, a level) or a working order.
   // tol = how many pixels away still counts
@@ -3110,13 +3119,19 @@ function ladderCandleHTML(L){
   if (!c) return h.replace(/(<tr class="[^"]*" data-price="[^"]+"[^>]*>)/g, '$1<td class="cdl"></td>');
   const up = c.last >= c.open, bLo = Math.min(c.open, c.last), bHi = Math.max(c.open, c.last);
   const pUp = c.prev ? c.prev.close >= c.prev.open : null, pLo = c.prev ? Math.min(c.prev.open, c.prev.close) : null, pHi = c.prev ? Math.max(c.prev.open, c.prev.close) : null;
+  // the candle runs past the rows on screen: the top / bottom row says where its open, high or low is, so a column that
+  // is all one colour still reads as a candle (open above: a red body running up off the ladder)
+  const ps = L.rows.map(r => +r.price), topP = Math.max(...ps), botP = Math.min(...ps);
+  const offTop = [c.open > topP + half ? `O ${px(c.open)}` : "", c.high > topP + half && c.high !== c.open ? `H ${px(c.high)}` : ""].filter(Boolean).join(" · ");
+  const offBot = [c.open < botP - half ? `O ${px(c.open)}` : "", c.low < botP - half && c.low !== c.open ? `L ${px(c.low)}` : ""].filter(Boolean).join(" · ");
   return h.replace(/<tr class="([^"]*)" data-price="([^"]+)"([^>]*)>/g, (m, cls, p, rest) => {
     const q = +p, k = [up ? "c-up" : "c-dn"];
     if (q >= bLo - half && q <= bHi + half) k.push("cb"); else if (q >= c.low - half && q <= c.high + half) k.push("cw");
     if (Math.abs(q - c.open) <= half) k.push("c-open"); if (Math.abs(q - c.last) <= half) k.push("c-last");
     if (Math.abs(q - c.high) <= half) k.push("c-high"); if (Math.abs(q - c.low) <= half) k.push("c-low");
     if (c.prev){ k.push(pUp ? "p-up" : "p-dn"); if (q >= pLo - half && q <= pHi + half) k.push("pb"); else if (q >= c.prev.low - half && q <= c.prev.high + half) k.push("pw"); }
-    const hl = k.includes("c-high") ? `<em class="hl h" title="the candle's high">H</em>` : k.includes("c-low") ? `<em class="hl l" title="the candle's low">L</em>` : "";
+    const off = Math.abs(q - topP) <= half && offTop ? `<em class="hl off up" title="the candle carries on above the ladder">▲ ${offTop}</em>` : Math.abs(q - botP) <= half && offBot ? `<em class="hl off dn" title="the candle carries on below the ladder">▼ ${offBot}</em>` : "";
+    const hl = off || (k.includes("c-high") ? `<em class="hl h" title="the candle's high">H</em>` : k.includes("c-low") ? `<em class="hl l" title="the candle's low">L</em>` : "");
     return `<tr class="${cls} ${k.join(" ")}" data-price="${p}"${rest}><td class="cdl"><i class="pg"></i><i class="wk"></i><i class="bd"></i>${hl}</td>`;
   });
 }
@@ -7272,12 +7287,16 @@ document.getElementById("signOutBtn").addEventListener("click", () => signOut(fa
 /* UPDATE (the VPS): a newer build on GitHub lights this button; one click installs it and TED restarts */
 async function updCheck(force){
   try { const j = await (await fetch("/api/update" + (force ? "?force=1" : ""), {cache: "no-store"})).json(); const b = document.getElementById("updBtn");
-    b.hidden = !(j.enabled && (j.newer || j.state === "downloading" || j.state === "installing" || j.state === "restarting"));
-    b.textContent = j.state === "downloading" || j.state === "installing" ? "UPDATING…" : j.state === "restarting" ? "RESTARTING…" : `UPDATE · ${j.latest || ""}`;
+    // always on the header when TED can update itself: orange with the new build when one is out, grey "UP TO DATE" when not
+    const busy = j.state === "downloading" || j.state === "installing" || j.state === "restarting";
+    b.hidden = !j.enabled; b.classList.toggle("current", !(j.newer || busy)); b.dataset.newer = j.newer ? "1" : "";
+    b.textContent = j.state === "downloading" || j.state === "installing" ? "UPDATING…" : j.state === "restarting" ? "RESTARTING…" : j.newer ? `UPDATE · ${j.latest || ""}` : "UP TO DATE";
+    b.title = j.newer ? "a newer TED build is out: click to install it (TED restarts in about 20 seconds; waits until you are flat)" : "this is the newest TED build. Click to check GitHub again";
     b.dataset.latest = j.latest || ""; return j; } catch (e) { return null; }
 }
 document.getElementById("updBtn").addEventListener("click", async () => {
   const b = document.getElementById("updBtn");
+  if (!b.dataset.newer){ b.textContent = "CHECKING…"; const j = await updCheck(true); toast(j && j.newer ? `New build ${j.latest} is out: click UPDATE` : "TED is up to date", true); return; }
   if (!confirm(`Install TED build ${b.dataset.latest}?\n\nTED restarts (about 20 seconds); the page comes back by itself. Your settings, keys, plays and layouts stay.`)) return;
   const out = await post("/api/update", {});
   if (!out.ok){ toast(out.reason || "Update refused", false); return; }

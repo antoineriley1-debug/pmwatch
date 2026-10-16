@@ -1,46 +1,48 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>TED · SHOW</title>
-<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;600;700&family=Barlow+Condensed:wght@500;600;700;800&family=Barlow:wght@500;600;700&family=Barlow+Semi+Condensed:wght@600;700&family=Oswald:wght@500;600;700&family=Roboto:wght@500;700&family=Roboto+Condensed:wght@600;700&display=swap" rel="stylesheet">
 <style>
 /* THE SHOW: the broadcast screen. The STAGE is a fixed canvas (16:9 1920x1080, 9:16 1080x1920 or 1:1 1080x1080) scaled
    to fit; everything outside it (the control dock) is for you, never for the viewers. ?clean=1 shows the stage only. */
-:root{--bg:#070b16;--panel:#0d1426;--panel2:#121b33;--line:#22304f;--ink:#eef2fa;--dim:#8a96b3;--acc:#e0242f;--acc2:#1f6fff;--gold:#f2c14e;
+:root{--fH:"Barlow Condensed","Arial Narrow",Arial,sans-serif;--fB:"Barlow",Arial,sans-serif;--fN:"Barlow Semi Condensed","Arial Narrow",Arial,sans-serif;--bg:#070b16;--panel:#0d1426;--panel2:#121b33;--line:#22304f;--ink:#eef2fa;--dim:#8a96b3;--acc:#e0242f;--acc2:#1f6fff;--gold:#f2c14e;
   --up:#21c07a;--dn:#ff4d5e;--brand:#e0242f;--brand2:#0a1f4d;--chart:#0a1020;--grid:#16213d}
 body.theme-desk{--bg:#0b0b0c;--panel:#131416;--panel2:#1a1b1e;--line:#2c2e33;--ink:#e6e6e3;--dim:#8e9096;--acc:#e3a83a;--acc2:#5aa9d6;--gold:#e3a83a;--brand:#e3a83a;--brand2:#1a1b1e;--chart:#0e0f11;--grid:#1c1d20}
 body.theme-neon{--bg:#05040a;--panel:#0d0b18;--panel2:#141126;--line:#2a2350;--ink:#f3f0ff;--dim:#9a90c8;--acc:#ff2bd6;--acc2:#19e3ff;--gold:#ffe14d;--brand:#ff2bd6;--brand2:#1a0f3a;--chart:#07060f;--grid:#18142e}
 body.theme-paper{--bg:#e9edf3;--panel:#ffffff;--panel2:#f3f6fb;--line:#c9d2e3;--ink:#0d1526;--dim:#5b6782;--acc:#d71f2b;--acc2:#1f5fd6;--gold:#b77b00;--brand:#d71f2b;--brand2:#0d1f45;--chart:#ffffff;--grid:#e6ebf4;--up:#0c9a5d;--dn:#d6283a}
 *{box-sizing:border-box}
-html,body{margin:0;height:100%;background:#000;color:var(--ink);font-family:"IBM Plex Sans",system-ui,sans-serif;overflow:hidden}
+html,body{margin:0;height:100%;background:#000;color:var(--ink);font-family:var(--fB);overflow:hidden}
 #wrap{position:fixed;inset:0;right:330px;display:flex;align-items:center;justify-content:center;background:#000}
 body.clean #wrap{right:0} body.dockoff #wrap{right:0}
-#stage{position:relative;transform-origin:center center;background:var(--bg);overflow:hidden;flex:0 0 auto}
-.mono{font-family:"IBM Plex Mono",monospace}
+body.font-classic{--fH:"IBM Plex Sans Condensed","Arial Narrow",Arial,sans-serif;--fB:"IBM Plex Sans",Arial,sans-serif;--fN:"IBM Plex Mono",Consolas,monospace}
+body.font-bold{--fH:"Oswald","Arial Narrow",Arial,sans-serif;--fB:"Roboto",Arial,sans-serif;--fN:"Roboto Condensed","Arial Narrow",Arial,sans-serif}
+#stage{font-variant-numeric:tabular-nums;font-feature-settings:"tnum";position:relative;transform-origin:center center;background:var(--bg);overflow:hidden;flex:0 0 auto}
+.mono{font-family:var(--fN)}
 /* top bar */
 #top{position:absolute;left:0;right:0;top:0;height:86px;display:flex;align-items:stretch;background:linear-gradient(90deg,var(--brand2),var(--panel) 60%);border-bottom:3px solid var(--brand);z-index:5}
-#bug{display:flex;align-items:center;gap:14px;padding:0 26px;background:var(--brand);color:#fff;font:700 34px "IBM Plex Sans Condensed",sans-serif;letter-spacing:.06em;white-space:nowrap}
+#bug{display:flex;align-items:center;gap:14px;padding:0 26px;background:var(--brand);color:#fff;font:700 34px var(--fH);letter-spacing:.06em;white-space:nowrap}
 body.theme-desk #bug{color:#111}
 #bug .dot{width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 0 0 0 rgba(255,255,255,.7);animation:pulse 1.6s infinite}
 body.theme-desk #bug .dot{background:#d9534f}
 @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(255,255,255,.7)}70%{box-shadow:0 0 0 14px rgba(255,255,255,0)}100%{box-shadow:0 0 0 0 rgba(255,255,255,0)}}
 #seg{flex:1;display:flex;flex-direction:column;justify-content:center;padding:0 26px;min-width:0}
-#seg b{font:700 32px "IBM Plex Sans Condensed",sans-serif;letter-spacing:.05em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#seg span{color:var(--dim);font:600 18px "IBM Plex Sans",sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#seg b{font:700 32px var(--fH);letter-spacing:.05em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#seg span{color:var(--dim);font:600 18px var(--fB);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #clock{display:flex;flex-direction:column;justify-content:center;align-items:flex-end;padding:0 26px;border-left:1px solid var(--line)}
-#clock b{font:700 34px "IBM Plex Mono",monospace}
-#clock span{font:700 16px "IBM Plex Mono",monospace;letter-spacing:.12em;color:var(--gold)}
+#clock b{font:700 34px var(--fN)}
+#clock span{font:700 16px var(--fN);letter-spacing:.12em;color:var(--gold)}
 /* body */
 #body{position:absolute;left:0;right:0;top:86px;bottom:150px;display:flex}
 #rail{width:330px;flex:0 0 auto;background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
-#rail h3{margin:0;padding:14px 18px;font:700 20px "IBM Plex Sans Condensed",sans-serif;letter-spacing:.12em;color:var(--dim);border-bottom:1px solid var(--line);display:flex;justify-content:space-between}
+#rail h3{margin:0;padding:14px 18px;font:700 20px var(--fH);letter-spacing:.12em;color:var(--dim);border-bottom:1px solid var(--line);display:flex;justify-content:space-between}
 #rail h3 i{font-style:normal;color:var(--acc2);cursor:pointer}
 #wl{flex:1;overflow:hidden}
 .wr{display:grid;grid-template-columns:1fr auto;gap:2px 8px;padding:12px 18px;border-bottom:1px solid var(--line);cursor:pointer}
 .wr:hover{background:var(--panel2)} .wr.on{background:var(--panel2);box-shadow:inset 5px 0 0 var(--brand)}
-.wr b{font:700 26px "IBM Plex Sans Condensed",sans-serif;letter-spacing:.03em}
-.wr .px{font:600 24px "IBM Plex Mono",monospace;text-align:right}
-.wr .sub{color:var(--dim);font:600 15px "IBM Plex Mono",monospace}
-.wr .ch{font:700 17px "IBM Plex Mono",monospace;text-align:right}
+.wr b{font:700 26px var(--fH);letter-spacing:.03em}
+.wr .px{font:600 24px var(--fN);text-align:right}
+.wr .sub{color:var(--dim);font:600 15px var(--fN)}
+.wr .ch{font:700 17px var(--fN);text-align:right}
 .up{color:var(--up)} .dn{color:var(--dn)}
 #grid{flex:1;display:grid;gap:10px;padding:10px;min-width:0;min-height:0}
 #grid.g1{grid-template-columns:1fr;grid-template-rows:1fr}
@@ -50,11 +52,11 @@ body.theme-desk #bug .dot{background:#d9534f}
 .cell{position:relative;background:var(--chart);border:2px solid var(--line);border-radius:8px;overflow:hidden;min-height:0;display:flex;flex-direction:column}
 .cell.focus{border-color:var(--brand)}
 .ch-h{display:flex;align-items:baseline;gap:16px;padding:10px 16px 6px;flex:0 0 auto}
-.ch-h .s{font:700 40px "IBM Plex Sans Condensed",sans-serif;letter-spacing:.03em}
-.ch-h .p{font:700 34px "IBM Plex Mono",monospace}
-.ch-h .c{font:700 24px "IBM Plex Mono",monospace}
-.ch-h .tf{margin-left:auto;font:700 18px "IBM Plex Mono",monospace;color:var(--dim);letter-spacing:.08em}
-.ch-h .st{font:600 17px "IBM Plex Sans",sans-serif;color:var(--gold);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:45%}
+.ch-h .s{font:700 40px var(--fH);letter-spacing:.03em}
+.ch-h .p{font:700 34px var(--fN)}
+.ch-h .c{font:700 24px var(--fN)}
+.ch-h .tf{margin-left:auto;font:700 18px var(--fN);color:var(--dim);letter-spacing:.08em}
+.ch-h .st{font:600 17px var(--fB);color:var(--gold);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:45%}
 .cv{position:relative;flex:1;min-height:0}
 .cv canvas{position:absolute;inset:0;width:100%;height:100%}
 .cv canvas.draw{cursor:crosshair}
@@ -62,68 +64,81 @@ body.theme-desk #bug .dot{background:#d9534f}
 /* lower third + crawl */
 #lower{position:absolute;left:28px;right:28px;bottom:62px;height:82px;display:flex;align-items:stretch;z-index:6;transform:translateY(0);transition:transform .45s cubic-bezier(.2,.8,.2,1),opacity .35s}
 #lower.off{transform:translateY(140px);opacity:0}
-#lower .tag{background:var(--brand);color:#fff;font:700 26px "IBM Plex Sans Condensed",sans-serif;letter-spacing:.1em;display:flex;align-items:center;padding:0 22px;white-space:nowrap}
+#lower .tag{background:var(--brand);color:#fff;font:700 26px var(--fH);letter-spacing:.1em;display:flex;align-items:center;padding:0 22px;white-space:nowrap}
 body.theme-desk #lower .tag{color:#111}
 #lower .txt{flex:1;background:rgba(10,15,30,.92);border-top:3px solid var(--brand);display:flex;flex-direction:column;justify-content:center;padding:0 22px;min-width:0}
 body.theme-paper #lower .txt{background:rgba(255,255,255,.95)}
-#lower .txt b{font:700 30px "IBM Plex Sans Condensed",sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#lower .txt span{font:600 19px "IBM Plex Sans",sans-serif;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#lower .txt b{font:700 30px var(--fH);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#lower .txt span{font:600 19px var(--fB);color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #crawl{position:absolute;left:0;right:0;bottom:0;height:54px;background:var(--panel);border-top:2px solid var(--line);display:flex;align-items:center;overflow:hidden;z-index:6}
-#crawl .lab{flex:0 0 auto;height:100%;display:flex;align-items:center;padding:0 18px;background:var(--brand2);font:700 20px "IBM Plex Sans Condensed",sans-serif;letter-spacing:.14em;color:var(--gold);z-index:2}
-#crawl .track{display:flex;gap:46px;white-space:nowrap;font:700 22px "IBM Plex Mono",monospace;padding-left:40px;animation:crawl var(--crawl,60s) linear infinite}
+#crawl .lab{flex:0 0 auto;height:100%;display:flex;align-items:center;padding:0 18px;background:var(--brand2);font:700 20px var(--fH);letter-spacing:.14em;color:var(--gold);z-index:2}
+#crawl .track{display:flex;gap:46px;white-space:nowrap;font:700 22px var(--fN);padding-left:40px;animation:crawl var(--crawl,60s) linear infinite}
 @keyframes crawl{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 #crawl .track i{font-style:normal;color:var(--dim);margin-right:8px}
-#crawl .track .mine{color:var(--gold);font-family:"IBM Plex Sans","Arial",sans-serif;font-weight:700}
+#crawl .track .mine{color:var(--gold);font-family:var(--fB);font-weight:700}
 /* the black data box (eSignal's OK box, the desk's): bar values at the cursor; ▴ / ▾ shows or folds every line's value */
 .dwin{position:absolute;left:10px;top:10px;z-index:3;width:250px;background:#000;border:1px solid #444;color:#fff;font:500 16px/1.3 "Segoe UI",Arial,sans-serif;cursor:move;user-select:none;box-shadow:0 6px 18px rgba(0,0,0,.5)}
 .dwin.off{display:none}
 .dwin .ok{background:#00ff00;color:#000;text-align:center;font-weight:800;font-size:14px;line-height:20px;border-bottom:1px solid #063;position:relative}
-.dwin .ok .mn{position:absolute;right:4px;top:1px;background:#000;color:#0f0;border-radius:3px;padding:0 6px;font:800 13px/18px "IBM Plex Mono",Consolas,monospace;cursor:pointer}
+.dwin .ok .mn{position:absolute;right:4px;top:1px;background:#000;color:#0f0;border-radius:3px;padding:0 6px;font:800 13px/18px var(--fN);cursor:pointer}
 .dwin .kv,.dwin .r{display:flex;justify-content:space-between;padding:0 7px;line-height:21px;white-space:nowrap;gap:10px}
 .dwin .kv span:first-child{color:#ddd} .dwin .kv span:last-child{font-weight:700}
 .dwin .r{font-weight:700;font-size:15px}
 /* breaking */
 #breaking{position:absolute;left:0;right:0;bottom:150px;height:74px;display:flex;z-index:8;transform:translateX(-105%);transition:transform .5s cubic-bezier(.2,.8,.2,1)}
 #breaking.on{transform:translateX(0)}
-#breaking .b1{background:#c8102e;color:#fff;font:700 32px "IBM Plex Sans Condensed",sans-serif;letter-spacing:.12em;display:flex;align-items:center;padding:0 26px;animation:flash 1s steps(2) 3}
+#breaking .b1{background:#c8102e;color:#fff;font:700 32px var(--fH);letter-spacing:.12em;display:flex;align-items:center;padding:0 26px;animation:flash 1s steps(2) 3}
 @keyframes flash{50%{background:#fff;color:#c8102e}}
-#breaking .b2{flex:1;background:#fff;color:#0b1220;font:700 30px "IBM Plex Sans Condensed",sans-serif;display:flex;align-items:center;padding:0 26px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#breaking .b2{flex:1;background:#fff;color:#0b1220;font:700 30px var(--fH);display:flex;align-items:center;padding:0 26px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* cards and scenes */
 .card{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) scale(.92);opacity:0;pointer-events:none;transition:all .35s;z-index:9;background:var(--panel);border:3px solid var(--brand);border-radius:14px;padding:30px 40px;min-width:640px;box-shadow:0 30px 80px rgba(0,0,0,.6)}
 .card.on{opacity:1;transform:translate(-50%,-50%) scale(1)}
-.card h2{margin:0 0 6px;font:700 22px "IBM Plex Sans Condensed",sans-serif;letter-spacing:.16em;color:var(--gold)}
-.card .big{font:700 64px "IBM Plex Sans Condensed",sans-serif;line-height:1.05}
-.card .row{display:flex;gap:40px;margin-top:16px;font:700 30px "IBM Plex Mono",monospace}
-.card .row div span{display:block;color:var(--dim);font:700 16px "IBM Plex Sans",sans-serif;letter-spacing:.12em}
+.card h2{margin:0 0 6px;font:700 22px var(--fH);letter-spacing:.16em;color:var(--gold)}
+.card .big{font:700 64px var(--fH);line-height:1.05}
+.card .row{display:flex;gap:40px;margin-top:16px;font:700 30px var(--fN)}
+.card .row div span{display:block;color:var(--dim);font:700 16px var(--fB);letter-spacing:.12em}
 #scene{position:absolute;inset:0;z-index:12;display:none;align-items:center;justify-content:center;flex-direction:column;gap:18px;
   background:radial-gradient(1200px 700px at 30% 20%,var(--brand2),var(--bg) 70%);overflow:hidden}
 #scene.on{display:flex}
 #scene::before{content:"";position:absolute;inset:-50%;background:repeating-linear-gradient(115deg,transparent 0 80px,rgba(255,255,255,.025) 80px 160px);animation:drift 30s linear infinite}
 @keyframes drift{to{transform:translateX(160px)}}
-#scene .k{font:700 30px "IBM Plex Sans Condensed",sans-serif;letter-spacing:.3em;color:var(--gold);z-index:1}
-#scene .t{font:700 130px "IBM Plex Sans Condensed",sans-serif;letter-spacing:.04em;z-index:1;text-align:center;line-height:1}
-#scene .c{font:700 90px "IBM Plex Mono",monospace;z-index:1}
-#scene .h{font:600 34px "IBM Plex Sans",sans-serif;color:var(--dim);z-index:1}
+#scene .k{font:700 30px var(--fH);letter-spacing:.3em;color:var(--gold);z-index:1}
+#scene .t{font:700 130px var(--fH);letter-spacing:.04em;z-index:1;text-align:center;line-height:1}
+#scene .c{font:700 90px var(--fN);z-index:1}
+#scene .h{font:600 34px var(--fB);color:var(--dim);z-index:1}
 #bumper{position:absolute;inset:0;z-index:13;pointer-events:none;display:flex;align-items:center;justify-content:center}
-#bumper .bar{position:absolute;left:-110%;top:42%;height:16%;width:100%;background:var(--brand);transform:skewX(-14deg)}
-#bumper .w{position:relative;font:700 150px "IBM Plex Sans Condensed",sans-serif;letter-spacing:.06em;color:#fff;opacity:0}
-#bumper.go .bar{animation:sweep 1.9s cubic-bezier(.7,0,.3,1) forwards}
-#bumper.go .w{animation:word 1.9s ease forwards}
+#bumper{--mc:var(--brand);flex-direction:column}
+#bumper .bar{position:absolute;left:-110%;top:38%;height:24%;width:100%;background:var(--mc);transform:skewX(-14deg);box-shadow:0 0 0 10px rgba(255,255,255,.08),0 30px 80px rgba(0,0,0,.5)}
+#bumper .bar::after{content:"";position:absolute;left:0;right:0;bottom:-14px;height:8px;background:#fff;opacity:.85}
+#bumper .w{position:relative;font:800 150px var(--fH);letter-spacing:.04em;color:#fff;opacity:0;text-transform:uppercase;text-shadow:0 6px 24px rgba(0,0,0,.35);display:flex;align-items:center;gap:28px;white-space:nowrap}
+#bumper .w .ic{display:inline-flex;align-items:center;justify-content:center;width:1.05em;height:1.05em;border-radius:12px;background:#fff;color:var(--mc);font-size:.62em}
+#bumper .sub{position:relative;margin-top:8px;font:700 30px var(--fH);letter-spacing:.3em;color:#fff;opacity:0}
+#bumper.go .bar{animation:sweep 2.2s cubic-bezier(.7,0,.3,1) forwards}
+#bumper.go .w{animation:word 2.2s ease forwards} #bumper.go .sub{animation:word 2.2s ease .1s forwards}
+#bumper.mood-bull.go .w{animation:wordUp 2.2s ease forwards} #bumper.mood-hod.go .w{animation:wordUp 2.2s ease forwards}
+#bumper.mood-bear.go .w{animation:wordDn 2.2s ease forwards} #bumper.mood-lod.go .w{animation:wordDn 2.2s ease forwards}
+#bumper.mood-chop.go .w,#bumper.mood-sit.go .w{animation:word 2.2s ease forwards,chop .18s linear 6 .6s}
+#bumper.mood-careful .bar,#bumper.mood-early .bar{background:repeating-linear-gradient(135deg,var(--mc) 0 46px,#111 46px 92px)}
+#bumper.mood-careful .w,#bumper.mood-early .w{color:#fff;text-shadow:0 0 0 #000,4px 4px 0 #000}
+@keyframes wordUp{0%,25%{opacity:0;transform:translateY(80px)}40%,70%{opacity:1;transform:none}100%{opacity:0;transform:translateY(-80px)}}
+@keyframes wordDn{0%,25%{opacity:0;transform:translateY(-80px)}40%,70%{opacity:1;transform:none}100%{opacity:0;transform:translateY(80px)}}
+@keyframes chop{0%,100%{transform:translateX(0)}25%{transform:translateX(-14px)}75%{transform:translateX(14px)}}
+.txtin{position:absolute;z-index:31;font:700 34px var(--fH);background:rgba(0,0,0,.7);border:2px solid #fff;border-radius:6px;padding:2px 10px;min-width:320px;outline:none}
 @keyframes sweep{0%{left:-110%}40%{left:0}70%{left:0}100%{left:110%}}
 @keyframes word{0%,25%{opacity:0;transform:scale(1.3)}40%,70%{opacity:1;transform:scale(1)}100%{opacity:0}}
-#cam{position:absolute;width:420px;height:236px;border:3px dashed var(--brand);border-radius:12px;z-index:7;display:none;align-items:flex-end;justify-content:flex-start;padding:8px 12px;font:700 15px "IBM Plex Sans Condensed",sans-serif;letter-spacing:.14em;color:var(--dim)}
+#cam{position:absolute;width:420px;height:236px;border:3px dashed var(--brand);border-radius:12px;z-index:7;display:none;align-items:flex-end;justify-content:flex-start;padding:8px 12px;font:700 15px var(--fH);letter-spacing:.14em;color:var(--dim)}
 #cam.on{display:flex} #cam.key{background:#00ff00;border-style:solid;color:#00ff00}
 #guides{position:absolute;inset:0;pointer-events:none;z-index:20;display:none}
 #guides.on{display:block}
-#guides div{position:absolute;left:0;right:0;background:rgba(255,0,80,.18);border:2px dashed rgba(255,0,80,.7);color:#fff;font:700 18px "IBM Plex Sans",sans-serif;padding:6px 10px}
+#guides div{position:absolute;left:0;right:0;background:rgba(255,0,80,.18);border:2px dashed rgba(255,0,80,.7);color:#fff;font:700 18px var(--fB);padding:6px 10px}
 #spot{position:absolute;inset:0;pointer-events:none;z-index:4;display:none}
 #spot.on{display:block}
-#qcard .q{font:600 40px "IBM Plex Sans",sans-serif;line-height:1.25;max-width:1100px}
+#qcard .q{font:600 40px var(--fB);line-height:1.25;max-width:1100px}
 /* vertical and square stages */
 body.fmt-v #rail{display:none} body.fmt-s #rail{display:none}
 body.fmt-v #body{flex-direction:column} body.fmt-v #chips{display:flex}
 #chips{display:none;gap:10px;padding:10px 14px;overflow:hidden;flex:0 0 auto;background:var(--panel);border-bottom:1px solid var(--line)}
-#chips span{padding:8px 14px;border-radius:999px;background:var(--panel2);font:700 22px "IBM Plex Mono",monospace;white-space:nowrap;cursor:pointer}
+#chips span{padding:8px 14px;border-radius:999px;background:var(--panel2);font:700 22px var(--fN);white-space:nowrap;cursor:pointer}
 #chips span.on{background:var(--brand);color:#fff}
 body.norail #rail{display:none}
 /* the dock: your controls, never on the stage */
@@ -140,6 +155,11 @@ body.clean #dock,body.dockoff #dock{display:none}
 #dock .sw{display:inline-block;width:22px;height:22px;border-radius:50%;border:2px solid #0c111d;cursor:pointer}
 #dock .sw.on{outline:2px solid #fff}
 #dock .hint{color:#8a96b3;font-size:11.5px;padding:2px 14px 0;line-height:1.45}
+#cmenu{position:fixed;z-index:200;background:#0c111d;border:1px solid #3a5a9a;border-radius:8px;padding:6px;min-width:220px;box-shadow:0 14px 40px rgba(0,0,0,.6);font:13px "IBM Plex Sans",sans-serif}
+#cmenu .h{color:#8a96b3;font:700 12px "IBM Plex Mono",monospace;padding:4px 8px 6px;letter-spacing:.06em}
+#cmenu button{display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:none;border:0;color:#dfe6f5;padding:6px 8px;border-radius:5px;font:700 12.5px "IBM Plex Mono",monospace;cursor:pointer}
+#cmenu button:hover{background:#16213a} #cmenu button i{display:inline-block;width:12px;height:12px;border-radius:3px} #cmenu button.del{color:#ff8a9a}
+#cmenu .n{color:#64748b;font-size:11px;padding:5px 8px 2px;border-top:1px solid #1a2540;margin-top:4px}
 #toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:#16213a;color:#fff;border:1px solid #3a5a9a;padding:9px 16px;border-radius:6px;font:600 13px "IBM Plex Sans",sans-serif;z-index:99;display:none}
 /* MARKET IN 60 / THE PLAYS board / the sponsor corner / chat */
 .board{position:absolute;inset:0;z-index:12;display:none;flex-direction:column;align-items:center;justify-content:center;gap:24px;background:radial-gradient(1200px 700px at 30% 20%,var(--brand2),var(--bg) 70%);overflow:hidden}
@@ -184,7 +204,7 @@ body.clean #dock,body.dockoff #dock{display:none}
   <div class="card" id="scard"></div>
   <div class="card" id="qcard"><h2>VIEWER QUESTION</h2><div class="q" id="qText"></div><div class="row"><div><span>FROM</span><b id="qFrom"></b></div></div></div>
   <div id="scene"><div class="k" id="scK"></div><div class="t" id="scT"></div><div class="c mono" id="scC"></div><div class="h" id="scH"></div></div>
-  <div id="bumper"><div class="bar"></div><div class="w" id="bumpW">WE'RE LIVE</div></div>
+  <div id="bumper"><div class="bar"></div><div class="w" id="bumpW">WE'RE LIVE</div><div class="sub" id="bumpS"></div></div>
   <div class="board" id="m60"><div class="k">MARKET IN 60 SECONDS</div><div class="sym" id="m60s"></div><div class="px" id="m60p"></div><div class="rd" id="m60r"></div><div class="bar" id="m60b"></div></div>
   <div class="board" id="plays"><div class="k" id="playsK"></div><div class="t" id="playsT">THE PLAYS</div><table id="playsTbl"></table></div>
   <div id="sponsor"><b id="spT"></b><span id="spS"></span></div>
@@ -226,6 +246,14 @@ body.clean #dock,body.dockoff #dock{display:none}
   <h4>ON AIR</h4>
   <div class="full"><input id="brandIn" placeholder="show name"><input id="handleIn" placeholder="@handle"></div>
   <div class="r"><button id="bumpBtn">WE'RE LIVE INTRO</button><button id="lowBtn">LOWER THIRD</button><button id="safeBtn" title="no dollars, no sizes on screen: results in R and %">SHOW-SAFE</button></div>
+  <h4>STINGERS · full-screen words</h4>
+  <div class="r" id="moodR">
+    <button data-mood="bull" style="border-color:#16a34a">▲ BULLISH</button><button data-mood="bear" style="border-color:#dc2626">▼ BEARISH</button><button data-mood="chop" style="border-color:#d97706">CHOP</button><button data-mood="careful" style="border-color:#f59e0b">CAREFUL</button>
+    <button data-mood="early">TAKE PROFITS EARLY</button><button data-mood="pay">PAY YOURSELF</button><button data-mood="confirm">WAIT FOR CONFIRMATION</button><button data-mood="second">SECOND ENTRY</button>
+    <button data-mood="pivot">AT THE PIVOT</button><button data-mood="runner">LET THE RUNNER RUN</button><button data-mood="hod">NEW HIGH OF DAY</button><button data-mood="lod">NEW LOW OF DAY</button>
+    <button data-mood="sit">SIT ON YOUR HANDS</button><button data-mood="green">GREEN DAY</button><button data-mood="red">RED DAY: RESET</button>
+  </div>
+  <div class="full" style="margin-top:5px"><input id="moodIn" placeholder="your own word: type it, Enter plays it"></div>
   <h4>SEGMENT</h4>
   <div class="r" id="segR"></div>
   <div class="full" style="margin-top:5px"><input id="segIn" placeholder="segment title"><input id="segSubIn" placeholder="line under it (blank: the chart's PS60 read)"></div>
@@ -265,6 +293,7 @@ body.clean #dock,body.dockoff #dock{display:none}
   <div class="hint">Shift+1…8 segments · Alt+1 LIVE · Alt+2 STARTING SOON · Alt+3 OPEN COUNTDOWN · Alt+4 BE RIGHT BACK · Alt+5 THANKS · F2 trade card · F3 scorecard · F4 plays board · F6 market in 60 · F7 question card · F8 sponsor now · B intro · H panel. A Stream Deck "Hotkey" button sends any of these.</div>
   <h4>LOOK</h4>
   <div class="r" id="thR"><button data-th="net">NETWORK</button><button data-th="desk">NIGHT DESK</button><button data-th="neon">NEON</button><button data-th="paper">DAYTIME</button></div>
+  <div class="r" style="margin-top:5px" id="fontR"><button data-font="net" title="condensed news-desk lettering, numbers that line up">FONT: NETWORK</button><button data-font="bold" title="tall heavy headlines, sports-network style">FONT: BOLD</button><button data-font="classic" title="the first look">FONT: CLASSIC</button></div>
   <h4>OUTPUT</h4>
   <div class="hint">OBS: Window Capture of this tab, or a Browser Source at this address with <b>?clean=1</b> on the end (sign in once with Interact). H hides this panel. Nothing on this page can place or cancel an order.</div>
   <div class="r" style="margin:6px 0 20px"><button id="cleanBtn">OPEN CLEAN OUTPUT</button><button id="hideBtn">HIDE PANEL (H)</button></div>
@@ -289,6 +318,9 @@ S.lyr = Object.assign({ps60: true, mas: true, bb: true, vwap: true, gas: true, a
 S.sponsor = Object.assign({on: false, title: "", sub: "", every: 10, secs: 20}, S.sponsor || {}); S.yt = Object.assign({key: "", vid: "", on: false, box: false}, S.yt || {});
 if (S.sound == null) S.sound = true;
 const save = () => store.set("cfg", S);
+// the show's three typefaces (headlines, text, numbers), from the LOOK's font set; the charts draw with them too
+const FONT = {H: "", B: "", N: ""};
+function readFonts(){ const cs = getComputedStyle(document.body); FONT.H = cs.getPropertyValue("--fH").trim(); FONT.B = cs.getPropertyValue("--fB").trim(); FONT.N = cs.getPropertyValue("--fN").trim(); }
 const SIZES = {h: [1920, 1080], v: [1080, 1920], s: [1080, 1080]};
 const SEGMENTS = ["THE WATCHLIST", "PREMARKET PREP", "LIVE TRADING", "TRADE OF THE DAY", "THE BREAKDOWN", "MARKET RECAP", "Q&A", "TOMORROW'S PLAYS"];
 const COLORS = ["#f2c14e", "#21c07a", "#ff4d5e", "#ffffff", "#19e3ff", "#ff2bd6"];
@@ -303,7 +335,7 @@ function fit(){
   requestAnimationFrame(() => cells.forEach(c => c.resize()));
 }
 function applyLook(){
-  document.body.className = document.body.className.split(" ").filter(c => !/^(theme-|fmt-|norail$)/.test(c)).join(" ") + ` theme-${S.theme} fmt-${S.fmt}` + (S.rail ? "" : " norail");
+  document.body.className = document.body.className.split(" ").filter(c => !/^(theme-|fmt-|font-|norail$)/.test(c)).join(" ") + ` theme-${S.theme} fmt-${S.fmt} font-${S.font || "net"}` + (S.rail ? "" : " norail"); readFonts();
   $("#brandName").textContent = S.brand || "TWINEY LIVE"; $("#brandIn").value = S.brand; $("#handleIn").value = S.handle;
   $("#lower").classList.toggle("off", !S.lower); $("#crawl").style.display = S.tick ? "" : "none";
   $("#crawl .track").style.setProperty("--crawl", S.crawl + "s");
@@ -436,22 +468,25 @@ class Cell {
     const W = this.cv.width, H = this.cv.height, axisW = 110, timeH = 30, volH = S.lyr.vol && this.tf !== "D" ? Math.round(H * .14) : 0;
     const bars = this.bars(); const v = this.view || (this.view = {cw: this.tf === "D" ? 12 : 11, off: 0});
     const room = this.tf === "D" ? .18 : Math.max(.18, ((((INFO[this.sym] || {}).studies || {}).style || {}).lbl_space_pct || 30) / 100);
-    const plotW = W - axisW, n = Math.max(5, Math.floor(plotW * (1 - room) / v.cw)), end = Math.max(0, bars.length - v.off), start = Math.max(0, end - n);
-    const vis = bars.slice(start, end);
+    v.off = Math.max(0, Math.min(Math.max(0, bars.length - 3), v.off || 0));
+    // MOVE drags by fractions of a bar, so the chart slides with the mouse instead of jumping a candle at a time
+    const offI = Math.floor(v.off), frac = v.off - offI;
+    const plotW = W - axisW, n = Math.max(5, Math.floor(plotW * (1 - room) / v.cw)), end = Math.max(0, bars.length - offI), base = end - n, start = Math.max(0, base - 1);
+    const vis = bars.slice(Math.max(0, base), end);
     let lo = Infinity, hi = -Infinity; for (const b of vis){ lo = Math.min(lo, b[3]); hi = Math.max(hi, b[2]); }
     if (!isFinite(lo)){ lo = 0; hi = 1; }
     const pad = (hi - lo) * .08 || hi * .01 || 1; lo -= pad; hi += pad;
     if (v.yLo != null){ lo = v.yLo; hi = v.yHi; }
     const plotH = H - timeH - volH;
-    return {W, H, axisW, timeH, volH, plotW, plotH, bars, start, end, vis, lo, hi, cw: v.cw,
+    return {W, H, axisW, timeH, volH, plotW, plotH, bars, start, end, base, frac, vis: bars.slice(start, end), lo, hi, cw: v.cw,
       y: p => 8 + (hi - p) / (hi - lo) * (plotH - 16), p: y => hi - (y - 8) / (plotH - 16) * (hi - lo),
-      x: idx => (idx - start + .5) * v.cw};
+      x: idx => (idx - base + .5 + frac) * v.cw, idx: x => Math.floor(x / v.cw - frac + base)};
   }
   tToX(L, t){ const b = L.bars; if (!b.length) return 0; const sec = TFSEC(this.tf);
     if (t <= b[0][0]) return L.x(0) + (t - b[0][0]) / sec * L.cw;
     let lo = 0, hi = b.length - 1; while (lo < hi){ const m = (lo + hi + 1) >> 1; if (b[m][0] <= t) lo = m; else hi = m - 1; }
     return L.x(lo) + Math.min(4, (t - b[lo][0]) / sec) * L.cw; }
-  xToT(L, x){ const b = L.bars, sec = TFSEC(this.tf); if (!b.length) return 0; const f = x / L.cw - .5 + L.start, i = Math.floor(f);
+  xToT(L, x){ const b = L.bars, sec = TFSEC(this.tf); if (!b.length) return 0; const f = x / L.cw - .5 - L.frac + L.base, i = Math.floor(f);
     if (i < 0) return b[0][0] + f * sec; if (i >= b.length) return b[b.length - 1][0] + (f - b.length + 1) * sec; return b[i][0] + (f - i) * sec; }
   draw(){
     const info = INFO[this.sym] || {}, w = WL.find(x => x.symbol === this.sym) || {};
@@ -463,9 +498,9 @@ class Cell {
     const css = getComputedStyle(document.body), col = n => css.getPropertyValue(n).trim(), DC = deskColors();
     const BG = DC ? DC.bg : col("--chart"), TXT = DC ? DC.text : col("--dim"), GRID = DC ? DC.grid : col("--grid");
     g.fillStyle = BG; g.fillRect(0, 0, L.W, L.H); this.box.style.background = BG;
-    if (!L.bars.length){ g.fillStyle = TXT; g.font = '600 28px "IBM Plex Sans", Arial, sans-serif'; g.fillText(this.sym ? "loading " + this.sym + "…" : "click a name on the watchlist", 30, L.H / 2); this.drawOverlay(); return; }
+    if (!L.bars.length){ g.fillStyle = TXT; g.font = `600 28px ${FONT.B}`; g.fillText(this.sym ? "loading " + this.sym + "…" : "click a name on the watchlist", 30, L.H / 2); this.drawOverlay(); return; }
     // grid + price axis
-    g.strokeStyle = GRID; g.lineWidth = 1; g.font = '600 17px "IBM Plex Mono", Consolas, monospace'; g.fillStyle = TXT;
+    g.strokeStyle = GRID; g.lineWidth = 1; g.font = `600 17px ${FONT.N}`; g.fillStyle = TXT;
     const step = niceStep((L.hi - L.lo) / 7);
     for (let p = Math.ceil(L.lo / step) * step; p < L.hi; p += step){ const yy = Math.round(L.y(p)) + .5; g.beginPath(); g.moveTo(0, yy); g.lineTo(L.plotW, yy); g.stroke(); g.fillText(px(p), L.plotW + 8, yy + 6); }
     const every = Math.max(1, Math.round(140 / L.cw));
@@ -477,7 +512,7 @@ class Cell {
     const raw = info.studies || {}, daily = this.tf === "D";
     const SD = Object.assign({}, raw, {gas: S.lyr.gas && !daily ? raw.gas : null, air: S.lyr.air ? raw.air : null, uv: S.lyr.uv ? raw.uv : null,
       style: Object.assign({}, raw.style || {}, {lbl_size: S.lbl || 16, lbl_gap_bars: 2})});
-    const ctx = {g, S: SD, bars: L.vis, x0: 0, cw: L.cw, plotW: L.plotW, plotH: L.plotH, labelW: L.axisW, y: L.y, H: L.H, lo: L.lo, hi: L.hi, bg: BG, lightScreen: DC && DC.light};
+    const ctx = {g, S: SD, bars: L.vis, x0: L.x(L.start) - L.cw / 2, cw: L.cw, plotW: L.plotW, plotH: L.plotH, labelW: L.axisW, y: L.y, H: L.H, lo: L.lo, hi: L.hi, bg: BG, lightScreen: DC && DC.light};
     try { studiesBack(ctx); } catch (e) {}
     // your moving averages and Bollinger Bands, the desk's lines and colours (and its on / off switches)
     const cls = L.bars.map(b => b[4]), IND = DESK("ind", {}), onI = k => IND[k] !== false;
@@ -518,7 +553,7 @@ class Cell {
       g.strokeStyle = c_; g.lineWidth = 3; g.setLineDash(u.role === "second_entry" ? [10, 6] : u.role === "stop" || u.role === "target" ? [4, 4] : []);
       g.beginPath(); g.moveTo(0, yy); g.lineTo(L.plotW, yy); g.stroke(); g.setLineDash([]);
       const name = u.role === "opart" ? u.label : (ROLE_NAME[u.role] || u.label || "LEVEL"), txt = `${name} ${px(u.price)}`;
-      g.font = '700 18px "IBM Plex Sans Condensed", "Arial Narrow", Arial, sans-serif'; const tw = g.measureText(txt).width + 14;
+      g.font = `700 18px ${FONT.H}`; const tw = g.measureText(txt).width + 14;
       g.fillStyle = c_; g.fillRect(6, yy - 12, tw, 24); g.fillStyle = "#0a0d12"; g.fillText(txt, 13, yy + 6); }
   }
   drawOverlay(){ drawShapes(this); }
@@ -531,24 +566,24 @@ class Cell {
       const tri = (x, y, up, fill) => { g.fillStyle = fill; g.strokeStyle = "#000"; g.lineWidth = 2; g.beginPath(); if (up){ g.moveTo(x, y + 4); g.lineTo(x - 14, y + 28); g.lineTo(x + 14, y + 28); } else { g.moveTo(x, y - 4); g.lineTo(x - 14, y - 28); g.lineTo(x + 14, y - 28); } g.closePath(); g.fill(); g.stroke(); };
       tri(x1, y1, long, "#2563eb");
       if (x2 != null && y2 != null){ tri(x2, y2, !long, c_);
-        const lab = t.r != null ? (t.r >= 0 ? "+" : "") + t.r + "R" : t.pct != null ? pct(t.pct) : ""; if (lab){ g.font = '800 22px "IBM Plex Mono", Consolas, monospace'; const tw = g.measureText(lab).width;
+        const lab = t.r != null ? (t.r >= 0 ? "+" : "") + t.r + "R" : t.pct != null ? pct(t.pct) : ""; if (lab){ g.font = `800 22px ${FONT.N}`; const tw = g.measureText(lab).width;
           g.fillStyle = c_; g.fillRect(x2 + 18, y2 - 16, tw + 14, 30); g.fillStyle = "#fff"; g.fillText(lab, x2 + 25, y2 + 7); } } }
   }
   book(g, L){
     // LEVEL II on the chart for teaching: waiting sellers over waiting buyers, the size as a bar
     const bk = (INFO[this.sym] || {}).book;
-    if (!bk || (!bk.bids.length && !bk.asks.length)){ const t = "LEVEL II: open " + this.sym + " on a desk ladder"; g.font = '700 18px "IBM Plex Sans Condensed", Arial, sans-serif';
+    if (!bk || (!bk.bids.length && !bk.asks.length)){ const t = "LEVEL II: open " + this.sym + " on a desk ladder"; g.font = `700 18px ${FONT.H}`;
       const w = g.measureText(t).width + 24, y = L.plotH - 50; g.fillStyle = "rgba(5,8,16,.85)"; g.fillRect(14, y, w, 36); g.fillStyle = "#c9d2e3"; g.fillText(t, 26, y + 24); return; }
     const rows = [...bk.asks.slice(0, 6).reverse().map(r => ["s", r]), ...bk.bids.slice(0, 6).map(r => ["b", r])], rh = 26, W = 300, H = rows.length * rh + 64;
     const x = L.plotW - W - 12, y = Math.max(8, L.plotH - H - 10);   // bottom right, clear of the data box
     let mx = 1; for (const [, r] of rows) mx = Math.max(mx, +r[1] || 0);
     g.fillStyle = "rgba(5,8,16,.9)"; g.fillRect(x, y, W, H); g.strokeStyle = "#444"; g.strokeRect(x, y, W, H);
-    g.font = '700 16px "IBM Plex Sans Condensed", Arial, sans-serif'; g.fillStyle = "#c9d2e3"; g.fillText("WAITING SELLERS", x + 12, y + 24); g.fillText("SIZE", x + W - 12 - g.measureText("SIZE").width, y + 24);
+    g.font = `700 16px ${FONT.H}`; g.fillStyle = "#c9d2e3"; g.fillText("WAITING SELLERS", x + 12, y + 24); g.fillText("SIZE", x + W - 12 - g.measureText("SIZE").width, y + 24);
     rows.forEach(([sd, r], i) => { const yy = y + 34 + i * rh, w = (+r[1] || 0) / mx * (W - 130);
       g.fillStyle = sd === "s" ? "rgba(220,38,38,.35)" : "rgba(22,163,74,.35)"; g.fillRect(x + 120, yy, w, rh - 4);
-      g.font = '700 18px "IBM Plex Mono", Consolas, monospace'; g.fillStyle = sd === "s" ? "#ff6b6b" : "#4ade80"; g.fillText(px(+r[0]), x + 12, yy + 18);
+      g.font = `700 18px ${FONT.N}`; g.fillStyle = sd === "s" ? "#ff6b6b" : "#4ade80"; g.fillText(px(+r[0]), x + 12, yy + 18);
       g.fillStyle = "#fff"; const sz = Math.round(+r[1] || 0).toLocaleString("en-US"); g.fillText(sz, x + W - 12 - g.measureText(sz).width, yy + 18); });
-    g.font = '700 16px "IBM Plex Sans Condensed", Arial, sans-serif'; g.fillStyle = "#c9d2e3"; g.fillText("WAITING BUYERS", x + 12, y + H - 10);
+    g.font = `700 16px ${FONT.H}`; g.fillStyle = "#c9d2e3"; g.fillText("WAITING BUYERS", x + 12, y + H - 10);
   }
   dataWin(L){
     // the black box: the bar under the cursor (the last one when the mouse is off the chart), every line's value with it
@@ -576,7 +611,7 @@ class Cell {
 }
 function niceStep(r){ const m = Math.pow(10, Math.floor(Math.log10(r || 1))), f = r / m; return (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * m; }
 function tag(g, L, p, txt, c, bold){ if (p < L.lo || p > L.hi) return; const yy = L.y(p); g.fillStyle = c; g.fillRect(L.plotW + 2, yy - 13, L.axisW - 4, 26);
-  g.fillStyle = "#08101f"; g.font = (bold ? "700 18px" : "700 15px") + ' "IBM Plex Mono", Consolas, monospace'; g.fillText(txt.length > 11 ? txt.slice(0, 11) : txt, L.plotW + 6, yy + 6); }
+  g.fillStyle = "#08101f"; g.font = (bold ? "700 18px " : "700 15px ") + FONT.N; g.fillText(txt.length > 11 ? txt.slice(0, 11) : txt, L.plotW + 6, yy + 6); }
 
 let cells = [];
 function renderCells(){
@@ -593,67 +628,174 @@ const DRAW = {}; const dkey = s => "draw." + s;
 const shapesOf = s => DRAW[s] || (DRAW[s] = store.get(dkey(s), []));
 const saveShapes = s => store.set(dkey(s), DRAW[s] || []);
 let laser = null, spot = null;
+// one repaint per screen frame, however fast the mouse moves: the drawing layer alone while you draw, the whole chart
+// only when it moves
+function paint(c, full){ c._full = c._full || !!full; if (c._raf) return;
+  c._raf = requestAnimationFrame(() => { c._raf = 0; const f = c._full; c._full = false; if (f) c.draw(); else c.drawOverlay(); }); }
+// a drawing made on the DAILY shows on every smaller timeframe: lines carry on across, squares / circles / the MP ruler
+// become the price band they cover, text sits at its price
+const carried = (c, s) => s.tf === "D" && c.tf !== "D";
+const LINE_LABELS = [["PIVOT", "#7c3aed"], ["2ND ENTRY", "#0ea5e9"], ["TARGET", "#16a34a"], ["STOP", "#dc2626"], ["SUPPLY", "#ea580c"], ["DEMAND", "#0d9488"], ["SNEAKY PIVOT", "#c026d3"], ["MP", "#ca8a04"]];
 function wireDraw(c){
-  const cv = c.dv; let cur = null, pan = null;
+  const cv = c.dv; let cur = null, pan = null, grab = null;
   const at = e => { const r = cv.getBoundingClientRect(), sc = $("#stage")._sc || 1; return [(e.clientX - r.left) / sc, (e.clientY - r.top) / sc]; };
   const tp = (L, x, y) => ({t: c.xToT(L, x), p: L.p(y)});
   cv.addEventListener("mousedown", e => {
+    if (e.button !== 0) return; hideMenu();
     if (!c.L || !c.sym) return; const [x, y] = at(e), L = c.L;
-    if (tool === "move"){ pan = {x, y, off: c.view.off, cw: c.view.cw, axis: x > L.plotW}; return; }
+    if (tool === "move"){
+      const k = x < L.plotW ? hitShape(c, x, y) : -1;
+      if (k >= 0){ const s = shapesOf(c.sym)[k]; grab = {s, x, y, t0: c.xToT(L, x), p0: L.p(y), orig: JSON.parse(JSON.stringify(s))}; cv.style.cursor = "grabbing"; return; }
+      pan = {x, y, off: c.view.off, lo: L.lo, hi: L.hi, axis: x > L.plotW, ymoved: false}; cv.style.cursor = "grabbing"; return; }
     if (tool === "laser" || tool === "spot") return;
-    if (tool === "erase"){ const sh = shapesOf(c.sym), k = hitShape(c, x, y); if (k >= 0){ sh.splice(k, 1); saveShapes(c.sym); c.draw(); } return; }
-    if (tool === "text"){ const s = prompt("Text on the chart:"); if (s){ shapesOf(c.sym).push({k: "text", a: tp(L, x, y), s, c: drawCol}); saveShapes(c.sym); c.draw(); } return; }
-    if (tool === "hline"){ shapesOf(c.sym).push({k: "hline", a: tp(L, x, y), c: drawCol}); saveShapes(c.sym); c.draw(); return; }
-    cur = {k: tool, a: tp(L, x, y), b: tp(L, x, y), pts: [tp(L, x, y)], c: drawCol}; shapesOf(c.sym).push(cur);
+    if (tool === "erase"){ const sh = shapesOf(c.sym), k = hitShape(c, x, y); if (k >= 0){ sh.splice(k, 1); saveShapes(c.sym); paint(c); } return; }
+    if (tool === "text"){ e.preventDefault(); textAt(c, x, y, tp(L, x, y)); return; }
+    if (tool === "hline"){ shapesOf(c.sym).push({k: "hline", a: tp(L, x, y), c: drawCol, tf: c.tf}); saveShapes(c.sym); paint(c); return; }
+    cur = {k: tool, a: tp(L, x, y), b: tp(L, x, y), pts: [tp(L, x, y)], c: drawCol, tf: c.tf, _x: x, _y: y}; shapesOf(c.sym).push(cur);
   });
   window.addEventListener("mousemove", e => {
     if (!c.L) return; const [x, y] = at(e), L = c.L;
-    if (e.target === cv && c.L){ const h = Math.floor(x / c.L.cw + c.L.start); if (h !== c.hover){ c.hover = h; c.dataWin(c.L); } }
-    if (pan){ if (pan.axis){ const v = c.view; const f = Math.exp((y - pan.y) / 200); const mid = (L.lo + L.hi) / 2, half = (L.hi - L.lo) / 2 * f; v.yLo = mid - half; v.yHi = mid + half; pan.y = y; }
-      else { c.view.off = Math.max(0, Math.round(pan.off + (x - pan.x) / c.view.cw)); } c.draw(); return; }
-    if (cur){ cur.b = tp(L, x, y); if (cur.k === "pen" || cur.k === "hl") cur.pts.push(cur.b); c.draw(); return; }
-    if (e.target === cv && (tool === "laser")){ laser = {c, x, y, trail: [...((laser && laser.c === c && laser.trail) || []), [x, y, performance.now()]].slice(-24)}; c.drawOverlay(); }
-    if (e.target === cv && tool === "spot" && e.buttons === 1){ spot = {c, x, y}; drawSpot(); }
+    if (e.target === cv){ const h = L.idx(x); if (h !== c.hover){ c.hover = h; c.dataWin(L); } }
+    if (grab){ const dt = carried(c, grab.s) ? 0 : c.xToT(L, x) - grab.t0, dp = L.p(y) - grab.p0, o = grab.orig, s = grab.s;
+      const mv = q => ({t: q.t + dt, p: q.p + dp}); s.a = mv(o.a); if (o.b) s.b = mv(o.b); if (o.pts) s.pts = o.pts.map(mv); paint(c); return; }
+    if (pan){ const v = c.view;
+      if (pan.axis){ const f = Math.exp((y - pan.y) / 200), mid = (L.lo + L.hi) / 2, half = (L.hi - L.lo) / 2 * f; v.yLo = mid - half; v.yHi = mid + half; pan.y = y; }
+      else {
+        v.off = Math.max(0, pan.off + (x - pan.x) / v.cw);
+        // up and down too: the price scale follows the mouse once you pull more than a few pixels up or down
+        if (pan.ymoved || Math.abs(y - pan.y) > 4){ pan.ymoved = true; const dp = (y - pan.y) / (L.plotH - 16) * (pan.hi - pan.lo); v.yLo = pan.lo + dp; v.yHi = pan.hi + dp; } }
+      paint(c, true); return; }
+    if (cur){ const q = tp(L, x, y); cur.b = q;
+      if (cur.k === "pen" || cur.k === "hl"){ if (Math.hypot(x - cur._x, y - cur._y) >= 2){ cur.pts.push(q); cur._x = x; cur._y = y; } }
+      paint(c); return; }
+    if (e.target === cv && tool === "laser"){ laser = {c, x, y, trail: [...((laser && laser.c === c && laser.trail) || []), [x, y, performance.now()]].slice(-24)}; paint(c); }
     if (e.target === cv && tool === "ruler" && !cur) showTip(e, c, L, x, y);
+    if (e.target === cv && tool === "move" && !e.buttons) cv.style.cursor = x < L.plotW && hitShape(c, x, y) >= 0 ? "move" : "";
   });
-  window.addEventListener("mouseup", () => { if (cur){ saveShapes(c.sym); cur = null; c.draw(); } pan = null; });
-  cv.addEventListener("mouseleave", () => { c.hover = null; if (c.L) c.dataWin(c.L); if (laser && laser.c === c){ laser = null; c.drawOverlay(); } $("#tip").style.display = "none"; });
-  cv.addEventListener("wheel", e => { e.preventDefault(); const v = c.view || {}; v.cw = Math.max(3, Math.min(60, v.cw * (e.deltaY < 0 ? 1.12 : 1 / 1.12))); c.draw(); }, {passive: false});
-  cv.addEventListener("dblclick", e => { if (tool === "move"){ c.view = null; c.draw(); } });
+  window.addEventListener("mouseup", () => {
+    if (cur){ delete cur._x; delete cur._y; if (cur.b && cur.k !== "pen" && cur.k !== "hl" && Math.abs(c.tToX(c.L, cur.a.t) - c.tToX(c.L, cur.b.t)) < 3 && Math.abs(c.L.y(cur.a.p) - c.L.y(cur.b.p)) < 3) shapesOf(c.sym).pop();   // a click, not a drag
+      saveShapes(c.sym); cur = null; paint(c); }
+    if (grab){ saveShapes(c.sym); grab = null; cv.style.cursor = ""; }
+    if (pan){ pan = null; cv.style.cursor = ""; } });
+  cv.addEventListener("mouseleave", () => { c.hover = null; if (c.L) c.dataWin(c.L); if (laser && laser.c === c){ laser = null; paint(c); } $("#tip").style.display = "none"; });
+  cv.addEventListener("wheel", e => { e.preventDefault(); if (tool === "spot" && spot){ spot.r = Math.max(80, Math.min(700, spot.r * (e.deltaY < 0 ? 1.1 : 1 / 1.1))); drawSpot(); return; }
+    if (!c.L) return; const v = c.view, L = c.L, [x] = at(e);
+    if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)){ v.off = Math.max(0, v.off + (e.deltaX || e.deltaY) / v.cw); }
+    else {
+      // zoom around the mouse: the candle under it stays under it; smooth steps on a trackpad, ~18% a wheel notch
+      const dy = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY, f = Math.exp(-Math.max(-300, Math.min(300, dy)) * 0.0017);
+      // a candle i sits at x = (i - (bars - off - n) + .5) * width; keep the one under the mouse there after the zoom
+      const room = c.tf === "D" ? .18 : Math.max(.18, ((((INFO[c.sym] || {}).studies || {}).style || {}).lbl_space_pct || 30) / 100);
+      const nOf = cw => Math.max(5, Math.floor(L.plotW * (1 - room) / cw)), mx = Math.min(x, L.plotW), len = L.bars.length;
+      const i0 = mx / v.cw - .5 + len - v.off - nOf(v.cw);
+      v.cw = Math.max(3, Math.min(60, v.cw * f));
+      v.off = Math.max(0, mx / v.cw - .5 + len - nOf(v.cw) - i0); }
+    v.yLo = v.yHi = null;                                    // the prices re-fit: every candle on screen stays in view
+    paint(c, true); }, {passive: false});
+  cv.addEventListener("dblclick", e => { if (tool === "move"){ c.view = null; paint(c, true); } });
+  cv.addEventListener("contextmenu", e => { e.preventDefault(); if (!c.L || !c.sym) return; const [x, y] = at(e); chartMenu(c, x, y, e.clientX, e.clientY); });
 }
+// TEXT: type right on the chart (Enter puts it there, Esc drops it)
+function textAt(c, x, y, a){
+  const st = $("#stage"), r = c.dv.getBoundingClientRect(), sr = st.getBoundingClientRect(), sc = st._sc || 1;
+  const inp = document.createElement("input"); inp.className = "txtin"; inp.placeholder = "type, then Enter";
+  inp.style.left = ((r.left - sr.left) / sc + x) + "px"; inp.style.top = ((r.top - sr.top) / sc + y - 30) + "px"; inp.style.color = drawCol; st.appendChild(inp); setTimeout(() => inp.focus(), 0);
+  let done = false; const fin = ok => { if (done) return; done = true; const s = inp.value.trim(); inp.remove(); if (ok && s){ shapesOf(c.sym).push({k: "text", a, s, c: drawCol, tf: c.tf}); saveShapes(c.sym); paint(c); } };
+  inp.addEventListener("keydown", e => { e.stopPropagation(); if (e.key === "Enter") fin(true); else if (e.key === "Escape") fin(false); });
+  inp.addEventListener("mousedown", e => e.stopPropagation());
+  setTimeout(() => inp.addEventListener("blur", () => fin(true)), 250);
+}
+// RIGHT-CLICK: put a named PS60 line at that price (on the show only: nothing here ever places an order)
+function hideMenu(){ const m = $("#cmenu"); if (m) m.remove(); }
+function chartMenu(c, x, y, cx, cy){
+  hideMenu(); const L = c.L; if (x > L.plotW) return; const p = L.p(y), t = c.xToT(L, x), k = hitShape(c, x, y);
+  const m = document.createElement("div"); m.id = "cmenu";
+  m.innerHTML = `<div class="h">${esc(c.sym)} · ${px(p)}</div>` + LINE_LABELS.map(([n, col]) => `<button data-lab="${n}"><i style="background:${col}"></i>${n} ${px(p)}</button>`).join("")
+    + `<button data-do="line"><i style="background:${drawCol}"></i>PRICE LINE ${px(p)}</button><button data-do="text">TEXT HERE…</button>`
+    + (k >= 0 ? `<button data-do="del" class="del">REMOVE THIS DRAWING</button>` : "")
+    + (shapesOf(c.sym).length ? `<button data-do="clear" class="del">CLEAR ${esc(c.sym)} DRAWINGS</button>` : "")
+    + `<div class="n">on the show only · never an order</div>`;
+  document.body.appendChild(m);
+  m.style.left = Math.min(cx, innerWidth - m.offsetWidth - 6) + "px"; m.style.top = Math.min(cy, innerHeight - m.offsetHeight - 6) + "px";
+  m.addEventListener("mousedown", e => e.stopPropagation());
+  m.addEventListener("click", e => { const b = e.target.closest("button"); if (!b) return; const sh = shapesOf(c.sym);
+    if (b.dataset.lab){ const [n, col] = LINE_LABELS.find(l => l[0] === b.dataset.lab); sh.push({k: "hline", a: {t, p}, c: col, lab: n, tf: c.tf}); }
+    else if (b.dataset.do === "line") sh.push({k: "hline", a: {t, p}, c: drawCol, tf: c.tf});
+    else if (b.dataset.do === "text"){ hideMenu(); setTimeout(() => textAt(c, x, y, {t, p}), 0); return; }
+    else if (b.dataset.do === "del") sh.splice(k, 1);
+    else if (b.dataset.do === "clear"){ DRAW[c.sym] = []; }
+    saveShapes(c.sym); paint(c); hideMenu(); });
+}
+document.addEventListener("mousedown", e => { if (!e.target.closest("#cmenu")) hideMenu(); });
 function showTip(e, c, L, x, y){ const t = $("#tip"); t.style.display = "block"; const sc = $("#stage")._sc || 1, r = $("#stage").getBoundingClientRect();
   t.style.left = ((e.clientX - r.left) / sc + 14) + "px"; t.style.top = ((e.clientY - r.top) / sc + 10) + "px"; t.textContent = px(L.p(y)); }
+function lineLabel(g, L, s, yy){ if (!s.lab) return; g.font = `700 20px ${FONT.H}`; const txt = `${s.lab} ${px(s.a.p)}`, tw = g.measureText(txt).width + 16;
+  const lx = L.plotW - tw - 8; g.fillStyle = s.c; g.fillRect(lx, yy - 14, tw, 28); g.fillStyle = "#fff"; g.fillText(txt, lx + 8, yy + 7); }
+function bandOf(s){ const ps = [s.a.p, s.b ? s.b.p : s.a.p]; return [Math.min(...ps), Math.max(...ps)]; }
+function trendEnds(c, L, s){ const dt = s.b.t - s.a.t; if (!dt) return null; const k = (s.b.p - s.a.p) / dt, tL = c.xToT(L, 0), tR = c.xToT(L, L.plotW);
+  return [0, L.y(s.a.p + k * (tL - s.a.t)), L.plotW, L.y(s.a.p + k * (tR - s.a.t))]; }
 function drawShapes(c){
   const g = c.dv.getContext("2d"), L = c.L; g.clearRect(0, 0, c.dv.width, c.dv.height); if (!L) return;
   const X = a => c.tToX(L, a.t), Y = a => L.y(a.p), atr = atrOf(c.sym);
+  g.save(); g.beginPath(); g.rect(0, 0, L.W, L.plotH + L.volH); g.clip();
   for (const s of (c.sym ? shapesOf(c.sym) : [])){
     g.strokeStyle = s.c; g.fillStyle = s.c; g.lineWidth = 4; g.lineCap = "round"; g.lineJoin = "round"; g.setLineDash([]);
-    if (s.k === "pen" || s.k === "hl"){ g.globalAlpha = s.k === "hl" ? .35 : 1; g.lineWidth = s.k === "hl" ? 26 : 4; g.beginPath(); s.pts.forEach((q, i) => i ? g.lineTo(X(q), Y(q)) : g.moveTo(X(q), Y(q))); g.stroke(); g.globalAlpha = 1; }
+    if (carried(c, s)){
+      // a DAILY drawing on a smaller timeframe
+      if (s.k === "trend" || s.k === "arrow"){ const e = trendEnds(c, L, s); if (!e) continue; g.lineWidth = 3; g.beginPath(); g.moveTo(e[0], e[1]); g.lineTo(e[2], e[3]); g.stroke();
+        g.font = `700 16px ${FONT.H}`; g.fillText("DAILY", Math.max(8, L.plotW - 60), Math.min(L.plotH - 6, Math.max(18, e[3] - 8))); }
+      else if (s.k === "rect" || s.k === "circle" || s.k === "ruler"){ const [lo, hi] = bandOf(s), y1 = L.y(hi), y2 = L.y(lo);
+        g.globalAlpha = .12; g.fillRect(0, y1, L.plotW, y2 - y1); g.globalAlpha = 1; g.lineWidth = 2; g.setLineDash([10, 6]); g.beginPath(); g.moveTo(0, y1); g.lineTo(L.plotW, y1); g.moveTo(0, y2); g.lineTo(L.plotW, y2); g.stroke(); g.setLineDash([]);
+        g.font = `700 16px ${FONT.H}`; const bt = s.k === "ruler" ? `DAILY MP ${px(lo)} – ${px(hi)}` : `DAILY ${px(lo)} – ${px(hi)}`; g.fillText(bt, L.plotW - g.measureText(bt).width - 10, y1 - 6); }
+      else if (s.k === "hline"){ const yy = Y(s.a); g.lineWidth = 3; g.setLineDash(s.lab ? [] : [12, 6]); g.beginPath(); g.moveTo(0, yy); g.lineTo(L.plotW, yy); g.stroke(); g.setLineDash([]); lineLabel(g, L, s, yy); tag(g, L, s.a.p, px(s.a.p), s.c); }
+      else if (s.k === "text"){ g.font = `700 34px ${FONT.H}`; const yy = Y(s.a), tw = g.measureText(s.s).width, lx = L.plotW - tw - 24; g.fillStyle = "rgba(0,0,0,.6)"; g.fillRect(lx - 8, yy - 34, tw + 16, 44); g.fillStyle = s.c; g.fillText(s.s, lx, yy); }
+      continue; }
+    if (s.k === "pen" || s.k === "hl"){ g.globalAlpha = s.k === "hl" ? .35 : 1; g.lineWidth = s.k === "hl" ? 26 : 4; const P = s.pts.map(q => [X(q), Y(q)]); g.beginPath();
+      if (P.length){ g.moveTo(P[0][0], P[0][1]); for (let i = 1; i < P.length - 1; i++){ const mx = (P[i][0] + P[i + 1][0]) / 2, my = (P[i][1] + P[i + 1][1]) / 2; g.quadraticCurveTo(P[i][0], P[i][1], mx, my); } if (P.length > 1) g.lineTo(P[P.length - 1][0], P[P.length - 1][1]); else g.lineTo(P[0][0] + .1, P[0][1]); }
+      g.stroke(); g.globalAlpha = 1; }
     else if (s.k === "rect"){ const x1 = X(s.a), y1 = Y(s.a), x2 = X(s.b), y2 = Y(s.b); g.globalAlpha = .14; g.fillRect(x1, y1, x2 - x1, y2 - y1); g.globalAlpha = 1; g.strokeRect(x1, y1, x2 - x1, y2 - y1); }
     else if (s.k === "circle"){ const x1 = X(s.a), y1 = Y(s.a), x2 = X(s.b), y2 = Y(s.b); g.beginPath(); g.ellipse((x1 + x2) / 2, (y1 + y2) / 2, Math.abs(x2 - x1) / 2 + 1, Math.abs(y2 - y1) / 2 + 1, 0, 0, Math.PI * 2); g.stroke(); }
     else if (s.k === "trend" || s.k === "arrow"){ const x1 = X(s.a), y1 = Y(s.a), x2 = X(s.b), y2 = Y(s.b); g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke();
       if (s.k === "arrow"){ const a = Math.atan2(y2 - y1, x2 - x1), h = 26; g.beginPath(); g.moveTo(x2, y2); g.lineTo(x2 - h * Math.cos(a - .45), y2 - h * Math.sin(a - .45)); g.lineTo(x2 - h * Math.cos(a + .45), y2 - h * Math.sin(a + .45)); g.closePath(); g.fill(); } }
-    else if (s.k === "hline"){ const yy = Y(s.a); g.lineWidth = 3; g.setLineDash([12, 6]); g.beginPath(); g.moveTo(0, yy); g.lineTo(L.plotW, yy); g.stroke(); g.setLineDash([]); tag(g, L, s.a.p, px(s.a.p), s.c); }
-    else if (s.k === "text"){ g.font = "700 34px \"IBM Plex Sans Condensed\", \"Arial Narrow\", Arial, sans-serif"; const xx = X(s.a), yy = Y(s.a), tw = g.measureText(s.s).width; g.fillStyle = "rgba(0,0,0,.6)"; g.fillRect(xx - 8, yy - 34, tw + 16, 44); g.fillStyle = s.c; g.fillText(s.s, xx, yy); }
+    else if (s.k === "hline"){ const yy = Y(s.a); g.lineWidth = 3; g.setLineDash(s.lab ? (s.lab === "STOP" || s.lab === "TARGET" ? [6, 5] : []) : [12, 6]); g.beginPath(); g.moveTo(0, yy); g.lineTo(L.plotW, yy); g.stroke(); g.setLineDash([]); lineLabel(g, L, s, yy); tag(g, L, s.a.p, px(s.a.p), s.c); }
+    else if (s.k === "text"){ g.font = `700 34px ${FONT.H}`; const xx = X(s.a), yy = Y(s.a), tw = g.measureText(s.s).width; g.fillStyle = "rgba(0,0,0,.6)"; g.fillRect(xx - 8, yy - 34, tw + 16, 44); g.fillStyle = s.c; g.fillText(s.s, xx, yy); }
     else if (s.k === "ruler"){ const x1 = X(s.a), y1 = Y(s.a), x2 = X(s.b), y2 = Y(s.b), d = s.b.p - s.a.p, up = d >= 0;
       g.globalAlpha = .16; g.fillStyle = up ? "#21c07a" : "#ff4d5e"; g.fillRect(Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1), Math.abs(y2 - y1)); g.globalAlpha = 1;
       g.strokeStyle = up ? "#21c07a" : "#ff4d5e"; g.beginPath(); g.moveTo(x1, y1); g.lineTo(x1, y2); g.stroke();
       const txt = `MP ${up ? "+" : "−"}$${Math.abs(d).toFixed(2)} · ${(Math.abs(d) / s.a.p * 100).toFixed(2)}%${atr ? " · " + (Math.abs(d) / atr).toFixed(2) + "× ATR" : ""}`;
-      g.font = "700 26px \"IBM Plex Mono\", Consolas, monospace"; const tw = g.measureText(txt).width, lx = Math.min(x2 + 10, L.plotW - tw - 20), ly = Math.max(36, y2); g.fillStyle = "rgba(0,0,0,.75)"; g.fillRect(lx, ly - 30, tw + 16, 40); g.fillStyle = up ? "#21c07a" : "#ff4d5e"; g.fillText(txt, lx + 8, ly); }
+      g.font = `700 26px ${FONT.N}`; const tw = g.measureText(txt).width, lx = Math.min(x2 + 10, L.plotW - tw - 20), ly = Math.max(36, y2); g.fillStyle = "rgba(0,0,0,.75)"; g.fillRect(lx, ly - 30, tw + 16, 40); g.fillStyle = up ? "#21c07a" : "#ff4d5e"; g.fillText(txt, lx + 8, ly); }
   }
+  g.restore();
   if (laser && laser.c === c){ const now = performance.now(); laser.trail = laser.trail.filter(p => now - p[2] < 500);
     laser.trail.forEach((p, i) => { g.globalAlpha = (i + 1) / laser.trail.length * .5; g.fillStyle = "#ff2030"; g.beginPath(); g.arc(p[0], p[1], 6 + i * .4, 0, Math.PI * 2); g.fill(); });
     g.globalAlpha = 1; g.shadowColor = "#ff2030"; g.shadowBlur = 30; g.fillStyle = "#ff3344"; g.beginPath(); g.arc(laser.x, laser.y, 11, 0, Math.PI * 2); g.fill(); g.shadowBlur = 0; }
 }
 function hitShape(c, x, y){ const L = c.L, sh = shapesOf(c.sym); for (let k = sh.length - 1; k >= 0; k--){ const s = sh[k], X = a => c.tToX(L, a.t), Y = a => L.y(a.p);
-  const pts = s.pts ? s.pts : s.b ? [s.a, s.b] : [s.a]; if (s.k === "hline" && Math.abs(Y(s.a) - y) < 12) return k;
-  if (pts.some(q => Math.hypot(X(q) - x, Y(q) - y) < 22)) return k;
+  if (s.k === "hline"){ if (Math.abs(Y(s.a) - y) < 12) return k; continue; }
+  if (carried(c, s)){
+    if (s.k === "trend" || s.k === "arrow"){ const e = trendEnds(c, L, s); if (e && segDist(x, y, e[0], e[1], e[2], e[3]) < 12) return k; }
+    else if (s.k === "rect" || s.k === "circle" || s.k === "ruler"){ const [lo, hi] = bandOf(s); if (y >= L.y(hi) - 8 && y <= L.y(lo) + 8) return k; }
+    else if (s.k === "text" && Math.abs(Y(s.a) - y + 14) < 24 && x > L.plotW - 30 * String(s.s).length * .6 - 40) return k;
+    continue; }
+  const pts = s.pts ? s.pts : s.b ? [s.a, s.b] : [s.a];
+  if ((s.k === "trend" || s.k === "arrow") && segDist(x, y, X(s.a), Y(s.a), X(s.b), Y(s.b)) < 12) return k;
+  if (s.k === "text"){ const xx = X(s.a), yy = Y(s.a); if (x >= xx - 8 && x <= xx + 30 * String(s.s).length * .6 + 16 && y >= yy - 34 && y <= yy + 10) return k; }
+  if (pts.some(q => Math.hypot(X(q) - x, Y(q) - y) < 16)) return k;
+  if ((s.k === "pen" || s.k === "hl") && pts.some((q, i) => i && segDist(x, y, X(pts[i - 1]), Y(pts[i - 1]), X(q), Y(q)) < (s.k === "hl" ? 16 : 10))) return k;
   if ((s.k === "rect" || s.k === "circle" || s.k === "ruler") && x >= Math.min(X(s.a), X(s.b)) && x <= Math.max(X(s.a), X(s.b)) && y >= Math.min(Y(s.a), Y(s.b)) && y <= Math.max(Y(s.a), Y(s.b))) return k; } return -1; }
+function segDist(px_, py, x1, y1, x2, y2){ const dx = x2 - x1, dy = y2 - y1, l = dx * dx + dy * dy; let t = l ? ((px_ - x1) * dx + (py - y1) * dy) / l : 0; t = Math.max(0, Math.min(1, t)); return Math.hypot(px_ - x1 - t * dx, py - y1 - t * dy); }
+// SPOTLIGHT: press anywhere on the stage and drag it around; the mouse wheel makes it bigger or smaller
 function drawSpot(){ const sp = $("#spot"), cv = $("#spotCv"), st = $("#stage"); sp.classList.toggle("on", !!spot); if (!spot) return;
-  cv.width = st.offsetWidth; cv.height = st.offsetHeight; const g = cv.getContext("2d"); g.fillStyle = "rgba(0,0,0,.62)"; g.fillRect(0, 0, cv.width, cv.height);
-  const r = spot.c.dv.getBoundingClientRect(), sr = st.getBoundingClientRect(), sc = st._sc || 1; const cx = (r.left - sr.left) / sc + spot.x, cy = (r.top - sr.top) / sc + spot.y;
-  g.globalCompositeOperation = "destination-out"; const grd = g.createRadialGradient(cx, cy, 120, cx, cy, 260); grd.addColorStop(0, "rgba(0,0,0,1)"); grd.addColorStop(1, "rgba(0,0,0,0)"); g.fillStyle = grd; g.beginPath(); g.arc(cx, cy, 260, 0, Math.PI * 2); g.fill(); g.globalCompositeOperation = "source-over"; }
-setInterval(() => { if (laser) laser.c.drawOverlay(); }, 40);
+  if (cv.width !== st.offsetWidth || cv.height !== st.offsetHeight){ cv.width = st.offsetWidth; cv.height = st.offsetHeight; }
+  const g = cv.getContext("2d"); g.clearRect(0, 0, cv.width, cv.height); g.fillStyle = "rgba(0,0,0,.62)"; g.fillRect(0, 0, cv.width, cv.height);
+  const r = spot.r || 260; g.globalCompositeOperation = "destination-out"; const grd = g.createRadialGradient(spot.x, spot.y, r * .46, spot.x, spot.y, r); grd.addColorStop(0, "rgba(0,0,0,1)"); grd.addColorStop(1, "rgba(0,0,0,0)");
+  g.fillStyle = grd; g.beginPath(); g.arc(spot.x, spot.y, r, 0, Math.PI * 2); g.fill(); g.globalCompositeOperation = "source-over"; }
+let spotDrag = false, spotRaf = 0;
+const stageAt = e => { const st = $("#stage"), r = st.getBoundingClientRect(), sc = st._sc || 1; return [(e.clientX - r.left) / sc, (e.clientY - r.top) / sc]; };
+$("#stage").addEventListener("mousedown", e => { if (tool !== "spot" || e.button !== 0) return; const [x, y] = stageAt(e); spot = {x, y, r: (spot && spot.r) || 260}; spotDrag = true; drawSpot(); e.preventDefault(); }, true);
+window.addEventListener("mousemove", e => { if (!spotDrag) return; const [x, y] = stageAt(e); spot.x = x; spot.y = y; if (!spotRaf) spotRaf = requestAnimationFrame(() => { spotRaf = 0; drawSpot(); }); });
+window.addEventListener("mouseup", () => { spotDrag = false; });
+setInterval(() => { if (laser) paint(laser.c); }, 40);
 
 /* ------------------------------------------------------------ broadcast pieces */
 function clock(){
@@ -716,15 +858,26 @@ function setScene(k){ SCENE = k; const el = $("#scene"); el.classList.toggle("on
   syncDock(); }
 function sceneTick(p, m){ if (SCENE === "soon") $("#scC").textContent = fmtDur((soonEnd - Date.now()) / 1000);
   if (SCENE === "open") $("#scC").textContent = m < 570 ? fmtDur((570 - m) * 60 - p.s) : "WE'RE OPEN"; }
-function bumper(){ sting("intro"); const b = $("#bumper"); $("#bumpW").textContent = "WE'RE LIVE"; b.classList.remove("go"); void b.offsetWidth; b.classList.add("go"); }
+// the stingers: a full-screen word that sweeps in and out. WE'RE LIVE, the market's mood, your reminders, or your own
+const MOODS = {live: ["WE'RE LIVE", "#e0242f", ""], bull: ["BULLISH", "#16a34a", "▲"], bear: ["BEARISH", "#dc2626", "▼"], chop: ["CHOP", "#d97706", "↔"],
+  careful: ["CAREFUL", "#f59e0b", "!"], early: ["TAKE PROFITS EARLY", "#0ea5e9", "$"], pay: ["PAY YOURSELF", "#16a34a", "$"], confirm: ["WAIT FOR CONFIRMATION", "#7c3aed", "…"],
+  second: ["SECOND ENTRY", "#0ea5e9", "2"], pivot: ["AT THE PIVOT", "#7c3aed", "◆"], runner: ["LET THE RUNNER RUN", "#16a34a", "»"], hod: ["NEW HIGH OF DAY", "#16a34a", "▲"],
+  lod: ["NEW LOW OF DAY", "#dc2626", "▼"], sit: ["SIT ON YOUR HANDS", "#64748b", "✋"], green: ["GREEN DAY", "#16a34a", "✔"], red: ["RED DAY: RESET", "#dc2626", "↺"]};
+function bumper(kind, own){
+  const m = own ? [own.toUpperCase(), "#e0242f", ""] : (MOODS[kind] || MOODS.live), b = $("#bumper"), w = $("#bumpW");
+  b.className = "mood-" + (own ? "own" : kind || "live"); b.style.setProperty("--mc", m[1]);
+  w.innerHTML = (m[2] ? `<span class="ic">${esc(m[2])}</span>` : "") + esc(m[0]); w.style.fontSize = (m[0].length > 18 ? 104 : m[0].length > 11 ? 126 : 156) + "px";
+  $("#bumpS").textContent = S.brand + (S.handle ? "  ·  " + S.handle : "");
+  sting(kind === "bull" || kind === "hod" || kind === "green" || kind === "pay" ? "bull" : kind === "bear" || kind === "lod" || kind === "red" ? "bear" : kind === "chop" || kind === "sit" ? "chop" : kind === "careful" || kind === "early" ? "careful" : "intro");
+  void b.offsetWidth; b.classList.add("go"); }
 // snapshot: the focused chart with your drawings, the name and the show, as a picture
 function snapshot(){
   const c = cells[S.focus] || cells[0]; if (!c.L) return; const W = c.cv.width, H = c.cv.height, out = document.createElement("canvas"); out.width = W; out.height = H + 110;
   const g = out.getContext("2d"), css = getComputedStyle(document.body); g.fillStyle = css.getPropertyValue("--bg"); g.fillRect(0, 0, out.width, out.height);
   g.drawImage(c.cv, 0, 110); g.drawImage(c.dv, 0, 110);
-  g.fillStyle = css.getPropertyValue("--brand"); g.fillRect(0, 0, W, 8); g.fillStyle = css.getPropertyValue("--ink"); g.font = "700 54px \"IBM Plex Sans Condensed\", \"Arial Narrow\", Arial, sans-serif"; g.fillText(c.sym || "", 24, 78);
-  const w = WL.find(x => x.symbol === c.sym) || {}; g.font = "700 40px \"IBM Plex Mono\", Consolas, monospace"; g.fillText(px(w.last), 24 + g.measureText(c.sym || "").width * 1.4 + 20, 78);
-  g.font = "700 28px \"IBM Plex Sans Condensed\", \"Arial Narrow\", Arial, sans-serif"; g.fillStyle = css.getPropertyValue("--gold"); const br = `${S.brand}${S.handle ? "  " + S.handle : ""}`; g.fillText(br, W - g.measureText(br).width - 24, 74);
+  g.fillStyle = css.getPropertyValue("--brand"); g.fillRect(0, 0, W, 8); g.fillStyle = css.getPropertyValue("--ink"); g.font = `700 54px ${FONT.H}`; g.fillText(c.sym || "", 24, 78);
+  const w = WL.find(x => x.symbol === c.sym) || {}; g.font = `700 40px ${FONT.N}`; g.fillText(px(w.last), 24 + g.measureText(c.sym || "").width * 1.4 + 20, 78);
+  g.font = `700 28px ${FONT.H}`; g.fillStyle = css.getPropertyValue("--gold"); const br = `${S.brand}${S.handle ? "  " + S.handle : ""}`; g.fillText(br, W - g.measureText(br).width - 24, 74);
   const a = document.createElement("a"); a.href = out.toDataURL("image/png"); a.download = `${c.sym || "chart"}-${new Date().toISOString().slice(0, 10)}.png`; a.click(); toast("Snapshot saved");
 }
 // replay the day, candle by candle
@@ -742,7 +895,7 @@ function syncDock(){
   const c = cells[S.focus]; $$("#tfR button").forEach(b => b.classList.toggle("on", c && String(c.tf) === b.dataset.tf));
   $$("#lyrR button").forEach(b => b.classList.toggle("on", !!S.lyr[b.dataset.lyr]));
   $$("#toolR button").forEach(b => b.classList.toggle("on", b.dataset.tool === tool));
-  $$("#thR button").forEach(b => b.classList.toggle("on", b.dataset.th === S.theme));
+  $$("#thR button").forEach(b => b.classList.toggle("on", b.dataset.th === S.theme)); $$("#fontR button").forEach(b => b.classList.toggle("on", b.dataset.font === (S.font || "net")));
   $$("#scR button").forEach(b => b.classList.toggle("on", b.dataset.sc === SCENE));
   $$("#camR button[data-cam]").forEach(b => b.classList.toggle("on", b.dataset.cam === S.cam));
   $("#camKey").classList.toggle("on", !!S.camKey); $("#gBtn").classList.toggle("on", !!S.guides); $("#railBtn").classList.toggle("on", !!S.rail);
@@ -759,7 +912,7 @@ function syncDock(){
   if (document.activeElement !== $("#crawlLabIn")) $("#crawlLabIn").value = S.crawlLab || ""; $("#lblSel").value = String(S.lbl || 16);
   cells.forEach(c => { c.dv.classList.toggle("move", tool === "move"); c.dv.style.cursor = tool === "laser" ? "none" : ""; });
 }
-function setTool(t){ tool = t; if (t !== "spot"){ spot = null; drawSpot(); } syncDock(); }
+function setTool(t){ tool = t; hideMenu(); if (t !== "spot"){ spot = null; drawSpot(); } syncDock(); }
 $("#dock").addEventListener("click", e => {
   const b = e.target.closest("button, .sw"); if (!b) return; const d = b.dataset;
   if (d.fmt){ S.fmt = d.fmt; applyLook(); }
@@ -769,6 +922,8 @@ $("#dock").addEventListener("click", e => {
   else if (d.tool) setTool(d.tool);
   else if (d.col){ drawCol = S.color = d.col; }
   else if (d.th){ S.theme = d.th; applyLook(); cells.forEach(c => c.draw()); }
+  else if (d.font){ S.font = d.font; applyLook(); document.fonts && document.fonts.ready.then(() => cells.forEach(c => c.draw())); }
+  else if (d.mood){ bumper(d.mood); }
   else if (d.sc != null) setScene(d.sc);
   else if (d.cam != null){ S.cam = d.cam; applyLook(); }
   else if (d.seg){ S.seg = d.seg; $("#segIn").value = ""; autoSub(); }
@@ -795,7 +950,7 @@ $("#dock").addEventListener("click", e => {
   else if (b.id === "clearBtn") clearChart();
   else if (b.id === "snapBtn") snapshot();
   else if (b.id === "replayBtn") replayDay();
-  else if (b.id === "bumpBtn") bumper();
+  else if (b.id === "bumpBtn") bumper("live");
   else if (b.id === "cleanBtn") window.open("/show?clean=1", "_blank");
   else if (b.id === "hideBtn"){ document.body.classList.add("dockoff"); fit(); toast("H brings the panel back"); }
   save(); syncDock(); autoSub();
@@ -813,6 +968,7 @@ $("#lblSel").addEventListener("change", e => { S.lbl = +e.target.value; save(); 
 for (const [id, k] of [["#brandIn", "brand"], ["#handleIn", "handle"], ["#segIn", "seg"], ["#segSubIn", "segSub"]]){
   $(id).addEventListener("input", e => { if (k === "seg" && !e.target.value) return; S[k] = e.target.value; save(); $("#brandName").textContent = S.brand || "TWINEY LIVE"; autoSub(); renderCrawl(); });
   $(id).addEventListener("keydown", e => e.stopPropagation()); }
+$("#moodIn").addEventListener("keydown", e => { e.stopPropagation(); if (e.key === "Enter" && e.target.value.trim()) bumper("own", e.target.value.trim()); });
 for (const id of ["#qIn", "#qFromIn", "#soonMin"]) $(id).addEventListener("keydown", e => e.stopPropagation());
 function undo(){ const c = cells[S.focus]; const sh = c && c.sym && shapesOf(c.sym); if (sh && sh.length){ sh.pop(); saveShapes(c.sym); c.draw(); } }
 function clearChart(){ const c = cells[S.focus]; if (c && c.sym && shapesOf(c.sym).length && confirm(`Clear every drawing on ${c.sym}?`)){ DRAW[c.sym] = []; saveShapes(c.sym); c.draw(); } }
@@ -823,7 +979,7 @@ document.addEventListener("keydown", e => {
   else if (k === "z") undo(); else if (k === "x") clearChart();
   else if (k === "h"){ document.body.classList.toggle("dockoff"); fit(); }
   else if (k === "escape"){ setTool("move"); setScene(""); playsBoard(false); if (m60T) m60(); $$(".card").forEach(c => c.classList.remove("on")); }
-  else if (k === "b") bumper();
+  else if (k === "b") bumper("live");
 });
 // HOTKEYS for a Stream Deck: Shift+1..8 segments, Alt+1..5 scenes, F-keys for the boards and cards
 document.addEventListener("keydown", e => {
@@ -896,9 +1052,14 @@ function sting(kind){
     const tone = (f, t, d, type) => { const o = AC.createOscillator(), gn = AC.createGain(); o.type = type || "sine"; o.frequency.value = f; gn.gain.setValueAtTime(0, t0 + t); gn.gain.linearRampToValueAtTime(1, t0 + t + .02); gn.gain.exponentialRampToValueAtTime(.001, t0 + t + d); o.connect(gn); gn.connect(out); o.start(t0 + t); o.stop(t0 + t + d + .05); };
     if (kind === "intro"){ tone(220, 0, .5, "sawtooth"); tone(330, .12, .5, "sawtooth"); tone(440, .24, .7, "triangle"); tone(880, .36, .9, "sine"); }
     else if (kind === "card"){ tone(660, 0, .18, "triangle"); }
+    else if (kind === "bull"){ tone(392, 0, .3, "triangle"); tone(523, .12, .3, "triangle"); tone(659, .24, .3, "triangle"); tone(784, .36, .7, "sine"); }
+    else if (kind === "bear"){ tone(784, 0, .3, "triangle"); tone(622, .12, .3, "triangle"); tone(523, .24, .3, "triangle"); tone(392, .36, .8, "sine"); }
+    else if (kind === "chop"){ for (let i = 0; i < 6; i++) tone(i % 2 ? 440 : 466, i * .09, .12, "square"); }
+    else if (kind === "careful"){ tone(880, 0, .2, "square"); tone(660, .24, .2, "square"); tone(880, .48, .2, "square"); tone(660, .72, .3, "square"); }
     else { tone(523, 0, .22, "triangle"); tone(784, .16, .35, "triangle"); }
   } catch (e) {}
 }
 applyLook(); setTool("move"); poll(); clock(); ytStart();
+if (document.fonts) document.fonts.ready.then(() => { readFonts(); cells.forEach(c => c.draw()); });
 </script>
 </body></html>

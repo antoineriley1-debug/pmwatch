@@ -1076,14 +1076,17 @@ function wireChart(p, cv, v, saveView, isFoot){
     } else if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)){   // shift+wheel or trackpad sideways: pan
       const d = (e.deltaX || e.deltaY) / v.cw;
       v.offset = Math.max(minOff(), v.offset - d); v.follow = v.offset < 0.5; v.rightT = null;
+      v.yLo = v.yHi = null;                      // the prices re-fit to what is on screen: nothing slides off the top or bottom
     } else {                                     // zoom, keeping the bar under the cursor where it is
-      const f = e.deltaY > 0 ? 1 / 1.2 : 1.2;
+      // smooth: a notch of a mouse wheel is ~18%, a trackpad's small steps zoom a little at a time
+      const dy = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY, f = Math.exp(-Math.max(-300, Math.min(300, dy)) * 0.0017);
+      v.yLo = v.yHi = null;                      // the prices re-fit to what is on screen: nothing slides off the top or bottom
       const plotW = r.width - 86, barsRight = (plotW - x) / v.cw;   // bars between cursor and right edge
       v.cw = Math.max(isFoot ? 34 : 2, Math.min(isFoot ? 120 : 60, v.cw * f));
       v.offset = Math.max(minOff(), v.offset + barsRight - (plotW - x) / v.cw);
       v.follow = v.offset < 0.5; v.rightT = null;
     }
-    saveView(); drawChart(p);
+    saveView(); if (!v._wraf) v._wraf = requestAnimationFrame(() => { v._wraf = 0; drawChart(p); });   // one draw per frame
   }, {passive: false});
   // the line under a price: one of your level lines (stop, target, 2nd entry, pivot, a level) or a working order.
   // tol = how many pixels away still counts
@@ -1786,13 +1789,19 @@ function ladderCandleHTML(L){
   if (!c) return h.replace(/(<tr class="[^"]*" data-price="[^"]+"[^>]*>)/g, '$1<td class="cdl"></td>');
   const up = c.last >= c.open, bLo = Math.min(c.open, c.last), bHi = Math.max(c.open, c.last);
   const pUp = c.prev ? c.prev.close >= c.prev.open : null, pLo = c.prev ? Math.min(c.prev.open, c.prev.close) : null, pHi = c.prev ? Math.max(c.prev.open, c.prev.close) : null;
+  // the candle runs past the rows on screen: the top / bottom row says where its open, high or low is, so a column that
+  // is all one colour still reads as a candle (open above: a red body running up off the ladder)
+  const ps = L.rows.map(r => +r.price), topP = Math.max(...ps), botP = Math.min(...ps);
+  const offTop = [c.open > topP + half ? `O ${px(c.open)}` : "", c.high > topP + half && c.high !== c.open ? `H ${px(c.high)}` : ""].filter(Boolean).join(" · ");
+  const offBot = [c.open < botP - half ? `O ${px(c.open)}` : "", c.low < botP - half && c.low !== c.open ? `L ${px(c.low)}` : ""].filter(Boolean).join(" · ");
   return h.replace(/<tr class="([^"]*)" data-price="([^"]+)"([^>]*)>/g, (m, cls, p, rest) => {
     const q = +p, k = [up ? "c-up" : "c-dn"];
     if (q >= bLo - half && q <= bHi + half) k.push("cb"); else if (q >= c.low - half && q <= c.high + half) k.push("cw");
     if (Math.abs(q - c.open) <= half) k.push("c-open"); if (Math.abs(q - c.last) <= half) k.push("c-last");
     if (Math.abs(q - c.high) <= half) k.push("c-high"); if (Math.abs(q - c.low) <= half) k.push("c-low");
     if (c.prev){ k.push(pUp ? "p-up" : "p-dn"); if (q >= pLo - half && q <= pHi + half) k.push("pb"); else if (q >= c.prev.low - half && q <= c.prev.high + half) k.push("pw"); }
-    const hl = k.includes("c-high") ? `<em class="hl h" title="the candle's high">H</em>` : k.includes("c-low") ? `<em class="hl l" title="the candle's low">L</em>` : "";
+    const off = Math.abs(q - topP) <= half && offTop ? `<em class="hl off up" title="the candle carries on above the ladder">▲ ${offTop}</em>` : Math.abs(q - botP) <= half && offBot ? `<em class="hl off dn" title="the candle carries on below the ladder">▼ ${offBot}</em>` : "";
+    const hl = off || (k.includes("c-high") ? `<em class="hl h" title="the candle's high">H</em>` : k.includes("c-low") ? `<em class="hl l" title="the candle's low">L</em>` : "");
     return `<tr class="${cls} ${k.join(" ")}" data-price="${p}"${rest}><td class="cdl"><i class="pg"></i><i class="wk"></i><i class="bd"></i>${hl}</td>`;
   });
 }

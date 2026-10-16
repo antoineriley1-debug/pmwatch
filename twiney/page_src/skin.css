@@ -159,7 +159,11 @@ input:focus,select:focus,textarea:focus{outline:1px solid var(--gold);outline-of
 
 .wlrow .gw{display:inline-flex;align-items:center;gap:3px;justify-self:end}
 .pnl.fa{container-type:inline-size}
-@container (max-width: 420px){ .fl .cols{gap:2px 9px;font-size:11.5px} .fl{padding:7px 10px 9px} .fa-sub{gap:8px} }
+/* smaller flow text (Twiney): more prints on screen, same layout */
+.fl{padding:5px 10px 6px} .fl .tm{font-size:9.5px;margin-bottom:3px} .fl .top{gap:9px}
+.fl .tk{font-size:10.5px;padding:1px 7px;min-width:30px} .fl .prem{font-size:12.5px}
+.fl .cols{gap:1px 11px;margin-top:5px;font-size:10.5px} .fl .cols i{font-size:7.5px;margin-bottom:1px}
+@container (max-width: 420px){ .fl .cols{gap:1px 8px;font-size:10px} .fl{padding:5px 8px 6px} .fa-sub{gap:8px} }
 
 .fa-sub .fsw{background:#0f1522;border:1px solid #2a3344;border-radius:10px;color:#8b95a7;font:600 9.5px "IBM Plex Sans","Segoe UI",sans-serif;letter-spacing:.08em;padding:1px 8px;height:18px;text-transform:none}
 .fa-sub .fsw b{color:#8b95a7;margin-left:3px} .fa-sub .fsw.on{border-color:#17a86a;color:#e6e9ef} .fa-sub .fsw.on b{color:#2ec27e}

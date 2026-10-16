@@ -121,5 +121,25 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(code, 409); self.assertIn("close out first", out["reason"])
 
 
+    def test_the_practice_desk_asks_the_live_desk(self):
+        class Fake:
+            def enabled(self): return True
+            def check(self, force=False): return {"ok": True, "enabled": True, "newer": True, "latest": "20991231-0000", "current": "x"}
+            def install(self): raise AssertionError("must not install while holding")
+        self.dash.hooks["update"] = Fake()                         # the live desk
+        self.engine.positions[("DU1", "AAA")] = {"qty": 100, "avg_cost": 10.0}
+        practice = Dashboard(Engine(plays(), cfg()), "127.0.0.1", 0, clock=lambda: 2.0).start()
+        try:
+            practice.hooks["update_relay"] = self.dash.url
+            self.dash, live = practice, self.dash
+            code, out = self.call("GET")
+            self.assertEqual(code, 200); self.assertTrue(out["enabled"]); self.assertEqual(out["latest"], "20991231-0000")
+            code, out = self.call("POST")                          # the live desk's own positions decide
+            self.assertEqual(code, 409); self.assertIn("close out first", out["reason"])
+        finally:
+            self.dash = live
+            practice.stop()
+
+
 if __name__ == "__main__":
     unittest.main()

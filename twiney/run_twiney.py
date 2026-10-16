@@ -329,10 +329,14 @@ def run_live(cfg, plays, args):
         dash.hooks["source"] = SOURCE[0]
 
     def stop_all():
+        if practice.running():
+            os.environ["TWINEY_PRACTICE_BACK"] = "1"   # a restart (UPDATE, settings) brings the practice desk back with it
         practice.stop()
         stop()
     dash.hooks["restart"] = lambda: restart_process(stop_all)
     attach_updater(dash, cfg)
+    if os.environ.pop("TWINEY_PRACTICE_BACK", None):
+        threading.Thread(target=practice.start, name="practice-back", daemon=True).start()
     wait_forever(stop_all)
     return 0
 
@@ -495,6 +499,10 @@ def run_demo(cfg, plays, args):
     dash.hooks["restart"] = lambda: restart_process(lambda: (stop_evt.set(), dash.stop(), desk.stop()))
     if SOURCE[0]:
         attach_updater(dash, cfg)              # the service itself on the practice market, not the PRACTICE button's desk
+    elif os.environ.get("TWINEY_PRACTICE") == "1":
+        # the PRACTICE button's desk: its UPDATE goes through the live desk next door, which installs the build and
+        # restarts both (it checks your live positions first)
+        dash.hooks["update_relay"] = f"http://127.0.0.1:{int(cfg['dashboard']['port']) - 1}"
     if SOURCE[0]:
         dash.hooks["datasource"] = datasource_hook(cfg, args.config, dash.hooks["restart"])
         dash.hooks["source"] = SOURCE[0]

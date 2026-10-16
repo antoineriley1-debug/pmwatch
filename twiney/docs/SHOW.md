@@ -57,8 +57,14 @@ on:
 - **VWAP** and **VOLUME**.
 - **LABELS S / M / L / XL**: the study label size for the camera.
 
-Each layer switches on and off with one click. Timeframes: 1, 2, 5, 15, 60 min and daily. The mouse wheel zooms.
-MOVE + drag pans; drag the price scale to squeeze or stretch it. Double-click resets. Everything you draw sits on top.
+Each layer switches on and off with one click. Timeframes: 1, 2, 5, 15, 60 min and daily.
+
+- **MOVE + drag** slides the chart left / right **and up / down**, smoothly (by part of a candle, not a candle at a time).
+- **The mouse wheel** zooms around the mouse: the candle under it stays under it. Every zoom re-fits the prices, so
+  nothing goes off the top or bottom. Shift + wheel (or a trackpad sideways) slides it.
+- Drag the price scale to squeeze or stretch it. Double-click resets.
+- **MOVE on a drawing** picks it up: drag any line, square, text or PS60 line to a new place.
+- Everything you draw sits on top.
 
 ## Drawing tools (keys)
 
@@ -83,7 +89,16 @@ MOVE + drag pans; drag the price scale to squeeze or stretch it. Double-click re
 | H | hide / show the panel |
 
 Six colors. Drawings stay on their ticker at their price and time, so they are still there tomorrow and on every
-timeframe.
+timeframe. TEXT: click, type on the chart, Enter. The SPOTLIGHT: press anywhere and drag it around; the mouse wheel
+makes it bigger or smaller.
+
+**Marked up on the DAILY?** It shows on every smaller timeframe too: trend lines carry on across the chart (tagged
+DAILY), squares, circles and the MP ruler become the price band they cover, price lines and text sit at their price.
+Pen, highlighter and arrow strokes stay on the daily.
+
+**Right-click the chart** for named lines at that price: PIVOT, 2ND ENTRY, TARGET, STOP, SUPPLY, DEMAND, SNEAKY PIVOT,
+MP, a plain PRICE LINE, TEXT HERE, REMOVE THIS DRAWING (when you right-click one), CLEAR. They are drawings on the
+show only: nothing on this page places an order.
 
 ## The broadcast pieces
 
@@ -99,6 +114,10 @@ timeframe.
   your own). AUTO switches the desk's calls off. Type your own line and press Enter. SAY IT has the browser read it
   out; it is off by default so you do the talking.
 - **WE'RE LIVE intro**: a red sweep with WE'RE LIVE, for the top of the show.
+- **STINGERS**: the same full-screen sweep with a word and its own colour, movement and sound: ▲ BULLISH (rises in,
+  green), ▼ BEARISH (drops in, red), CHOP (shakes, amber), CAREFUL and TAKE PROFITS EARLY (hazard stripes), PAY YOURSELF,
+  WAIT FOR CONFIRMATION, SECOND ENTRY, AT THE PIVOT, LET THE RUNNER RUN, NEW HIGH OF DAY, NEW LOW OF DAY, SIT ON YOUR
+  HANDS, GREEN DAY, RED DAY: RESET, or type your own word and press Enter.
 - **Scenes**: STARTING SOON with a countdown, OPEN COUNTDOWN to 9:30, BE RIGHT BACK, THANKS FOR WATCHING, LIVE (back
   to the charts).
 - **LAST TRADE CARD** and **TODAY'S SCORECARD**: your closed trades in R (or % on options), wins and losses.
@@ -106,6 +125,8 @@ timeframe.
 - **CAMERA SPOT**: a marked corner for your camera in OBS. GREEN FILL lets OBS key it.
 - **Looks**: NETWORK (red, white, navy, the news-desk look), NIGHT DESK (TED's graphite and gold), NEON, DAYTIME
   (light).
+- **Fonts**: FONT: NETWORK (default: condensed news-desk lettering, numbers that line up in columns), FONT: BOLD (tall
+  heavy sports-network headlines), FONT: CLASSIC (the first look). The charts draw with the same font.
 - **SHOW-SAFE** (on by default): no dollars and no sizes on screen. Cards show R and %. Turn it off only if you want
   dollars shown.
 - **SNAPSHOT**: saves the chart with your drawings as a PNG for a post.

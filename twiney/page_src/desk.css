@@ -1166,6 +1166,7 @@ body.whitedesk .chart-wrap canvas,body.whitedesk img,body.whitedesk video{filter
 .lad.candle tr.c-high td.cdl i.wk::before{top:0}.lad.candle tr.c-low td.cdl i.wk::after{bottom:0}
 .lad.candle td.cdl em.hl{position:absolute;right:1px;top:1px;font:700 8px/1 var(--mono);color:var(--cc);font-style:normal}
 .lad.candle td.cdl em.hl.l{top:auto;bottom:1px}
+.lad.candle td.cdl em.hl.off{left:0;right:0;top:0;bottom:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.72);color:#fff;font:700 8px/1 var(--mono);white-space:nowrap;overflow:hidden;z-index:2}
 .lad.candle th.cdl i.oc.h,.lad.candle th.cdl i.oc.l{opacity:.8}.lad.candle th.cdl i.oc.r{opacity:.7}
 
 /* THE DESK SCORE */
@@ -1357,5 +1358,6 @@ body.whitedesk .chart-wrap canvas,body.whitedesk img,body.whitedesk video{filter
 .simple .tprow input{width:64px} .simple .tprow .go{font-weight:700}
 .cmenu.copt > .lvl2:not(.heldopt){display:none}      /* contract mode: the share setup grid steps aside */
 #updBtn{background:#e3a83a;color:#111;font-weight:800;letter-spacing:.08em;border-color:#e3a83a} #updBtn[hidden]{display:none}
+#updBtn.current{background:transparent;color:var(--dim,#8e9096);border-color:var(--line,#2c2e33);font-weight:700}
 .qs .qclr,.qs .qflat{font:700 10.5px var(--mono);height:18px;padding:0 7px;letter-spacing:.06em}
 .qs .qflat,.simple .mgr .flat{color:#ff8a80;border-color:#7a2a2a} .qs .qclr,.simple .mgr .clr{color:#b0b0ad}
