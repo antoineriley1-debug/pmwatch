@@ -65,6 +65,7 @@ LOCKED = {
 SECRET = {"quantdata.api_key", "speech.api_key", "gmail.app_password"}
 
 CHOICES = {
+    "trading.auto_target_mode": [("r", "2 to 1 · the target auto_target_r times the stop distance"), ("supply", "next supply / demand · never closer than the 2 to 1")],
     "ibkr.port": [(7497, "7497 · TWS paper"), (7496, "7496 · TWS live"), (4002, "4002 · Gateway paper"), (4001, "4001 · Gateway live")],
     "ibkr.market_data_type": [(1, "1 · live"), (2, "2 · frozen"), (3, "3 · delayed"), (4, "4 · delayed frozen")],
     "quantdata.method": [("POST", "POST"), ("GET", "GET")],

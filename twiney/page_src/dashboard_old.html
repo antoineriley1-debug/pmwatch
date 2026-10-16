@@ -2982,11 +2982,36 @@ function sayNames(text){
   if (!_nameRx) return text;
   return text.replace(_nameRx, (m, pre, sym) => pre + (N[sym] || N[sym.replace(".", " ")] || N[sym.replace(" ", ".")] || sym));
 }
+/* a price said the way a trader says it: 13.45 "thirteen forty-five", 13.05 "thirteen oh five", 13.00 "thirteen
+   dollars", 0.45 "forty-five cents", 152.50 "one fifty-two fifty". Never "thirteen point four five" */
+const _ONES = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen",
+  "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen"];
+const _TENS = ["", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"];
+function n2w(n){
+  n = Math.floor(n);
+  if (n < 20) return _ONES[n];
+  if (n < 100) return _TENS[Math.floor(n / 10)] + (n % 10 ? "-" + _ONES[n % 10] : "");
+  if (n < 1000) return _ONES[Math.floor(n / 100)] + " hundred" + (n % 100 ? " " + n2w(n % 100) : "");
+  if (n < 1e6) return n2w(Math.floor(n / 1000)) + " thousand" + (n % 1000 ? " " + n2w(n % 1000) : "");
+  return String(n);
+}
+function dollarsWords(d){
+  // 152 "one fifty-two", 1,240 "twelve forty", the way a price is read off the screen; 100 / 200 stay "one hundred"
+  if (d >= 100 && d < 10000 && d % 100) return n2w(Math.floor(d / 100)) + " " + (d % 100 < 10 ? "oh " + _ONES[d % 100] : n2w(d % 100));
+  return n2w(d);
+}
+function priceWords(str){
+  const [a, b = ""] = String(str).split("."), c = (b + "00").slice(0, 2), d = parseInt(a, 10), cents = parseInt(c, 10);
+  if (!d) return cents ? n2w(cents) + " cents" : "zero";
+  if (!cents) return dollarsWords(d) + (d === 1 ? " dollar" : " dollars");
+  return dollarsWords(d) + " " + (cents < 10 ? "oh " + _ONES[cents] : n2w(cents));
+}
 function spokenText(text){
   return sayNames(String(text || ""))
     .replace(/×/g, " times ")
     .replace(/\$\s?(\d+(?:\.\d+)?)\s?([MK])\b/gi, (m, n, u) => n + (u.toUpperCase() === "M" ? " million" : " thousand") + " dollars")
-    .replace(/(^|[^\d.$\wx])(\d{1,5}\.\d{1,2})(?![\d%x]|\s*(?:times|percent|million|thousand|to 1|R\b|ATR|seconds?|s\b))/gi, (m, pre, n) => pre + "$" + (/\.\d$/.test(n) ? n + "0" : n))
+    .replace(/\$(\d{1,5}\.\d{1,2})(?![\d%])/g, (m, n) => priceWords(n))
+    .replace(/(^|[^\d.$\wx])(\d{1,5}\.\d{1,2})(?![\d%x]|\s*(?:times|percent|million|thousand|to 1|R\b|ATR|seconds?|s\b))/gi, (m, pre, n) => pre + priceWords(n))
     .replace(/\bPM VWAP\b/g, "premarket V-WAP").replace(/\bVWAP\b/gi, "V-WAP")
     .replace(/(\d)k\b/g, "$1 thousand").replace(/\bk\b/g, " thousand")
     .replace(/[★·]/g, " ").replace(/\s+/g, " ").trim();

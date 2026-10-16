@@ -244,9 +244,15 @@ DEFAULTS = {
         "auto_entry_max_slip_pct": 0.3,
         # drawing a 2nd entry while DISARMED arms the desk (paper / practice accounts only; never when locked)
         "auto_arm_on_second_entry": True,
-        # a 2nd entry drawn with no stop on its side gets a STOP this many dollars away (under a long, over a short);
-        # drag it where you want it. 0 = off
-        "auto_stop_dollars": 1.0,
+        # a 2nd entry drawn with no stop on its side gets a STOP this many dollars away (under a long, over a short):
+        # tight on purpose; drag it where you want it. 0 = off
+        "auto_stop_dollars": 0.20,
+        # a new 2nd entry with no target gets a TARGET at auto_target_r times the stop distance: 2 = 2 to 1 (a 0.20
+        # stop, a 0.40 target). auto_target_mode "supply": the next supply (long) / demand (short) the story reads
+        # instead, when it is at least that far. auto_target false: never drawn for you
+        "auto_target": True,
+        "auto_target_r": 2.0,
+        "auto_target_mode": "r",
         "sim_options_after_hours": True,
         "outside_rth": True,            # stock limit / stop-limit orders work in the premarket and after hours too (IBKR outsideRth)
         "overnight_venue": True,        # 8 PM - 3:50 AM ET: a stock limit goes to IBKR's OVERNIGHT venue instead of waiting for 4 AM

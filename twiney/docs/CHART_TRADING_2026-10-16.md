@@ -24,6 +24,21 @@
   - 2ND / STOP / TARGET at that stock price: the lines trade the contract. The stock trading through the 2ND buys
     it, the STOP sells it, the TARGET sells it (or your %).
 
+## A new 2nd entry: STOP and TARGET drawn for you, 2 to 1
+
+Draw a 2nd entry and the desk draws the rest:
+- **STOP**: tight, $0.20 away (under a long, over a short). SETTINGS › Trading › auto stop dollars.
+- **TARGET**: 2 to 1 on that stop ($0.40 away). SETTINGS › Trading › auto target r.
+
+Lines you drew yourself are never replaced. Drag either one to move it. Take the 2nd entry off before a trade and the
+two the desk drew go with it. Auto target mode "supply" uses the next supply (demand on a short) instead, never closer
+than the 2 to 1.
+
+## The voice says prices like a trader
+
+13.45 is "thirteen forty-five", 13.05 "thirteen oh five", 13.00 "thirteen dollars", 0.45 "forty-five cents", 152.50
+"one fifty-two fifty". Never "thirteen point four five".
+
 ## The option chart
 
 - The bid / ask, delta and "practice model" words are gone from the top line.

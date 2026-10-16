@@ -1680,6 +1680,7 @@ class Engine:
                 log.exception("story MAs %s", st.symbol)
                 mc["v"], mc["mas"], mc["dpack"], mc["hpack"], mc["dprev"], mc["hprev"], mc["h60"] = [], [], [], [], [], [], []
         points = story_mod.ps60_points(st.play, getattr(st, "sneaky_auto", None)) + dc["pts"] + story_mod.ma_points(ctx) + mc["v"]
+        st._story_points = points                             # the auto TARGET reads its next supply / demand from these
         zones = story_mod.user_zones(st.play)                 # your zones only: no automatic supply / demand
         conf = story_mod.confluence(points, zones, last, atr, tick, sc)
         prints = list(self.flow.by_symbol.get(st.symbol, ()))
@@ -3068,6 +3069,7 @@ class Engine:
             self._save_plays()
             if role == "second_entry" and price is not None and old is None and source == "chart":
                 self._auto_stop(symbol, st.play, False, price, t)
+                self._auto_target(symbol, st.play, False, price, t)
             if role == "second_entry" and price is None and old is not None:
                 self._orphan_auto_stop(symbol, st.play, False, t)
             return True
@@ -3090,8 +3092,61 @@ class Engine:
         lines["auto_stop_px"] = stop          # the stop the DESK drew: it goes with its 2nd entry while you are not in
         self._message("info", f"{symbol}: STOP set ${d:g} from your 2nd entry at {narrative.px(stop)} — drag it to move it", t or self.last_t, symbol)
 
+    def _auto_target(self, symbol, lines, alt, se, t):
+        """A NEW 2nd entry with no target on its side: the TARGET goes ``trading.auto_target_r`` (2) times the stop distance
+        away, 2 to 1. auto_target_mode "supply": the next supply over a long's 2nd entry (demand under a short's) from
+        the levels the story reads, never closer than the 2 to 1. Drag it to move it."""
+        tc = self.cfg.get("trading") or {}
+        if tc.get("auto_target", True) is False or lines.get("target") is not None:
+            return
+        st = self._st(symbol)
+        side = lines.get("side") or (("short" if st.play.get("side", "long") == "long" else "long") if alt else st.play.get("side", "long"))
+        long_ = side == "long"
+        stop = lines.get("stop")
+        risk = abs(float(se) - float(stop)) if stop is not None else float(tc.get("auto_stop_dollars") or 1.0)
+        room = max(0.10, risk * 0.5)                     # the next supply / demand at least half the risk away
+        pts = [p for p in (getattr(st, "_story_points", None) or []) if p.get("kind") not in ("inst", "pivot", "second", "target") and p.get("p")]
+        r = float(tc.get("auto_target_r") or 2.0)
+        if str(tc.get("auto_target_mode") or "r").lower() == "supply":
+            room = max(room, r * risk)                   # never closer than the 2 to 1
+            ahead = sorted((p for p in pts if (p["p"] >= se + room if long_ else p["p"] <= se - room)),
+                           key=lambda p: p["p"] if long_ else -p["p"])
+        else:
+            ahead = []
+        if ahead:
+            tgt, why = round(float(ahead[0]["p"]), 2), f"the next {'supply' if long_ else 'demand'}, {ahead[0].get('name') or 'a level'}"
+        else:
+            tgt = round(se + r * risk if long_ else se - r * risk, 2)
+            why = f"{r:g} to 1 on your stop {narrative.px(risk)} away"
+        if tgt <= 0:
+            return
+        if alt:
+            self._set_alt_level(symbol, "target", tgt, t, source="auto target")
+        else:
+            self.set_play_level(symbol, "target", tgt, t, source="auto target")
+        lines["auto_target_px"] = tgt
+        self._message("info", f"{symbol}: TARGET set at {narrative.px(tgt)}, {why} — drag it to move it", t or self.last_t, symbol)
+
+    def _orphan_auto_line(self, symbol, lines, alt, t, role):
+        px = lines.pop(f"auto_{role}_px", None)
+        if px is None or lines.get(role) is None or abs(float(lines[role]) - float(px)) > 1e-9:
+            return
+        tr = getattr(self, "trader", None)
+        try:
+            held = bool(tr and int(tr.broker.position(symbol))) or any(int(p.get("qty") or 0) for p in list(self.opt_positions.values()) if p.get("symbol") == symbol)
+        except Exception:
+            held = True
+        if held or self._pending(symbol):
+            return
+        if alt:
+            self._set_alt_level(symbol, role, None, t, source="2nd entry off")
+        else:
+            self.set_play_level(symbol, role, None, t, source="2nd entry off")
+
     def _orphan_auto_stop(self, symbol, lines, alt, t):
-        """Its 2nd entry taken off before any trade: the stop the desk drew with it goes too (one you moved or drew stays)."""
+        """Its 2nd entry taken off before any trade: the stop (and target) the desk drew with it go too (one you moved
+        or drew stays)."""
+        self._orphan_auto_line(symbol, lines, alt, t, "target")
         px = lines.get("auto_stop_px")
         lines.pop("auto_stop_px", None)
         if px is None or lines.get("stop") is None or abs(float(lines["stop"]) - float(px)) > 1e-9:
@@ -3135,6 +3190,7 @@ class Engine:
             self._save_plays()
             if role == "second_entry" and price is not None and old is None and source == "chart" and st.play.get("alt"):
                 self._auto_stop(symbol, st.play["alt"], True, price, t)
+                self._auto_target(symbol, st.play["alt"], True, price, t)
             if role == "second_entry" and price is None and old is not None and st.play.get("alt"):
                 self._orphan_auto_stop(symbol, st.play["alt"], True, t)
             return True

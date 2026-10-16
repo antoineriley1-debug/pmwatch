@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261016-0207">
+<meta name="build" content="20261016-0225">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script>(function(){const f=window.fetch.bind(window);window.fetch=async function(){const r=await f.apply(null,arguments);if(r.status===401&&!window._tedOut){window._tedOut=1;location.replace("/login?next="+encodeURIComponent(location.pathname));}return r;};})();</script>
@@ -4145,11 +4145,36 @@ function sayNames(text){
   if (!_nameRx) return text;
   return text.replace(_nameRx, (m, pre, sym) => pre + (N[sym] || N[sym.replace(".", " ")] || N[sym.replace(" ", ".")] || sym));
 }
+/* a price said the way a trader says it: 13.45 "thirteen forty-five", 13.05 "thirteen oh five", 13.00 "thirteen
+   dollars", 0.45 "forty-five cents", 152.50 "one fifty-two fifty". Never "thirteen point four five" */
+const _ONES = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen",
+  "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen"];
+const _TENS = ["", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"];
+function n2w(n){
+  n = Math.floor(n);
+  if (n < 20) return _ONES[n];
+  if (n < 100) return _TENS[Math.floor(n / 10)] + (n % 10 ? "-" + _ONES[n % 10] : "");
+  if (n < 1000) return _ONES[Math.floor(n / 100)] + " hundred" + (n % 100 ? " " + n2w(n % 100) : "");
+  if (n < 1e6) return n2w(Math.floor(n / 1000)) + " thousand" + (n % 1000 ? " " + n2w(n % 1000) : "");
+  return String(n);
+}
+function dollarsWords(d){
+  // 152 "one fifty-two", 1,240 "twelve forty", the way a price is read off the screen; 100 / 200 stay "one hundred"
+  if (d >= 100 && d < 10000 && d % 100) return n2w(Math.floor(d / 100)) + " " + (d % 100 < 10 ? "oh " + _ONES[d % 100] : n2w(d % 100));
+  return n2w(d);
+}
+function priceWords(str){
+  const [a, b = ""] = String(str).split("."), c = (b + "00").slice(0, 2), d = parseInt(a, 10), cents = parseInt(c, 10);
+  if (!d) return cents ? n2w(cents) + " cents" : "zero";
+  if (!cents) return dollarsWords(d) + (d === 1 ? " dollar" : " dollars");
+  return dollarsWords(d) + " " + (cents < 10 ? "oh " + _ONES[cents] : n2w(cents));
+}
 function spokenText(text){
   return sayNames(String(text || ""))
     .replace(/×/g, " times ")
     .replace(/\$\s?(\d+(?:\.\d+)?)\s?([MK])\b/gi, (m, n, u) => n + (u.toUpperCase() === "M" ? " million" : " thousand") + " dollars")
-    .replace(/(^|[^\d.$\wx])(\d{1,5}\.\d{1,2})(?![\d%x]|\s*(?:times|percent|million|thousand|to 1|R\b|ATR|seconds?|s\b))/gi, (m, pre, n) => pre + "$" + (/\.\d$/.test(n) ? n + "0" : n))
+    .replace(/\$(\d{1,5}\.\d{1,2})(?![\d%])/g, (m, n) => priceWords(n))
+    .replace(/(^|[^\d.$\wx])(\d{1,5}\.\d{1,2})(?![\d%x]|\s*(?:times|percent|million|thousand|to 1|R\b|ATR|seconds?|s\b))/gi, (m, pre, n) => pre + priceWords(n))
     .replace(/\bPM VWAP\b/g, "premarket V-WAP").replace(/\bVWAP\b/gi, "V-WAP")
     .replace(/(\d)k\b/g, "$1 thousand").replace(/\bk\b/g, " thousand")
     .replace(/[★·]/g, " ").replace(/\s+/g, " ").trim();

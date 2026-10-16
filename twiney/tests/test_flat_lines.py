@@ -82,7 +82,7 @@ class StockFlatTests(unittest.TestCase):
 
 class AutoStopTests(unittest.TestCase):
     def test_the_desk_stop_goes_with_its_2nd_entry(self):
-        e, tr, broker = make()
+        e, tr, broker = make(); e.cfg["trading"]["auto_stop_dollars"] = 1.0     # these read the $1 stop
         e.set_play_level("AAA", "second_entry", None, 1.5, source="chart")       # the test play starts with one
         e.set_play_level("AAA", "second_entry", 10.30, 2.0, source="chart")
         self.assertEqual(lines(e)["stop"], 9.3)                              # the desk drew it $1 under
@@ -90,7 +90,7 @@ class AutoStopTests(unittest.TestCase):
         self.assertIsNone(lines(e)["stop"])
 
     def test_a_stop_you_moved_stays(self):
-        e, tr, broker = make()
+        e, tr, broker = make(); e.cfg["trading"]["auto_stop_dollars"] = 1.0     # these read the $1 stop
         e.set_play_level("AAA", "second_entry", None, 1.5, source="chart")
         e.set_play_level("AAA", "second_entry", 10.30, 2.0, source="chart")
         self.assertEqual(lines(e)["stop"], 9.3)
@@ -100,7 +100,7 @@ class AutoStopTests(unittest.TestCase):
 
 
     def test_in_a_trade_the_stop_stays(self):
-        e, tr, broker = make()
+        e, tr, broker = make(); e.cfg["trading"]["auto_stop_dollars"] = 1.0     # these read the $1 stop
         e.set_play_level("AAA", "second_entry", None, 1.5, source="chart")
         e.set_play_level("AAA", "second_entry", 10.30, 2.0, source="chart")
         self.assertTrue(tr.submit("AAA", "BUY", 10.0, 100, 2.5, bracket=False)["ok"]); quote(e, 9.99, 10.00, 3.0)
@@ -395,3 +395,43 @@ class PairedTakeProfitTests(unittest.TestCase):
         broker._report(tg, 5.0); broker._report(st, 5.0)
         tr.fast_stops(5.1); tr.watchdog(5.2)
         self.assertEqual(self.exits(e), [("stop", 60), ("target", 60)])
+
+
+class AutoTargetTests(unittest.TestCase):
+    """A new 2nd entry drawn on the chart gets its STOP and its TARGET: the next supply over a long (demand under a
+    short) from the story's levels, else 2x the stop distance; taken off with its 2nd entry before any trade."""
+
+    def fresh(self):
+        e, tr, broker = make()
+        for r in ("second_entry", "stop", "target"):
+            e.set_play_level("AAA", r, None, 1.0, source="chart")
+        return e
+
+    def test_the_default_is_a_tight_stop(self):
+        from twiney.config import DEFAULTS
+        self.assertEqual(DEFAULTS["trading"]["auto_stop_dollars"], 0.20); self.assertEqual(DEFAULTS["trading"]["auto_target_r"], 2.0)
+
+    def test_two_to_one_on_a_tight_stop(self):
+        e = self.fresh(); e.cfg["trading"]["auto_stop_dollars"] = 0.20; e.syms["AAA"]._story_points = [{"p": 10.25, "name": "prior-day high", "kind": "level"}]
+        e.set_play_level("AAA", "second_entry", 10.00, 2.0, source="chart")
+        p = e.syms["AAA"].play
+        self.assertEqual(p["stop"], 9.8); self.assertEqual(p["target"], 10.4)       # 0.20 stop, 0.40 target: 2 to 1
+
+    def test_supply_mode_takes_the_next_supply_never_closer_than_two_to_one(self):
+        e = self.fresh(); e.cfg["trading"]["auto_target_mode"] = "supply"; e.cfg["trading"]["auto_stop_dollars"] = 1.0
+        e.syms["AAA"]._story_points = [{"p": 10.30, "name": "too close", "kind": "level"}, {"p": 11.25, "name": "prior-day high", "kind": "level"},
+                                       {"p": 12.0, "name": "the 50-day", "kind": "ma"}, {"p": 10.9, "name": "PS60 pivot", "kind": "pivot"}]
+        e.set_play_level("AAA", "second_entry", 10.00, 2.0, source="chart")
+        self.assertEqual(e.syms["AAA"].play["target"], 12.0)                       # 11.25 is under the 2 to 1
+
+    def test_your_own_target_is_kept_and_the_auto_one_goes_with_its_2nd_entry(self):
+        e = self.fresh(); e.cfg["trading"]["auto_stop_dollars"] = 0.20; e.syms["AAA"]._story_points = []
+        e.set_play_level("AAA", "target", 13.0, 1.5, source="chart")
+        e.set_play_level("AAA", "second_entry", 10.00, 2.0, source="chart")
+        self.assertEqual(e.syms["AAA"].play["target"], 13.0)
+        e.set_play_level("AAA", "target", None, 2.5, source="chart")
+        e.set_play_level("AAA", "second_entry", None, 2.6, source="chart")
+        e.set_play_level("AAA", "second_entry", 10.00, 3.0, source="chart")
+        self.assertEqual(e.syms["AAA"].play["target"], 10.4)
+        e.set_play_level("AAA", "second_entry", None, 4.0, source="chart")
+        self.assertIsNone(e.syms["AAA"].play.get("target"))

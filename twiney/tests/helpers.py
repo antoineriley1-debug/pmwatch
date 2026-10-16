@@ -12,7 +12,7 @@ PLAYS = [
 
 
 def cfg(**sections):
-    raw = {"reload": {"auto_levels": False}}
+    raw = {"reload": {"auto_levels": False}, "trading": {"auto_stop_dollars": 1.0}}   # older tests read the $1 stop
     for name, values in sections.items():
         raw.setdefault(name, {}).update(values)
     return build_config(raw)
