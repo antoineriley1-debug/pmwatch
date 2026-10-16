@@ -71,6 +71,17 @@ def make_auth(cfg, args):
     return auth
 
 
+def attach_updater(dash, cfg):
+    """The UPDATE button (the VPS install only: TED runs from the /opt/ted/app link)."""
+    from twiney.dashboard import BUILD
+    from twiney.updater import Updater
+    u = cfg.get("update") or {}
+    up = Updater(BUILD, u.get("repo"), u.get("branch"), u.get("app_link") or "/opt/ted/app")
+    if up.enabled():
+        dash.hooks["update"] = up
+    return up
+
+
 def set_password_cli(args):
     """python run_twiney.py --set-password: create or replace the desk's password from a terminal. Every browser
     signed in before has to sign in again."""
@@ -321,6 +332,7 @@ def run_live(cfg, plays, args):
         practice.stop()
         stop()
     dash.hooks["restart"] = lambda: restart_process(stop_all)
+    attach_updater(dash, cfg)
     wait_forever(stop_all)
     return 0
 
@@ -482,6 +494,8 @@ def run_demo(cfg, plays, args):
     start_watchdog(lambda: trader)
     dash.hooks["restart"] = lambda: restart_process(lambda: (stop_evt.set(), dash.stop(), desk.stop()))
     if SOURCE[0]:
+        attach_updater(dash, cfg)              # the service itself on the practice market, not the PRACTICE button's desk
+    if SOURCE[0]:
         dash.hooks["datasource"] = datasource_hook(cfg, args.config, dash.hooks["restart"])
         dash.hooks["source"] = SOURCE[0]
     wait_forever(lambda: (stop_evt.set(), dash.stop(), desk.stop()))
@@ -531,6 +545,7 @@ def run_replay(cfg, plays, args):
                     _d = dash
                     dash.hooks["restart"] = lambda: restart_process(lambda: _d.stop())
                     dash.hooks["datasource"] = datasource_hook(cfg, args.config, dash.hooks["restart"])
+                    attach_updater(dash, cfg)
                     dash.hooks["source"] = SOURCE[0]
                 open_dashboard(dash, cfg, args)
             dash.trader = engine.trader

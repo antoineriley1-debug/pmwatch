@@ -214,6 +214,46 @@ class ManagementTests(unittest.TestCase):
         paid = e.opt_positions[k]["avg_cost"] / (e.opt_positions[k].get("mult") or 100)
         self.assertGreaterEqual(tr.opt_stops[k]["price"], paid - 1e-9)                # never under what you paid
         self.assertLess(tr.opt_stops[k]["price"] - paid, 0.05 + 1e-9); self.assertEqual(tr.opt_stops[k]["on"], "option")
+        again = tr.opt_breakeven(k, T + 4)
+        self.assertTrue(again.get("already"), again); self.assertIn("already in place", again["sent"])
+        up = tr.opt_breakeven(k, T + 4.5, plus=0.05)
+        if up["ok"]:
+            self.assertGreaterEqual(tr.opt_stops[k]["price"], paid + 0.05 - 1e-9)
+        else:
+            self.assertIn("not yet", up["reason"])                                # only when the contract is not that far yet
+
+
+class ClearFlatTests(unittest.TestCase):
+    """CLEAR: every order on the stock and its contracts cancelled, watches off. FLAT: shares and contracts out."""
+
+    def setup(self):
+        import datetime, zoneinfo
+        from twiney import options as _o
+        e, tr, broker = make()
+        T = datetime.datetime(2026, 10, 12, 11, 0, tzinfo=zoneinfo.ZoneInfo("America/New_York")).timestamp()
+        e.on_l1("AAA", "last", 10.0, T); quote(e, 9.99, 10.00, T)
+        exp = e.option_chain("AAA", None, "C", T)["expiry"]
+        return e, tr, T, exp, _o.key_of("AAA", exp, 10, "C")
+
+    def test_clear_cancels_orders_and_watches_but_keeps_the_position(self):
+        e, tr, T, exp, k = self.setup()
+        tr.submit("AAA", "BUY", 9.50, 100, T + 1, bracket=False)
+        self.assertTrue(tr.opt_watch("AAA", exp, 10, "C", "BUY", 1, 10.50, "above", T + 1)["ok"])
+        out = tr.clear_symbol("AAA", T + 2)
+        self.assertTrue(out["ok"]); self.assertGreaterEqual(out["cancelled"], 1); self.assertEqual(out["watches"], 1)
+        self.assertFalse(e._pending("AAA")); self.assertFalse(tr.opt_watches)
+
+    def test_flat_gets_out_of_shares_and_contracts(self):
+        e, tr, T, exp, k = self.setup()
+        tr.submit("AAA", "BUY", 10.0, 100, T + 1, bracket=False); quote(e, 9.99, 10.00, T + 1.5)
+        tr.opt_open("AAA", exp, 10, "C", "BUY", 2, None, T + 2); e.practice_opt_tick(T + 2.5)
+        self.assertTrue(tr.broker.position("AAA")); self.assertTrue(e.opt_positions[k]["qty"])
+        out = tr.flat_symbol("AAA", T + 3)
+        self.assertTrue(out["ok"], out)
+        quote(e, 9.99, 10.00, T + 4); e.practice_opt_tick(T + 4.5); e.practice_opt_tick(T + 5)
+        self.assertFalse(tr.broker.position("AAA"))
+        self.assertFalse(int((e.opt_positions.get(k) or {}).get("qty") or 0))
+        self.assertIn("already flat", tr.flat_symbol("AAA", T + 6)["sent"])
 
 
 class BackupStopTests(unittest.TestCase):

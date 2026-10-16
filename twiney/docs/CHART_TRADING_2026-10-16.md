@@ -37,6 +37,30 @@
 | shares | SELL / BUY presets, ALL, **BREAK EVEN**, and a **STOP** box: type a price, SET |
 | a contract | SELL 25% / 50% / 75%, **CLOSE**, **BREAK EVEN**, and a **STOP** box: ON the stock or ON CONTRACT, type a price, SET |
 
+## BREAK EVEN, +5¢, +10¢, CLEAR, FLAT
+
+On the top line of the stock chart, in the order block (shares and contract), on the option chart and in the left-click
+contract menu:
+
+- **BREAK EVEN** moves the stop to your entry. It always answers:
+  - "stop moved to BREAK EVEN"
+  - "BREAK EVEN already in place"
+  - "your stop is already past break even: left where it is" (plain BREAK EVEN never pulls a better stop back)
+  - "not yet: price is under it" (a stop there would sell at once)
+  - "you hold nothing in AAPL"
+- **+5¢ / +10¢** puts the stop 5 or 10 cents past your entry (past what you paid, on a contract).
+- **CLEAR** takes every line off the chart, cancels every working order on the stock and its contracts, and turns
+  every contract watch off. What you hold stays open (it asks first, and warns that it will have no stop).
+- **FLAT** gets you out of the shares and every contract on the stock, now, at the touch. No confirm box: getting out
+  never waits.
+
+## UPDATE (the VPS)
+
+When a newer build is on GitHub, an orange **UPDATE · build** button shows in the header. Click it and confirm: TED
+downloads the build, checks that it starts, swaps it in and restarts (about 20 seconds), and the page comes back by
+itself. Your settings, keys, plays, layouts and password stay. It refuses while you hold shares or contracts or have
+working orders ("close out first"). The previous build is kept as `/opt/ted/app.prev` for a rollback by hand.
+
 ## TAKE PROFIT along the way
 
 In a trade you can have a target, break even and a stop set, and still pay yourself on the way. The order block has a

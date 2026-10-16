@@ -37,6 +37,12 @@ DEFAULTS = {
         "sign_in": True,
         "session_hours": 12,            # how long one sign-in lasts on a browser before it asks again
     },
+    # UPDATE from the desk (the VPS only): where newer builds come from and the link TED runs from
+    "update": {
+        "repo": "antoineriley1-debug/pmwatch",
+        "branch": "claude/twiney-v1-complete-gdn0ws",
+        "app_link": "/opt/ted/app",
+    },
     "depth": {
         # IBKR caps simultaneous market-depth subscriptions; TWINEY uses three.
         "slots": 3,

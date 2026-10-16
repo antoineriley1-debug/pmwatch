@@ -997,6 +997,50 @@ class Trader:
         self._note(now, f"cancelled {n} working order{'s' if n != 1 else ''}{' in ' + symbol if symbol else ''}", True)
         return {"ok": True, "cancelled": n}
 
+    def _keys_on(self, symbol):
+        """Every contract key on this stock the desk knows: held, with a stop, lines or a watch, or a working order."""
+        keys = {k for k, p in list(self.engine.opt_positions.items()) if (p.get("symbol") or k.split(" ")[0]) == symbol}
+        keys |= {k for k in list(self.opt_stops) + list(self.opt_levels) if str(k).split(" ")[0] == symbol}
+        keys |= {w["key"] for w in self.opt_watches if w.get("symbol") == symbol}
+        return keys
+
+    def clear_symbol(self, symbol, now=None):
+        """CLEAR: every working order on this stock AND on its contracts cancelled, every contract watch, stop and
+        option-chart line taken off. A position you hold stays open (with no stop): FLAT gets you out."""
+        now = now or time.time()
+        with self.lock:
+            n = int(self.broker.cancel_all(now, symbol) or 0)
+            keys = self._keys_on(symbol)
+            for k in keys:
+                try:
+                    if self.engine._pending(k):
+                        n += int(self.broker.cancel_all(now, k) or 0)
+                except Exception as exc:  # noqa: BLE001
+                    self._note(now, f"{k}: could not cancel: {exc}", False)
+                self.opt_stops.pop(k, None)
+                self.opt_levels.pop(k, None)
+            w0 = len(self.opt_watches)
+            self.opt_watches[:] = [w for w in self.opt_watches if w.get("symbol") != symbol]
+            watches = w0 - len(self.opt_watches)
+        self._note(now, f"{symbol} CLEAR: {n} order{'s' if n != 1 else ''} cancelled" + (f", {watches} watch{'es' if watches != 1 else ''} off" if watches else ""), True)
+        return {"ok": True, "cancelled": n, "watches": watches}
+
+    def flat_symbol(self, symbol, now=None):
+        """FLAT: out of everything on this stock, the shares and every contract on it, at the touch; their working
+        orders cancelled. Getting out is never blocked."""
+        now = now or time.time()
+        sent, why = [], []
+        if self.broker.position(symbol):
+            out = self.flatten(symbol, now)
+            (sent if out.get("ok") else why).append(out.get("sent") or out.get("reason") or "")
+        for k in sorted(self._keys_on(symbol)):
+            if int((self.engine.opt_positions.get(k) or {}).get("qty") or 0):
+                out = self.opt_adjust(k, 0, "close", None, now)
+                (sent if out.get("ok") else why).append(out.get("sent") or out.get("reason") or "")
+        if not sent and not why:
+            return {"ok": True, "flat": True, "sent": f"{symbol}: nothing held, already flat"}
+        return {"ok": not why, "sent": " · ".join(x for x in sent if x), "reason": " · ".join(x for x in why if x)}
+
     REDUCING = ("flatten", "close", "partial")
 
     def _committed(self, symbol, action, roles):
@@ -1308,11 +1352,11 @@ class Trader:
         except Exception as exc:
             log.warning("unpair %s: %s", symbol, exc)
 
-    def breakeven(self, symbol, now=None):
+    def breakeven(self, symbol, now=None, plus=0.0):
         with self.lock:
-            return self._breakeven_unlocked(symbol, now)
+            return self._breakeven_unlocked(symbol, now, plus)
 
-    def _breakeven_unlocked(self, symbol, now=None):
+    def _breakeven_unlocked(self, symbol, now=None, plus=0.0):
         """Move every working stop of this position to the entry price (your average cost). Protective, so it works
         disarmed or locked. Refused when price is already through the entry: the stop would fire at once."""
         now = now or time.time()
@@ -1324,18 +1368,31 @@ class Trader:
         if not entry:
             return {"ok": False, "reason": "no entry price for the position yet"}
         long_ = pos > 0
-        be = snap(entry, -1 if long_ else +1, symbol)            # never a tick on the wrong side of your cost
+        try:
+            plus = max(0.0, min(float(plus or 0), 50.0))          # BE +5 / +10: that many cents locked in past your cost
+        except (TypeError, ValueError):
+            plus = 0.0
+        tag = f"BREAK EVEN +{plus * 100:.0f}¢" if plus else "BREAK EVEN"
+        be = snap(entry + (plus if long_ else -plus), -1 if long_ else +1, symbol)   # never a tick on the wrong side
         st = self.engine.syms.get(symbol)
         bid, ask = st.bbo() if st else (None, None)
         last = st.price() if st else None
         mkt = bid if long_ else ask
         mkt = mkt or last
         if mkt is not None and ((long_ and mkt <= be) or (not long_ and mkt >= be)):
-            where = "below" if long_ else "above"
-            return {"ok": False, "reason": f"price {money(mkt)} is {where} your entry {money(be)} — a breakeven stop would fire now"}
+            where = "at or under" if long_ else "at or over"
+            return {"ok": False, "reason": f"not yet: price {money(mkt)} is {where} {money(be)}. {tag} goes in once price is past it (a stop there now would sell at once)"}
         if not self.gate.can_reduce():
             return {"ok": False, "reason": self.gate.why_not() or "no account"}
         closing = SELL if long_ else BUY
+        cur = [o for o in self.engine._pending(symbol) if o.get("order_id") is not None and o.get("action") == closing
+               and (o.get("role") == "stop" or o.get("type") in ("STP", "STP LMT"))]
+        cur_px = [float(o.get("aux") or o.get("lmt") or 0) for o in cur if (o.get("aux") or o.get("lmt"))]
+        if cur_px and all(abs(x - be) < 1e-6 for x in cur_px):
+            return {"ok": True, "already": True, "price": be, "sent": f"{tag} already in place: your stop is at {money(be)}"}
+        if cur_px and not plus and all((x > be) if long_ else (x < be) for x in cur_px):
+            return {"ok": True, "already": True, "price": cur_px[0],
+                    "sent": f"your stop {money(cur_px[0])} is already past break even {money(be)}: left where it is"}
         left = lambda o: int(o.get("remaining") if o.get("remaining") is not None else o.get("qty") or 0)
         # every stop-type order working on this symbol: the bracket's stops first, then any placed by hand
         stop_orders = [o for o in self.engine._pending(symbol) if o.get("order_id") is not None
@@ -1361,10 +1418,10 @@ class Trader:
                       and (o.get("role") == "stop" or o.get("type") in ("STP", "STP LMT"))]
             if not placed:
                 return {"ok": False, "reason": f"the STOP line is at breakeven {money(be)} but the stop order did not go in — check ORDERS"}
-            self._note(now, f"{symbol}: BREAKEVEN stop placed at {money(be)} for {abs(int(pos)):,} sh", True)
+            self._note(now, f"{symbol}: {tag} stop placed at {money(be)} for {abs(int(pos)):,} sh", True)
             self.engine._rec({"ev": "breakeven", "t": now, "sym": symbol, "px": be})
             return {"ok": True, "price": be, "moved": 0, "cancelled": 0, "placed": True,
-                    "sent": f"breakeven stop {money(be)} placed for {abs(int(pos)):,} sh"}
+                    "sent": f"{tag} stop {money(be)} placed for {abs(int(pos)):,} sh"}
         # after this: stops at breakeven covering exactly the position, and no other stop on the board
         need, moved, cancelled = abs(int(pos)), 0, 0
         for o in keep_pool:
@@ -1394,10 +1451,10 @@ class Trader:
             self._note(now, f"{symbol}: breakeven stops cover {abs(int(pos)) - need} of {abs(int(pos))} shares — "
                             f"the rest has no stop", False)
         extra = f" · {cancelled} other stop order{'s' if cancelled != 1 else ''} cancelled" if cancelled else ""
-        self._note(now, f"{symbol}: stop moved to BREAKEVEN {money(be)}{extra}", True)
+        self._note(now, f"{symbol}: stop moved to {tag} {money(be)}{extra}", True)
         self.engine._rec({"ev": "breakeven", "t": now, "sym": symbol, "px": be})
         return {"ok": True, "price": be, "moved": moved, "cancelled": cancelled,
-                "sent": f"stop to breakeven {money(be)}{extra}"}
+                "sent": f"stop moved to {tag} {money(be)}{extra}"}
 
     def _reduce(self, symbol, action, price, qty, now, role, oca=None):
         try:
@@ -1695,7 +1752,7 @@ class Trader:
                        bool(be.get("ok")))
         return out, n
 
-    def opt_breakeven(self, key, now=None):
+    def opt_breakeven(self, key, now=None, plus=0.0):
         """BE on a CONTRACT: its stop goes to what you paid (the premium per contract), on the contract's own price —
         out at no loss if it comes back. Refused while the contract is under that price (it would fire at once)."""
         with self.lock:
@@ -1707,15 +1764,28 @@ class Trader:
             mult = p.get("mult") or 100
             paid = (p.get("avg_cost") or 0) / mult if mult else (p.get("avg_cost") or 0)
             # on a nickel, rounded to the side that never locks in a loss: up for a contract you bought, down for one sold
+            try:
+                plus = max(0.0, min(float(plus or 0), 50.0))
+            except (TypeError, ValueError):
+                plus = 0.0
+            tag = f"BREAK EVEN +{plus * 100:.0f}¢" if plus else "BREAK EVEN"
+            paid = paid + plus if q > 0 else paid - plus
             entry = round((math.ceil(paid / 0.05 - 1e-9) if q > 0 else math.floor(paid / 0.05 + 1e-9)) * 0.05, 2) if paid else 0
             if not entry or entry <= 0:
                 return {"ok": False, "reason": "no entry price for the contract yet"}
+            os_ = self.opt_stops.get(key)
+            if os_ and os_.get("on") == "option" and os_.get("price") is not None:
+                cur = float(os_["price"])
+                if abs(cur - entry) < 1e-6:
+                    return {"ok": True, "already": True, "price": entry, "sent": f"{tag} already in place: the contract's stop is {entry:.2f}"}
+                if not plus and (cur > entry if q > 0 else cur < entry):
+                    return {"ok": True, "already": True, "price": cur, "sent": f"the contract's stop {cur:.2f} is already past break even {entry:.2f}: left where it is"}
             touch = p.get("bid") if q > 0 else p.get("ask")
             if touch is None or (touch <= entry if q > 0 else touch >= entry):
-                return {"ok": False, "reason": f"the contract is {touch if touch is not None else 'not quoted'} — not over your {entry:.2f} yet; a breakeven stop would fire now"}
+                return {"ok": False, "reason": f"not yet: the contract is {touch if touch is not None else 'not quoted'}, not past {entry:.2f}. {tag} goes in once it is (a stop there now would sell at once)"}
         out = self.set_opt_stop(key, entry, "option", now)
         if out.get("ok"):
-            out["sent"] = f"stop to breakeven {entry:.2f} (the contract's price)"
+            out["sent"] = f"stop moved to {tag} {entry:.2f} (the contract's price)"
             out["price"] = entry
         return out
 

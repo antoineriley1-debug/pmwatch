@@ -47,6 +47,7 @@ SECTIONS = [
     ("recording", "Recording", "Session recordings."),
     ("ibkr", "IBKR connection", "TWS / Gateway connection."),
     ("dashboard", "Desk", "The desk itself."),
+    ("update", "Update", "Where the UPDATE button gets newer builds (the VPS install only). Shown here, changed only in config.json by hand."),
 ]
 
 # settings that are read once at startup: saved at once, used after RESTART
@@ -56,6 +57,9 @@ RESTART = ("ibkr.", "dashboard.", "depth.slots", "depth.rows_requested", "depth.
 LOCKED = {
     "dashboard.host": "Locked: the desk only listens on this computer.",
     "dashboard.sign_in": "Locked: the sign-in is never switched off from the desk (config.json by hand only).",
+    "update.repo": "Locked: changed in config.json by hand only.",
+    "update.branch": "Locked: changed in config.json by hand only.",
+    "update.app_link": "Locked: changed in config.json by hand only.",
 }
 
 SECRET = {"quantdata.api_key", "speech.api_key", "gmail.app_password"}

@@ -206,6 +206,50 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                 self._send(429 if "too many" in why else 400 if path == "/api/auth/password" else 401, json.dumps({"ok": False, "reason": why}), "application/json")
             return True
 
+        def _open_trades(self):
+            """What is open right now: shares, contracts, working orders. An update restarts TED, so it waits for flat."""
+            out = []
+            try:
+                for sym in list(engine.syms):
+                    pv = engine._position_view(sym, None)
+                    if pv and pv.get("qty"):
+                        out.append(f"{sym} {int(pv['qty']):+d} sh")
+                    if engine._pending(sym):
+                        out.append(f"{sym} working orders")
+                for k, p in list(getattr(engine, "opt_positions", {}).items()):
+                    if p.get("qty"):
+                        out.append(f"{k} {int(p['qty']):+d} ct")
+                    if engine._pending(k):
+                        out.append(f"{k} working orders")
+            except Exception:  # noqa: BLE001
+                pass
+            return out
+
+        def _update(self, body):
+            up = hooks.get("update")
+            if up is None or not up.enabled():
+                self._send(400, json.dumps({"ok": False, "reason": "updating from the desk works on the VPS install only"}), "application/json")
+                return
+            st = up.check(force=True)
+            if not st.get("newer") and not body.get("same"):
+                self._send(200, json.dumps({"ok": False, "reason": f"already on the newest build ({st.get('current')})"}), "application/json")
+                return
+            busy = self._open_trades()
+            if busy:
+                self._send(409, json.dumps({"ok": False, "reason": "close out first, an update restarts TED: " + ", ".join(busy[:6])}), "application/json")
+                return
+
+            def go():
+                res = up.install()
+                if res.get("ok") and hooks.get("restart"):
+                    engine._message("info", f"UPDATE: build {res['build']} installed, TED restarting", clock())
+                    time.sleep(0.8)
+                    hooks["restart"]()
+                elif not res.get("ok"):
+                    engine._message("error", "UPDATE: " + res.get("reason", "failed"), clock())
+            threading.Thread(target=go, name="ted-update", daemon=True).start()
+            self._send(200, json.dumps({"ok": True, "started": True, "latest": st.get("latest")}), "application/json")
+
         def _send(self, code, body, ctype, cookie=None):
             data = body if isinstance(body, bytes) else body.encode("utf-8")
             # the desk polls a big snapshot a few times a second: gzip takes it down ~8x on the wire
@@ -244,6 +288,12 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
             if path == "/api/auth":
                 self._send(200, json.dumps({"ok": True, "sign_in": auth is not None, "signed_in": self._signed_in(),
                                             "session_hours": round(auth.session_s / 3600, 2) if auth else None}), "application/json")
+                return
+            if path == "/api/update":
+                up = hooks.get("update")
+                q = parse_qs(urlparse(self.path).query)
+                out = up.check(force=q.get("force", [""])[0] == "1") if up else {"ok": True, "enabled": False}
+                self._send(200, json.dumps(out), "application/json")
                 return
             if path in ("/", "/index.html"):
                 with open(STATIC, "rb") as fh:
@@ -539,6 +589,9 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                 return
             path = self.path.split("?", 1)[0]
             if auth is not None and self._auth_post(path, body):
+                return
+            if path == "/api/update":
+                self._update(body)
                 return
             if path == "/api/pin":
                 ok = engine.set_pinned(str(body.get("symbol", "")).upper(), bool(body.get("pinned")), clock())
@@ -940,6 +993,10 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                     out = tr.cancel_all(sym or None, now)
                 elif action == "flatten":
                     out = tr.flatten(sym, now)
+                elif action == "clear_symbol":
+                    out = tr.clear_symbol(sym, now)
+                elif action == "flat_symbol":
+                    out = tr.flat_symbol(sym, now)
                 elif action == "flatten_all":
                     out = tr.flatten_all(now)
                 elif action == "mode":
@@ -959,7 +1016,7 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                 elif action == "adjust":
                     out = tr.adjust(sym, body.get("shares"), str(body.get("mode", "")), now)
                 elif action == "breakeven":
-                    out = tr.breakeven(sym, now)
+                    out = tr.breakeven(sym, now, body.get("plus") or 0)
                 elif action == "partial":
                     out = tr.partial(sym, body.get("shares"), body.get("price"), now)
                 elif action == "opt_open":
@@ -982,7 +1039,7 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                 elif action == "trade_as":
                     out = tr.set_trade_as(sym, str(body.get("mode", "stock")), body.get("opt_key"), body.get("opt_qty"), now)
                 elif action == "opt_breakeven":
-                    out = tr.opt_breakeven(str(body.get("key", "")), now)
+                    out = tr.opt_breakeven(str(body.get("key", "")), now, body.get("plus") or 0)
                 elif action == "opt_stop":
                     out = tr.set_opt_stop(str(body.get("key", "")), body.get("price"), str(body.get("on", "stock")), now)
                 elif action == "opt_level":

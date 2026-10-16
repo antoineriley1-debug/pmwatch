@@ -274,8 +274,28 @@ class BreakevenTests(unittest.TestCase):
         e.on_l1("AAA", "last", 9.80, 3.0)
         out = tr.breakeven("AAA", 4.0)
         self.assertFalse(out["ok"])
-        self.assertIn("below your entry", out["reason"])
+        self.assertIn("not yet", out["reason"])
 
+
+    def test_breakeven_says_when_it_is_already_in_place_and_moves_up_by_cents(self):
+        e, tr, gate, broker = sim_setup(max_orders_per_minute=100)
+        gate.arm(True)
+        e.syms["AAA"].play.update(stop=9.50, target=11.0)
+        tr.submit("AAA", "BUY", 10.00, 100, 2.0)
+        e.on_depth("AAA", 0, UPDATE, BID, 10.30, 500, "", 3.0); e.on_depth("AAA", 0, UPDATE, ASK, 10.31, 500, "", 3.0)
+        e.on_l1("AAA", "last", 10.30, 3.0)
+        self.assertTrue(tr.breakeven("AAA", 4.0)["ok"])
+        again = tr.breakeven("AAA", 4.5)
+        self.assertTrue(again["ok"] and again.get("already"), again); self.assertIn("already in place", again["sent"])
+        up5 = tr.breakeven("AAA", 5.0, plus=0.05)
+        self.assertTrue(up5["ok"], up5); self.assertIn("+5¢", up5["sent"])
+        self.assertTrue(all(o["aux"] == 10.05 for o in pend(e) if o["role"] == "stop"))
+        back = tr.breakeven("AAA", 5.5)                                  # plain BE never pulls a better stop back
+        self.assertTrue(back.get("already")); self.assertIn("already past break even", back["sent"])
+        self.assertTrue(all(o["aux"] == 10.05 for o in pend(e) if o["role"] == "stop"))
+        up10 = tr.breakeven("AAA", 6.0, plus=0.10)
+        self.assertTrue(up10["ok"], up10)
+        self.assertTrue(all(o["aux"] == 10.10 for o in pend(e) if o["role"] == "stop"))
 
     def test_breakeven_leaves_one_set_of_stops_covering_the_position(self):
         e, tr, gate, broker = sim_setup(max_orders_per_minute=100)

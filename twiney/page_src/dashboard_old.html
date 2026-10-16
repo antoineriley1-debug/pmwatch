@@ -1383,7 +1383,7 @@ function heldQuick(p, x, y, price){
   const old = document.getElementById("cmenu"); if (old) old.remove();
   const m = document.createElement("div"); m.id = "cmenu"; m.className = "pop cmenu heldq";
   m.innerHTML = `<div class="dim" style="font-size:11px;margin-bottom:4px">${esc(d.symbol)} @ <b style="color:var(--gold)">${px(price)}</b><span class="x" title="close (Esc)">✕</span></div>${menu}
-    <div class="hqrow"><button data-do="obe" title="the contract's stop to what you paid">BREAK EVEN</button><button data-do="oclose" class="bflat" title="sell every contract at the touch">CLOSE ${c.qty} ct</button></div>`;
+    <div class="hqrow"><button data-do="obe" title="the contract's stop to what you paid">BREAK EVEN</button><button data-do="obe" data-plus="0.05">+5¢</button><button data-do="obe" data-plus="0.10">+10¢</button><button data-do="oclose" class="bflat" title="sell every contract at the touch">CLOSE ${c.qty} ct</button></div>`;
   m.style.left = Math.min(x, window.innerWidth - 250) + "px"; m.style.top = Math.min(y, window.innerHeight - 170) + "px";
   document.body.appendChild(m);
   const esc_ = ev => { if (ev.key === "Escape"){ m.remove(); document.removeEventListener("keydown", esc_, true); } };
@@ -1393,7 +1393,7 @@ function heldQuick(p, x, y, price){
     const b = e.target.closest("button[data-do]"); if (!b || b.disabled) return;
     m.remove();
     if (b.dataset.do === "optline") optHeldLine(d, b.dataset.role, price, b.dataset.key, +b.dataset.qty);
-    else if (b.dataset.do === "obe"){ const out = await post("/api/trade/opt_breakeven", {key: c.key}); toast(out.ok ? c.key + ": " + out.sent : "Breakeven blocked: " + (out.reason || ""), out.ok); poll(true); }
+    else if (b.dataset.do === "obe") optBreakeven(c.key, +b.dataset.plus || 0);
     else if (b.dataset.do === "oclose"){ if (!confirm("CLOSE every contract of " + c.key + "?")) return;
       const out = await post("/api/trade/opt_adjust", {key: c.key, contracts: 0, mode: "close", price: null}); toast(out.ok ? "Sent: " + out.sent : "Blocked: " + (out.reason || ""), out.ok); poll(true); }
   });

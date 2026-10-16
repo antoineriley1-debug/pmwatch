@@ -90,7 +90,7 @@ html,body{height:100%} body{overflow:hidden;font-size:12px}
 /* quote strip inside the chart panel */
 .qs{display:flex;gap:10px;align-items:center;padding:2px 8px;font-family:var(--mono);font-size:12px;white-space:nowrap;overflow:hidden;background:#0f141c;border-bottom:1px solid var(--line);flex:0 0 auto;height:22px}
 .qs .qlive{display:contents}
-.qs .qbe{font:700 10.5px var(--mono);height:18px;padding:0 7px;letter-spacing:.06em;opacity:.45} .qs .qbe.on{opacity:1;color:#ffd866;border-color:#8a6d1e}
+.qs .qbes{display:inline-flex;gap:2px} .qs .qbe{font:700 10.5px var(--mono);height:18px;padding:0 6px;letter-spacing:.04em;opacity:.55} .qs .qbe.on{opacity:1;color:#ffd866;border-color:#8a6d1e}
 .qs .sym{font-weight:800;color:var(--gold);font-size:13px} .qs .dim{font-size:11px}
 /* status bar */
 #status{display:flex;align-items:center;gap:14px;padding:0 10px;background:#0b0f15;border-top:1px solid var(--line);font-family:var(--mono);font-size:11px;color:var(--dim);white-space:nowrap;overflow:hidden}
@@ -1356,3 +1356,6 @@ body.whitedesk .chart-wrap canvas,body.whitedesk img,body.whitedesk video{filter
 .simple .tprow{display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin-top:4px} .simple .tprow .lbl{font-weight:700;letter-spacing:.08em;color:#6fcf97}
 .simple .tprow input{width:64px} .simple .tprow .go{font-weight:700}
 .cmenu.copt > .lvl2:not(.heldopt){display:none}      /* contract mode: the share setup grid steps aside */
+#updBtn{background:#e3a83a;color:#111;font-weight:800;letter-spacing:.08em;border-color:#e3a83a} #updBtn[hidden]{display:none}
+.qs .qclr,.qs .qflat{font:700 10.5px var(--mono);height:18px;padding:0 7px;letter-spacing:.06em}
+.qs .qflat,.simple .mgr .flat{color:#ff8a80;border-color:#7a2a2a} .qs .qclr,.simple .mgr .clr{color:#b0b0ad}
