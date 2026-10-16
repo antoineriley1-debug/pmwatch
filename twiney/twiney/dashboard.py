@@ -15,6 +15,7 @@ from . import auth as _auth
 
 STATIC = os.path.join(os.path.dirname(__file__), "static", "dashboard.html")
 MARKET_PAGE = os.path.join(os.path.dirname(__file__), "static", "market.html")
+SHOW_PAGE = os.path.join(os.path.dirname(__file__), "static", "show.html")
 
 
 def _static_build():
@@ -160,7 +161,7 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                 return False
             if path in (OPEN_POST if post else OPEN_GET) or self._signed_in():
                 return True
-            if post or path.startswith("/api/") or not (path in ("/", "/index.html", "/market")):
+            if post or path.startswith("/api/") or not (path in ("/", "/index.html", "/market", "/show")):
                 self._send(401, json.dumps({"ok": False, "signin": True, "reason": "sign in first"}), "application/json")
             else:
                 self._redirect("/login" + ("" if path in ("/", "/index.html") else "?next=" + quote(path)))
@@ -288,6 +289,25 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
             if path == "/api/auth":
                 self._send(200, json.dumps({"ok": True, "sign_in": auth is not None, "signed_in": self._signed_in(),
                                             "session_hours": round(auth.session_s / 3600, 2) if auth else None}), "application/json")
+                return
+            if path == "/api/show":
+                # THE SHOW page: the watchlist light, the charts in view full
+                q = parse_qs(urlparse(self.path).query)
+                view = [x.strip().upper() for x in q.get("view", [""])[0].split(",") if x.strip()][:6]
+                full = {x.strip().upper() for x in q.get("full", [""])[0].split(",") if x.strip()}
+                try:
+                    out = engine.show_snapshot(clock(), view, full)
+                except Exception as exc:  # noqa: BLE001
+                    out = {"ok": False, "reason": str(exc)}
+                out["build"] = BUILD
+                self._send(200, json.dumps(out, default=str, separators=(",", ":")), "application/json")
+                return
+            if path == "/show":
+                try:
+                    with open(SHOW_PAGE, "rb") as fh:
+                        self._send(200, fh.read(), "text/html; charset=utf-8")
+                except OSError:
+                    self._send(404, "the show page is not built: python page_src/build_page.py", "text/plain")
                 return
             if path == "/api/update":
                 up = hooks.get("update")

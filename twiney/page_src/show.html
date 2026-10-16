@@ -1,0 +1,684 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TED · SHOW</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+/* THE SHOW: the broadcast screen. The STAGE is a fixed canvas (16:9 1920x1080, 9:16 1080x1920 or 1:1 1080x1080) scaled
+   to fit; everything outside it (the control dock) is for you, never for the viewers. ?clean=1 shows the stage only. */
+:root{--bg:#070b16;--panel:#0d1426;--panel2:#121b33;--line:#22304f;--ink:#eef2fa;--dim:#8a96b3;--acc:#e0242f;--acc2:#1f6fff;--gold:#f2c14e;
+  --up:#21c07a;--dn:#ff4d5e;--brand:#e0242f;--brand2:#0a1f4d;--chart:#0a1020;--grid:#16213d}
+body.theme-desk{--bg:#0b0b0c;--panel:#131416;--panel2:#1a1b1e;--line:#2c2e33;--ink:#e6e6e3;--dim:#8e9096;--acc:#e3a83a;--acc2:#5aa9d6;--gold:#e3a83a;--brand:#e3a83a;--brand2:#1a1b1e;--chart:#0e0f11;--grid:#1c1d20}
+body.theme-neon{--bg:#05040a;--panel:#0d0b18;--panel2:#141126;--line:#2a2350;--ink:#f3f0ff;--dim:#9a90c8;--acc:#ff2bd6;--acc2:#19e3ff;--gold:#ffe14d;--brand:#ff2bd6;--brand2:#1a0f3a;--chart:#07060f;--grid:#18142e}
+body.theme-paper{--bg:#e9edf3;--panel:#ffffff;--panel2:#f3f6fb;--line:#c9d2e3;--ink:#0d1526;--dim:#5b6782;--acc:#d71f2b;--acc2:#1f5fd6;--gold:#b77b00;--brand:#d71f2b;--brand2:#0d1f45;--chart:#ffffff;--grid:#e6ebf4;--up:#0c9a5d;--dn:#d6283a}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:#000;color:var(--ink);font-family:"IBM Plex Sans",system-ui,sans-serif;overflow:hidden}
+#wrap{position:fixed;inset:0;right:330px;display:flex;align-items:center;justify-content:center;background:#000}
+body.clean #wrap{right:0} body.dockoff #wrap{right:0}
+#stage{position:relative;transform-origin:center center;background:var(--bg);overflow:hidden;flex:0 0 auto}
+.mono{font-family:"IBM Plex Mono",monospace}
+/* top bar */
+#top{position:absolute;left:0;right:0;top:0;height:86px;display:flex;align-items:stretch;background:linear-gradient(90deg,var(--brand2),var(--panel) 60%);border-bottom:3px solid var(--brand);z-index:5}
+#bug{display:flex;align-items:center;gap:14px;padding:0 26px;background:var(--brand);color:#fff;font:700 34px "IBM Plex Sans Condensed",sans-serif;letter-spacing:.06em;white-space:nowrap}
+body.theme-desk #bug{color:#111}
+#bug .dot{width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 0 0 0 rgba(255,255,255,.7);animation:pulse 1.6s infinite}
+body.theme-desk #bug .dot{background:#d9534f}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(255,255,255,.7)}70%{box-shadow:0 0 0 14px rgba(255,255,255,0)}100%{box-shadow:0 0 0 0 rgba(255,255,255,0)}}
+#seg{flex:1;display:flex;flex-direction:column;justify-content:center;padding:0 26px;min-width:0}
+#seg b{font:700 32px "IBM Plex Sans Condensed",sans-serif;letter-spacing:.05em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#seg span{color:var(--dim);font:600 18px "IBM Plex Sans",sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#clock{display:flex;flex-direction:column;justify-content:center;align-items:flex-end;padding:0 26px;border-left:1px solid var(--line)}
+#clock b{font:700 34px "IBM Plex Mono",monospace}
+#clock span{font:700 16px "IBM Plex Mono",monospace;letter-spacing:.12em;color:var(--gold)}
+/* body */
+#body{position:absolute;left:0;right:0;top:86px;bottom:150px;display:flex}
+#rail{width:330px;flex:0 0 auto;background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+#rail h3{margin:0;padding:14px 18px;font:700 20px "IBM Plex Sans Condensed",sans-serif;letter-spacing:.12em;color:var(--dim);border-bottom:1px solid var(--line);display:flex;justify-content:space-between}
+#rail h3 i{font-style:normal;color:var(--acc2);cursor:pointer}
+#wl{flex:1;overflow:hidden}
+.wr{display:grid;grid-template-columns:1fr auto;gap:2px 8px;padding:12px 18px;border-bottom:1px solid var(--line);cursor:pointer}
+.wr:hover{background:var(--panel2)} .wr.on{background:var(--panel2);box-shadow:inset 5px 0 0 var(--brand)}
+.wr b{font:700 26px "IBM Plex Sans Condensed",sans-serif;letter-spacing:.03em}
+.wr .px{font:600 24px "IBM Plex Mono",monospace;text-align:right}
+.wr .sub{color:var(--dim);font:600 15px "IBM Plex Mono",monospace}
+.wr .ch{font:700 17px "IBM Plex Mono",monospace;text-align:right}
+.up{color:var(--up)} .dn{color:var(--dn)}
+#grid{flex:1;display:grid;gap:10px;padding:10px;min-width:0;min-height:0}
+#grid.g1{grid-template-columns:1fr;grid-template-rows:1fr}
+#grid.g2{grid-template-columns:1fr 1fr;grid-template-rows:1fr}
+#grid.g4{grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr}
+#grid.v2{grid-template-columns:1fr;grid-template-rows:1fr 1fr}
+.cell{position:relative;background:var(--chart);border:2px solid var(--line);border-radius:8px;overflow:hidden;min-height:0;display:flex;flex-direction:column}
+.cell.focus{border-color:var(--brand)}
+.ch-h{display:flex;align-items:baseline;gap:16px;padding:10px 16px 6px;flex:0 0 auto}
+.ch-h .s{font:700 40px "IBM Plex Sans Condensed",sans-serif;letter-spacing:.03em}
+.ch-h .p{font:700 34px "IBM Plex Mono",monospace}
+.ch-h .c{font:700 24px "IBM Plex Mono",monospace}
+.ch-h .tf{margin-left:auto;font:700 18px "IBM Plex Mono",monospace;color:var(--dim);letter-spacing:.08em}
+.ch-h .st{font:600 17px "IBM Plex Sans",sans-serif;color:var(--gold);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:45%}
+.cv{position:relative;flex:1;min-height:0}
+.cv canvas{position:absolute;inset:0;width:100%;height:100%}
+.cv canvas.draw{cursor:crosshair}
+.cv canvas.draw.move{cursor:grab}
+/* lower third + crawl */
+#lower{position:absolute;left:28px;right:28px;bottom:62px;height:82px;display:flex;align-items:stretch;z-index:6;transform:translateY(0);transition:transform .45s cubic-bezier(.2,.8,.2,1),opacity .35s}
+#lower.off{transform:translateY(140px);opacity:0}
+#lower .tag{background:var(--brand);color:#fff;font:700 26px "IBM Plex Sans Condensed",sans-serif;letter-spacing:.1em;display:flex;align-items:center;padding:0 22px;white-space:nowrap}
+body.theme-desk #lower .tag{color:#111}
+#lower .txt{flex:1;background:rgba(10,15,30,.92);border-top:3px solid var(--brand);display:flex;flex-direction:column;justify-content:center;padding:0 22px;min-width:0}
+body.theme-paper #lower .txt{background:rgba(255,255,255,.95)}
+#lower .txt b{font:700 30px "IBM Plex Sans Condensed",sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#lower .txt span{font:600 19px "IBM Plex Sans",sans-serif;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#crawl{position:absolute;left:0;right:0;bottom:0;height:54px;background:var(--panel);border-top:2px solid var(--line);display:flex;align-items:center;overflow:hidden;z-index:6}
+#crawl .lab{flex:0 0 auto;height:100%;display:flex;align-items:center;padding:0 18px;background:var(--brand2);font:700 20px "IBM Plex Sans Condensed",sans-serif;letter-spacing:.14em;color:var(--gold);z-index:2}
+#crawl .track{display:flex;gap:46px;white-space:nowrap;font:700 22px "IBM Plex Mono",monospace;padding-left:40px;animation:crawl var(--crawl,60s) linear infinite}
+@keyframes crawl{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+#crawl .track i{font-style:normal;color:var(--dim);margin-right:8px}
+/* breaking */
+#breaking{position:absolute;left:0;right:0;bottom:150px;height:74px;display:flex;z-index:8;transform:translateX(-105%);transition:transform .5s cubic-bezier(.2,.8,.2,1)}
+#breaking.on{transform:translateX(0)}
+#breaking .b1{background:#c8102e;color:#fff;font:700 32px "IBM Plex Sans Condensed",sans-serif;letter-spacing:.12em;display:flex;align-items:center;padding:0 26px;animation:flash 1s steps(2) 3}
+@keyframes flash{50%{background:#fff;color:#c8102e}}
+#breaking .b2{flex:1;background:#fff;color:#0b1220;font:700 30px "IBM Plex Sans Condensed",sans-serif;display:flex;align-items:center;padding:0 26px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* cards and scenes */
+.card{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) scale(.92);opacity:0;pointer-events:none;transition:all .35s;z-index:9;background:var(--panel);border:3px solid var(--brand);border-radius:14px;padding:30px 40px;min-width:640px;box-shadow:0 30px 80px rgba(0,0,0,.6)}
+.card.on{opacity:1;transform:translate(-50%,-50%) scale(1)}
+.card h2{margin:0 0 6px;font:700 22px "IBM Plex Sans Condensed",sans-serif;letter-spacing:.16em;color:var(--gold)}
+.card .big{font:700 64px "IBM Plex Sans Condensed",sans-serif;line-height:1.05}
+.card .row{display:flex;gap:40px;margin-top:16px;font:700 30px "IBM Plex Mono",monospace}
+.card .row div span{display:block;color:var(--dim);font:700 16px "IBM Plex Sans",sans-serif;letter-spacing:.12em}
+#scene{position:absolute;inset:0;z-index:12;display:none;align-items:center;justify-content:center;flex-direction:column;gap:18px;
+  background:radial-gradient(1200px 700px at 30% 20%,var(--brand2),var(--bg) 70%);overflow:hidden}
+#scene.on{display:flex}
+#scene::before{content:"";position:absolute;inset:-50%;background:repeating-linear-gradient(115deg,transparent 0 80px,rgba(255,255,255,.025) 80px 160px);animation:drift 30s linear infinite}
+@keyframes drift{to{transform:translateX(160px)}}
+#scene .k{font:700 30px "IBM Plex Sans Condensed",sans-serif;letter-spacing:.3em;color:var(--gold);z-index:1}
+#scene .t{font:700 130px "IBM Plex Sans Condensed",sans-serif;letter-spacing:.04em;z-index:1;text-align:center;line-height:1}
+#scene .c{font:700 90px "IBM Plex Mono",monospace;z-index:1}
+#scene .h{font:600 34px "IBM Plex Sans",sans-serif;color:var(--dim);z-index:1}
+#bumper{position:absolute;inset:0;z-index:13;pointer-events:none;display:flex;align-items:center;justify-content:center}
+#bumper .bar{position:absolute;left:-110%;top:42%;height:16%;width:100%;background:var(--brand);transform:skewX(-14deg)}
+#bumper .w{position:relative;font:700 150px "IBM Plex Sans Condensed",sans-serif;letter-spacing:.06em;color:#fff;opacity:0}
+#bumper.go .bar{animation:sweep 1.9s cubic-bezier(.7,0,.3,1) forwards}
+#bumper.go .w{animation:word 1.9s ease forwards}
+@keyframes sweep{0%{left:-110%}40%{left:0}70%{left:0}100%{left:110%}}
+@keyframes word{0%,25%{opacity:0;transform:scale(1.3)}40%,70%{opacity:1;transform:scale(1)}100%{opacity:0}}
+#cam{position:absolute;width:420px;height:236px;border:3px dashed var(--brand);border-radius:12px;z-index:7;display:none;align-items:flex-end;justify-content:flex-start;padding:8px 12px;font:700 15px "IBM Plex Sans Condensed",sans-serif;letter-spacing:.14em;color:var(--dim)}
+#cam.on{display:flex} #cam.key{background:#00ff00;border-style:solid;color:#00ff00}
+#guides{position:absolute;inset:0;pointer-events:none;z-index:20;display:none}
+#guides.on{display:block}
+#guides div{position:absolute;left:0;right:0;background:rgba(255,0,80,.18);border:2px dashed rgba(255,0,80,.7);color:#fff;font:700 18px "IBM Plex Sans",sans-serif;padding:6px 10px}
+#spot{position:absolute;inset:0;pointer-events:none;z-index:4;display:none}
+#spot.on{display:block}
+#qcard .q{font:600 40px "IBM Plex Sans",sans-serif;line-height:1.25;max-width:1100px}
+/* vertical and square stages */
+body.fmt-v #rail{display:none} body.fmt-s #rail{display:none}
+body.fmt-v #body{flex-direction:column} body.fmt-v #chips{display:flex}
+#chips{display:none;gap:10px;padding:10px 14px;overflow:hidden;flex:0 0 auto;background:var(--panel);border-bottom:1px solid var(--line)}
+#chips span{padding:8px 14px;border-radius:999px;background:var(--panel2);font:700 22px "IBM Plex Mono",monospace;white-space:nowrap;cursor:pointer}
+#chips span.on{background:var(--brand);color:#fff}
+body.norail #rail{display:none}
+/* the dock: your controls, never on the stage */
+#dock{position:fixed;top:0;right:0;bottom:0;width:330px;background:#0c111d;border-left:1px solid #22304f;overflow-y:auto;color:#dfe6f5;font:13px "IBM Plex Sans",sans-serif;z-index:50}
+body.clean #dock,body.dockoff #dock{display:none}
+#dock h4{margin:14px 14px 6px;font:700 12px "IBM Plex Mono",monospace;letter-spacing:.14em;color:#8a96b3}
+#dock .r{display:flex;flex-wrap:wrap;gap:5px;padding:0 14px}
+#dock button{background:#16213a;color:#dfe6f5;border:1px solid #2a3a60;border-radius:5px;padding:6px 9px;font:700 11.5px "IBM Plex Mono",monospace;letter-spacing:.04em;cursor:pointer}
+#dock button.on{background:#e0242f;border-color:#e0242f;color:#fff}
+#dock button:hover{border-color:#5a7ab8}
+#dock input,#dock select{background:#0f172b;color:#dfe6f5;border:1px solid #2a3a60;border-radius:5px;padding:6px 8px;font:12px "IBM Plex Sans",sans-serif;width:100%}
+#dock .w2{display:grid;grid-template-columns:1fr 1fr;gap:5px;padding:0 14px}
+#dock .full{padding:0 14px} #dock .full > *{margin-bottom:5px}
+#dock .sw{display:inline-block;width:22px;height:22px;border-radius:50%;border:2px solid #0c111d;cursor:pointer}
+#dock .sw.on{outline:2px solid #fff}
+#dock .hint{color:#8a96b3;font-size:11.5px;padding:2px 14px 0;line-height:1.45}
+#toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:#16213a;color:#fff;border:1px solid #3a5a9a;padding:9px 16px;border-radius:6px;font:600 13px "IBM Plex Sans",sans-serif;z-index:99;display:none}
+#tip{position:absolute;z-index:30;pointer-events:none;background:rgba(0,0,0,.8);color:#fff;font:700 18px "IBM Plex Mono",monospace;padding:4px 8px;border-radius:4px;display:none}
+</style></head>
+<body class="theme-net fmt-h">
+<div id="wrap"><div id="stage">
+  <div id="top"><div id="bug"><span class="dot"></span><span id="brandName">TWINEY LIVE</span></div>
+    <div id="seg"><b id="segTitle">THE WATCHLIST</b><span id="segSub">PS60 · pivots, second entries, measured potential</span></div>
+    <div id="clock"><b id="clk">--:--:--</b><span id="mkt">—</span></div></div>
+  <div id="body">
+    <div id="rail"><h3><span id="railTitle">WATCHLIST</span><i id="railSrc" title="your watchlist / Dan's">MINE</i></h3><div id="wl"></div></div>
+    <div id="chips"></div>
+    <div id="grid" class="g1"></div>
+  </div>
+  <div id="spot"><canvas id="spotCv"></canvas></div>
+  <div id="cam"><span>CAMERA</span></div>
+  <div id="breaking"><div class="b1">BREAKING</div><div class="b2" id="brkTxt"></div></div>
+  <div id="lower"><div class="tag" id="lowTag">LIVE</div><div class="txt"><b id="lowTitle"></b><span id="lowSub"></span></div></div>
+  <div id="crawl"><div class="lab">WATCHLIST</div><div class="track" id="crawlTrack"></div></div>
+  <div class="card" id="tcard"></div>
+  <div class="card" id="scard"></div>
+  <div class="card" id="qcard"><h2>VIEWER QUESTION</h2><div class="q" id="qText"></div><div class="row"><div><span>FROM</span><b id="qFrom"></b></div></div></div>
+  <div id="scene"><div class="k" id="scK"></div><div class="t" id="scT"></div><div class="c mono" id="scC"></div><div class="h" id="scH"></div></div>
+  <div id="bumper"><div class="bar"></div><div class="w" id="bumpW">WE'RE LIVE</div></div>
+  <div id="guides"></div>
+  <div id="tip"></div>
+</div></div>
+
+<div id="dock">
+  <h4>FORMAT · WHERE YOU POST</h4>
+  <div class="r" id="fmtR">
+    <button data-fmt="h" title="YouTube / Twitch / X / Facebook: 16:9 at 1920x1080">YOUTUBE 16:9</button>
+    <button data-fmt="v" title="Instagram Live, Reels, TikTok, YouTube Shorts: 9:16 at 1080x1920">INSTAGRAM 9:16</button>
+    <button data-fmt="s" title="Instagram feed post / carousel: 1:1 at 1080x1080">FEED 1:1</button>
+  </div>
+  <div class="r" style="margin-top:5px"><button id="gBtn" title="where Instagram / TikTok put their buttons and comments: keep the chart out of the red">SAFE AREA GUIDES</button><button id="railBtn">WATCHLIST RAIL</button></div>
+  <h4>LAYOUT</h4>
+  <div class="r" id="layR"><button data-lay="1">1 BIG</button><button data-lay="2">2 SIDE BY SIDE</button><button data-lay="4">4 GRID</button></div>
+  <div class="hint">Click a watchlist name: it goes into the chart with the red frame. Double-click a chart: it fills the screen (again: back).</div>
+  <h4>CHART</h4>
+  <div class="r" id="tfR"><button data-tf="1">1M</button><button data-tf="2">2M</button><button data-tf="5">5M</button><button data-tf="15">15M</button><button data-tf="60">60M</button><button data-tf="D">DAILY</button></div>
+  <div class="r" style="margin-top:5px" id="lyrR">
+    <button data-lyr="ps60" title="your pivot, 2nd entry, stop, target, partials">PS60 LINES</button><button data-lyr="mas" title="your moving averages, the desk's (SMA / EMA, the daily 34 / 65 / 89 on the daily)">MOVING AVERAGES</button>
+    <button data-lyr="bb" title="Bollinger Bands 20, 2">BOLLINGER</button><button data-lyr="vwap">VWAP</button>
+    <button data-lyr="gas" title="GAS + ATR: prior day, premarket / after hours, high / low of day, the ATR levels (intraday)">GAS + ATR</button><button data-lyr="air" title="AIRSPACE: daily / weekly bounce and rejection">AIRSPACE</button><button data-lyr="uv" title="UNVISITED HIGHS / LOWS">UNVISITED</button><button data-lyr="vol">VOLUME</button>
+  </div>
+  <div class="r" style="margin-top:5px;align-items:center"><button id="lookBtn" title="the chart looks exactly like your desk chart: its screen colour, candles and the lines you have on there">MY DESK CHART LOOK</button>
+    <select id="lblSel" style="width:auto" title="study label size on the show"><option value="12">LABELS S</option><option value="16">LABELS M</option><option value="20">LABELS L</option><option value="24">LABELS XL</option></select></div>
+  <h4>DRAW · keys 1-9, L, S, E, Z, X</h4>
+  <div class="r" id="toolR">
+    <button data-tool="move" title="M: move / zoom the chart">MOVE</button><button data-tool="pen" title="1">1 PEN</button><button data-tool="rect" title="2">2 SQUARE</button><button data-tool="trend" title="3">3 TREND LINE</button>
+    <button data-tool="arrow" title="4">4 ARROW</button><button data-tool="hline" title="5">5 PRICE LINE</button><button data-tool="ruler" title="6: measured potential, dollars and times the ATR">6 MP RULER</button>
+    <button data-tool="text" title="7">7 TEXT</button><button data-tool="circle" title="8">8 CIRCLE</button><button data-tool="hl" title="9">9 HIGHLIGHT</button>
+    <button data-tool="laser" title="L: a glowing pointer, leaves nothing behind">L LASER</button><button data-tool="spot" title="S: dim everything but the part you drag around">S SPOTLIGHT</button><button data-tool="erase" title="E: click a drawing to take it off">E ERASER</button>
+  </div>
+  <div class="r" style="margin-top:6px;align-items:center" id="colR"></div>
+  <div class="r" style="margin-top:5px"><button id="undoBtn">UNDO (Z)</button><button id="clearBtn">CLEAR CHART (X)</button><button id="snapBtn" title="save this chart with your drawings as a picture for a post">SNAPSHOT</button><button id="replayBtn" title="play the day back candle by candle">REPLAY THE DAY</button></div>
+  <h4>ON AIR</h4>
+  <div class="full"><input id="brandIn" placeholder="show name"><input id="handleIn" placeholder="@handle"></div>
+  <div class="r"><button id="bumpBtn">WE'RE LIVE INTRO</button><button id="lowBtn">LOWER THIRD</button><button id="safeBtn" title="no dollars, no sizes on screen: results in R and %">SHOW-SAFE</button></div>
+  <h4>SEGMENT</h4>
+  <div class="r" id="segR"></div>
+  <div class="full" style="margin-top:5px"><input id="segIn" placeholder="segment title"><input id="segSubIn" placeholder="line under it (blank: the chart's PS60 read)"></div>
+  <h4>SCENES</h4>
+  <div class="r" id="scR"><button data-sc="">LIVE</button><button data-sc="soon">STARTING SOON</button><button data-sc="open">OPEN COUNTDOWN</button><button data-sc="brb">BE RIGHT BACK</button><button data-sc="thanks">THANKS FOR WATCHING</button></div>
+  <div class="w2" style="margin-top:5px"><input id="soonMin" type="number" min="1" value="5" title="starting soon: minutes"><span class="hint" style="padding:6px 0">minutes for STARTING SOON</span></div>
+  <h4>BREAKING · CARDS</h4>
+  <div class="r"><button id="brkAuto" title="the desk's calls on your watchlist (2nd entry, pivot breaks, flow ready) slide in by themselves">AUTO BREAKING</button><button id="brkVoice" title="the browser says the breaking line (off: you do the talking)">SAY IT</button></div>
+  <div class="full" style="margin-top:5px"><input id="brkIn" placeholder="type a breaking line, Enter sends it"></div>
+  <div class="r"><button id="tcBtn">LAST TRADE CARD</button><button id="scBtn">TODAY'S SCORECARD</button></div>
+  <div class="full" style="margin-top:5px"><input id="qIn" placeholder="viewer question"><input id="qFromIn" placeholder="from (@name)"></div>
+  <div class="r"><button id="qBtn">SHOW QUESTION</button></div>
+  <h4>CROWD</h4>
+  <div class="r"><button id="tickBtn">TICKER CRAWL</button><select id="crawlSpd" style="width:auto"><option value="90">CRAWL SLOW</option><option value="60" selected>CRAWL NORMAL</option><option value="35">CRAWL FAST</option></select></div>
+  <h4>CAMERA SPOT</h4>
+  <div class="r" id="camR"><button data-cam="">OFF</button><button data-cam="br">BOTTOM RIGHT</button><button data-cam="tr">TOP RIGHT</button><button data-cam="bl">BOTTOM LEFT</button><button id="camKey" title="fill it green so OBS can key your camera in">GREEN FILL</button></div>
+  <h4>LOOK</h4>
+  <div class="r" id="thR"><button data-th="net">NETWORK</button><button data-th="desk">NIGHT DESK</button><button data-th="neon">NEON</button><button data-th="paper">DAYTIME</button></div>
+  <h4>OUTPUT</h4>
+  <div class="hint">OBS: Window Capture of this tab, or a Browser Source at this address with <b>?clean=1</b> on the end (sign in once with Interact). H hides this panel. Nothing on this page can place or cancel an order.</div>
+  <div class="r" style="margin:6px 0 20px"><button id="cleanBtn">OPEN CLEAN OUTPUT</button><button id="hideBtn">HIDE PANEL (H)</button></div>
+</div>
+<div id="toast"></div>
+<script>
+const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
+const store = {get(k, d){ try { const v = localStorage.getItem("show." + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+               set(k, v){ try { localStorage.setItem("show." + k, JSON.stringify(v)); } catch (e) {} }};
+const Q = new URLSearchParams(location.search);
+if (Q.get("clean") === "1") document.body.classList.add("clean");
+function toast(m){ const t = $("#toast"); t.textContent = m; t.style.display = "block"; clearTimeout(t._t); t._t = setTimeout(() => t.style.display = "none", 2600); }
+const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+const px = v => v == null || isNaN(v) ? "—" : (+v).toFixed(+v < 1 ? 4 : 2);
+const pct = v => v == null ? "" : (v >= 0 ? "+" : "") + (+v).toFixed(2) + "%";
+
+/* ------------------------------------------------------------ settings, kept per browser */
+const S = Object.assign({fmt: "h", lay: 1, theme: "net", rail: true, lyr: {ps60: true, mas: true, bb: true, vwap: true, gas: true, air: true, uv: true, vol: true}, deskLook: true, lbl: 16,
+  brand: "TWINEY LIVE", handle: "@twiney", safe: true, lower: true, tick: true, crawl: 60, brkAuto: true, brkVoice: false, cam: "", camKey: false,
+  guides: false, seg: "THE WATCHLIST", segSub: "", src: "mine", cells: [{sym: null, tf: 5}, {sym: null, tf: 5}, {sym: null, tf: 5}, {sym: null, tf: 5}], focus: 0, color: "#f2c14e"}, store.get("cfg", {}));
+S.lyr = Object.assign({ps60: true, mas: true, bb: true, vwap: true, gas: true, air: true, uv: true, vol: true}, S.lyr || {});
+const save = () => store.set("cfg", S);
+const SIZES = {h: [1920, 1080], v: [1080, 1920], s: [1080, 1080]};
+const SEGMENTS = ["THE WATCHLIST", "PREMARKET PREP", "LIVE TRADING", "TRADE OF THE DAY", "THE BREAKDOWN", "MARKET RECAP", "Q&A", "TOMORROW'S PLAYS"];
+const COLORS = ["#f2c14e", "#21c07a", "#ff4d5e", "#ffffff", "#19e3ff", "#ff2bd6"];
+
+/* ------------------------------------------------------------ the stage */
+function fit(){
+  const [W, H] = SIZES[S.fmt], st = $("#stage"), wr = $("#wrap");
+  st.style.width = W + "px"; st.style.height = H + "px";
+  const sc = Math.min(wr.clientWidth / W, wr.clientHeight / H);
+  st.style.transform = `scale(${sc})`; st._sc = sc;
+  // the grid's rows fill what is left between the top bar and the lower third
+  requestAnimationFrame(() => cells.forEach(c => c.resize()));
+}
+function applyLook(){
+  document.body.className = document.body.className.split(" ").filter(c => !/^(theme-|fmt-|norail$)/.test(c)).join(" ") + ` theme-${S.theme} fmt-${S.fmt}` + (S.rail ? "" : " norail");
+  $("#brandName").textContent = S.brand || "TWINEY LIVE"; $("#brandIn").value = S.brand; $("#handleIn").value = S.handle;
+  $("#lower").classList.toggle("off", !S.lower); $("#crawl").style.display = S.tick ? "" : "none";
+  $("#crawl .track").style.setProperty("--crawl", S.crawl + "s");
+  const lay = S.fmt === "v" ? (S.lay >= 2 ? "v2" : "g1") : S.fmt === "s" ? "g1" : (S.lay === 4 ? "g4" : S.lay === 2 ? "g2" : "g1");
+  $("#grid").className = lay; renderCells();
+  const cam = $("#cam"); cam.className = (S.cam ? "on" : "") + (S.camKey ? " key" : ""); const [W, H] = SIZES[S.fmt];
+  Object.assign(cam.style, {left: "", right: "", top: "", bottom: ""});
+  if (S.cam){ const m = 24; if (S.cam.includes("b")) cam.style.bottom = (S.fmt === "h" ? 160 : 170) + "px"; else cam.style.top = 100 + "px"; if (S.cam.includes("r")) cam.style.right = m + "px"; else cam.style.left = (S.rail && S.fmt === "h" ? 350 : m) + "px"; }
+  guides(); syncDock(); fit();
+}
+function guides(){
+  const g = $("#guides"); g.classList.toggle("on", !!S.guides); if (!S.guides){ g.innerHTML = ""; return; }
+  const H = SIZES[S.fmt][1];
+  g.innerHTML = S.fmt === "v" ? `<div style="top:0;height:${Math.round(H * .12)}px">INSTAGRAM / TIKTOK: name, follow, the LIVE badge</div><div style="bottom:0;height:${Math.round(H * .2)}px">comments, hearts, the buttons</div><div style="top:${Math.round(H * .12)}px;bottom:${Math.round(H * .2)}px;left:auto;right:0;width:${Math.round(SIZES.v[0] * .13)}px">side buttons</div>`
+    : S.fmt === "s" ? `<div style="bottom:0;height:80px">the feed crops a little here on some phones</div>` : `<div style="bottom:0;height:120px">YouTube: the player bar covers this when someone hovers</div>`;
+}
+
+/* ------------------------------------------------------------ data */
+const BARS = {}, DAILY = {}, INFO = {};
+let WL = [], DAN = [], ALERTS = [], TRADES = [], SEEN = new Set(), FIRST = true, LASTNOW = 0;
+async function poll(){
+  const view = [...new Set(cells.filter(c => c.visible && c.sym).map(c => c.sym))];
+  const full = view.filter(s => !BARS[s]);
+  try {
+    const r = await fetch(`/api/show?view=${encodeURIComponent(view.join(","))}&full=${encodeURIComponent(full.join(","))}`, {cache: "no-store"});
+    if (r.status === 401){ location.replace("/login?next=/show"); return; }
+    const j = await r.json(); if (!j.ok) return;
+    LASTNOW = j.now; WL = j.watchlist || []; DAN = j.dan || []; TRADES = j.trades || [];
+    for (const [s, d] of Object.entries(j.charts || {})){
+      INFO[s] = d;
+      if (d.daily) DAILY[s] = d.daily;
+      const b = d.bars || [];
+      if (!BARS[s] || full.includes(s)) BARS[s] = b.slice();
+      else { const m = BARS[s]; for (const x of b){ const i = m.length ? m.findIndex((y, k) => k >= m.length - 12 && y[0] === x[0]) : -1; if (i >= 0) m[i] = x; else if (!m.length || x[0] > m[m.length - 1][0]) m.push(x); } }
+    }
+    if (!cells.some(c => c.sym) && WL.length){ cells.forEach((c, i) => { c.sym = (WL[i] || WL[0]).symbol; }); S.cells.forEach((c, i) => c.sym = cells[i].sym); save(); renderCells(); }
+    breakingFrom(j.alerts || []);
+    renderRail(); renderCrawl(); cells.forEach(c => c.draw());
+    if (!S.segSub) autoSub();
+  } catch (e) {}
+}
+setInterval(poll, 1500);
+
+/* ------------------------------------------------------------ watchlist rail, chips, crawl */
+function renderRail(){
+  const src = S.src === "dan" && DAN.length ? "dan" : "mine";
+  $("#railSrc").textContent = src === "dan" ? "DAN'S" : "MINE"; $("#railTitle").textContent = src === "dan" ? "DAN'S WATCHLIST" : "WATCHLIST";
+  const fsym = cells[S.focus] && cells[S.focus].sym;
+  const rows = src === "dan" ? DAN.map(d => { const w = WL.find(x => x.symbol === d.symbol) || {}; return {symbol: d.symbol, last: w.last, chg_pct: w.chg_pct, side: d.side, pivot: d.pivot, stars: d.stars}; }) : WL;
+  const h = rows.map(w => `<div class="wr ${w.symbol === fsym ? "on" : ""}" data-sym="${esc(w.symbol)}"><b>${esc(w.symbol)}</b><div class="px">${px(w.last)}</div>
+      <div class="sub">${w.pivot ? (w.side === "short" ? "▼" : "▲") + " PIVOT " + px(w.pivot) : "&nbsp;"}${w.stars ? " " + "★".repeat(w.stars) : ""}</div><div class="ch ${w.chg_pct >= 0 ? "up" : "dn"}">${pct(w.chg_pct)}</div></div>`).join("");
+  const el = $("#wl"); if (el._h !== h){ el._h = h; el.innerHTML = h; }
+  const ch = WL.map(w => `<span class="${w.symbol === fsym ? "on" : ""}" data-sym="${esc(w.symbol)}">${esc(w.symbol)} <b class="${w.chg_pct >= 0 ? "up" : "dn"}">${pct(w.chg_pct)}</b></span>`).join("");
+  const c2 = $("#chips"); if (c2._h !== ch){ c2._h = ch; c2.innerHTML = ch; }
+}
+function renderCrawl(){
+  const one = WL.map(w => `<span><i>${esc(w.symbol)}</i>${px(w.last)} <b class="${w.chg_pct >= 0 ? "up" : "dn"}">${w.chg_pct >= 0 ? "▲" : "▼"} ${pct(w.chg_pct)}</b></span>`).join("") + (S.handle ? `<span><i>FOLLOW</i>${esc(S.handle)}</span>` : "");
+  const h = one + one;                                   // twice: the crawl loops without a gap
+  const t = $("#crawlTrack"); if (t._h !== h){ t._h = h; t.innerHTML = h; }
+}
+function pickSym(sym, dbl){
+  if (!WL.some(w => w.symbol === sym)){ toast(`${sym} is not on the desk: add it as a play on the desk first`); return; }
+  const c = cells[S.focus] || cells[0]; c.sym = sym; c.view = null; S.cells[c.i].sym = sym; save();
+  if (dbl && S.fmt === "h"){ S.lay = 1; applyLook(); }
+  renderCells(); poll(); autoSub();
+}
+$("#wl").addEventListener("click", e => { const r = e.target.closest(".wr"); if (r) pickSym(r.dataset.sym); });
+$("#wl").addEventListener("dblclick", e => { const r = e.target.closest(".wr"); if (r) pickSym(r.dataset.sym, true); });
+$("#chips").addEventListener("click", e => { const r = e.target.closest("[data-sym]"); if (r) pickSym(r.dataset.sym); });
+$("#railSrc").addEventListener("click", () => { S.src = S.src === "dan" ? "mine" : "dan"; if (S.src === "dan" && !DAN.length) toast("Dan's watchlist has not come in yet (SETTINGS > Gmail on the desk)"); save(); renderRail(); });
+
+/* ------------------------------------------------------------ the charts */
+const TFSEC = tf => tf === "D" ? 86400 : tf * 60;
+function nyParts(t){ const d = new Date(t * 1000); const f = new Intl.DateTimeFormat("en-US", {timeZone: "America/New_York", hour12: false, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", weekday: "short"});
+  const o = {}; for (const p of f.formatToParts(d)) o[p.type] = p.value; return {y: +o.year, mo: +o.month, d: +o.day, h: +o.hour % 24, mi: +o.minute, s: +o.second, wd: o.weekday}; }
+function agg(sym, tf){
+  if (tf === "D"){ return (DAILY[sym] || []).map(r => [r[0], +r[1], +r[2], +r[3], +r[4], +r[5] || 0]); }
+  const src = BARS[sym] || [], sec = tf * 60, off = tf >= 30 ? 1800 : 0, out = [];
+  for (const b of src){ const k = Math.floor((b[0] - off) / sec) * sec + off; const l = out[out.length - 1];
+    if (l && l[0] === k){ l[2] = Math.max(l[2], b[2]); l[3] = Math.min(l[3], b[3]); l[4] = b[4]; l[5] += b[5] || 0; }
+    else out.push([k, b[1], b[2], b[3], b[4], b[5] || 0]); }
+  return out;
+}
+function vwapOf(sym){
+  const src = BARS[sym] || []; if (!src.length) return [];
+  const last = nyParts(src[src.length - 1][0]), out = []; let pv = 0, vv = 0;
+  for (const b of src){ const p = nyParts(b[0]); if (p.d !== last.d || p.mo !== last.mo || p.h * 60 + p.mi < 570) continue;
+    const tp = (b[2] + b[3] + b[4]) / 3; pv += tp * (b[5] || 0); vv += b[5] || 0; if (vv) out.push([b[0], pv / vv]); }
+  return out;
+}
+function atrOf(sym){ const d = DAILY[sym] || []; if (d.length < 3) return null; let s = 0, n = 0;
+  for (let i = Math.max(1, d.length - 14); i < d.length; i++){ const h = +d[i][2], l = +d[i][3], pc = +d[i - 1][4]; s += Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc)); n++; } return n ? s / n : null; }
+/* ---- the DESK's chart code (studies, moving averages, Bollinger), copied in by the build ---- */
+/*@DESK_CHART@*/
+/* your desk chart's own settings (same browser): the screen, candle colours, which moving averages are on */
+const DESK = (k, d) => { try { const v = localStorage.getItem("twiney." + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } };
+function deskColors(){
+  if (!S.deskLook) return null;
+  const screen = DESK("screen", "white"), SCR = {white: "#ffffff", blue: "#a9d1f2", pink: "#f4d3e2", custom: DESK("screenColor", "#dfe9f3")};
+  const light = screen !== "desk";
+  const C = light ? {bg: SCR[screen] || "#ffffff", grid: "rgba(93,107,122,.35)", text: "#111111", up: "#00f900", dn: "#ff2600", wick: "#000000", border: "#000000", light}
+                  : {bg: "#0a0d12", grid: "#1b2433", text: "#7b889e", up: "#26d07c", dn: "#ff4d5e", wick: null, border: null, light};
+  const cs = k => DESK("cs." + k, ""); if (cs("upCol")) C.up = cs("upCol"); if (cs("dnCol")) C.dn = cs("dnCol"); if (cs("wickCol")) C.wick = cs("wickCol");
+  return C;
+}
+const ROLE_COL = {trigger: "#dbe3ee", second_entry: "#19c3ff", stop: "#ff4d5e", target: "#21c07a", opart: "#7bed9f", extra: "#b9c3d3", sneaky: "#f0a8ff"};
+const ROLE_NAME = {trigger: "PIVOT", second_entry: "2ND ENTRY", stop: "STOP", target: "TARGET", opart: "PARTIAL", extra: "LEVEL", sneaky: "SNEAKY PIVOT"};
+
+class Cell {
+  constructor(i){
+    this.i = i; this.sym = S.cells[i].sym; this.tf = S.cells[i].tf || 5; this.view = null; this.visible = true; this.replay = null;
+    const el = this.el = document.createElement("div"); el.className = "cell";
+    el.innerHTML = `<div class="ch-h"><span class="s"></span><span class="p"></span><span class="c"></span><span class="st"></span><span class="tf"></span></div><div class="cv"><canvas class="chart"></canvas><canvas class="draw"></canvas></div>`;
+    this.cv = el.querySelector("canvas.chart"); this.dv = el.querySelector("canvas.draw"); this.box = el.querySelector(".cv");
+    el.addEventListener("mousedown", () => { if (S.focus !== i){ S.focus = i; save(); cells.forEach(c => c.el.classList.toggle("focus", c.i === i)); syncDock(); renderRail(); autoSub(); } });
+    el.addEventListener("dblclick", e => { if (tool !== "move" && tool !== "laser") return; if (S.fmt !== "h") return; S.focus = i; S.lay = S.lay === 1 ? (S._lastLay || 4) : (S._lastLay = S.lay, 1); save(); applyLook(); });
+    wireDraw(this);
+  }
+  resize(){ const r = this.box.getBoundingClientRect(), sc = $("#stage")._sc || 1; const w = Math.max(50, Math.round(r.width / sc)), h = Math.max(50, Math.round(r.height / sc));
+    for (const c of [this.cv, this.dv]) if (c.width !== w || c.height !== h){ c.width = w; c.height = h; } this.draw(); }
+  bars(){ let b = agg(this.sym, this.tf); if (this.replay != null) b = b.slice(0, Math.max(1, this.replay)); return b; }
+  layout(){
+    const W = this.cv.width, H = this.cv.height, axisW = 110, timeH = 30, volH = S.lyr.vol && this.tf !== "D" ? Math.round(H * .14) : 0;
+    const bars = this.bars(); const v = this.view || (this.view = {cw: this.tf === "D" ? 12 : 11, off: 0});
+    const room = this.tf === "D" ? .18 : Math.max(.18, ((((INFO[this.sym] || {}).studies || {}).style || {}).lbl_space_pct || 30) / 100);
+    const plotW = W - axisW, n = Math.max(5, Math.floor(plotW * (1 - room) / v.cw)), end = Math.max(0, bars.length - v.off), start = Math.max(0, end - n);
+    const vis = bars.slice(start, end);
+    let lo = Infinity, hi = -Infinity; for (const b of vis){ lo = Math.min(lo, b[3]); hi = Math.max(hi, b[2]); }
+    if (!isFinite(lo)){ lo = 0; hi = 1; }
+    const pad = (hi - lo) * .08 || hi * .01 || 1; lo -= pad; hi += pad;
+    if (v.yLo != null){ lo = v.yLo; hi = v.yHi; }
+    const plotH = H - timeH - volH;
+    return {W, H, axisW, timeH, volH, plotW, plotH, bars, start, end, vis, lo, hi, cw: v.cw,
+      y: p => 8 + (hi - p) / (hi - lo) * (plotH - 16), p: y => hi - (y - 8) / (plotH - 16) * (hi - lo),
+      x: idx => (idx - start + .5) * v.cw};
+  }
+  tToX(L, t){ const b = L.bars; if (!b.length) return 0; const sec = TFSEC(this.tf);
+    if (t <= b[0][0]) return L.x(0) + (t - b[0][0]) / sec * L.cw;
+    let lo = 0, hi = b.length - 1; while (lo < hi){ const m = (lo + hi + 1) >> 1; if (b[m][0] <= t) lo = m; else hi = m - 1; }
+    return L.x(lo) + Math.min(4, (t - b[lo][0]) / sec) * L.cw; }
+  xToT(L, x){ const b = L.bars, sec = TFSEC(this.tf); if (!b.length) return 0; const f = x / L.cw - .5 + L.start, i = Math.floor(f);
+    if (i < 0) return b[0][0] + f * sec; if (i >= b.length) return b[b.length - 1][0] + (f - b.length + 1) * sec; return b[i][0] + (f - i) * sec; }
+  draw(){
+    const info = INFO[this.sym] || {}, w = WL.find(x => x.symbol === this.sym) || {};
+    const h = this.el.querySelector(".ch-h"); h.querySelector(".s").textContent = this.sym || "PICK A NAME";
+    h.querySelector(".p").textContent = px(info.last || w.last); const c = h.querySelector(".c"); c.textContent = pct(w.chg_pct); c.className = "c " + (w.chg_pct >= 0 ? "up" : "dn");
+    h.querySelector(".tf").textContent = (this.tf === "D" ? "DAILY" : this.tf + " MIN") + (this.replay != null ? " · REPLAY" : "");
+    const se = info.se && info.se.state && info.se.state !== "IDLE" ? info.se.state.replace(/_/g, " ") : ""; h.querySelector(".st").textContent = se ? "PS60: " + se : "";
+    const g = this.cv.getContext("2d"), L = this.layout(); this.L = L;
+    const css = getComputedStyle(document.body), col = n => css.getPropertyValue(n).trim(), DC = deskColors();
+    const BG = DC ? DC.bg : col("--chart"), TXT = DC ? DC.text : col("--dim"), GRID = DC ? DC.grid : col("--grid");
+    g.fillStyle = BG; g.fillRect(0, 0, L.W, L.H); this.box.style.background = BG;
+    if (!L.bars.length){ g.fillStyle = TXT; g.font = '600 28px "IBM Plex Sans", Arial, sans-serif'; g.fillText(this.sym ? "loading " + this.sym + "…" : "click a name on the watchlist", 30, L.H / 2); this.drawOverlay(); return; }
+    // grid + price axis
+    g.strokeStyle = GRID; g.lineWidth = 1; g.font = '600 17px "IBM Plex Mono", Consolas, monospace'; g.fillStyle = TXT;
+    const step = niceStep((L.hi - L.lo) / 7);
+    for (let p = Math.ceil(L.lo / step) * step; p < L.hi; p += step){ const yy = Math.round(L.y(p)) + .5; g.beginPath(); g.moveTo(0, yy); g.lineTo(L.plotW, yy); g.stroke(); g.fillText(px(p), L.plotW + 8, yy + 6); }
+    const every = Math.max(1, Math.round(140 / L.cw));
+    for (let i = L.start; i < L.end; i++){ if ((i - L.start) % every) continue; const t = L.bars[i][0], p = nyParts(t), xx = L.x(i);
+      g.fillText(this.tf === "D" ? `${p.mo}/${p.d}` : `${p.h}:${String(p.mi).padStart(2, "0")}`, xx - 22, L.H - 8); }
+    if (L.volH){ let mv = 1; for (const b of L.vis) mv = Math.max(mv, b[5]); const base = L.plotH + L.volH;
+      for (let i = L.start; i < L.end; i++){ const b = L.bars[i], hh = b[5] / mv * (L.volH - 6); g.fillStyle = b[4] >= b[1] ? "rgba(33,192,122,.35)" : "rgba(255,77,94,.35)"; g.fillRect(L.x(i) - L.cw * .35, base - hh, L.cw * .7, hh); } }
+    // your studies, the desk's code: GAS + ATR (intraday only, like the desk), AIRSPACE, UNVISITED
+    const raw = info.studies || {}, daily = this.tf === "D";
+    const SD = Object.assign({}, raw, {gas: S.lyr.gas && !daily ? raw.gas : null, air: S.lyr.air ? raw.air : null, uv: S.lyr.uv ? raw.uv : null,
+      style: Object.assign({}, raw.style || {}, {lbl_size: S.lbl || 16, lbl_gap_bars: 2})});
+    const ctx = {g, S: SD, bars: L.vis, x0: 0, cw: L.cw, plotW: L.plotW, plotH: L.plotH, labelW: L.axisW, y: L.y, H: L.H, lo: L.lo, hi: L.hi, bg: BG, lightScreen: DC && DC.light};
+    try { studiesBack(ctx); } catch (e) {}
+    // your moving averages and Bollinger Bands, the desk's lines and colours (and its on / off switches)
+    const cls = L.bars.map(b => b[4]), IND = DESK("ind", {}), onI = k => IND[k] !== false;
+    const line = (ser, c_, lw) => { g.strokeStyle = c_; g.lineWidth = lw + 1; g.setLineDash([]); g.beginPath(); let on = false;
+      for (let i = L.start; i < L.end; i++){ const v = ser[i]; if (v == null || !isFinite(v)){ on = false; continue; } const xx = L.x(i), yy = L.y(v); if (!on){ g.moveTo(xx, yy); on = true; } else g.lineTo(xx, yy); } g.stroke(); };
+    if (S.lyr.mas && DESK("mas", true)){
+      for (const [n, c_, lw] of DAN_SMA) if (onI("s" + n)) line(smaSeries(cls, n), c_, lw);
+      for (const [n, c_, lw] of DAN_EMA) if (onI("e" + n)) line(emaSeries(cls, n), c_, lw);
+      if (daily) for (const [n, c_, lw] of DAN_EMA_DAILY) if (onI("d" + n)) line(emaSeries(cls, n), c_, lw);
+    }
+    if (S.lyr.bb && DESK("bb", true)){ const bb = bbSeries(cls, 20, 2.0); line(bb.up, DAN_BB, 2); line(bb.dn, DAN_BB, 2); }
+    // candles (the desk's colours; Dan's black wicks and borders on a light screen)
+    const up = DC ? DC.up : col("--up"), dn = DC ? DC.dn : col("--dn"), bw = Math.max(1, L.cw * .72);
+    for (let i = L.start; i < L.end; i++){ const b = L.bars[i], xx = L.x(i), c_ = b[4] >= b[1] ? up : dn;
+      g.strokeStyle = DC && DC.wick ? DC.wick : c_; g.lineWidth = Math.max(1, L.cw / 9);
+      g.beginPath(); g.moveTo(xx, L.y(b[2])); g.lineTo(xx, L.y(b[3])); g.stroke();
+      const y1 = L.y(Math.max(b[1], b[4])), y2 = L.y(Math.min(b[1], b[4])); g.fillStyle = c_; g.fillRect(xx - bw / 2, y1, bw, Math.max(1.5, y2 - y1));
+      if (DC && DC.border){ g.strokeStyle = DC.border; g.lineWidth = 1; g.strokeRect(xx - bw / 2, y1, bw, Math.max(1.5, y2 - y1)); } }
+    if (S.lyr.vwap && !daily){ const vw = vwapOf(this.sym); if (vw.length){ g.strokeStyle = "#f2a33a"; g.lineWidth = 3; g.beginPath(); let started = false;
+      for (const [t, v] of vw){ const xx = this.tToX(L, t); if (xx < -20 || xx > L.plotW) continue; const yy = L.y(v); if (!started){ g.moveTo(xx, yy); started = true; } else g.lineTo(xx, yy); } g.stroke(); } }
+    try { studiesFront(ctx); } catch (e) {}
+    this.levels(g, L, col);
+    try { studiesTags(ctx); } catch (e) {}
+    if (S.lyr.vwap && !daily){ const vw = vwapOf(this.sym); if (vw.length){ const lv = vw[vw.length - 1][1]; tag(g, L, lv, "VWAP " + px(lv), "#f2a33a"); } }
+    const last = +(info.last || L.bars[L.bars.length - 1][4]); if (this.replay == null) tag(g, L, last, px(last), L.bars[L.bars.length - 1][4] >= L.bars[L.bars.length - 1][1] ? up : dn, true);
+    this.drawOverlay();
+  }
+  levels(g, L, col){
+    // your PS60 lines (pivot, 2nd entry, stop, target, partials): full width, labelled at the left so they never sit in the study labels
+    if (!S.lyr.ps60) return;
+    const info = INFO[this.sym] || {};
+    for (const u of info.user_levels || []){ if (u.price < L.lo || u.price > L.hi) continue; const yy = L.y(u.price), c_ = ROLE_COL[u.role] || "#dbe3ee";
+      g.strokeStyle = c_; g.lineWidth = 3; g.setLineDash(u.role === "second_entry" ? [10, 6] : u.role === "stop" || u.role === "target" ? [4, 4] : []);
+      g.beginPath(); g.moveTo(0, yy); g.lineTo(L.plotW, yy); g.stroke(); g.setLineDash([]);
+      const name = u.role === "opart" ? u.label : (ROLE_NAME[u.role] || u.label || "LEVEL"), txt = `${name} ${px(u.price)}`;
+      g.font = '700 18px "IBM Plex Sans Condensed", "Arial Narrow", Arial, sans-serif'; const tw = g.measureText(txt).width + 14;
+      g.fillStyle = c_; g.fillRect(6, yy - 12, tw, 24); g.fillStyle = "#0a0d12"; g.fillText(txt, 13, yy + 6); }
+  }
+  drawOverlay(){ drawShapes(this); }
+}
+function niceStep(r){ const m = Math.pow(10, Math.floor(Math.log10(r || 1))), f = r / m; return (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * m; }
+function tag(g, L, p, txt, c, bold){ if (p < L.lo || p > L.hi) return; const yy = L.y(p); g.fillStyle = c; g.fillRect(L.plotW + 2, yy - 13, L.axisW - 4, 26);
+  g.fillStyle = "#08101f"; g.font = (bold ? "700 18px" : "700 15px") + ' "IBM Plex Mono", Consolas, monospace'; g.fillText(txt.length > 11 ? txt.slice(0, 11) : txt, L.plotW + 6, yy + 6); }
+
+let cells = [];
+function renderCells(){
+  const grid = $("#grid"), n = grid.className === "g4" ? 4 : grid.className === "g2" || grid.className === "v2" ? 2 : 1;
+  if (!cells.length) cells = [0, 1, 2, 3].map(i => new Cell(i));
+  if (S.focus >= n) S.focus = 0;
+  grid.innerHTML = ""; cells.forEach((c, i) => { c.visible = i < n; if (c.visible) grid.appendChild(c.el); c.el.classList.toggle("focus", i === S.focus && n > 1); });
+  requestAnimationFrame(() => cells.forEach(c => c.visible && c.resize()));
+}
+
+/* ------------------------------------------------------------ drawing: shapes live in (time, price), per ticker */
+let tool = "move", drawCol = S.color;
+const DRAW = {}; const dkey = s => "draw." + s;
+const shapesOf = s => DRAW[s] || (DRAW[s] = store.get(dkey(s), []));
+const saveShapes = s => store.set(dkey(s), DRAW[s] || []);
+let laser = null, spot = null;
+function wireDraw(c){
+  const cv = c.dv; let cur = null, pan = null;
+  const at = e => { const r = cv.getBoundingClientRect(), sc = $("#stage")._sc || 1; return [(e.clientX - r.left) / sc, (e.clientY - r.top) / sc]; };
+  const tp = (L, x, y) => ({t: c.xToT(L, x), p: L.p(y)});
+  cv.addEventListener("mousedown", e => {
+    if (!c.L || !c.sym) return; const [x, y] = at(e), L = c.L;
+    if (tool === "move"){ pan = {x, y, off: c.view.off, cw: c.view.cw, axis: x > L.plotW}; return; }
+    if (tool === "laser" || tool === "spot") return;
+    if (tool === "erase"){ const sh = shapesOf(c.sym), k = hitShape(c, x, y); if (k >= 0){ sh.splice(k, 1); saveShapes(c.sym); c.draw(); } return; }
+    if (tool === "text"){ const s = prompt("Text on the chart:"); if (s){ shapesOf(c.sym).push({k: "text", a: tp(L, x, y), s, c: drawCol}); saveShapes(c.sym); c.draw(); } return; }
+    if (tool === "hline"){ shapesOf(c.sym).push({k: "hline", a: tp(L, x, y), c: drawCol}); saveShapes(c.sym); c.draw(); return; }
+    cur = {k: tool, a: tp(L, x, y), b: tp(L, x, y), pts: [tp(L, x, y)], c: drawCol}; shapesOf(c.sym).push(cur);
+  });
+  window.addEventListener("mousemove", e => {
+    if (!c.L) return; const [x, y] = at(e), L = c.L;
+    if (pan){ if (pan.axis){ const v = c.view; const f = Math.exp((y - pan.y) / 200); const mid = (L.lo + L.hi) / 2, half = (L.hi - L.lo) / 2 * f; v.yLo = mid - half; v.yHi = mid + half; pan.y = y; }
+      else { c.view.off = Math.max(0, Math.round(pan.off + (x - pan.x) / c.view.cw)); } c.draw(); return; }
+    if (cur){ cur.b = tp(L, x, y); if (cur.k === "pen" || cur.k === "hl") cur.pts.push(cur.b); c.draw(); return; }
+    if (e.target === cv && (tool === "laser")){ laser = {c, x, y, trail: [...((laser && laser.c === c && laser.trail) || []), [x, y, performance.now()]].slice(-24)}; c.drawOverlay(); }
+    if (e.target === cv && tool === "spot" && e.buttons === 1){ spot = {c, x, y}; drawSpot(); }
+    if (e.target === cv && tool === "ruler" && !cur) showTip(e, c, L, x, y);
+  });
+  window.addEventListener("mouseup", () => { if (cur){ saveShapes(c.sym); cur = null; c.draw(); } pan = null; });
+  cv.addEventListener("mouseleave", () => { if (laser && laser.c === c){ laser = null; c.drawOverlay(); } $("#tip").style.display = "none"; });
+  cv.addEventListener("wheel", e => { e.preventDefault(); const v = c.view || {}; v.cw = Math.max(3, Math.min(60, v.cw * (e.deltaY < 0 ? 1.12 : 1 / 1.12))); c.draw(); }, {passive: false});
+  cv.addEventListener("dblclick", e => { if (tool === "move"){ c.view = null; c.draw(); } });
+}
+function showTip(e, c, L, x, y){ const t = $("#tip"); t.style.display = "block"; const sc = $("#stage")._sc || 1, r = $("#stage").getBoundingClientRect();
+  t.style.left = ((e.clientX - r.left) / sc + 14) + "px"; t.style.top = ((e.clientY - r.top) / sc + 10) + "px"; t.textContent = px(L.p(y)); }
+function drawShapes(c){
+  const g = c.dv.getContext("2d"), L = c.L; g.clearRect(0, 0, c.dv.width, c.dv.height); if (!L) return;
+  const X = a => c.tToX(L, a.t), Y = a => L.y(a.p), atr = atrOf(c.sym);
+  for (const s of (c.sym ? shapesOf(c.sym) : [])){
+    g.strokeStyle = s.c; g.fillStyle = s.c; g.lineWidth = 4; g.lineCap = "round"; g.lineJoin = "round"; g.setLineDash([]);
+    if (s.k === "pen" || s.k === "hl"){ g.globalAlpha = s.k === "hl" ? .35 : 1; g.lineWidth = s.k === "hl" ? 26 : 4; g.beginPath(); s.pts.forEach((q, i) => i ? g.lineTo(X(q), Y(q)) : g.moveTo(X(q), Y(q))); g.stroke(); g.globalAlpha = 1; }
+    else if (s.k === "rect"){ const x1 = X(s.a), y1 = Y(s.a), x2 = X(s.b), y2 = Y(s.b); g.globalAlpha = .14; g.fillRect(x1, y1, x2 - x1, y2 - y1); g.globalAlpha = 1; g.strokeRect(x1, y1, x2 - x1, y2 - y1); }
+    else if (s.k === "circle"){ const x1 = X(s.a), y1 = Y(s.a), x2 = X(s.b), y2 = Y(s.b); g.beginPath(); g.ellipse((x1 + x2) / 2, (y1 + y2) / 2, Math.abs(x2 - x1) / 2 + 1, Math.abs(y2 - y1) / 2 + 1, 0, 0, Math.PI * 2); g.stroke(); }
+    else if (s.k === "trend" || s.k === "arrow"){ const x1 = X(s.a), y1 = Y(s.a), x2 = X(s.b), y2 = Y(s.b); g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke();
+      if (s.k === "arrow"){ const a = Math.atan2(y2 - y1, x2 - x1), h = 26; g.beginPath(); g.moveTo(x2, y2); g.lineTo(x2 - h * Math.cos(a - .45), y2 - h * Math.sin(a - .45)); g.lineTo(x2 - h * Math.cos(a + .45), y2 - h * Math.sin(a + .45)); g.closePath(); g.fill(); } }
+    else if (s.k === "hline"){ const yy = Y(s.a); g.lineWidth = 3; g.setLineDash([12, 6]); g.beginPath(); g.moveTo(0, yy); g.lineTo(L.plotW, yy); g.stroke(); g.setLineDash([]); tag(g, L, s.a.p, px(s.a.p), s.c); }
+    else if (s.k === "text"){ g.font = "700 34px \"IBM Plex Sans Condensed\", \"Arial Narrow\", Arial, sans-serif"; const xx = X(s.a), yy = Y(s.a), tw = g.measureText(s.s).width; g.fillStyle = "rgba(0,0,0,.6)"; g.fillRect(xx - 8, yy - 34, tw + 16, 44); g.fillStyle = s.c; g.fillText(s.s, xx, yy); }
+    else if (s.k === "ruler"){ const x1 = X(s.a), y1 = Y(s.a), x2 = X(s.b), y2 = Y(s.b), d = s.b.p - s.a.p, up = d >= 0;
+      g.globalAlpha = .16; g.fillStyle = up ? "#21c07a" : "#ff4d5e"; g.fillRect(Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1), Math.abs(y2 - y1)); g.globalAlpha = 1;
+      g.strokeStyle = up ? "#21c07a" : "#ff4d5e"; g.beginPath(); g.moveTo(x1, y1); g.lineTo(x1, y2); g.stroke();
+      const txt = `MP ${up ? "+" : "−"}$${Math.abs(d).toFixed(2)} · ${(Math.abs(d) / s.a.p * 100).toFixed(2)}%${atr ? " · " + (Math.abs(d) / atr).toFixed(2) + "× ATR" : ""}`;
+      g.font = "700 26px \"IBM Plex Mono\", Consolas, monospace"; const tw = g.measureText(txt).width, lx = Math.min(x2 + 10, L.plotW - tw - 20), ly = Math.max(36, y2); g.fillStyle = "rgba(0,0,0,.75)"; g.fillRect(lx, ly - 30, tw + 16, 40); g.fillStyle = up ? "#21c07a" : "#ff4d5e"; g.fillText(txt, lx + 8, ly); }
+  }
+  if (laser && laser.c === c){ const now = performance.now(); laser.trail = laser.trail.filter(p => now - p[2] < 500);
+    laser.trail.forEach((p, i) => { g.globalAlpha = (i + 1) / laser.trail.length * .5; g.fillStyle = "#ff2030"; g.beginPath(); g.arc(p[0], p[1], 6 + i * .4, 0, Math.PI * 2); g.fill(); });
+    g.globalAlpha = 1; g.shadowColor = "#ff2030"; g.shadowBlur = 30; g.fillStyle = "#ff3344"; g.beginPath(); g.arc(laser.x, laser.y, 11, 0, Math.PI * 2); g.fill(); g.shadowBlur = 0; }
+}
+function hitShape(c, x, y){ const L = c.L, sh = shapesOf(c.sym); for (let k = sh.length - 1; k >= 0; k--){ const s = sh[k], X = a => c.tToX(L, a.t), Y = a => L.y(a.p);
+  const pts = s.pts ? s.pts : s.b ? [s.a, s.b] : [s.a]; if (s.k === "hline" && Math.abs(Y(s.a) - y) < 12) return k;
+  if (pts.some(q => Math.hypot(X(q) - x, Y(q) - y) < 22)) return k;
+  if ((s.k === "rect" || s.k === "circle" || s.k === "ruler") && x >= Math.min(X(s.a), X(s.b)) && x <= Math.max(X(s.a), X(s.b)) && y >= Math.min(Y(s.a), Y(s.b)) && y <= Math.max(Y(s.a), Y(s.b))) return k; } return -1; }
+function drawSpot(){ const sp = $("#spot"), cv = $("#spotCv"), st = $("#stage"); sp.classList.toggle("on", !!spot); if (!spot) return;
+  cv.width = st.offsetWidth; cv.height = st.offsetHeight; const g = cv.getContext("2d"); g.fillStyle = "rgba(0,0,0,.62)"; g.fillRect(0, 0, cv.width, cv.height);
+  const r = spot.c.dv.getBoundingClientRect(), sr = st.getBoundingClientRect(), sc = st._sc || 1; const cx = (r.left - sr.left) / sc + spot.x, cy = (r.top - sr.top) / sc + spot.y;
+  g.globalCompositeOperation = "destination-out"; const grd = g.createRadialGradient(cx, cy, 120, cx, cy, 260); grd.addColorStop(0, "rgba(0,0,0,1)"); grd.addColorStop(1, "rgba(0,0,0,0)"); g.fillStyle = grd; g.beginPath(); g.arc(cx, cy, 260, 0, Math.PI * 2); g.fill(); g.globalCompositeOperation = "source-over"; }
+setInterval(() => { if (laser) laser.c.drawOverlay(); }, 40);
+
+/* ------------------------------------------------------------ broadcast pieces */
+function clock(){
+  const t = LASTNOW && Math.abs(LASTNOW * 1000 - Date.now()) < 3e5 ? Date.now() / 1000 : Date.now() / 1000, p = nyParts(t), m = p.h * 60 + p.mi, wk = !["Sat", "Sun"].includes(p.wd);
+  $("#clk").textContent = `${String(p.h % 12 || 12).padStart(2, "0")}:${String(p.mi).padStart(2, "0")}:${String(p.s).padStart(2, "0")} ${p.h < 12 ? "AM" : "PM"} ET`;
+  $("#mkt").textContent = !wk ? "MARKET CLOSED · WEEKEND" : m < 240 ? "OVERNIGHT" : m < 570 ? `PREMARKET · OPEN IN ${fmtDur((570 - m) * 60 - p.s)}` : m < 960 ? "MARKET OPEN" : m < 1200 ? "AFTER HOURS" : "OVERNIGHT";
+  if (SCENE === "open" || SCENE === "soon") sceneTick(p, m);
+}
+const fmtDur = s => { s = Math.max(0, Math.round(s)); const h = Math.floor(s / 3600), mi = Math.floor(s % 3600 / 60), se = s % 60; return (h ? h + ":" + String(mi).padStart(2, "0") : mi) + ":" + String(se).padStart(2, "0"); };
+setInterval(clock, 500);
+function autoSub(){
+  const c = cells[S.focus] || cells[0], info = INFO[c && c.sym] || {}, pl = info.play || {};
+  $("#segTitle").textContent = S.seg || "THE WATCHLIST";
+  const bits = []; if (c && c.sym) bits.push(c.sym);
+  if (pl.trigger) bits.push(`${(pl.side || "long").toUpperCase()} · PIVOT ${px(pl.trigger)}`);
+  if (pl.second_entry) bits.push(`2ND ENTRY ${px(pl.second_entry)}`); if (pl.target) bits.push(`TARGET ${px(pl.target)}`); if (pl.stop) bits.push(`STOP ${px(pl.stop)}`);
+  $("#segSub").textContent = S.segSub || (bits.length > 1 ? bits.join(" · ") : "PS60 · pivots, second entries, measured potential");
+  $("#lowTag").textContent = S.seg === "Q&A" ? "Q&A" : "LIVE"; $("#lowTitle").textContent = S.brand + (S.handle ? "  ·  " + S.handle : "");
+  $("#lowSub").textContent = S.segSub || (bits.length > 1 ? bits.join("  ·  ") : S.seg);
+}
+// BREAKING: a call the desk makes on your watchlist slides in (or one you type)
+const BQ = []; let brkBusy = false;
+function breakingFrom(list){
+  for (const a of list.slice().reverse()){ if (!a.key || SEEN.has(a.key)) continue; SEEN.add(a.key); if (FIRST) continue;
+    if (!S.brkAuto) continue; const lab = String(a.label || "") + " " + String(a.role || "");
+    if (!/2ND|SECOND|PIVOT|READY|ARMED|BREAK|TARGET|STOP|FILL|CONVICTION|REMOUNT|REJECT|BOUNCE/i.test(lab)) continue;
+    if (!WL.some(w => w.symbol === a.symbol)) continue;
+    BQ.push(`${a.symbol} · ${String(a.label || "").toUpperCase()}${a.text ? " — " + String(a.text).replace(/^\S+\.\s*/, "").slice(0, 120) : ""}`); }
+  FIRST = false; nextBreaking();
+}
+function nextBreaking(){ if (brkBusy || !BQ.length) return; brkBusy = true; const t = BQ.shift(); $("#brkTxt").textContent = t; $("#breaking").classList.add("on");
+  if (S.brkVoice && "speechSynthesis" in window){ try { speechSynthesis.speak(new SpeechSynthesisUtterance("Breaking. " + t.replace(/·|—/g, ","))); } catch (e) {} }
+  setTimeout(() => { $("#breaking").classList.remove("on"); setTimeout(() => { brkBusy = false; nextBreaking(); }, 700); }, 8000); }
+$("#brkIn").addEventListener("keydown", e => { e.stopPropagation(); if (e.key === "Enter" && e.target.value.trim()){ BQ.push(e.target.value.trim()); e.target.value = ""; nextBreaking(); } });
+// cards
+function flash(id, ms){ const el = $(id); el.classList.add("on"); clearTimeout(el._t); el._t = setTimeout(() => el.classList.remove("on"), ms || 9000); }
+$("#tcBtn").addEventListener("click", () => {
+  const t = TRADES[TRADES.length - 1]; if (!t){ toast("No closed trade today yet"); return; }
+  const res = t.r != null ? (t.r >= 0 ? "+" : "") + t.r + "R" : t.pct != null ? pct(t.pct) : "";
+  $("#tcard").innerHTML = `<h2>TRADE CARD</h2><div class="big">${esc(t.symbol)} <span class="${(t.r ?? t.pct ?? 0) >= 0 ? "up" : "dn"}">${esc(res)}</span></div>
+    <div class="row"><div><span>SIDE</span>${esc((t.side || "").toUpperCase())}${t.opt ? " · OPTION" : ""}</div><div><span>IN</span>${px(t.entry)}</div><div><span>OUT</span>${px(t.exit)}</div>${t.setup ? `<div><span>SETUP</span>${esc(t.setup)}</div>` : ""}${!S.safe && t.pnl != null ? `<div><span>P&amp;L</span>${t.pnl >= 0 ? "+" : "−"}$${Math.abs(t.pnl).toFixed(0)}</div>` : ""}</div>`;
+  flash("#tcard");
+});
+$("#scBtn").addEventListener("click", () => {
+  const r = TRADES.filter(t => t.r != null || t.pct != null); if (!r.length){ toast("No closed trade today yet"); return; }
+  const w = r.filter(t => (t.r ?? t.pct) > 0).length, totR = r.reduce((a, t) => a + (t.r || 0), 0);
+  $("#scard").innerHTML = `<h2>TODAY'S SCORECARD</h2><div class="big">${w} W · ${r.length - w} L</div>
+    <div class="row"><div><span>TRADES</span>${r.length}</div><div><span>TOTAL</span><b class="${totR >= 0 ? "up" : "dn"}">${totR >= 0 ? "+" : ""}${totR.toFixed(2)}R</b></div>${!S.safe ? `<div><span>P&amp;L</span>${(() => { const p = r.reduce((a, t) => a + (t.pnl || 0), 0); return (p >= 0 ? "+" : "−") + "$" + Math.abs(p).toFixed(0); })()}</div>` : ""}</div>`;
+  flash("#scard");
+});
+$("#qBtn").addEventListener("click", () => { $("#qText").textContent = $("#qIn").value || "…"; $("#qFrom").textContent = $("#qFromIn").value || ""; flash("#qcard", 15000); });
+// scenes
+let SCENE = "", soonEnd = 0;
+function setScene(k){ SCENE = k; const el = $("#scene"); el.classList.toggle("on", !!k); if (!k) return;
+  $("#scH").textContent = S.handle || ""; $("#scC").textContent = "";
+  if (k === "soon"){ soonEnd = Date.now() + Math.max(1, +$("#soonMin").value || 5) * 60000; $("#scK").textContent = S.brand; $("#scT").textContent = "STARTING SOON"; }
+  if (k === "open"){ $("#scK").textContent = S.brand; $("#scT").textContent = "THE OPEN"; }
+  if (k === "brb"){ $("#scK").textContent = S.brand; $("#scT").textContent = "BE RIGHT BACK"; $("#scC").textContent = "watching the tape"; }
+  if (k === "thanks"){ $("#scK").textContent = S.brand; $("#scT").textContent = "THANKS FOR WATCHING"; $("#scC").textContent = "see you at the open"; }
+  syncDock(); }
+function sceneTick(p, m){ if (SCENE === "soon") $("#scC").textContent = fmtDur((soonEnd - Date.now()) / 1000);
+  if (SCENE === "open") $("#scC").textContent = m < 570 ? fmtDur((570 - m) * 60 - p.s) : "WE'RE OPEN"; }
+function bumper(){ const b = $("#bumper"); $("#bumpW").textContent = "WE'RE LIVE"; b.classList.remove("go"); void b.offsetWidth; b.classList.add("go"); }
+// snapshot: the focused chart with your drawings, the name and the show, as a picture
+function snapshot(){
+  const c = cells[S.focus] || cells[0]; if (!c.L) return; const W = c.cv.width, H = c.cv.height, out = document.createElement("canvas"); out.width = W; out.height = H + 110;
+  const g = out.getContext("2d"), css = getComputedStyle(document.body); g.fillStyle = css.getPropertyValue("--bg"); g.fillRect(0, 0, out.width, out.height);
+  g.drawImage(c.cv, 0, 110); g.drawImage(c.dv, 0, 110);
+  g.fillStyle = css.getPropertyValue("--brand"); g.fillRect(0, 0, W, 8); g.fillStyle = css.getPropertyValue("--ink"); g.font = "700 54px \"IBM Plex Sans Condensed\", \"Arial Narrow\", Arial, sans-serif"; g.fillText(c.sym || "", 24, 78);
+  const w = WL.find(x => x.symbol === c.sym) || {}; g.font = "700 40px \"IBM Plex Mono\", Consolas, monospace"; g.fillText(px(w.last), 24 + g.measureText(c.sym || "").width * 1.4 + 20, 78);
+  g.font = "700 28px \"IBM Plex Sans Condensed\", \"Arial Narrow\", Arial, sans-serif"; g.fillStyle = css.getPropertyValue("--gold"); const br = `${S.brand}${S.handle ? "  " + S.handle : ""}`; g.fillText(br, W - g.measureText(br).width - 24, 74);
+  const a = document.createElement("a"); a.href = out.toDataURL("image/png"); a.download = `${c.sym || "chart"}-${new Date().toISOString().slice(0, 10)}.png`; a.click(); toast("Snapshot saved");
+}
+// replay the day, candle by candle
+let replayT = null;
+function replayDay(){ const c = cells[S.focus] || cells[0]; if (replayT){ clearInterval(replayT); replayT = null; c.replay = null; c.draw(); $("#replayBtn").classList.remove("on"); return; }
+  const all = agg(c.sym, c.tf); if (!all.length) return; const p0 = nyParts(all[all.length - 1][0]);
+  let i = all.findIndex(b => { const p = nyParts(b[0]); return p.d === p0.d && p.mo === p0.mo && p.h * 60 + p.mi >= 570; }); if (i < 0) i = Math.max(1, all.length - 60);
+  c.replay = i; c.view = {cw: c.view ? c.view.cw : 11, off: 0}; $("#replayBtn").classList.add("on");
+  replayT = setInterval(() => { c.replay++; c.draw(); if (c.replay >= all.length){ clearInterval(replayT); replayT = null; setTimeout(() => { c.replay = null; c.draw(); $("#replayBtn").classList.remove("on"); }, 2500); } }, Math.max(60, 9000 / Math.max(1, all.length - i))); }
+
+/* ------------------------------------------------------------ the dock */
+function syncDock(){
+  $$("#fmtR button").forEach(b => b.classList.toggle("on", b.dataset.fmt === S.fmt));
+  $$("#layR button").forEach(b => b.classList.toggle("on", +b.dataset.lay === S.lay));
+  const c = cells[S.focus]; $$("#tfR button").forEach(b => b.classList.toggle("on", c && String(c.tf) === b.dataset.tf));
+  $$("#lyrR button").forEach(b => b.classList.toggle("on", !!S.lyr[b.dataset.lyr]));
+  $$("#toolR button").forEach(b => b.classList.toggle("on", b.dataset.tool === tool));
+  $$("#thR button").forEach(b => b.classList.toggle("on", b.dataset.th === S.theme));
+  $$("#scR button").forEach(b => b.classList.toggle("on", b.dataset.sc === SCENE));
+  $$("#camR button[data-cam]").forEach(b => b.classList.toggle("on", b.dataset.cam === S.cam));
+  $("#camKey").classList.toggle("on", !!S.camKey); $("#gBtn").classList.toggle("on", !!S.guides); $("#railBtn").classList.toggle("on", !!S.rail);
+  $("#lowBtn").classList.toggle("on", !!S.lower); $("#safeBtn").classList.toggle("on", !!S.safe); $("#tickBtn").classList.toggle("on", !!S.tick);
+  $("#brkAuto").classList.toggle("on", !!S.brkAuto); $("#brkVoice").classList.toggle("on", !!S.brkVoice);
+  $("#colR").innerHTML = COLORS.map(x => `<span class="sw ${x === drawCol ? "on" : ""}" data-col="${x}" style="background:${x}"></span>`).join("");
+  $("#segR").innerHTML = SEGMENTS.map(x => `<button data-seg="${esc(x)}" class="${x === S.seg ? "on" : ""}">${esc(x)}</button>`).join("");
+  $("#crawlSpd").value = String(S.crawl); $("#lookBtn").classList.toggle("on", !!S.deskLook); $("#lblSel").value = String(S.lbl || 16);
+  cells.forEach(c => { c.dv.classList.toggle("move", tool === "move"); c.dv.style.cursor = tool === "laser" ? "none" : ""; });
+}
+function setTool(t){ tool = t; if (t !== "spot"){ spot = null; drawSpot(); } syncDock(); }
+$("#dock").addEventListener("click", e => {
+  const b = e.target.closest("button, .sw"); if (!b) return; const d = b.dataset;
+  if (d.fmt){ S.fmt = d.fmt; applyLook(); }
+  else if (d.lay){ S.lay = +d.lay; applyLook(); }
+  else if (d.tf){ const c = cells[S.focus]; c.tf = d.tf === "D" ? "D" : +d.tf; c.view = null; S.cells[c.i].tf = c.tf; c.draw(); }
+  else if (d.lyr){ S.lyr[d.lyr] = !S.lyr[d.lyr]; cells.forEach(c => c.draw()); }
+  else if (d.tool) setTool(d.tool);
+  else if (d.col){ drawCol = S.color = d.col; }
+  else if (d.th){ S.theme = d.th; applyLook(); cells.forEach(c => c.draw()); }
+  else if (d.sc != null) setScene(d.sc);
+  else if (d.cam != null){ S.cam = d.cam; applyLook(); }
+  else if (d.seg){ S.seg = d.seg; $("#segIn").value = ""; autoSub(); }
+  else if (b.id === "lookBtn"){ S.deskLook = !S.deskLook; cells.forEach(c => c.draw()); }
+  else if (b.id === "camKey"){ S.camKey = !S.camKey; applyLook(); }
+  else if (b.id === "gBtn"){ S.guides = !S.guides; guides(); }
+  else if (b.id === "railBtn"){ S.rail = !S.rail; applyLook(); }
+  else if (b.id === "lowBtn"){ S.lower = !S.lower; applyLook(); }
+  else if (b.id === "safeBtn"){ S.safe = !S.safe; toast(S.safe ? "SHOW-SAFE on: results in R and %, no dollars" : "SHOW-SAFE off: dollars show on the cards"); }
+  else if (b.id === "tickBtn"){ S.tick = !S.tick; applyLook(); }
+  else if (b.id === "brkAuto"){ S.brkAuto = !S.brkAuto; }
+  else if (b.id === "brkVoice"){ S.brkVoice = !S.brkVoice; }
+  else if (b.id === "undoBtn") undo();
+  else if (b.id === "clearBtn") clearChart();
+  else if (b.id === "snapBtn") snapshot();
+  else if (b.id === "replayBtn") replayDay();
+  else if (b.id === "bumpBtn") bumper();
+  else if (b.id === "cleanBtn") window.open("/show?clean=1", "_blank");
+  else if (b.id === "hideBtn"){ document.body.classList.add("dockoff"); fit(); toast("H brings the panel back"); }
+  save(); syncDock(); autoSub();
+});
+$("#crawlSpd").addEventListener("change", e => { S.crawl = +e.target.value; save(); applyLook(); });
+$("#lblSel").addEventListener("change", e => { S.lbl = +e.target.value; save(); cells.forEach(c => c.draw()); });
+for (const [id, k] of [["#brandIn", "brand"], ["#handleIn", "handle"], ["#segIn", "seg"], ["#segSubIn", "segSub"]]){
+  $(id).addEventListener("input", e => { if (k === "seg" && !e.target.value) return; S[k] = e.target.value; save(); $("#brandName").textContent = S.brand || "TWINEY LIVE"; autoSub(); renderCrawl(); });
+  $(id).addEventListener("keydown", e => e.stopPropagation()); }
+for (const id of ["#qIn", "#qFromIn", "#soonMin"]) $(id).addEventListener("keydown", e => e.stopPropagation());
+function undo(){ const c = cells[S.focus]; const sh = c && c.sym && shapesOf(c.sym); if (sh && sh.length){ sh.pop(); saveShapes(c.sym); c.draw(); } }
+function clearChart(){ const c = cells[S.focus]; if (c && c.sym && shapesOf(c.sym).length && confirm(`Clear every drawing on ${c.sym}?`)){ DRAW[c.sym] = []; saveShapes(c.sym); c.draw(); } }
+document.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT") return; const k = e.key.toLowerCase();
+  const map = {"1": "pen", "2": "rect", "3": "trend", "4": "arrow", "5": "hline", "6": "ruler", "7": "text", "8": "circle", "9": "hl", l: "laser", s: "spot", e: "erase", m: "move"};
+  if (map[k]) setTool(map[k]);
+  else if (k === "z") undo(); else if (k === "x") clearChart();
+  else if (k === "h"){ document.body.classList.toggle("dockoff"); fit(); }
+  else if (k === "escape"){ setTool("move"); setScene(""); $$(".card").forEach(c => c.classList.remove("on")); }
+  else if (k === "b") bumper();
+});
+window.addEventListener("resize", fit);
+applyLook(); setTool("move"); poll(); clock();
+</script>
+</body></html>

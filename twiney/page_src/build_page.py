@@ -57,3 +57,22 @@ mk = open(os.path.join(SP, "market.html"), encoding="utf-8").read().replace("<ti
 mk = mk.replace("</head>", GUARD + "</head>", 1)
 open(os.path.join(SP, "..", "twiney", "static", "market.html"), "w", encoding="utf-8").write(mk)
 print("written market", len(mk), "build", build)
+# THE SHOW page (the broadcast screen, /show): its own page, same build stamp
+sh = open(os.path.join(SP, "show.html"), encoding="utf-8").read().replace("<title>", f'<meta name="build" content="{build}">\n<title>', 1)
+# the SHOW chart draws your studies and moving averages with the DESK's own code, copied in here at build time, so the
+# two can never look different
+_core, _old = open(SP + "/desk_core.js", encoding="utf-8").read(), "\n".join(old)
+def _fn(src, name):
+    # the whole function, braces matched (strings and template literals in these never hold an unmatched brace)
+    i = src.index(f"function {name}("); j = src.index("{", i); depth = 0
+    for k in range(j, len(src)):
+        depth += {"{": 1, "}": -1}.get(src[k], 0)
+        if depth == 0:
+            return src[i:k + 1]
+    raise ValueError(name)
+_desk = "\n".join(_fn(_core, n) for n in ("stX", "studyLineList", "stDash", "studyStyle", "studiesBack", "studiesFront", "studiesTags"))
+_desk += "\n" + "\n".join(l for l in old if l.startswith(("const DAN_SMA", "const DAN_EMA", "const DAN_BB", "function smaSeries(", "function emaSeries(", "function bbSeries(")))
+assert "/*@DESK_CHART@*/" in sh
+sh = sh.replace("/*@DESK_CHART@*/", _desk)
+open(os.path.join(SP, "..", "twiney", "static", "show.html"), "w", encoding="utf-8").write(sh)
+print("written show", len(sh))

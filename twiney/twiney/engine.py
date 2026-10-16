@@ -5831,6 +5831,69 @@ class Engine:
                 del cache[m]
         return out
 
+    def show_snapshot(self, t, view=(), full=()):
+        """THE SHOW page (the broadcast screen): every watchlist name light (price, % on the day), the charts in view
+        with their candles, daily, VWAP / the 50-day, the day's levels, the ATR levels and your PS60 lines; the last
+        calls for the BREAKING banner; today's closed trades in R (never dollars unless the page asks to show them)."""
+        def prev_close(st):
+            c = st.l1.get("close")
+            if c:
+                return float(c)
+            ks = sorted(st.daily)
+            if not ks:
+                return None
+            import datetime as _dt
+            from zoneinfo import ZoneInfo as _Z
+            today = _dt.datetime.fromtimestamp(t, _Z("America/New_York")).date()
+            last_day = _dt.datetime.fromtimestamp(ks[-1], _Z("America/New_York")).date()
+            k = ks[-2] if last_day >= today and len(ks) > 1 else ks[-1]
+            return float(st.daily[k][3])
+        with self.lock:
+            wl = []
+            for p in self.plays:
+                st = self.syms.get(p["symbol"])
+                if st is None:
+                    continue
+                last, pc = st.price(), prev_close(st)
+                wl.append({"symbol": p["symbol"], "last": fmt_price(last), "prev_close": fmt_price(pc),
+                           "chg_pct": round((last - pc) / pc * 100, 2) if last and pc else None,
+                           "side": p.get("side"), "pivot": p.get("trigger"), "active": p.get("active", True)})
+            charts = {}
+            for sym in list(view)[:6]:
+                if sym not in self.syms:
+                    continue
+                d = self._pane(sym, -1, t, None, sym in full)
+                st = self.syms[sym]
+                charts[sym] = {k: d.get(k) for k in ("symbol", "last", "bars", "daily", "refs", "user_levels", "play", "headline")}
+                charts[sym]["prev_close"] = fmt_price(prev_close(st))
+                charts[sym]["studies"] = d.get("studies") or {}      # GAS + ATR, AIRSPACE, UNVISITED: drawn the desk's way
+                se = ((d.get("ps60") or {}).get("se") or {})
+                charts[sym]["se"] = {"state": se.get("state"), "text": se.get("text")}
+            alerts = [{"key": a.get("key"), "t": a.get("t"), "symbol": a.get("symbol"), "label": a.get("label"), "role": a.get("role"),
+                       "text": a.get("words") or a.get("text")} for a in list(self.alerts)[:25]]
+        trades = []
+        for tr in list(getattr(self.desk, "trades", None) or [])[-30:] if self.desk else []:
+            if not tr.get("closed"):
+                continue
+            eq, xq = tr.get("entry_qty") or 0, tr.get("exit_qty") or 0
+            ein = tr["entry_cost"] / eq if eq else None
+            eout = tr["exit_cost"] / xq if xq else None
+            stop = (tr.get("plan") or {}).get("stop")
+            r = None
+            if not tr.get("opt") and ein and eout and stop and abs(ein - stop) > 1e-9:
+                r = round(((eout - ein) if tr["side"] == "long" else (ein - eout)) / abs(ein - stop), 2)
+            trades.append({"name": tr.get("name"), "symbol": tr.get("underlying") or tr.get("symbol"), "side": tr.get("side"),
+                           "opt": tr.get("opt"), "entry": round(ein, 2) if ein else None, "exit": round(eout, 2) if eout else None,
+                           "r": r, "pct": tr.get("pnl_pct"), "pnl": tr.get("pnl"), "closed": tr.get("closed"), "setup": tr.get("setup")})
+        dan = []
+        try:
+            dv = self.dan.view() if getattr(self, "dan", None) is not None else None
+            dan = [{"symbol": r.get("symbol"), "pivot": (r.get("pivots") or [None])[0], "side": r.get("side"), "stars": r.get("stars")}
+                   for r in ((dv or {}).get("rows") or [])][:20]
+        except Exception:  # noqa: BLE001
+            dan = []
+        return {"ok": True, "now": t, "watchlist": wl, "charts": charts, "alerts": alerts, "trades": trades[-10:], "dan": dan}
+
     def snapshot(self, t, extra=(), full=None, tv=None):
         """``full``: symbols the page wants the whole bar history for (None = every pane, as before).
         ``tv``: the journal version the page already holds; the same version = the trades are not sent again."""
