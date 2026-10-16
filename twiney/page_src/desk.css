@@ -1355,3 +1355,4 @@ body.whitedesk .chart-wrap canvas,body.whitedesk img,body.whitedesk video{filter
 .simple .stoprow input{width:84px} .simple .mgr .be,.och-head .out.be{color:#ffd866;font-weight:700}
 .simple .tprow{display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin-top:4px} .simple .tprow .lbl{font-weight:700;letter-spacing:.08em;color:#6fcf97}
 .simple .tprow input{width:64px} .simple .tprow .go{font-weight:700}
+.cmenu.copt > .lvl2:not(.heldopt){display:none}      /* contract mode: the share setup grid steps aside */

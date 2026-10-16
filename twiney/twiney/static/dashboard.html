@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261016-0028">
+<meta name="build" content="20261016-0144">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script>(function(){const f=window.fetch.bind(window);window.fetch=async function(){const r=await f.apply(null,arguments);if(r.status===401&&!window._tedOut){window._tedOut=1;location.replace("/login?next="+encodeURIComponent(location.pathname));}return r;};})();</script>
@@ -1668,6 +1668,7 @@ body.whitedesk .chart-wrap canvas,body.whitedesk img,body.whitedesk video{filter
 .simple .stoprow input{width:84px} .simple .mgr .be,.och-head .out.be{color:#ffd866;font-weight:700}
 .simple .tprow{display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin-top:4px} .simple .tprow .lbl{font-weight:700;letter-spacing:.08em;color:#6fcf97}
 .simple .tprow input{width:64px} .simple .tprow .go{font-weight:700}
+.cmenu.copt > .lvl2:not(.heldopt){display:none}      /* contract mode: the share setup grid steps aside */
 
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
@@ -2671,6 +2672,28 @@ async function optHeldLine(d, role, price, key, qty){
   toast(`${d.symbol} ${role.toUpperCase()} ${px(price)}: ${d.symbol} ${role === "stop" ? "through" : "at"} ${px(price)} sells your ${key.split(" ").slice(2).join(" ")}`, true);
   poll(true);
 }
+/* the contract this stock chart trades: the one picked in ORDER ENTRY (OPT), else the one the chart lines are linked to */
+function contractOnChart(d){
+  let key = null, n = 1;
+  if (typeof OC !== "undefined" && OC.link && OC.link.sym === d.symbol){ key = OC.link.key; n = OC.link.n || 1; }
+  else { const ol = typeof optLinkFor === "function" ? optLinkFor(d.symbol) : null;
+    if (ol && ol.key){ key = ol.key; n = ol.qty || 1; }
+    else if (d.play && d.play.trade_as === "option" && d.play.opt_key){ key = d.play.opt_key; n = d.play.opt_qty || 1; } }
+  if (!key) return null;
+  const [sym, exp, sr] = String(key).split(" "); if (sym !== d.symbol || !sr) return null;
+  const right = sr.slice(-1), strike = parseFloat(sr);
+  return {key, n, expiry: exp, strike, right, label: `${exp.slice(4, 6)}/${exp.slice(6, 8)} ${sr}`};
+}
+/* right-click with the contract picked (not held yet): buy it now or when the stock gets here, and put its 2ND / STOP /
+   TARGET on the stock chart (the lines trade the contract) */
+function optSetupMenu(d, price, c){
+  const call = c.right === "C", on = canTrade();
+  const b = (role, lbl) => `<button data-do="cline" data-role="${role}" class="blvl ${role === "second_entry" ? "se" : ""}">${lbl}</button>`;
+  return `<div class="lvl2 heldopt"><div class="hh"><b class="${call ? "b" : "s"}">CONTRACT ${esc(c.label)}</b> <span class="dim">· ${c.n} ct · you trade the contract, not shares</span></div>
+      <button class="bbuy" data-do="cwatch" ${on ? "" : "disabled"} title="a watch: the moment ${esc(d.symbol)} trades ${px(price)}, buy ${c.n} at the ask">BUY ${c.n} ${esc(c.label)} when ${esc(d.symbol)} hits ${px(price)}</button>
+      <button class="bbuy" data-do="cnow" ${on ? "" : "disabled"}>BUY ${c.n} ${esc(c.label)} now (at the ask)</button>
+      <div class="hb">${b("second_entry", "2ND")}${b("stop", "STOP")}${b("target", "TARGET")} <span class="dim">@ ${px(price)} on ${esc(d.symbol)}: these lines trade the contract</span></div></div>`;
+}
 /* THE CONTRACT FROM THE STOCK CHART, one left click: holding a contract on this stock (no shares), a click on the
    stock chart opens its STOP / TARGET at that stock price (the line sells the contract), BREAK EVEN and CLOSE */
 function heldQuick(p, x, y, price){
@@ -2746,12 +2769,15 @@ function chartMenu(p, v, x, y, price){
   if (p.opt && typeof optChartMenu === "function") return optChartMenu(p, x, y, price);
   const old = document.getElementById("cmenu"); if (old) old.remove();
   const d = p.data, t = T(), on = canTrade();
-  const m = document.createElement("div"); m.id = "cmenu"; m.className = "pop cmenu";
+  // OPTION mode on this chart (the OPT contract picked, or the chart lines linked to a contract), no shares held: the
+  // menu is the contract's, never shares
+  const cOn = !(d.position && d.position.qty) ? contractOnChart(d) : null;
+  const m = document.createElement("div"); m.id = "cmenu"; m.className = "pop cmenu" + (cOn ? " copt" : "");
   m.innerHTML = `<div class="dim" style="font-size:11px;margin-bottom:4px">${esc(d.symbol)} @ <b style="color:var(--gold)">${px(price)}</b><span class="x" title="close (Esc)">✕</span></div>
     ${optHeldMenu(d, price)}
     ${takeProfitMenu(d, price)}
-    <button class="bbuy" data-do="buy" ${on ? "" : "disabled"}>BUY ${sz(t.default_shares)} limit @ ${px(price)}</button>
-    <button class="bsell" data-do="sell" ${on ? "" : "disabled"}>SELL ${sz(t.default_shares)} limit @ ${px(price)}</button>
+    ${cOn ? optSetupMenu(d, price, cOn) : `<button class="bbuy" data-do="buy" ${on ? "" : "disabled"}>BUY ${sz(t.default_shares)} limit @ ${px(price)}</button>
+    <button class="bsell" data-do="sell" ${on ? "" : "disabled"}>SELL ${sz(t.default_shares)} limit @ ${px(price)}</button>`}
     ${d.position ? `<button class="bflat" data-do="flat" ${on ? "" : "disabled"}>Flatten ${esc(d.symbol)}</button>` : ""}
     ${d.orders.length ? `<button data-do="cxl">Cancel all (${d.orders.length})</button>` : ""}
     <div class="lvl2" title="mark both sides: a long setup over the price and a short setup under it. Only the 2nd entries go in as orders; whichever fills first cancels the other, and that side's stop and target go live">
@@ -2783,6 +2809,11 @@ function chartMenu(p, v, x, y, price){
       if (role === "trigger" && own && cur && Math.abs(cur - price) > 1e-9 && !confirm(`Move the ${d.symbol} pivot from ${px(cur)} to ${px(price)}?`)) return;
       post("/api/level", {symbol: d.symbol, role, price, side, confirm: role === "trigger"}).then(out => { toast(out.ok ? `${d.symbol} ${side ? side.toUpperCase() + " " : ""}${names[role]} ${px(price)}` + (role === "second_entry" ? " — entry order going in (armed desk)" : "") : "Could not set the " + names[role], out.ok); if (out.ok) poll(true); }); }
     else if (b.dataset.do === "optline") optHeldLine(d, b.dataset.role, price, b.dataset.key, +b.dataset.qty);
+    else if (b.dataset.do === "cline") optHeldLine(d, b.dataset.role, price, cOn.key, cOn.n);
+    else if (b.dataset.do === "cwatch") post("/api/trade/opt_watch", {symbol: d.symbol, expiry: cOn.expiry, strike: cOn.strike, right: cOn.right, action: "BUY", contracts: cOn.n, px: price, when: d.last != null && price < d.last ? "below" : "above"})
+      .then(out => { toast(out.ok ? `WATCH: buy ${cOn.n} ${cOn.label} when ${d.symbol} trades ${px(price)}` : "Blocked: " + (out.reason || ""), out.ok); poll(true); });
+    else if (b.dataset.do === "cnow") post("/api/trade/opt_open", {symbol: d.symbol, expiry: cOn.expiry, strike: cOn.strike, right: cOn.right, action: "BUY", contracts: cOn.n, price: null})
+      .then(out => { toast(out.ok ? "Sent: " + out.sent : "Blocked: " + (out.reason || ""), out.ok); poll(true); });
     else if (b.dataset.do === "tp") post("/api/trade/partial", {symbol: d.symbol, shares: +b.dataset.n, price}).then(out => {
       toast(out.ok ? `TAKE PROFIT: ${out.sent}` : "Take profit blocked: " + (out.reason || ""), out.ok); if (out.ok) poll(true); });
     else if (b.dataset.do === "sneaky") post("/api/level", {symbol: d.symbol, price, on: true, role: "sneaky"}).then(out => { toast(out.ok ? `${d.symbol} SNEAKY PIVOT ${px(price)} — on the chart and the ladder` : "Could not mark it", out.ok); if (out.ok) poll(true); });

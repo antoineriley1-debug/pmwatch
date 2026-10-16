@@ -18,6 +18,12 @@
 
   A double-click never opens this menu.
 
+- **OPT picked (contract mode), not holding it yet:** a right-click on the stock chart is the contract's menu, never
+  shares:
+  - BUY n of the contract when the stock hits this price, or BUY now
+  - 2ND / STOP / TARGET at that stock price: the lines trade the contract. The stock trading through the 2ND buys
+    it, the STOP sells it, the TARGET sells it (or your %).
+
 ## The option chart
 
 - The bid / ask, delta and "practice model" words are gone from the top line.
