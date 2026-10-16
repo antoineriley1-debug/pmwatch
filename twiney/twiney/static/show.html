@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="build" content="20261016-0458">
+<meta name="build" content="20261016-0515">
 <title>TED · SHOW</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
@@ -74,6 +74,15 @@ body.theme-paper #lower .txt{background:rgba(255,255,255,.95)}
 #crawl .track{display:flex;gap:46px;white-space:nowrap;font:700 22px "IBM Plex Mono",monospace;padding-left:40px;animation:crawl var(--crawl,60s) linear infinite}
 @keyframes crawl{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 #crawl .track i{font-style:normal;color:var(--dim);margin-right:8px}
+#crawl .track .mine{color:var(--gold);font-family:"IBM Plex Sans","Arial",sans-serif;font-weight:700}
+/* the black data box (eSignal's OK box, the desk's): bar values at the cursor; ▴ / ▾ shows or folds every line's value */
+.dwin{position:absolute;left:10px;top:10px;z-index:3;width:250px;background:#000;border:1px solid #444;color:#fff;font:500 16px/1.3 "Segoe UI",Arial,sans-serif;cursor:move;user-select:none;box-shadow:0 6px 18px rgba(0,0,0,.5)}
+.dwin.off{display:none}
+.dwin .ok{background:#00ff00;color:#000;text-align:center;font-weight:800;font-size:14px;line-height:20px;border-bottom:1px solid #063;position:relative}
+.dwin .ok .mn{position:absolute;right:4px;top:1px;background:#000;color:#0f0;border-radius:3px;padding:0 6px;font:800 13px/18px "IBM Plex Mono",Consolas,monospace;cursor:pointer}
+.dwin .kv,.dwin .r{display:flex;justify-content:space-between;padding:0 7px;line-height:21px;white-space:nowrap;gap:10px}
+.dwin .kv span:first-child{color:#ddd} .dwin .kv span:last-child{font-weight:700}
+.dwin .r{font-weight:700;font-size:15px}
 /* breaking */
 #breaking{position:absolute;left:0;right:0;bottom:150px;height:74px;display:flex;z-index:8;transform:translateX(-105%);transition:transform .5s cubic-bezier(.2,.8,.2,1)}
 #breaking.on{transform:translateX(0)}
@@ -147,7 +156,7 @@ body.clean #dock,body.dockoff #dock{display:none}
   </div>
   <div id="spot"><canvas id="spotCv"></canvas></div>
   <div id="cam"><span>CAMERA</span></div>
-  <div id="breaking"><div class="b1">BREAKING</div><div class="b2" id="brkTxt"></div></div>
+  <div id="breaking"><div class="b1" id="brkLab">POTENTIAL SETUP</div><div class="b2" id="brkTxt"></div></div>
   <div id="lower"><div class="tag" id="lowTag">LIVE</div><div class="txt"><b id="lowTitle"></b><span id="lowSub"></span></div></div>
   <div id="crawl"><div class="lab">WATCHLIST</div><div class="track" id="crawlTrack"></div></div>
   <div class="card" id="tcard"></div>
@@ -178,6 +187,7 @@ body.clean #dock,body.dockoff #dock{display:none}
     <button data-lyr="gas" title="GAS + ATR: prior day, premarket / after hours, high / low of day, the ATR levels (intraday)">GAS + ATR</button><button data-lyr="air" title="AIRSPACE: daily / weekly bounce and rejection">AIRSPACE</button><button data-lyr="uv" title="UNVISITED HIGHS / LOWS">UNVISITED</button><button data-lyr="vol">VOLUME</button>
   </div>
   <div class="r" style="margin-top:5px;align-items:center"><button id="lookBtn" title="the chart looks exactly like your desk chart: its screen colour, candles and the lines you have on there">MY DESK CHART LOOK</button>
+    <button id="legBtn" title="your black data box: the bar under the mouse and every moving average / Bollinger / VWAP value, in its colour. Drag it anywhere; ▴ / ▾ folds the lines">DATA BOX</button>
     <select id="lblSel" style="width:auto" title="study label size on the show"><option value="12">LABELS S</option><option value="16">LABELS M</option><option value="20">LABELS L</option><option value="24">LABELS XL</option></select></div>
   <h4>DRAW · keys 1-9, L, S, E, Z, X</h4>
   <div class="r" id="toolR">
@@ -197,14 +207,19 @@ body.clean #dock,body.dockoff #dock{display:none}
   <h4>SCENES</h4>
   <div class="r" id="scR"><button data-sc="">LIVE</button><button data-sc="soon">STARTING SOON</button><button data-sc="open">OPEN COUNTDOWN</button><button data-sc="brb">BE RIGHT BACK</button><button data-sc="thanks">THANKS FOR WATCHING</button></div>
   <div class="w2" style="margin-top:5px"><input id="soonMin" type="number" min="1" value="5" title="starting soon: minutes"><span class="hint" style="padding:6px 0">minutes for STARTING SOON</span></div>
-  <h4>BREAKING · CARDS</h4>
-  <div class="r"><button id="brkAuto" title="the desk's calls on your watchlist (2nd entry, pivot breaks, flow ready) slide in by themselves">AUTO BREAKING</button><button id="brkVoice" title="the browser says the breaking line (off: you do the talking)">SAY IT</button></div>
-  <div class="full" style="margin-top:5px"><input id="brkIn" placeholder="type a breaking line, Enter sends it"></div>
+  <h4>SETUP BANNER · CARDS</h4>
+  <div class="r" id="blabR"><button data-blab="POTENTIAL SETUP">POTENTIAL SETUP</button><button data-blab="ON THE RADAR">ON THE RADAR</button><button data-blab="WATCHING">WATCHING</button><button data-blab="SETUP ALERT">SETUP ALERT</button><button data-blab="BREAKING">BREAKING</button></div>
+  <div class="full" style="margin-top:5px"><input id="blabIn" placeholder="or your own word on the banner"></div>
+  <div class="r"><button id="brkAuto" title="the desk's calls on your watchlist (2nd entry, pivot breaks, flow ready) slide in by themselves">AUTO SETUPS</button><button id="brkVoice" title="the browser says the banner line (off: you do the talking)">SAY IT</button></div>
+  <div class="full" style="margin-top:5px"><input id="brkIn" placeholder="type a setup line, Enter shows it on the banner"></div>
   <div class="r"><button id="tcBtn">LAST TRADE CARD</button><button id="scBtn">TODAY'S SCORECARD</button></div>
   <div class="full" style="margin-top:5px"><input id="qIn" placeholder="viewer question"><input id="qFromIn" placeholder="from (@name)"></div>
   <div class="r"><button id="qBtn">SHOW QUESTION</button></div>
-  <h4>CROWD</h4>
+  <h4>TICKER CRAWL</h4>
   <div class="r"><button id="tickBtn">TICKER CRAWL</button><select id="crawlSpd" style="width:auto"><option value="90">CRAWL SLOW</option><option value="60" selected>CRAWL NORMAL</option><option value="35">CRAWL FAST</option></select></div>
+  <div class="full" style="margin-top:5px"><textarea id="crawlIn" rows="4" placeholder="your own lines for the crawl, one per line: quotes, reminders, your link, anything" style="width:100%;background:#0f172b;color:#dfe6f5;border:1px solid #2a3a60;border-radius:5px;padding:6px 8px;font:12px IBM Plex Sans,Arial,sans-serif;resize:vertical"></textarea></div>
+  <div class="r" id="cmodeR"><button data-cmode="mix" title="your lines between the watchlist prices">MIX WITH PRICES</button><button data-cmode="mine" title="only your lines">MY LINES ONLY</button><button data-cmode="prices" title="only the watchlist">PRICES ONLY</button></div>
+  <div class="full" style="margin-top:5px"><input id="crawlLabIn" placeholder="crawl label (default: WATCHLIST)"></div>
   <h4>CAMERA SPOT</h4>
   <div class="r" id="camR"><button data-cam="">OFF</button><button data-cam="br">BOTTOM RIGHT</button><button data-cam="tr">TOP RIGHT</button><button data-cam="bl">BOTTOM LEFT</button><button id="camKey" title="fill it green so OBS can key your camera in">GREEN FILL</button></div>
   <h4>LOOK</h4>
@@ -226,7 +241,7 @@ const px = v => v == null || isNaN(v) ? "—" : (+v).toFixed(+v < 1 ? 4 : 2);
 const pct = v => v == null ? "" : (v >= 0 ? "+" : "") + (+v).toFixed(2) + "%";
 
 /* ------------------------------------------------------------ settings, kept per browser */
-const S = Object.assign({fmt: "h", lay: 1, theme: "net", rail: true, lyr: {ps60: true, mas: true, bb: true, vwap: true, gas: true, air: true, uv: true, vol: true}, deskLook: true, lbl: 16,
+const S = Object.assign({fmt: "h", lay: 1, theme: "net", rail: true, lyr: {ps60: true, mas: true, bb: true, vwap: true, gas: true, air: true, uv: true, vol: true}, deskLook: true, lbl: 16, dwin: true, dwinMin: false, brkLabel: "POTENTIAL SETUP", crawlLines: [], crawlMode: "mix",
   brand: "TWINEY LIVE", handle: "@twiney", safe: true, lower: true, tick: true, crawl: 60, brkAuto: true, brkVoice: false, cam: "", camKey: false,
   guides: false, seg: "THE WATCHLIST", segSub: "", src: "mine", cells: [{sym: null, tf: 5}, {sym: null, tf: 5}, {sym: null, tf: 5}, {sym: null, tf: 5}], focus: 0, color: "#f2c14e"}, store.get("cfg", {}));
 S.lyr = Object.assign({ps60: true, mas: true, bb: true, vwap: true, gas: true, air: true, uv: true, vol: true}, S.lyr || {});
@@ -302,7 +317,14 @@ function renderRail(){
   const c2 = $("#chips"); if (c2._h !== ch){ c2._h = ch; c2.innerHTML = ch; }
 }
 function renderCrawl(){
-  const one = WL.map(w => `<span><i>${esc(w.symbol)}</i>${px(w.last)} <b class="${w.chg_pct >= 0 ? "up" : "dn"}">${w.chg_pct >= 0 ? "▲" : "▼"} ${pct(w.chg_pct)}</b></span>`).join("") + (S.handle ? `<span><i>FOLLOW</i>${esc(S.handle)}</span>` : "");
+  const prices = WL.map(w => `<span><i>${esc(w.symbol)}</i>${px(w.last)} <b class="${w.chg_pct >= 0 ? "up" : "dn"}">${w.chg_pct >= 0 ? "▲" : "▼"} ${pct(w.chg_pct)}</b></span>`);
+  const mine = (S.crawlLines || []).filter(Boolean).map(t => `<span class="mine">★ ${esc(t)}</span>`);
+  let parts = S.crawlMode === "mine" ? mine.slice() : S.crawlMode === "prices" ? prices.slice() : [];
+  if (S.crawlMode === "mix" || !["mine", "prices"].includes(S.crawlMode)){ const step = mine.length ? Math.max(1, Math.ceil(prices.length / mine.length)) : 1e9; let k = 0;
+    prices.forEach((p, i) => { parts.push(p); if ((i + 1) % step === 0 && k < mine.length) parts.push(mine[k++]); }); while (k < mine.length) parts.push(mine[k++]); }
+  if (!parts.length) parts = prices;
+  $("#crawl .lab").textContent = S.crawlLab || "WATCHLIST";
+  const one = parts.join("") + (S.handle ? `<span><i>FOLLOW</i>${esc(S.handle)}</span>` : "");
   const h = one + one;                                   // twice: the crawl loops without a gap
   const t = $("#crawlTrack"); if (t._h !== h){ t._h = h; t.innerHTML = h; }
 }
@@ -444,7 +466,7 @@ class Cell {
   constructor(i){
     this.i = i; this.sym = S.cells[i].sym; this.tf = S.cells[i].tf || 5; this.view = null; this.visible = true; this.replay = null;
     const el = this.el = document.createElement("div"); el.className = "cell";
-    el.innerHTML = `<div class="ch-h"><span class="s"></span><span class="p"></span><span class="c"></span><span class="st"></span><span class="tf"></span></div><div class="cv"><canvas class="chart"></canvas><canvas class="draw"></canvas></div>`;
+    el.innerHTML = `<div class="ch-h"><span class="s"></span><span class="p"></span><span class="c"></span><span class="st"></span><span class="tf"></span></div><div class="cv"><canvas class="chart"></canvas><canvas class="draw"></canvas><div class="dwin"></div></div>`;
     this.cv = el.querySelector("canvas.chart"); this.dv = el.querySelector("canvas.draw"); this.box = el.querySelector(".cv");
     el.addEventListener("mousedown", () => { if (S.focus !== i){ S.focus = i; save(); cells.forEach(c => c.el.classList.toggle("focus", c.i === i)); syncDock(); renderRail(); autoSub(); } });
     el.addEventListener("dblclick", e => { if (tool !== "move" && tool !== "laser") return; if (S.fmt !== "h") return; S.focus = i; S.lay = S.lay === 1 ? (S._lastLay || 4) : (S._lastLay = S.lay, 1); save(); applyLook(); });
@@ -502,14 +524,17 @@ class Cell {
     try { studiesBack(ctx); } catch (e) {}
     // your moving averages and Bollinger Bands, the desk's lines and colours (and its on / off switches)
     const cls = L.bars.map(b => b[4]), IND = DESK("ind", {}), onI = k => IND[k] !== false;
-    const line = (ser, c_, lw) => { g.strokeStyle = c_; g.lineWidth = lw + 1; g.setLineDash([]); g.beginPath(); let on = false;
+    const leg = [];
+    const line = (ser, c_, lw, name) => { if (name) leg.push([name, c_, ser]); g.strokeStyle = c_; g.lineWidth = lw + 1; g.setLineDash([]); g.beginPath(); let on = false;
       for (let i = L.start; i < L.end; i++){ const v = ser[i]; if (v == null || !isFinite(v)){ on = false; continue; } const xx = L.x(i), yy = L.y(v); if (!on){ g.moveTo(xx, yy); on = true; } else g.lineTo(xx, yy); } g.stroke(); };
     if (S.lyr.mas && DESK("mas", true)){
-      for (const [n, c_, lw] of DAN_SMA) if (onI("s" + n)) line(smaSeries(cls, n), c_, lw);
-      for (const [n, c_, lw] of DAN_EMA) if (onI("e" + n)) line(emaSeries(cls, n), c_, lw);
-      if (daily) for (const [n, c_, lw] of DAN_EMA_DAILY) if (onI("d" + n)) line(emaSeries(cls, n), c_, lw);
+      for (const [n, c_, lw] of DAN_SMA) if (onI("s" + n)) line(smaSeries(cls, n), c_, lw, `MA(${n},C)s`);
+      for (const [n, c_, lw] of DAN_EMA) if (onI("e" + n)) line(emaSeries(cls, n), c_, lw, `MA(${n},C)e`);
+      if (daily) for (const [n, c_, lw] of DAN_EMA_DAILY) if (onI("d" + n)) line(emaSeries(cls, n), c_, lw, `MA(${n},C)e`);
     }
-    if (S.lyr.bb && DESK("bb", true)){ const bb = bbSeries(cls, 20, 2.0); line(bb.up, DAN_BB, 2); line(bb.dn, DAN_BB, 2); }
+    if (S.lyr.bb && DESK("bb", true)){ const bb = bbSeries(cls, 20, 2.0); line(bb.up, DAN_BB, 2, "BB(20,2,C)Upr"); line(bb.dn, DAN_BB, 2, "BB(20,2,C)Lwr"); }
+    if (S.lyr.vwap && !daily){ const vw = vwapOf(this.sym); if (vw.length){ let j = 0, cur = null; const sec = TFSEC(this.tf); leg.push(["VWAP", "#f2a33a", L.bars.map(b => { while (j < vw.length && vw[j][0] <= b[0] + sec - 1){ cur = vw[j][1]; j++; } return cur; })]); } }
+    this.series = leg; this.dataWin(L);
     // candles (the desk's colours; Dan's black wicks and borders on a light screen)
     const up = DC ? DC.up : col("--up"), dn = DC ? DC.dn : col("--dn"), bw = Math.max(1, L.cw * .72);
     for (let i = L.start; i < L.end; i++){ const b = L.bars[i], xx = L.x(i), c_ = b[4] >= b[1] ? up : dn;
@@ -538,6 +563,29 @@ class Cell {
       g.fillStyle = c_; g.fillRect(6, yy - 12, tw, 24); g.fillStyle = "#0a0d12"; g.fillText(txt, 13, yy + 6); }
   }
   drawOverlay(){ drawShapes(this); }
+  dataWin(L){
+    // the black box: the bar under the cursor (the last one when the mouse is off the chart), every line's value with it
+    const w = this.el.querySelector(".dwin"); w.classList.toggle("off", !S.dwin || !L.bars.length); if (!S.dwin || !L.bars.length) return;
+    if (!w._wired){ w._wired = true; const key = "dwin.pos." + this.i, pos = store.get(key, null); if (pos){ w.style.left = pos[0] + "px"; w.style.top = pos[1] + "px"; }
+      w.addEventListener("mousedown", e => { if (e.target.classList.contains("mn")){ S.dwinMin = !S.dwinMin; save(); w._h = ""; this.dataWin(this.L); e.stopPropagation(); return; }
+        e.stopPropagation(); e.preventDefault(); const sc = $("#stage")._sc || 1, x0 = e.clientX, y0 = e.clientY, l0 = w.offsetLeft, t0 = w.offsetTop, box = this.box;
+        const mv = ev => { w.style.left = Math.max(0, Math.min(box.clientWidth - w.offsetWidth, l0 + (ev.clientX - x0) / sc)) + "px"; w.style.top = Math.max(0, Math.min(box.clientHeight - 30, t0 + (ev.clientY - y0) / sc)) + "px"; };
+        const up = () => { window.removeEventListener("mousemove", mv); window.removeEventListener("mouseup", up); store.set(key, [w.offsetLeft, w.offsetTop]); };
+        window.addEventListener("mousemove", mv); window.addEventListener("mouseup", up); }); }
+    const k = this.hover != null && this.hover >= L.start && this.hover < L.end ? this.hover : L.end - 1, b = L.bars[k], dt = new Date(b[0] * 1000);
+    const ny = o => dt.toLocaleString("en-US", Object.assign({timeZone: "America/New_York"}, o));
+    const f = v => v == null || !isFinite(v) ? "—" : (+v).toFixed(+v < 1 ? 4 : 2);
+    const lum = c => { const n = parseInt(String(c).slice(1, 7), 16); return 0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255); };
+    const rows = (this.series || []).map(([n, c_, ser]) => `<div class="r" style="background:${c_};color:${lum(c_) > 140 ? "#000" : "#fff"}"><span>${esc(n)}</span><span>${f(ser[k])}</span></div>`).join("");
+    const html = `<div class="ok">OK<b class="mn" title="${S.dwinMin ? "show every line's value" : "fold the lines away: keep the black box"}">${S.dwinMin ? "▾" : "▴"}</b></div>
+      <div class="kv"><span>Symbol:</span><span>${esc(this.sym)},${this.tf === "D" ? "D" : this.tf}</span></div>
+      <div class="kv"><span>Date:</span><span>${ny({month: "2-digit", day: "2-digit", year: "2-digit"})}</span></div>
+      <div class="kv"><span>Time:</span><span>${this.tf === "D" ? "00:00" : ny({hour: "2-digit", minute: "2-digit", hourCycle: "h23"})}</span></div>
+      <div class="kv"><span>Open:</span><span>${f(b[1])}</span></div><div class="kv"><span>High:</span><span>${f(b[2])}</span></div>
+      <div class="kv"><span>Low:</span><span>${f(b[3])}</span></div><div class="kv"><span>Close:</span><span>${f(b[4])}</span></div>
+      ${S.dwinMin ? "" : rows + `<div class="r" style="background:#222"><span>Vol</span><span>${Math.round(b[5] || 0).toLocaleString("en-US")}</span></div>`}`;
+    if (w._h !== html){ w._h = html; w.innerHTML = html; }
+  }
 }
 function niceStep(r){ const m = Math.pow(10, Math.floor(Math.log10(r || 1))), f = r / m; return (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * m; }
 function tag(g, L, p, txt, c, bold){ if (p < L.lo || p > L.hi) return; const yy = L.y(p); g.fillStyle = c; g.fillRect(L.plotW + 2, yy - 13, L.axisW - 4, 26);
@@ -573,6 +621,7 @@ function wireDraw(c){
   });
   window.addEventListener("mousemove", e => {
     if (!c.L) return; const [x, y] = at(e), L = c.L;
+    if (e.target === cv && c.L){ const h = Math.floor(x / c.L.cw + c.L.start); if (h !== c.hover){ c.hover = h; c.dataWin(c.L); } }
     if (pan){ if (pan.axis){ const v = c.view; const f = Math.exp((y - pan.y) / 200); const mid = (L.lo + L.hi) / 2, half = (L.hi - L.lo) / 2 * f; v.yLo = mid - half; v.yHi = mid + half; pan.y = y; }
       else { c.view.off = Math.max(0, Math.round(pan.off + (x - pan.x) / c.view.cw)); } c.draw(); return; }
     if (cur){ cur.b = tp(L, x, y); if (cur.k === "pen" || cur.k === "hl") cur.pts.push(cur.b); c.draw(); return; }
@@ -581,7 +630,7 @@ function wireDraw(c){
     if (e.target === cv && tool === "ruler" && !cur) showTip(e, c, L, x, y);
   });
   window.addEventListener("mouseup", () => { if (cur){ saveShapes(c.sym); cur = null; c.draw(); } pan = null; });
-  cv.addEventListener("mouseleave", () => { if (laser && laser.c === c){ laser = null; c.drawOverlay(); } $("#tip").style.display = "none"; });
+  cv.addEventListener("mouseleave", () => { c.hover = null; if (c.L) c.dataWin(c.L); if (laser && laser.c === c){ laser = null; c.drawOverlay(); } $("#tip").style.display = "none"; });
   cv.addEventListener("wheel", e => { e.preventDefault(); const v = c.view || {}; v.cw = Math.max(3, Math.min(60, v.cw * (e.deltaY < 0 ? 1.12 : 1 / 1.12))); c.draw(); }, {passive: false});
   cv.addEventListener("dblclick", e => { if (tool === "move"){ c.view = null; c.draw(); } });
 }
@@ -648,8 +697,8 @@ function breakingFrom(list){
     BQ.push(`${a.symbol} · ${String(a.label || "").toUpperCase()}${a.text ? " — " + String(a.text).replace(/^\S+\.\s*/, "").slice(0, 120) : ""}`); }
   FIRST = false; nextBreaking();
 }
-function nextBreaking(){ if (brkBusy || !BQ.length) return; brkBusy = true; const t = BQ.shift(); $("#brkTxt").textContent = t; $("#breaking").classList.add("on");
-  if (S.brkVoice && "speechSynthesis" in window){ try { speechSynthesis.speak(new SpeechSynthesisUtterance("Breaking. " + t.replace(/·|—/g, ","))); } catch (e) {} }
+function nextBreaking(){ if (brkBusy || !BQ.length) return; brkBusy = true; const t = BQ.shift(); $("#brkTxt").textContent = t; $("#brkLab").textContent = S.brkLabel || "POTENTIAL SETUP"; $("#breaking").classList.add("on");
+  if (S.brkVoice && "speechSynthesis" in window){ try { speechSynthesis.speak(new SpeechSynthesisUtterance((S.brkLabel || "Potential setup").toLowerCase() + ". " + t.replace(/·|—/g, ","))); } catch (e) {} }
   setTimeout(() => { $("#breaking").classList.remove("on"); setTimeout(() => { brkBusy = false; nextBreaking(); }, 700); }, 8000); }
 $("#brkIn").addEventListener("keydown", e => { e.stopPropagation(); if (e.key === "Enter" && e.target.value.trim()){ BQ.push(e.target.value.trim()); e.target.value = ""; nextBreaking(); } });
 // cards
@@ -714,7 +763,10 @@ function syncDock(){
   $("#brkAuto").classList.toggle("on", !!S.brkAuto); $("#brkVoice").classList.toggle("on", !!S.brkVoice);
   $("#colR").innerHTML = COLORS.map(x => `<span class="sw ${x === drawCol ? "on" : ""}" data-col="${x}" style="background:${x}"></span>`).join("");
   $("#segR").innerHTML = SEGMENTS.map(x => `<button data-seg="${esc(x)}" class="${x === S.seg ? "on" : ""}">${esc(x)}</button>`).join("");
-  $("#crawlSpd").value = String(S.crawl); $("#lookBtn").classList.toggle("on", !!S.deskLook); $("#lblSel").value = String(S.lbl || 16);
+  $("#crawlSpd").value = String(S.crawl); $("#lookBtn").classList.toggle("on", !!S.deskLook); $("#legBtn").classList.toggle("on", !!S.dwin);
+  $$("#blabR button").forEach(b => b.classList.toggle("on", b.dataset.blab === S.brkLabel)); $$("#cmodeR button").forEach(b => b.classList.toggle("on", b.dataset.cmode === (S.crawlMode || "mix")));
+  if (document.activeElement !== $("#crawlIn")) $("#crawlIn").value = (S.crawlLines || []).join("\n");
+  if (document.activeElement !== $("#crawlLabIn")) $("#crawlLabIn").value = S.crawlLab || ""; $("#lblSel").value = String(S.lbl || 16);
   cells.forEach(c => { c.dv.classList.toggle("move", tool === "move"); c.dv.style.cursor = tool === "laser" ? "none" : ""; });
 }
 function setTool(t){ tool = t; if (t !== "spot"){ spot = null; drawSpot(); } syncDock(); }
@@ -730,6 +782,9 @@ $("#dock").addEventListener("click", e => {
   else if (d.sc != null) setScene(d.sc);
   else if (d.cam != null){ S.cam = d.cam; applyLook(); }
   else if (d.seg){ S.seg = d.seg; $("#segIn").value = ""; autoSub(); }
+  else if (d.blab){ S.brkLabel = d.blab; $("#blabIn").value = ""; $("#brkLab").textContent = S.brkLabel; }
+  else if (d.cmode){ S.crawlMode = d.cmode; renderCrawl(); }
+  else if (b.id === "legBtn"){ S.dwin = !S.dwin; cells.forEach(c => c.draw()); }
   else if (b.id === "lookBtn"){ S.deskLook = !S.deskLook; cells.forEach(c => c.draw()); }
   else if (b.id === "camKey"){ S.camKey = !S.camKey; applyLook(); }
   else if (b.id === "gBtn"){ S.guides = !S.guides; guides(); }
@@ -749,6 +804,11 @@ $("#dock").addEventListener("click", e => {
   save(); syncDock(); autoSub();
 });
 $("#crawlSpd").addEventListener("change", e => { S.crawl = +e.target.value; save(); applyLook(); });
+$("#crawlIn").addEventListener("input", e => { S.crawlLines = e.target.value.split("\n").map(x => x.trim()).filter(Boolean).slice(0, 40); save(); renderCrawl(); });
+$("#crawlIn").addEventListener("keydown", e => e.stopPropagation());
+$("#blabIn").addEventListener("input", e => { if (e.target.value.trim()){ S.brkLabel = e.target.value.trim().toUpperCase(); save(); $("#brkLab").textContent = S.brkLabel; syncDock(); } });
+$("#crawlLabIn").addEventListener("input", e => { S.crawlLab = e.target.value.trim().toUpperCase(); save(); renderCrawl(); });
+for (const id of ["#blabIn", "#crawlLabIn"]) $(id).addEventListener("keydown", e => e.stopPropagation());
 $("#lblSel").addEventListener("change", e => { S.lbl = +e.target.value; save(); cells.forEach(c => c.draw()); });
 for (const [id, k] of [["#brandIn", "brand"], ["#handleIn", "handle"], ["#segIn", "seg"], ["#segSubIn", "segSub"]]){
   $(id).addEventListener("input", e => { if (k === "seg" && !e.target.value) return; S[k] = e.target.value; save(); $("#brandName").textContent = S.brand || "TWINEY LIVE"; autoSub(); renderCrawl(); });
