@@ -1214,9 +1214,12 @@ function wireChart(p, cv, v, saveView, isFoot){
         else if (vp <= S){ v.offset = 0; v.eat = vp; }
         else { v.offset = vp - S; v.eat = S; }
         v.follow = v.offset < 0.5; v.rightT = null;
-        if (start.y && !onAxis){ const [lo, hi] = start.y; const per = (hi - lo) / start.h; v.yLo = lo + dy * per; v.yHi = hi + dy * per; }
+        // up / down only when you pull up or down (or the prices were already fixed): a sideways drag keeps re-fitting
+        // the prices to the candles on screen, so nothing runs off the top or bottom
+        if (start.y && !onAxis && (start.yLo != null || Math.abs(dy) > 10)){ const [lo, hi] = start.y; const per = (hi - lo) / start.h; v.yLo = lo + dy * per; v.yHi = hi + dy * per; }
+        else if (start.yLo == null){ v.yLo = v.yHi = null; }
       }
-      drawChart(p);
+      if (!v._draf) v._draf = requestAnimationFrame(() => { v._draf = 0; drawChart(p); });   // one draw per screen frame
     };
     const up = ev => { cv.classList.remove("pan"); window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up);
       if (moved){ saveView(); return; }
@@ -1271,8 +1274,8 @@ function wireChart(p, cv, v, saveView, isFoot){
   p.chartKey = (e, force) => {
     if (!p._hot && !force) return false;
     const step = e.shiftKey ? 10 : 1;
-    if (e.key === "ArrowLeft"){ v.offset = v.offset + step; v.follow = false; v.rightT = null; }
-    else if (e.key === "ArrowRight"){ v.offset = Math.max(minOff(), v.offset - step); v.follow = v.offset < 0.5; v.rightT = null; }
+    if (e.key === "ArrowLeft"){ v.offset = v.offset + step; v.follow = false; v.rightT = null; v.yLo = v.yHi = null; }
+    else if (e.key === "ArrowRight"){ v.offset = Math.max(minOff(), v.offset - step); v.follow = v.offset < 0.5; v.rightT = null; v.yLo = v.yHi = null; }
     else if (e.key === "ArrowUp"){ v.cw = Math.min(isFoot ? 120 : 60, v.cw * 1.2); }
     else if (e.key === "ArrowDown"){ v.cw = Math.max(isFoot ? 34 : 2, v.cw / 1.2); }
     else if (e.key === "Home"){ v.offset = restOffset(); v.eat = 0; v.follow = true; v.rightT = null; }

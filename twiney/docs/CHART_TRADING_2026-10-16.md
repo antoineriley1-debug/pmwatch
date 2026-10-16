@@ -127,3 +127,6 @@ watch and FLOW WATCH for a play on the other side stay quiet while you are in th
   where it goes (▲ O 200.54 · H 200.56), so a column that is all one colour still reads as a candle.
 - **The chart's mouse wheel** zooms smoothly around the mouse and re-fits the prices every time, so nothing goes off the
   top or bottom; a trackpad zooms a little at a time.
+- **Dragging the chart sideways** keeps the prices fitted to the candles on screen (it used to freeze them, so candles
+  ran off the top or bottom). Pull up or down to move the prices on purpose; AUTO SCALE gives them back. The arrow keys
+  re-fit too. The drag draws once per screen frame.
