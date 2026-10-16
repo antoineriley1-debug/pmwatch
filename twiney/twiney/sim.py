@@ -1,0 +1,1186 @@
+"""Synthetic market (``--demo``): a regime-driven order-flow simulator for practice without IBKR.
+
+Clearly labelled DEMO everywhere; it is not market data. What it mimics:
+
+* **Price comes from order flow.** Aggressive orders eat the queue at the touch; when a queue is
+  gone the price steps a tick and the other side follows in. Nothing is drawn on the price directly.
+* **Regimes.** Each symbol moves through chop, trends, grinds, squeezes, capitulation, bounces and
+  fades. A regime sets the buy/sell bias of the aggressors, the trade rate, the size of prints and
+  how thin the book is on the side being run over. Regimes hand off to each other the way sessions
+  tend to (capitulation → bounce, squeeze → fade or chop, …), with an open and close that run hotter.
+* **A living book.** Ten rows a side that add, cancel, thin out and refill on their own; big resting
+  size shows up, gets hit or pulled, and sometimes comes back to the same price.
+* **PS60 levels.** When price comes into a play's pivot a participant defends it with a reserve behind
+  a displayed size that refills as it gets hit (a reload). Three outcomes: it HOLDS and price rejects,
+  it gets CLEANED UP and price goes through, retraces and continues (the second entry), or it is
+  PULLED and price runs.
+"""
+
+import math
+import random
+
+from .book import ASK, BID, DELETE, INSERT, UPDATE
+from .prices import tick_size
+
+ROWS = 10
+EXCH = ("NSDQ", "ARCA", "BATS", "EDGX", "NYSE", "IEX")
+
+# bias: P(an aggressive order is a buy) · rate: aggressive orders per second · size: print size multiplier
+# thin: size multiplier for the side being run over · dur: minutes the regime lasts
+REGIMES = {
+    "chop":         dict(bias=0.50, rate=1.2, size=1.0, thin=1.0, dur=(3, 9)),
+    "trend_up":     dict(bias=0.63, rate=1.9, size=1.1, thin=0.55, dur=(3, 10)),
+    "trend_down":   dict(bias=0.37, rate=1.9, size=1.1, thin=0.55, dur=(3, 10)),
+    "grind_up":     dict(bias=0.56, rate=1.0, size=0.9, thin=0.8, dur=(5, 14)),
+    "grind_down":   dict(bias=0.44, rate=1.0, size=0.9, thin=0.8, dur=(5, 14)),
+    "squeeze":      dict(bias=0.76, rate=4.0, size=1.7, thin=0.3, dur=(1, 3)),
+    "capitulation": dict(bias=0.22, rate=5.0, size=2.1, thin=0.3, dur=(1, 3)),
+    "bounce":       dict(bias=0.68, rate=3.0, size=1.4, thin=0.5, dur=(1, 3)),
+    "fade":         dict(bias=0.34, rate=2.2, size=1.2, thin=0.5, dur=(1, 3)),
+}
+NEXT = {
+    "chop":         (("chop", 3), ("trend_up", 2), ("trend_down", 2), ("grind_up", 2), ("grind_down", 2), ("squeeze", 1), ("capitulation", 1)),
+    "trend_up":     (("chop", 3), ("grind_up", 2), ("fade", 2), ("squeeze", 1), ("trend_up", 1)),
+    "trend_down":   (("chop", 3), ("grind_down", 2), ("bounce", 2), ("capitulation", 1), ("trend_down", 1)),
+    "grind_up":     (("chop", 3), ("trend_up", 2), ("fade", 1), ("grind_up", 1)),
+    "grind_down":   (("chop", 3), ("trend_down", 2), ("bounce", 1), ("grind_down", 1)),
+    "squeeze":      (("fade", 3), ("chop", 2), ("grind_up", 1)),
+    "capitulation": (("bounce", 4), ("chop", 1), ("trend_down", 1)),
+    "bounce":       (("chop", 3), ("grind_up", 2), ("fade", 1)),
+    "fade":         (("chop", 3), ("grind_down", 2), ("bounce", 1)),
+}
+
+
+# day types: a scenario tilts which regimes tend to come next, so some sessions trend, some chop, some flush
+SCENARIOS = {
+    "mixed":        {},
+    "trend_up":     {"trend_up": 3, "grind_up": 2, "squeeze": 1.5, "fade": 0.6, "trend_down": 0.4, "grind_down": 0.4, "capitulation": 0.2},
+    "trend_down":   {"trend_down": 3, "grind_down": 2, "capitulation": 1.5, "bounce": 0.7, "trend_up": 0.4, "grind_up": 0.4, "squeeze": 0.2},
+    "chop":         {"chop": 3, "grind_up": 0.7, "grind_down": 0.7, "trend_up": 0.4, "trend_down": 0.4, "squeeze": 0.3, "capitulation": 0.3},
+    "capitulation": {"trend_down": 2, "capitulation": 3, "bounce": 2, "chop": 0.6, "trend_up": 0.3},
+    "squeeze":      {"trend_up": 2, "squeeze": 3, "fade": 1.5, "chop": 0.6, "trend_down": 0.3},
+}
+
+
+# Episodes: the market styles that have a SHAPE over time. Each stage: (lean, tape speed, print size, book on the
+# side being hit (1 = normal, lower = bids / offers pulled), seconds lo, hi). Mirrors are built for the other side.
+EPISODES = {
+    # buyers run out: the move speeds up into a climax of big fast prints, then the tape dries up, price stalls and rolls
+    "exhaustion_top": [(0.66, 2.0, 1.2, 1.0, 60, 120), (0.72, 3.2, 1.6, 0.8, 40, 80), (0.76, 5.5, 2.6, 0.6, 15, 30),
+                       (0.50, 0.40, 0.7, 1.0, 40, 90), (0.38, 1.6, 1.1, 1.0, 60, 120)],
+    # the flush: heavy selling, bids pulled, a waterfall of huge prints, then the V: buyers slam it back
+    "capitulation":   [(0.34, 2.2, 1.3, 0.8, 60, 120), (0.25, 3.6, 1.9, 0.55, 40, 80), (0.14, 6.5, 3.3, 0.35, 15, 35),
+                       (0.74, 4.2, 2.3, 1.0, 20, 45), (0.56, 1.4, 1.0, 1.0, 90, 180)],
+}
+EPISODES["exhaustion_bottom"] = [(1 - b, r, z, th, lo, hi) for b, r, z, th, lo, hi in EPISODES["exhaustion_top"]]
+EPISODES["squeeze_up"] = [(1 - b, r, z, th, lo, hi) for b, r, z, th, lo, hi in EPISODES["capitulation"]]
+
+
+# how hard each name follows the market (the Nasdaq / QQQ factor). 1.0 = moves with QQQ, 2 = twice as hard,
+# near 0 = its own thing, negative = the other way. Anything not listed trades like a mid-cap tech name.
+BETAS = {"QQQ": 1.0, "SPY": 0.85, "SPX": 0.85, "IWM": 0.9, "DIA": 0.7,
+         "NVDA": 1.7, "AMD": 1.7, "TSLA": 1.8, "PLTR": 1.7, "SMCI": 2.0, "MSTR": 2.2, "COIN": 1.9, "ARM": 1.8, "MU": 1.5,
+         "AVGO": 1.4, "META": 1.3, "AMZN": 1.2, "AAPL": 1.1, "MSFT": 1.0, "GOOGL": 1.1, "NFLX": 1.1, "SHOP": 1.5, "SNOW": 1.4,
+         "SOFI": 1.4, "HOOD": 1.8, "UBER": 1.2, "INTC": 1.1, "RIVN": 1.5, "NIO": 1.3, "BABA": 0.9, "CVNA": 1.8,
+         "DIS": 0.7, "BA": 0.8, "JPM": 0.6, "XOM": 0.3, "GLD": 0.0, "TLT": -0.3}
+INDEX = {"QQQ", "SPY", "SPX", "IWM", "DIA"}
+
+
+def beta_of(sym):
+    return BETAS.get(sym, 1.2)
+
+
+class _Mkt:
+    """The market: one regime process everybody leans on. The session's day type tilts this one."""
+    __slots__ = ("regime", "regime_until", "bias", "level", "prev_level", "pulse")
+
+    def __init__(self):
+        self.regime, self.regime_until, self.bias = "chop", 0.0, 0.5
+        self.level = self.prev_level = 488.0      # QQQ-like
+        self.pulse = None                          # the tape's push / pullback clock (every trending name breathes with it)
+
+
+
+
+def roundness(price):
+    """How much a price draws size: whole dollars most, then halves, quarters, dimes, nickels. Institutions work
+    their orders at round numbers, so that is where the liquidity (and the reloaders) sit and where the tape is heavy."""
+    if not price or price < 1:
+        return 1.0
+    c = int(round(price * 100)) % 100
+    if c == 0:
+        return 4.0
+    if c == 50:
+        return 3.0
+    if c in (25, 75):
+        return 2.0
+    if c % 10 == 0:
+        return 1.5
+    if c % 5 == 0:
+        return 1.2
+    return 1.0
+
+
+def _r100(x):
+    return max(100, int(round(x / 100.0)) * 100)
+
+
+class _Sym:
+    __slots__ = ("play", "tk", "asks", "bids", "last", "vol", "regime", "regime_until", "script", "big",
+                 "big_home", "parts", "level_cooldown", "hidden_next", "prev", "l1", "base", "mid0", "beta", "sym", "eff", "owed",
+                 "hot", "hot_dir", "mom", "spent", "now", "last_mid", "episode", "ep_next", "thin", "ep_script",
+                 "program", "program_next",
+                 "vs", "vs_t", "vs_mid", "vs_norm", "pulse", "hl_t", "lv_cool", "lv_next", "day_open", "hod", "lod", "pdh", "pdl", "pdc", "pmh", "pml", "ahh", "ahl", "vwap_pv", "vwap_v", "day_key", "real_hist", "atr_day")
+
+    def __init__(self, play, mid, t):
+        self.play = play
+        self.tk = tick_size(mid)
+        self.mid0 = mid
+        self.base = min(7500, max(500, 1500 * math.sqrt(50.0 / max(mid, 1.0))))   # typical resting size
+        self.asks, self.bids = [], []
+        self.last = mid
+        self.vol = 0
+        self.regime, self.regime_until = "chop", t
+        self.script = []            # [(bias, rate, until_t)] scripted stages that override the regime
+        self.big = {}               # (side, price) -> until
+        self.spent = {}             # (side, price) -> until: a reloader was just cleaned / pulled there, it stays thin
+        self.now = 0.0
+        self.big_home = {ASK: None, BID: None}
+        self.parts = []             # participants working a level: the one at the pivot, and hidden ones anywhere
+        self.level_cooldown = t
+        self.hidden_next = t
+        self.sym = play.get("symbol", "")
+        self.beta = beta_of(self.sym)
+        self.eff = (0.5, 1.2, 1.0)   # this step's blended lean, rate, size: own regime + beta x market
+        self.owed = 0.0              # dollars of move the index / basket desks still have to push through this name
+        self.hot = 0.0               # tape heat: price moving brings more orders (chasers, stops), fading in seconds
+        self.hot_dir = 0             # which way it last moved
+        self.mom = 0.0               # the market's push on this name over the last ~10 s, in ticks (signed)
+        self.last_mid = mid
+        self.episode = None          # (name, stage index) while an exhaustion / capitulation / squeeze plays out
+        self.ep_next = None          # first episode time is drawn from the feed's own (seeded) random
+        self.ep_script = None
+        self.program = None
+        self.program_next = None
+        self.thin = 1.0              # the book on the side being hit (pulled bids in a flush, pulled offers in a squeeze)
+        self.prev = {ASK: [], BID: []}
+        self.l1 = {}
+        # THE MARKET DAY: volatility clusters (vs), a trend breathes (pulse: push / pullback), the key levels of the
+        # day get defended or taken (pdh / pdl / pdc / hod / lod / VWAP), the session has a shape (open, 10 o'clock,
+        # midday, the close)
+        self.vs = 1.0                # volatility state: rises on a big move or a shock, decays over minutes
+        self.vs_t = None; self.vs_mid = None; self.vs_norm = 0.002
+        self.hl_t = None             # when the high / low of the day last moved
+        self.lv_cool = {}            # key level name -> not before t: one participant per level per ten minutes
+        self.pulse = None            # {"mode": "push" / "pullback", "until"} inside a trend
+        self.lv_next = t
+        self.day_open = None
+        self.hod = self.lod = None
+        self.pdh = self.pdl = self.pdc = None
+        self.pmh = self.pml = self.ahh = self.ahl = None
+        self.real_hist = False       # seeded from the stock's real history (Engine.save_history)
+        self.atr_day = None
+        self.vwap_pv = self.vwap_v = 0.0
+        self.day_key = None
+
+
+class DemoFeed:
+    def __init__(self, engine, plays, seed=7, scenario=None, history_dir=None):
+        self.engine = engine
+        # real histories the live desk saved (Engine.save_history): a stock practices at its own price, ATR and levels
+        self.history_dir = history_dir
+        self.cache = {}
+        if history_dir:
+            for p in plays:
+                if p.get("active"):
+                    try:
+                        from .engine import Engine
+                        d = Engine.load_history(history_dir, p["symbol"])
+                    except Exception:
+                        d = None
+                    if d:
+                        self.cache[p["symbol"]] = d
+        self.rng = random.Random(seed if seed is not None else int(__import__("time").time() * 1000) % 1000003)
+        names = list(SCENARIOS)
+        self.scenario = scenario if scenario in SCENARIOS else self.rng.choices(names, weights=[3, 2, 2, 2, 1, 1])[0]
+        self.mkt = _Mkt()
+        self.pushes = {}   # symbol -> (time, direction): a move the option flow saw coming
+        self.state = {}
+        self.t = None
+        self.t0 = None
+        for p in plays:
+            if not p["active"]:
+                continue
+            # any level drawn says where the stock trades: the pivot, else the stop or the target alone
+            from .flow import SimFlow
+            known = {k: v for k, v, _b in SimFlow.MARKET}
+            real = (self.cache.get(p["symbol"]) or {}).get("last") or ((self.cache.get(p["symbol"]) or {}).get("daily") or [[0, 0, 0, 0, 0]])[-1][4]
+            base = real or p.get("trigger") or p.get("second_entry") or p.get("stop") or p.get("target") or known.get(p["symbol"]) \
+                or self.rng.uniform(20, 300)
+            mid = round(base * (1 + self.rng.uniform(0.002, 0.006) * self.rng.choice((-1, 1))), 2)
+            band = sorted(x for x in (p.get("stop"), p.get("target")) if x)
+            lo, hi = (band[0], band[-1]) if len(band) == 2 else (None, None)   # a stop alone (or a target alone) is fine
+            if lo and hi:   # start inside the play's band so the demo doesn't retire the play at once
+                mid = round(min(max(mid, lo + (hi - lo) * 0.15), hi - (hi - lo) * 0.15), 2)
+            self.state[p["symbol"]] = _Sym(p, mid, 0.0)
+
+    # ---- lifecycle ---------------------------------------------------------
+
+    def start(self, t):
+        self.t = t
+        self.t0 = t                                           # the practice clock starts here (see _clock)
+        self.engine.on_connection("DEMO", "SYNTHETIC DEMO FEED — not market data", t, market_data_type=None)
+        for sym, s in self.state.items():
+            self._history_one(sym, s, t)
+            self._seed_book(s, t)
+            s.regime_until = t
+        self.engine.play_listeners.append(self.add_play)
+
+    def add_play(self, p):
+        """A typed-in ticker in the demo: a made-up price that trades like the others."""
+        if p["symbol"] in self.state:   # a level changed on a ticker already trading: keep its market
+            return
+        import time as _t
+        t = self.t or _t.time()
+        from .flow import SimFlow
+        known = {k: v for k, v, _b in SimFlow.MARKET}
+        base = known.get(p["symbol"])
+        if self.history_dir and p["symbol"] not in self.cache:
+            try:
+                from .engine import Engine
+                d = Engine.load_history(self.history_dir, p["symbol"])
+                if d:
+                    self.cache[p["symbol"]] = d
+                    base = d.get("last") or d["daily"][-1][4]
+            except Exception:
+                pass
+        s = _Sym(p, round(base * self.rng.uniform(0.98, 1.02), 2) if base else round(self.rng.uniform(20, 300), 2), t)
+        self._history_one(p["symbol"], s, t)
+        self._seed_book(s, t)
+        s.regime_until = t
+        self.state[p["symbol"]] = s     # published only once it has a book: the market loop never sees it half-built
+
+    # ---- history -------------------------------------------------------------
+
+    def _history_one(self, sym, s, t):
+        """Five sessions of 1-minute bars and 20 daily bars, walked through regimes (labelled demo)."""
+        from .ps60 import ny_offset, SESSION_OPEN
+        rng = self.rng
+        p = s.play
+        tk = s.tk
+        atr_ = max(tk * 20, (p.get("trigger") or s.mid0) * 0.018)
+        off = ny_offset(t)
+        today0 = (t + off) // 86400 * 86400 - off
+        cache = self.cache.get(sym)
+        real_days = [r for r in (cache or {}).get("daily") or [] if r[0] < today0]
+        px = s.mid0 * (1 + rng.uniform(-0.03, 0.03))
+        day_bars = []
+        if len(real_days) >= 20:
+            # THE REAL DAILY: the stock's own days, moved as a whole so the last close is where the practice price
+            # starts (a few cents at most), with its real ATR
+            shift = s.mid0 - real_days[-1][4]
+            day_bars = [(r[0], round(r[1] + shift, 2), round(r[2] + shift, 2), round(r[3] + shift, 2), round(r[4] + shift, 2)) for r in real_days[-300:]]
+            trs = [max(h - l, abs(h - pc), abs(l - pc)) for (_d, _o, h, l, _c), pc in zip(day_bars[-15:], [b[4] for b in day_bars[-16:-1]])]
+            if trs:
+                atr_ = max(tk * 20, sum(trs) / len(trs))
+            s.real_hist = True
+        else:
+            for d in range(300, 0, -1):
+                day0 = today0 - d * 86400
+                if ((day0 + off) // 86400) % 7 in (2, 3):   # skip Sat / Sun (epoch day 0 is a Thursday: 2 = Sat, 3 = Sun)
+                    continue
+                o = px
+                c = round(o + rng.uniform(-atr_, atr_) * 0.7, 2)
+                h = round(max(o, c) + rng.uniform(0, atr_ * 0.4), 2)
+                l = round(min(o, c) - rng.uniform(0, atr_ * 0.4), 2)
+                day_bars.append((day0, o, h, l, c))
+                px = c
+            # anchor the daily history so it walks into today's price instead of ending somewhere else
+            if day_bars:
+                shift = (s.mid0 - day_bars[-1][4]) / len(day_bars)
+                day_bars = [(d0, round(o + shift * (i + 1), 2), round(h + shift * (i + 1), 2), round(l + shift * (i + 1), 2), round(c + shift * (i + 1), 2))
+                            for i, (d0, o, h, l, c) in enumerate(day_bars)]
+        s.atr_day = atr_
+        if day_bars:
+            s.pdh, s.pdl, s.pdc = day_bars[-1][2], day_bars[-1][3], day_bars[-1][4]
+        for day0, o, h, l, c in day_bars:
+            # a day's volume: bigger on the big-range days, like the real thing
+            rng_pct = (h - l) / max(c, 0.01)
+            vol = int(rng.lognormvariate(math.log(s.base * 3000), 0.3) * (0.6 + 25 * rng_pct))
+            self.engine.on_daily_bar(sym, day0, o, h, l, c, vol)
+        # the chart studies' 30-minute history (the CONT odds sample, the 60-minute MAs): 13 half hours per practice
+        # day that open at its open, touch its high and low and close at its close
+        for day0, o, h, l, c in day_bars[-160:]:
+            first_hi = rng.random() < 0.5
+            k1, k2 = sorted(rng.sample(range(1, 12), 2))
+            anchors = {0: o, k1: h if first_hi else l, k2: l if first_hi else h, 13: c}
+            keys = sorted(anchors)
+            pts = []
+            for a, b in zip(keys, keys[1:]):
+                for j in range(b - a):
+                    pts.append(anchors[a] + (anchors[b] - anchors[a]) * j / (b - a))
+            pts.append(c)
+            vday = 0.0
+            for j in range(13):
+                bo, bc = pts[j], pts[j + 1]
+                bh = max(bo, bc) + rng.uniform(0, (h - l) * 0.05); bl = min(bo, bc) - rng.uniform(0, (h - l) * 0.05)
+                bh, bl = min(bh, h), max(bl, l)        # the day's high and low are endpoints of the path: never past them
+                t30 = day0 + SESSION_OPEN + 1800 * j
+                self.engine.on_study_bar(sym, "m30", t30, round(bo, 2), round(max(bh, bo, bc), 2), round(min(bl, bo, bc), 2), round(bc, 2),
+                                         float(rng.randint(2000, 20000)))
+        # the extended hours: yesterday's after-hours (16:00-20:00) and today's premarket (4:00-9:30) as 5-minute bars,
+        # a quiet drift with a small range around the close, so the ladder, the chart and the story have the premarket
+        # high / low and the after-hours high / low the way they do on the live desk
+        if day_bars:
+            pc = day_bars[-1][4]
+            ah_h = ah_l = pm_h = pm_l = None
+            px2 = pc
+            for j in range(48):                                # 16:00-20:00 yesterday: 48 five-minute bars
+                t5 = day_bars[-1][0] + 16 * 3600 + 300 * j
+                o = px2; c2 = round(o + rng.gauss(0, atr_ * 0.03), 2)
+                h = round(max(o, c2) + rng.uniform(0, atr_ * 0.02), 2); l = round(min(o, c2) - rng.uniform(0, atr_ * 0.02), 2)
+                self.engine.on_study_bar(sym, "m5x", t5, o, h, l, c2, float(rng.randint(200, 3000)))
+                ah_h = h if ah_h is None else max(ah_h, h); ah_l = l if ah_l is None else min(ah_l, l)
+                px2 = c2
+            px2 = round(s.mid0 * (1 + rng.uniform(-0.006, 0.006)), 2)
+            pm_end = min(t, today0 + 34200)                       # the premarket up to now (or to 9:30)
+            for j in range(66):                                # 4:00-9:30 today: 66 five-minute bars
+                t5 = today0 + 4 * 3600 + 300 * j
+                if t5 >= pm_end:
+                    break
+                o = px2; c2 = round(o + rng.gauss(0, atr_ * 0.04), 2)
+                h = round(max(o, c2) + rng.uniform(0, atr_ * 0.03), 2); l = round(min(o, c2) - rng.uniform(0, atr_ * 0.03), 2)
+                self.engine.on_study_bar(sym, "m5x", t5, o, h, l, c2, float(rng.randint(100, 4000)))
+                pm_h = h if pm_h is None else max(pm_h, h); pm_l = l if pm_l is None else min(pm_l, l)
+                px2 = c2
+            s.pmh, s.pml, s.ahh, s.ahl = pm_h, pm_l, ah_h, ah_l
+        real_min = [r for r in (cache or {}).get("bars") or [] if r[0] < t and len(r) >= 5]
+        if len(real_min) >= 390 and len(real_days) >= 20:
+            # THE REAL MINUTES: the last sessions as they traded, moved by the same shift
+            shift = s.mid0 - real_days[-1][4]
+            for r in real_min[-1950:]:
+                self.engine.on_hist_bar(sym, r[0], round(r[1] + shift, 2), round(r[2] + shift, 2), round(r[3] + shift, 2), round(r[4] + shift, 2), int(r[5] if len(r) > 5 else 0))
+            for r in (cache or {}).get("m5x") or []:
+                if r[0] < t and len(r) >= 5:
+                    self.engine.on_study_bar(sym, "m5x", r[0], round(r[1] + shift, 2), round(r[2] + shift, 2), round(r[3] + shift, 2), round(r[4] + shift, 2), float(r[5] if len(r) > 5 else 0))
+            s.pmh = s.pml = s.ahh = s.ahl = None
+            try:
+                from . import studies as _stu
+                sess = _stu.session_levels(self.engine.syms[sym], t)
+                s.pmh, s.pml, s.ahh, s.ahl = sess.get("pmh"), sess.get("pml"), sess.get("ahh"), sess.get("ahl")
+            except Exception:
+                pass
+            return
+        sessions = [b[0] for b in day_bars[-5:]]
+        n_total = 390 * len(sessions)
+        end_px = s.mid0
+        start_px = day_bars[-5][1] if len(day_bars) >= 5 else end_px
+        # a regime walk: segments of 20-90 minutes with their own drift and volatility
+        walk = [start_px]
+        i = 0
+        while len(walk) < n_total:
+            seg = rng.randint(20, 90)
+            drift = rng.choice((-1.2, -0.6, 0, 0, 0.6, 1.2)) * atr_ / 120
+            vol = atr_ / rng.choice((30, 40, 55))
+            for _ in range(seg):
+                if len(walk) >= n_total:
+                    break
+                walk.append(walk[-1] + drift + rng.gauss(0, vol))
+            i += 1
+        corr = (end_px - walk[-1]) / max(1, n_total - 1)
+        walk = [w + corr * k for k, w in enumerate(walk)]
+        k = 0
+        for day0 in sessions:
+            for m in range(390):
+                t0 = day0 + SESSION_OPEN + m * 60
+                if t0 >= t or k >= n_total - 1:
+                    break
+                o, c = walk[k], walk[k + 1]
+                h = max(o, c) + abs(rng.gauss(0, atr_ / 80))
+                l = min(o, c) - abs(rng.gauss(0, atr_ / 80))
+                hot = 1.8 if m < 30 or m > 360 else 1.0
+                self.engine.on_hist_bar(sym, t0, round(o, 2), round(h, 2), round(l, 2), round(c, 2),
+                                        int(rng.lognormvariate(8.6, 0.6) * hot))
+                k += 1
+
+    # ---- the book ------------------------------------------------------------
+
+    @staticmethod
+    def _rn(s, side, price):
+        """How much size a price draws: round numbers more - except one where a reloader was just cleaned or
+        pulled. That size is gone; for a while there is less there than anywhere around it, not a new wall."""
+        until = s.spent.get((side, round(price, 4))) if price is not None else None
+        if until is not None:
+            if s.now < until:
+                return 0.4
+            del s.spent[(side, round(price, 4))]
+        return roundness(price)
+
+    def _fresh(self, s, side, price=None):
+        b = s.eff[0]
+        against = (side == ASK and b > 0.5) or (side == BID and b < 0.5)
+        target = s.base * (max(0.3, 1 - 2.5 * abs(b - 0.5)) if against else 1.2) * self._rn(s, side, price)
+        return _r100(self.rng.lognormvariate(math.log(target), 0.7))
+
+    def _seed_book(self, s, t):
+        tk = s.tk
+        bid = round(s.mid0 - tk, 2)
+        s.asks = [[round(bid + tk * (i + 1), 2), self._fresh(s, ASK, round(bid + tk * (i + 1), 2))] for i in range(ROWS + 4)]
+        s.bids = [[round(bid - tk * i, 2), self._fresh(s, BID, round(bid - tk * i, 2))] for i in range(ROWS + 4)]
+        s.last = s.asks[0][0]
+
+    def _extend(self, s):
+        tk = s.tk
+        while len(s.asks) < ROWS + 4:
+            p = round((s.asks[-1][0] if s.asks else s.bids[0][0]) + tk, 2)
+            s.asks.append([p, self._fresh(s, ASK, p)])
+        while len(s.bids) < ROWS + 4:
+            p = round((s.bids[-1][0] if s.bids else s.asks[0][0]) - tk, 2)
+            s.bids.append([p, self._fresh(s, BID, p)])
+
+    def _churn(self, s, t):
+        """Passive flow: rows add, cancel, thin out and refill; big size shows up, sits, gets pulled or hit."""
+        rng, rg = self.rng, REGIMES[s.regime]
+        if s.thin < 1.0 and rng.random() < 0.35:
+            # a flush pulls the bids (a squeeze the offers): the side in the way thins out and price falls through
+            hit = s.bids if s.eff[0] < 0.5 else s.asks
+            for row in hit[:5]:
+                row[1] = max(100, _r100(row[1] * s.thin))
+        for side, rows in ((ASK, s.asks), (BID, s.bids)):
+            b = s.eff[0]
+            against = (side == ASK and b > 0.5) or (side == BID and b < 0.5)
+            target = s.base * (max(0.3, 1 - 2.5 * abs(b - 0.5)) if against else 1.2)
+            for i in range(min(ROWS, len(rows))):
+                row = rows[i]
+                key = (side, row[0])
+                if key in s.big:
+                    if t >= s.big[key]:
+                        del s.big[key]
+                        # away from the touch, big size often gets pulled (it was there to be seen). At the touch
+                        # it mostly stays and has to be traded through; a pull right there is the rare spoof.
+                        if rng.random() < (0.6 if i >= 2 else 0.15):   # pulled
+                            row[1] = _r100(rng.lognormvariate(math.log(target), 0.5))
+                    continue
+                if any(pt["side"] == side and abs(row[0] - pt["price"]) < 1e-9 for pt in s.parts):
+                    continue                            # a participant manages this row
+                if i < 2:
+                    # the inside queue: it only goes down when prints take it or someone cancels, and grows when
+                    # someone joins - a few hundred at a time. It is never re-dealt, so a print that takes 300 off
+                    # the bid shows as 300 less on the ladder.
+                    if rng.random() < 0.18:
+                        if rng.random() < 0.6:
+                            row[1] = row[1] + rng.choice((100, 100, 200, 200, 300, 500))           # joins
+                        else:
+                            row[1] = max(100, row[1] - rng.choice((100, 100, 200, 300)))        # cancels
+                    continue
+                if rng.random() < 0.12:
+                    tg = target * self._rn(s, side, row[0])
+                    row[1] = _r100(row[1] + 0.2 * (tg - row[1]) + rng.gauss(0, 0.25 * tg))
+            # big resting size: 5k-40k, mostly at a fresh price, sometimes back at the same one (a repeat)
+            if rng.random() < 0.006 and len(rows) > 6:
+                # big size goes where institutions work: round numbers first
+                cand = list(range(1, min(9, len(rows))))
+                i = rng.choices(cand, weights=[self._rn(s, side, rows[j][0]) ** 2 for j in cand])[0]
+                if s.big_home[side] is not None and rng.random() < 0.4:
+                    for j in range(min(ROWS, len(rows))):
+                        if abs(rows[j][0] - s.big_home[side]) < 1e-9:
+                            i = j
+                            break
+                row = rows[i]
+                row[1] = _r100(row[1] + rng.choice((5000, 8000, 12000, 18000, 25000, 40000)))
+                s.big[(side, row[0])] = t + rng.uniform(15, 150)
+                s.big_home[side] = row[0]
+
+    # ---- aggressive flow -------------------------------------------------------
+
+    def _market(self, sym, s, is_buy, size, t, emit_depth):
+        """One aggressive order eats the touch; a gone queue moves the price a tick and the other side follows."""
+        rng = self.rng
+        rows = s.asks if is_buy else s.bids
+        opp = s.bids if is_buy else s.asks
+        remaining = size
+        while remaining > 0 and rows:
+            price, avail = rows[0][0], rows[0][1]
+            take = min(remaining, avail)
+            hit_side = ASK if is_buy else BID
+            lv = next((pt for pt in s.parts if pt["side"] == hit_side and abs(price - pt["price"]) < 1e-9), None)
+            if take <= 0:
+                if lv is not None and lv["refill_at"] is not None:
+                    break                  # he is reloading this very moment: the order waits, nothing trades
+                rows.pop(0)
+                self._extend(s)
+                continue
+            # the engine sees the book this order trades against before it sees the print (as on a real feed,
+            # the quote is out before the trade): so the print is read against the quote it hit
+            self._emit(sym, s, t, emit_depth)
+            self.engine.on_print(sym, price, int(take), rng.choice(EXCH), t)
+            s.last = price
+            s.vol += take
+            s.vwap_pv += price * take; s.vwap_v += take
+            rows[0][1] -= take
+            remaining -= take
+            if lv is not None:
+                lv["hit"] += take
+                if rows[0][1] <= 0 and lv["reserve"] > 0:
+                    # the reload: size comes back a moment later, sometimes quick, sometimes after a beat
+                    lv["refill_at"] = t + (rng.uniform(0.2, 0.9) if rng.random() < 0.6 else rng.uniform(1.0, 3.0))
+                    lv["refills"] += 1
+                    rows[0][1] = 0
+                    break
+            if rows[0][1] <= 0:
+                rows.pop(0)
+                if lv is not None:
+                    lv["done"] = "clean"
+                self._extend(s)
+                follow = 0.85 if (s.eff[0] > 0.5) == is_buy else 0.55
+                if rng.random() < follow and not any(pt["side"] == (BID if is_buy else ASK) and abs(price - pt["price"]) < 1e-9 for pt in s.parts):
+                    opp.insert(0, [price, self._fresh(s, BID if is_buy else ASK, price)])
+                if rng.random() < 0.55:
+                    break   # most orders don't sweep several levels
+        # sizes from sweeps that reached nothing left are just lost (the book is contiguous, price moved)
+
+    @staticmethod
+    def _heat(s):
+        """How hot the tape is: a level that just broke, or the market pushing this name (past a few ticks)."""
+        return min(5.0, s.hot + max(0.0, abs(s.mom) - 3.0) / 3.0)
+
+    def _tempo(self, s):
+        """How fast the tape runs right now, and which way it leans on top of the regime:
+        - moving price draws orders (momentum chasers, stops): the tape speeds up with the move and leans with it
+        - price coming into a level (a reloader, a round number a few ticks ahead) makes it slow down: people wait
+          to see who holds it; AT the level the prints stay heavy (absorption) while price goes nowhere"""
+        heat = self._heat(s)
+        tempo = 1.0
+        lean = 0.0
+        d = s.hot_dir or (1 if s.eff[0] > 0.5 else -1)
+        rows = s.asks if d > 0 else s.bids
+        ahead = rows[1:4]
+        levels = {round(pt["price"], 4) for pt in s.parts}
+        if any(round(r[0], 4) in levels or roundness(r[0]) >= 2 for r in ahead) and heat < 2.5:
+            tempo *= 0.5                                  # approaching a level: the tape slows
+        if rows and (round(rows[0][0], 4) in levels):
+            tempo = max(tempo, 1.3)                       # at the level: steady, heavy prints into it
+        return tempo, lean
+
+    def _flow(self, sym, s, t, dt, emit_depth):
+        rng = self.rng
+        bias, rate, mult = s.eff
+        tempo, lean = self._tempo(s)
+        base_rate = rate
+        rate *= tempo
+        lam = rate * dt
+        # chasers: a moving price pulls in orders on the side it is moving to (momentum, stops) - the tape speeds up
+        # WITH the move; most moves start with the market, so this amplifies the market's move, not noise
+        heat = self._heat(s)
+        if s.hot_dir and heat > 0.3:
+            lc = base_rate * dt * 0.9 * heat
+            nc = int(lc) + (1 if rng.random() < lc - int(lc) else 0)
+            for _ in range(nc):
+                size = _r100(rng.lognormvariate(5.2, 0.7) * mult)
+                self._market(sym, s, s.hot_dir > 0, size, t, emit_depth)
+        n = int(lam) + (1 if rng.random() < lam - int(lam) else 0)
+        for _ in range(n):
+            is_buy = rng.random() < bias
+            touch = (s.asks if is_buy else s.bids)
+            r = roundness(touch[0][0]) if touch else 1.0
+            if rng.random() < 0.22:
+                size = rng.randint(1, 99)                       # odd lots
+            else:
+                size = _r100(rng.lognormvariate(5.4, 0.75) * mult * (1 + 0.35 * (r - 1)))   # heavier into a round number
+                if rng.random() < 0.03:
+                    size *= 6                                   # a sweep
+                if r >= 2 and rng.random() < 0.04 * r:
+                    size = max(size, rng.choice((2000, 3000, 5000, 8000, 10000)))   # a block at the round number
+            self._market(sym, s, is_buy, size, t, emit_depth)
+
+    def _params(self, s, t):
+        rg = REGIMES[s.regime]
+        while s.script and t >= s.script[0][2]:
+            s.script.pop(0)
+        m = self.mkt.bias - 0.5
+        heat = 1.0 + 1.2 * abs(m)                               # a fast tape makes every name busier
+        if s.episode and s.script is not getattr(s, "ep_script", None):
+            s.episode = None          # a level's own script took over: the episode is over
+        if s.script:
+            st = s.script[0]
+            b, r = st[0], st[1]
+            size = st[3] if len(st) > 3 else rg["size"]
+            s.thin = st[4] if len(st) > 4 else 1.0
+            b = 0.5 + 0.8 * (b - 0.5) + (1.0 if s.episode else 0.6) * s.beta * m   # still feels the market
+            if s.hod is not None and s.lod is not None and s.day_open:
+                atr = s.atr_day or max(s.tk * 20, s.day_open * 0.018)
+                stretch = (s.last - (s.hod + s.lod) / 2) / atr
+                if abs(stretch) > 1.0 and (b - 0.5) * stretch > 0:      # pushing further out: the push loses its legs
+                    b = 0.5 + (b - 0.5) * max(0.25, 1.0 - 0.6 * (abs(stretch) - 1.0))
+                if abs(stretch) > 1.2:
+                    b -= (1 if stretch > 0 else -1) * 0.1 * min(1.5, abs(stretch) - 1.2)
+            return min(0.9, max(0.1, b)), r * heat * s.vs ** 0.5, size * s.vs ** 0.25
+        s.thin = 1.0
+        s.episode = None
+        own = 0.25 if s.sym in INDEX else 0.4                   # an index is mostly the market; a stock is part itself
+        b = 0.5 + own * (rg["bias"] - 0.5) + 1.0 * s.beta * m
+        ph = self._phase(t)
+        # a trend breathes: a push, then a pullback that gets bought (higher lows) or sold (lower highs). That is
+        # where the second entries live; a chop has no pulse, its candles sit on top of each other
+        rate_x, size_x = ph["rate"], ph["size"]
+        if s.regime in ("trend_up", "trend_down", "grind_up", "grind_down"):
+            rng = self.rng
+            # the whole tape breathes together: one clock for the desk (the pullbacks come at the same time across
+            # the names, the way they do when the index pulls back), each name on its own trend
+            mk = self.mkt
+            pulse = getattr(mk, "pulse", None)
+            if pulse is None or t >= pulse["until"]:
+                push = pulse is None or pulse["mode"] == "pullback"
+                pulse = mk.pulse = {"mode": "push" if push else "pullback", "until": t + (rng.uniform(90, 240) if push else rng.uniform(40, 120))}
+            s.pulse = pulse
+            if pulse["mode"] == "pullback":
+                b = 0.5 - 0.4 * (b - 0.5)                       # against the trend, shallow: the retrace
+                rate_x *= 0.7; size_x *= 0.8
+        else:
+            s.pulse = None
+        # the VWAP magnet: stretched away from it (midday most of all) the lean comes back toward it
+        if s.vwap_v > 0 and ph["vwap"] and s.last:
+            dev = (s.last - s.vwap_pv / s.vwap_v) / s.last
+            b -= ph["vwap"] * 0.12 * max(-1.0, min(1.0, dev / 0.004))
+        rate_x *= s.vs ** 0.5                                   # a hot tape: more prints, a little bigger, not 3x everything
+        size_x *= s.vs ** 0.25
+        b = self._rubber(s, b)
+        return min(0.9, max(0.1, b)), rg["rate"] * heat * rate_x, rg["size"] * size_x
+
+    def _rubber(self, s, b):
+        """THE DAY'S RUBBER BAND. A stock has a daily range it tends to keep (its ATR): the further the session has
+        stretched from its middle, the more the other side leans in (the market makers, the mean reverters, the
+        profit takers), so a day runs one to two ATRs, not ten. The lean is damped too: a 60 / 40 regime is a lean on
+        the tape, not a one-way street."""
+        b = 0.5 + 0.55 * (b - 0.5)
+        if s.hod is None or s.lod is None or not s.day_open:
+            return b
+        atr = s.atr_day or max(s.tk * 20, s.day_open * 0.018)
+        mid = (s.hod + s.lod) / 2
+        stretch = (s.last - mid) / atr
+        if abs(stretch) > 0.6:
+            b -= (1 if stretch > 0 else -1) * 0.16 * min(1.5, abs(stretch) - 0.6)
+        return b
+
+    def _close_spread(self, s):
+        """Market makers: a gap between bid and ask gets stepped into within a moment. Who steps in follows the
+        lean, so in a rally the bids step up and in a sell-off the offers step down."""
+        rng, tk = self.rng, s.tk
+        for _ in range(3):
+            if not s.asks or not s.bids:
+                return
+            gap = int(round((s.asks[0][0] - s.bids[0][0]) / tk))
+            if gap <= 1 or rng.random() > 0.8:
+                return
+            if rng.random() < s.eff[0]:
+                p = round(s.bids[0][0] + tk, 2)
+                s.bids.insert(0, [p, _r100(self._fresh(s, BID, p) * 0.6)])
+            else:
+                p = round(s.asks[0][0] - tk, 2)
+                s.asks.insert(0, [p, _r100(self._fresh(s, ASK, p) * 0.6)])
+
+    def _market_step(self, t, dt):
+        mk, rng = self.mkt, self.rng
+        self._regime(mk, t)
+        target = REGIMES[mk.regime]["bias"]
+        # the market's lean wanders on a minute scale (a slow mean-reverting drift toward the regime), it does not jump
+        target = 0.5 + 0.6 * (target - 0.5)
+        mk.bias += 0.004 * dt / 0.25 * (target - mk.bias) + rng.gauss(0, 0.004 * math.sqrt(dt / 0.25))
+        mk.bias = min(0.7, max(0.3, mk.bias))
+        mk.prev_level = mk.level
+        mk.level *= math.exp((mk.bias - 0.5) * 6.4e-5 * dt + rng.gauss(0, 1.0e-4 * math.sqrt(dt)))
+
+    REPRICE = 0.6   # share of that move that is quotes repricing rather than prints
+    BASKET = 1.7    # share of each name's move that comes from index / ETF / basket flow
+
+    def _basket(self, sym, s, t, slotted):
+        """When QQQ moves, the ETF and basket desks buy or sell every component at once. Each name owes
+        beta x the market's move; they lift offers / hit bids at the touch until it is paid. A big resting
+        participant at the touch stops them, as it would: the rally stalls into the seller."""
+        mk = self.mkt
+        if not mk.prev_level:
+            return
+        s.owed += self.BASKET * s.beta * math.log(mk.level / mk.prev_level) * s.last
+        # basket desks work in clips at the touch, never the whole level in one print. A wall (big resting size)
+        # takes a lot of clips to get through and bleeds the push while they chip at it: price stalls into it,
+        # the way it does on a real ladder, and only goes through once the size has actually traded.
+        cap = s.owed / s.tk
+        if abs(cap) > 6:
+            s.owed = 6 * s.tk * (1 if cap > 0 else -1)
+        for _ in range(4):
+            if abs(s.owed) < s.tk:
+                return
+            is_buy = s.owed > 0
+            rows = s.asks if is_buy else s.bids
+            if not rows:
+                return
+            side = ASK if is_buy else BID
+            if any(pt["side"] == side and abs(rows[0][0] - pt["price"]) < 1e-9 for pt in s.parts):
+                s.owed *= 0.9      # parked into a real participant: the move leaks away instead
+                return
+            touch = rows[0][1]
+            wall = touch >= max(5 * s.base, 5000)
+            opp = s.bids if is_buy else s.asks
+            if s.hot >= 2.0 and s.hot_dir and (s.hot_dir > 0) != is_buy:
+                s.owed *= 0.5      # a level just broke: for a few seconds the break's momentum wins over the index
+                return
+            with_push = abs(s.mom) >= 1 and (s.mom > 0) == is_buy
+            if not wall and len(rows) > 1 and opp and (not with_push or self.rng.random() < self.REPRICE):
+                # the market makers move their quotes with the index: the offer lifts / the bid drops, no print.
+                # A wiggle against the last few seconds' push is only ever that; the desks trade WITH the push
+                rows.pop(0)
+                step = s.tk if is_buy else -s.tk
+                p = round(opp[0][0] + step, 2)
+                if (p < rows[0][0]) if is_buy else (p > rows[0][0]):
+                    opp.insert(0, [p, _r100(self._fresh(s, BID if is_buy else ASK, p) * 0.6)])
+                self._extend(s)
+                s.owed -= step
+                continue
+            clip = _r100(self.rng.lognormvariate(math.log(max(100.0, s.base * 0.9)), 0.6))
+            if touch - clip < 100:
+                clip = int(touch)          # the last of the level
+            before = rows[0][0]
+            self._market(sym, s, is_buy, int(min(touch, max(1, clip))), t, slotted)
+            if (s.asks[0][0] if is_buy else s.bids[0][0]) != before:
+                s.owed -= s.tk if is_buy else -s.tk
+            else:
+                s.owed *= 0.85     # a clip that didn't move it: the rest of the push is soaked up by resting size
+            if wall:
+                s.owed *= 0.99     # leaning on a wall: one clip a beat, a little of the push gives up
+                return
+
+    # THE SESSION'S SHAPE, the way the day really trades: the opening drive, the 10 o'clock reversal window, the
+    # morning, the midday chop with the VWAP as the magnet, the afternoon trend, the close with the day's program.
+    # rate / size scale the tape; tilt leans the regime draw; vwap is how hard price gets pulled back to the VWAP
+    PHASES = (
+        (0, 30, dict(name="open", rate=2.4, size=1.5, vwap=0.0, tilt={"trend_up": 2.2, "trend_down": 2.2, "squeeze": 1.3, "capitulation": 1.3, "chop": 0.5})),
+        (30, 60, dict(name="reversal", rate=1.6, size=1.2, vwap=0.25, tilt={"chop": 1.0})),
+        (60, 120, dict(name="morning", rate=1.1, size=1.0, vwap=0.35, tilt={})),
+        (120, 270, dict(name="midday", rate=0.6, size=0.85, vwap=0.9, tilt={"chop": 3.0, "grind_up": 1.2, "grind_down": 1.2, "trend_up": 0.5, "trend_down": 0.5, "squeeze": 0.3, "capitulation": 0.3})),
+        (270, 360, dict(name="afternoon", rate=1.0, size=1.0, vwap=0.4, tilt={"trend_up": 1.5, "trend_down": 1.5, "grind_up": 1.2, "grind_down": 1.2})),
+        (360, 390, dict(name="close", rate=1.7, size=1.4, vwap=0.1, tilt={"chop": 0.6})),
+    )
+    CLOSED = dict(name="closed", rate=0.35, size=0.8, vwap=0.0, tilt={"chop": 2.5, "squeeze": 0.2, "capitulation": 0.2})
+
+    @staticmethod
+    def _phase_at(t):
+        from .ps60 import ny_offset, SESSION_OPEN
+        off = ny_offset(t)
+        m = ((t + off) % 86400 - SESSION_OPEN) / 60.0
+        for lo, hi, ph in DemoFeed.PHASES:
+            if lo <= m < hi:
+                return ph
+        return DemoFeed.CLOSED
+
+    def _clock(self, t):
+        """THE PRACTICE CLOCK. During the real session (New York, a weekday) the practice day is the real day. Outside
+        it (nights, weekends, premarket) the practice day starts at 9:30 the moment the feed starts and runs its 390
+        minutes, then the next day opens: you get a whole session's shape whenever you sit down."""
+        from .ps60 import ny_offset, SESSION_OPEN
+        off = ny_offset(t)
+        loc = t + off
+        sec = loc % 86400
+        wd = (int(loc // 86400) + 3) % 7                     # epoch day 0 is a Thursday: 0 = Monday here
+        if wd < 5 and SESSION_OPEN <= sec < SESSION_OPEN + 390 * 60:
+            return t, 0
+        t0 = self.t0 if self.t0 is not None else t
+        el = max(0.0, t - t0)
+        day = int(el // (390 * 60))
+        day0 = int(loc // 86400) * 86400 - off
+        return day0 + SESSION_OPEN + (el - day * 390 * 60), day + 1
+
+    def _phase(self, t):
+        return DemoFeed._phase_at(self._clock(t)[0])
+
+    def _day_key(self, t):
+        from .ps60 import ny_offset
+        ct, vday = self._clock(t)
+        return int((ct + ny_offset(ct)) // 86400) * 10 + vday
+
+    def _tod(self, t):
+        return self._phase(t)["rate"]
+
+    # ---- regimes ---------------------------------------------------------------
+
+    def _regime(self, s, t):
+        if t < s.regime_until:
+            return
+        rng = self.rng
+        tilt = dict(SCENARIOS.get(self.scenario, {})) if s is self.mkt else {}
+        ph = self._phase(t)
+        # the session's shape is the MARKET's: the opening drive, the 10 o'clock fade and the close are one tape,
+        # every name feels it through its beta. A name on its own only gets the midday quiet
+        if s is self.mkt:
+            for n, w in ph["tilt"].items():
+                tilt[n] = tilt.get(n, 1.0) * w
+            if getattr(self, "mkt_day_open", None):
+                up = s.level > self.mkt_day_open
+                if ph["name"] == "reversal":           # the 10 o'clock window: the opening drive often gets faded
+                    for n in (("trend_down", "fade", "grind_down") if up else ("trend_up", "bounce", "grind_up")):
+                        tilt[n] = tilt.get(n, 1.0) * 2.2
+                elif ph["name"] == "close":            # the close goes with the day
+                    for n in (("trend_up", "grind_up") if up else ("trend_down", "grind_down")):
+                        tilt[n] = tilt.get(n, 1.0) * 2.5
+        elif ph["name"] == "midday":
+            tilt["chop"] = tilt.get("chop", 1.0) * 1.8
+        opts = [(n, w * tilt.get(n, 1.0)) for n, w in NEXT[s.regime]]
+        tot = sum(w for _, w in opts)
+        x = rng.uniform(0, tot)
+        for name, w in opts:
+            x -= w
+            if x <= 0:
+                break
+        s.regime = name
+        lo, hi = REGIMES[name]["dur"]
+        s.regime_until = t + rng.uniform(lo, hi) * 60
+
+    # ---- the PS60 participant at the pivot ---------------------------------------------
+
+    def _new_part(self, s, side, price, t, pivot):
+        """A participant working a price. Not two alike: large size (small shows, deep reserve), block
+        (bigger shows), or a shallow one that pulls; refills vary; some hold, some get run over."""
+        rng = self.rng
+        r = roundness(price)
+        # at a round number the one working the level is usually bigger and more often there to stay
+        mode = rng.choices(("hold", "clean", "pull"), weights=(4 * r, 4, 2))[0]
+        fund = rng.random() < 0.45                  # fund-style large size: the same small show every refill
+        base = rng.choice((200, 300, 400, 500, 700)) if fund else rng.choice((900, 1200, 1500, 2000, 2800, 3500))
+        base = int(base * r ** 0.6 / 100) * 100 or 100
+        reserve = {"hold": rng.randint(30000, 120000), "clean": rng.randint(3000, 18000), "pull": rng.randint(4000, 12000)}[mode]
+        reserve = int(reserve * r ** 0.8)
+        return {"side": side, "price": price, "mode": mode, "base": base, "reserve": reserve, "hit": 0, "refills": 0, "fund": fund,
+                "refill_at": None, "done": None, "started": t, "pivot": pivot,
+                "hold_after": rng.randint(4, 10), "pull_after": rng.randint(2, 6)}
+
+    def _episodes(self, s, t):
+        """Now and then a name plays out a whole market style: exhaustion at a top / bottom, a capitulation flush,
+        a squeeze. Random timing, random pick (leaning on how it has been trading); a flush or squeeze in the whole
+        market pulls the high-beta names in with it."""
+        rng = self.rng
+        if s.ep_next is None:
+            s.ep_next = t + rng.uniform(1800, 7200)      # a name's own episode: every hour or two at most
+        if s.script or t < s.ep_next:
+            return
+        mk = self.mkt.regime
+        with_market = mk in ("capitulation", "squeeze") and s.beta >= 1.2 and rng.random() < 0.5
+        if not with_market and t < s.ep_next:
+            return
+        s.ep_next = t + rng.uniform(3600, 9000)
+        if with_market:
+            name = "capitulation" if mk == "capitulation" else "squeeze_up"
+        else:
+            lean = {"trend_up": "up", "grind_up": "up", "squeeze": "up", "bounce": "up",
+                    "trend_down": "down", "grind_down": "down", "capitulation": "down", "fade": "down"}.get(s.regime)
+            w = {"exhaustion_top": 2 if lean == "up" else 1, "squeeze_up": 1.2 if lean == "up" else 0.5,
+                 "exhaustion_bottom": 2 if lean == "down" else 1, "capitulation": 1.2 if lean == "down" else 0.5}
+            name = rng.choices(list(w), weights=list(w.values()))[0]
+        at, script = t, []
+        for b, r, z, th, lo, hi in EPISODES[name]:
+            at += rng.uniform(lo, hi)
+            script.append((b, r * rng.uniform(0.85, 1.15), at, z * rng.uniform(0.85, 1.2), th))
+        s.script = script
+        s.episode = name
+        s.ep_script = script
+
+    def _participants(self, sym, s, t):
+        rng, p, tk = self.rng, s.play, s.tk
+        pivot = p.get("trigger")
+        # the one at the pivot: shows up when price comes into the level
+        if pivot and t >= s.level_cooldown and not any(pt["pivot"] for pt in s.parts):
+            seller = p["side"] == "long"                  # a long needs the offer at the pivot cleared
+            side = ASK if seller else BID
+            rows = s.asks if seller else s.bids
+            best = rows[0][0]
+            dist = (pivot - best) if seller else (best - pivot)
+            steps = int(round(dist / tk))
+            if steps < 0:
+                if not s.script:
+                    s.script = [(0.36 if seller else 0.64, 2.0, t + 45)]   # bring price back toward the level
+            elif steps > 2:
+                if not s.script and rng.random() < 0.5:
+                    s.script = [(0.6 if seller else 0.4, 1.6, t + 40)]     # approach
+            else:
+                pt = self._new_part(s, side, pivot, t, True)
+                rows[steps][1] = _r100(pt["base"] * rng.uniform(0.7, 1.3))
+                s.parts.append(pt)
+                # flow leans into the level, not always hard: sometimes it takes a while to get tested
+                s.script = [(0.62 if seller else 0.38, rng.uniform(1.6, 2.8), t + rng.uniform(120, 300))]
+        # THE KEY LEVELS: price coming into the prior day's high / low / close, the high / low of the day, the VWAP:
+        # someone is usually there. He defends it (the bounce / the reject), gets cleaned up (the break, then the
+        # retest and the second entry), or pulls. The same participant engine as the pivot, so the ladder and the
+        # tape read the same way at every level that matters
+        if t >= s.lv_next:
+            s.lv_next = t + 20.0
+            vw = s.vwap_pv / s.vwap_v if s.vwap_v > 0 else None
+            held = t - (s.hl_t or t) >= 180                    # a high / low of the day that has held three minutes
+            keys = [("PDH", s.pdh), ("PDL", s.pdl), ("PDC", s.pdc), ("PMH", s.pmh), ("PML", s.pml), ("AHH", s.ahh), ("AHL", s.ahl),
+                    ("HOD", s.hod if held else None), ("LOD", s.lod if held else None), ("VWAP", vw)]
+            cool = s.lv_cool
+            d = s.hot_dir or (1 if s.eff[0] > 0.5 else -1)
+            rows = s.asks if d > 0 else s.bids
+            if rows and len(rows) > 3:
+                best = rows[0][0]
+                for name, lv in keys:
+                    if not lv:
+                        continue
+                    lvp = round(round(lv / tk) * tk, 2)
+                    steps = int(round((lvp - best) / tk)) if d > 0 else int(round((best - lvp) / tk))
+                    if not (1 <= steps <= 3):
+                        continue
+                    side = ASK if d > 0 else BID
+                    if any(abs(pt["price"] - lvp) < 1e-9 for pt in s.parts) or (side, round(lvp, 4)) in s.spent or t < cool.get(name, 0):
+                        continue
+                    if name in ("HOD", "LOD") and abs(lvp - (s.hod if name == "HOD" else s.lod)) < tk * 0.5 and abs(lvp - s.last) < tk * 1.5:
+                        continue                               # the high of the day is the price itself right now
+                    cool[name] = t + 600.0
+                    if rng.random() < 0.7:
+                        pt = self._new_part(s, side, lvp, t, False)
+                        pt["key"] = name
+                        if name in ("PDH", "PDL", "PMH", "PML", "VWAP"):     # the levels everyone watches: more often defended, bigger
+                            pt["mode"] = rng.choices(("hold", "clean", "pull"), weights=(5, 3, 2))[0]
+                            pt["base"] = int(pt["base"] * 1.4 / 100) * 100 or 100
+                        rows[steps][1] = _r100(pt["base"] * rng.uniform(0.7, 1.3))
+                        s.parts.append(pt)
+                    break
+        # hidden participants anywhere in the book, on either side: the ones you have to find yourself
+        if t >= s.hidden_next:
+            s.hidden_next = t + rng.uniform(240, 900)
+            side = rng.choice((ASK, BID))
+            rows = s.asks if side == ASK else s.bids
+            # hidden reloaders sit where the liquidity is: whole / half / quarter dollars and dimes, far more often
+            cand = list(range(1, min(9, len(rows) - 1) + 1))
+            i = rng.choices(cand, weights=[self._rn(s, side, rows[j][0]) ** 3 for j in cand])[0]
+            if not any(abs(pt["price"] - rows[i][0]) < 1e-9 for pt in s.parts):
+                pt = self._new_part(s, side, rows[i][0], t, False)
+                rows[i][1] = _r100(pt["base"] * rng.uniform(0.7, 1.3))
+                s.parts.append(pt)
+                if rng.random() < 0.4:                     # sometimes the flow finds it, sometimes it just sits
+                    s.script = [(0.62 if side == ASK else 0.38, rng.uniform(1.4, 2.4), t + rng.uniform(60, 180))]
+        # work every active participant
+        for lv in list(s.parts):
+            side, rows = lv["side"], (s.asks if lv["side"] == ASK else s.bids)
+            seller = side == ASK
+            idx = next((i for i, r in enumerate(rows) if abs(r[0] - lv["price"]) < 1e-9), None)
+            if idx is None and lv["done"] is None:
+                # price moved away and the row rolled out of view: he is still there, nothing to see for now
+                if t - lv["started"] > 900:
+                    s.parts.remove(lv)
+                continue
+            if lv["refill_at"] is not None and t >= lv["refill_at"] and idx is not None:
+                lv["refill_at"] = None
+                if lv["mode"] == "pull" and lv["refills"] >= lv["pull_after"]:
+                    lv["done"] = "pull"
+                else:
+                    # fund-style large size shows the same display size every time (the fingerprint); others vary
+                    refill = min(lv["reserve"], lv["base"] if lv.get("fund") else _r100(lv["base"] * rng.uniform(0.5, 1.4)))
+                    lv["reserve"] -= refill
+                    rows[idx][1] = refill
+            if idx is not None and rows[idx][1] <= 0 and lv["refill_at"] is None and lv["reserve"] <= 0:
+                lv["done"] = "clean"
+            if lv["mode"] == "hold" and lv["refills"] >= lv["hold_after"] and lv["done"] is None:
+                lv["done"] = "hold"
+            if lv["done"] is None and t - lv["started"] > 420:
+                lv["done"] = "hold" if lv["refills"] >= 2 else "fade"
+            if lv["done"] is None:
+                continue
+            # outcome
+            if lv["done"] == "hold":
+                if idx is not None and rng.random() < 0.5:
+                    rows[idx][1] = _r100(rows[idx][1] + rng.choice((1500, 3000, 6000)))
+                if lv["pivot"] or rng.random() < 0.5:
+                    s.script = [(0.34 if seller else 0.66, 2.2, t + 80), (0.45 if seller else 0.55, 1.4, t + 200)]
+            elif lv["done"] == "fade":
+                pass                                       # never really tested: he just goes away
+            else:
+                s.spent[(side, round(lv["price"], 4))] = t + rng.uniform(45, 150)
+                if lv["done"] == "clean":
+                    s.hot += 5.0                               # the level broke: the tape bursts through it
+                    s.hot_dir = 1 if seller else -1
+                if lv["done"] == "pull" and idx is not None:
+                    rows[idx][1] = _r100(rng.lognormvariate(math.log(s.base * 0.4), 0.4))
+                if lv["pivot"]:
+                    # break: momentum through, a retrace back toward the level, then continuation (the second entry)
+                    s.script = [(0.72 if seller else 0.28, 3.0, t + 50), (0.38 if seller else 0.62, 1.8, t + 110),
+                                (0.66 if seller else 0.34, 2.4, t + 260)]
+                elif lv.get("key") and lv["done"] == "clean":
+                    s.vs = min(3.5, s.vs + 0.6)                    # a key level breaking: the tape gets busier for a while
+                    if rng.random() < 0.3:
+                        # the failed break: through it, the chasers pile in, and it comes straight back through the
+                        # level the other way (trapped longs / shorts)
+                        s.script = [(0.70 if seller else 0.30, 3.0, t + 40), (0.22 if seller else 0.78, 3.2, t + 130),
+                                    (0.42 if seller else 0.58, 1.6, t + 240)]
+                    else:
+                        # the real break: momentum, the retest of the level from the other side, the second entry
+                        s.script = [(0.72 if seller else 0.28, 3.0, t + 50), (0.36 if seller else 0.64, 1.8, t + 120),
+                                    (0.68 if seller else 0.32, 2.4, t + 280)]
+                elif rng.random() < 0.6:
+                    s.script = [(0.68 if seller else 0.32, 2.4, t + 60)]
+            s.parts.remove(lv)
+            if lv["pivot"]:
+                s.level_cooldown = t + rng.uniform(300, 900)
+
+    # ---- one step ------------------------------------------------------------------
+
+    def _program(self, sym, s, t, dt, slotted=True):
+        """A FUND'S VWAP ALGO: now and then one stock gets a parent order worked for 40-90 minutes, a small child order
+        of the same size every few seconds on one side, a share of the tape kept steady (the INST read's program)."""
+        rng = self.rng
+        pg = getattr(s, "program", None)
+        if pg is None:
+            if getattr(s, "program_next", None) is None:
+                s.program_next = t + rng.uniform(60, 900)
+            if t < s.program_next:
+                return
+            if any(o is not s and getattr(o, "program", None) for o in self.state.values()):
+                s.program_next = t + rng.uniform(300, 900)     # one fund at a time on the desk
+                return
+            # two kinds of algo: a VWAP / TWAP slicer sends the SAME child size on a steady clock (the prints that repeat
+            # and look normal); a percentage-of-volume algo sends a steady share (6-12 %) of what traded since the
+            # last one, so its children vary with the tape
+            fixed = rng.random() < 0.5
+            s.program = pg = {"buy": rng.random() < 0.55, "pov": rng.uniform(0.06, 0.12), "every": rng.uniform(2.5, 6.0),
+                              "end": t + rng.uniform(2400, 5400), "next": t, "vol0": s.vol,
+                              "slice": int(rng.choice((100, 200, 200, 300, 400, 500))) if fixed else None}
+        if t >= pg["end"]:
+            s.program = None
+            s.program_next = t + rng.uniform(1800, 5400)
+            return
+        if t >= pg["next"]:
+            pg["next"] = t + pg["every"] * rng.uniform(0.7, 1.3)
+            traded = max(0.0, s.vol - pg["vol0"]); pg["vol0"] = s.vol
+            child = pg["slice"] or max(100, int(traded * pg["pov"] / (1 - pg["pov"]) / 100) * 100)
+            self._market(sym, s, pg["buy"], child, t, slotted)
+
+    def _dark(self, sym, s, t, dt):
+        """DARK POOL prints, the way they show up on a real tape: a steady trickle of small off-exchange prints at the
+        middle of the quote (internalised retail, algos' child orders), and now and then a block."""
+        if not (s.bids and s.asks):
+            return
+        rng = self.rng
+        mid = (s.bids[0][0] + s.asks[0][0]) / 2.0
+        px_ = round(mid, 4) if mid < 1 else round(mid * 200) / 200.0 if rng.random() < 0.5 else round(mid, 2)
+        if rng.random() < 0.6 * dt:
+            self.engine.on_print(sym, px_, int(rng.choice((100, 100, 200, 300, 500, 1000))), "FINRA", t)
+        if rng.random() < 0.0008 * dt:
+            self.engine.on_print(sym, round(mid, 2), int(rng.choice((10000, 15000, 25000, 40000, 60000))), "FINRA", t)
+
+    def _news(self, t):
+        """Now and then the market gets news: one name (or the whole tape) dumps or rips for a few minutes, six
+        times the pace, the book on the side being hit pulled, then a partial retrace. Where the trapped traders and
+        the capitulation / squeeze episodes come from on a real day."""
+        rng = self.rng
+        if getattr(self, "shock_next", None) is None:
+            self.shock_next = t + rng.uniform(2400, 9000)
+        if t < self.shock_next or not self.state:
+            return
+        self.shock_next = t + rng.uniform(3600, 10800)
+        syms = list(self.state)
+        whole = rng.random() < 0.25
+        down = rng.random() < 0.55
+        dur = rng.uniform(180, 480)
+        for sym in (syms if whole else [rng.choice(syms)]):
+            s = self.state[sym]
+            if s.script:
+                continue
+            # a real shock: a few percent in a few minutes, four times the pace, part of the book pulled, then the
+            # partial retrace. The day's rubber band keeps it to a couple of ATRs, never a stock cut in half
+            lean = (0.27 if down else 0.73) if not whole else (0.5 - 0.14 * s.beta if down else 0.5 + 0.14 * s.beta)
+            back = (0.6 if down else 0.4) if not whole else 0.5
+            s.script = [(lean, 4.0, t + dur * 0.5, 2.0, 0.6), (back, 2.2, t + dur, 1.3, 1.0)]
+            s.episode = "news"
+            s.ep_script = s.script
+            s.vs = 3.0
+
+    def step(self, t):
+        dt = 0.25 if self.t is None else max(0.05, min(1.0, t - self.t))
+        self.t = t
+        self._market_step(t, dt)
+        self._news(t)
+        ph = self._phase(t)
+        dk = self._day_key(t)
+        if ph["name"] != "closed" and getattr(self, "mkt_day_key", None) != dk:
+            self.mkt_day_key, self.mkt_day_open = dk, self.mkt.level     # the market's own open, for the 10 o'clock / close tilts
+        for sym, (at, d) in list(self.pushes.items()):          # the move the option flow was early on
+            s = self.state.get(sym)
+            if s is not None and t >= at and not s.script:
+                s.script = [(0.5 + 0.17 * d, 2.4, t + self.rng.uniform(120, 300))]
+                del self.pushes[sym]
+            elif s is None or t > at + 900:
+                self.pushes.pop(sym, None)
+        for sym, s in list(self.state.items()):
+            slotted = sym in self.engine.slots
+            if not slotted:
+                s.prev = {ASK: [], BID: []}
+            s.now = t
+            # the day's open, high and low, and the VWAP: reset at the open (the session, not midnight)
+            if ph["name"] != "closed" and s.day_key != dk:
+                s.day_key = dk
+                s.day_open = s.last; s.hod = s.lod = s.last
+                s.vwap_pv = s.vwap_v = 0.0
+            if s.hod is not None:
+                if s.last > s.hod or s.last < s.lod:
+                    s.hl_t = t
+                s.hod = max(s.hod, s.last); s.lod = min(s.lod, s.last)
+            self._regime(s, t)
+            self._episodes(s, t)
+            s.eff = self._params(s, t)
+            self._churn(s, t)
+            self._participants(sym, s, t)
+            self._flow(sym, s, t, dt, slotted)
+            self._basket(sym, s, t, slotted)
+            self._dark(sym, s, t, dt)
+            self._program(sym, s, t, dt, slotted)
+            self._close_spread(s)
+            # tape heat: every tick the price moves adds heat (in that direction); it cools off in a few seconds
+            if s.bids and s.asks:
+                mid = (s.bids[0][0] + s.asks[0][0]) / 2
+                # what the market's move asks of this name (beta x the index move, in ticks), summed over ~10 s: a
+                # quarter-second wiggle cancels out, a real push builds up. Chasers (momentum, stops) come in with
+                # that push, so the tape speeds up when the whole tape moves, and a level breaking (below) bursts it
+                mkt = self.mkt
+                want = s.beta * math.log(mkt.level / mkt.prev_level) * mid / s.tk if mkt.prev_level else 0.0
+                s.mom = s.mom * (0.975 ** (dt / 0.25)) + want
+                s.hot = s.hot * (0.93 ** (dt / 0.25))
+                # volatility clusters: judged once a minute on the minute's move against a normal one (0.15 %), the
+                # state eases toward it (half-life a few minutes): the wild stretch after a break or a shock, the
+                # quiet stretch in a tight base. A shock sets it high directly
+                if s.vs_t is None:
+                    s.vs_t, s.vs_mid = t, mid
+                elif t - s.vs_t >= 60:
+                    ret = abs(mid - s.vs_mid) / s.vs_mid if s.vs_mid else 0.0
+                    # against this name's own normal minute (a running average of its quiet-state moves) and what the
+                    # state itself produces: a hot tape that only moves as much as a hot tape does is settling, not
+                    # getting hotter (so the state mean-reverts the way volatility does)
+                    s.vs_norm = 0.9 * s.vs_norm + 0.1 * max(1e-5, ret / s.vs)
+                    target = min(3.5, max(0.6, ret / (s.vs_norm * s.vs)))
+                    s.vs = min(3.5, max(0.6, 0.75 * s.vs + 0.25 * target))
+                    s.vs_t, s.vs_mid = t, mid
+                if s.hot < 1.0:
+                    s.hot_dir = (1 if s.mom > 0 else -1) if abs(s.mom) >= 3 else 0
+                s.last_mid = mid
+            self._extend(s)
+            self._emit(sym, s, t, slotted)
+        for _cmd in self.engine.tick(t):
+            pass
+
+    def _emit(self, sym, s, t, slotted):
+        eng = self.engine
+        bid, ask = s.bids[0][0], s.asks[0][0]
+        for field, v in (("bid", bid), ("ask", ask), ("last", s.last)):
+            if s.l1.get(field) != v:
+                s.l1[field] = v
+                eng.on_l1(sym, field, v, t)
+        if not slotted:
+            return
+        for side, rows in ((ASK, s.asks), (BID, s.bids)):
+            # a price with nothing on it (a reloader between refills) is not a row on a real feed: it is deleted,
+            # and inserted again when his size comes back
+            cur = [(r[0], int(r[1])) for r in rows if r[1] > 0][:ROWS]
+            prev = s.prev[side]
+            for i in range(len(prev) - 1, len(cur) - 1, -1):
+                eng.on_depth(sym, i, DELETE, side, prev[i][0], 0, "", t)
+            for i, (price, size) in enumerate(cur):
+                if i < len(prev) and prev[i] == (price, size):
+                    continue
+                eng.on_depth(sym, i, UPDATE if i < len(prev) else INSERT, side, price, size, "", t)
+            s.prev[side] = cur

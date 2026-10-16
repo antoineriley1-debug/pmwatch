@@ -1,0 +1,589 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="build" content="20261016-0628">
+<title>TED · Market Analysis</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#09090a;--panel:#111214;--panel2:#16171a;--line:#24262a;--line2:#2e3035;--text:#d6d6d3;--dim:#7d7f85;--dim2:#5b5d63;
+  --ok:#3fb56f;--okbg:#10261a;--warn:#e3a83a;--warnbg:#2a2110;--bad:#d9534f;--badbg:#2c1414;--loud:#ff5a52;--loudbg:#3d1414;
+  --gold:#e3a83a;--cyan:#5aa9d6;--violet:#a48bd6;--b0:#f2c94c;--b1:#b39ddb;--b2:#90caf9;--b3:#a5d6a7;
+  --sans:"IBM Plex Sans","Segoe UI",system-ui,sans-serif;--mono:"IBM Plex Mono","Cascadia Mono",Consolas,Menlo,monospace}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font:13px/1.45 var(--sans);letter-spacing:.005em}
+body{background:radial-gradient(1200px 500px at 70% -200px,rgba(227,168,58,.07),transparent 70%),var(--bg)}
+button{font:600 10.5px/1 var(--sans);letter-spacing:.12em;text-transform:uppercase;background:#17181b;color:#c9c9c6;border:1px solid var(--line2);border-radius:2px;padding:7px 11px;cursor:pointer}
+button:hover{border-color:#4a4c52;color:#fff} button.gold{border-color:#6a5220;color:var(--gold)} button.gold:hover{background:#2a2110}
+button:disabled{opacity:.4;cursor:default}
+.mono{font-family:var(--mono)}
+.dim{color:var(--dim)} .ok{color:var(--ok)} .warn{color:var(--warn)} .bad{color:var(--bad)} .loud{color:var(--loud)}
+/* ---------- top bar ---------- */
+header{position:sticky;top:0;z-index:5;background:rgba(9,9,10,.92);backdrop-filter:blur(6px);border-bottom:1px solid var(--line)}
+.bar{display:flex;align-items:center;gap:12px;padding:10px 18px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:9px;font:600 11px var(--sans);letter-spacing:.2em;color:#9a9ba0}
+.brand i{width:9px;height:9px;background:var(--gold);display:inline-block}
+.brand b{color:#e6e6e3;font-weight:600}
+.title{font:600 12px var(--sans);letter-spacing:.22em;color:#e6e6e3}
+.asof{font:500 11px var(--mono);color:var(--dim)}
+.badge{font:600 9.5px var(--sans);letter-spacing:.14em;padding:3px 7px;border:1px solid var(--line2);border-radius:2px;color:var(--dim)}
+.badge.practice{border-color:#6a5220;color:var(--gold);background:#1c160a}
+.badge.live{border-color:#1f5a37;color:var(--ok)}
+.spacer{flex:1}
+.prog{height:2px;background:#1a1b1e;position:relative;overflow:hidden}
+.prog i{position:absolute;left:0;top:0;bottom:0;background:linear-gradient(90deg,var(--gold),#f2d59a);transition:width .4s}
+.loadtxt{font:500 10.5px var(--mono);color:var(--dim);padding:4px 18px 6px}
+/* ---------- layout ---------- */
+main{padding:16px 18px 40px;max-width:1680px;margin:0 auto;display:grid;gap:14px;grid-template-columns:repeat(12,minmax(0,1fr))}
+.card{background:linear-gradient(180deg,var(--panel),#0f1012);border:1px solid var(--line);border-radius:3px;padding:14px 16px;min-width:0;position:relative}
+.card h2{margin:0 0 10px;font:600 10px var(--sans);letter-spacing:.22em;color:var(--dim);text-transform:uppercase;display:flex;align-items:center;gap:8px}
+.card h2 .n{font:600 9px var(--mono);color:var(--dim2);border:1px solid var(--line2);padding:1px 5px;border-radius:2px;letter-spacing:.06em}
+.card h2 .rt{margin-left:auto;font-weight:500;letter-spacing:.08em;text-transform:none;color:var(--dim2)}
+.s12{grid-column:span 12}.s8{grid-column:span 8}.s7{grid-column:span 7}.s6{grid-column:span 6}.s5{grid-column:span 5}.s4{grid-column:span 4}.s3{grid-column:span 3}
+@media(max-width:1180px){.s8,.s7,.s6,.s5,.s4,.s3{grid-column:span 12}}
+p.read{margin:6px 0 0;color:#bdbdb9}
+.tone-ok{color:var(--ok)} .tone-warn{color:var(--warn)} .tone-bad{color:var(--bad)} .tone-loud{color:var(--loud)} .tone-hdr{color:var(--text)}
+/* ---------- state ---------- */
+.statebig{display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap}
+.statenum{font:600 68px/0.9 var(--mono);letter-spacing:-.04em}
+.statename{font:700 26px/1 var(--sans);letter-spacing:.14em}
+.statemeta{font:500 11.5px var(--mono);color:var(--dim);margin-top:6px}
+.ladder{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-top:14px}
+.rung{border:1px solid var(--line2);border-radius:2px;padding:8px 9px;background:#0d0e10;cursor:pointer;min-width:0}
+.rung .k{font:600 9.5px var(--sans);letter-spacing:.16em;color:var(--dim)}
+.rung .pctbar{height:3px;background:#1d1e21;margin:6px 0 5px}
+.rung .pctbar i{display:block;height:100%}
+.rung .hx{font:500 10px var(--mono);color:var(--dim2)}
+.rung.on{border-color:currentColor;box-shadow:inset 0 0 0 1px currentColor}
+.c1{color:var(--ok)}.c2{color:var(--warn)}.c3{color:var(--bad)}.c4{color:var(--violet)}
+.dobox{margin-top:12px;border-left:2px solid var(--gold);padding:6px 0 6px 12px;color:#e6e6e3}
+.dobox b{font:600 9.5px var(--sans);letter-spacing:.18em;color:var(--gold);display:block;margin-bottom:3px}
+/* ---------- the sequence ---------- */
+.seq{display:grid;grid-template-columns:repeat(5,1fr);gap:0;position:relative;margin:4px 0 6px}
+.node{position:relative;padding:0 6px;text-align:left;cursor:pointer;min-width:0}
+.node .line{position:absolute;top:13px;left:0;right:0;height:2px;background:#24262a}
+.node:first-child .line{left:50%} .node:last-child .line{right:50%}
+.node .dot{position:relative;z-index:1;width:28px;height:28px;border-radius:50%;border:2px solid #34363b;background:#0d0e10;display:grid;place-items:center;font:600 11px var(--mono);color:var(--dim);margin:0 auto}
+.node.on .dot{border-color:var(--bad);color:#fff;background:#3a1416;box-shadow:0 0 0 4px rgba(217,83,79,.12)}
+.node.on.k1 .dot{border-color:var(--warn);background:#2a2110;box-shadow:0 0 0 4px rgba(227,168,58,.12)}
+.node.close .dot{border-color:var(--warn);color:var(--warn)}
+.node .nm{font:600 9.5px var(--sans);letter-spacing:.14em;color:#bdbdb9;text-align:center;margin-top:8px}
+.node .st{font:600 10px var(--mono);text-align:center;margin-top:3px}
+.meter{height:4px;background:#1d1e21;margin:7px 8px 2px;border-radius:1px;overflow:hidden}
+.meter i{display:block;height:100%;background:var(--warn)}
+.node .mt{font:500 10px var(--mono);color:var(--dim);text-align:center}
+.where{margin-top:12px;padding:10px 12px;border:1px solid var(--line2);background:#0d0e10}
+.stepdetail{margin-top:10px;padding:10px 12px;border-left:2px solid var(--line2);color:#c7c7c3;display:none}
+.stepdetail.show{display:block}
+/* ---------- breadth ---------- */
+.gauges{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.gauge{background:#0d0e10;border:1px solid var(--line);padding:10px 12px}
+.gauge .v{font:600 30px/1 var(--mono)}
+.gauge .lbl{font:600 9.5px var(--sans);letter-spacing:.16em;color:var(--dim);margin-bottom:6px}
+.track{position:relative;height:8px;background:#1b1c1f;margin:10px 0 4px}
+.track i{position:absolute;left:0;top:0;bottom:0}
+.track .mark{position:absolute;top:-4px;bottom:-4px;width:2px;background:#e6e6e3}
+.track .ghost{position:absolute;top:-2px;bottom:-2px;width:2px;background:#5b5d63}
+.gauge .sub{font:500 10.5px var(--mono);color:var(--dim)}
+canvas{display:block;width:100%}
+.chartwrap{margin-top:12px;position:relative}
+.legend{display:flex;gap:14px;font:500 10px var(--mono);color:var(--dim);margin-top:6px;flex-wrap:wrap}
+.legend i{display:inline-block;width:10px;height:2px;vertical-align:middle;margin-right:5px}
+/* ---------- AI ---------- */
+.aistat{font:500 10.5px var(--mono);color:var(--dim)}
+.aitext{white-space:normal;color:#dcdcd8;font-size:13.5px;line-height:1.6;max-height:720px;overflow:auto;padding-right:6px}
+.aitext h3{font:600 10.5px var(--sans);letter-spacing:.2em;color:var(--gold);margin:16px 0 6px;text-transform:uppercase}
+.aitext p{margin:6px 0}.aitext ul{margin:4px 0 8px 18px;padding:0}.aitext li{margin:2px 0}
+.ask{display:flex;gap:8px;margin-top:12px}
+.ask input{flex:1;background:#0b0b0c;border:1px solid var(--line2);color:var(--text);font:13px var(--sans);padding:8px 10px;border-radius:2px}
+.ask input:focus{outline:1px solid var(--gold)}
+details.given summary{cursor:pointer;font:600 9.5px var(--sans);letter-spacing:.16em;color:var(--dim);margin-top:10px}
+details.given pre{white-space:pre-wrap;font:11px/1.45 var(--mono);color:#9fa0a5;max-height:340px;overflow:auto;background:#0b0b0c;border:1px solid var(--line);padding:10px}
+/* ---------- scenarios ---------- */
+.scen{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px}
+.sc{border:1px solid var(--line2);background:#0d0e10;padding:12px;border-top:2px solid var(--dim2)}
+.sc.base{border-top-color:var(--ok)} .sc.risk{border-top-color:var(--bad)} .sc.money{border-top-color:var(--cyan)}
+.sc .t{font:600 12px var(--sans);letter-spacing:.06em;color:#ececE9;margin-bottom:8px}
+.sc .k{font:600 9px var(--sans);letter-spacing:.18em;color:var(--dim);margin-top:8px}
+.sc .x{color:#c7c7c3;font-size:12.5px}
+.odds{display:flex;align-items:center;gap:8px;margin-top:8px}
+.odds .b{flex:1;height:5px;background:#1d1e21}.odds .b i{display:block;height:100%}
+.odds span{font:600 12px var(--mono)}
+/* ---------- relationships ---------- */
+.counts{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.chip{font:600 9.5px var(--sans);letter-spacing:.12em;padding:3px 7px;border-radius:2px;border:1px solid var(--line2)}
+.chip.past{color:#fff;background:#3a1416;border-color:#6a2522}.chip.watch{color:var(--warn);background:#2a2110;border-color:#5a4418}
+.chip.clear{color:var(--ok);background:#0f2318;border-color:#1f5a37}.chip.check{color:var(--dim);background:#141517}
+.rels{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:8px;align-items:start}
+.rel{border:1px solid var(--line);background:#0d0e10;padding:10px 11px;cursor:pointer;border-left:3px solid var(--dim2);min-width:0}
+.rel.past{border-left-color:var(--bad);background:linear-gradient(90deg,rgba(217,83,79,.09),#0d0e10 60%)}
+.rel.watch{border-left-color:var(--warn);background:linear-gradient(90deg,rgba(227,168,58,.07),#0d0e10 60%)}
+.rel.clear{border-left-color:var(--ok)}
+.rel .top{display:flex;align-items:flex-start;gap:6px}
+.rel .num{font:600 10px var(--mono);color:var(--dim2)}
+.rel .lab{font:600 10px var(--sans);letter-spacing:.08em;color:#d6d6d3;flex:1;min-width:0;line-height:1.25}
+.rel .star{color:var(--gold);font:600 9px var(--mono)}
+.rel .val{font:600 20px/1.1 var(--mono);margin-top:6px}
+.rel .ln{font:500 10.5px var(--mono);color:var(--dim)}
+.cush{position:relative;height:5px;background:#1b1c1f;margin:8px 0 4px}
+.cush i{position:absolute;top:0;bottom:0}
+.cush b{position:absolute;top:-3px;bottom:-3px;width:1px;background:#e6e6e3;left:50%}
+.rel .dir{font:500 10.5px var(--mono)}
+.rel .more{display:none;margin-top:8px;font-size:12px;color:#bdbdb9;border-top:1px solid var(--line);padding-top:8px}
+.rel.open{grid-column:1/-1}.rel.open .more{display:block;columns:2 300px;column-gap:24px}
+.rel .more b{font:600 9px var(--sans);letter-spacing:.16em;color:var(--dim);display:block;margin-top:6px}
+/* ---------- baskets ---------- */
+.lines div{padding:6px 0;border-bottom:1px dashed #1f2023}
+.lines .k{font:600 9.5px var(--sans);letter-spacing:.16em;color:var(--dim);margin-right:6px}
+table{border-collapse:collapse;width:100%}
+th{font:600 9px var(--sans);letter-spacing:.16em;color:var(--dim);text-align:left;padding:7px 8px;border-bottom:1px solid var(--line2);white-space:nowrap}
+td{padding:6px 8px;border-bottom:1px solid #18191c;vertical-align:top}
+td.num{font:500 12px var(--mono);text-align:right;white-space:nowrap}
+tr.bk td{background:#121316;font-weight:600}
+tr.bk td:first-child{letter-spacing:.08em}
+tr.lead td{background:#132a1d}
+td.rd{color:#aeaeaa;font-size:12px}
+.heat{display:inline-block;min-width:52px;padding:2px 6px;border-radius:2px}
+.scroll{overflow-x:auto}
+/* ---------- leaders ---------- */
+.carry{padding:10px 12px;border:1px solid var(--line2);background:#0d0e10;margin-bottom:10px}
+.hbars .r{display:grid;grid-template-columns:132px 1fr 64px;gap:8px;align-items:center;padding:3px 0}
+.hbars .nm{font:500 11.5px var(--mono);color:#cfcfcb;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hbars .bw{position:relative;height:10px;background:#141518}
+.hbars .bw i{position:absolute;top:0;bottom:0}
+.hbars .bw b{position:absolute;top:-2px;bottom:-2px;width:1px;background:#3a3c42;left:50%}
+.hbars .v{font:500 11.5px var(--mono);text-align:right}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:760px){.two,.gauges{grid-template-columns:1fr}.ladder{grid-template-columns:repeat(2,1fr)}.statenum{font-size:52px}}
+.seg{display:inline-flex;border:1px solid var(--line2);border-radius:2px;overflow:hidden}
+.seg button{border:0;border-right:1px solid var(--line2);border-radius:0;padding:5px 9px}
+.seg button:last-child{border-right:0}
+.seg button.on{color:var(--gold);background:#1c160a}
+.mtable td{font-size:12px}
+.mtable{table-layout:fixed}.mtable td.s{font:600 11.5px var(--mono);color:#e6e6e3;width:56px}.mtable td.num{width:62px}.mtable td.tr50{width:40px;font-size:10px}
+.nmcell{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.secn{font-size:10.5px;color:var(--dim2)}
+.sb .r{display:grid;grid-template-columns:110px 1fr 1fr;gap:10px;align-items:center;padding:4px 0}
+.sb .bar2{height:8px;background:#141518;position:relative}
+.sb .bar2 i{position:absolute;left:0;top:0;bottom:0}
+.sb .bar2 span{position:absolute;right:-38px;top:-3px;font:500 10.5px var(--mono);color:var(--dim)}
+/* ---------- history / feeds ---------- */
+.htable td,.htable th{text-align:right}.htable td:first-child,.htable th:first-child{text-align:left}
+.feeds{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:6px}
+.feed{display:flex;gap:8px;align-items:center;font-size:12px;padding:6px 8px;background:#0d0e10;border:1px solid var(--line)}
+.feed i{width:7px;height:7px;transform:rotate(45deg);display:inline-block;flex:none}
+.foot{grid-column:span 12;color:var(--dim2);font-size:11.5px;text-align:center;padding:8px}
+.empty{padding:40px;text-align:center;color:var(--dim)}
+.pulse{animation:pulse 1.6s ease-in-out infinite}@keyframes pulse{50%{opacity:.45}}
+</style>
+<script>(function(){const f=window.fetch.bind(window);window.fetch=async function(){const r=await f.apply(null,arguments);if(r.status===401&&!window._tedOut){window._tedOut=1;location.replace("/login?next="+encodeURIComponent(location.pathname));}return r;};})();</script>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <span class="brand"><i></i><b>TED</b></span>
+    <span class="title">MARKET ANALYSIS DETAILED REPORT</span>
+    <span class="asof" id="asof">—</span>
+    <span class="badge" id="srcBadge">—</span>
+    <span class="spacer"></span>
+    <span class="aistat" id="aiTop"></span>
+    <button id="refreshBtn" title="Ask IBKR for any missing days and FRED for the economy numbers, then rebuild">REFRESH</button>
+    <button id="aiBtn" class="gold" title="DESK AI reads every number on this page and writes the report: the summary, the scenarios, the history counts">WRITE AI REPORT</button>
+    <button id="deskBtn" title="back to the desk">DESK</button>
+  </div>
+  <div class="prog"><i id="progBar" style="width:0"></i></div>
+  <div class="loadtxt" id="loadTxt"></div>
+</header>
+<main id="main"><div class="card s12 empty pulse" id="emptyMsg">Loading the market report…</div></main>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+const f = (v, p = 2) => v == null || isNaN(v) ? "n/a" : Number(v).toFixed(p);
+const sgn = (v, p = 1) => v == null || isNaN(v) ? "n/a" : (v > 0 ? "+" : "") + Number(v).toFixed(p);
+const tone = (v) => v == null ? "dim" : v > 0 ? "ok" : v < 0 ? "bad" : "";
+const dayTxt = (d) => { if (!d) return "n/a"; const s = String(d); return `${["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][+s.slice(4, 6) - 1]} ${+s.slice(6, 8)}, ${s.slice(0, 4)}`; };
+const STATE_COL = {1: "var(--ok)", 2: "var(--warn)", 3: "var(--bad)", 4: "var(--violet)"};
+const KEY_ROWS = {16: "★1", 5: "★2", 7: "★3"};
+let DATA = null, AI = null, aiPoll = null, memView = "m", openStep = null, drawnAt = null;
+const openRels = new Set();
+const store = { get(k, d) { try { const v = localStorage.getItem("mkt." + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+                set(k, v) { try { localStorage.setItem("mkt." + k, JSON.stringify(v)); } catch (e) {} } };
+memView = store.get("memView", "m");
+
+async function getJSON(url, opt) { const r = await fetch(url, opt); return r.json(); }
+async function post(url, body) { return getJSON(url, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body || {})}); }
+
+// ---------------------------------------------------------------- polling
+async function load() {
+  try {
+    const d = await getJSON("/api/market");
+    DATA = d;
+    drawTop(d);
+    if (d.report && d.report.ok) { if (d.computed_at !== drawnAt) { drawnAt = d.computed_at; draw(d.report); } }
+    else { drawnAt = null; drawEmpty(d); }
+    const busy = d.loading && d.loading.on || d.building;
+    setTimeout(load, busy ? 3000 : 30000);
+  } catch (e) {
+    $("loadTxt").textContent = "TED is not answering: is the desk still running?";
+    setTimeout(load, 5000);
+  }
+}
+
+function drawTop(d) {
+  const r = d.report || {};
+  $("asof").textContent = r.ok ? "AS OF THE " + r.as_of_text.toUpperCase() + " CLOSE" : "";
+  const b = $("srcBadge");
+  if (d.mode === "practice") { b.className = "badge practice"; b.textContent = "PRACTICE · SYNTHETIC, NOT THE MARKET"; }
+  else if (d.mode === "cache") { b.className = "badge"; b.textContent = "REPLAY · LAST SAVED CLOSES"; }
+  else { b.className = "badge live"; b.textContent = "IBKR + FRED"; }
+  const L = d.loading || {};
+  const pctDone = L.total ? Math.round(100 * L.done / L.total) : (L.on ? 2 : 0);
+  $("progBar").style.width = (L.on ? pctDone : 0) + "%";
+  const bits = [];
+  if (L.on) bits.push(`LOADING DAILY BARS FROM IBKR ${L.done} / ${L.total}` + (L.failed ? ` · ${L.failed} not available` : ""));
+  if (d.building) bits.push("BUILDING THE REPORT…");
+  if (d.fred && d.fred.state === "loading") bits.push("FRED: LOADING");
+  else if (d.fred && (d.fred.state === "partial" || d.fred.state === "failed")) bits.push("FRED: " + Object.keys(d.fred.failed || {}).join(", ") + " not answering (the last saved numbers are used)");
+  if (d.error) bits.push(d.error);
+  if (!bits.length && d.computed_at) bits.push("BUILT " + new Date(d.computed_at * 1000).toLocaleTimeString() + " · " + (d.members || 0) + " S&P MEMBERS");
+  $("loadTxt").textContent = bits.join("   ·   ");
+  aiState(d.ai);
+}
+
+function drawEmpty(d) {
+  const L = d.loading || {};
+  const why = !d.enabled ? "The market report is off: SETTINGS > Market report > enabled." :
+    d.mode === "live" ? (L.on ? `Loading 20 years of daily bars from IBKR: ${L.done} of ${L.total}. The first load takes a few minutes; after that only the missing days.` :
+      "Waiting for IBKR: the daily bars load as soon as TWS / Gateway is connected.") :
+    d.mode === "cache" ? "No saved closes yet: the report fills on a live day." : "Building the practice report…";
+  $("main").innerHTML = `<div class="card s12 empty ${L.on ? "pulse" : ""}">${esc(why)}</div>`;
+}
+
+// ---------------------------------------------------------------- the page
+function draw(r) {
+  const m = $("main");
+  const keepAsk = $("askIn") ? $("askIn").value : "";
+  m.innerHTML = [
+    stateCard(r), seqCard(r),
+    breadthCard(r), aiCard(r),
+    scenCard(r),
+    relCard(r),
+    basketCard(r),
+    carryCard(r), membersCard(r),
+    histCard(r), feedCard(r),
+    `<div class="foot">${esc(r.footer)} ${esc(r.note)}</div>`
+  ].join("");
+  if ($("askIn")) $("askIn").value = keepAsk;
+  wire(r);
+  drawBreadthChart(r);
+  drawAI();
+}
+
+function stateCard(r) {
+  const s = r.state, c = STATE_COL[s.n];
+  const rungs = s.ladder.map((x) => `<div class="rung c${x.n} ${x.now ? "on" : ""}" data-rung="${x.n}" title="${esc(x.when)}">
+      <div class="k">STATE ${x.n} · ${esc(x.name)}</div>
+      <div class="pctbar"><i style="width:${Math.min(100, x.pct_days || 0)}%;background:${STATE_COL[x.n]}"></i></div>
+      <div class="hx">${x.pct_days == null ? "n/a" : x.pct_days + "%"} of days · ${x.entered}×</div></div>`).join("");
+  return `<section class="card s5"><h2>Market state <span class="n">MARKET STATE</span><span class="rt">${esc(r.source)}</span></h2>
+    <div class="statebig" style="color:${c}"><div class="statenum">${s.n}</div><div><div class="statename">${esc(s.name)}</div>
+    <div class="statemeta">${s.days} TRADING DAY${s.days === 1 ? "" : "S"} · SINCE ${esc(s.since_text).toUpperCase()}</div></div></div>
+    <p class="read">${esc(s.now.replace(/^STATE \d · \w+ for [^.]+\. /, ""))}</p>
+    <div class="ladder">${rungs}</div>
+    <div class="dobox"><b>WHAT TO DO IN THIS STATE</b>${esc(s.do)}</div>
+    <p class="read"><span class="dim">WHAT FLIPS NEXT · </span>${esc(s.flips)}</p>
+    <div id="rungInfo" class="stepdetail"></div></section>`;
+}
+
+function seqCard(r) {
+  const R = r.recession, g = r.numbers;
+  const meters = {
+    1: [g.credRun, 5, `${g.credRun} of 5 weak days`],
+    2: [g.thinRun, 5, `${g.thinRun} of 5 days under 30`],
+    3: [g.bankN, 2, `${g.bankN} of 3 clues · needs 2`],
+    4: [g.econN, 3, `${g.econN} of 3 points`],
+    5: [g.sahm == null ? 0 : Math.max(0, g.sahm), 0.5, `${f(g.sahm)} of 0.50`]};
+  const nodes = [1, 2, 3, 4, 5].map((k) => {
+    const on = R.on[k], [v, mx, txt] = meters[k];
+    const close = !on && v >= mx * 0.6;
+    const st = on ? (R.days[k] <= 5 && k === 2 ? "JUST ON" : "ON") : "NOT YET";
+    return `<div class="node ${on ? "on" : ""} ${close ? "close" : ""} k${k}" data-step="${k}"><div class="line"></div><div class="dot">${k}</div>
+      <div class="nm">${esc(["", "LENDERS NERVOUS", "FEWER STOCKS", "BANKS LAG", "RECESSION WARNING", "JOBS"][k])}</div>
+      <div class="st" style="color:${on ? (k === 1 ? "var(--warn)" : "var(--bad)") : close ? "var(--warn)" : "var(--dim)"}">${st}${on ? " · " + R.days[k] + "d" : ""}</div>
+      <div class="meter"><i style="width:${Math.min(100, 100 * (v || 0) / mx)}%;background:${on ? "var(--bad)" : close ? "var(--warn)" : "#4a4c52"}"></i></div>
+      <div class="mt">${esc(txt)}</div></div>`;
+  }).join("");
+  const w = R.where;
+  return `<section class="card s7"><h2>Recession steps <span class="n">STEP ${R.step} OF 5</span><span class="rt">click a step for its full read</span></h2>
+    <div class="seq">${nodes}</div>
+    <div class="where tone-${w.tone}">${esc(w.text)}</div>
+    <div class="stepdetail ${openStep ? "show" : ""}" id="stepDetail">${openStep ? stepHTML(r, openStep) : ""}</div>
+    <p class="read"><span class="dim">WHAT TO WATCH NEXT · </span>${esc(R.next)}</p></section>`;
+}
+
+function stepHTML(r, k) {
+  const row = r.recession.rows[k] || r.recession.rows[String(k)];
+  if (!row) return "";
+  return `<b class="dim" style="font:600 9.5px var(--sans);letter-spacing:.16em">${esc(row.label)}</b><div class="tone-${row.tone}" style="margin-top:4px">${esc(row.text)}</div>`;
+}
+
+function gauge(label, v, line, wk, mo, run, sub) {
+  const col = v == null ? "var(--dim)" : v < line ? "var(--bad)" : v < line + 5 ? "var(--warn)" : "var(--ok)";
+  return `<div class="gauge"><div class="lbl">${esc(label)}</div>
+    <div class="v" style="color:${col}">${f(v)}<span style="font-size:14px">%</span></div>
+    <div class="track"><i style="width:${Math.max(0, Math.min(100, v || 0))}%;background:${col};opacity:.75"></i>
+      <span class="mark" style="left:${line}%" title="the line: ${line}"></span>
+      ${wk != null ? `<span class="ghost" style="left:${wk}%" title="a week ago ${f(wk, 1)}%"></span>` : ""}</div>
+    <div class="sub">LINE ${line} · WEEK AGO ${f(wk, 1)} · MONTH AGO ${f(mo, 1)}${run != null ? ` · UNDER 30: ${run} OF 5 DAYS` : ""}</div>
+    ${sub ? `<div class="sub" style="margin-top:3px">${esc(sub)}</div>` : ""}</div>`;
+}
+
+function breadthCard(r) {
+  const g = r.numbers, b = r.recession.rows.breadth;
+  return `<section class="card s6"><h2>Breadth · how many stocks are taking part <span class="n">S&amp;P 500</span><span class="rt">${r.members_counted} members counted</span></h2>
+    <div class="gauges">${gauge("ABOVE THEIR 50-DAY (SHORT-TERM)", g.s5fi, 30, g.s5fiWk, g.s5fiMo, g.thinRun)}
+    ${gauge("ABOVE THEIR 200-DAY (LONG-TERM)", g.s5th, 45, g.s5thWk, g.s5thMo, null, g.s5th == null ? "" : (g.s5th < 45 ? "UNDER 45: A STEP 4 POINT" : `CUSHION ${f(g.s5th - 45)} PTS`))}</div>
+    <div class="chartwrap"><canvas id="brChart" height="210"></canvas>
+    <div class="legend"><span><i style="background:var(--cyan)"></i>ABOVE 50-DAY</span><span><i style="background:var(--violet)"></i>ABOVE 200-DAY</span><span><i style="background:var(--bad)"></i>LINE 30</span><span><i style="background:var(--warn)"></i>LINE 45</span><span><i style="background:#3a3c42;height:8px"></i>STATE 2+ SHADED</span></div></div>
+    <p class="read tone-${b.tone}">${esc(b.text)}</p></section>`;
+}
+
+function aiCard(r) {
+  return `<section class="card s6"><h2>DESK AI · the report <span class="n">OLLAMA</span><span class="rt" id="aiRt"></span></h2>
+    <div id="aiBody" class="aitext"><div class="dim">${AI && !AI.enabled ? "DESK AI is off. Turn it on in SETTINGS > AI (Ollama) on the desk, with Ollama running on this computer, and this card fills with the written report. Every number below is already live without it. " : ""}The AI report has not been written yet. WRITE AI REPORT reads every number on this page and writes the summary, the scenarios with how often each has happened, and what it means for your PS60 day.</div></div>
+    <div class="ask"><input id="askIn" placeholder="Ask about the market backdrop, e.g. how close is step 2, which sectors are lagging…" autocomplete="off"><button id="askBtn" class="gold">ASK</button></div>
+    <div id="askOut" class="aitext" style="margin-top:10px"></div></section>`;
+}
+
+function scenCard(r) {
+  const cards = r.scenarios.map((s) => {
+    const m = /(\d+) of (\d+) times(?: \((\d+)%\))?/.exec(s.history || "");
+    const pc = m ? (m[3] != null ? +m[3] : (+m[2] ? Math.round(100 * m[1] / m[2]) : null)) : null;
+    const col = s.kind === "risk" ? "var(--bad)" : s.kind === "base" ? "var(--ok)" : "var(--cyan)";
+    return `<div class="sc ${s.kind}"><div class="t">${esc(s.name)}</div>
+      ${pc != null ? `<div class="odds"><div class="b"><i style="width:${pc}%;background:${col}"></i></div><span style="color:${col}">${pc}%</span></div>` : ""}
+      <div class="k">WHAT HAS TO HAPPEN</div><div class="x">${esc(s.needs)}</div>
+      <div class="k">HOW OFTEN BEFORE</div><div class="x">${esc(s.history)}</div>
+      <div class="k">IF IT COMES</div><div class="x">${esc(s.means)}</div></div>`;
+  }).join("");
+  return `<section class="card s12"><h2>Scenarios · what happens next, and how often it has <span class="rt">counts from ${dayTxt(r.history.start)} · ${r.history.years} years · counts, not promises</span></h2><div class="scen">${cards}</div></section>`;
+}
+
+function relCard(r) {
+  const R = r.relationships, C = R.counts;
+  const cls = {"PAST THE LINE": "past", "WATCH": "watch", "CLEAR": "clear", "DATA CHECK": "check"};
+  const tiles = R.rows.map((x) => {
+    const c = cls[x.state];
+    const unit = x.unit === "$" ? "" : x.unit === "%" ? "%" : " " + x.unit;
+    const pre = x.unit === "$" ? "$" : "";
+    const band = Math.max(x.band * 3, Math.abs(x.cushion || 0) * 1.2, 0.0001);
+    const pos = x.cushion == null ? 50 : 50 + 50 * Math.max(-1, Math.min(1, x.cushion / band));
+    const col = c === "past" ? "var(--bad)" : c === "watch" ? "var(--warn)" : c === "clear" ? "var(--ok)" : "var(--dim)";
+    const dir = x.direction === "toward" ? `<span class="warn">▼ TOWARD THE LINE</span>` : x.direction === "away" ? `<span class="ok">▲ AWAY FROM THE LINE</span>` : `<span class="dim">— FLAT</span>`;
+    return `<div class="rel ${c} ${openRels.has(x.n) ? "open" : ""}" data-rel="${x.n}"><div class="top"><span class="num">${x.n}</span><span class="lab" title="${esc(x.label)}">${esc(x.label)}</span>${KEY_ROWS[x.n] ? `<span class="star">${KEY_ROWS[x.n]}</span>` : ""}<span class="chip ${c}">${esc(x.state)}</span></div>
+      <div class="val" style="color:${col}">${x.gap == null ? "n/a" : pre + f(x.gap) + unit}</div>
+      <div class="ln">LINE ${pre}${f(x.line)}${unit} · CUSHION ${x.cushion == null ? "n/a" : sgn(x.cushion, 2)}</div>
+      <div class="cush"><i style="left:${Math.min(pos, 50)}%;width:${Math.abs(pos - 50)}%;background:${col}"></i><b></b></div>
+      <div class="dir">${x.direction ? dir : ""} ${x.crossed ? `<span class="loud">${esc(x.crossed.toUpperCase())}</span>` : ""}</div>
+      <div class="more"><b>WHAT</b>${esc(x.what)}${x.agree ? `<b>AGAINST ROW 1</b>${esc(x.agree)}` : ""}${x.why ? `<b>DATA CHECK</b>${esc(x.why)}` : ""}<b>IF IT RISES</b>${esc(x.rises)}<b>IF IT FALLS</b>${esc(x.falls)}<b>A WEEK AGO</b>${x.gap_week_ago == null ? "n/a" : pre + f(x.gap_week_ago) + unit}, cushion ${x.cushion_week_ago == null ? "n/a" : sgn(x.cushion_week_ago, 2)}</div></div>`;
+  }).join("");
+  return `<section class="card s12"><h2>Relationships board · sixteen lines <span class="n">${C["PAST THE LINE"]} PAST · ${C["WATCH"]} WATCH · ${C["CLEAR"]} CLEAR${C["DATA CHECK"] ? " · " + C["DATA CHECK"] + " DATA CHECK" : ""}</span><span class="rt">red = past its line · orange = within the warning band · click a tile for what it means</span></h2>
+    <div class="rels">${tiles}</div></section>`;
+}
+
+function heat(v) {
+  if (v == null) return `<span class="heat dim">n/a</span>`;
+  const a = Math.min(1, Math.abs(v) / 6);
+  const bg = v > 0 ? `rgba(63,181,111,${0.12 + 0.45 * a})` : v < 0 ? `rgba(217,83,79,${0.12 + 0.45 * a})` : "transparent";
+  return `<span class="heat" style="background:${bg};color:${v > 0 ? "#dff5e8" : v < 0 ? "#f5dede" : "#ccc"}">${sgn(v)}</span>`;
+}
+
+function basketCard(r) {
+  const B = r.baskets;
+  const bcol = ["var(--b0)", "var(--b1)", "var(--b2)", "var(--b3)"];
+  const rows = B.rows.map((b) => `<tr class="bk ${b.lead ? "lead" : ""}"><td style="color:${bcol[b.basket]}">${esc(b.name)}${b.tag ? ` <span class="dim" style="font-weight:500">· ${esc(b.tag)}</span>` : ""}</td>
+      <td class="num">${heat(b.w)}</td><td class="num">${heat(b.m)}</td><td class="num">${heat(b.y)}</td><td class="rd">${esc(b.read)}</td></tr>` +
+    b.sectors.map((x) => `<tr><td style="padding-left:20px">${esc(x.name)} <span class="dim mono">${esc(x.fund)}</span></td><td class="num">${heat(x.w)}</td><td class="num">${heat(x.m)}</td><td class="num">${heat(x.y)}</td><td class="rd">${esc(x.read)}</td></tr>`).join("")).join("");
+  const tcl = (t) => t === "ok" ? "tone-ok" : t === "bad" ? "tone-bad" : t === "warn" ? "tone-warn" : "";
+  return `<section class="card s12"><h2>Rate baskets · where the money is going <span class="n">WINNER THIS WEEK: ${esc(B.winner).toUpperCase()}</span><span class="rt">every number is the fund's gain minus the S&amp;P's, in points</span></h2>
+    <div class="lines">
+      <div><span class="k">RATES</span>${esc(B.rate_text)}</div>
+      <div><span class="k">WHAT IT MEANS</span>${esc(B.meaning)}</div>
+      <div class="${tcl(B.rotation.tone)}"><span class="k">CURRENT ROTATION</span>${esc(B.rotation.state)}. ${esc(B.rotation.why)}</div>
+      <div class="${tcl(B.blueprint.tone)}"><span class="k">BLUEPRINT</span>${esc(B.blueprint.state)}. ${esc(B.blueprint.why)}</div>
+      <div><span class="k">STRENGTH</span>${esc(B.winner_vs_loser)} ${esc(B.strength)}</div>
+      ${B.turn ? `<div><span class="k">TREND</span>${esc(B.turn)}</div>` : ""}
+      <div class="${B.tell_flags.regional_cracking || B.tell_flags.homebuilders_not_biting ? "tone-warn" : ""}"><span class="k">TELLS</span>${esc(B.tells)}</div>
+    </div>
+    <div class="scroll" style="margin-top:10px"><table><thead><tr><th>BASKET / SECTOR</th><th style="text-align:right">WEEK</th><th style="text-align:right">MONTH</th><th style="text-align:right">YEAR</th><th>WHAT IT IS · HOW IT IS DOING</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="dim" style="margin-top:6px;font-size:11.5px">${esc(B.data)} Scenario ${B.scenario || "none (no clear winner)"} of 9 on your board's HELP 3 page.</div></section>`;
+}
+
+function hbar(label, v, scale, title) {
+  const w = v == null ? 0 : Math.min(50, 50 * Math.abs(v) / scale);
+  const left = v == null || v >= 0 ? 50 : 50 - w;
+  return `<div class="r" title="${esc(title || "")}"><span class="nm">${esc(label)}</span><span class="bw"><i style="left:${left}%;width:${w}%;background:${v >= 0 ? "var(--ok)" : "var(--bad)"};opacity:.8"></i><b></b></span><span class="v ${tone(v)}">${sgn(v)}%</span></div>`;
+}
+
+function carryCard(r) {
+  const L = r.leaders;
+  const scale = Math.max(2, ...L.big_names.map((x) => Math.abs(x.m || 0)), Math.abs(L.spy.m || 0), Math.abs((L.equal_weight || {}).m || 0));
+  const names = [hbar("S&P 500 (SPY)", L.spy.m, scale), hbar("AVG STOCK (RSP)", L.equal_weight.m, scale)].concat(L.big_names.map((x) => hbar(x.sym, x.m, scale, x.label))).join("");
+  const secScale = Math.max(1, ...L.sectors.map((s) => Math.abs(s.d1 || 0)));
+  const secs = L.sectors.slice().sort((a, b) => (b.d1 ?? -99) - (a.d1 ?? -99)).map((s) => hbar(s.name, s.d1, secScale, s.fund)).join("");
+  return `<section class="card s6"><h2>Who is carrying it <span class="n">MACRO VISION</span><span class="rt">month %, bars against the S&amp;P's scale</span></h2>
+    <div class="carry ${L.carried ? "tone-warn" : ""}">${esc(L.carry_text)}</div>
+    <div class="dim" style="margin-bottom:8px">${esc(L.chips_text)}</div>
+    <div class="two"><div><div class="dim" style="font:600 9.5px var(--sans);letter-spacing:.16em;margin-bottom:4px">CHIPS AND BIG NAMES · THIS MONTH</div><div class="hbars">${names}</div></div>
+    <div><div class="dim" style="font:600 9.5px var(--sans);letter-spacing:.16em;margin-bottom:4px">SECTORS · LAST SESSION</div><div class="hbars">${secs}</div></div></div></section>`;
+}
+
+function membersCard(r) {
+  const L = r.leaders;
+  const key = memView;
+  const top = key === "w" ? L.members_week_top : key === "d1" ? L.members_day_top : L.members_month_top;
+  const bot = key === "w" ? L.members_week_bottom : key === "d1" ? L.members_day_bottom : L.members_month_bottom;
+  const tr = (x) => `<tr title="${esc(x.name)} · ${esc(x.sector)} · ${x.a50 == null ? "" : x.a50 ? "above" : "below"} its 50-day, ${x.a200 == null ? "" : x.a200 ? "above" : "below"} its 200-day"><td class="s">${esc(x.sym)}</td><td class="dim nmcell">${esc(x.name)}<div class="secn">${esc(x.sector)}</div></td><td class="num ${tone(x[key])}">${sgn(x[key])}%</td><td class="num dim tr50">${x.a50 == null ? "" : x.a50 ? "▲50" : "▽50"}</td></tr>`;
+  const sb = L.sector_breadth.map((s) => `<div class="r"><span class="nm" style="font:500 11.5px var(--mono)">${esc(s.sector)}</span>
+      <span class="bar2" title="above their 50-day"><i style="width:${s.pct50}%;background:${s.pct50 < 30 ? "var(--bad)" : s.pct50 < 50 ? "var(--warn)" : "var(--ok)"}"></i><span>${f(s.pct50, 0)}%</span></span>
+      <span class="bar2" title="above their 200-day" style="margin-right:40px"><i style="width:${s.pct200}%;background:${s.pct200 < 45 ? "var(--bad)" : "var(--violet)"}"></i><span>${f(s.pct200, 0)}%</span></span></div>`).join("");
+  return `<section class="card s6"><h2>Leaders and the stocks lagging <span class="n">ALL S&amp;P MEMBERS</span><span class="rt"><span class="seg" id="memSeg"><button data-k="d1" class="${key === "d1" ? "on" : ""}">DAY</button><button data-k="w" class="${key === "w" ? "on" : ""}">WEEK</button><button data-k="m" class="${key === "m" ? "on" : ""}">MONTH</button></span></span></h2>
+    <div class="dim" style="margin-bottom:8px">NEW 52-WEEK HIGHS <b class="ok mono">${L.new_highs}</b> · NEW 52-WEEK LOWS <b class="bad mono">${L.new_lows}</b></div>
+    <div class="two"><div class="scroll"><table class="mtable"><thead><tr><th colspan="4">LEADING</th></tr></thead><tbody>${top.map(tr).join("")}</tbody></table></div>
+    <div class="scroll"><table class="mtable"><thead><tr><th colspan="4">LAGGING</th></tr></thead><tbody>${bot.map(tr).join("")}</tbody></table></div></div>
+    <div style="margin-top:12px"><div class="dim" style="font:600 9.5px var(--sans);letter-spacing:.16em;margin-bottom:4px">EACH SECTOR: SHARE OF ITS MEMBERS ABOVE THEIR 50-DAY · 200-DAY</div><div class="sb">${sb}</div></div></section>`;
+}
+
+function histCard(r) {
+  const H = r.history, S = H.steps;
+  const names = {1: "LENDERS NERVOUS", 2: "FEWER STOCKS", 3: "BANKS LAG", 4: "RECESSION WARNING", 5: "JOBS"};
+  const rows = [1, 2, 3, 4, 5].map((k) => { const h = S[k] || S[String(k)];
+    return `<tr><td>${k} · ${names[k]}</td><td class="num">${h.turned_on}</td><td class="num">${h.avg_days ?? "n/a"}</td><td class="num">${h.longest}</td><td class="num">${k < 5 ? h.next_followed + " of " + h.episodes : "—"}</td><td class="num">${h.on_now ? `<span class="warn">ON · ${h.run_now}d</span>` : h.last_on ? dayTxt(h.last_on) : "never"}</td></tr>`; }).join("");
+  const srows = r.state.ladder.map((x) => `<tr><td style="color:${STATE_COL[x.n]}">STATE ${x.n} · ${esc(x.name)}</td><td class="num">${x.pct_days ?? "n/a"}%</td><td class="num">${x.entered}</td><td class="num">${x.now ? "<span class='warn'>NOW</span>" : esc(x.last_text || "never")}</td></tr>`).join("");
+  return `<section class="card s8"><h2>History · how many times this has happened <span class="rt">since ${dayTxt(H.start)} · next step counted within ${H.follow_window} trading days</span></h2>
+    <div class="scroll"><table class="htable"><thead><tr><th>STEP</th><th>TURNED ON</th><th>AVG DAYS</th><th>LONGEST</th><th>NEXT STEP FOLLOWED</th><th>NOW / LAST ON</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="scroll" style="margin-top:12px"><table class="htable"><thead><tr><th>MARKET STATE</th><th>SHARE OF DAYS</th><th>ENTERED</th><th>NOW / LAST</th></tr></thead><tbody>${srows}</tbody></table></div>
+    <p class="read">${esc(r.recession.history_text)}</p>
+    <p class="read dim">${esc(r.state.rules)}</p>
+    <p class="read dim"><b style="font:600 9.5px var(--sans);letter-spacing:.16em">WHEN STATE 3 HITS · </b>${esc(r.state.state3)}</p></section>`;
+}
+
+function feedCard(r) {
+  const col = {OK: "var(--ok)", OLD: "var(--warn)", MISSING: "var(--bad)"};
+  const L = (DATA && DATA.loading) || {};
+  const fails = Object.entries(L.failed_list || {}).slice(0, 12).map(([k, v]) => `<div class="dim mono" style="font-size:11px">${esc(k)}: ${esc(v)}</div>`).join("");
+  return `<section class="card s4"><h2>Feeds <span class="rt">${esc(r.feeds.text)}</span></h2>
+    <div class="feeds" style="grid-template-columns:1fr">${r.feeds.rows.map((x) => `<div class="feed"><i style="background:${col[x.state]}"></i><span style="flex:1">${esc(x.name)}</span><span class="dim mono" style="font-size:11px">${esc(x.why)}</span></div>`).join("")}</div>
+    ${fails ? `<div style="margin-top:8px"><div class="dim" style="font:600 9.5px var(--sans);letter-spacing:.16em">NOT AVAILABLE FROM IBKR</div>${fails}</div>` : ""}
+    ${DATA && DATA.mode === "live" ? `<button id="membersBtn" style="margin-top:10px" title="fetch today's S&P 500 member list (public list on GitHub) and load any new names">UPDATE THE S&amp;P MEMBER LIST</button>` : ""}</section>`;
+}
+
+// ---------------------------------------------------------------- the breadth chart (canvas)
+function drawBreadthChart(r) {
+  const cv = $("brChart");
+  if (!cv) return;
+  const C = r.chart, dpr = window.devicePixelRatio || 1;
+  const W = cv.clientWidth, H = 210;
+  cv.width = W * dpr; cv.height = H * dpr;
+  const x = cv.getContext("2d"); x.scale(dpr, dpr);
+  const pad = {l: 30, r: 8, t: 8, b: 18}, n = C.days.length;
+  const X = (i) => pad.l + (W - pad.l - pad.r) * i / Math.max(1, n - 1), Y = (v) => pad.t + (H - pad.t - pad.b) * (1 - v / 100);
+  for (let i = 0; i < n; i++) {               // the state behind the lines
+    const s = C.state[i]; if (s < 2) continue;
+    x.fillStyle = s === 2 ? "rgba(227,168,58,.07)" : s === 3 ? "rgba(217,83,79,.11)" : "rgba(164,139,214,.10)";
+    x.fillRect(X(i) - 0.5, pad.t, (W - pad.l - pad.r) / n + 1, H - pad.t - pad.b);
+  }
+  x.strokeStyle = "#1e1f23"; x.lineWidth = 1; x.font = "10px IBM Plex Mono, monospace"; x.fillStyle = "#5b5d63";
+  [0, 25, 50, 75, 100].forEach((v) => { x.beginPath(); x.moveTo(pad.l, Y(v)); x.lineTo(W - pad.r, Y(v)); x.stroke(); x.fillText(String(v), 4, Y(v) + 3); });
+  const hline = (v, c) => { x.setLineDash([4, 4]); x.strokeStyle = c; x.beginPath(); x.moveTo(pad.l, Y(v)); x.lineTo(W - pad.r, Y(v)); x.stroke(); x.setLineDash([]); };
+  hline(30, "rgba(217,83,79,.8)"); hline(45, "rgba(227,168,58,.8)");
+  const line = (arr, c, w) => { x.strokeStyle = c; x.lineWidth = w; x.beginPath(); let on = false;
+    arr.forEach((v, i) => { if (v == null) { on = false; return; } on ? x.lineTo(X(i), Y(v)) : x.moveTo(X(i), Y(v)); on = true; }); x.stroke(); };
+  line(C.s5th, "#a48bd6", 1.5); line(C.s5fi, "#5aa9d6", 1.8);
+  let lastM = -1;                              // month ticks
+  C.days.forEach((d, i) => { const mm = String(d).slice(4, 6); if (mm !== lastM && i > 3) { lastM = mm; if (+mm % 2 === 0) x.fillText(["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][+mm - 1], X(i) - 8, H - 4); } else if (lastM === -1) lastM = mm; });
+  const li = n - 1;
+  if (C.s5fi[li] != null) { x.fillStyle = "#5aa9d6"; x.beginPath(); x.arc(X(li), Y(C.s5fi[li]), 3, 0, 7); x.fill(); }
+  if (C.s5th[li] != null) { x.fillStyle = "#a48bd6"; x.beginPath(); x.arc(X(li), Y(C.s5th[li]), 3, 0, 7); x.fill(); }
+}
+
+// ---------------------------------------------------------------- DESK AI
+function aiState(s) {
+  AI = s;
+  const top = $("aiTop");
+  if (!s) { top.textContent = ""; return; }
+  const busy = s.busy === "market" || s.busy === "marketask";
+  top.innerHTML = !s.enabled ? "DESK AI OFF · SETTINGS > AI" : busy ? `<span class="warn pulse">DESK AI WRITING…</span>` : s.busy ? `DESK AI BUSY (${esc(s.busy)})` : s.reachable === false ? `<span class="bad">OLLAMA NOT ANSWERING</span>` : "DESK AI READY";
+  $("aiBtn").disabled = !s.enabled || !!s.busy;
+  if (busy && !aiPoll) aiPoll = setInterval(pollAI, 3000);
+}
+
+function md(t) {      // small markdown: headings, bullets, bold
+  const lines = String(t || "").split(/\n/), out = []; let ul = false;
+  for (let raw of lines) {
+    let l = esc(raw).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
+    if (/^\s*#{1,4}\s+/.test(raw) || /^\s*\d+\.\s+[A-Z][A-Z ,'&/-]{6,}:?\s*$/.test(raw)) { if (ul) { out.push("</ul>"); ul = false; } out.push(`<h3>${l.replace(/^\s*#{1,4}\s+/, "")}</h3>`); continue; }
+    if (/^\s*[-*•]\s+/.test(raw)) { if (!ul) { out.push("<ul>"); ul = true; } out.push(`<li>${l.replace(/^\s*[-*•]\s+/, "")}</li>`); continue; }
+    if (ul) { out.push("</ul>"); ul = false; }
+    if (l.trim()) out.push(`<p>${l}</p>`);
+  }
+  if (ul) out.push("</ul>");
+  return out.join("");
+}
+
+async function drawAI() {
+  try {
+    const d = await getJSON("/api/ai/result?job=market");
+    const body = $("aiBody"); if (!body) return;
+    const r = d.result;
+    if (r && r.text) {
+      body.innerHTML = md(r.text) + `<details class="given"><summary>WHAT THE AI WAS GIVEN</summary><pre>${esc(r.given || "")}</pre></details>`;
+      $("aiRt").textContent = "written " + new Date(r.t * 1000).toLocaleString() + (r.ms ? " · " + Math.round(r.ms / 1000) + "s" : "");
+    } else if (r && r.error) {
+      body.innerHTML = `<div class="bad">The last try failed: ${esc(r.error)}</div>`;
+    }
+    const q = await getJSON("/api/ai/result?job=marketask");
+    if (q.result && $("askOut")) $("askOut").innerHTML = q.result.text ? md(q.result.text) : q.result.error ? `<div class="bad">${esc(q.result.error)}</div>` : "";
+    if (!d.busy && aiPoll) { clearInterval(aiPoll); aiPoll = null; }
+  } catch (e) {}
+}
+async function pollAI() { await drawAI(); try { const s = await getJSON("/api/ai/status"); aiState(s); if (!s.busy && aiPoll) { clearInterval(aiPoll); aiPoll = null; drawAI(); } } catch (e) {} }
+
+async function runAI(job, text) {
+  const out = await post("/api/ai/run", {job, text});
+  if (!out.ok) { alert(out.reason || "DESK AI could not start"); return; }
+  if (job === "marketask" && $("askOut")) $("askOut").innerHTML = `<div class="warn pulse">Writing the answer…</div>`;
+  if (job === "market" && $("aiBody")) $("aiBody").innerHTML = `<div class="warn pulse">DESK AI is reading the page and writing the report (a laptop takes one to three minutes)…</div>`;
+  if (!aiPoll) aiPoll = setInterval(pollAI, 3000);
+}
+
+// ---------------------------------------------------------------- wiring
+function wire(r) {
+  document.querySelectorAll(".node").forEach((el) => el.addEventListener("click", () => {
+    const k = +el.dataset.step; openStep = openStep === k ? null : k;
+    const d = $("stepDetail"); d.innerHTML = openStep ? stepHTML(r, openStep) : ""; d.classList.toggle("show", !!openStep);
+  }));
+  document.querySelectorAll(".rung").forEach((el) => el.addEventListener("click", () => {
+    const x = r.state.ladder[+el.dataset.rung - 1], d = $("rungInfo");
+    const same = d.dataset.n === el.dataset.rung && d.classList.contains("show");
+    d.dataset.n = el.dataset.rung; d.classList.toggle("show", !same);
+    d.innerHTML = `<b style="color:${STATE_COL[x.n]};font:600 9.5px var(--sans);letter-spacing:.16em">STATE ${x.n} · ${esc(x.name)}</b><div><span class="dim">WHEN · </span>${esc(x.when)}</div><div><span class="dim">DO · </span>${esc(x.do)}</div><div class="dim">${x.pct_days}% of days since ${dayTxt(r.history.start)}, entered ${x.entered} times, last ${esc(x.last_text || "never")}.</div>`;
+  }));
+  document.querySelectorAll(".rel").forEach((el) => el.addEventListener("click", () => {
+    const k = +el.dataset.rel; el.classList.toggle("open"); el.classList.contains("open") ? openRels.add(k) : openRels.delete(k); }));
+  document.querySelectorAll("#memSeg button").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); memView = b.dataset.k; store.set("memView", memView); draw(r); }));
+  const ask = () => { const t = $("askIn").value.trim(); if (t) runAI("marketask", t); };
+  $("askBtn").addEventListener("click", ask);
+  $("askIn").addEventListener("keydown", (e) => { if (e.key === "Enter") ask(); });
+  const mb = $("membersBtn");
+  if (mb) mb.addEventListener("click", async () => { mb.disabled = true; const o = await post("/api/market/members"); alert(o.reason); mb.disabled = false; });
+}
+$("aiBtn").addEventListener("click", () => runAI("market"));
+$("refreshBtn").addEventListener("click", async () => { const b = $("refreshBtn"); b.disabled = true; const o = await post("/api/market/refresh"); $("loadTxt").textContent = o.reason || ""; setTimeout(() => { b.disabled = false; load(); }, 1500); });
+$("deskBtn").addEventListener("click", () => { if (window.opener) window.close(); else location.href = "/"; });
+window.addEventListener("resize", () => { if (DATA && DATA.report && DATA.report.ok) drawBreadthChart(DATA.report); });
+load();
+</script>
+</body>
+</html>

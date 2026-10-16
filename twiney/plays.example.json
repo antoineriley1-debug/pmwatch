@@ -1,0 +1,11 @@
+{
+  "_note": "PS60 plays. pivot = the 60-minute pivot (Dan's word; the old trigger key still works). second_entry (optional, leave it out until the pivot breaks) = the new high (long) / new low (short) after the break; the entry is back through it after the retrace. TWINEY finds it for you and offers 'use X as 2nd entry'. mp = your measured potential LEVEL, the price the move can run to (it is the target). stop = max pain. extra_levels = more prices to watch for reloads.",
+  "plays": [
+    {"symbol": "AAPL", "side": "long",  "pivot": 232.50, "mp": 235.00, "stop": 230.90, "notes": "60m supply break"},
+    {"symbol": "NVDA", "side": "long",  "pivot": 128.40, "second_entry": 128.95, "mp": 131.00, "stop": 126.90, "extra_levels": [129.00]},
+    {"symbol": "TSLA", "side": "short", "pivot": 241.20, "second_entry": 240.60, "mp": 236.50, "stop": 243.30, "notes": "demand break"},
+    {"symbol": "AMD",  "side": "long",  "pivot": 158.75, "mp": 162.00, "stop": 156.80},
+    {"symbol": "PLTR", "side": "short", "pivot": 41.30,  "mp": 39.80,  "stop": 42.20},
+    {"symbol": "SOFI", "side": "long",  "pivot": 10.45,  "mp": 10.95,  "stop": 10.12}
+  ]
+}
