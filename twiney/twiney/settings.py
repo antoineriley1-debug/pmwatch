@@ -55,6 +55,7 @@ RESTART = ("ibkr.", "dashboard.", "depth.slots", "depth.rows_requested", "depth.
 
 LOCKED = {
     "dashboard.host": "Locked: the desk only listens on this computer.",
+    "dashboard.sign_in": "Locked: the sign-in is never switched off from the desk (config.json by hand only).",
 }
 
 SECRET = {"quantdata.api_key", "speech.api_key", "gmail.app_password"}

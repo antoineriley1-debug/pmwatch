@@ -32,6 +32,10 @@ DEFAULTS = {
         "host": "127.0.0.1",
         "port": 8765,
         "open_browser": True,
+        # THE SIGN-IN: every page and every API route needs your password (set it on first visit with the SETUP
+        # CODE TED prints, or `python run_twiney.py --set-password`). Off only by editing config.json by hand
+        "sign_in": True,
+        "session_hours": 12,            # how long one sign-in lasts on a browser before it asks again
     },
     "depth": {
         # IBKR caps simultaneous market-depth subscriptions; TWINEY uses three.

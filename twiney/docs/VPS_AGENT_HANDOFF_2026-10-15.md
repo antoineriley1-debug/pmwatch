@@ -85,8 +85,21 @@ Never use `tailscale funnel` (that would put the desk on the public internet).
 Check from the box:
 
 ```
-curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8765/api/state     # 200
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8765/healthz       # 200
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8765/api/state     # 401: THE SIGN-IN is on
 ```
+
+## 3b. THE SIGN-IN (build 20261016 or newer)
+
+Every page and route needs Antoine's password (`docs/SIGN_IN.md`). Do not set it for him. Send him the one-time code:
+
+```
+journalctl -u ted --since "10 min ago" | grep "SETUP CODE"
+```
+
+He opens the address, types the code and his own password. If he would rather set it from your shell, he types it
+himself into: `sudo -u ted /opt/ted/venv/bin/python /opt/ted/app/run_twiney.py --config /var/lib/ted/config.json --set-password`
+(as `ted`, never root: `auth.json` is mode 0600 and must stay TED's). Never print `/var/lib/ted/auth.json`.
 
 ## 4. What to send Antoine
 
@@ -101,6 +114,7 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8765/api/state     # 2
 - `systemctl status ibgateway ted tailscaled` all active.
 - The BUILD stamp the desk shows through the Tailscale address.
 - CONNECTED / PAPER on the desk; the Level II reads LIVE (or DELAYED outside hours) and SMART DEPTH.
+- `/api/state` answers 401 before signing in; the desk opens after Antoine signs in through the Tailscale address.
 - `config.json` writable by `ted` (the WRITABLE line above); no read-only warning in `journalctl -u ted`.
 - The PRACTICE button opens the practice desk at `:8766` and its tape moves.
 - One message to Antoine: what you ran, the two addresses, anything that failed and the exact fix. Nothing else

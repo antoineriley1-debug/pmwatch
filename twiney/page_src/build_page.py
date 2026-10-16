@@ -43,6 +43,10 @@ for a, b in [('${g.ok ? "✅" : "❌"}', '<i class="gate ${g.ok ? "ok" : "no"}">
              ('` ⚠ PS60 says PASS: ${g.why}.`', '` · PS60 PASS: ${g.why}.`'), ('` · PS60: WATCH — ${g.why}.`', '` · PS60 WATCH: ${g.why}.`'),
              ('<span style="color:var(--gold)">◆</span>', '<span style="color:var(--gold);font-size:9px;letter-spacing:.1em">L2</span>')]:
     html = html.replace(a, b)
+# THE SIGN-IN: any answer of 401 (signed out, the session ran out, the password changed) goes to the sign-in page
+GUARD = ('<script>(function(){const f=window.fetch.bind(window);window.fetch=async function(){const r=await f.apply(null,arguments);'
+         'if(r.status===401&&!window._tedOut){window._tedOut=1;location.replace("/login?next="+encodeURIComponent(location.pathname));}return r;};})();</script>\n')
+html = html.replace("<style>", GUARD + "<style>", 1)
 import subprocess, datetime
 build = datetime.datetime.utcnow().strftime("%Y%m%d-%H%M")
 html = html.replace("<title>", f'<meta name="build" content="{build}">\n<title>', 1)
@@ -50,5 +54,6 @@ open(os.path.join(SP, "..", "twiney", "static", "dashboard.html"), "w", encoding
 print("written", len(html))
 # the MARKET ANALYSIS DETAILED REPORT page: its own page (the MARKET button), same build stamp
 mk = open(os.path.join(SP, "market.html"), encoding="utf-8").read().replace("<title>", f'<meta name="build" content="{build}">\n<title>', 1)
+mk = mk.replace("</head>", GUARD + "</head>", 1)
 open(os.path.join(SP, "..", "twiney", "static", "market.html"), "w", encoding="utf-8").write(mk)
 print("written market", len(mk), "build", build)

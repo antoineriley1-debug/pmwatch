@@ -510,7 +510,7 @@ function makeLadResizable(table){
      a grip: back to the default. Saved in this browser. */
   if (!table || table.dataset.gripped) return;
   table.dataset.gripped = "1";
-  const ths = [...table.querySelectorAll("tr:first-child th")], n = ths.length, key = table.classList.contains("simple") ? "ladw1" : table.classList.contains("tight") ? "ladw5" : "ladw3";
+  const ths = [...table.querySelectorAll("tr:first-child th")], n = ths.length, key = table.classList.contains("dom") ? "ladwdom2" : table.classList.contains("simple") ? "ladw1" : table.classList.contains("tight") ? "ladw5" : "ladw3";
   const DEF = ths.map(th => +th.dataset.w || 30), MINS = ths.map(th => +th.dataset.min || 12);
   let w = store.get(key, null); if (!Array.isArray(w) || w.length !== n || w.some(x => !(x > 0))) w = DEF.slice();
   table.style.tableLayout = "fixed";

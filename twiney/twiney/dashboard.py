@@ -9,7 +9,9 @@ import os
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, urlparse
+
+from . import auth as _auth
 
 STATIC = os.path.join(os.path.dirname(__file__), "static", "dashboard.html")
 MARKET_PAGE = os.path.join(os.path.dirname(__file__), "static", "market.html")
@@ -92,7 +94,12 @@ _SNAP_CACHE = {}
 _DIFF_SEEN = {}        # client id -> {top-level key: hash of its last JSON}: what each page already holds
 
 
-def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_path=None, config_path=None, hooks=None):
+# with THE SIGN-IN on, these answer without a session: the sign-in page itself and the health check
+OPEN_GET = {"/login", "/healthz"}
+OPEN_POST = {"/api/login", "/api/auth/setup", "/api/logout"}
+
+
+def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_path=None, config_path=None, hooks=None, auth=None):
     hooks = hooks if hooks is not None else {}
     class Handler(BaseHTTPRequestHandler):
         server_version = "TWINEY/1.0"
@@ -115,7 +122,91 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                 return False
             return True
 
-        def _send(self, code, body, ctype):
+        def _client(self):
+            """Who is asking, for the wrong-password count: behind Tailscale / an SSH tunnel the peer is this machine,
+            so the address the proxy added last."""
+            peer = self.client_address[0] if self.client_address else ""
+            xff = self.headers.get("X-Forwarded-For")
+            if xff and peer in ("127.0.0.1", "::1", "::ffff:127.0.0.1"):
+                return xff.split(",")[-1].strip() or peer
+            return peer
+
+        def _same_origin(self):
+            """THE SIGN-IN guards the desk, so it may be reached by any name (Tailscale's address too), but a browser's
+            Origin, when sent, must be the very address it is talking to: another website can never act on the desk."""
+            origin = (self.headers.get("Origin") or "").strip().lower()
+            if not origin:
+                return True
+            got = urlparse(origin).netloc
+            names = {(self.headers.get("Host") or "").strip().lower(), (self.headers.get("X-Forwarded-Host") or "").strip().lower()}
+            return bool(got) and got in names
+
+        def _https(self):
+            return (self.headers.get("X-Forwarded-Proto") or "").strip().lower() == "https"
+
+        def _signed_in(self):
+            return auth is None or auth.valid(_auth.cookie_from(self.headers.get("Cookie")))
+
+        def _guard(self, post):
+            """True when this request may go on; otherwise the answer is already sent."""
+            path = self.path.split("?", 1)[0]
+            if auth is None:
+                if not self._local():
+                    self._send(403, "forbidden", "text/plain")
+                    return False
+                return True
+            if not self._same_origin():
+                self._send(403, "forbidden", "text/plain")
+                return False
+            if path in (OPEN_POST if post else OPEN_GET) or self._signed_in():
+                return True
+            if post or path.startswith("/api/") or not (path in ("/", "/index.html", "/market")):
+                self._send(401, json.dumps({"ok": False, "signin": True, "reason": "sign in first"}), "application/json")
+            else:
+                self._redirect("/login" + ("" if path in ("/", "/index.html") else "?next=" + quote(path)))
+            return False
+
+        def _redirect(self, where, cookie=None):
+            self.send_response(303)
+            self.send_header("Location", where)
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", "0")
+            if cookie is not None:
+                self.send_header("Set-Cookie", cookie)
+            self.end_headers()
+
+        def _auth_post(self, path, body):
+            """The sign-in routes. True when this was one of them (the answer is sent)."""
+            if path not in ("/api/login", "/api/auth/setup", "/api/logout", "/api/auth/password"):
+                return False
+            who, life = self._client(), int(auth.session_s)
+            if path == "/api/logout":
+                if body.get("everywhere") and self._signed_in():
+                    auth.sign_out_everywhere()
+                self._send(200, json.dumps({"ok": True}), "application/json", cookie=_auth.set_cookie("", self._https(), 0))
+                return True
+            if path == "/api/login":
+                tok, why = auth.login(str(body.get("password") or ""), who)
+                if tok:
+                    print(f"TED: signed in from {who}", flush=True)
+            elif path == "/api/auth/setup":
+                ok, why = auth.setup(body.get("code"), body.get("password"), body.get("confirm"), who)
+                tok = auth.issue() if ok else None
+                if ok:
+                    print(f"TED: password created from {who}", flush=True)
+            else:
+                ok, why = auth.change_password(str(body.get("current") or ""), body.get("password"), body.get("confirm"), who)
+                tok = auth.issue() if ok else None          # this browser stays signed in, every other one is out
+            if tok:
+                self._send(200, json.dumps({"ok": True}), "application/json", cookie=_auth.set_cookie(tok, self._https(), life))
+            else:
+                if path == "/api/login":
+                    print(f"TED: refused sign-in from {who} ({why})", flush=True)
+                # a refused password change answers 400: a 401 sends the desk to the sign-in page
+                self._send(429 if "too many" in why else 400 if path == "/api/auth/password" else 401, json.dumps({"ok": False, "reason": why}), "application/json")
+            return True
+
+        def _send(self, code, body, ctype, cookie=None):
             data = body if isinstance(body, bytes) else body.encode("utf-8")
             # the desk polls a big snapshot a few times a second: gzip takes it down ~8x on the wire
             if len(data) > 2048 and "gzip" in str(self.headers.get("Accept-Encoding", "")) and ctype.startswith(("application/json", "text/")):
@@ -129,6 +220,11 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(data)))
             self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Frame-Options", "DENY")                 # never shown inside another site's page
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Referrer-Policy", "no-referrer")
+            if cookie is not None:
+                self.send_header("Set-Cookie", cookie)
             self.end_headers()
             try:
                 self.wfile.write(data)
@@ -136,10 +232,19 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                 pass                    # the page went away mid-answer (closed / reloaded): nothing to say
 
         def do_GET(self):
-            if not self._local():
-                self._send(403, "forbidden", "text/plain")
+            if not self._guard(False):
                 return
             path = self.path.split("?", 1)[0]
+            if path == "/login":
+                if auth is None or self._signed_in():
+                    self._redirect("/")
+                else:
+                    self._send(200, _auth.login_page(not auth.has_password()), "text/html; charset=utf-8")
+                return
+            if path == "/api/auth":
+                self._send(200, json.dumps({"ok": True, "sign_in": auth is not None, "signed_in": self._signed_in(),
+                                            "session_hours": round(auth.session_s / 3600, 2) if auth else None}), "application/json")
+                return
             if path in ("/", "/index.html"):
                 with open(STATIC, "rb") as fh:
                     self._send(200, fh.read(), "text/html; charset=utf-8")
@@ -412,12 +517,11 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                 self._send(404, "not found", "text/plain")
 
         def do_POST(self):
+            # only accept requests from this dashboard page (blocks other websites), signed in when THE SIGN-IN is on
+            if not self._guard(True):
+                return
             with _SNAP_LOCK:          # anything you do shows on the very next update, never a cached one from before it
                 _SNAP_CACHE.clear()
-            # only accept requests from this dashboard page (blocks other websites)
-            if not self._local():
-                self._send(403, "forbidden", "text/plain")
-                return
             if self.path.split("?", 1)[0] == "/api/desk/mic_audio":
                 self._mic_audio()
                 return
@@ -434,6 +538,8 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                 self._send(400, "bad json", "text/plain")
                 return
             path = self.path.split("?", 1)[0]
+            if auth is not None and self._auth_post(path, body):
+                return
             if path == "/api/pin":
                 ok = engine.set_pinned(str(body.get("symbol", "")).upper(), bool(body.get("pinned")), clock())
                 self._send(200 if ok else 404, json.dumps({"ok": ok}), "application/json")
@@ -900,11 +1006,12 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
 
 class Dashboard:
     def __init__(self, engine, host, port, clock=time.time, trader=None, desk=None, rec_dir=None, layout_path=None,
-                 config_path=None, on_restart=None):
+                 config_path=None, on_restart=None, auth=None):
         self.hooks = {"restart": on_restart}
+        self.auth = auth
         try:
             self.httpd = ThreadingHTTPServer((host, port), make_handler(engine, clock, trader, desk, rec_dir, layout_path,
-                                                                        config_path, self.hooks))
+                                                                        config_path, self.hooks, auth))
         except OSError as exc:
             if getattr(exc, "errno", None) in (98, 48, 10048) or "in use" in str(exc).lower():
                 raise OSError(f"TED is already running: another TED window is using {host}:{port}. "

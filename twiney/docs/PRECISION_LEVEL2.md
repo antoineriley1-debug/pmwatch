@@ -124,9 +124,11 @@ draws the latest snapshot.
 
 One click puts the ladder in the Jigsaw Depth & Sales shape, twelve columns, the price still fixed in the centre:
 
-| BUY | WAITING BUYERS | +/− | LEVELS | ACTUAL SELLING | PRICE | ACTUAL BUYING | +/− | WAITING SELLERS | SELL | TRADED | NET |
+| LEVELS | BUY | WAITING BUYERS | +/− | ACTUAL SELLING | PRICE | ACTUAL BUYING | +/− | WAITING SELLERS | SELL | NET | TRADED |
 
-The middle of the ladder reads LEVEL · SOLD · PRICE · BOUGHT; everything else sits outside that, on its side.
+Twiney's order (2026-10-16): PRICE in the centre, ACTUAL BUYING to its right, ACTUAL SELLING to its left, then WAITING
+BUYERS (left) and WAITING SELLERS (right), the LEVELS rail on the far left and TRADED on the far right. The default
+view (no order columns) reads LEVELS · WAITING BUYERS · SOLD · PRICE · BOUGHT · WAITING SELLERS · TRADED.
 
 - **BUY / SELL order columns** on the edges. A click on a row is an order at that price: at or under the offer in the BUY
   column a limit, above the offer (▲) a BUY STOP that fires when price trades there; at or over the bid in the SELL

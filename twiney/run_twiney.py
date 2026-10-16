@@ -55,6 +55,39 @@ def _rec_dir(cfg):
     return d
 
 
+def make_auth(cfg, args):
+    """THE SIGN-IN (twiney/auth.py): on unless config.json says dashboard.sign_in false. No password yet: a one-time
+    SETUP CODE is printed here, and the sign-in page creates the password with it."""
+    from twiney.auth import Auth, auth_path
+    d = cfg.get("dashboard") or {}
+    if d.get("sign_in", True) is False:
+        print("WARNING: the sign-in is OFF (config.json dashboard.sign_in): anyone who reaches this desk sees everything", flush=True)
+        return None
+    auth = Auth(auth_path(args.config), d.get("session_hours", 12))
+    if not auth.has_password():
+        code = auth.new_setup_code()
+        print(f"TED SIGN-IN: no password yet. SETUP CODE {code} - open the desk and create your password with it "
+              f"(or run: python run_twiney.py --set-password)", flush=True)
+    return auth
+
+
+def set_password_cli(args):
+    """python run_twiney.py --set-password: create or replace the desk's password from a terminal. Every browser
+    signed in before has to sign in again."""
+    import getpass
+    from twiney.auth import Auth, auth_path
+    auth = Auth(auth_path(args.config))
+    print(("Replace" if auth.has_password() else "Create") + f" TED's password ({auth.path})", flush=True)
+    for _ in range(3):
+        pw = getpass.getpass("New password: ")
+        ok, why = auth.set_password(pw, getpass.getpass("Again: "))
+        if ok:
+            print("Password saved. Every browser signed in before must sign in again.", flush=True)
+            return 0
+        print(f"Not saved: {why}", flush=True)
+    return 1
+
+
 def layout_file(args):
     """layout.json lives next to config.json (the TWINEY folder)."""
     return os.path.join(os.path.dirname(os.path.abspath(args.config)), "layout.json")
@@ -247,7 +280,7 @@ def run_live(cfg, plays, args):
     if recorder:
         desk.started = time.time()
     dash = Dashboard(engine, cfg["dashboard"]["host"], cfg["dashboard"]["port"], trader=trader, desk=desk,
-                     rec_dir=_rec_dir(cfg), layout_path=layout_file(args), config_path=args.config).start()
+                     rec_dir=_rec_dir(cfg), layout_path=layout_file(args), config_path=args.config, auth=make_auth(cfg, args)).start()
     ib = cfg["ibkr"]
     mode = "order entry PAPER-ONLY" if trader and not cfg["trading"]["allow_live"] else \
         "order entry LIVE ALLOWED" if trader else "view only"
@@ -423,7 +456,7 @@ def run_demo(cfg, plays, args):
     if recorder:
         desk.started = time.time()
     dash = Dashboard(engine, cfg["dashboard"]["host"], cfg["dashboard"]["port"], trader=trader, desk=desk,
-                     rec_dir=_rec_dir(cfg), layout_path=layout_file(args), config_path=args.config).start()
+                     rec_dir=_rec_dir(cfg), layout_path=layout_file(args), config_path=args.config, auth=make_auth(cfg, args)).start()
     print(f"TWINEY {__version__} · DEMO FEED (synthetic, not market data) · practice orders fill in the simulator",
           flush=True)
     open_dashboard(dash, cfg, args)
@@ -493,7 +526,7 @@ def run_replay(cfg, plays, args):
             if dash is None:
                 dash = Dashboard(ref, cfg["dashboard"]["host"], cfg["dashboard"]["port"],
                                  clock=lambda: box["engine"].last_t, trader=None, rec_dir=_rec_dir(cfg),
-                                 layout_path=layout_file(args), config_path=args.config).start()
+                                 layout_path=layout_file(args), config_path=args.config, auth=make_auth(cfg, args)).start()
                 if SOURCE[0]:
                     _d = dash
                     dash.hooks["restart"] = lambda: restart_process(lambda: _d.stop())
@@ -551,6 +584,7 @@ def main(argv=None):
     ap.add_argument("--start", type=float, help="replay: jump to this time first (a clip's start)")
     ap.add_argument("--end", type=float, help="replay: pause at this time (a clip's end)")
     ap.add_argument("--port", type=int, help="dashboard port (overrides config.json)")
+    ap.add_argument("--set-password", action="store_true", help="create or replace the desk's sign-in password, then exit")
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args(argv)
     # your files live in the data folder (C:\Users\you\TWINEY), never in the program folder a new zip replaces
@@ -560,6 +594,8 @@ def main(argv=None):
         args.config = _paths.ensure_config(program_dir)
     if args.plays is None:
         args.plays = _paths.ensure_plays(program_dir)
+    if args.set_password:
+        return set_password_cli(args)
     print(f"Your settings, key, plays and layout: {os.path.dirname(os.path.abspath(args.config))}", flush=True)
     _cfg_dir = os.path.dirname(os.path.abspath(args.config))
     if not os.access(_cfg_dir, os.W_OK) or (os.path.exists(args.config) and not os.access(args.config, os.W_OK)):

@@ -89,6 +89,7 @@ html,body{height:100%} body{overflow:hidden;font-size:12px}
 .pct.up{color:var(--buy)} .pct.dn{color:var(--sell)}
 /* quote strip inside the chart panel */
 .qs{display:flex;gap:10px;align-items:center;padding:2px 8px;font-family:var(--mono);font-size:12px;white-space:nowrap;overflow:hidden;background:#0f141c;border-bottom:1px solid var(--line);flex:0 0 auto;height:22px}
+.qs .qlive{display:contents}
 .qs .sym{font-weight:800;color:var(--gold);font-size:13px} .qs .dim{font-size:11px}
 /* status bar */
 #status{display:flex;align-items:center;gap:14px;padding:0 10px;background:#0b0f15;border-top:1px solid var(--line);font-family:var(--mono);font-size:11px;color:var(--dim);white-space:nowrap;overflow:hidden}
@@ -997,6 +998,11 @@ table.lad .fdl.b{background:#1b7a43;box-shadow:0 0 6px #26d07c88} table.lad .fdl
 .vtest button { font-weight: 700; }
 .vtest .vok { color: #26a69a; font-weight: 600; }
 .vtest .vbad { color: #ef5350; font-weight: 600; }
+.signin { margin: 6px 0 12px; padding: 8px 10px; border: 1px solid var(--line, #2c2e33); border-radius: 4px; }
+.signin .pwrow { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.signin .pwrow input { flex: 1 1 140px; min-width: 0; }
+.signin .pwrow button { font-weight: 700; }
+.signin .vok { color: #26a69a; font-weight: 600; } .signin .vbad { color: #ef5350; font-weight: 600; }
 #voiceBtn.vfail { color: #ef5350; }
 /* THE BASKET LADDER (LAYOUT: BASKET): $ BID │ BID │ PRICE + BASKET │ ASK │ $ ASK */
 table.lad.basket2 td.mny{font-size:calc(9.5px * var(--ladz,1));color:#9aa4b4;white-space:nowrap}

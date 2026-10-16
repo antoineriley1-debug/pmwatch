@@ -5,21 +5,27 @@ const pctFmt = (v) => v == null ? NA : (v >= 0 ? "+" : "") + v.toFixed(2) + "%";
 
 function renderQuote(d){
   const el = P.chart.el.querySelector(".qs");
-  if (!d){ el.innerHTML = `<span class="sym">${esc(curSym || "")}</span><span class="dim">${curSym ? "NO DATA" : "NO SYMBOL · Ctrl+L"}</span>`; return; }
+  if (!d){ el.dataset.h = ""; el.innerHTML = `<span class="sym">${esc(curSym || "")}</span><span class="dim">${curSym ? "NO DATA" : "NO SYMBOL · Ctrl+L"}</span>`; return; }
   const day = d.day || {}, pl = d.play, g = d.ps60;
   const chg = d.last && day.prev_close ? d.last - day.prev_close : null;
   const tfNow = store.get("tf.chart", 1);
   const TFP = [["1", 1], ["5", 5], ["1H", 60], ["4H", 240], ["1D", "D"], ["1W", "W"], ["1M", "M"], ["1Y", "12M"]];
-  const html = `<span class="sym">${esc(d.symbol)}</span><select class="tfsel" data-tfsel="1" title="timeframe · or click the chart and type: 5, 1H, 1D, 1W, 5M, or a ticker">${TFP.map(([l, v]) => `<option value="${v}" ${String(tfNow) === String(v) ? "selected" : ""}>${l}</option>`).join("")}</select><span class="tfn">${tfLabel(tfNow)}</span>
+  const head = `<span class="sym">${esc(d.symbol)}</span><select class="tfsel" data-tfsel="1" title="timeframe · or click the chart and type: 5, 1H, 1D, 1W, 5M, or a ticker">${TFP.map(([l, v]) => `<option value="${v}" ${String(tfNow) === String(v) ? "selected" : ""}>${l}</option>`).join("")}</select><span class="tfn">${tfLabel(tfNow)}</span>`;
+  const live = `
     <span>LAST <b style="color:var(--gold)">${px(d.last)}</b>${chg != null ? ` <span class="${chg >= 0 ? "buy" : "sell"}">${chg >= 0 ? "+" : ""}${chg.toFixed(2)} ${(chg / day.prev_close * 100).toFixed(2)}%</span>` : ""}</span>
     <span><span class="buy">${px(d.bid)}</span><span class="dim">${day.bid_size ? "×" + kfmt(day.bid_size) : ""}</span> / <span class="sell">${px(d.ask)}</span><span class="dim">${day.ask_size ? "×" + kfmt(day.ask_size) : ""}</span></span>
     <span class="dim">PIVOT <b style="color:#dbe3ee">${px(pl.trigger)}</b> 2ND <b style="color:var(--cyan)">${px(pl.second_entry)}</b> TGT <b style="color:var(--buy)">${px(pl.target)}</b> STOP <b style="color:var(--sell)">${px(pl.stop)}</b></span>
     ${g ? `<span class="p-ps60" style="margin:0;height:auto;overflow:visible"><span class="g ${g.grade}" title="${esc(g.why)}">${g.grade}</span></span>` : ""}
     <span class="dim">${esc(d.health.status)}${d.pinned ? " · PINNED" : ""}${(d.book && (d.book.bids.length || d.book.asks.length)) ? "" : " · no depth"}</span>`;
+
   const scr = store.get("screen", "white");
-  const html2 = html + `<span class="spacer"></span><select class="qscreen" data-qscreen="1" title="chart screen">${[["blue", "BLUE"], ["white", "WHITE"], ["pink", "PINK"], ["custom", "CUSTOM"], ["desk", "DESK"]].map(([v, l]) => `<option value="${v}" ${scr === v ? "selected" : ""}>${l}</option>`).join("")}</select><button class="qtools ${store.get("tools", false) ? "on" : ""}" data-tools="1" title="show / hide the chart toolbar">TOOLS</button>`;
+  const html2 = head + `<span class="qlive"></span><span class="spacer"></span><select class="qscreen" data-qscreen="1" title="chart screen">${[["blue", "BLUE"], ["white", "WHITE"], ["pink", "PINK"], ["custom", "CUSTOM"], ["desk", "DESK"]].map(([v, l]) => `<option value="${v}" ${scr === v ? "selected" : ""}>${l}</option>`).join("")}</select><button class="qtools ${store.get("tools", false) ? "on" : ""}" data-tools="1" title="show / hide the chart toolbar">TOOLS</button>`;
   const html3 = html2 + `<button class="qgear" data-gear="1" title="chart settings">⚙</button>`;
-  if (el.dataset.h !== html3){ el.dataset.h = html3; el.innerHTML = html3; }
+  // the fixed part (symbol, timeframe dropdown, screen, tools) is built only when it changes; the prices update in
+  // their own span, so an open dropdown is never rebuilt (and closed) by the next tick
+  if (el.dataset.h !== html3){ el.dataset.h = html3; el.innerHTML = html3; el.dataset.l = ""; }
+  const ql = el.querySelector(".qlive");
+  if (ql && el.dataset.l !== live){ el.dataset.l = live; ql.innerHTML = live; }
 }
 /* ⚙ chart settings, TradingView style: colours, lines and what the chart draws. Saved per browser, applied at once */
 const CS_DEF = [
@@ -821,7 +827,7 @@ document.getElementById("colsMenu").querySelector("button").addEventListener("cl
 // TRADED + NET for the session, the summary line; nothing above the rows
 document.getElementById("colsPop").addEventListener("click", e => { const b = e.target.closest("button[data-domjig]"); if (!b) return; e.stopPropagation();
   store.set("domCols", Object.assign({}, store.get("domCols", {}), {orders: true, net: true, ps: true, sum: true, sell: true, buy: true, traded: true})); store.set("domVol", "rolling"); store.set("domStrips", false); store.set("domMoney", false); store.set("ladMode", "dom");
-  P.book.last = null; poll(true); toast("Jigsaw layout: BUY · buyers · +/− · LEVELS · SOLD · PRICE · BOUGHT · +/− · sellers · SELL · TRADED · NET", true); });
+  P.book.last = null; poll(true); toast("Jigsaw layout: LEVELS · BUY · buyers · +/− · SOLD · PRICE · BOUGHT · +/− · sellers · SELL · NET · TRADED", true); });
 document.getElementById("colsPop").addEventListener("change", e => {
   if (e.target.dataset.rows != null){ store.set("ladRowsAuto", false); post("/api/ladder", {half_rows: +e.target.value}); store.set("ladRows", +e.target.value); P.book.last = null; poll(true); return; }   // your pick: the ladder stops sizing itself
   if (e.target.dataset.ladclick != null){ store.set("ladClick", e.target.value); return; }
@@ -2065,7 +2071,7 @@ function renderSettings(){
   document.getElementById("setNav").innerHTML = secs.map(s => { const n = s.fields.filter(match).length; const d = s.fields.filter(f => SET.dirty.hasOwnProperty(f.path)).length;
     return `<div class="sn ${s.key === SET.cur && !q ? "on" : ""} ${n ? "" : "none"}" data-sec="${s.key}">${esc(s.title)}${d ? ` <i>${d}</i>` : ""}${q && n ? ` <span class="dim">${n}</span>` : ""}</div>`; }).join("");
   const show = q ? secs.filter(s => s.fields.some(match)) : secs.filter(s => s.key === SET.cur);
-  document.getElementById("setForm").innerHTML = show.map(s => `<div class="ss"><h4>${esc(s.title)}</h4><div class="sb">${esc(s.blurb)}</div>${s.key === "speech" ? `<div class="vtest"><button id="voiceTest" type="button">TEST VOICE</button> <span id="voiceTestOut" class="dim">says one line in your ElevenLabs voice and tells you if it answered (save changes first)</span></div>` : ""}${s.fields.filter(match).map(setField).join("")}</div>`).join("") || `<div class="dim" style="padding:20px">No setting matches.</div>`;
+  document.getElementById("setForm").innerHTML = show.map(s => `<div class="ss"><h4>${esc(s.title)}</h4><div class="sb">${esc(s.blurb)}</div>${s.key === "speech" ? `<div class="vtest"><button id="voiceTest" type="button">TEST VOICE</button> <span id="voiceTestOut" class="dim">says one line in your ElevenLabs voice and tells you if it answered (save changes first)</span></div>` : ""}${s.key === "dashboard" ? signinHTML() : ""}${s.fields.filter(match).map(setField).join("")}</div>`).join("") || `<div class="dim" style="padding:20px">No setting matches.</div>`;
   const n = Object.keys(SET.dirty).length;
   const sv = document.getElementById("setSave"); sv.disabled = !n; sv.textContent = n ? `SAVE ${n}` : "SAVE";
   document.getElementById("setRestart").hidden = !(SET.restartPending && SET.canRestart);
@@ -2078,6 +2084,28 @@ function readInput(el){
   const orig = f.type === "bool" ? !!f.value : f.value;
   if (String(v) === String(orig) && f.type !== "secret") delete SET.dirty[path]; else SET.dirty[path] = v;
 }
+/* THE SIGN-IN: change the password (every other browser has to sign in again), sign out here or everywhere */
+function signinHTML(){
+  return `<div class="signin"><b>SIGN-IN PASSWORD</b><div class="dim">Every page and every order route needs it. Changing it signs out every other browser.</div>
+    <div class="pwrow"><input type="password" id="pwCur" placeholder="current password" autocomplete="current-password"><input type="password" id="pwNew" placeholder="new password (10+)" autocomplete="new-password"><input type="password" id="pwNew2" placeholder="new password again" autocomplete="new-password">
+    <button id="pwSave" type="button">CHANGE PASSWORD</button><button id="pwAll" type="button">SIGN OUT EVERYWHERE</button></div><div id="pwOut" class="dim"></div></div>`;
+}
+async function signOut(everywhere){
+  try { await fetch("/api/logout", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({everywhere: !!everywhere})}); } catch (e) {}
+  location.replace("/login");
+}
+document.getElementById("setForm").addEventListener("click", async e => {
+  if (e.target.closest("#pwAll")){ if (confirm("Sign out every browser, this one too?")) signOut(true); return; }
+  if (!e.target.closest("#pwSave")) return;
+  const out = document.getElementById("pwOut"), v = id => document.getElementById(id).value;
+  try {
+    const r = await fetch("/api/auth/password", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({current: v("pwCur"), password: v("pwNew"), confirm: v("pwNew2")})});
+    const j = await r.json().catch(() => ({}));
+    out.className = j.ok ? "vok" : "vbad"; out.textContent = j.ok ? "PASSWORD CHANGED · every other browser is signed out" : ("NOT CHANGED: " + (j.reason || r.status));
+    if (j.ok) ["pwCur", "pwNew", "pwNew2"].forEach(id => document.getElementById(id).value = "");
+  } catch (err) { out.className = "vbad"; out.textContent = "the desk did not answer"; }
+});
+document.getElementById("signOutBtn").addEventListener("click", () => signOut(false));
 document.getElementById("setBtn").addEventListener("click", openSettings);
 document.getElementById("setClose").addEventListener("click", () => { if (Object.keys(SET.dirty).length && !confirm("Close without saving your changes?")) return; document.getElementById("settings").hidden = true; });
 document.getElementById("setFind").addEventListener("input", renderSettings);
@@ -3677,11 +3705,11 @@ function ladderDomHTML(L){
       <span class="sp"></span><button data-lclr="above" title="clear SOLD / BOUGHT / +/− above the offer (after a move down)">CLR ▲</button><button data-lclr="below" title="clear SOLD / BOUGHT / +/− below the bid (after a move up)">CLR ▼</button></div>`;
   }
   h += `<table class="${cl}" data-cols="laddom"><tr>
+    <th class="railh" data-w="52" data-min="18" title="the level rail: every level on this price (your lines, the day's levels, the daily chart's, VWAP, strikes getting the money), stacked; hover for all of them. The reload buyer / seller cluster sits here too: ↻N = refilled N times"><span class="full">LEVELS</span><span class="short">LVL</span></th>
     ${link ? `<th class="odh b opt" data-w="40" data-min="26" title="CONTRACT MODE — BUY ${cn} × ${esc(cname)}: click a row at or under the offer to buy the contract NOW at its touch; above the offer (▲) a WATCH that buys it the moment ${esc(sym)} trades that price. Your watches sit here; click one to take it off${esc(tt)}">BUY ${cn}×${esc(cshort)}</th>`
            : `<th class="odh b" data-w="40" data-min="26" title="BUY column (Jigsaw-style order entry): click a row to BUY ${esc(sz((T().default_shares || 0)))} there. At or under the offer: a limit. Above the offer (▲): a BUY STOP that fires when price trades there. Your working buys sit here; click one to cancel, drag to move${esc(tt)}">BUY</th>`}
     <th class="szh wb" data-w="64" data-min="26" title="WAITING BUYERS: shares resting to buy at this price right now (the book). The bar is against the biggest size on screen; it shrinks on a cancel and on a trade alike. Click: BUY there${esc(tt)}"><span class="full">WAITING BUYERS</span><span class="short">BUYERS</span></th>
     <th class="dpsh" data-w="34" data-min="14" title="+/− on the BID, last ${L.stack_seconds || 60}s: + size ADDED by buyers, − size PULLED without trading (COLS)">+/−</th>
-    <th class="railh" data-w="52" data-min="18" title="the level rail: every level on this price (your lines, the day's levels, the daily chart's, VWAP, strikes getting the money), stacked; hover for all of them. The reload buyer / seller cluster sits here too: ↻N = refilled N times"><span class="full">LEVELS</span><span class="short">LVL</span></th>
     <th class="volh s" data-w="58" data-min="22" title="ACTUAL SELLING: shares that HIT THE BID at this price ${volWord} (aggressive sellers, read off the tape against the quote in force). Pulses only when a print lands here"><span class="full">ACTUAL SELLING</span><span class="short">SOLD</span></th>
     <th class="pxh" data-w="58" data-min="30">PRICE</th>
     <th class="volh b" data-w="58" data-min="22" title="ACTUAL BUYING: shares that LIFTED THE OFFER at this price ${volWord} (aggressive buyers). Pulses only when a print lands here"><span class="full">ACTUAL BUYING</span><span class="short">BOUGHT</span></th>
@@ -3689,9 +3717,9 @@ function ladderDomHTML(L){
     <th class="szh ws" data-w="64" data-min="26" title="WAITING SELLERS: shares resting to sell at this price right now (the book). Click: SELL there${esc(tt)}"><span class="full">WAITING SELLERS</span><span class="short">SELLERS</span></th>
     ${link ? `<th class="odh s opt" data-w="40" data-min="26" title="CONTRACT MODE — SELL ${cn} × ${esc(cname)}: click a row at or over the bid to sell the contract NOW at its touch; below the bid (▼) a WATCH that sells it the moment ${esc(sym)} trades that price (your stop on the stock). Your watches sit here; click one to take it off${esc(tt)}">SELL ${cn}×${esc(cshort)}</th>`
            : `<th class="odh s" data-w="40" data-min="26" title="SELL column (Jigsaw-style order entry): click a row to SELL ${esc(sz((T().default_shares || 0)))} there. At or over the bid: a limit. Below the bid (▼): a SELL STOP that fires when price trades there. Your working sells sit here; click one to cancel, drag to move${esc(tt)}">SELL</th>`}
-    <th class="trh" data-w="58" data-min="22" title="TRADED AT PRICE: every confirmed trade at this price today (bought + sold + the prints no side could be read for). Resets with the session"><span class="full">TRADED</span><span class="short">TRD</span></th>
     <th class="neth" data-w="44" data-min="38" title="NET at this price today: bought (lifted the offer) minus sold (hit the bid). Green = more buying, red = more selling (COLS)">NET</th>
-    ${C.money ? `<th class="mnh" data-w="52" data-min="22" title="$ resting here: (buyers + sellers showing) × price">$ HERE</th>` : ""}</tr>`;
+    ${C.money ? `<th class="mnh" data-w="52" data-min="22" title="$ resting here: (buyers + sellers showing) × price">$ HERE</th>` : ""}
+    <th class="trh" data-w="58" data-min="22" title="TRADED AT PRICE: every confirmed trade at this price today (bought + sold + the prints no side could be read for). Resets with the session"><span class="full">TRADED</span><span class="short">TRD</span></th></tr>`;
   const netCell = r => { const bk = r.bk, n = bk ? (bk[1] || 0) - (bk[2] || 0) : 0; if (!bk || !n) return `<td class="dnet"></td>`;
     return `<td class="dnet ${n > 0 ? "b" : "s"}" title="${esc(`${px(r.price)} today: ${sz(bk[1])} bought, ${sz(bk[2])} sold = ${n > 0 ? "+" : "−"}${sz(Math.abs(n))} net`)}">${n > 0 ? "+" : "−"}${kfmt(Math.abs(n))}</td>`; };
   for (const r of rows){
@@ -3711,19 +3739,19 @@ function ladderDomHTML(L){
     const tT = v.t ? `${sz(v.t)} traded at ${px(r.price)} today in ${r.bk ? r.bk[3] : "?"} prints: ${sz(r.bk ? r.bk[1] : 0)} bought, ${sz(r.bk ? r.bk[2] : 0)} sold${r.bk && r.bk[0] - r.bk[1] - r.bk[2] > 0 ? `, ${sz(r.bk[0] - r.bk[1] - r.bk[2])} unclassified` : ""}` : "nothing traded here today";
     const glow = r.last && L.pace && L.pace.heat ? `;--heat:${L.pace.heat}` : "";
     h += `<tr class="${cls}" data-price="${r.price}" style="${glow.slice(1)}">
+      ${rail(r)}
       ${ocol(r, "b")}
       <td class="sz bsz click${fakeB}${bigB}" data-act="BUY" data-px="${r.price}"${optAttr} title="${esc(tB)}">${bar(k + "|wb", 100 * (r.bid || 0) / maxSz, "b")}<span class="szn">${r.bid ? kfmt(r.bid) : ""}</span>${sizeChips(r, "b") ? `<span class="mine">${sizeChips(r, "b")}</span>` : ""}</td>
       ${stk(r, "b")}
-      ${rail(r)}
       <td class="dvol s" data-v="${v.s}" title="${esc(tS)}">${bar(k + "|s", 100 * v.s / maxV, "s")}<span class="vn">${v.s ? kfmt(v.s) : ""}</span>${lrg(r, "s")}</td>
       <td class="px" title="${esc(tT)}">${r.best_bid ? `<u class="inb" title="the INSIDE BID: the best price a buyer is resting at right now">BID</u>` : r.best_ask ? `<u class="ina" title="the INSIDE ASK: the best price a seller is resting at right now">ASK</u>` : ""}${px(r.price)}${r.vn > 1 ? `<sup title="price has been back here ${r.vn} times">×${r.vn}</sup>` : ""}</td>
       <td class="dvol b" data-v="${v.b}" title="${esc(tBuy)}">${bar(k + "|b", 100 * v.b / maxV, "b")}<span class="vn">${v.b ? kfmt(v.b) : ""}</span>${lrg(r, "b")}</td>
       ${stk(r, "a")}
       <td class="sz asz click${fakeA}${bigA}" data-act="SELL" data-px="${r.price}"${optAttr} title="${esc(tA)}">${bar(k + "|ws", 100 * (r.ask || 0) / maxSz, "s")}<span class="szn">${r.ask ? kfmt(r.ask) : ""}</span>${sizeChips(r, "s") ? `<span class="mine">${sizeChips(r, "s")}</span>` : ""}</td>
       ${ocol(r, "s")}
-      <td class="dtr" data-v="${v.t}" title="${esc(tT)}">${bar(k + "|t", 100 * v.t / maxT, "t")}<span class="vn">${v.t ? kfmt(v.t) : ""}</span></td>
       ${netCell(r)}
-      ${C.money ? `<td class="mn">${r.bid || r.ask ? usdK(((r.bid || 0) + (r.ask || 0)) * r.price) : ""}</td>` : ""}</tr>`;
+      ${C.money ? `<td class="mn">${r.bid || r.ask ? usdK(((r.bid || 0) + (r.ask || 0)) * r.price) : ""}</td>` : ""}
+      <td class="dtr" data-v="${v.t}" title="${esc(tT)}">${bar(k + "|t", 100 * v.t / maxT, "t")}<span class="vn">${v.t ? kfmt(v.t) : ""}</span></td></tr>`;
   }
   h += `</table>`;
   return h;
