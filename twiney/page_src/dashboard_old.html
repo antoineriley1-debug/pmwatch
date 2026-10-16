@@ -1106,6 +1106,7 @@ function wireChart(p, cv, v, saveView, isFoot){
   const commitLevel = async d => {
     if (Math.abs(d.price - d.from) < 1e-6) return;
     let out;
+    if (d.role === "opart"){ const out = await post("/api/trade/opt_partial_move", {id: d.wid, px: d.price}); toast(out.ok ? out.sent : "PARTIAL: " + (out.reason || "not moved"), out.ok); poll(true); return; }
     if (p.opt && typeof optLevel === "function"){ await optLevel(d.role, d.price, ((T().opt_levels || {})[OCH.key] || {}).n || OCH.n); return; }
     if (d.role === "extra"){ await post("/api/level", {symbol: p.data.symbol, price: d.from, on: false, role: "extra"});
       out = await post("/api/level", {symbol: p.data.symbol, price: d.price, on: true, role: "extra"}); }
@@ -1127,6 +1128,7 @@ function wireChart(p, cv, v, saveView, isFoot){
     drawChart(p); };
   p.carryEnd = carryEnd;
   cv.addEventListener("mousedown", e => {
+    if (e.button !== 0) return;              // the right button is the menu (contextmenu), never a drag, a pan or a click
     // clicking the chart takes the keyboard: whatever box had focus (symbol box, ticket) lets go, so typing lands on the chart
     if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
     const r = cv.getBoundingClientRect(), x0 = e.clientX, y0 = e.clientY, onAxis = (e.clientX - r.left) > r.width - 86;
@@ -1165,7 +1167,7 @@ function wireChart(p, cv, v, saveView, isFoot){
     const hitL = p.data && v.chartY && !onAxis && !onTime && !(e.ctrlKey || e.metaKey) ? lineAt(yAt(), 8) : null;
     if (hitL && hitL.kind === "level"){
       const lv = hitL.lv; e.preventDefault();
-      p.dragLevel = {role: lv.role, from: lv.price, price: lv.price, label: lv.label};
+      p.dragLevel = {role: lv.role, from: lv.price, price: lv.price, label: lv.label, wid: lv.wid};
       // a line only moves on a deliberate drag (4px), and by how far you drag it, never jumping to the cursor
       const move = ev => { if (!p.dragLevel || (Math.abs(ev.clientY - y0) < 4 && p.dragLevel.price === p.dragLevel.from)) return;
         const dp = -(ev.clientY - y0) / ((v.chartH || 1) - 8) * (v.chartY[1] - v.chartY[0]);
@@ -1249,7 +1251,7 @@ function wireChart(p, cv, v, saveView, isFoot){
       if (hit){
         if (p.carry) carryEnd(false);
         const esc = ev => { if (ev.key === "Escape"){ ev.stopPropagation(); ev.preventDefault(); carryEnd(false); } };
-        if (hit.kind === "level"){ const lv = hit.lv; p.dragLevel = {role: lv.role, from: lv.price, price: lv.price, label: lv.label}; p.dragOrder = null; }
+        if (hit.kind === "level"){ const lv = hit.lv; p.dragLevel = {role: lv.role, from: lv.price, price: lv.price, label: lv.label, wid: lv.wid}; p.dragOrder = null; }
         else { p.dragOrder = {id: hit.o.id, ids: hit.group.map(x => x.id), price: hit.o.price}; p.dragLevel = null; }
         p.carry = {kind: hit.kind, o: hit.o, esc}; cv.classList.add("carry");
         document.addEventListener("keydown", esc, true);
@@ -1313,7 +1315,9 @@ function takeProfitMenu(d, price){
   const b = (f, lbl) => `<button data-do="tp" data-n="${f >= 1 ? q : n(f)}" class="blvl" ${ok ? "" : "disabled"}>${lbl} <span class="dim">${sz(f >= 1 ? q : n(f))}</span></button>`;
   return `<div class="lvl2 tpmenu" title="${act} part of your ${sz(q)} ${long ? "long" : "short"} at ${px(price)}: a limit that only takes the position down">
       <div class="hh"><b class="${long ? "b" : "s"}">TAKE PROFIT @ ${px(price)}</b> <span class="dim">· ${act} of your ${sz(q)}</span></div>
-      <div class="hb">${b(0.25, "25%")}${b(0.5, "50%")}${b(1, "ALL")}</div>${ok ? "" : `<div class="dim">profit is ${long ? "above" : "below"} ${px(last)} — this side is for a STOP</div>`}</div>`;
+      <div class="hb">${b(0.25, "25%")}${b(0.5, "50%")}${b(1, "ALL")}</div>
+      ${q > 1 ? `<div class="hb part"><b>PARTIAL</b> ${act.toLowerCase()} <select class="tp-n" title="how many of your ${sz(q)} shares">${[0.1, 0.2, 0.25, 1 / 3, 0.5, 2 / 3, 0.75].map(f => n(f)).filter((v, i, a) => v < q && a.indexOf(v) === i)
+        .map(v => `<option value="${v}" ${v === n(0.5) ? "selected" : ""}>${sz(v)} of ${sz(q)} (${Math.round(v / q * 100)}%)</option>`).join("")}</select> @ ${px(price)} <button data-do="tpsel" class="blvl" ${ok ? "" : "disabled"}>SET</button></div>` : ""}${ok ? "" : `<div class="dim">profit is ${long ? "above" : "below"} ${px(last)} — this side is for a STOP</div>`}</div>`;
 }
 function hasLines(d){
   const pl = d.play || {}, al = pl.alt || {};
@@ -1343,7 +1347,24 @@ function optHeldMenu(d, price){
   const btn = (role, ok, label, why) => `<button data-do="optline" data-role="${role}" data-key="${esc(c.key)}" data-qty="${c.qty}" class="blvl" ${ok ? "" : `disabled title="${why}"`}>${label} @ ${px(price)}${ok ? at(price) : ""}</button>`;
   return `<div class="lvl2 heldopt" title="the line goes on the ${esc(d.symbol)} chart and trades your contract: ${esc(d.symbol)} through the STOP sells it, ${esc(d.symbol)} at the TARGET sells ${(T().opt_target_pct || 100) >= 100 ? "it all" : (T().opt_target_pct) + "% of it, the rest runs with its stop at breakeven"}">
       <div class="hh"><b class="${call ? "b" : "s"}">YOUR ${esc(name)}</b> <span class="dim">· ${c.qty} ct · lines on the stock chart sell it</span></div>
-      <div class="hb">${btn("stop", stopOk, "STOP", `a ${call ? "call" : "put"}'s stop goes ${call ? "under" : "over"} ${px(last)}`)}${btn("target", tgtOk, (T().opt_target_pct || 100) >= 100 ? "TARGET" : `TARGET ${T().opt_target_pct}%`, `a ${call ? "call" : "put"}'s target goes ${call ? "over" : "under"} ${px(last)}`)}</div></div>`;
+      <div class="hb">${btn("stop", stopOk, "STOP", `a ${call ? "call" : "put"}'s stop goes ${call ? "under" : "over"} ${px(last)}`)}${btn("target", tgtOk, (T().opt_target_pct || 100) >= 100 ? "TARGET" : `TARGET ${T().opt_target_pct}%`, `a ${call ? "call" : "put"}'s target goes ${call ? "over" : "under"} ${px(last)}`)}</div>${optPartialRow(d, price, c, tgtOk)}</div>`;
+}
+/* PARTIAL TARGET on the contracts you hold: when the stock gets to this price, SELL some of them (whole contracts:
+   1 of 6, 2 of 6 ...); the rest stays on with its stop and target. Several partials at different prices add up */
+function optPartialRow(d, price, c, ok){
+  const q = Math.abs(c.qty || 0);
+  const set = ((T().opt_watches) || []).filter(w => w.close && w.key === c.key), planned = set.reduce((a, w) => a + (+w.contracts || 0), 0), free = q - planned;
+  const list = set.length ? `<div class="dim">set: ${set.map(w => `${w.contracts} at ${px(w.px)}`).join(", ")}</div>` : "";
+  if (q < 2) return `<div class="hb part dim">1 contract: the TARGET sells it (a partial needs 2 or more)</div>`;
+  if (free < 1) return `<div class="hb part dim">all ${q} already set to come off at your partials</div>${list}`;
+  const opts = Array.from({length: Math.min(free, q - 1)}, (_, i) => i + 1).map(k => `<option value="${k}" ${k === Math.max(1, Math.floor(q / 2)) && k <= free ? "selected" : ""}>${k} of ${q}${k === Math.floor(q / 2) ? " (half)" : k === Math.floor(q / 3) && q >= 3 ? " (a third)" : ""}</option>`).join("");
+  return `<div class="hb part"><b>PARTIAL</b> sell <select class="opart-n" title="how many of your ${q} contracts come off here">${opts}</select>
+      when ${esc(d.symbol)} hits ${px(price)} <button data-do="opart" data-key="${esc(c.key)}" class="blvl" ${ok ? "" : `disabled title="a partial target goes on the profit side of ${px(d.last)}"`}>SET</button></div>${list}`;
+}
+async function optPartialSet(d, price, key, m){
+  const sel = m.querySelector(".opart-n"); const n = sel ? +sel.value : 0; if (!n) return;
+  const out = await post("/api/trade/opt_partial", {key, contracts: n, px: price});
+  toast(out.ok ? out.sent : "PARTIAL: " + (out.reason || "refused"), out.ok); poll(true);
 }
 async function optHeldLine(d, role, price, key, qty){
   const right = (String(key).split(" ")[2] || "").slice(-1), side = right === "C" ? "long" : "short";
@@ -1393,6 +1414,7 @@ function heldQuick(p, x, y, price){
     const b = e.target.closest("button[data-do]"); if (!b || b.disabled) return;
     m.remove();
     if (b.dataset.do === "optline") optHeldLine(d, b.dataset.role, price, b.dataset.key, +b.dataset.qty);
+    else if (b.dataset.do === "opart") optPartialSet(d, price, b.dataset.key, m);
     else if (b.dataset.do === "obe") optBreakeven(c.key, +b.dataset.plus || 0);
     else if (b.dataset.do === "oclose"){ if (!confirm("CLOSE every contract of " + c.key + "?")) return;
       const out = await post("/api/trade/opt_adjust", {key: c.key, contracts: 0, mode: "close", price: null}); toast(out.ok ? "Sent: " + out.sent : "Blocked: " + (out.reason || ""), out.ok); poll(true); }
@@ -1471,7 +1493,7 @@ function chartMenu(p, v, x, y, price){
     ${(() => { const z = ((d.play && d.play.zones) || []).find(z => price >= z[0] - 1e-9 && price <= z[1] + 1e-9);
       return z ? `<button data-do="rmzone" data-lo="${z[0]}" data-hi="${z[1]}">✕ Remove your zone ${px(z[0])}–${px(z[1])}</button>` : ""; })()}
     ${(() => { const per = v.chartY ? (v.chartY[1] - v.chartY[0]) / ((v.chartH || 1) - 8) : 0; const lv = (d.user_levels || []).find(l => Math.abs(l.price - price) <= per * 6);
-      return lv ? `<button data-do="rmlevel" data-role="${esc(lv.role)}" data-lp="${lv.price}">✕ Remove ${esc(lv.label)} ${px(lv.price)}</button>` : ""; })()}
+      return lv ? `<button data-do="rmlevel" data-role="${esc(lv.role)}" data-lp="${lv.price}" data-wid="${lv.wid || ""}">✕ Remove ${esc(lv.role === "opart" ? "PARTIAL " + lv.n + " ct" : lv.label)} ${px(lv.price)}</button>` : ""; })()}
     ${hasLines(d) || d.orders.length ? `<button data-do="clearall" class="bclear" title="take off every line you drew on ${esc(d.symbol)} (pivot, 2nd entry, stop, target, extra lines, sneaky pivots, zones, both sides) and cancel every working order on it">✕ Clear all my lines${d.orders.length ? ` + cancel ${d.orders.length} order${d.orders.length === 1 ? "" : "s"}` : ""}</button>` : ""}
     ${!on ? `<div class="dim" style="font-size:11px;margin-top:4px">${esc(whyNot())}</div>` : ""}`;
   m.style.left = Math.min(x, window.innerWidth - 230) + "px"; m.style.top = Math.min(y, window.innerHeight - 160) + "px";
@@ -1490,6 +1512,9 @@ function chartMenu(p, v, x, y, price){
       if (role === "trigger" && own && cur && Math.abs(cur - price) > 1e-9 && !confirm(`Move the ${d.symbol} pivot from ${px(cur)} to ${px(price)}?`)) return;
       post("/api/level", {symbol: d.symbol, role, price, side, confirm: role === "trigger"}).then(out => { toast(out.ok ? `${d.symbol} ${side ? side.toUpperCase() + " " : ""}${names[role]} ${px(price)}` + (role === "second_entry" ? " — entry order going in (armed desk)" : "") : "Could not set the " + names[role], out.ok); if (out.ok) poll(true); }); }
     else if (b.dataset.do === "optline") optHeldLine(d, b.dataset.role, price, b.dataset.key, +b.dataset.qty);
+    else if (b.dataset.do === "opart") optPartialSet(d, price, b.dataset.key, m);
+    else if (b.dataset.do === "tpsel"){ const v = +(m.querySelector(".tp-n") || {}).value; if (v) post("/api/trade/partial", {symbol: d.symbol, shares: v, price}).then(out => {
+      toast(out.ok ? `PARTIAL: ${out.sent}` : "Partial blocked: " + (out.reason || ""), out.ok); if (out.ok) poll(true); }); }
     else if (b.dataset.do === "cline") optHeldLine(d, b.dataset.role, price, cOn.key, cOn.n);
     else if (b.dataset.do === "cwatch") post("/api/trade/opt_watch", {symbol: d.symbol, expiry: cOn.expiry, strike: cOn.strike, right: cOn.right, action: "BUY", contracts: cOn.n, px: price, when: d.last != null && price < d.last ? "below" : "above"})
       .then(out => { toast(out.ok ? `WATCH: buy ${cOn.n} ${cOn.label} when ${d.symbol} trades ${px(price)}` : "Blocked: " + (out.reason || ""), out.ok); poll(true); });
@@ -1502,6 +1527,7 @@ function chartMenu(p, v, x, y, price){
     else if (b.dataset.do === "zone"){ const tk = price >= 1 ? 0.01 : 0.0001; v.levelTool = "zone"; v.zoneStart = +(Math.round(price / tk) * tk).toFixed(4); renderTools(p); toast(`Zone edge ${px(v.zoneStart)}: now click the other edge`, true); }
     else if (b.dataset.do === "clearall") clearAllLines(d);
     else if (b.dataset.do === "rmzone") post("/api/zone", {symbol: d.symbol, lo: +b.dataset.lo, hi: +b.dataset.hi, on: false}).then(out => { toast(out.ok ? "Zone removed" : "Could not remove it", out.ok); if (out.ok) poll(true); });
+    else if (b.dataset.do === "rmlevel" && b.dataset.role === "opart") post("/api/trade/opt_unwatch", {id: +b.dataset.wid}).then(out => { toast(out.ok ? "PARTIAL taken off" : "Could not take it off", out.ok); poll(true); });
     else if (b.dataset.do === "rmlevel"){ const role = b.dataset.role, lp = +b.dataset.lp;
       (role === "extra" || role === "sneaky" ? post("/api/level", {symbol: d.symbol, price: lp, on: false, role}) : post("/api/level", {symbol: d.symbol, role, price: null, confirm: role === "trigger"}))
         .then(out => { toast(out.ok ? "Level removed " + px(lp) : "Could not remove it", out.ok); if (out.ok) poll(true); }); }
@@ -1509,7 +1535,9 @@ function chartMenu(p, v, x, y, price){
   // any click outside closes it (a click inside on a disabled button must not use that up), so does Escape or 20 s
   const away = ev => { if (!m.isConnected){ document.removeEventListener("mousedown", away, true); return; } if (!m.contains(ev.target)) m.remove(); };
   setTimeout(() => document.addEventListener("mousedown", away, true), 0);
-  setTimeout(() => { if (m.isConnected) m.remove(); }, 20000);
+  m.addEventListener("mousedown", () => { m.dataset.busy = "1"; });            // picking from a dropdown: it stays open
+  const auto = () => { if (!m.isConnected) return; if (m.dataset.busy){ delete m.dataset.busy; setTimeout(auto, 20000); return; } m.remove(); };
+  setTimeout(auto, 20000);
 }
 function ps60HTML(d){
   const s = d.ps60; if (!s) return "";
@@ -2015,6 +2043,7 @@ function emaSeries(cl, n){ const out = new Array(cl.length).fill(null); if (cl.l
 function bbSeries(cl, n, mult){ const up = new Array(cl.length).fill(null), dn = up.slice(), mid = up.slice(); for (let i = n - 1; i < cl.length; i++){ let s = 0, s2 = 0; for (let j = i - n + 1; j <= i; j++){ s += cl[j]; s2 += cl[j] * cl[j]; } const m = s / n, sd = Math.sqrt(Math.max(0, s2 / n - m * m)); mid[i] = m; up[i] = m + mult * sd; dn[i] = m - mult * sd; } return {up, dn, mid}; }
 const LEVEL_STYLE = {trigger:["#dbe3ee",[],1.6], second_entry:["#3fd0ff",[6,4],1.6], extra:["#b9c3d3",[3,4],1.2], sneaky:["#f0a8ff",[4,3],1.4],
   target:["#26d07c",[2,4],1], stop:["#ff4d5e",[2,4],1],
+  opart:["#7bed9f",[8,3],1.4],      // a PARTIAL on your contract: some of them come off here
   // the OTHER SIDE of the play (a short under a long, a long over a short): same colours, its own dash, an arrow in the label
   alt_trigger:["#c9b8ff",[10,3,2,3],1.6], alt_second_entry:["#3fd0ff",[10,3,2,3],1.6], alt_target:["#26d07c",[8,3,2,3],1], alt_stop:["#ff4d5e",[8,3,2,3],1]};
 

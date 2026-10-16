@@ -1025,6 +1025,10 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                 elif action == "opt_watch":
                     out = tr.opt_watch(sym, str(body.get("expiry", "")), body.get("strike"), str(body.get("right", "C")),
                                        str(body.get("action", "BUY")), body.get("contracts"), body.get("px"), str(body.get("when", "above")), now)
+                elif action == "opt_partial_move":
+                    out = tr.opt_partial_move(body.get("id"), body.get("px"), now)
+                elif action == "opt_partial":
+                    out = tr.opt_partial(str(body.get("key", "")), body.get("contracts"), body.get("px"), now)
                 elif action == "opt_unwatch":
                     out = tr.opt_unwatch(body.get("id"), now)
                 elif action == "opt_adjust":

@@ -5719,6 +5719,11 @@ class Engine:
             tape["speed"]["trend"] = pc.get("accel") or "STEADY"
             tape["speed"]["ratio"] = pc.get("ratio")
         user_levels = self._user_levels(st.play)
+        tr_ = getattr(self, "trader", None)
+        for w in list(getattr(tr_, "opt_watches", None) or []):
+            if w.get("close") and w.get("symbol") == sym:     # a PARTIAL on your contract: a line you can drag
+                user_levels = user_levels + [{"role": "opart", "price": w["px"], "label": f"PART {w['contracts']}",
+                                              "wid": w["id"], "key": w["key"], "n": w["contracts"]}]
         bars = st.bar_list(MAX_BARS)
         first_bar = bars[0][0] if bars else t
         sym_alerts = [a for a in self.alerts if a["symbol"] == sym]

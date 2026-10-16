@@ -435,3 +435,32 @@ class AutoTargetTests(unittest.TestCase):
         self.assertEqual(e.syms["AAA"].play["target"], 10.4)
         e.set_play_level("AAA", "second_entry", None, 4.0, source="chart")
         self.assertIsNone(e.syms["AAA"].play.get("target"))
+
+
+class PartialTargetTests(unittest.TestCase):
+    """PARTIAL on contracts you hold, set on the stock chart: whole contracts come off when the stock gets there."""
+
+    def setup(self):
+        import datetime, zoneinfo
+        from twiney import options as _o
+        e, tr, broker = make()
+        T = datetime.datetime(2026, 10, 12, 11, 0, tzinfo=zoneinfo.ZoneInfo("America/New_York")).timestamp()
+        e.on_l1("AAA", "last", 10.0, T); quote(e, 9.99, 10.00, T)
+        exp = e.option_chain("AAA", None, "C", T)["expiry"]; k = _o.key_of("AAA", exp, 10, "C")
+        tr.opt_open("AAA", exp, 10, "C", "BUY", 6, None, T); e.practice_opt_tick(T + 0.5)
+        return e, tr, T, k
+
+    def test_set_move_and_fire(self):
+        e, tr, T, k = self.setup()
+        self.assertEqual(e.opt_positions[k]["qty"], 6)
+        self.assertFalse(tr.opt_partial(k, 2, 9.50, T + 1)["ok"])                      # the loss side: refused
+        out = tr.opt_partial(k, 2, 10.50, T + 1)
+        self.assertTrue(out["ok"], out); self.assertIn("2 of 6", out["sent"])
+        self.assertFalse(tr.opt_partial(k, 5, 10.80, T + 1.1)["ok"])                   # 2 + 5 is more than the 6 held
+        self.assertTrue(tr.opt_partial(k, 2, 10.80, T + 1.2)["ok"])
+        wid = tr.opt_watches[0]["id"]
+        self.assertTrue(tr.opt_partial_move(wid, 10.40, T + 1.5)["ok"])
+        e.on_l1("AAA", "last", 10.45, T + 2); quote(e, 10.44, 10.45, T + 2); tr.watchdog(T + 2.1)
+        e.practice_opt_tick(T + 2.5); e.practice_opt_tick(T + 3)
+        self.assertEqual(e.opt_positions[k]["qty"], 4)                                  # 2 whole contracts came off, 4 run
+        self.assertEqual([w["px"] for w in tr.opt_watches], [10.80])                     # the other partial still set

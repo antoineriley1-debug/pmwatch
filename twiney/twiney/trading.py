@@ -3255,6 +3255,57 @@ class Trader:
             self._note(now, f"WATCH {action} {n} {key} when {symbol} trades {money(px)}", True)
             return {"ok": True, "id": w["id"], "watch": dict(w)}
 
+    def opt_partial(self, key, contracts, px, now=None):
+        """PARTIAL TARGET on a contract you hold, set on the STOCK chart: when the stock reaches ``px`` (over it for a
+        call you bought, under it for a put), ``contracts`` of them come off at the touch; the rest stays on with its
+        stop and target. Several can be set at different prices."""
+        from . import options as _o
+        with self.lock:
+            now = now or time.time()
+            try:
+                sym, expiry, strike, right = _o.parse_key(str(key))
+                n, px = int(contracts), float(px)
+            except (TypeError, ValueError, IndexError):
+                return {"ok": False, "reason": "pick the contract, how many and the stock price"}
+            held = int((self.engine.opt_positions.get(key) or {}).get("qty") or 0)
+            if not held:
+                return {"ok": False, "reason": f"you do not hold {key}"}
+            if n <= 0 or px <= 0:
+                return {"ok": False, "reason": "how many contracts, at what stock price?"}
+            planned = sum(int(w["contracts"]) for w in self.opt_watches if w.get("close") and w["key"] == key)
+            if n + planned > abs(held):
+                return {"ok": False, "reason": f"you hold {abs(held)}; {planned} already set to come off at other prices — at most {abs(held) - planned} more"}
+            when = "above" if (right == "C") == (held > 0) else "below"
+            st = self.engine.syms.get(sym)
+            last = st.price() if st else None
+            if last and ((when == "above" and last >= px) or (when == "below" and last <= px)):
+                return {"ok": False, "reason": f"{sym} is already {'at or over' if when == 'above' else 'at or under'} {money(px)}: use TAKE PROFIT now instead"}
+            self._opt_watch_seq += 1
+            w = {"id": self._opt_watch_seq, "symbol": sym, "expiry": expiry, "strike": strike, "right": right, "key": key,
+                 "action": SELL if held > 0 else BUY, "contracts": n, "px": round(px, 4), "when": when, "t": now, "close": True}
+            self.opt_watches.append(w)
+            self._note(now, f"PARTIAL set: {n} of {abs(held)} {key} come off when {sym} trades {money(px)}", True)
+            return {"ok": True, "id": w["id"], "sent": f"PARTIAL: {n} of {abs(held)} come off when {sym} trades {money(px)}"}
+
+    def opt_partial_move(self, wid, px, now=None):
+        """A PARTIAL line dragged on the stock chart: same contracts, the new stock price (still on the profit side)."""
+        with self.lock:
+            now = now or time.time()
+            w = next((x for x in self.opt_watches if x["id"] == int(wid) and x.get("close")), None)
+            if w is None:
+                return {"ok": False, "reason": "that partial is not there any more"}
+            try:
+                px = float(px)
+            except (TypeError, ValueError):
+                return {"ok": False, "reason": "price must be a number"}
+            st = self.engine.syms.get(w["symbol"])
+            last = st.price() if st else None
+            if last and ((w["when"] == "above" and last >= px) or (w["when"] == "below" and last <= px)):
+                return {"ok": False, "reason": f"{w['symbol']} is already past {money(px)}: a partial goes on the profit side"}
+            w["px"] = round(px, 4)
+            self._note(now, f"PARTIAL moved: {w['contracts']} {w['key']} come off when {w['symbol']} trades {money(px)}", True)
+            return {"ok": True, "sent": f"PARTIAL {w['contracts']} at {money(px)}"}
+
     def opt_unwatch(self, wid, now=None):
         with self.lock:
             for i, w in enumerate(self.opt_watches):
@@ -3277,6 +3328,17 @@ class Trader:
             if not hit:
                 continue
             self.opt_watches.remove(w)
+            if w.get("close"):
+                # a PARTIAL: take some of the contracts you hold off (never more than you hold, never a new position)
+                held = abs(int((self.engine.opt_positions.get(w["key"]) or {}).get("qty") or 0))
+                if not held:
+                    self._note(now, f"PARTIAL at {money(w['px'])} on {w['key']}: nothing held any more, nothing sent", False)
+                    continue
+                n = min(int(w["contracts"]), held)
+                out = self.opt_adjust(w["key"], 0 if n >= held else n, "close", None, now)
+                self._note(now, f"PARTIAL {w['symbol']} reached {money(w['px'])}: {n} of {held} {w['key']} — "
+                                + (out.get("sent") or f"NOT sent: {out.get('reason')}"), bool(out.get("ok")))
+                continue
             out = self.opt_open(w["symbol"], w["expiry"], w["strike"], w["right"], w["action"], w["contracts"], None, now)
             if not out.get("ok"):
                 self._note(now, f"WATCH at {money(w['px'])} fired, {w['action']} {w['contracts']} {w['key']} NOT sent: {out.get('reason')}", False)

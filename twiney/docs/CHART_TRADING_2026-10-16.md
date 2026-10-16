@@ -39,6 +39,20 @@ than the 2 to 1.
 13.45 is "thirteen forty-five", 13.05 "thirteen oh five", 13.00 "thirteen dollars", 0.45 "forty-five cents", 152.50
 "one fifty-two fifty". Never "thirteen point four five".
 
+## PARTIAL targets (right-click the stock chart)
+
+Holding contracts: right-click where you want some of them off. The menu has **PARTIAL sell [dropdown] when the stock
+hits that price** and a **SET** button.
+
+- The dropdown knows how many you hold. It counts whole contracts, never a part of one: "1 of 6, 2 of 6, 3 of 6 (half)".
+- SET puts a green dashed **PART n** line on the chart. Drag it, or double-click it to pick it up, to move it. Right-click
+  it and choose Remove to take it off.
+- When the stock reaches it, that many contracts come off at the touch. The rest stay on with their stop and target.
+- Several partials at different prices add up, never to more than you hold.
+
+Holding shares: the same menu has **PARTIAL sell [10% … 75% of your shares] @ price** with SET. That rests a limit
+order that only takes the position down, drawn on the chart as an order line you can drag.
+
 ## The option chart
 
 - The bid / ask, delta and "practice model" words are gone from the top line.
