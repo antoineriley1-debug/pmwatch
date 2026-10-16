@@ -5857,7 +5857,8 @@ class Engine:
                 last, pc = st.price(), prev_close(st)
                 wl.append({"symbol": p["symbol"], "last": fmt_price(last), "prev_close": fmt_price(pc),
                            "chg_pct": round((last - pc) / pc * 100, 2) if last and pc else None,
-                           "side": p.get("side"), "pivot": p.get("trigger"), "active": p.get("active", True)})
+                           "side": p.get("side"), "pivot": p.get("trigger"), "active": p.get("active", True),
+                           "second_entry": p.get("second_entry"), "target": p.get("target"), "stop": p.get("stop")})
             charts = {}
             for sym in list(view)[:6]:
                 if sym not in self.syms:
@@ -5867,6 +5868,8 @@ class Engine:
                 charts[sym] = {k: d.get(k) for k in ("symbol", "last", "bars", "daily", "refs", "user_levels", "play", "headline")}
                 charts[sym]["prev_close"] = fmt_price(prev_close(st))
                 charts[sym]["studies"] = d.get("studies") or {}      # GAS + ATR, AIRSPACE, UNVISITED: drawn the desk's way
+                bk = d.get("book") or {}
+                charts[sym]["book"] = {"bids": (bk.get("bids") or [])[:10], "asks": (bk.get("asks") or [])[:10]} if isinstance(bk, dict) else None
                 se = ((d.get("ps60") or {}).get("se") or {})
                 charts[sym]["se"] = {"state": se.get("state"), "text": se.get("text")}
             alerts = [{"key": a.get("key"), "t": a.get("t"), "symbol": a.get("symbol"), "label": a.get("label"), "role": a.get("role"),
@@ -5882,7 +5885,7 @@ class Engine:
             r = None
             if not tr.get("opt") and ein and eout and stop and abs(ein - stop) > 1e-9:
                 r = round(((eout - ein) if tr["side"] == "long" else (ein - eout)) / abs(ein - stop), 2)
-            trades.append({"name": tr.get("name"), "symbol": tr.get("underlying") or tr.get("symbol"), "side": tr.get("side"),
+            trades.append({"name": tr.get("name"), "symbol": tr.get("underlying") or tr.get("symbol"), "side": tr.get("side"), "opened": tr.get("opened"),
                            "opt": tr.get("opt"), "entry": round(ein, 2) if ein else None, "exit": round(eout, 2) if eout else None,
                            "r": r, "pct": tr.get("pnl_pct"), "pnl": tr.get("pnl"), "closed": tr.get("closed"), "setup": tr.get("setup")})
         dan = []

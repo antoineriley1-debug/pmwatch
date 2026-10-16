@@ -94,9 +94,10 @@ timeframe.
   (side, pivot, 2nd entry, target, stop).
 - **Lower third**: your name and @handle with the segment.
 - **Ticker crawl**: your watchlist scrolling with price and % on the day, plus FOLLOW @handle. Slow / normal / fast.
-- **BREAKING**: the desk's calls on your watchlist slide in by themselves (2nd entry, pivot broken, READY, bounce /
-  rejection, target / stop, fills). AUTO BREAKING switches that off. Type your own line and press Enter. SAY IT has
-  the browser read it out; it is off by default so you do the talking.
+- **POTENTIAL SETUP** banner: the desk's calls on your watchlist slide in by themselves (2nd entry, pivot broken,
+  READY, bounce / rejection, target / stop, fills). The red label is yours to pick (POTENTIAL SETUP by default, or type
+  your own). AUTO switches the desk's calls off. Type your own line and press Enter. SAY IT has the browser read it
+  out; it is off by default so you do the talking.
 - **WE'RE LIVE intro**: a red sweep with WE'RE LIVE, for the top of the show.
 - **Scenes**: STARTING SOON with a countdown, OPEN COUNTDOWN to 9:30, BE RIGHT BACK, THANKS FOR WATCHING, LIVE (back
   to the charts).
@@ -110,11 +111,45 @@ timeframe.
 - **SNAPSHOT**: saves the chart with your drawings as a PNG for a post.
 - **REPLAY THE DAY**: plays the session back candle by candle from the open, for the recap.
 
-## More ideas, for later
+## Segment boards, chat, sponsor, sound, hotkeys
 
-- A **"MARKET IN 60 SECONDS"** opener: SPY / QQQ / the leaders, one card each, timed.
-- **Split screen with Level II** for a teaching segment on reading the book (desk data, show styling).
-- A **trade recap from a recording**: pick a recorded trade from the journal and replay it with its fills marked.
-- **Chat on screen**: pull YouTube Live chat into a lower third (needs a YouTube API key).
-- **Sponsor / course bug** in a corner with your link, on a timer.
-- **Hotkeys from a Stream Deck**: every scene and segment is one key.
+- **MARKET IN 60 SECONDS** (F6): SPY, QQQ and the four biggest movers on your watchlist, one full-screen card each,
+  timed to fill a minute, with a red bar running along the bottom. Each card shows the price, the % on the day and the
+  PS60 plan if you have one (side, pivot, 2nd entry, target, stop). Press it again to stop.
+- **THE PLAYS** board (F4): a full-screen table of your plays (name, side, pivot, 2nd entry, target, stop) with Dan's
+  stars. Type your own title in the box under it. Esc closes it.
+- **LEVEL II** layer: the book drawn on the chart, big, for a teaching segment: waiting sellers over waiting buyers,
+  the size as a bar. The desk only has the book for names it has open on a ladder; for any other name it says so.
+- **MY TRADES** layer (on by default): your stock trades today on the chart. Blue ▲ (long) or ▼ (short) where you got
+  in, the exit in green (a win) or red, joined by a dashed line, with the R.
+- **SPONSOR / COURSE corner**: type the headline and the line under it (your link). ON shows it every N minutes for
+  N seconds. SHOW NOW (F8) shows it once.
+- **YOUTUBE LIVE CHAT**: paste a YouTube API key and the live video's ID (or its address), then CHAT ON. New messages
+  come in every 7 seconds and list in the panel. Click one: it goes up as the VIEWER QUESTION card. CHAT ON SCREEN
+  shows the last four messages on the stage. The key stays in this browser only; it is never sent to TED or saved on
+  the server.
+  - Getting the key: console.cloud.google.com › new project › APIs & Services › Library › "YouTube Data API v3" ›
+    Enable › Credentials › Create credentials › API key.
+- **SOUND** (on by default): a short sound when the POTENTIAL SETUP banner comes in, on each MARKET IN 60 card, and
+  on the WE'RE LIVE intro. Made in the browser; OBS picks it up with the page's audio.
+
+### Hotkeys (for a Stream Deck: set each button to "Hotkey")
+
+| keys | what |
+|---|---|
+| Shift+1 … Shift+8 | the eight segments, in the order of the buttons |
+| Alt+1 | LIVE (back to the charts) |
+| Alt+2 / Alt+3 / Alt+4 / Alt+5 | STARTING SOON / OPEN COUNTDOWN / BE RIGHT BACK / THANKS FOR WATCHING |
+| F2 | LAST TRADE CARD |
+| F3 | TODAY'S SCORECARD |
+| F4 | THE PLAYS board |
+| F6 | MARKET IN 60 SECONDS |
+| F7 | VIEWER QUESTION card |
+| F8 | the sponsor corner, now |
+| B | WE'RE LIVE intro |
+
+The SHOW tab must be the window in front for the keys to land (OBS Browser Source: right-click › Interact).
+
+## Still for later
+
+- A trade recap from a recording: pick a recorded trade from the journal and replay it with its fills marked.

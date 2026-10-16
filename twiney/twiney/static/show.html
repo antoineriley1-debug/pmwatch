@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="build" content="20261016-0515">
+<meta name="build" content="20261016-0526">
 <title>TED · SHOW</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
@@ -142,6 +142,28 @@ body.clean #dock,body.dockoff #dock{display:none}
 #dock .sw.on{outline:2px solid #fff}
 #dock .hint{color:#8a96b3;font-size:11.5px;padding:2px 14px 0;line-height:1.45}
 #toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:#16213a;color:#fff;border:1px solid #3a5a9a;padding:9px 16px;border-radius:6px;font:600 13px "IBM Plex Sans",sans-serif;z-index:99;display:none}
+/* MARKET IN 60 / THE PLAYS board / the sponsor corner / chat */
+.board{position:absolute;inset:0;z-index:12;display:none;flex-direction:column;align-items:center;justify-content:center;gap:24px;background:radial-gradient(1200px 700px at 30% 20%,var(--brand2),var(--bg) 70%);overflow:hidden}
+.board.on{display:flex}
+.board .k{font:700 30px "IBM Plex Sans Condensed",Arial,sans-serif;letter-spacing:.3em;color:var(--gold)}
+.board .t{font:700 84px "IBM Plex Sans Condensed",Arial,sans-serif;letter-spacing:.03em;text-align:center}
+#m60 .sym{font:700 220px "IBM Plex Sans Condensed",Arial,sans-serif;line-height:.9}
+#m60 .px{font:700 96px "IBM Plex Mono",Consolas,monospace}
+#m60 .rd{font:600 40px "IBM Plex Sans",Arial,sans-serif;color:var(--dim);max-width:1500px;text-align:center}
+#m60 .bar{position:absolute;left:0;bottom:0;height:12px;background:var(--brand);transition:width 1s linear}
+#plays table{border-collapse:collapse;font:700 34px "IBM Plex Mono",Consolas,monospace;min-width:1500px}
+#plays th{font:700 22px "IBM Plex Sans Condensed",Arial,sans-serif;letter-spacing:.14em;color:var(--dim);text-align:left;padding:10px 26px;border-bottom:3px solid var(--brand)}
+#plays td{padding:14px 26px;border-bottom:1px solid var(--line)} #plays td.s{font-family:"IBM Plex Sans Condensed",Arial,sans-serif;font-size:44px}
+#plays td .st{color:var(--gold)}
+#sponsor{position:absolute;right:28px;top:104px;z-index:7;min-width:420px;max-width:640px;background:rgba(10,15,30,.94);border-left:8px solid var(--gold);padding:14px 22px;transform:translateX(120%);transition:transform .5s cubic-bezier(.2,.8,.2,1)}
+#sponsor.on{transform:translateX(0)} #sponsor b{display:block;font:700 30px "IBM Plex Sans Condensed",Arial,sans-serif} #sponsor span{font:600 20px "IBM Plex Sans",Arial,sans-serif;color:var(--gold)}
+#chatbox{position:absolute;right:28px;bottom:160px;z-index:7;width:560px;display:none;flex-direction:column;gap:8px}
+#chatbox.on{display:flex} #chatbox div{background:rgba(10,15,30,.9);border-left:5px solid #ff0033;padding:8px 14px;font:600 21px "IBM Plex Sans",Arial,sans-serif;animation:pop .4s}
+#chatbox div b{color:#ff8a9a;margin-right:8px}
+@keyframes pop{from{transform:translateX(30px);opacity:0}to{transform:none;opacity:1}}
+#dock .chatlist{max-height:180px;overflow:auto;margin:5px 14px;border:1px solid #2a3a60;border-radius:5px}
+#dock .chatlist div{padding:5px 8px;border-bottom:1px solid #1a2540;cursor:pointer;font-size:12px} #dock .chatlist div:hover{background:#16213a}
+#dock .chatlist b{color:#ff8a9a}
 #tip{position:absolute;z-index:30;pointer-events:none;background:rgba(0,0,0,.8);color:#fff;font:700 18px "IBM Plex Mono",monospace;padding:4px 8px;border-radius:4px;display:none}
 </style></head>
 <body class="theme-net fmt-h">
@@ -164,6 +186,10 @@ body.clean #dock,body.dockoff #dock{display:none}
   <div class="card" id="qcard"><h2>VIEWER QUESTION</h2><div class="q" id="qText"></div><div class="row"><div><span>FROM</span><b id="qFrom"></b></div></div></div>
   <div id="scene"><div class="k" id="scK"></div><div class="t" id="scT"></div><div class="c mono" id="scC"></div><div class="h" id="scH"></div></div>
   <div id="bumper"><div class="bar"></div><div class="w" id="bumpW">WE'RE LIVE</div></div>
+  <div class="board" id="m60"><div class="k">MARKET IN 60 SECONDS</div><div class="sym" id="m60s"></div><div class="px" id="m60p"></div><div class="rd" id="m60r"></div><div class="bar" id="m60b"></div></div>
+  <div class="board" id="plays"><div class="k" id="playsK"></div><div class="t" id="playsT">THE PLAYS</div><table id="playsTbl"></table></div>
+  <div id="sponsor"><b id="spT"></b><span id="spS"></span></div>
+  <div id="chatbox"></div>
   <div id="guides"></div>
   <div id="tip"></div>
 </div></div>
@@ -184,7 +210,7 @@ body.clean #dock,body.dockoff #dock{display:none}
   <div class="r" style="margin-top:5px" id="lyrR">
     <button data-lyr="ps60" title="your pivot, 2nd entry, stop, target, partials">PS60 LINES</button><button data-lyr="mas" title="your moving averages, the desk's (SMA / EMA, the daily 34 / 65 / 89 on the daily)">MOVING AVERAGES</button>
     <button data-lyr="bb" title="Bollinger Bands 20, 2">BOLLINGER</button><button data-lyr="vwap">VWAP</button>
-    <button data-lyr="gas" title="GAS + ATR: prior day, premarket / after hours, high / low of day, the ATR levels (intraday)">GAS + ATR</button><button data-lyr="air" title="AIRSPACE: daily / weekly bounce and rejection">AIRSPACE</button><button data-lyr="uv" title="UNVISITED HIGHS / LOWS">UNVISITED</button><button data-lyr="vol">VOLUME</button>
+    <button data-lyr="gas" title="GAS + ATR: prior day, premarket / after hours, high / low of day, the ATR levels (intraday)">GAS + ATR</button><button data-lyr="air" title="AIRSPACE: daily / weekly bounce and rejection">AIRSPACE</button><button data-lyr="uv" title="UNVISITED HIGHS / LOWS">UNVISITED</button><button data-lyr="vol">VOLUME</button><button data-lyr="l2" title="the book on the chart, big: waiting sellers over waiting buyers, for a teaching segment">LEVEL II</button><button data-lyr="trades" title="your trades today on the chart: where you got in and out, with the R">MY TRADES</button>
   </div>
   <div class="r" style="margin-top:5px;align-items:center"><button id="lookBtn" title="the chart looks exactly like your desk chart: its screen colour, candles and the lines you have on there">MY DESK CHART LOOK</button>
     <button id="legBtn" title="your black data box: the bar under the mouse and every moving average / Bollinger / VWAP value, in its colour. Drag it anywhere; ▴ / ▾ folds the lines">DATA BOX</button>
@@ -222,6 +248,22 @@ body.clean #dock,body.dockoff #dock{display:none}
   <div class="full" style="margin-top:5px"><input id="crawlLabIn" placeholder="crawl label (default: WATCHLIST)"></div>
   <h4>CAMERA SPOT</h4>
   <div class="r" id="camR"><button data-cam="">OFF</button><button data-cam="br">BOTTOM RIGHT</button><button data-cam="tr">TOP RIGHT</button><button data-cam="bl">BOTTOM LEFT</button><button id="camKey" title="fill it green so OBS can key your camera in">GREEN FILL</button></div>
+  <h4>SEGMENT BOARDS</h4>
+  <div class="r"><button id="m60Btn" title="SPY, QQQ and your biggest movers, one full-screen card each, about 60 seconds">MARKET IN 60</button><button id="playsBtn" title="your watchlist as one board: side, pivot, 2nd entry, target, stop">THE PLAYS BOARD</button></div>
+  <div class="full" style="margin-top:5px"><input id="playsTitleIn" placeholder="board title (default: THE PLAYS)"></div>
+  <h4>SPONSOR / COURSE CORNER</h4>
+  <div class="full"><input id="spTIn" placeholder="headline, e.g. JOIN THE DISCORD"><input id="spSIn" placeholder="line under it, e.g. link in bio"></div>
+  <div class="w2"><input id="spEvery" type="number" min="1" title="every how many minutes"><input id="spSecs" type="number" min="5" title="on screen for how many seconds"></div>
+  <div class="r" style="margin-top:5px"><button id="spBtn" title="shows by itself every N minutes">ON A TIMER</button><button id="spNow">SHOW NOW</button></div>
+  <h4>YOUTUBE LIVE CHAT</h4>
+  <div class="full"><input id="ytKey" type="password" placeholder="YouTube API key (stays in this browser only)"><input id="ytVid" placeholder="your live video ID (after watch?v=)"></div>
+  <div class="r"><button id="ytBtn">READ CHAT</button><button id="ytBox" title="the last few messages on screen">CHAT ON SCREEN</button></div>
+  <div class="hint">Click a message: it goes on screen as the VIEWER QUESTION card.</div>
+  <div class="chatlist" id="ytList"></div>
+  <h4>SOUND</h4>
+  <div class="r"><button id="sndBtn" title="a short sting with the setup banner and the WE'RE LIVE intro">STINGS</button></div>
+  <h4>HOTKEYS (STREAM DECK)</h4>
+  <div class="hint">Shift+1…8 segments · Alt+1 LIVE · Alt+2 STARTING SOON · Alt+3 OPEN COUNTDOWN · Alt+4 BE RIGHT BACK · Alt+5 THANKS · F2 trade card · F3 scorecard · F4 plays board · F6 market in 60 · F7 question card · F8 sponsor now · B intro · H panel. A Stream Deck "Hotkey" button sends any of these.</div>
   <h4>LOOK</h4>
   <div class="r" id="thR"><button data-th="net">NETWORK</button><button data-th="desk">NIGHT DESK</button><button data-th="neon">NEON</button><button data-th="paper">DAYTIME</button></div>
   <h4>OUTPUT</h4>
@@ -241,10 +283,12 @@ const px = v => v == null || isNaN(v) ? "—" : (+v).toFixed(+v < 1 ? 4 : 2);
 const pct = v => v == null ? "" : (v >= 0 ? "+" : "") + (+v).toFixed(2) + "%";
 
 /* ------------------------------------------------------------ settings, kept per browser */
-const S = Object.assign({fmt: "h", lay: 1, theme: "net", rail: true, lyr: {ps60: true, mas: true, bb: true, vwap: true, gas: true, air: true, uv: true, vol: true}, deskLook: true, lbl: 16, dwin: true, dwinMin: false, brkLabel: "POTENTIAL SETUP", crawlLines: [], crawlMode: "mix",
+const S = Object.assign({fmt: "h", lay: 1, theme: "net", rail: true, lyr: {ps60: true, mas: true, bb: true, vwap: true, gas: true, air: true, uv: true, vol: true, l2: false, trades: true}, deskLook: true, lbl: 16, dwin: true, dwinMin: false, brkLabel: "POTENTIAL SETUP", crawlLines: [], crawlMode: "mix",
   brand: "TWINEY LIVE", handle: "@twiney", safe: true, lower: true, tick: true, crawl: 60, brkAuto: true, brkVoice: false, cam: "", camKey: false,
   guides: false, seg: "THE WATCHLIST", segSub: "", src: "mine", cells: [{sym: null, tf: 5}, {sym: null, tf: 5}, {sym: null, tf: 5}, {sym: null, tf: 5}], focus: 0, color: "#f2c14e"}, store.get("cfg", {}));
-S.lyr = Object.assign({ps60: true, mas: true, bb: true, vwap: true, gas: true, air: true, uv: true, vol: true}, S.lyr || {});
+S.lyr = Object.assign({ps60: true, mas: true, bb: true, vwap: true, gas: true, air: true, uv: true, vol: true, l2: false, trades: true}, S.lyr || {});
+S.sponsor = Object.assign({on: false, title: "", sub: "", every: 10, secs: 20}, S.sponsor || {}); S.yt = Object.assign({key: "", vid: "", on: false, box: false}, S.yt || {});
+if (S.sound == null) S.sound = true;
 const save = () => store.set("cfg", S);
 const SIZES = {h: [1920, 1080], v: [1080, 1920], s: [1080, 1080]};
 const SEGMENTS = ["THE WATCHLIST", "PREMARKET PREP", "LIVE TRADING", "TRADE OF THE DAY", "THE BREAKDOWN", "MARKET RECAP", "Q&A", "TOMORROW'S PLAYS"];
@@ -546,7 +590,9 @@ class Cell {
       for (const [t, v] of vw){ const xx = this.tToX(L, t); if (xx < -20 || xx > L.plotW) continue; const yy = L.y(v); if (!started){ g.moveTo(xx, yy); started = true; } else g.lineTo(xx, yy); } g.stroke(); } }
     try { studiesFront(ctx); } catch (e) {}
     this.levels(g, L, col);
+    if (S.lyr.trades) this.marks(g, L);
     try { studiesTags(ctx); } catch (e) {}
+    if (S.lyr.l2) this.book(g, L);
     if (S.lyr.vwap && !daily){ const vw = vwapOf(this.sym); if (vw.length){ const lv = vw[vw.length - 1][1]; tag(g, L, lv, "VWAP " + px(lv), "#f2a33a"); } }
     const last = +(info.last || L.bars[L.bars.length - 1][4]); if (this.replay == null) tag(g, L, last, px(last), L.bars[L.bars.length - 1][4] >= L.bars[L.bars.length - 1][1] ? up : dn, true);
     this.drawOverlay();
@@ -563,6 +609,34 @@ class Cell {
       g.fillStyle = c_; g.fillRect(6, yy - 12, tw, 24); g.fillStyle = "#0a0d12"; g.fillText(txt, 13, yy + 6); }
   }
   drawOverlay(){ drawShapes(this); }
+  marks(g, L){
+    // MY TRADES: where you got in (▲ long / ▼ short) and out today, joined, with the R
+    for (const t of TRADES){ if (t.symbol !== this.sym || t.opt || !t.opened || !t.entry) continue;
+      const x1 = this.tToX(L, t.opened), y1 = L.y(t.entry), x2 = t.closed ? this.tToX(L, t.closed) : null, y2 = t.exit ? L.y(t.exit) : null, long = t.side === "long";
+      const win = (t.r ?? t.pct ?? 0) >= 0, c_ = win ? "#16a34a" : "#dc2626";
+      if (x2 != null && y2 != null){ g.strokeStyle = c_; g.lineWidth = 3; g.setLineDash([8, 6]); g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke(); g.setLineDash([]); }
+      const tri = (x, y, up, fill) => { g.fillStyle = fill; g.strokeStyle = "#000"; g.lineWidth = 2; g.beginPath(); if (up){ g.moveTo(x, y + 4); g.lineTo(x - 14, y + 28); g.lineTo(x + 14, y + 28); } else { g.moveTo(x, y - 4); g.lineTo(x - 14, y - 28); g.lineTo(x + 14, y - 28); } g.closePath(); g.fill(); g.stroke(); };
+      tri(x1, y1, long, "#2563eb");
+      if (x2 != null && y2 != null){ tri(x2, y2, !long, c_);
+        const lab = t.r != null ? (t.r >= 0 ? "+" : "") + t.r + "R" : t.pct != null ? pct(t.pct) : ""; if (lab){ g.font = '800 22px "IBM Plex Mono", Consolas, monospace'; const tw = g.measureText(lab).width;
+          g.fillStyle = c_; g.fillRect(x2 + 18, y2 - 16, tw + 14, 30); g.fillStyle = "#fff"; g.fillText(lab, x2 + 25, y2 + 7); } } }
+  }
+  book(g, L){
+    // LEVEL II on the chart for teaching: waiting sellers over waiting buyers, the size as a bar
+    const bk = (INFO[this.sym] || {}).book;
+    if (!bk || (!bk.bids.length && !bk.asks.length)){ const t = "LEVEL II: open " + this.sym + " on a desk ladder"; g.font = '700 18px "IBM Plex Sans Condensed", Arial, sans-serif';
+      const w = g.measureText(t).width + 24, y = L.plotH - 50; g.fillStyle = "rgba(5,8,16,.85)"; g.fillRect(14, y, w, 36); g.fillStyle = "#c9d2e3"; g.fillText(t, 26, y + 24); return; }
+    const rows = [...bk.asks.slice(0, 6).reverse().map(r => ["s", r]), ...bk.bids.slice(0, 6).map(r => ["b", r])], rh = 26, W = 300, H = rows.length * rh + 64;
+    const x = L.plotW - W - 12, y = Math.max(8, L.plotH - H - 10);   // bottom right, clear of the data box
+    let mx = 1; for (const [, r] of rows) mx = Math.max(mx, +r[1] || 0);
+    g.fillStyle = "rgba(5,8,16,.9)"; g.fillRect(x, y, W, H); g.strokeStyle = "#444"; g.strokeRect(x, y, W, H);
+    g.font = '700 16px "IBM Plex Sans Condensed", Arial, sans-serif'; g.fillStyle = "#c9d2e3"; g.fillText("WAITING SELLERS", x + 12, y + 24); g.fillText("SIZE", x + W - 12 - g.measureText("SIZE").width, y + 24);
+    rows.forEach(([sd, r], i) => { const yy = y + 34 + i * rh, w = (+r[1] || 0) / mx * (W - 130);
+      g.fillStyle = sd === "s" ? "rgba(220,38,38,.35)" : "rgba(22,163,74,.35)"; g.fillRect(x + 120, yy, w, rh - 4);
+      g.font = '700 18px "IBM Plex Mono", Consolas, monospace'; g.fillStyle = sd === "s" ? "#ff6b6b" : "#4ade80"; g.fillText(px(+r[0]), x + 12, yy + 18);
+      g.fillStyle = "#fff"; const sz = Math.round(+r[1] || 0).toLocaleString("en-US"); g.fillText(sz, x + W - 12 - g.measureText(sz).width, yy + 18); });
+    g.font = '700 16px "IBM Plex Sans Condensed", Arial, sans-serif'; g.fillStyle = "#c9d2e3"; g.fillText("WAITING BUYERS", x + 12, y + H - 10);
+  }
   dataWin(L){
     // the black box: the bar under the cursor (the last one when the mouse is off the chart), every line's value with it
     const w = this.el.querySelector(".dwin"); w.classList.toggle("off", !S.dwin || !L.bars.length); if (!S.dwin || !L.bars.length) return;
@@ -697,7 +771,7 @@ function breakingFrom(list){
     BQ.push(`${a.symbol} · ${String(a.label || "").toUpperCase()}${a.text ? " — " + String(a.text).replace(/^\S+\.\s*/, "").slice(0, 120) : ""}`); }
   FIRST = false; nextBreaking();
 }
-function nextBreaking(){ if (brkBusy || !BQ.length) return; brkBusy = true; const t = BQ.shift(); $("#brkTxt").textContent = t; $("#brkLab").textContent = S.brkLabel || "POTENTIAL SETUP"; $("#breaking").classList.add("on");
+function nextBreaking(){ if (brkBusy || !BQ.length) return; brkBusy = true; const t = BQ.shift(); $("#brkTxt").textContent = t; $("#brkLab").textContent = S.brkLabel || "POTENTIAL SETUP"; sting("setup"); $("#breaking").classList.add("on");
   if (S.brkVoice && "speechSynthesis" in window){ try { speechSynthesis.speak(new SpeechSynthesisUtterance((S.brkLabel || "Potential setup").toLowerCase() + ". " + t.replace(/·|—/g, ","))); } catch (e) {} }
   setTimeout(() => { $("#breaking").classList.remove("on"); setTimeout(() => { brkBusy = false; nextBreaking(); }, 700); }, 8000); }
 $("#brkIn").addEventListener("keydown", e => { e.stopPropagation(); if (e.key === "Enter" && e.target.value.trim()){ BQ.push(e.target.value.trim()); e.target.value = ""; nextBreaking(); } });
@@ -729,7 +803,7 @@ function setScene(k){ SCENE = k; const el = $("#scene"); el.classList.toggle("on
   syncDock(); }
 function sceneTick(p, m){ if (SCENE === "soon") $("#scC").textContent = fmtDur((soonEnd - Date.now()) / 1000);
   if (SCENE === "open") $("#scC").textContent = m < 570 ? fmtDur((570 - m) * 60 - p.s) : "WE'RE OPEN"; }
-function bumper(){ const b = $("#bumper"); $("#bumpW").textContent = "WE'RE LIVE"; b.classList.remove("go"); void b.offsetWidth; b.classList.add("go"); }
+function bumper(){ sting("intro"); const b = $("#bumper"); $("#bumpW").textContent = "WE'RE LIVE"; b.classList.remove("go"); void b.offsetWidth; b.classList.add("go"); }
 // snapshot: the focused chart with your drawings, the name and the show, as a picture
 function snapshot(){
   const c = cells[S.focus] || cells[0]; if (!c.L) return; const W = c.cv.width, H = c.cv.height, out = document.createElement("canvas"); out.width = W; out.height = H + 110;
@@ -763,7 +837,10 @@ function syncDock(){
   $("#brkAuto").classList.toggle("on", !!S.brkAuto); $("#brkVoice").classList.toggle("on", !!S.brkVoice);
   $("#colR").innerHTML = COLORS.map(x => `<span class="sw ${x === drawCol ? "on" : ""}" data-col="${x}" style="background:${x}"></span>`).join("");
   $("#segR").innerHTML = SEGMENTS.map(x => `<button data-seg="${esc(x)}" class="${x === S.seg ? "on" : ""}">${esc(x)}</button>`).join("");
-  $("#crawlSpd").value = String(S.crawl); $("#lookBtn").classList.toggle("on", !!S.deskLook); $("#legBtn").classList.toggle("on", !!S.dwin);
+  $("#crawlSpd").value = String(S.crawl); $("#lookBtn").classList.toggle("on", !!S.deskLook); $("#m60Btn").classList.toggle("on", !!m60T); $("#playsBtn").classList.toggle("on", $("#plays").classList.contains("on"));
+  $("#spBtn").classList.toggle("on", !!S.sponsor.on); $("#ytBtn").classList.toggle("on", !!S.yt.on); $("#ytBox").classList.toggle("on", !!S.yt.box); $("#sndBtn").classList.toggle("on", !!S.sound);
+  for (const [id, v] of [["#spTIn", S.sponsor.title], ["#spSIn", S.sponsor.sub], ["#spEvery", S.sponsor.every], ["#spSecs", S.sponsor.secs], ["#ytKey", S.yt.key], ["#ytVid", S.yt.vid], ["#playsTitleIn", S.playsTitle || ""]])
+    if (document.activeElement !== $(id)) $(id).value = v == null ? "" : v; $("#legBtn").classList.toggle("on", !!S.dwin);
   $$("#blabR button").forEach(b => b.classList.toggle("on", b.dataset.blab === S.brkLabel)); $$("#cmodeR button").forEach(b => b.classList.toggle("on", b.dataset.cmode === (S.crawlMode || "mix")));
   if (document.activeElement !== $("#crawlIn")) $("#crawlIn").value = (S.crawlLines || []).join("\n");
   if (document.activeElement !== $("#crawlLabIn")) $("#crawlLabIn").value = S.crawlLab || ""; $("#lblSel").value = String(S.lbl || 16);
@@ -784,6 +861,13 @@ $("#dock").addEventListener("click", e => {
   else if (d.seg){ S.seg = d.seg; $("#segIn").value = ""; autoSub(); }
   else if (d.blab){ S.brkLabel = d.blab; $("#blabIn").value = ""; $("#brkLab").textContent = S.brkLabel; }
   else if (d.cmode){ S.crawlMode = d.cmode; renderCrawl(); }
+  else if (b.id === "m60Btn") m60();
+  else if (b.id === "playsBtn") playsBoard();
+  else if (b.id === "spBtn"){ S.sponsor.on = !S.sponsor.on; if (S.sponsor.on && !S.sponsor.title) toast("Type the headline first"); spLast = Date.now() - (S.sponsor.every || 10) * 60000; }
+  else if (b.id === "spNow") sponsor(true);
+  else if (b.id === "ytBtn"){ S.yt.on = !S.yt.on; if (S.yt.on && (!S.yt.key || !S.yt.vid)){ toast("Put in your API key and the live video ID first"); S.yt.on = false; } ytStart(); }
+  else if (b.id === "ytBox"){ S.yt.box = !S.yt.box; renderChat(); }
+  else if (b.id === "sndBtn"){ S.sound = !S.sound; if (S.sound) sting("setup"); }
   else if (b.id === "legBtn"){ S.dwin = !S.dwin; cells.forEach(c => c.draw()); }
   else if (b.id === "lookBtn"){ S.deskLook = !S.deskLook; cells.forEach(c => c.draw()); }
   else if (b.id === "camKey"){ S.camKey = !S.camKey; applyLook(); }
@@ -809,6 +893,9 @@ $("#crawlIn").addEventListener("keydown", e => e.stopPropagation());
 $("#blabIn").addEventListener("input", e => { if (e.target.value.trim()){ S.brkLabel = e.target.value.trim().toUpperCase(); save(); $("#brkLab").textContent = S.brkLabel; syncDock(); } });
 $("#crawlLabIn").addEventListener("input", e => { S.crawlLab = e.target.value.trim().toUpperCase(); save(); renderCrawl(); });
 for (const id of ["#blabIn", "#crawlLabIn"]) $(id).addEventListener("keydown", e => e.stopPropagation());
+for (const [id, f] of [["#spTIn", v => S.sponsor.title = v], ["#spSIn", v => S.sponsor.sub = v], ["#spEvery", v => S.sponsor.every = +v || 10], ["#spSecs", v => S.sponsor.secs = +v || 20],
+                      ["#ytKey", v => S.yt.key = v.trim()], ["#ytVid", v => { S.yt.vid = v.trim().replace(/^.*[?&]v=/, "").replace(/&.*$/, ""); }], ["#playsTitleIn", v => { S.playsTitle = v.trim().toUpperCase(); if ($("#plays").classList.contains("on")) playsBoard(true); }]]){
+  $(id).addEventListener("input", e => { f(e.target.value); save(); }); $(id).addEventListener("keydown", e => e.stopPropagation()); }
 $("#lblSel").addEventListener("change", e => { S.lbl = +e.target.value; save(); cells.forEach(c => c.draw()); });
 for (const [id, k] of [["#brandIn", "brand"], ["#handleIn", "handle"], ["#segIn", "seg"], ["#segSubIn", "segSub"]]){
   $(id).addEventListener("input", e => { if (k === "seg" && !e.target.value) return; S[k] = e.target.value; save(); $("#brandName").textContent = S.brand || "TWINEY LIVE"; autoSub(); renderCrawl(); });
@@ -822,10 +909,83 @@ document.addEventListener("keydown", e => {
   if (map[k]) setTool(map[k]);
   else if (k === "z") undo(); else if (k === "x") clearChart();
   else if (k === "h"){ document.body.classList.toggle("dockoff"); fit(); }
-  else if (k === "escape"){ setTool("move"); setScene(""); $$(".card").forEach(c => c.classList.remove("on")); }
+  else if (k === "escape"){ setTool("move"); setScene(""); playsBoard(false); if (m60T) m60(); $$(".card").forEach(c => c.classList.remove("on")); }
   else if (k === "b") bumper();
 });
+// HOTKEYS for a Stream Deck: Shift+1..8 segments, Alt+1..5 scenes, F-keys for the boards and cards
+document.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
+  const n = parseInt((e.code || "").replace(/^Digit/, ""), 10);
+  if (e.shiftKey && n >= 1 && n <= SEGMENTS.length){ e.preventDefault(); e.stopImmediatePropagation(); S.seg = SEGMENTS[n - 1]; save(); autoSub(); syncDock(); return; }
+  if (e.altKey && n >= 1 && n <= 5){ e.preventDefault(); e.stopImmediatePropagation(); setScene(["", "soon", "open", "brb", "thanks"][n - 1]); return; }
+  const fk = {F2: "#tcBtn", F3: "#scBtn", F7: "#qBtn"}[e.key];
+  if (fk){ e.preventDefault(); $(fk).click(); }
+  else if (e.key === "F4"){ e.preventDefault(); playsBoard(); }
+  else if (e.key === "F6"){ e.preventDefault(); m60(); }
+  else if (e.key === "F8"){ e.preventDefault(); sponsor(true); }
+}, true);
 window.addEventListener("resize", fit);
-applyLook(); setTool("move"); poll(); clock();
+/* ------------------------------------------------------------ MARKET IN 60 SECONDS */
+let m60T = null;
+function m60(){
+  const el = $("#m60"); if (m60T){ clearInterval(m60T); m60T = null; el.classList.remove("on"); syncDock(); return; }
+  const pick = [...WL.filter(w => ["SPY", "QQQ"].includes(w.symbol)), ...WL.filter(w => !["SPY", "QQQ"].includes(w.symbol) && w.chg_pct != null).sort((a, b) => Math.abs(b.chg_pct) - Math.abs(a.chg_pct)).slice(0, 4)];
+  if (!pick.length){ toast("No watchlist names yet"); return; }
+  const per = Math.max(6, Math.round(60 / pick.length)); let i = -1, left = 0;
+  const show = () => { i++; if (i >= pick.length){ clearInterval(m60T); m60T = null; el.classList.remove("on"); syncDock(); return; }
+    const w = WL.find(x => x.symbol === pick[i].symbol) || pick[i]; $("#m60s").textContent = w.symbol;
+    $("#m60p").innerHTML = `${px(w.last)} <span class="${w.chg_pct >= 0 ? "up" : "dn"}">${w.chg_pct >= 0 ? "▲" : "▼"} ${pct(w.chg_pct)}</span>`;
+    const bits = []; if (w.pivot) bits.push(`${(w.side || "long").toUpperCase()} · PIVOT ${px(w.pivot)}`); if (w.second_entry) bits.push(`2ND ENTRY ${px(w.second_entry)}`); if (w.target) bits.push(`TARGET ${px(w.target)}`); if (w.stop) bits.push(`STOP ${px(w.stop)}`);
+    $("#m60r").textContent = bits.length ? bits.join("  ·  ") : (w.symbol === "SPY" ? "the S&P" : w.symbol === "QQQ" ? "the Nasdaq" : "on the watchlist"); left = per; sting("card"); };
+  el.classList.add("on"); show(); const bar = $("#m60b");
+  m60T = setInterval(() => { left--; bar.style.width = (100 - left / per * 100) + "%"; if (left <= 0) show(); }, 1000); syncDock();
+}
+/* ------------------------------------------------------------ THE PLAYS board */
+function playsBoard(on){
+  const el = $("#plays"), show = on != null ? on : !el.classList.contains("on"); el.classList.toggle("on", show); syncDock(); if (!show) return;
+  const p0 = nyParts(Date.now() / 1000); $("#playsK").textContent = `${S.brand}  ·  ${p0.mo}/${p0.d}`; $("#playsT").textContent = S.playsTitle || "THE PLAYS";
+  const dan = new Map(DAN.map(d => [d.symbol, d]));
+  const rows = WL.filter(w => w.pivot || w.second_entry || dan.has(w.symbol)).concat(WL.filter(w => !(w.pivot || w.second_entry || dan.has(w.symbol)))).slice(0, 9);
+  $("#playsTbl").innerHTML = `<tr><th>NAME</th><th>SIDE</th><th>PIVOT</th><th>2ND ENTRY</th><th>TARGET</th><th>STOP</th><th></th></tr>` + rows.map(w => { const d = dan.get(w.symbol) || {};
+    const side = (w.side || d.side || "long") === "short" ? `<span class="dn">▼ SHORT</span>` : `<span class="up">▲ LONG</span>`;
+    return `<tr><td class="s">${esc(w.symbol)}</td><td>${side}</td><td>${px(w.pivot || d.pivot)}</td><td>${px(w.second_entry)}</td><td class="up">${px(w.target)}</td><td class="dn">${px(w.stop)}</td><td><span class="st">${d.stars ? "★".repeat(d.stars) : ""}</span></td></tr>`; }).join("");
+}
+/* ------------------------------------------------------------ the sponsor / course corner */
+let spLast = 0;
+function sponsor(now){ const t = S.sponsor; if (!t.title){ toast("Type the headline first"); return; } $("#spT").textContent = t.title; $("#spS").textContent = t.sub || "";
+  const el = $("#sponsor"); el.classList.add("on"); spLast = Date.now(); clearTimeout(el._t); el._t = setTimeout(() => el.classList.remove("on"), Math.max(5, +t.secs || 20) * 1000); }
+setInterval(() => { const t = S.sponsor; if (t.on && t.title && Date.now() - spLast > Math.max(1, +t.every || 10) * 60000) sponsor(); }, 5000);
+/* ------------------------------------------------------------ YouTube Live chat (your key stays in this browser) */
+let ytChat = null, ytPage = "", ytMsgs = [], ytT = null;
+async function ytPoll(){
+  const y = S.yt; if (!y.on || !y.key || !y.vid) return;
+  try {
+    if (!ytChat){ const r = await (await fetch(`https://www.googleapis.com/youtube/v3/videos?part=liveStreamingDetails&id=${encodeURIComponent(y.vid)}&key=${encodeURIComponent(y.key)}`)).json();
+      ytChat = r.items && r.items[0] && r.items[0].liveStreamingDetails && r.items[0].liveStreamingDetails.activeLiveChatId;
+      if (!ytChat){ toast("YouTube: no live chat on that video (is it live?)" + (r.error ? " · " + r.error.message : "")); y.on = false; save(); syncDock(); return; } }
+    const r = await (await fetch(`https://www.googleapis.com/youtube/v3/liveChat/messages?part=snippet,authorDetails&liveChatId=${encodeURIComponent(ytChat)}&key=${encodeURIComponent(y.key)}${ytPage ? "&pageToken=" + ytPage : ""}`)).json();
+    if (r.error){ toast("YouTube: " + r.error.message); return; }
+    ytPage = r.nextPageToken || ytPage;
+    for (const m of r.items || []) ytMsgs.push({who: m.authorDetails.displayName, txt: (m.snippet.displayMessage || "").slice(0, 200)});
+    ytMsgs = ytMsgs.slice(-40); renderChat();
+  } catch (e) { toast("YouTube chat did not answer"); }
+}
+function renderChat(){
+  $("#ytList").innerHTML = ytMsgs.slice().reverse().map((m, i) => `<div data-ym="${ytMsgs.length - 1 - i}"><b>${esc(m.who)}</b> ${esc(m.txt)}</div>`).join("");
+  const box = $("#chatbox"); box.classList.toggle("on", !!S.yt.box); box.innerHTML = ytMsgs.slice(-4).map(m => `<div><b>${esc(m.who)}</b>${esc(m.txt)}</div>`).join("");
+}
+$("#ytList").addEventListener("click", e => { const d = e.target.closest("[data-ym]"); if (!d) return; const m = ytMsgs[+d.dataset.ym]; $("#qText").textContent = m.txt; $("#qFrom").textContent = m.who; flash("#qcard", 15000); });
+function ytStart(){ clearInterval(ytT); ytT = null; ytChat = null; ytPage = ""; if (S.yt.on){ ytPoll(); ytT = setInterval(ytPoll, 7000); } }
+/* ------------------------------------------------------------ sound stings (made in the browser, no files) */
+let AC = null;
+function sting(kind){
+  if (!S.sound) return; try { AC = AC || new (window.AudioContext || window.webkitAudioContext)(); const t0 = AC.currentTime, out = AC.createGain(); out.gain.value = .18; out.connect(AC.destination);
+    const tone = (f, t, d, type) => { const o = AC.createOscillator(), gn = AC.createGain(); o.type = type || "sine"; o.frequency.value = f; gn.gain.setValueAtTime(0, t0 + t); gn.gain.linearRampToValueAtTime(1, t0 + t + .02); gn.gain.exponentialRampToValueAtTime(.001, t0 + t + d); o.connect(gn); gn.connect(out); o.start(t0 + t); o.stop(t0 + t + d + .05); };
+    if (kind === "intro"){ tone(220, 0, .5, "sawtooth"); tone(330, .12, .5, "sawtooth"); tone(440, .24, .7, "triangle"); tone(880, .36, .9, "sine"); }
+    else if (kind === "card"){ tone(660, 0, .18, "triangle"); }
+    else { tone(523, 0, .22, "triangle"); tone(784, .16, .35, "triangle"); }
+  } catch (e) {}
+}
+applyLook(); setTool("move"); poll(); clock(); ytStart();
 </script>
 </body></html>

@@ -35,6 +35,21 @@ class ShowTests(unittest.TestCase):
             self.assertIn(k, ch)
         self.assertIn("build", out); self.assertIsInstance(out["alerts"], list); self.assertIsInstance(out["trades"], list)
 
+    def test_the_plays_board_and_level_two_data(self):
+        out = json.loads(self.get("/api/show?view=AAA&full=AAA")[1])
+        for w in out["watchlist"]:                              # THE PLAYS board and MARKET IN 60 read these
+            for k in ("pivot", "second_entry", "target", "stop", "chg_pct"):
+                self.assertIn(k, w)
+        bk = out["charts"]["AAA"]["book"]                       # the LEVEL II layer
+        self.assertIn("bids", bk); self.assertIn("asks", bk)
+        self.assertLessEqual(len(bk["bids"]), 10)
+
+    def test_the_youtube_key_never_reaches_the_server(self):
+        with open(SHOW_PAGE, encoding="utf-8") as fh:
+            page = fh.read()
+        self.assertIn("googleapis.com/youtube/v3/liveChat/messages", page)
+        self.assertNotIn("/api/yt", page)                        # the key is used from the browser only
+
     def test_the_page_is_built_and_served(self):
         self.assertTrue(os.path.exists(SHOW_PAGE))
         code, body = self.get("/show")
