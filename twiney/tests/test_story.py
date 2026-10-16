@@ -328,6 +328,29 @@ class DirectionTests(unittest.TestCase):
         self.assertEqual(out["flow"]["state"], "CONFIRMED")
 
 
+class PositionSideTests(unittest.TestCase):
+    """In a trade, the story reads the market from YOUR side: a short on a bullish Daily never hears the long read."""
+
+    def run_with(self, trade):
+        sb = story.Story()
+        t = ny_t(2026, 10, 5, 10, 0)
+        ctx = {"bias": "bull", "text": "Daily above the 50-day.", "sma50": 150.0, "sma200": 120.0}
+        pts = story.ma_points(ctx)
+        fr = story.flow_read(prints("C", 600_000, 4, t), t, CFG)
+        return story.build(sb, t, 150.10, 0.01, 3.0, {"side": "long"}, None, ctx, pts, [], [], fr, None, [], [],
+                           [[t - 300, 150.1, 150.1, 150.1, 150.1, 1], [t - 60, 150.1, 150.1, 150.1, 150.1, 1]], CFG, trade=trade)
+
+    def test_flat_reads_with_the_daily(self):
+        self.assertEqual(self.run_with(None)["flow"]["state"], "CONFIRMED")
+
+    def test_short_reads_from_the_short_side(self):
+        out = self.run_with({"dir": "short", "what": "short 100 AAA from 150.30", "pnl": 20.0, "entry": 150.30,
+                             "stop": 151.0, "target": 148.0, "qty": -100, "key": ("short", -100, ())})
+        self.assertNotEqual(out["flow"]["state"], "CONFIRMED")            # calls bought are against a short, never "with" it
+        said = " ".join(x.get("text", "") for x in out.get("said", []) if isinstance(x, dict)).lower()
+        self.assertNotIn("supply to supply", said)
+
+
 class PlayByPlayTests(unittest.TestCase):
     """At the place: where price is, who is stepping up, the reload buyer / seller, calls / puts being bought, what it
     adds up to, said like a play-by-play."""

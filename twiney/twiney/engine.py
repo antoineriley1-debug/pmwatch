@@ -5522,6 +5522,9 @@ class Engine:
             return                                        # a WATCH is called on real flow, not on a stray print
         if t - getattr(st, "board_said_t", {}).get(state, -1e9) < 300:
             return
+        tr_ = self._trade_read(st, st.price())
+        if tr_ and tr_.get("dir") in ("long", "short") and tr_["dir"] != st.play.get("side", "long"):
+            return                                        # in a trade the other way: this play's call is not yours to hear
         st.board_said_t = getattr(st, "board_said_t", {})
         st.board_said_t[state] = t
         text = board.alert_text(b, st.play, (ps or {}).get("mp"), (ps or {}).get("se"))

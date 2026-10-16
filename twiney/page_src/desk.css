@@ -90,6 +90,7 @@ html,body{height:100%} body{overflow:hidden;font-size:12px}
 /* quote strip inside the chart panel */
 .qs{display:flex;gap:10px;align-items:center;padding:2px 8px;font-family:var(--mono);font-size:12px;white-space:nowrap;overflow:hidden;background:#0f141c;border-bottom:1px solid var(--line);flex:0 0 auto;height:22px}
 .qs .qlive{display:contents}
+.qs .qbe{font:700 10.5px var(--mono);height:18px;padding:0 7px;letter-spacing:.06em;opacity:.45} .qs .qbe.on{opacity:1;color:#ffd866;border-color:#8a6d1e}
 .qs .sym{font-weight:800;color:var(--gold);font-size:13px} .qs .dim{font-size:11px}
 /* status bar */
 #status{display:flex;align-items:center;gap:14px;padding:0 10px;background:#0b0f15;border-top:1px solid var(--line);font-family:var(--mono);font-size:11px;color:var(--dim);white-space:nowrap;overflow:hidden}
@@ -1347,3 +1348,10 @@ body.whitedesk .chart-wrap canvas,body.whitedesk img,body.whitedesk video{filter
 .modemenu button b{font:800 11px var(--sans);letter-spacing:.05em} .modemenu button span{font:10px var(--sans);color:#9fb0c3;text-transform:none;letter-spacing:0}
 .modemenu button.on{border-color:var(--gold);background:#2b2512} .modemenu button.on b{color:#ffd866}
 .modemenu select{font:10.5px var(--mono);margin:0 0 2px 8px} .modemenu .mmnote{font:10px var(--sans);color:#7d8590;padding:2px}
+
+/* the contract's quick menu on a left click of the stock chart */
+.cmenu.heldq .hqrow{display:flex;gap:6px;margin-top:6px} .cmenu.heldq .hqrow button{flex:1;font-weight:700}
+.simple .stoprow{display:flex;gap:6px;align-items:center;margin-top:4px} .simple .stoprow .lbl{font-weight:700;letter-spacing:.08em}
+.simple .stoprow input{width:84px} .simple .mgr .be,.och-head .out.be{color:#ffd866;font-weight:700}
+.simple .tprow{display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin-top:4px} .simple .tprow .lbl{font-weight:700;letter-spacing:.08em;color:#6fcf97}
+.simple .tprow input{width:64px} .simple .tprow .go{font-weight:700}

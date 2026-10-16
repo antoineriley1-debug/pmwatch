@@ -1849,6 +1849,10 @@ def build(sb, t, last, tick, atr, play, se_state, ctx, points, zones, conf, fr, 
             up = foc["dir"] == "up"
     if up is None and ctx and ctx.get("bias"):
         up = ctx["bias"] == "bull"
+    if trade and trade.get("dir") in ("long", "short"):
+        # in a trade, every line reads the market from YOUR side: short means demand under you is what you watch,
+        # long means supply over you; the Daily and the last break never talk over the position
+        up = trade["dir"] == "long"
     fs = flow_state(fr, up if up is not None else True, cfg)
     out["flow"] = fs
     resp = response(mins, fr, pace, near, cfg)
@@ -1992,7 +1996,9 @@ def build(sb, t, last, tick, atr, play, se_state, ctx, points, zones, conf, fr, 
             tone_ = {"bounce": "bull", "reject": "bear", "through_up": "bull", "through_dn": "bear"}.get(kind, "neutral")
             note("ma:" + m["name"], (kind, round(t // 60)), txt, tone_, repeat=600, loud=kind != "into" or active_)
     # YOUR SECOND ENTRY: walked in, step by step, then live
-    for kind, txt in second_entry_watch(sb, t, play or {}, last, near, locals().get("pb"), se_state, cfg):
+    se_side = (play or {}).get("side", "long")
+    for kind, txt in (second_entry_watch(sb, t, play or {}, last, near, locals().get("pb"), se_state, cfg)
+                      if not (trade and trade.get("dir") in ("long", "short") and trade["dir"] != se_side) else ()):
         note("se:" + kind, (kind, txt[:40]), txt, "bull" if (play or {}).get("side", "long") != "short" else "bear", repeat=30, loud=True)
     # the 60-minute candle confirmation (PS60 rule 2)
     hc = h60_confirm(sb, t, h60, last)

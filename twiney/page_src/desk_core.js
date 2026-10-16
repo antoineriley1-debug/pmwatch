@@ -4,7 +4,16 @@
    UI layout (LAY), voice (VOICE), tabs (TABS). Panels re-render only when their own slice changed. */
 
 
-function panelHTML(id, html){ const p = P[id]; if (p.last === html) return false; p.last = html; p.pc.innerHTML = html; return true; }
+/* a dropdown you have open is never rebuilt under your mouse (that closed it before you could pick): the panel waits
+   until you pick or click away, then catches up */
+function selOpen(el){ const a = document.activeElement; return !!(a && a.tagName === "SELECT" && el && el.contains(a)); }
+(function(){ const d = Object.getOwnPropertyDescriptor(Element.prototype, "innerHTML");
+  // every rebuild on the desk goes through innerHTML: one holding an open dropdown waits (its cache key is dropped so the
+  // next refresh after you pick draws it fresh)
+  Object.defineProperty(Element.prototype, "innerHTML", {configurable: true, get(){ return d.get.call(this); },
+    set(v){ if (selOpen(this)){ if (this.dataset) delete this.dataset.h; return; } d.set.call(this, v); }}); })();
+document.addEventListener("change", e => { if (e.target.tagName === "SELECT") setTimeout(() => { if (document.activeElement === e.target) e.target.blur(); }, 0); }, true);
+function panelHTML(id, html){ const p = P[id]; if (p.last === html) return false; if (selOpen(p.pc)) return false; p.last = html; p.pc.innerHTML = html; return true; }
 
 /* ---------- docking */
 function emptyLayout(){ return {zones: {TL: [], TC: [], TR: [], TX: [], BL: [], BC: [], BR: [], BX: []}, active: {}, sizes: {c1: 250, c3: 430, c4: 300, r2: {L: 300, C: 300, R: 300, X: 300}}, floats: {}, hidden: [], max: null}; }

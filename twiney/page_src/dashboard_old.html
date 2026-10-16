@@ -1085,12 +1085,54 @@ function wireChart(p, cv, v, saveView, isFoot){
     }
     saveView(); drawChart(p);
   }, {passive: false});
+  // the line under a price: one of your level lines (stop, target, 2nd entry, pivot, a level) or a working order.
+  // tol = how many pixels away still counts
+  const lineAt = (price, tol) => {
+    if (!p.data || !v.chartY || price == null) return null;
+    const per = (v.chartY[1] - v.chartY[0]) / ((v.chartH || 1) - 8), near = x => Math.abs(x - price) <= per * tol;
+    const orders = (p.data.orders || []).filter(o => o.price && o.id != null);
+    const bracketOn = !!(p.data.position && p.data.position.qty && orders.some(o => o.role && !["entry", "flatten", "close"].includes(o.role)));
+    const levels = (p.data.user_levels || []).filter(l => !(bracketOn && (l.role === "stop" || l.role === "target")));
+    const best = (arr, f) => arr.filter(x => near(f(x))).sort((a, b) => Math.abs(f(a) - price) - Math.abs(f(b) - price))[0];
+    const o = best(orders, x => x.price), lv = best(levels, x => x.price);
+    if (o && (!lv || Math.abs(o.price - price) <= Math.abs(lv.price - price))){
+      const kind = x => x.role === "stop" ? "stop" : x.role === "entry" || x.role === "flatten" || x.role === "close" ? x.role + x.id : "exit";
+      const group = orders.filter(x => Math.abs(x.price - o.price) < 1e-6 && kind(x) === kind(o) && x.action === o.action);
+      return {kind: "order", o, group};
+    }
+    return lv ? {kind: "level", lv} : null;
+  };
+  const snapTk = pr => { const tk = pr >= 1 ? 0.01 : 0.0001; return +(Math.round(pr / tk) * tk).toFixed(4); };
+  const commitLevel = async d => {
+    if (Math.abs(d.price - d.from) < 1e-6) return;
+    let out;
+    if (p.opt && typeof optLevel === "function"){ await optLevel(d.role, d.price, ((T().opt_levels || {})[OCH.key] || {}).n || OCH.n); return; }
+    if (d.role === "extra"){ await post("/api/level", {symbol: p.data.symbol, price: d.from, on: false, role: "extra"});
+      out = await post("/api/level", {symbol: p.data.symbol, price: d.price, on: true, role: "extra"}); }
+    else out = await post("/api/level", {symbol: p.data.symbol, price: d.price, role: d.role, confirm: d.role === "trigger"});
+    toast(out.ok ? `${d.label} moved to ${px(d.price)} — saved` : "Could not move " + d.label, out.ok);
+  };
+  const commitOrders = async (d, o) => {
+    if (Math.abs(d.price - o.price) < 1e-6) return;
+    let ok = true, why = "";
+    for (const id of d.ids){ const out = await post("/api/trade/modify", {id, price: d.price}); if (!out.ok){ ok = false; why = out.reason || ""; } }
+    toast(ok ? `${o.role === "stop" ? "Stop" : o.role === "entry" ? "Order" : "Target"} moved to ${px(d.price)}` : "Move blocked: " + why, ok);
+  };
+  // DOUBLE-CLICK A LINE: it comes off the chart and follows the mouse (no button held); click once to drop it there,
+  // Esc puts it back
+  const carryEnd = commit => { const c = p.carry; if (!c) return; p.carry = null; cv.classList.remove("carry");
+    document.removeEventListener("keydown", c.esc, true);
+    if (c.kind === "level"){ const d = p.dragLevel; p.dragLevel = null; if (commit && d) commitLevel(d); }
+    else { const d = p.dragOrder; p.dragOrder = null; if (commit && d) commitOrders(d, c.o); }
+    drawChart(p); };
+  p.carryEnd = carryEnd;
   cv.addEventListener("mousedown", e => {
     // clicking the chart takes the keyboard: whatever box had focus (symbol box, ticket) lets go, so typing lands on the chart
     if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
     const r = cv.getBoundingClientRect(), x0 = e.clientX, y0 = e.clientY, onAxis = (e.clientX - r.left) > r.width - 86;
     const onTime = !onAxis && (e.clientY - r.top) > r.height - 18;   // the time axis: drag left / right to squeeze / stretch bars
     const yAt = () => v.chartY ? v.chartY[1] - ((e.clientY - r.top) - 8) / ((v.chartH || 1) - 8) * (v.chartY[1] - v.chartY[0]) : null;
+    if (p.carry){ e.preventDefault(); carryEnd(true); return; }       // a carried line drops where you click
     // mark tool: click the chart to set the chosen level at that price
     if (v.levelTool && p.data && !onAxis && !onTime){
       const price = yAt(); if (price == null) return;
@@ -1119,56 +1161,33 @@ function wireChart(p, cv, v, saveView, isFoot){
       v.levelTool = null; renderTools(p);   // one mark per click of the tool
       return;
     }
-    // grab one of your level lines and drag it to a new price
-    if (p.data && v.chartY && !onAxis && !onTime && !(e.ctrlKey || e.metaKey)){
-      const price = yAt(), per = (v.chartY[1] - v.chartY[0]) / ((v.chartH || 1) - 8);
-      const nearOrder = (p.data.orders || []).some(o => o.price && Math.abs(o.price - price) <= per * 5);
-      // every line you drew drags, the pivot too (dragging it is the deliberate move; it is logged)
-      const bracketOn = !!(p.data.position && p.data.position.qty && (p.data.orders || []).some(o => o.role && !["entry", "flatten", "close"].includes(o.role)));
-      const lv = !nearOrder && (p.data.user_levels || []).find(l => !(bracketOn && (l.role === "stop" || l.role === "target"))
-        && Math.abs(l.price - price) <= per * 5);
-      if (lv){
-        e.preventDefault();
-        p.dragLevel = {role: lv.role, from: lv.price, price: lv.price, label: lv.label};
-        // a line only moves on a deliberate drag (4px), and by how far you drag it, never jumping to the cursor
-        const move = ev => { if (Math.abs(ev.clientY - y0) < 4 && p.dragLevel.price === p.dragLevel.from) return;
-          const dp = -(ev.clientY - y0) / ((v.chartH || 1) - 8) * (v.chartY[1] - v.chartY[0]);
-          const pr = lv.price + dp, tk = pr >= 1 ? 0.01 : 0.0001; p.dragLevel.price = +(Math.round(pr / tk) * tk).toFixed(4); drawChart(p); };
-        const up = async () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up);
-          const d = p.dragLevel; p.dragLevel = null;
-          if (Math.abs(d.price - d.from) < 1e-6) return;
-          let out;
-          if (p.opt && typeof optLevel === "function"){ await optLevel(d.role, d.price, ((T().opt_levels || {})[OCH.key] || {}).n || OCH.n); return; }
-          if (d.role === "extra"){ await post("/api/level", {symbol: p.data.symbol, price: d.from, on: false, role: "extra"});
-            out = await post("/api/level", {symbol: p.data.symbol, price: d.price, on: true, role: "extra"}); }
-          else out = await post("/api/level", {symbol: p.data.symbol, price: d.price, role: d.role, confirm: d.role === "trigger"});
-          toast(out.ok ? `${d.label} moved to ${px(d.price)} — saved` : "Could not move " + d.label, out.ok); };
-        window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
-        return;
-      }
+    // grab a line (your level lines, or a working order) and drag it: within 8 px of it counts
+    const hitL = p.data && v.chartY && !onAxis && !onTime && !(e.ctrlKey || e.metaKey) ? lineAt(yAt(), 8) : null;
+    if (hitL && hitL.kind === "level"){
+      const lv = hitL.lv; e.preventDefault();
+      p.dragLevel = {role: lv.role, from: lv.price, price: lv.price, label: lv.label};
+      // a line only moves on a deliberate drag (4px), and by how far you drag it, never jumping to the cursor
+      const move = ev => { if (!p.dragLevel || (Math.abs(ev.clientY - y0) < 4 && p.dragLevel.price === p.dragLevel.from)) return;
+        const dp = -(ev.clientY - y0) / ((v.chartH || 1) - 8) * (v.chartY[1] - v.chartY[0]);
+        p.dragLevel.price = snapTk(lv.price + dp); drawChart(p); };
+      const up = async () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up);
+        if (p.carry) return;                                   // a double-click picked it up: it follows the mouse now
+        const d = p.dragLevel; p.dragLevel = null; if (d) await commitLevel(d); };
+      window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
+      return;
     }
-    // grab a working-order line on the chart and drag it to a new price
-    if (p.data && v.chartY && !onAxis && !onTime){
-      const price = yAt(), per = (v.chartY[1] - v.chartY[0]) / ((v.chartH || 1) - 8);
-      const o = (p.data.orders || []).find(o => o.price && Math.abs(o.price - price) <= per * 5 && o.id != null);
-      if (o){
-        e.preventDefault();
-        // a bracket line can be several orders at one price (each exit piece has its own stop): they move as one
-        const kind = x => x.role === "stop" ? "stop" : x.role === "entry" || x.role === "flatten" || x.role === "close" ? x.role + x.id : "exit";
-        const group = (p.data.orders || []).filter(x => x.id != null && Math.abs(x.price - o.price) < 1e-6 && kind(x) === kind(o) && x.action === o.action);
-        p.dragOrder = {id: o.id, ids: group.map(x => x.id), price: o.price};
-        const move = ev => { if (Math.abs(ev.clientY - y0) < 4 && p.dragOrder.price === o.price) return;
-          const dp = -(ev.clientY - y0) / ((v.chartH || 1) - 8) * (v.chartY[1] - v.chartY[0]);
-          const pr = o.price + dp, tk = pr >= 1 ? 0.01 : 0.0001; p.dragOrder.price = +(Math.round(pr / tk) * tk).toFixed(4); drawChart(p); };
-        const up = async () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up);
-          const d = p.dragOrder; p.dragOrder = null;
-          if (Math.abs(d.price - o.price) >= 1e-6){
-            let ok = true, why = "";
-            for (const id of d.ids){ const out = await post("/api/trade/modify", {id, price: d.price}); if (!out.ok){ ok = false; why = out.reason || ""; } }
-            toast(ok ? `${o.role === "stop" ? "Stop" : o.role === "entry" ? "Order" : "Target"} moved to ${px(d.price)}` : "Move blocked: " + why, ok); } };
-        window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
-        return;
-      }
+    if (hitL && hitL.kind === "order"){
+      const o = hitL.o; e.preventDefault();
+      // a bracket line can be several orders at one price (each exit piece has its own stop): they move as one
+      p.dragOrder = {id: o.id, ids: hitL.group.map(x => x.id), price: o.price};
+      const move = ev => { if (!p.dragOrder || (Math.abs(ev.clientY - y0) < 4 && p.dragOrder.price === o.price)) return;
+        const dp = -(ev.clientY - y0) / ((v.chartH || 1) - 8) * (v.chartY[1] - v.chartY[0]);
+        p.dragOrder.price = snapTk(o.price + dp); drawChart(p); };
+      const up = async () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up);
+        if (p.carry) return;
+        const d = p.dragOrder; p.dragOrder = null; if (d) await commitOrders(d, o); };
+      window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
+      return;
     }
     const start = {offset: v.offset, eat: v.eat || 0, yLo: v.yLo, yHi: v.yHi, y: v.chartY ? v.chartY.slice() : null, h: v.chartH || 1, cw: v.cw};
     let moved = false;
@@ -1199,11 +1218,18 @@ function wireChart(p, cv, v, saveView, isFoot){
       // a plain click: the LIVE button jumps to the newest candle, the AUTO SCALE tag hands the price scale back
       const cx = ev.clientX - r.left, cy = ev.clientY - r.top, hit = b => b && cx >= b[0] && cx <= b[0] + b[2] && cy >= b[1] && cy <= b[1] + b[3];
       if (hit(v.liveBtn)){ v.offset = restOffset(); v.eat = 0; v.follow = true; v.rightT = null; saveView(); drawChart(p); }
-      else if (hit(v.autoBtn) || (onAxis && v.yLo != null)){ v.yLo = v.yHi = null; v.autoY = null; saveView(); drawChart(p); } };
+      else if (hit(v.autoBtn) || (onAxis && v.yLo != null)){ v.yLo = v.yHi = null; v.autoY = null; saveView(); drawChart(p); }
+      // holding a contract on this stock: a plain left click opens its STOP / TARGET / BREAK EVEN / CLOSE at that price
+      else if (!onAxis && !onTime && !p.opt && p.data && v.chartY && typeof heldQuick === "function"){
+        const pr = snapTk(v.chartY[1] - (cy - 8) / ((v.chartH || 1) - 8) * (v.chartY[1] - v.chartY[0]));
+        clearTimeout(p._hq); const cx_ = ev.clientX, cy_ = ev.clientY; p._hq = setTimeout(() => heldQuick(p, cx_, cy_, pr), 260); } };
     window.addEventListener("mousemove", move); window.addEventListener("mouseup", up);
   });
   cv.addEventListener("mousemove", e => { const r = cv.getBoundingClientRect(); v.cross = [e.clientX - r.left, e.clientY - r.top];
-    cv.style.cursor = (e.clientX - r.left) > r.width - 86 ? "ns-resize" : (e.clientY - r.top) > r.height - 18 ? "ew-resize" : "";
+    if (p.carry && v.chartY){ const pr = snapTk(v.chartY[1] - ((e.clientY - r.top) - 8) / ((v.chartH || 1) - 8) * (v.chartY[1] - v.chartY[0]));
+      if (p.carry.kind === "level" && p.dragLevel) p.dragLevel.price = pr; else if (p.dragOrder) p.dragOrder.price = pr; }
+    const onLine = !p.carry && v.chartY && (e.clientX - r.left) <= r.width - 86 && lineAt(v.chartY[1] - ((e.clientY - r.top) - 8) / ((v.chartH || 1) - 8) * (v.chartY[1] - v.chartY[0]), 8);
+    cv.style.cursor = p.carry ? "row-resize" : (e.clientX - r.left) > r.width - 86 ? "ns-resize" : (e.clientY - r.top) > r.height - 18 ? "ew-resize" : onLine ? "grab" : "";
     drawChart(p); crossSync(p); });
   cv.addEventListener("mouseleave", () => { v.cross = null; if (typeof ladderHighlight === "function") ladderHighlight(null); drawChart(p); crossSync(null); });
   cv.addEventListener("contextmenu", e => {
@@ -1217,6 +1243,20 @@ function wireChart(p, cv, v, saveView, isFoot){
   cv.addEventListener("dblclick", e => {
     // double-click the price scale: auto scale back. The time axis: bars back to normal width. The chart: everything back, live
     const r = cv.getBoundingClientRect(), onAxis = (e.clientX - r.left) > r.width - 86, onTime = !onAxis && (e.clientY - r.top) > r.height - 18;
+    clearTimeout(p._hq);                                     // a double-click is never also a click
+    if (!onAxis && !onTime && v.chartY){
+      const hit = lineAt(v.chartY[1] - ((e.clientY - r.top) - 8) / ((v.chartH || 1) - 8) * (v.chartY[1] - v.chartY[0]), 14);
+      if (hit){
+        if (p.carry) carryEnd(false);
+        const esc = ev => { if (ev.key === "Escape"){ ev.stopPropagation(); ev.preventDefault(); carryEnd(false); } };
+        if (hit.kind === "level"){ const lv = hit.lv; p.dragLevel = {role: lv.role, from: lv.price, price: lv.price, label: lv.label}; p.dragOrder = null; }
+        else { p.dragOrder = {id: hit.o.id, ids: hit.group.map(x => x.id), price: hit.o.price}; p.dragLevel = null; }
+        p.carry = {kind: hit.kind, o: hit.o, esc}; cv.classList.add("carry");
+        document.addEventListener("keydown", esc, true);
+        toast(`${hit.kind === "level" ? hit.lv.label : (hit.o.role || "order").toUpperCase()} picked up: move the mouse, click to drop it · Esc puts it back`, true);
+        drawChart(p); return;
+      }
+    }
     if (onAxis){ v.yLo = v.yHi = null; v.autoY = null; }
     else if (onTime){ v.cw = isFoot ? 64 : 11; }
     else { v.cw = isFoot ? 64 : 11; v.offset = restOffset(); v.eat = 0; v.yLo = v.yHi = null; v.autoY = null; v.follow = true; v.rightT = null; }
@@ -1312,6 +1352,31 @@ async function optHeldLine(d, role, price, key, qty){
   if (role === "stop") await post("/api/trade/opt_stop", {key, price: null});     // one stop: the line on the stock chart
   toast(`${d.symbol} ${role.toUpperCase()} ${px(price)}: ${d.symbol} ${role === "stop" ? "through" : "at"} ${px(price)} sells your ${key.split(" ").slice(2).join(" ")}`, true);
   poll(true);
+}
+/* THE CONTRACT FROM THE STOCK CHART, one left click: holding a contract on this stock (no shares), a click on the
+   stock chart opens its STOP / TARGET at that stock price (the line sells the contract), BREAK EVEN and CLOSE */
+function heldQuick(p, x, y, price){
+  const d = p.data, menu = optHeldMenu(d, price); if (!menu) return;
+  const c = heldContract(d); if (!c) return;
+  const old = document.getElementById("cmenu"); if (old) old.remove();
+  const m = document.createElement("div"); m.id = "cmenu"; m.className = "pop cmenu heldq";
+  m.innerHTML = `<div class="dim" style="font-size:11px;margin-bottom:4px">${esc(d.symbol)} @ <b style="color:var(--gold)">${px(price)}</b><span class="x" title="close (Esc)">✕</span></div>${menu}
+    <div class="hqrow"><button data-do="obe" title="the contract's stop to what you paid">BREAK EVEN</button><button data-do="oclose" class="bflat" title="sell every contract at the touch">CLOSE ${c.qty} ct</button></div>`;
+  m.style.left = Math.min(x, window.innerWidth - 250) + "px"; m.style.top = Math.min(y, window.innerHeight - 170) + "px";
+  document.body.appendChild(m);
+  const esc_ = ev => { if (ev.key === "Escape"){ m.remove(); document.removeEventListener("keydown", esc_, true); } };
+  document.addEventListener("keydown", esc_, true);
+  m.addEventListener("click", async e => {
+    if (e.target.classList.contains("x")){ m.remove(); return; }
+    const b = e.target.closest("button[data-do]"); if (!b || b.disabled) return;
+    m.remove();
+    if (b.dataset.do === "optline") optHeldLine(d, b.dataset.role, price, b.dataset.key, +b.dataset.qty);
+    else if (b.dataset.do === "obe"){ const out = await post("/api/trade/opt_breakeven", {key: c.key}); toast(out.ok ? c.key + ": " + out.sent : "Breakeven blocked: " + (out.reason || ""), out.ok); poll(true); }
+    else if (b.dataset.do === "oclose"){ if (!confirm("CLOSE every contract of " + c.key + "?")) return;
+      const out = await post("/api/trade/opt_adjust", {key: c.key, contracts: 0, mode: "close", price: null}); toast(out.ok ? "Sent: " + out.sent : "Blocked: " + (out.reason || ""), out.ok); poll(true); }
+  });
+  const away = ev => { if (!m.isConnected){ document.removeEventListener("mousedown", away, true); return; } if (!m.contains(ev.target)) m.remove(); };
+  setTimeout(() => document.addEventListener("mousedown", away, true), 0);
 }
 /* STOP $: a small tag on the stop line, what you lose if it is hit: the shares on the stock chart, the contract on
    the option chart, and (no shares) the contract the stock chart's lines trade, estimated from its delta / gamma.
