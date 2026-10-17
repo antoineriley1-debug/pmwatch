@@ -6,10 +6,11 @@ Six reads, each one answering a question the trade already asks:
                  day). Not the PS60 max pain (where you are wrong, the stop): always called OPTION MAX PAIN
 * BIG STRIKES    the strikes with the most option money on them, above and below price: hedging on those options
                  tends to slow price there or hold it (more supply / demand in the way of the move)
-* CALL vs PUT $  the day's running total of call money minus put money: which side the option buyers lean, all day
-* EXPECTED MOVE  how far the options say the stock moves by the expiry: is the measured potential inside it?
-* OPENING MONEY  open interest that grew overnight: new positions opened and held
-* AT THE ASK     on the contract you trade: how much traded at the ask against at the bid today
+* FLOW LEAN      call prints against put prints that buyers paid up for, today and the last 15 minutes: counted,
+                 never added up in dollars
+* OPTIONS EXPECT how far the options say the stock moves by the expiry: is the measured potential inside it?
+* NEW MONEY OVERNIGHT  open interest that grew overnight: new positions opened and held
+* YOUR CONTRACT  on the contract you trade: how much buyers paid up to get in against sellers sold down to get out today
 
 Each read comes from Quant Data's tools when the key opens them (one call per tool per symbol on its own timer, well
 inside the plan's 240 a minute), else from what the desk already has (the flow it pulls, the IBKR option chain,
@@ -28,7 +29,6 @@ import time
 from datetime import datetime, timezone
 
 TOOLS = {
-    "net_drift": "/v1/options/tool/net-drift",
     "exposure": "/v1/options/tool/exposure-by-strike",
     "max_pain_by_exp": "/v1/options/tool/max-pain-over-time",
     "max_pain": "/v1/options/tool/max-pain",
@@ -36,7 +36,7 @@ TOOLS = {
     "term_structure": "/v1/options/tool/term-structure",
     "trade_side": "/v1/options/tool/contract-trade-side-statistics",
 }
-TOOL_NAMES = {"net_drift": "CALL vs PUT MONEY (net drift)", "exposure": "BIG STRIKES (exposure by strike)",
+TOOL_NAMES = {"exposure": "BIG STRIKES (exposure by strike)",
               "max_pain_by_exp": "OPTION MAX PAIN by expiry", "max_pain": "OPTION MAX PAIN", "oi_by_strike": "OPEN INTEREST by strike",
               "term_structure": "EXPECTED MOVE (term structure)", "trade_side": "CALLS / PUTS BOUGHT vs SOLD"}
 
@@ -144,30 +144,6 @@ def _split_call_put(row, skip=("strike", "strikeprice", "price", "k", "__key", "
 
 
 # ---- Quant Data answers -------------------------------------------------------------------------------------------
-
-def parse_net_drift(payload):
-    """Net Drift: buckets keyed by start time (ms) with netCallPremium / netPutPremium (per bucket, not running).
-    -> {"series": [[t, running call minus put $]], "calls": $, "puts": $, "net": $} or None."""
-    rows = []
-    for r in _records(payload):
-        t = _secs(r.get("__key")) if "__key" in r else _secs(_pick(r, "t", "time", "timestamp", "bucket", "start", "startTime"))
-        c = _num(_pick(r, "netCallPremium", "callPremium", "netCall", "calls"))
-        p = _num(_pick(r, "netPutPremium", "putPremium", "netPut", "puts"))
-        if t is None or (c is None and p is None):
-            continue
-        rows.append((t, c or 0.0, p or 0.0))
-    if not rows:
-        return None
-    rows.sort()
-    cum = cc = pp = 0.0
-    series = []
-    for t, c, p in rows:
-        cc += c
-        pp += p
-        cum = cc - pp
-        series.append([round(t), round(cum)])
-    return {"series": series, "calls": round(cc), "puts": round(pp), "net": round(cum)}
-
 
 def parse_max_pain_by_exp(payload):
     """Max Pain Over Time: {"YYYY-MM-DD": strike, ...} (or rows with an expiration and a strike) -> [(YYYYMMDD, strike)]."""
@@ -282,21 +258,31 @@ def parse_trade_side(payload):
 # ---- the desk's own reads (no Quant Data needed) ------------------------------------------------------------------
 
 def local_drift(prints, t, day_start):
-    """CALL vs PUT money from the option flow the desk already pulls: calls bought at the ask add, sold at the bid
-    take away; puts the other way round. -> same shape as parse_net_drift."""
-    rows = sorted((p for p in prints if p.get("t", 0) >= day_start and p.get("premium")), key=lambda p: p["t"])
+    """OPTION FLOW LEAN, counted in prints, never in dollars: how many call prints and how many put prints buyers paid
+    up for today (buyers paid up for), and in the last 15 minutes. series: the running calls minus puts, print by print."""
+    rows = sorted((p for p in prints if p.get("t", 0) >= day_start and p.get("side") == "ask" and p.get("cp") in ("C", "P")),
+                  key=lambda p: p["t"])
     if not rows:
         return None
-    cc = pp = 0.0
+    nc = np_ = 0
     series = []
     for p in rows:
-        s = 1.0 if p.get("side") == "ask" else -1.0 if p.get("side") == "bid" else 0.0
-        if p.get("cp") == "C":
-            cc += s * p["premium"]
-        elif p.get("cp") == "P":
-            pp += s * p["premium"]
-        series.append([round(p["t"]), round(cc - pp)])
-    return {"series": series[-400:], "calls": round(cc), "puts": round(pp), "net": round(cc - pp)}
+        if p["cp"] == "C":
+            nc += 1
+        else:
+            np_ += 1
+        series.append([round(p["t"]), nc - np_])
+    recent = [p for p in rows if p["t"] >= t - 900]
+    return {"series": series[-400:], "calls": nc, "puts": np_, "net": nc - np_,
+            "calls15": sum(1 for p in recent if p["cp"] == "C"), "puts15": sum(1 for p in recent if p["cp"] == "P")}
+
+
+def lean_of(calls, puts, min_prints=3, ratio=1.5):
+    """UP when the call prints outnumber the put prints by half again (and there are enough to count), DOWN the other
+    way, else EVEN."""
+    if calls + puts < min_prints:
+        return "EVEN"
+    return "CALLS" if calls >= puts * ratio and calls > puts else "PUTS" if puts >= calls * ratio and puts > calls else "EVEN"
 
 
 def max_pain_from_oi(call_oi, put_oi):
@@ -347,12 +333,6 @@ def aggression(prints):
     return {"ask_pct": round(100.0 * b / n), "bid_pct": round(100.0 * s / n), "contracts": int(n)}
 
 
-def fmt_usd(v):
-    a = abs(v or 0)
-    s = f"${a / 1e9:.1f}B" if a >= 1e9 else f"${a / 1e6:.1f}M" if a >= 1e6 else f"${a / 1e3:.0f}K" if a >= 1e3 else f"${a:.0f}"
-    return ("−" if (v or 0) < 0 else "+") + s if v else s
-
-
 # ---- the reads, put together for one symbol -----------------------------------------------------------------------
 
 class OptionMoney:
@@ -380,20 +360,12 @@ class OptionMoney:
         if not c.get("enabled", True) or not spot:
             return None
         out = {"symbol": sym, "spot": spot, "src": {}}
-        # CALL vs PUT money
-        d = self.got(sym, "net_drift", 600)
+        # OPTION FLOW LEAN: call prints against put prints that buyers paid up for, today and the last 15 minutes
+        d = local.get("drift")
         if d:
-            out["src"]["drift"] = "QUANT DATA"
-        else:
-            d = local.get("drift")
-            if d:
-                out["src"]["drift"] = local.get("drift_src", "FLOW")
-        if d:
-            ser = d["series"]
-            back = [v for tt, v in ser if tt <= t - 900]
-            d = dict(d, chg15=(d["net"] - back[-1]) if back else None)
-            mag = max(float(c.get("lean_min_dollars", 250000)), 0.0)
-            d["lean"] = "CALLS" if d["net"] >= mag else "PUTS" if d["net"] <= -mag else "EVEN"
+            out["src"]["drift"] = local.get("drift_src", "FLOW")
+            mn = int(c.get("lean_min_prints", 3))
+            d = dict(d, lean=lean_of(d["calls"], d["puts"], mn), lean15=lean_of(d.get("calls15", 0), d.get("puts15", 0), 2))
             out["drift"] = d
         # MAX PAIN (this week's expiry first)
         mp = None
@@ -485,7 +457,7 @@ class OptionMoney:
         if d and d["lean"] != "EVEN":
             with_ = (d["lean"] == "CALLS") == long_
             lines.append({"tone": "ok" if with_ else "warn", "key": "drift",
-                          "text": f"option money leans {d['lean']} today ({fmt_usd(d['net'])}): {'with' if with_ else 'against'} the {play['side']}"})
+                          "text": f"option flow leans {'UP (calls)' if d['lean'] == 'CALLS' else 'DOWN (puts)'} today ({d['calls']} call prints vs {d['puts']} put prints, buyers paid up): {'with' if with_ else 'against'} the {play['side']}"})
         return lines
 
     def reads(self, v, direction, atr):
@@ -498,8 +470,8 @@ class OptionMoney:
         d = v.get("drift")
         if d:
             r["money"] = "EVEN" if d["lean"] == "EVEN" else ("WITH" if (d["lean"] == "CALLS") == up else "AGAINST")
-            if d.get("chg15") is not None:
-                r["money15"] = "WITH" if (d["chg15"] > 0) == up else "AGAINST"
+            if d.get("lean15") and d["lean15"] != "EVEN":
+                r["money15"] = "WITH" if (d["lean15"] == "CALLS") == up else "AGAINST"
         span = (atr or spot * 0.018) * float(self.c().get("strike_near_atr", 0.5))
         ss = v.get("strikes")
         if ss:
@@ -593,8 +565,6 @@ class OptionMoneyFeed:
     def parse(self, tool, payload, sym):
         st = self.engine.syms.get(sym)
         spot = st.price() if st else None
-        if tool == "net_drift":
-            return parse_net_drift(payload)
         if tool == "max_pain_by_exp":
             return parse_max_pain_by_exp(payload) or None
         if tool == "max_pain":
@@ -609,7 +579,7 @@ class OptionMoneyFeed:
 
     def every(self, tool):
         c = self.c()
-        return float({"net_drift": c.get("drift_seconds", 60), "exposure": c.get("exposure_seconds", 300),
+        return float({"exposure": c.get("exposure_seconds", 300),
                       "max_pain_by_exp": c.get("maxpain_seconds", 900), "max_pain": c.get("maxpain_seconds", 900),
                       "oi_by_strike": c.get("oi_seconds", 1800), "term_structure": c.get("term_seconds", 900),
                       "trade_side": c.get("trade_side_seconds", 300)}.get(tool, 600))

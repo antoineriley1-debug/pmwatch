@@ -48,8 +48,8 @@ class DarkBook:
         lv["big"] += 1
         tk = 0.01 if price >= 1 else 0.0001
         if bid and ask and ask >= bid:
-            at = ("over the ask" if price > ask + tk / 2 else "at the ask" if price >= ask - tk / 2
-                  else "under the bid" if price < bid - tk / 2 else "at the bid" if price <= bid + tk / 2 else "mid")
+            at = ("paid up over the ask" if price > ask + tk / 2 else "paid up" if price >= ask - tk / 2
+                  else "sold down under the bid" if price < bid - tk / 2 else "sold down" if price <= bid + tk / 2 else "mid")
         else:
             at = ""
         rec = {"t": t, "price": price, "size": size, "usd": usd, "exchange": str(exchange or ""), "at": at,

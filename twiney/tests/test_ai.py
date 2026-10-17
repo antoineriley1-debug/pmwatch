@@ -136,7 +136,7 @@ class PacketTests(unittest.TestCase):
             eng.score.path = os.path.join(d, "score.jsonl")
             t = time.time()
             with open(eng.storyline_path, "w") as f:
-                f.write(json.dumps({"t": t, "day": studies.day_key(t), "symbol": "AAA", "topic": "lean", "text": "sellers have the tape", "price": 10.0, "live": True}) + "\n")
+                f.write(json.dumps({"t": t, "day": studies.day_key(t), "symbol": "AAA", "topic": "lean", "text": "sellers are in control", "price": 10.0, "live": True}) + "\n")
             with open(eng.score.path, "w") as f:
                 f.write(json.dumps({"t": t, "symbol": "AAA", "kind": "RELOAD BUYER", "dir": 1, "p0": 10.0, "outcome": "MISS"}) + "\n")
             a = DeskAI(eng, c, d)
@@ -146,7 +146,7 @@ class PacketTests(unittest.TestCase):
             n = a.packet_notes(t)
             self.assertIn("watchin ten even", n)
             s = a.packet_study(t, 5)
-            self.assertIn("sellers have the tape", s)
+            self.assertIn("sellers are in control", s)
             self.assertIn("SCORE that day: 0 hit / 1 miss", s)
             self.assertIn("AAA DAILY BARS", s)
 

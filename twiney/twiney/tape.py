@@ -60,7 +60,7 @@ class Tape:
                 sell += p["size"]
             else:
                 mid += p["size"]
-        # the money in the last minute: dollars paid at the ask vs dollars hit at the bid (the gauge on T&S)
+        # the money in the last minute: dollars buyers paid up vs dollars sellers sold down (the gauge on T&S)
         usd_b = usd_s = 0.0
         for p in reversed(self.prints):
             if now - p["t"] > 60:
@@ -73,9 +73,9 @@ class Tape:
         if n < self.cfg["min_prints_for_read"] or directional <= 0:
             state = "QUIET"
         elif buy / directional >= self.cfg["control_ratio"]:
-            state = "BUYERS PAYING UP"     # impatient buyers: they wanted in now
+            state = "BUYERS PAID UP TO GET IN"       # a buyer wanted in now: paid the seller's price
         elif sell / directional >= self.cfg["control_ratio"]:
-            state = "SELLERS HITTING OUT"  # impatient sellers: they wanted out now
+            state = "SELLERS SOLD DOWN TO GET OUT"   # a seller wanted out now: took the buyer's price
         else:
             state = "TWO-SIDED"
         return {

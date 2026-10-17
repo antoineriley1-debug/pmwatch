@@ -85,7 +85,7 @@ const CS_DEF = [
   ["INDICATORS", [["check", "vwap", "VWAP", true, true], ["check", "mas", "Moving averages", true, true], ["check", "matags", "MA price tags", true, true],
     ["check", "bb", "Bollinger bands", true, true]]],
   ["OPTION MONEY", [["check", "omMaxPain", "OPTION MAX PAIN line (this week's expiry; not the PS60 max pain / stop)", true], ["check", "omStrikes", "BIG STRIKES: the most option money above and below price", true],
-    ["check", "omLine", "CALL vs PUT MONEY line in the volume pane", true]]],
+    ["check", "omLine", "FLOW LEAN line in the volume pane", true]]],
   ["LEVEL II CANDLE", [["check", "candleFly", "The ladder's candle flies to the chart when it closes (CANDLE mode, 1m / 5m)", true, true]]],
 ];
 function csKey(f){ return f[0] === "range" ? f[1] : f[4] === true || (f[0] === "check" && f.length > 4 && f[4]) ? f[1] : "cs." + f[1]; }
@@ -766,12 +766,12 @@ function instStripHTML(ic){
 }
 document.addEventListener("click", e => { if (!e.target.closest(".instrip[data-inst]")) return; store.set("instOpen", !store.get("instOpen", false)); if (P.tape) P.tape.last = null; const d0 = curData(); if (d0) renderTape(d0); });
 document.addEventListener("click", e => { if (!e.target.closest(".dkstrip[data-dk]")) return; store.set("darkOpen", !store.get("darkOpen", false)); if (P.tape) P.tape.last = null; const d0 = curData(); if (d0) renderTape(d0); });
-/* THE MONEY GAUGE: the last minute's dollars paid at the ask (buyers in a rush) against dollars hit at the bid */
+/* THE MONEY GAUGE: the last minute's dollars buyers paid up with against dollars sellers sold down with */
 function tapeGaugeHTML(t){
   const u = t.usd_60 || {buy: 0, sell: 0}, tot = u.buy + u.sell;
   if (!tot) return `<div class="tgauge dim">LAST MINUTE · no money through yet</div>`;
   const bp = Math.round(u.buy / tot * 100);
-  return `<div class="tgauge" title="the last 60 seconds: dollars traded at the ask (paid up) vs at the bid (hit)"><span class="b">${usdK(u.buy)} BOUGHT</span><span class="bar"><i class="b" style="width:${bp}%"></i><i class="s" style="width:${100 - bp}%"></i></span><span class="s">${usdK(u.sell)} SOLD</span></div>`;
+  return `<div class="tgauge" title="the last 60 seconds: dollars buyers paid up vs dollars sellers sold down"><span class="b">${usdK(u.buy)} BOUGHT</span><span class="bar"><i class="b" style="width:${bp}%"></i><i class="s" style="width:${100 - bp}%"></i></span><span class="s">${usdK(u.sell)} SOLD</span></div>`;
 }
 /* A BIG PRINT FLIES: when size comes off the ladder in a big print, a chip lifts off its row on LEVEL II and lands
    on top of TIME & SALES, so the eye follows the money from the book to the tape */
@@ -813,14 +813,14 @@ function renderBigTape(d){
   const body = box.querySelector(".bt-body");
   let bt = d && d.bigtape;
   if (!bt){ body.innerHTML = `<div class="dim" style="padding:4px 6px">${NA}</div>`; return; }
-  const c = btCols(), who = s => s === "buy" ? "PAID UP" : "HIT";
+  const c = btCols(), who = s => s === "buy" ? "PAID UP" : "SOLD DOWN";
   const minSh = btNum(store.get("btMinSh", "")), minUsd = btNum(store.get("btMinUsd", ""));
   const bigEnough = (shares, usd) => shares >= minSh && usd >= minUsd;
   bt = Object.assign({}, bt, {builders: bt.builders.filter(g => bigEnough(g.shares, g.dollars)), prints: bt.prints.filter(p => bigEnough(p.size, p.dollars))});
   // price · how many times · shares · (dollars) · LIVE / seconds — the colour says who: green paid up, red hit
   const cells = (side, price, times, shares, usd, age) => `<td class="px ${side}">${price}</td>${c.who ? `<td class="${side}">${who(side)}</td>` : ""}${c.times ? `<td class="${side}">${times}</td>` : ""}${c.shares ? `<td class="${side}"><b>${shares}</b></td>` : ""}${c.usd ? `<td class="${side}">${usd}</td>` : ""}${c.age ? `<td class="dim">${age}</td>` : ""}`;
   const n = 1 + (c.who ? 1 : 0) + (c.times ? 1 : 0) + (c.shares ? 1 : 0) + (c.usd ? 1 : 0) + (c.age ? 1 : 0);
-  const bl = bt.builders.map(g => `<tr class="${g.side} bld ${g.still ? "live" : ""}" title="${g.side === "buy" ? "paid the ask" : "hit the bid"} at ${g.price} ${g.prints} times in ${g.first_age - g.last_age}s — ${sz(g.shares)} shares, ${usdK(g.dollars)}, biggest print ${sz(g.biggest)}. ${g.still ? "Still going (last print " + g.last_age + "s ago)." : "Went quiet " + g.last_age + "s ago."}">
+  const bl = bt.builders.map(g => `<tr class="${g.side} bld ${g.still ? "live" : ""}" title="${g.side === "buy" ? "buyers paid up" : "sellers sold down"} at ${g.price} ${g.prints} times in ${g.first_age - g.last_age}s — ${sz(g.shares)} shares, ${usdK(g.dollars)}, biggest print ${sz(g.biggest)}. ${g.still ? "Still going (last print " + g.last_age + "s ago)." : "Went quiet " + g.last_age + "s ago."}">
       ${cells(g.side, g.price, "×" + g.prints, kfmt(g.shares), usdK(g.dollars), g.still ? "LIVE" : ago(g.last_age))}</tr>`).join("");
   const pr = c.blocks ? bt.prints.map(p => `<tr class="${p.side}" title="${who(p.side).toLowerCase()} ${sz(p.size)} shares at ${p.price} = ${usdK(p.dollars)}${p.exchange ? " · " + esc(p.exchange) : ""} · ${ago(p.age)} ago">
       ${cells(p.side, p.price, "", sz(p.size), usdK(p.dollars), ago(p.age))}</tr>`).join("") : "";
@@ -1051,9 +1051,10 @@ function renderSetup(d){
 /* OPTION MONEY in PLAY SETUP: the six reads in one block (where each one comes from in grey), then the checks against
    this play: the MP against the expected move, a big strike in the way, the option max pain on expiry day, the
    money's lean against the side. Flow backs up the setup, never replaces it. */
+// who is in control of a contract today, in your words: 60% or more taken by one side = that side is in control
+function tapeWho(ag){ return ag.ask_pct >= 60 ? "BUYERS IN CONTROL" : ag.bid_pct >= 60 ? "SELLERS IN CONTROL" : "NEITHER SIDE IN CONTROL"; }
 function omHTML(om){
   if (!om) return "";
-  const $k = v => v == null ? "—" : (v < 0 ? "−" : "") + "$" + (Math.abs(v) >= 1e9 ? (Math.abs(v) / 1e9).toFixed(1) + "B" : Math.abs(v) >= 1e6 ? (Math.abs(v) / 1e6).toFixed(1) + "M" : Math.round(Math.abs(v) / 1e3) + "K");
   const src = k => om.src && om.src[k] ? `<i>${esc(om.src[k])}</i>` : "";
   const ex = e => e ? e.slice(4, 6) + "/" + e.slice(6, 8) : "";
   const rows = [];
@@ -1064,15 +1065,16 @@ function omHTML(om){
     const f = s => s ? `${s.strike % 1 ? s.strike.toFixed(2) : s.strike} (${s.side}${s.rel >= 0.5 ? ", big" : ""})` : "—";
     rows.push(["BIG STRIKES", `above ${f(up)} · below ${f(dn)}`, src("strikes")]); }
   const dr = om.drift;
-  if (dr) rows.push(["CALL vs PUT $", `<b class="${dr.net >= 0 ? "pos" : "neg"}">${$k(dr.net)}</b> today · leans ${dr.lean}${dr.chg15 != null ? ` · last 15 min ${$k(dr.chg15)}` : ""}`, src("drift")]);
+  const leanW = l => l === "CALLS" ? "<b class=\"pos\">UP</b> (calls)" : l === "PUTS" ? "<b class=\"neg\">DOWN</b> (puts)" : "EVEN";
+  if (dr) rows.push(["OPTION FLOW LEAN", `leans ${leanW(dr.lean)} · ${dr.calls} call prints vs ${dr.puts} put prints today, buyers paid up · last 15 min ${dr.calls15 || 0} vs ${dr.puts15 || 0}`, src("drift")]);
   const em = om.em;
-  if (em) rows.push(["EXPECTED MOVE", `±${(+em.move).toFixed(2)} by ${ex(em.expiry)} (${px(em.lo)} – ${px(em.hi)})`, src("em")]);
+  if (em) rows.push(["OPTIONS EXPECT", `±$${(+em.move).toFixed(2)} by ${ex(em.expiry)} (${px(em.lo)} – ${px(em.hi)})`, src("em")]);
   const op = om.opening;
-  if (op) rows.push(["OPENING MONEY", `calls ${op.calls >= 0 ? "+" : ""}${kfmt(op.calls)} · puts ${op.puts >= 0 ? "+" : ""}${kfmt(op.puts)} contracts overnight · ${op.lean}`, op.src ? `<i>${esc(op.src)}</i>` : ""]);
+  if (op) rows.push(["NEW MONEY OVERNIGHT", `calls ${op.calls >= 0 ? "+" : ""}${kfmt(op.calls)} · puts ${op.puts >= 0 ? "+" : ""}${kfmt(op.puts)} new contracts held overnight · leans ${leanW(op.lean)}`, op.src ? `<i>${esc(op.src)}</i>` : ""]);
   const bs = om.bought_sold;
-  if (bs) rows.push(["BOUGHT vs SOLD", `calls ${kfmt(bs.calls_bought)} / ${kfmt(bs.calls_sold)} · puts ${kfmt(bs.puts_bought)} / ${kfmt(bs.puts_sold)}`, "<i>QUANT DATA</i>"]);
+  if (bs) rows.push(["CALLS / PUTS", `calls: buyers ${kfmt(bs.calls_bought)} · sellers ${kfmt(bs.calls_sold)} — puts: buyers ${kfmt(bs.puts_bought)} · sellers ${kfmt(bs.puts_sold)}`, "<i>QUANT DATA</i>"]);
   const ag = om.aggression;
-  if (ag) rows.push(["AT THE ASK", `${ag.ask_pct}% at the ask · ${ag.bid_pct}% at the bid · ${kfmt(ag.contracts)} ct today`, `<i>${esc(ag.key || "")}</i>`]);
+  if (ag) rows.push(["YOUR CONTRACT TODAY", `<span title="a buyer wanted in now, so they paid the seller's price (paid up to get in); a seller wanted out now, so they took the buyer's price (sold down to get out)">buyers paid up to get in ${ag.ask_pct}% · sellers sold down to get out ${ag.bid_pct}% · ${tapeWho(ag)}</span> <span class="dim">(${kfmt(ag.contracts)} traded today)</span>`, `<i>${esc(ag.key || "")}</i>`]);
   const checks = (om.checks || []).map(c => `<div class="omc ${c.tone}">${c.tone === "ok" ? "✓" : "!"} ${esc(c.text)}</div>`).join("");
   return `<div class="omh">OPTION MONEY <span class="dim">backs up the pivot, never replaces it</span></div>` +
     rows.map(r => `<div class="omr"><span>${r[0]}</span><span>${r[1]}</span>${r[2]}</div>`).join("") + checks;
@@ -1745,10 +1747,10 @@ function renderEquity(s){
   const dark = document.getElementById("eqDark").checked, mine = document.getElementById("eqMine").checked;
   const rows = (s.equity || []).filter(p => (!dark || p.dark) && (!mine || (s.symbols || []).includes(p.symbol))).slice(0, 80);
   const src = document.getElementById("eqSrc"); const st = s.connection && s.connection.state === "DEMO" ? "PRACTICE PRINTS" : (s.equity_status && s.equity_status.detail ? "NO PRINTS READ · hover" : "QUANT DATA"); if (src.textContent !== st){ src.textContent = st; src.title = (s.equity_status && s.equity_status.detail) || ""; }
-  const html = rows.length ? rows.map(p => `<div class="fl eq ${p.dark ? "dk" : "lt"} ${p.side === "ask" ? "c" : p.side === "bid" ? "p" : ""}" title="${p.dark ? "off-exchange print" : "on the tape"}${p.side === "ask" ? " · at the ask (buyer paid up)" : p.side === "bid" ? " · at the bid (seller hit it)" : ""}">
+  const html = rows.length ? rows.map(p => `<div class="fl eq ${p.dark ? "dk" : "lt"} ${p.side === "ask" ? "c" : p.side === "bid" ? "p" : ""}" title="${p.dark ? "off-exchange print" : "on the tape"}${p.side === "ask" ? " · buyers paid up" : p.side === "bid" ? " · sellers sold down" : ""}">
       <div class="tm">${nyHM(p.t)}</div>
       <div class="top"><span class="tk">${esc(p.symbol)}</span><span class="prem">${kfmt$(p.dollars)}</span><span class="venue ${p.dark ? "dk" : ""}">${p.dark ? "OFF-EX" : esc(p.venue || "LIT")}</span></div>
-      <div class="cols"><span><i>SHARES</i>${sz(p.size)}</span><span><i>PRICE</i>${px(p.price)}</span><span><i>SIDE</i>${p.side === "ask" ? "PAID UP" : p.side === "bid" ? "HIT" : "MID"}</span></div></div>`).join("")
+      <div class="cols"><span><i>SHARES</i>${sz(p.size)}</span><span><i>PRICE</i>${px(p.price)}</span><span><i>SIDE</i>${p.side === "ask" ? "PAID UP" : p.side === "bid" ? "SOLD DOWN" : "MID"}</span></div></div>`).join("")
     : `<div class="dim" style="padding:10px">${s.connection && s.connection.state === "DEMO" ? "Practice prints are warming up." : (s.equity_status && s.equity_status.detail) ? "Quant Data answered but no equity print could be read: " + esc(s.equity_status.detail) : "No big equity prints yet (prints under the minimum in SETTINGS, Quant Data, are left out)."}</div>`;
   if (el.dataset.h !== html){ el.dataset.h = html; el.innerHTML = html; }
 }
@@ -1773,7 +1775,7 @@ function renderUrgency(s){
   const strike = k => Number.isInteger(+k) ? String(k) : (+k).toFixed(2).replace(/\.?0+$/, "");
   const exp = e => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(e || ""); return m ? `${m[2]}/${m[3]}` : (e || NA); };
   const top = rows.length ? rows[0].score : 1;
-  const html = rows.length ? rows.map(u => `<div class="fl ur ${u.cp === "C" ? "c" : "p"} ${u.hot ? "hot" : ""}" title="${u.prints} prints bought at the ask in the window, ${u.sweeps} sweeps · ${kfmt$(u.pace)} a minute${u.accel ? " · speeding up" : ""}${u.hot ? " · CALLED: urgent" : ""}">
+  const html = rows.length ? rows.map(u => `<div class="fl ur ${u.cp === "C" ? "c" : "p"} ${u.hot ? "hot" : ""}" title="${u.prints} prints buyers paid up for in the window, ${u.sweeps} sweeps · ${kfmt$(u.pace)} a minute${u.accel ? " · speeding up" : ""}${u.hot ? " · CALLED: urgent" : ""}">
       <div class="tm">${nyHM12(u.last_t)} <span class="dim">· since ${nyHM12(u.first_t)}</span>${u.hot ? ` <span class="urg">⚡ URGENT</span>` : ""}${u.accel ? ` <span class="acc">▲ SPEEDING UP</span>` : ""}</div>
       <div class="top"><span class="tk">${esc(u.symbol)}</span><span class="prem">${kfmt$(u.dollars)}</span><span class="dots a">${u.sweeps ? "<i></i><i></i>" : ""}</span><span class="bar"><i style="width:${Math.max(4, 100 * u.score / top).toFixed(0)}%"></i></span></div>
       <div class="cols"><span><i>EXP</i>${exp(u.expiry)}${u.dte != null ? ` (${Math.round(u.dte)}d)` : ""}</span><span><i>STRIKE</i>${strike(u.strike)}</span><span><i>C/P</i>${u.cp}</span><span><i>OTM</i>${u.otm_pct != null ? u.otm_pct.toFixed(1) + "%" : NA}</span><span><i>PRINTS</i>${u.prints}${u.sweeps ? ` <b class="dim">${u.sweeps} sw</b>` : ""}</span><span><i>PACE</i>${kfmt$(u.pace)}/m</span>${u.spot != null ? `<span><i>SPOT</i>${(+u.spot).toFixed(2)}</span>` : ""}</div></div>`).join("")
@@ -1997,7 +1999,7 @@ document.getElementById("voiceVol").addEventListener("change", e => store.set("v
 /* ---------- status bar + command bar */
 const PAGE_BUILD = (document.querySelector('meta[name="build"]') || {}).content || "";
 /* OPTION FLOW: the feed, shaped like FlowAlgo. Green = calls, red = puts; the dot row is the trade type;
-   a gold WAYS AWAY tag marks size bought at the ask well out of the money. */
+   a gold WAYS AWAY tag marks size buyers paid up for well out of the money. */
 const kfmt$ = v => v >= 1e6 ? "$" + (v / 1e6).toFixed(v >= 1e7 ? 0 : 1) + "M" : v >= 1e3 ? "$" + Math.round(v / 1e3) + "K" : "$" + Math.round(v);
 // ONE TICKER'S FLOW: a ticker typed in the box (or the panel locked to your stock) loads EVERY print the desk holds for it
 // today, not just the market-wide latest. A call's RECEIPT (🔎 FLOW on the call) shows exactly the prints it added up.
@@ -2038,11 +2040,11 @@ function renderFlow(s){
       + (full && got.length < FLOWREF.ids.length ? ` <span class="dim">(${got.length} of ${FLOWREF.ids.length} still in today's memory, ${kfmt$(tot)})</span>` : "")
       + `<span class="frb"><button data-fref="all">${FLOWREF_ALL ? "ONLY THESE" : "ALL " + esc(FLOWREF.symbol)}</button><button data-fref="x" title="close">✕</button></span></div>`;
   }
-  // one ticker: the read the voice uses on it right now (short-dated, out of the money, bought at the ask)
+  // one ticker: the read the voice uses on it right now (short-dated, out of the money, buyers paid up)
   if (full && full.reads && !FLOWREF){
     const r = full.reads, b = cp => { const x = r[cp] || {}; return `<button class="${cp === "C" ? "c" : "p"} ${x.knows ? "kn" : ""}" data-fread="${cp}" ${x.ids && x.ids.length ? "" : "disabled"} title="show these prints">${cp === "C" ? "CALLS" : "PUTS"} ${kfmt$(x.dollars || 0)} · ${x.prints || 0}${x.knows ? " · SOMEBODY KNOWS" : ""}</button>`; };
     const c = r.C || {};
-    head = `<div class="fread"><span>${esc(full.symbol)} · last ${c.window_minutes || 10} min · ${c.max_dte != null ? c.max_dte : 7} days or less · out of the money · bought at the ask</span>${b("C")}${b("P")}</div>`;
+    head = `<div class="fread"><span>${esc(full.symbol)} · last ${c.window_minutes || 10} min · ${c.max_dte != null ? c.max_dte : 7} days or less · out of the money · buyers paid up for</span>${b("C")}${b("P")}</div>`;
   }
   const src = document.getElementById("flowSrc"), fsim = !!(s.feeds && s.feeds.options && s.feeds.options.label === "SIM");
   const st = s.connection && s.connection.state === "DEMO" ? "PRACTICE FLOW" : fsim ? "SIM · market closed" : "QUANT DATA";
@@ -2052,7 +2054,7 @@ function renderFlow(s){
   const strike = k => Number.isInteger(k) ? String(k) : (+k).toFixed(2).replace(/\.?0+$/, "");
   const typ = p => p.kind === "sweep" ? `<b class="ic o"></b>S` : p.kind === "block" ? `<b class="ic sq"></b>B` : p.kind === "split" ? `<b class="ic eq">=</b>S` : `<b class="ic dot"></b>T`;
   const urgent = new Set((s.urgency || []).filter(u => u.hot).map(u => u.key));
-  // somebody may know something: SIZE bought at the ask that expires today / this week, and the same far-out strike
+  // somebody may know something: SIZE buyers paid up for that expires today / this week, and the same far-out strike
   // being bought again and again (counted over the whole feed, not just the rows on screen)
   const KNOW_USD = fc.know_premium || 100000, dteOf = p => p.dte != null ? +p.dte : (p.expiry ? (new Date(p.expiry + "T16:00:00-04:00") - new Date(p.t * 1000)) / 864e5 : null);
   const again = {};
@@ -2063,7 +2065,7 @@ function renderFlow(s){
     const n = again[[p.symbol, p.strike, p.cp, p.expiry].join("|")] || 0, far = p.otm_pct != null && p.otm_pct >= fc.otm_pct;
     const rep = p.side === "ask" && n >= 2 && far ? `AGAIN ×${n} · ${p.otm_pct.toFixed(0)}% OUT` : "";
     const deep = p.otm_pct != null && p.otm_pct <= -3 ? `${Math.abs(p.otm_pct).toFixed(0)}% IN THE MONEY` : "";
-    return `<div class="fl ${cp === "C" ? "c" : "p"} ${p.away ? "away" : ""} ${soon || rep ? "know" : ""} ${FLOWREF && FLOWREF.idset.has(p.id) ? "said" : ""}" title="${p.side === "ask" ? "bought at the ask" : p.side === "bid" ? "sold at the bid" : "mid"}${p.otm_pct != null ? ` · ${p.otm_pct > 0 ? p.otm_pct.toFixed(1) + "% out of the money" : Math.abs(p.otm_pct).toFixed(1) + "% in the money"}` : ""}${soon ? " · size this close to expiry: somebody may know something" : ""}${rep ? " · the same far-out strike keeps getting bought with size" : ""}${deep ? " · deep in the money: delta near one, moves dollar for dollar with the stock. That is a hedge or stock replacement, not a bet on a move — not the short-dated out-of-the-money dough we wait for" : ""}">
+    return `<div class="fl ${cp === "C" ? "c" : "p"} ${p.away ? "away" : ""} ${soon || rep ? "know" : ""} ${FLOWREF && FLOWREF.idset.has(p.id) ? "said" : ""}" title="${p.side === "ask" ? "buyers paid up for" : p.side === "bid" ? "sellers sold down" : "mid"}${p.otm_pct != null ? ` · ${p.otm_pct > 0 ? p.otm_pct.toFixed(1) + "% out of the money" : Math.abs(p.otm_pct).toFixed(1) + "% in the money"}` : ""}${soon ? " · size this close to expiry: somebody may know something" : ""}${rep ? " · the same far-out strike keeps getting bought with size" : ""}${deep ? " · deep in the money: delta near one, moves dollar for dollar with the stock. That is a hedge or stock replacement, not a bet on a move — not the short-dated out-of-the-money dough we wait for" : ""}">
       <div class="tm">${nyHM12(p.t)}</div>
       <div class="top"><span class="tk">${esc(p.symbol)}</span><span class="prem">${kfmt$(p.premium)}</span><span class="dots ${p.side === "ask" ? "a" : ""}">${p.kind === "sweep" || p.kind === "split" ? "<i></i><i></i>" : p.kind === "block" ? "<i></i>" : ""}</span>${soon ? `<span class="kn">${soon}</span>` : ""}${rep ? `<span class="kn rep">${rep}</span>` : ""}${deep ? `<span class="itm">${deep}</span>` : ""}${p.away && !rep ? `<span class="aw">WAYS AWAY</span>` : ""}${urg ? `<span class="urg" title="this contract is being bought in a hurry: short-dated, out of the money, print after print">⚡ URGENT</span>` : ""}${p.opening === "NEW" ? `<span class="newpos" title="NEW: ${sz(p.size)} contracts in this print against ${kfmt(p.oi)} open this morning. More than existed: a new position, no doubt">NEW</span>` : ""}</div>
       <div class="cols"><span><i>EXP</i>${exp(p.expiry)}</span><span><i>STRIKE</i>${strike(p.strike)}</span><span><i>C/P</i>${cp}</span><span><i>SPOT</i>${p.spot != null ? (+p.spot).toFixed(2) : NA}</span><span><i>TYPE</i><span class="ty">${typ(p)}</span></span><span><i>DETAILS</i>${sz(p.size)} @ ${p.price != null ? p.price.toFixed(2) : NA}</span></div></div>`; }).join("")
@@ -2076,7 +2078,7 @@ document.getElementById("flowList").addEventListener("click", ev => {
   if (a){ if (a.dataset.fref === "x") FLOWREF = null; else FLOWREF_ALL = !FLOWREF_ALL; renderFlow(state); return; }
   if (r && FSYM.data && FSYM.data.reads){ const x = FSYM.data.reads[r.dataset.fread] || {};
     showFlowRef({symbol: FSYM.data.symbol, cp: r.dataset.fread, ids: x.ids || [], dollars: x.dollars, prints: x.prints,
-                 what: `${x.max_dte} days or less, out of the money, bought at the ask, last ${x.window_minutes} min`}); }
+                 what: `${x.max_dte} days or less, out of the money, buyers paid up, last ${x.window_minutes} min`}); }
 });
 document.getElementById("flowScope").addEventListener("click", async () => {
   const on = !(state && state.flow_scope !== "watchlist");
@@ -2093,10 +2095,11 @@ function renderFlowScope(s){ const a = document.getElementById("flowAlerts"); if
 ["flowFilter", "flowUnusual", "flowMine"].forEach(id => document.getElementById(id).addEventListener("input", () => renderFlow(state)));
 function flowWords(a){
   if (a.words) return `${a.symbol}: ${a.words}`;                                   // PRICE ALERT / FLOW ALERT / EQUITY FLOW
-  if (a.label === "REPEAT FLOW"){ const what = a.cp === "C" ? "call" : "put"; return `${a.symbol}: repeat ${what} flow, ${px(a.strike)} strike${a.dte != null ? ", " + Math.round(a.dte) + " days out" : ""}, ${a.premium >= 1e6 ? (a.premium / 1e6).toFixed(1) + " million" : Math.round(a.premium / 1e3) + " thousand"} total.`; }
+  // the one print that hit, never a total (the same words the desk speaks)
+  const one = `${a.premium >= 1e6 ? (a.premium / 1e6).toFixed(1) + " million" : Math.round(a.premium / 1e3) + " thousand"} just hit ${a.symbol} ${a.strike != null ? flowStrike(a.strike) + " " : ""}${a.cp === "C" ? "calls" : "puts"}`;
+  if (a.label === "REPEAT FLOW") return `${a.symbol}: ${one} again, ${a.prints || 2} times on this strike.`;
   if (!/^UNUSUAL/.test(a.label)) return null;
-  const what = a.cp === "C" ? "call" : "put";
-  return `${a.symbol}: unusual ${what} buying, ${a.premium >= 1e6 ? (a.premium / 1e6).toFixed(1) + " million" : Math.round(a.premium / 1e3) + " thousand"} premium${a.otm_pct != null ? ", " + Math.round(a.otm_pct) + " percent out of the money" : ""}${a.dte != null ? ", " + Math.round(a.dte) + " days out" : ""}.`;
+  return `${a.symbol}: ${one}, buyers paid up${a.otm_pct != null ? ", " + Math.round(a.otm_pct) + " percent out of the money" : ""}${a.dte != null ? ", " + Math.round(a.dte) + " days out" : ""}.`;
 }
 /* THE TRADE JOURNAL. On top: the trade(s) you are IN — name it while you trade, the plan, live P&L, every order /
    fill / line / mark / spoken word so far. Below: every closed trade with its RESULT (win / loss, $, %, R against the
@@ -2425,7 +2428,7 @@ function render(s){
   renderQuote(d);
   charts.chart.el.classList.toggle("clean", store.get("clean", true));
   drawChart(charts.chart); drawChart(charts.foot); drawChart(charts.chart2); drawChart(charts.chart3); renderFast(d);
-  renderBook(d); renderTape(d); renderSetup(d); renderPS60(d); renderReloads(d); renderConviction(d); renderStory(d); renderScore(s); try { renderAI(s); } catch (e) {}
+  renderBook(d); renderTape(d); renderSetup(d); renderPS60(d); renderReloads(d); renderConviction(d); renderStory(d); renderScore(s); try { renderCallBook(s); callbookPics(s); renderPhrases(); } catch (e) {} try { renderAI(s); } catch (e) {}
   renderTicket(s, d);
   renderWatch(s); renderCalls(s); renderPositions(s); renderOrders(s);
   renderDesk(s); renderTrades(s); renderFlow(s); renderFlowScope(s); renderEquity(s); renderMyAlerts(s); renderUrgency(s); renderBigMoney(curData());
@@ -2669,7 +2672,7 @@ document.addEventListener("click", e => {
   <p><b>Left is buyers, right is sellers.</b> Each row is one price. The middle column is the price.</p>
   <p class="watchcols"><b>WHERE TO LOOK: the two columns beside the price</b> (ACTUAL SELLING on the left, ACTUAL BUYING on the right, lit in gold) and the <b>inside bid / ask rows</b> (named BID and ASK at the price). That is what is trading right now, and it is where supply and demand show themselves. The outer columns (waiting buyers / sellers) are only what they chose to show; the edge columns are your orders.</p>
   <p><b>BID</b> = shares waiting to BUY at that price right now. <b>ASK</b> = shares waiting to SELL. That is only what they CHOOSE to show you.</p>
-  <p><b>HIT</b> = shares that actually traded into the bid there (sellers dumping on buyers). <b>PAID</b> = shares that traded at the ask (buyers paying up). These are real trades, not promises.</p>
+  <p><b>SOLD DOWN</b> = shares sellers sold down to get out there (a seller wanted out now, so they took the buyer's price). <b>PAID UP</b> = shares buyers paid up for to get in (a buyer wanted in now, so they paid the seller's price). These are real trades, not promises.</p>
   <p><b>The one thing to learn:</b> compare what traded with what was showing. If 12,000 shares traded at 10.88 but the ask never showed more than 300, somebody is hiding a big order there and keeps putting 300 back. That is a <b class="sell">RELOAD SELLER</b>. Mirror image on the bid: a <b class="buy">RELOAD BUYER</b>.</p>
   <p>A reloader's row lights up. The HIT / PAID cell switches to the <b>money</b> that traded into him ($135K). <b>R3</b> = he refilled 3 times. Hover any cell for the full sentence.</p>
   <p><b>What it means for you:</b> a reload seller above you is a wall; price has trouble going higher until he is <b>CLEANED UP</b> (C: price trades through and he is gone). A reload buyer under you is a floor. <b>PULLED</b> (P) = the size left without trading: it was never real.</p>
@@ -2720,6 +2723,185 @@ function renderScore(st){
     <div class="sctab">${recent || `<div class="dim" style="padding:4px 8px">nothing judged yet</div>`}</div>` + oddsHTML();
   panelHTML("score", html);
 }
+/* THE CALL BOOK: a card for every call THE DESK SCORE judges. The list (newest first, worst calls easy to find), a
+   card opened (what the desk saw at the call: the words, the T&S, the LEVEL II, who was in control, the flow prints on
+   that stock, the candles with the levels, the option money; then 5 / 15 / 30 min, target or stop first, the level
+   hold grade, HIT / MISS / FLAT; 👍 / 👎 and a note; the picture; REPLAY that moment), and THE WEEKLY REVIEW. */
+const CB = {days: 1, data: null, open: null, card: null, tab: "list", kind: "", at: 0, busy: false, shot: new Set()};
+async function cbPoll(force){
+  if (!P.callbook || CB.busy || (!force && Date.now() - CB.at < 15000)) return;
+  CB.busy = true;
+  try { CB.data = await (await fetch(`/api/callbook?days=${CB.days}${CB.tab === "review" ? "&review=1" : ""}`, {cache: "no-store"})).json(); CB.at = Date.now(); }
+  catch (e) {} finally { CB.busy = false; }
+  renderCallBook(state, true);
+}
+async function cbOpen(id){
+  CB.open = id; CB.card = null; renderCallBook(state, true);
+  try { const r = await (await fetch(`/api/callbook?id=${encodeURIComponent(id)}`, {cache: "no-store"})).json(); if (r.ok) CB.card = r.card; } catch (e) {}
+  renderCallBook(state, true);
+}
+function cbMove(c, k){ const v = (c.moves || {})[k]; return v == null ? `<i class="dim">…</i>` : `<b class="${v > 0 ? "good" : v < 0 ? "bad" : ""}">${v >= 0 ? "+" : ""}${(+v).toFixed(2)}</b>`; }
+function cbCandles(c){
+  // the candles with the levels, drawn small: the call's moment is the dashed line
+  const bars = (c.candles || []).slice(-60); if (bars.length < 2) return "";
+  const W = 420, H = 150, lv = (c.levels || []).filter(l => l.price != null);
+  let lo = Math.min(...bars.map(b => b[3])), hi = Math.max(...bars.map(b => b[2]));
+  for (const l of lv) if (l.price > lo - (hi - lo) * 0.3 && l.price < hi + (hi - lo) * 0.3){ lo = Math.min(lo, l.price); hi = Math.max(hi, l.price); }
+  const pad = (hi - lo) * 0.06 || 0.05; lo -= pad; hi += pad;
+  const y = v => (H - 4) - (v - lo) / (hi - lo) * (H - 8), bw = W / bars.length;
+  const cs = bars.map((b, i) => { const x = i * bw + bw / 2, up = b[4] >= b[1];
+    return `<line x1="${x}" x2="${x}" y1="${y(b[2])}" y2="${y(b[3])}" stroke="${up ? "#22c37a" : "#e5484d"}"/><rect x="${x - bw * 0.35}" width="${bw * 0.7}" y="${Math.min(y(b[1]), y(b[4]))}" height="${Math.max(1, Math.abs(y(b[1]) - y(b[4])))}" fill="${up ? "#22c37a" : "#e5484d"}"/>`; }).join("");
+  const ls = lv.filter(l => l.price >= lo && l.price <= hi).map(l => `<line x1="0" x2="${W}" y1="${y(l.price)}" y2="${y(l.price)}" stroke="${l.mine ? "#f5c542" : "#6b7a90"}" stroke-dasharray="${l.mine ? "" : "3 3"}"/><text x="2" y="${y(l.price) - 2}" fill="${l.mine ? "#f5c542" : "#9aa4b4"}" font-size="9">${esc(l.name)} ${(+l.price).toFixed(2)}</text>`).join("");
+  const ci = bars.findIndex(b => b[0] > c.t - 60), cx = (ci < 0 ? bars.length - 1 : ci) * bw + bw / 2;
+  return `<svg class="cbsvg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${ls}${cs}<line x1="${cx}" x2="${cx}" y1="0" y2="${H}" stroke="#4ea1ff" stroke-dasharray="2 2"/><line x1="0" x2="${W}" y1="${y(c.price)}" y2="${y(c.price)}" stroke="#4ea1ff" stroke-width=".6"/></svg>`;
+}
+function cbCard(c){
+  const tm = t => typeof nyHM12 === "function" ? nyHM12(t) : new Date(t * 1000).toLocaleTimeString();
+  const tape = (c.tape || []).map(p => `<div class="${p.side === "buy" ? "b" : p.side === "sell" ? "s" : ""}${p.large ? " lg" : ""}"><span>${(+p.price).toFixed(2)}</span><span>${sz(p.size)}</span><span>${p.side === "buy" ? "PAID UP" : p.side === "sell" ? "SOLD DOWN" : "MID"}</span></div>`).join("");
+  const bk = c.book || {}, n = Math.max((bk.bids || []).length, (bk.asks || []).length);
+  const book = Array.from({length: n}, (_, i) => { const b = (bk.bids || [])[i], a = (bk.asks || [])[i];
+    return `<div><span class="b">${b ? sz(b[1]) : ""}</span><span class="b">${b ? (+b[0]).toFixed(2) : ""}</span><span class="s">${a ? (+a[0]).toFixed(2) : ""}</span><span class="s">${a ? sz(a[1]) : ""}</span></div>`; }).join("");
+  const flow = (c.flow || []).slice().reverse().map(p => `<div class="${p.cp === "C" ? "b" : "s"}"><span>${tm(p.t)}</span><span>${usdK(p.premium)}</span><span>${flowStrike(p.strike)}${p.cp}</span><span>${(p.expiry || "").slice(5).replace("-", "/")}</span><span>${p.side === "ask" ? "PAID UP" : p.side === "bid" ? "SOLD DOWN" : "MID"}</span></div>`).join("");
+  const reads = Object.entries(c.reads || {}).map(([k, v]) => `<div><span>${esc(({money: "OPTION FLOW LEAN today", money15: "OPTION FLOW LEAN last 15 min", strike: "BIG STRIKE ahead", max_pain: "OPTION MAX PAIN", em_room: "ROOM LEFT IN WHAT OPTIONS EXPECT", opening: "NEW MONEY OVERNIGHT"})[k] || k)}</span><b>${esc(String(v))}</b></div>`).join("");
+  const first = c.first === "TARGET" ? `<b class="good">TARGET FIRST</b>` : c.first === "STOP" ? `<b class="bad">STOP FIRST</b>` : c.first === "NEITHER" ? `<b>NEITHER IN 30 MIN</b>` : `<i class="dim">watching</i>`;
+  return `<div class="cbcard">
+    <div class="cbhd"><button class="cbback" title="back to the list">‹</button><b>${esc(c.symbol)}</b> ${tm(c.t)} · ${esc(c.kind)} ${c.dir > 0 ? "▲" : "▼"} · price ${(+c.price).toFixed(2)}
+      <span class="cbout ${c.outcome === "HIT" ? "good" : c.outcome === "MISS" ? "bad" : ""}">${c.outcome || "waiting"}</span></div>
+    <div class="cbwords">${esc(c.words || c.text || "")}</div>
+    <div class="cbrow"><span>5 min ${cbMove(c, "300")}</span><span>15 min ${cbMove(c, "900")}</span><span>30 min ${cbMove(c, "1800")}</span>
+      <span title="target ${c.target} · stop ${c.stop} (${c.plan_src === "PLAY" ? "your play's lines" : "from the ATR: SETTINGS › Call book"})">${first}${c.first_t ? ` <i class="dim">${Math.round(c.first_t / 60)} min</i>` : ""}</span>
+      ${c.hold ? `<span>LEVEL HELD: <b class="${c.hold === "STRONG" || c.hold === "HOLDING" ? "good" : "bad"}">${esc(c.hold)}</b></span>` : ""}
+      <span><b>${esc(c.control || "")}</b></span></div>
+    <div class="cbrate"><button data-cbt="1" class="${c.thumb > 0 ? "on" : ""}" title="a good call">👍</button><button data-cbt="-1" class="${c.thumb < 0 ? "on" : ""}" title="a bad call">👎</button>
+      <input id="cbNote" placeholder="your note on this call" value="${esc(c.note || "")}"><button id="cbSave">SAVE</button>
+      ${c.replay ? `<button id="cbReplay" title="open the recording at this moment in the replay desk">REPLAY</button>` : ""}</div>
+    ${c.pic ? `<a href="/api/callbook/pic/${encodeURIComponent(c.pic)}" target="_blank"><img class="cbpic" src="/api/callbook/pic/${encodeURIComponent(c.pic)}" alt="the desk at the call"></a>` : ""}
+    ${cbCandles(c)}
+    <div class="cbgrid"><div><div class="sth">T&S · last 30 prints</div><div class="cbts">${tape || `<i class="dim">no prints</i>`}</div></div>
+      <div><div class="sth">LEVEL II · top</div><div class="cbbk">${book || `<i class="dim">no book</i>`}</div>
+        <div class="sth">OPTION MONEY</div><div class="cbrd">${reads || `<i class="dim">none read</i>`}</div></div>
+      <div><div class="sth">OPTION FLOW · this stock, 15 min · each print</div><div class="cbfl">${flow || `<i class="dim">no flow prints</i>`}</div></div></div>
+  </div>`;
+}
+function cbReview(r){
+  if (!r) return `<div class="dim" style="padding:8px">reading…</div>`;
+  const kinds = (r.kinds || []).map(k => `<div class="scrow"><span>${esc(k.kind)}</span><i>${k.n}</i><b class="${k.hit_pct >= 60 ? "good" : k.hit_pct <= 35 ? "bad" : ""}">${k.hit_pct}%</b>
+      <em title="hits · misses · flat">${k.hit}·${k.miss}·${k.flat}</em><u title="target first · stop first">🎯${k.target} ⛔${k.stop}</u><u title="your thumbs">👍${k.up} 👎${k.down}</u>
+      <u>${Object.entries(k.holds || {}).map(([g, n]) => g + " " + n).join(" · ")}</u></div>`).join("");
+  const tm = t => new Date(t * 1000).toLocaleDateString("en-US", {month: "numeric", day: "numeric"});
+  const tune = (r.tuning || []).map(s => `<div class="cbtn"><b>${esc(s.setting)}</b>${s.values.map(v => `<span>${esc(String(v.value))}: ${v.hit_pct}% of ${v.n} <i class="dim">${tm(v.from)}–${tm(v.to)}</i></span>`).join("<span>→</span>")}</div>`).join("");
+  return `<div class="sth">THE WEEKLY REVIEW · ${r.n} judged calls${r.hit_pct != null ? " · all hit " + r.hit_pct + "%" : ""} · worst first</div>
+    <div class="sctab">${kinds || `<div class="dim" style="padding:4px 8px">nothing judged in these days yet</div>`}</div>
+    <div class="sth">SETTINGS THAT CHANGED · hit rate before → after</div>
+    <div class="sctab">${tune || `<div class="dim" style="padding:4px 8px">no setting changed in these days</div>`}</div>`;
+}
+function renderCallBook(st, now){
+  if (!P.callbook) return;
+  if (!now) cbPoll(false);
+  const d = CB.data;
+  const head = `<div class="cbbar"><button data-cbtab="list" class="${CB.tab === "list" ? "on" : ""}">CALLS</button><button data-cbtab="review" class="${CB.tab === "review" ? "on" : ""}">WEEKLY REVIEW</button>
+    <select id="cbDays">${[[1, "today"], [2, "2 days"], [7, "7 days"], [30, "30 days"], [90, "90 days"]].map(([v, l]) => `<option value="${v}" ${CB.days === v ? "selected" : ""}>${l}</option>`).join("")}</select>
+    ${CB.tab === "list" ? `<select id="cbKind"><option value="">every call</option>${[...new Set(((d && d.cards) || []).map(c => c.kind))].sort().map(k => `<option ${CB.kind === k ? "selected" : ""}>${esc(k)}</option>`).join("")}</select>` : ""}</div>`;
+  let body;
+  if (CB.open && CB.tab === "list") body = CB.card ? cbCard(CB.card) : `<div class="dim" style="padding:8px">opening the card…</div>`;
+  else if (CB.tab === "review") body = cbReview(d && d.review);
+  else {
+    const tm = t => typeof nyHM12 === "function" ? nyHM12(t) : new Date(t * 1000).toLocaleTimeString();
+    const cards = ((d && d.cards) || []).filter(c => !CB.kind || c.kind === CB.kind);
+    body = cards.length ? `<div class="cblist">${cards.map(c => `<div class="cbli ${c.outcome === "HIT" ? "good" : c.outcome === "MISS" ? "bad" : ""}" data-cb="${esc(c.id)}" title="${esc(c.words || "")}">
+        <span>${CB.days > 1 ? new Date(c.t * 1000).toLocaleDateString("en-US", {month: "numeric", day: "numeric"}) + " " : ""}${tm(c.t)}</span><b>${esc(c.symbol)}</b><i>${esc(c.kind)} ${c.dir > 0 ? "▲" : "▼"}</i>
+        <em>${c.outcome || "…"}</em><u>${c.first === "TARGET" ? "🎯" : c.first === "STOP" ? "⛔" : ""}${c.hold ? " " + esc(c.hold) : ""}</u><u>${c.thumb > 0 ? "👍" : c.thumb < 0 ? "👎" : ""}${c.note ? " ✎" : ""}${c.pic ? " 📷" : ""}</u></div>`).join("")}</div>`
+      : `<div class="dim" style="padding:8px">${d ? "No calls in these days yet. Every call THE DESK SCORE judges gets a card here." : "reading…"}</div>`;
+  }
+  panelHTML("callbook", head + body);
+}
+document.addEventListener("click", async e => {
+  if (!P.callbook || !P.callbook.pc.contains(e.target)) return;
+  const tab = e.target.closest("[data-cbtab]"); if (tab){ CB.tab = tab.dataset.cbtab; CB.open = null; cbPoll(true); return; }
+  const li = e.target.closest("[data-cb]"); if (li){ cbOpen(li.dataset.cb); return; }
+  if (e.target.closest(".cbback")){ CB.open = null; CB.card = null; renderCallBook(state, true); return; }
+  const th = e.target.closest("[data-cbt]");
+  if (th && CB.card){ const v = +th.dataset.cbt, nv = CB.card.thumb === v ? 0 : v; const out = await post("/api/callbook/rate", {id: CB.card.id, thumb: nv}); if (out && out.ok){ CB.card.thumb = nv; renderCallBook(state, true); cbPoll(true); } return; }
+  if (e.target.id === "cbSave" && CB.card){ const note = (document.getElementById("cbNote") || {}).value || ""; const out = await post("/api/callbook/rate", {id: CB.card.id, note}); toast(out && out.ok ? "Note saved on the card" : "Could not save the note", !!(out && out.ok)); if (out && out.ok){ CB.card.note = note; cbPoll(true); } return; }
+  if (e.target.id === "cbReplay" && CB.card && CB.card.replay){
+    const out = await post("/api/desk/replay", {name: CB.card.replay.file, speed: 1, start: CB.card.replay.at - 60, end: CB.card.replay.at + 1800});
+    if (out.ok){ toast("Replay desk starting at the call…", true); setTimeout(() => window.open(out.url, "_blank"), 2500); } else toast(out.reason || "no replay", false); }
+});
+document.addEventListener("change", e => {
+  if (e.target.id === "cbDays"){ CB.days = +e.target.value; cbPoll(true); }
+  if (e.target.id === "cbKind"){ CB.kind = e.target.value; renderCallBook(state, true); }
+});
+document.addEventListener("keydown", e => { if (e.target.id === "cbNote") e.stopPropagation(); }, true);
+/* the picture for a card: the chart as it is now (just after the call), with the T&S and the flow prints beside it */
+function callbookPics(s){
+  const want = (s && s.callbook_pic) || [];
+  for (const w of want){
+    if (CB.shot.has(w.id) || w.symbol !== curSym) continue;
+    const ch = charts.chart; if (!ch || !ch.canvas || !ch.canvas.width) continue;
+    CB.shot.add(w.id);
+    try {
+      const cv = ch.canvas, side = 300, W = cv.width + side * 2, H = Math.max(cv.height, 520);
+      const o = document.createElement("canvas"); o.width = W; o.height = H; const g = o.getContext("2d");
+      g.fillStyle = "#0b0f15"; g.fillRect(0, 0, W, H); g.drawImage(cv, 0, 0);
+      g.font = "12px monospace"; g.fillStyle = "#9aa4b4";
+      const d = curData() || {};
+      let x = cv.width + 10, y = 18; g.fillText(`T&S · ${w.symbol}`, x, y);
+      for (const p of ((d.tape && d.tape.recent) || []).slice(0, 34)){ y += 15; g.fillStyle = p.side === "buy" ? "#22c37a" : p.side === "sell" ? "#e5484d" : "#9aa4b4";
+        g.fillText(`${(+p.price).toFixed(2)}  ${String(p.size).padStart(6)}  ${p.side === "buy" ? "PAID UP" : p.side === "sell" ? "SOLD DOWN" : "MID"}`, x, y); }
+      x = cv.width + side + 10; y = 18; g.fillStyle = "#9aa4b4"; g.fillText(`OPTION FLOW · ${w.symbol}`, x, y);
+      for (const p of (s.flow || []).filter(p => p.symbol === w.symbol).slice(0, 34)){ y += 15; g.fillStyle = p.cp === "C" ? "#22c37a" : "#e5484d";
+        g.fillText(`${usdK(p.premium)} ${flowStrike(p.strike)}${p.cp} ${(p.expiry || "").slice(5)} ${p.side === "ask" ? "PAID UP" : p.side === "bid" ? "SOLD DOWN" : ""}`, x, y); }
+      o.toBlob(b => { if (b) fetch("/api/callbook/pic?id=" + encodeURIComponent(w.id), {method: "POST", headers: {"Content-Type": "image/jpeg"}, body: b}).catch(() => {}); }, "image/jpeg", 0.8);
+    } catch (e) {}
+  }
+}
+/* THE PHRASE LIST: each spoken call, its built-in line, and other ways to say it. WRITE VERSIONS asks the DESK AI for
+   some (they wait as PENDING); APPROVE puts one in the voice's turn, REJECT throws it out; type your own and ADD. The
+   voice says the built-in line or an APPROVED one, never a pending one. */
+const PH = {d: null, at: 0, busy: false, open: null, wait: null};
+async function phPoll(force){
+  if (!P.phrases || PH.busy || (!force && Date.now() - PH.at < (PH.wait ? 4000 : 20000))) return;
+  PH.busy = true;
+  try { PH.d = await (await fetch("/api/phrases", {cache: "no-store"})).json(); PH.at = Date.now(); } catch (e) {} finally { PH.busy = false; }
+  const cnt = PH.d && PH.d.kinds ? PH.d.kinds.reduce((a, k) => a + k.lines.length + k.rejected, 0) : 0;
+  if (PH.wait && PH.waitN != null && cnt !== PH.waitN) PH.wait = null;     // the versions came back
+  PH.n = cnt;
+  renderPhrases(true);
+}
+function phLine(k, l){
+  const hl = esc(l.text).replace(/\{(\w+)\}/g, `<i>{$1}</i>`);
+  return `<div class="phl ${l.status}"><span>${hl}</span><em>${l.by === "ai" ? "AI" : "YOU"} · ${l.status.toUpperCase()}</em>
+    ${l.status !== "approved" ? `<button data-pha="approved" data-k="${k}" data-id="${l.id}" title="the voice may say it">APPROVE</button>` : ""}
+    ${l.status === "pending" ? `<button data-pha="rejected" data-k="${k}" data-id="${l.id}" title="never say it">REJECT</button>` : `<button data-pha="removed" data-k="${k}" data-id="${l.id}" title="take it off the list">REMOVE</button>`}</div>`;
+}
+function renderPhrases(now){
+  if (!P.phrases) return;
+  if (!now) phPoll(false);
+  const d = PH.d;
+  if (!d || !d.ok){ panelHTML("phrases", `<div class="dim" style="padding:8px">reading…</div>`); return; }
+  if (PH.wait && Date.now() - PH.wait > 300000) PH.wait = null;
+  const rows = d.kinds.map(k => { const pend = k.lines.filter(l => l.status === "pending").length, ok = k.lines.filter(l => l.status === "approved").length, open = PH.open === k.kind;
+    return `<div class="phk ${open ? "open" : ""}"><div class="phh" data-phk="${k.kind}"><b>${esc(k.name)}</b><span>${ok} approved${pend ? ` · <u>${pend} waiting for you</u>` : ""}</span></div>
+      ${open ? `<div class="phb"><div class="phl base"><span>${esc(k.default).replace(/\{(\w+)\}/g, `<i>{$1}</i>`)}</span><em>THE DESK'S OWN LINE</em></div>
+        ${k.lines.map(l => phLine(k.kind, l)).join("")}
+        <div class="phadd"><input id="phNew" placeholder="your own line: keep the {numbers}"><button data-phadd="${k.kind}">ADD</button>
+          <button data-phw="${k.kind}" title="the DESK AI writes versions in your words; they wait here as PENDING">WRITE VERSIONS</button></div>
+        <div class="dim phf">numbers: ${k.fields.map(f => "{" + f + "}").join(" ")}${k.rejected ? ` · ${k.rejected} rejected` : ""}</div></div>` : ""}</div>`; }).join("");
+  panelHTML("phrases", `<div class="sth">THE PHRASE LIST · the voice says the desk's line or one you approved${d.use_approved ? "" : " · <b>OFF in SETTINGS › Phrase list: built-in lines only</b>"}${PH.wait ? " · the AI is writing…" : ""}</div>${rows}`);
+}
+document.addEventListener("click", async e => {
+  if (!P.phrases || !P.phrases.pc.contains(e.target)) return;
+  const h = e.target.closest("[data-phk]"); if (h){ PH.open = PH.open === h.dataset.phk ? null : h.dataset.phk; renderPhrases(true); return; }
+  const a = e.target.closest("[data-pha]");
+  if (a){ const out = await post("/api/phrases", {action: a.dataset.pha, kind: a.dataset.k, id: +a.dataset.id}); if (!out.ok) toast("Could not change it", false); phPoll(true); return; }
+  const ad = e.target.closest("[data-phadd]");
+  if (ad){ const v = (document.getElementById("phNew") || {}).value || ""; const out = await post("/api/phrases", {action: "add", kind: ad.dataset.phadd, text: v});
+    toast(out.ok ? "Added: the voice can say it now" : "Not added: " + (out.reason || ""), out.ok); if (out.ok) phPoll(true); return; }
+  const w = e.target.closest("[data-phw]");
+  if (w){ const out = await post("/api/phrases", {action: "write", kind: w.dataset.phw});
+    toast(out.ok ? "The DESK AI is writing versions… they show here as PENDING" : (out.reason || "the AI could not start"), out.ok); if (out.ok){ PH.wait = Date.now(); PH.waitN = PH.n; renderPhrases(true); } }
+});
+document.addEventListener("keydown", e => { if (e.target.id === "phNew") e.stopPropagation(); }, true);
 /* THE ODDS: every judged call on the live market, all days, split by what the OPTION MONEY said at the call (with the
    move or against it, a big strike in the way or clear ...). Read after a few weeks: keep what proves itself. And
    which Quant Data tools this key opens (CHECK asks each one once). */
@@ -2838,7 +3020,7 @@ function renderOchHead(){
   if (!OCH.key) html = `<span class="dim">No contract yet — open OPTIONS, click a strike (or 📈 on its row) and it charts here.</span><button data-och="chain">OPTIONS</button>`;
   else { const pos = d && d.position, q = pos ? Math.abs(pos.qty) : 0, long = pos && pos.qty > 0;
     const rs = d ? optRiskSize(d) : null;
-    html = `<b class="${d && d.right === "P" ? "s" : "b"}">${esc(d ? d.label : OCH.key)}</b>${d && d.expires_today ? `<span class="exptoday" title="expires at 4:00 today: a long one in the money is exercised into shares; the desk calls it out at 3:30 and closes it at 3:50 (SETTINGS, Trading)">EXPIRES TODAY</span>` : d && d.dte != null && d.dte < 7 ? `<span class="dim">${d.dte.toFixed(1)}d left</span>` : ""}${d && d.oi && d.oi.oi != null ? `<span class="ochoi ${d.oi.open_read === "MORE" ? "more" : d.oi.open_read === "LESS" ? "less" : ""}" title="${esc(oiTip(d.oi))}">OPEN INT ${kfmt(d.oi.oi)}${d.oi.oi_change ? ` <i class="${d.oi.oi_change > 0 ? "up" : "dn"}">${d.oi.oi_change > 0 ? "▲" : "▼"}${kfmt(Math.abs(d.oi.oi_change))}</i>` : ""} · TRADED ${d.oi.vol == null ? "—" : kfmt(d.oi.vol)}${d.oi.open_read === "MORE" ? " <b>▲ MORE THAN OPEN</b>" : d.oi.open_read === "LESS" ? " <b>LESS THAN OPEN</b>" : ""}</span>` : ""}${d && d.aggression ? `<span class="ochag" title="today on this contract: contracts traded at the ask (bought in a rush) against at the bid (sold in a rush)">AT THE ASK <b class="up">${d.aggression.ask_pct}%</b> · AT THE BID <b class="dn">${d.aggression.bid_pct}%</b></span>` : ""}${d && d.sim ? `<span class="simtag" title="options market closed: this contract's price is SIMULATED from the stock (paper only); option orders wait for the 9:30 open">SIM · market closed</span>` : ""}
+    html = `<b class="${d && d.right === "P" ? "s" : "b"}">${esc(d ? d.label : OCH.key)}</b>${d && d.expires_today ? `<span class="exptoday" title="expires at 4:00 today: a long one in the money is exercised into shares; the desk calls it out at 3:30 and closes it at 3:50 (SETTINGS, Trading)">EXPIRES TODAY</span>` : d && d.dte != null && d.dte < 7 ? `<span class="dim">${d.dte.toFixed(1)}d left</span>` : ""}${d && d.oi && d.oi.oi != null ? `<span class="ochoi ${d.oi.open_read === "MORE" ? "more" : d.oi.open_read === "LESS" ? "less" : ""}" title="${esc(oiTip(d.oi))}">OPEN INT ${kfmt(d.oi.oi)}${d.oi.oi_change ? ` <i class="${d.oi.oi_change > 0 ? "up" : "dn"}">${d.oi.oi_change > 0 ? "▲" : "▼"}${kfmt(Math.abs(d.oi.oi_change))}</i>` : ""} · TRADED ${d.oi.vol == null ? "—" : kfmt(d.oi.vol)}${d.oi.open_read === "MORE" ? " <b>▲ MORE THAN OPEN</b>" : d.oi.open_read === "LESS" ? " <b>LESS THAN OPEN</b>" : ""}</span>` : ""}${d && d.aggression ? `<span class="ochag" title="today on this contract, of every contract traded: a buyer wanted in now, so they paid the seller's price (paid up to get in); a seller wanted out now, so they took the buyer's price (sold down to get out)">BUYERS PAID UP TO GET IN <b class="up">${d.aggression.ask_pct}%</b> · SELLERS SOLD DOWN TO GET OUT <b class="dn">${d.aggression.bid_pct}%</b> · <b>${tapeWho(d.aggression)}</b></span>` : ""}${d && d.sim ? `<span class="simtag" title="options market closed: this contract's price is SIMULATED from the stock (paper only); option orders wait for the 9:30 open">SIM · market closed</span>` : ""}
       ${rs ? `<button class="risksz" data-ochn="${rs.n}" title="${esc(rs.why)}">RISK $${riskDollars()} → ${rs.n} ct</button>` : d ? `<span class="dim" title="draw a STOP on the stock chart (or set this contract's stop) and the desk sizes contracts from your RISK $">no stop to size from</span>` : ""}
       ${q ? `<span class="${long ? "b" : "s"}">YOU HAVE ${q}${pos.pnl != null ? ` · ${pos.pnl >= 0 ? "+" : "−"}$${sz(Math.abs(Math.round(pos.pnl)))}` : ""}</span>` : ""}
       <span class="tfs">${[1, 5, 15].map(m => `<button data-ochtf="${m}" class="${tf === m ? "on" : ""}">${m}m</button>`).join("")}<button data-ochind="mas" class="${store.get("och.mas", false) ? "on" : ""}" title="moving averages on the OPTION CHART (the stock chart keeps its own)">MAS</button><button data-ochind="bb" class="${store.get("och.bb", false) ? "on" : ""}" title="Bollinger Bands on the OPTION CHART">BB</button></span>
@@ -3413,7 +3595,7 @@ function tradeAsBox(sym, se, side, onPick, onCancel){
 
 /* ---------- THE PRO LADDER (default). Jigsaw's Depth & Sales, made for PS60:
    LEVEL │ STACK │ SOLD │ BID │ PRICE │ ASK │ BOUGHT │ STACK
-   · SOLD / BOUGHT = THIS VISIT: what hit the bid / lifted the ask since price came back to this price (a visit ends when
+   · SOLD / BOUGHT = THIS VISIT: what sellers sold down / buyers paid up since price came back to this price (a visit ends when
      price trades 3 ticks away — one cent of chop is not leaving). ×N on the price = visits in the last 15 minutes.
    · STACK = size ADDED (+, buyers / sellers stepping up) or PULLED (−, left without trading) at that price in the last
      minute. Lit = big: STEPPING UP / PULLING.
@@ -3431,7 +3613,7 @@ const LVSHORT = {entry: "ENTRY", trigger: "PIV", second_entry: "2ND", target: "T
 function lvWords(m, short){
   const base = short && LVSHORT[m.role] ? LVSHORT[m.role] : (LVROLE[m.role] || [m.label])[0];
   if (m.role === "strike") return `${short ? "" : (m.cp === "P" ? "PUTS HIT " : "CALLS HIT ")}${m.label} ${usdK(m.prem)}${!short && m.n > 1 ? " ×" + m.n : ""}${!short && m.dte != null ? " " + Math.round(m.dte) + "d" : ""}${m.hot ? "⚡" : ""}`;
-  if (m.role === "flow") return `${short ? "" : "OPTION FLOW "}${usdK(m.prem)}${m.n > 1 ? " ×" + m.n : ""}${short ? "" : m.buyside ? " (paid the ask)" : " (hit the bid)"}`;
+  if (m.role === "flow") return `${short ? "" : "OPTION FLOW "}${usdK(m.prem)}${m.n > 1 ? " ×" + m.n : ""}${short ? "" : m.buyside ? " (buyers paid up)" : " (sellers sold down)"}`;
   if (m.role === "reload_bid" || m.role === "reload_ask") return short ? `${m.role === "reload_bid" ? "BUYER" : "SELLER"} ↻${m.refills || ""}` : `${base} ↻${m.refills || ""}`;
   if (m.role === "vwap") return m.label === "PM VWAP" ? (short ? "PMVWAP" : "PREMARKET VWAP") : "VWAP";
   if (m.role === "key") return short ? m.short : m.label;
@@ -3483,7 +3665,7 @@ function renderStory(d){
       <div class="sctx ${c.bias === "bull" ? "bull" : c.bias === "bear" ? "bear" : ""}"><b>${c.bias === "bull" ? "DAILY ▲ BULLISH PS60" : c.bias === "bear" ? "DAILY ▼ BEARISH PS60" : "DAILY"}</b> <span>${esc(c.text || "")}</span></div>
       <div class="satt">${s.attention ? `<b class="hat">HIGH ATTENTION</b>` : `<b class="watch">WATCHING</b>`} <span>${where}</span></div>
       <div class="snow t-${esc(s.tone || "neutral")}">${esc(s.now || "")}</div>
-      ${s.lean ? `<div class="slean ${s.lean.side === "bear" ? "bear" : s.lean.side === "bull" ? "bull" : ""}" title="who HAS the tape: levels taken on a close and not recovered, a new low / high of day, lower lows / higher highs, the puts or calls out in front. Held until the data turns it; a move against it is the other side TRYING"><b>WHO HAS THE TAPE</b> ${s.lean.regime ? `<u>${esc(s.lean.regime)}</u> · ` : ""}${esc(s.lean.text || "")}${s.lean.attempt ? `<div class="satt"><b>${esc(s.lean.attempt.who.toUpperCase())} TRYING</b> from ${px(s.lean.attempt.p0)} since ${nyHM12(s.lean.attempt.t0)} · need ${esc(s.lean.attempt.need.name)} ${px(s.lean.attempt.need.p)} on a close</div>` : ""}${(s.lean.attempts || []).map(a => `<div class="satt done ${a.outcome === "took" ? "ok" : "no"}"><b>${esc(a.who.toUpperCase())}</b> ${nyHM12(a.t0)} from ${px(a.p0)} → ${a.outcome === "took" ? "took back " + esc(a.need.name) + " " + px(a.need.p) : "could not take back " + esc(a.need.name) + " " + px(a.need.p)}</div>`).join("")}</div>` : ""}
+      ${s.lean ? `<div class="slean ${s.lean.side === "bear" ? "bear" : s.lean.side === "bull" ? "bull" : ""}" title="who is IN CONTROL: levels taken on a close and not recovered, a new low / high of day, lower lows / higher highs, the puts or calls out in front. Held until the data turns it; a move against it is the other side TRYING"><b>WHO HAS THE TAPE</b> ${s.lean.regime ? `<u>${esc(s.lean.regime)}</u> · ` : ""}${esc(s.lean.text || "")}${s.lean.attempt ? `<div class="satt"><b>${esc(s.lean.attempt.who.toUpperCase())} TRYING</b> from ${px(s.lean.attempt.p0)} since ${nyHM12(s.lean.attempt.t0)} · need ${esc(s.lean.attempt.need.name)} ${px(s.lean.attempt.need.p)} on a close</div>` : ""}${(s.lean.attempts || []).map(a => `<div class="satt done ${a.outcome === "took" ? "ok" : "no"}"><b>${esc(a.who.toUpperCase())}</b> ${nyHM12(a.t0)} from ${px(a.p0)} → ${a.outcome === "took" ? "took back " + esc(a.need.name) + " " + px(a.need.p) : "could not take back " + esc(a.need.name) + " " + px(a.need.p)}</div>`).join("")}</div>` : ""}
       ${s.play ? `<div class="splay"><b>PLAY-BY-PLAY</b> ${esc(s.play)}</div>` : ""}
       ${s.framework && s.framework.text ? `<div class="sfw"><b>THE AVERAGES</b> ${esc(s.framework.text)}</div>` : ""}
       ${s.framework && s.framework.text ? `<div class="sfw"><b>THE AVERAGES</b> ${esc(s.framework.text)}</div>` : ""}
@@ -3513,13 +3695,13 @@ function renderStory(d){
 function paceHTML(pc){
   if (!pc) return "";
   // SOMEBODY KNOWS SOMETHING stays up even on a quiet tape: the flow tag never disappears because the stock is slow
-  const kn0 = pc.knows ? `<span class="pkn ${pc.knows.cp === "C" ? "c" : "p"}" title="SOMEBODY KNOWS SOMETHING: short-dated, out-of-the-money ${pc.knows.cp === "C" ? "calls" : "puts"} bought at the ask, again and again">⚡ ${esc(pc.knows.text)}</span>` : "";
+  const kn0 = pc.knows ? `<span class="pkn ${pc.knows.cp === "C" ? "c" : "p"}" title="SOMEBODY KNOWS SOMETHING: short-dated, out-of-the-money ${pc.knows.cp === "C" ? "calls" : "puts"} buyers paid up for, again and again">⚡ ${esc(pc.knows.text)}</span>` : "";
   if (pc.state === "QUIET") return kn0 ? `<div class="pacebar s-warm">${kn0}</div>` : "";
   if (pc.state === "WARMING UP") return `<div class="pacebar s-warm" title="the pace reads this stock against its own last 20 minutes: a few minutes of tape first"><span class="pst">PACE · warming up</span>${kn0}</div>`;
   const st = pc.state, cls = {SURGE: "surge", FAST: "fast", NORMAL: "norm", SLOW: "slow", "DRYING UP": "dry"}[st] || "norm";
   const b = pc.buy_pct, acc = pc.accel === "SPEEDING UP" ? "▲" : pc.accel === "SLOWING" ? "▼" : "";
   const tip = `PACE OF TAPE: ${sz(pc.sps)} shares/s now vs ${sz(pc.norm_sps || 0)} normal (the median 15 s of the last 20 min) = ×${pc.ratio} · faster than ${pc.pct}% of the last 20 min${b != null ? ` · buyers ${b}% / sellers ${100 - b}% of the aggressive shares` : ""}${pc.accel ? " · " + pc.accel : ""}`;
-  const kn = pc.knows ? `<span class="pkn ${pc.knows.cp === "C" ? "c" : "p"}" title="SOMEBODY KNOWS SOMETHING: short-dated, out-of-the-money ${pc.knows.cp === "C" ? "calls" : "puts"} bought at the ask, again and again">⚡ ${esc(pc.knows.text)}</span>` : "";
+  const kn = pc.knows ? `<span class="pkn ${pc.knows.cp === "C" ? "c" : "p"}" title="SOMEBODY KNOWS SOMETHING: short-dated, out-of-the-money ${pc.knows.cp === "C" ? "calls" : "puts"} buyers paid up for, again and again">⚡ ${esc(pc.knows.text)}</span>` : "";
   let h = `<div class="pacebar s-${cls}" title="${esc(tip)}"><span class="pst">${st}</span><span class="pg"><i style="width:${Math.max(3, pc.pct || 0)}%"></i></span><span class="prt">×${pc.ratio}</span><span class="pacc">${acc}</span>${b != null ? `<span class="pbs" title="buyers ${b}% / sellers ${100 - b}%"><i class="b" style="width:${b}%"></i><i class="s" style="width:${100 - b}%"></i></span>` : ""}${kn}</div>`;
   if (pc.call && pc.level){
     const good = /WITH SPEED|PRESSING|SPEED \+ FLOW/.test(pc.call) && !/WITHOUT/.test(pc.call), warn = /STALLING|WITHOUT/.test(pc.call);
@@ -3743,7 +3925,7 @@ document.addEventListener("change", async e => {
      WAITING BUYERS | ACTUAL SELLING | [levels] | PRICE | ACTUAL BUYING | WAITING SELLERS | TRADED AT PRICE
    WAITING = the resting size now (the server's number) with a bar against the biggest size on screen; the bar eases to
    its new size in ~160 ms, shrinking on a cancel and on a trade alike, and never hides the number.
-   ACTUAL SELLING / BUYING = shares that hit the bid / lifted the offer AT THIS PRICE: this session (resets with the day)
+   ACTUAL SELLING / BUYING = shares sellers sold down / buyers paid up AT THIS PRICE: this session (resets with the day)
    or this visit (rolling), your pick in COLS. These cells PULSE only when a print corroborates it (the server counted
    it); a size drop with no print shrinks the bar and pulses nothing.
    TRADED AT PRICE = every confirmed trade here today (bought + sold + the unclassified).
@@ -3852,7 +4034,7 @@ function ladderDomHTML(L){
   // traded, the high / low of day, and the CLR buttons that clear the counts above the offer / below the bid
   if (C.cols.sum !== false && L.sum && !compact){
     const S_ = L.sum, net = S_.net || 0;
-    h += `<div class="domsum" title="the whole session on ${esc(sym)}: BOUGHT = shares that lifted the offer, SOLD = shares that hit the bid, NET = bought − sold, TRADED = every print (${S_.prints || 0} prints). CLR clears the counts on one side of the market after price leaves it (COLS turns this line off)">
+    h += `<div class="domsum" title="the whole session on ${esc(sym)}: BOUGHT = shares buyers paid up for, SOLD = shares sellers sold down, NET = bought − sold, TRADED = every print (${S_.prints || 0} prints). CLR clears the counts on one side of the market after price leaves it (COLS turns this line off)">
       <span class="k">BOUGHT</span><b class="b">${kfmt(S_.bought || 0)}</b><span class="k">SOLD</span><b class="s">${kfmt(S_.sold || 0)}</b>
       <span class="k">NET</span><b class="${net > 0 ? "b" : net < 0 ? "s" : ""}">${net > 0 ? "+" : net < 0 ? "−" : ""}${kfmt(Math.abs(net))}</b>
       <span class="k">TRADED</span><b>${kfmt(S_.traded || 0)}</b>
@@ -3865,14 +4047,14 @@ function ladderDomHTML(L){
            : `<th class="odh b" data-w="40" data-min="26" title="BUY column (Jigsaw-style order entry): click a row to BUY ${esc(sz((T().default_shares || 0)))} there. At or under the offer: a limit. Above the offer (▲): a BUY STOP that fires when price trades there. Your working buys sit here; click one to cancel, drag to move${esc(tt)}">BUY</th>`}
     <th class="szh wb" data-w="64" data-min="26" title="WAITING BUYERS: shares resting to buy at this price right now (the book). The bar is against the biggest size on screen; it shrinks on a cancel and on a trade alike. Click: BUY there${esc(tt)}"><span class="full">WAITING BUYERS</span><span class="short">BUYERS</span></th>
     <th class="dpsh" data-w="34" data-min="14" title="+/− on the BID, last ${L.stack_seconds || 60}s: + size ADDED by buyers, − size PULLED without trading (COLS)">+/−</th>
-    <th class="volh s" data-w="58" data-min="22" title="ACTUAL SELLING: shares that HIT THE BID at this price ${volWord} (aggressive sellers, read off the tape against the quote in force). Pulses only when a print lands here"><span class="full">ACTUAL SELLING</span><span class="short">SOLD</span></th>
+    <th class="volh s" data-w="58" data-min="22" title="ACTUAL SELLING: shares sellers SOLD DOWN at this price ${volWord} (aggressive sellers, read off the tape against the quote in force). Pulses only when a print lands here"><span class="full">ACTUAL SELLING</span><span class="short">SOLD</span></th>
     <th class="pxh" data-w="58" data-min="30">PRICE</th>
-    <th class="volh b" data-w="58" data-min="22" title="ACTUAL BUYING: shares that LIFTED THE OFFER at this price ${volWord} (aggressive buyers). Pulses only when a print lands here"><span class="full">ACTUAL BUYING</span><span class="short">BOUGHT</span></th>
+    <th class="volh b" data-w="58" data-min="22" title="ACTUAL BUYING: shares buyers PAID UP for at this price ${volWord} (aggressive buyers). Pulses only when a print lands here"><span class="full">ACTUAL BUYING</span><span class="short">BOUGHT</span></th>
     <th class="dpsh" data-w="34" data-min="14" title="+/− on the ASK, last ${L.stack_seconds || 60}s: + size ADDED by sellers, − size PULLED without trading (COLS)">+/−</th>
     <th class="szh ws" data-w="64" data-min="26" title="WAITING SELLERS: shares resting to sell at this price right now (the book). Click: SELL there${esc(tt)}"><span class="full">WAITING SELLERS</span><span class="short">SELLERS</span></th>
     ${link ? `<th class="odh s opt" data-w="40" data-min="26" title="CONTRACT MODE — SELL ${cn} × ${esc(cname)}: click a row at or over the bid to sell the contract NOW at its touch; below the bid (▼) a WATCH that sells it the moment ${esc(sym)} trades that price (your stop on the stock). Your watches sit here; click one to take it off${esc(tt)}">SELL ${cn}×${esc(cshort)}</th>`
            : `<th class="odh s" data-w="40" data-min="26" title="SELL column (Jigsaw-style order entry): click a row to SELL ${esc(sz((T().default_shares || 0)))} there. At or over the bid: a limit. Below the bid (▼): a SELL STOP that fires when price trades there. Your working sells sit here; click one to cancel, drag to move${esc(tt)}">SELL</th>`}
-    <th class="neth" data-w="44" data-min="38" title="NET at this price today: bought (lifted the offer) minus sold (hit the bid). Green = more buying, red = more selling (COLS)">NET</th>
+    <th class="neth" data-w="44" data-min="38" title="NET at this price today: bought (paid up) minus sold (sold down). Green = more buying, red = more selling (COLS)">NET</th>
     ${C.money ? `<th class="mnh" data-w="52" data-min="22" title="$ resting here: (buyers + sellers showing) × price">$ HERE</th>` : ""}
     <th class="trh" data-w="58" data-min="22" title="TRADED AT PRICE: every confirmed trade at this price today (bought + sold + the prints no side could be read for). Resets with the session"><span class="full">TRADED</span><span class="short">TRD</span></th></tr>`;
   const netCell = r => { const bk = r.bk, n = bk ? (bk[1] || 0) - (bk[2] || 0) : 0; if (!bk || !n) return `<td class="dnet"></td>`;
@@ -3889,8 +4071,8 @@ function ladderDomHTML(L){
     const bigB = r.bid_big ? (r.bid_big.huge ? " huge" : " big") : "", bigA = r.ask_big ? (r.ask_big.huge ? " huge" : " big") : "";
     const tB = [r.bid ? sz(r.bid) + " waiting to buy" : "no bid here", r.bid_real ? realWords(r.bid_real) : "", r.ps_b && (r.ps_b[0] || r.ps_b[1]) ? `last minute: +${kfmt(r.ps_b[0])} added, −${kfmt(r.ps_b[1])} pulled` : ""].filter(Boolean).join(" · ") + tt;
     const tA = [r.ask ? sz(r.ask) + " waiting to sell" : "no offer here", r.ask_real ? realWords(r.ask_real) : "", r.ps_a && (r.ps_a[0] || r.ps_a[1]) ? `last minute: +${kfmt(r.ps_a[0])} added, −${kfmt(r.ps_a[1])} pulled` : ""].filter(Boolean).join(" · ") + tt;
-    const tS = v.s ? `${sz(v.s)} shares hit the bid at ${px(r.price)} ${volWord} = ${usdK(v.s * r.price)}` : `nothing hit the bid here ${volWord}`;
-    const tBuy = v.b ? `${sz(v.b)} shares lifted the offer at ${px(r.price)} ${volWord} = ${usdK(v.b * r.price)}` : `nothing lifted the offer here ${volWord}`;
+    const tS = v.s ? `${sz(v.s)} shares sellers sold down at ${px(r.price)} ${volWord} = ${usdK(v.s * r.price)}` : `nothing sold down here ${volWord}`;
+    const tBuy = v.b ? `${sz(v.b)} shares buyers paid up for at ${px(r.price)} ${volWord} = ${usdK(v.b * r.price)}` : `nothing paid up for here ${volWord}`;
     const tT = v.t ? `${sz(v.t)} traded at ${px(r.price)} today in ${r.bk ? r.bk[3] : "?"} prints: ${sz(r.bk ? r.bk[1] : 0)} bought, ${sz(r.bk ? r.bk[2] : 0)} sold${r.bk && r.bk[0] - r.bk[1] - r.bk[2] > 0 ? `, ${sz(r.bk[0] - r.bk[1] - r.bk[2])} unclassified` : ""}` : "nothing traded here today";
     const glow = r.last && L.pace && L.pace.heat ? `;--heat:${L.pace.heat}` : "";
     h += `<tr class="${cls}" data-price="${r.price}" style="${glow.slice(1)}">
@@ -3995,7 +4177,7 @@ function ladderProHTML(L){
   h += `<table class="lad lad3 pro" data-cols="ladpro"><tr>
     <th class="lvh" data-w="64" data-min="26" title="your chart on the ladder: PIVOT, 2ND ENTRY, TARGET, STOP, SNEAKY PIVOT, option STRIKES getting the money, high / low of day, the RELOAD buyer / seller — and how far they are">LEVEL</th>
     <th class="stkh" data-w="40" data-min="16" title="+/− on the BID: + size ADDED (buyers stepping up), − size PULLED without trading, last ${L.stack_seconds || 60}s. Lit = big">+/−</th>
-    <th class="vish" data-w="44" data-min="18" title="SOLD this visit: shares that hit the bid at this price since price came back here">SOLD</th>
+    <th class="vish" data-w="44" data-min="18" title="SOLD this visit: shares sellers sold down at this price since price came back here">SOLD</th>
     <th class="szh" data-w="54" data-min="20" title="BID: resting buy orders. Drains as it gets hit. Solid green ↻N = the RELOAD BUYER refilling. Click to BUY there">BID</th>
     <th class="pxh" data-w="58" data-min="26">PRICE</th>
     <th class="szh" data-w="54" data-min="20" title="ASK: resting sell orders. Drains as it gets lifted. Solid red ↻N = the RELOAD SELLER refilling. Click to SELL there">ASK</th>

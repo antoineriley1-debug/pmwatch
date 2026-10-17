@@ -330,6 +330,37 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                 except OSError:
                     self._send(404, "the show page is not built: python page_src/build_page.py", "text/plain")
                 return
+            if path == "/api/callbook":
+                # THE CALL BOOK: the cards (brief), one whole card (?id=), or THE WEEKLY REVIEW (?review=1)
+                q = parse_qs(urlparse(self.path).query)
+                cb = engine.callbook
+                try:
+                    days = max(1, min(400, int(q.get("days", ["7"])[0])))
+                except ValueError:
+                    days = 7
+                cid = q.get("id", [""])[0]
+                with engine.lock:
+                    if cid:
+                        c = cb.recent.get(cid) or cb._find(cid)
+                        out = {"ok": c is not None, "card": c}
+                    else:
+                        cards = cb.read(days, clock() if engine.replay is None else None)
+                        out = {"ok": True, "days": days, "cards": [cb.brief(c) for c in cards[:300]],
+                               "review": cb.review(cards) if q.get("review") else None}
+                self._send(200, json.dumps(out, default=str, separators=(",", ":")), "application/json")
+                return
+            if path == "/api/phrases":
+                # THE PHRASE LIST: every spoken call, its built-in line, the versions (pending / approved)
+                self._send(200, json.dumps(dict(engine.phrases.view(), ok=True)), "application/json")
+                return
+            if path.startswith("/api/callbook/pic/"):
+                p = engine.callbook.pic_path(path.rsplit("/", 1)[1])
+                if p is None:
+                    self._send(404, "not found", "text/plain")
+                    return
+                with open(p, "rb") as fh:
+                    self._send(200, fh.read(), "image/png" if p.endswith(".png") else "image/jpeg")
+                return
             if path == "/api/optmoney":
                 # OPTION MONEY: which Quant Data tools this key opens (the CHECK), and THE ODDS from the scored calls
                 feed = hooks.get("optmoney_feed")
@@ -627,6 +658,9 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
             if self.path.split("?", 1)[0] == "/api/desk/mic_audio":
                 self._mic_audio()
                 return
+            if self.path.split("?", 1)[0] == "/api/callbook/pic":
+                self._callbook_pic()
+                return
             if (self.headers.get("Content-Type") or "").split(";")[0].strip() != "application/json":
                 self._send(415, "json only", "text/plain")
                 return
@@ -644,6 +678,26 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                 return
             if path == "/api/update":
                 self._update(body)
+                return
+            if path == "/api/phrases":
+                act, kind = str(body.get("action", "")), str(body.get("kind", ""))
+                ph = engine.phrases
+                if act == "write":                   # the DESK AI writes versions: they come back as PENDING
+                    ai = getattr(engine, "ai", None)
+                    out = ai.run("phrases", t=clock(), kind=kind) if ai is not None else {"ok": False, "reason": "DESK AI is not loaded"}
+                elif act == "add":                   # Twiney's own line: approved as he writes it
+                    row, why = ph.add(kind, body.get("text", ""), by="twiney")
+                    out = {"ok": row is not None, "reason": why, "line": row}
+                elif act in ("approved", "rejected", "pending", "removed"):
+                    out = {"ok": ph.set_status(kind, body.get("id", 0), act)}
+                else:
+                    out = {"ok": False, "reason": "unknown action"}
+                self._send(200, json.dumps(out, default=str), "application/json")
+                return
+            if path == "/api/callbook/rate":
+                with engine.lock:
+                    c = engine.callbook.rate(str(body.get("id", "")), body.get("thumb"), body.get("note"))
+                self._send(200, json.dumps({"ok": c is not None}), "application/json")
                 return
             if path == "/api/optmoney/check":
                 feed = hooks.get("optmoney_feed")
@@ -942,6 +996,22 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                 self._send(200, json.dumps({"ok": True, "replay": dict(r)}), "application/json")
             else:
                 self._send(404, "not found", "text/plain")
+
+        def _callbook_pic(self):
+            """THE CALL BOOK: the page's picture of the chart, the T&S and the flow at a call (JPEG / PNG, up to 4 MB)."""
+            ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                length = 0
+            if ctype not in ("image/jpeg", "image/png") or not 0 < length <= 4 * 1024 * 1024:
+                self._send(400, json.dumps({"ok": False, "reason": "not a picture"}), "application/json")
+                return
+            data = self.rfile.read(length)
+            cid = parse_qs(urlparse(self.path).query).get("id", [""])[0]
+            with engine.lock:
+                name = engine.callbook.save_pic(cid, data)
+            self._send(200, json.dumps({"ok": bool(name), "pic": name}), "application/json")
 
         def _mic_audio(self):
             """A voice note's audio (raw bytes from the browser's recorder), up to 30 MB."""

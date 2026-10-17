@@ -49,7 +49,7 @@ PHRASES = {
     ],
     "RECLAIMED_DOWN": [
         "{nm} reclaimed by sellers. It popped over {lvl}, now back under at {px}",
-        "Failed breakout at {nm}. Back below {lvl}, price {px}",
+        "Price hit supply at {nm}. Back under {lvl}, price {px}",
         "That push over {nm} didn't stick. Back under {lvl}, price {px}",
         "Sellers took {nm} back. Over {lvl} for a bit, now {px}",
     ],
@@ -166,5 +166,5 @@ def label(v):
     if o == "DEFENDED":
         return "DEFENDED" if frm == "above" else "HELD AS SUPPLY"
     if o == "RECLAIMED":
-        return "RECLAIMED" if frm == "above" else "FAILED BREAKOUT"
+        return "RECLAIMED" if frm == "above" else "HIT SUPPLY"
     return {"LOST": "LOST", "BROKE": "BROKE THROUGH", "UNDECIDED": "STILL UNDECIDED"}[o]

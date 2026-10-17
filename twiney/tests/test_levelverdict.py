@@ -4,7 +4,7 @@ import unittest
 from twiney.levelverdict import LevelFollowUp, PHRASES, label
 from twiney.levelwatch import LevelWatch
 
-CFG = {"zone_ticks": 2, "zone_atr_pct": 1, "near_ticks": 6, "near_atr_pct": 8, "away_ticks": 8, "away_atr_pct": 10,
+CFG = {"took_hold_minutes": 0, "zone_ticks": 2, "zone_atr_pct": 1, "near_ticks": 6, "near_atr_pct": 8, "away_ticks": 8, "away_atr_pct": 10,
        "hold_seconds": 60, "repeat_seconds": 300, "touch_minutes": 15, "test_ticks": 4, "test_atr_pct": 3,
        "followup_min_minutes": 5, "followup_max_minutes": 7, "followup_min_alerts": 3, "followup_quiet_seconds": 60,
        "followup_recheck_minutes": 4}

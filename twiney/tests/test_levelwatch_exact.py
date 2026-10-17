@@ -4,7 +4,7 @@ import unittest
 
 from twiney.levelwatch import LevelWatch
 
-CFG = {"zone_ticks": 2, "zone_atr_pct": 1, "near_ticks": 6, "near_atr_pct": 8, "away_ticks": 8, "away_atr_pct": 10,
+CFG = {"took_hold_minutes": 0, "zone_ticks": 2, "zone_atr_pct": 1, "near_ticks": 6, "near_atr_pct": 8, "away_ticks": 8, "away_atr_pct": 10,
        "hold_seconds": 60, "repeat_seconds": 300, "touch_minutes": 15}
 PMC = [{"price": 337.19, "name": "PREMARKET CLOSE", "say": "the premarket close", "code": "PMC"}]
 

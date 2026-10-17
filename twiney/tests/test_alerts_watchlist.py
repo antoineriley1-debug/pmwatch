@@ -81,7 +81,7 @@ class UserAlertTests(unittest.TestCase):
         e.on_flow(_print(s, 105, 300000, t=5.0), 5.0)
         fa = [g for g in self.got if g["label"] == "FLOW ALERT"]
         self.assertEqual(len(fa), 1)
-        self.assertIn("$300K of calls bought at the ask", fa[0]["text"])
+        self.assertIn("$300K just hit AAA 105 calls", fa[0]["text"])
         self.assertEqual(e.user_alerts, [])
 
     def test_equity_alert_and_the_equity_feed(self):
@@ -128,8 +128,9 @@ class LadderFlowMarkTests(unittest.TestCase):
         self.assertEqual(r1["items"][0]["strike"], 105)
         rf = [g for g in got if g["label"] == "REPEAT FLOW"]
         self.assertEqual(len(rf), 1)
-        self.assertIn("105.00 strike expiring in 3 days bought at the ask 2 times", rf[0]["text"])
-        self.assertEqual(rf[0]["premium"], 1000000)
+        self.assertIn("just hit AAA 105 calls", rf[0]["text"]); self.assertIn("again, ×2 on this strike in 30 min", rf[0]["text"])
+        self.assertNotIn("in all", rf[0]["text"])
+        self.assertEqual(rf[0]["premium"], 600000)          # the print that hit, not the two added up
         self.assertTrue(any(v["kind"] == "rflow" for v in e.voice))
         # the ladder rows carry it
         e.on_l1(s, "bid", 100.4, 62.0); e.on_l1(s, "ask", 100.41, 62.0)
@@ -174,12 +175,13 @@ class UrgentFlowTests(unittest.TestCase):
         self.assertEqual([g["label"] for g in got if g["label"] == "URGENT FLOW"], [])   # 2 prints, $180K: on the list, not called
         u = e._urgency_list(61.0)
         self.assertEqual((u[0]["symbol"], u[0]["strike"], u[0]["prints"], u[0]["hot"]), (s, 103, 2, False))
-        e.on_flow(self._p(s, 103, 120000, 300.0), 300.0)                                  # 3 prints, $300K inside 10 min
+        e.on_flow(self._p(s, 103, 250000, 300.0), 300.0)                                  # 3 prints, one of them $250K
         ug = [g for g in got if g["label"] == "URGENT FLOW"]
         self.assertEqual(len(ug), 1)
-        self.assertIn("103.00 strike, 2 days out, 3.0% out of the money", ug[0]["text"])
-        self.assertIn("3 times in 10 min, 3 of them sweeps", ug[0]["text"])
-        self.assertIn("urgent call buying", ug[0]["words"])
+        self.assertIn("just hit AAA 103 calls", ug[0]["text"]); self.assertIn("3.0% out of the money - ×3 on this strike", ug[0]["text"])
+        self.assertIn("in 10 min, 3 of them sweeps", ug[0]["text"]); self.assertNotIn("in all", ug[0]["text"])
+        self.assertIn("urgent call flow, 250 thousand just hit", ug[0]["words"])
+        self.assertEqual(ug[0]["premium"], 250000)
         self.assertTrue(any(v["kind"] == "urgent" for v in e.voice))
         self.assertTrue(e._urgency_list(301.0)[0]["hot"])
         e.on_flow(self._p(s, 103, 120000, 330.0), 330.0)                                  # more of it inside the cooldown: no repeat call
@@ -201,7 +203,7 @@ class UrgentFlowTests(unittest.TestCase):
         self.assertEqual(e._urgency_list(40.0)[0]["symbol"], "ZZZZ")
         self.assertEqual([g for g in got if g["label"] == "URGENT FLOW"], [])
         e.set_flow_alerts("all", 41.0)
-        e.on_flow(self._p("ZZZZ", 50, 150000, 42.0), 42.0)
+        e.on_flow(self._p("ZZZZ", 50, 250000, 42.0), 42.0)                                  # one print the size: called
         self.assertEqual(len([g for g in got if g["label"] == "URGENT FLOW"]), 1)
 
 
@@ -243,7 +245,7 @@ class UrgencySearchTests(unittest.TestCase):
         from helpers import cfg, plays
         from twiney.engine import Engine
         e = Engine(plays(), cfg())
-        def pr(sym, t, prem=120000.0, strike=11.0):
+        def pr(sym, t, prem=250000.0, strike=11.0):
             return {"t": t, "symbol": sym, "strike": strike, "cp": "C", "expiry": "2026-10-03", "dte": 2.0, "size": 300,
                     "price": 4.0, "premium": prem, "spot": 10.0, "side": "ask", "kind": "sweep", "otm_pct": 10.0}
         for i in range(4):
@@ -256,7 +258,7 @@ class UrgencySearchTests(unittest.TestCase):
         self.assertEqual(out["history"][0]["strike"], 12.0)
         self.assertTrue(all(h["symbol"] == "AAA" for h in out["history"]))
         self.assertEqual([u["strike"] for u in out["live"]], [12.0])
-        self.assertTrue(out["history"][-1]["called"])               # 4 x $120K in 30 s: that contract was called urgent
+        self.assertTrue(out["history"][-1]["called"])               # 4 x $250K prints in 30 s: that contract was called urgent
 
 
 class NoFlowNoDoughTests(unittest.TestCase):

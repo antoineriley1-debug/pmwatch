@@ -1005,7 +1005,7 @@ class DemoFeed:
                 elif lv.get("key") and lv["done"] == "clean":
                     s.vs = min(3.5, s.vs + 0.6)                    # a key level breaking: the tape gets busier for a while
                     if rng.random() < 0.3:
-                        # the failed break: through it, the chasers pile in, and it comes straight back through the
+                        # price hits supply: through it, the chasers pile in, and it comes straight back through the
                         # level the other way (trapped longs / shorts)
                         s.script = [(0.70 if seller else 0.30, 3.0, t + 40), (0.22 if seller else 0.78, 3.2, t + 130),
                                     (0.42 if seller else 0.58, 1.6, t + 240)]

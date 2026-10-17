@@ -25,7 +25,7 @@ def classify(alert):
         if topic.startswith("hype"):
             return ("CALLS / PUTS POUNDED", up)
         if topic.startswith("break:"):
-            return ("LEVEL BREAK (CLOSE)", up)
+            return None             # a close through a level is scored only once it has held (LEVEL BUYERS / SELLERS TOOK)
         if topic.startswith("openread"):
             return ("OPEN READ", up)
         if topic.startswith("retrace"):
@@ -44,7 +44,7 @@ def classify(alert):
     if role == "level":
         if label in ("BUYERS TOOK", "BOUNCED", "DEFENDED", "RECLAIMED", "BROKE THROUGH"):
             return ("LEVEL " + label, 1)
-        if label in ("SELLERS TOOK", "REJECTED", "HELD AS SUPPLY", "FAILED BREAKOUT", "LOST"):
+        if label in ("SELLERS TOOK", "REJECTED", "HELD AS SUPPLY", "HIT SUPPLY", "FAILED BREAKOUT", "LOST"):
             return ("LEVEL " + label, -1)
         return None
     if role == "pace":
@@ -82,8 +82,19 @@ class Scorecard:
         kind, d = c
         row = {"t": float(t), "symbol": alert.get("symbol"), "kind": kind, "dir": d, "p0": float(price), "atr": float(atr or 0) or None,
                "text": str(alert.get("text") or "")[:160], "moves": {}, "src": self.src}
+        if alert.get("lvl") is not None:
+            row["lvl"] = float(alert["lvl"])
         self.open.append(row)
         return row
+
+    def grade(self, symbol, lvl, took, grade):
+        """The 10-minute call on a level that was taken (STRONG / HOLDING / NOT STRONG / LOST), saved with its call."""
+        kind = "LEVEL " + took
+        for r in reversed(self.open):
+            if r["symbol"] == symbol and r["kind"] == kind and abs(r.get("lvl", -1e9) - float(lvl)) < 1e-6:
+                r["hold"] = grade
+                return r
+        return None
 
     def tick(self, t, prices):
         """prices: {symbol: last}. Resolves the calls whose horizons have passed."""
@@ -133,15 +144,15 @@ class Scorecard:
                           "hit_pct": round(100.0 * b["hit"] / b["n"]) if b["n"] else None,
                           "avg5": round(b["sum5"] / b["n"], 2) if b["n"] else None, "avg15": round(b["sum15"] / b["n"], 2) if b["n"] else None})
         recent = [{"t": r["t"], "symbol": r["symbol"], "kind": r["kind"], "dir": r["dir"], "p0": r["p0"], "outcome": r.get("outcome"),
-                   "m5": r["moves"].get("300"), "m15": r["moves"].get("900"), "pct15": r.get("pct15"), "text": r["text"]} for r in list(self.done)[-25:]][::-1]
+                   "m5": r["moves"].get("300"), "m15": r["moves"].get("900"), "pct15": r.get("pct15"), "text": r["text"], "hold": r.get("hold")} for r in list(self.done)[-25:]][::-1]
         return {"kinds": kinds, "recent": recent, "open": len(self.open)}
 
-    READ_NAMES = {"money": "CALL vs PUT MONEY today", "money15": "CALL vs PUT MONEY last 15 min", "strike": "BIG STRIKE ahead",
-                  "max_pain": "OPTION MAX PAIN", "em_room": "EXPECTED MOVE room", "opening": "OPENING MONEY (overnight)"}
+    READ_NAMES = {"money": "OPTION FLOW LEAN today", "money15": "OPTION FLOW LEAN last 15 min", "strike": "BIG STRIKE ahead",
+                  "max_pain": "OPTION MAX PAIN", "em_room": "ROOM LEFT IN WHAT OPTIONS EXPECT", "opening": "NEW MONEY OVERNIGHT"}
 
     def odds(self):
         """THE ODDS: every judged call on the live market, all days, split by what the option money said at the call.
-        Per read and answer (e.g. CALL vs PUT MONEY: WITH / AGAINST): how many calls, the hit rate, the average move
+        Per read and answer (e.g. OPTION FLOW LEAN today: WITH / AGAINST): how many calls, the hit rate, the average move
         at 15 minutes in ATRs; against the hit rate of all calls. Nothing here is a call or an order."""
         import os
         if not self.path or not os.path.exists(self.path):

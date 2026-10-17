@@ -17,11 +17,15 @@ before touching anything that talks about the market. This holds for chat replie
   module name. A failed breakout is "price hit supply" (or demand).
 - If a thing has no PS60 word, describe it in plain English with the PS60 words around it. Never borrow a word.
 - Twiney's own instructions on wording override everything else, always.
+- Twiney's words (see the skill): buyers / sellers first, bulls / bears only now and then; SELLERS / BUYERS / NEITHER
+  SIDE IN CONTROL (never "have the tape"); "buyers are paying higher prices to get in" / "sellers are accepting lower
+  prices to get out"; BUYERS PAID UP TO GET IN / SELLERS SOLD DOWN TO GET OUT; flow calls name the one print that hit,
+  never a total.
 
 ## Other standing rules
 
 - Everything is structured around the PS60 theory: Daily room → 60-minute pivot (or sneaky) → confirm → second
-  entry → build → pay yourself → runner to MP. Flow supports, never replaces.
+  entry → build → pay yourself → runner to MP. Flow backs up the setup, never replaces it.
 - All settings live in SETTINGS. Paper first. Verify visually and functionally; test everything as implemented.
 - The Quant Data key and the ElevenLabs key go only into the private zip, never into git.
 - Never put a model identifier in a commit, a PR, code or a doc.

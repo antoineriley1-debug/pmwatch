@@ -16,14 +16,6 @@ from twiney.scorecard import Scorecard
 
 
 class ParseTests(unittest.TestCase):
-    def test_net_drift_runs_the_buckets_into_a_day_total(self):
-        p = {"data": {"1792245600000": {"netCallPremium": 300000, "netPutPremium": 100000},
-                      "1792245660000": {"netCallPremium": 50000, "netPutPremium": 400000}}}
-        d = om.parse_net_drift(p)
-        self.assertEqual(d["series"], [[1792245600, 200000], [1792245660, -150000]])
-        self.assertEqual((d["calls"], d["puts"], d["net"]), (350000, 500000, -150000))
-        self.assertIsNone(om.parse_net_drift({"data": {}}))
-
     def test_max_pain_by_expiry_and_the_single_answer(self):
         rows = om.parse_max_pain_by_exp({"data": {"2026-10-24": 350.0, "2026-10-17": 355.0}})
         self.assertEqual(rows, [("20261017", 355.0), ("20261024", 350.0)])
@@ -68,12 +60,16 @@ class LocalTests(unittest.TestCase):
         self.assertEqual(b[0]["side"], "calls")
         self.assertEqual(b[-1]["side"], "puts")
 
-    def test_drift_from_the_flow(self):
-        prints = [{"t": 100, "cp": "C", "side": "ask", "premium": 500000}, {"t": 110, "cp": "P", "side": "ask", "premium": 200000},
-                  {"t": 120, "cp": "C", "side": "bid", "premium": 100000}, {"t": 50, "cp": "C", "side": "ask", "premium": 9e9}]
-        d = om.local_drift(prints, 200, 90)
-        self.assertEqual(d["net"], 200000)
-        self.assertEqual([v for _, v in d["series"]], [500000, 300000, 200000])
+    def test_flow_lean_counts_prints_never_dollars(self):
+        prints = [{"t": 100, "cp": "C", "side": "ask", "premium": 9e9}, {"t": 110, "cp": "P", "side": "ask", "premium": 1},
+                  {"t": 120, "cp": "C", "side": "bid", "premium": 5e6}, {"t": 130, "cp": "C", "side": "ask", "premium": 10},
+                  {"t": 50, "cp": "C", "side": "ask", "premium": 1}]
+        d = om.local_drift(prints, 1000, 90)
+        self.assertEqual((d["calls"], d["puts"], d["net"]), (2, 1, 1))          # paid-up prints only, counted
+        self.assertEqual([v for _, v in d["series"]], [1, 0, 1])
+        self.assertEqual((d["calls15"], d["puts15"]), (2, 1))
+        self.assertEqual(om.lean_of(6, 2), "CALLS"); self.assertEqual(om.lean_of(2, 6), "PUTS")
+        self.assertEqual(om.lean_of(4, 3), "EVEN"); self.assertEqual(om.lean_of(2, 0), "EVEN")
 
     def test_aggression(self):
         self.assertEqual(om.aggression([[1, 1.0, 30, "buy"], [2, 1.0, 10, "sell"], [3, 1.0, 10, None]]),
@@ -87,22 +83,22 @@ class ViewTests(unittest.TestCase):
 
     def test_quant_data_first_then_the_desk(self):
         t = time.time()
-        local = {"drift": {"series": [[t - 1000, 100], [t, 900000]], "calls": 1, "puts": 0, "net": 900000}, "drift_src": "FLOW",
+        local = {"drift": {"series": [[t, 5]], "calls": 7, "puts": 2, "net": 5, "calls15": 3, "puts15": 0}, "drift_src": "FLOW",
                  "em": {"expiry": "20991231", "move": 2.0, "iv": 0.3}, "em_src": "CHAIN IV"}
         v = self.m.view("AAA", 100.0, t, local)
         self.assertEqual(v["src"]["drift"], "FLOW")
-        self.assertEqual(v["drift"]["lean"], "CALLS")
+        self.assertEqual((v["drift"]["lean"], v["drift"]["lean15"]), ("CALLS", "CALLS"))
         self.assertEqual((v["em"]["lo"], v["em"]["hi"]), (98.0, 102.0))
-        self.m.put("AAA", "net_drift", {"series": [[t, -400000]], "calls": 0, "puts": 400000, "net": -400000}, time.time())
+        self.m.put("AAA", "max_pain_by_exp", [("20991231", 99.0)], time.time())
         v = self.m.view("AAA", 100.0, t, local)
-        self.assertEqual((v["src"]["drift"], v["drift"]["lean"]), ("QUANT DATA", "PUTS"))
+        self.assertEqual((v["src"]["max_pain"], v["max_pain"]["strike"]), ("QUANT DATA", 99.0))
 
     def test_the_checks_against_a_play(self):
         t = time.time()
         today = time.strftime("%Y%m%d", time.gmtime(t - 4 * 3600))
         local = {"em": {"expiry": today, "move": 1.0, "iv": 0.3},
                  "oi_rows": [(102, 9e6, 0), (99, 0, 1e6)], "max_pain": {"strike": 98.0, "expiry": today},
-                 "drift": {"series": [[t, -1e6]], "calls": 0, "puts": 1e6, "net": -1e6}}
+                 "drift": {"series": [[t, -6]], "calls": 1, "puts": 7, "net": -6}}
         play = {"side": "long", "trigger": 100.0, "target": 104.0}
         v = self.m.view("AAA", 100.5, t, local, play)
         keys = {c["key"]: c for c in v["checks"]}
@@ -115,7 +111,7 @@ class ViewTests(unittest.TestCase):
     def test_reads_in_the_calls_direction(self):
         t = time.time()
         local = {"oi_rows": [(100.5, 9e6, 0)], "max_pain": {"strike": 98.0, "expiry": "20991231"},
-                 "drift": {"series": [[t, 1e6]], "calls": 1e6, "puts": 0, "net": 1e6}, "em": {"expiry": "20991231", "move": 3.0, "iv": 0.3},
+                 "drift": {"series": [[t, 6]], "calls": 8, "puts": 2, "net": 6, "calls15": 4, "puts15": 0}, "em": {"expiry": "20991231", "move": 3.0, "iv": 0.3},
                  "opening": om.opening_lean(500, 100, "CHAIN OI")}
         v = self.m.view("AAA", 100.0, t, local)
         up, dn = self.m.reads(v, 1, 2.0), self.m.reads(v, -1, 2.0)
@@ -162,8 +158,6 @@ class FeedTests(unittest.TestCase):
         e.on_l1("AAA", "last", 10.0, 1.0)
 
         def request(path, body):
-            if path.endswith("net-drift"):
-                return {"data": {"1792245600000": {"netCallPremium": 5, "netPutPremium": 1}}}
             if path.endswith("max-pain-over-time"):
                 return {"data": {"2099-12-31": 10.0}}
             if path.endswith("term-structure"):
@@ -171,13 +165,12 @@ class FeedTests(unittest.TestCase):
             raise RuntimeError("HTTP 403 (this key's plan does not include this data)")
         f = om.OptionMoneyFeed(e, e.cfg, request)
         st = f.check()
-        self.assertEqual(st["net_drift"]["state"], "ok")
         self.assertEqual(st["max_pain_by_exp"]["state"], "ok")
         self.assertEqual(st["term_structure"]["state"], "unread")
         self.assertEqual(st["exposure"]["state"], "no")
-        self.assertTrue(os.path.exists(os.path.join(e.cfg["recording"]["dir"], "quantdata_tools", "net_drift.json")))
+        self.assertTrue(os.path.exists(os.path.join(e.cfg["recording"]["dir"], "quantdata_tools", "max_pain_by_exp.json")))
         sym = f.symbols()[0] if "SPY" not in f.symbols() else "SPY"
-        self.assertEqual(e.optmoney.got(sym, "net_drift", 60)["net"], 4)
+        self.assertEqual(e.optmoney.got(sym, "max_pain_by_exp", 60), [("20991231", 10.0)])
         self.assertEqual(f.body("AAA", "exposure")["greekMode"], "GAMMA")
 
 
@@ -202,7 +195,7 @@ class EngineAndRouteTests(unittest.TestCase):
             out = json.loads(r.read())
         self.assertTrue(out["ok"])
         self.assertFalse(out["feed"])
-        self.assertIn("net_drift", out["status"])
+        self.assertIn("exposure", out["status"])
         self.assertIn("reads", out["odds"])
         req = urllib.request.Request(self.dash.url + "/api/optmoney/check", data=b"{}", method="POST", headers={"Content-Type": "application/json"})
         with urllib.request.urlopen(req, timeout=5) as r:

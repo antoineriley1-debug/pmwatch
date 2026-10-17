@@ -75,7 +75,7 @@ def flow_gate(prints, side, price, daily_closes, now, cfg):
         out.update(dte_lane=R, premium_ok=far >= prem_min, otm_ok=False, repeats_ok=False, sweep=False)
         return out
     if not mine:
-        out["lanes"]["L5_FLOW_SIDE"] = (R, f"no {'call' if cp == 'C' else 'put'} flow bought at the ask on this name — no flow, no dough")
+        out["lanes"]["L5_FLOW_SIDE"] = (R, f"no {'call' if cp == 'C' else 'put'} flow buyers paid up for on this name — no flow, no dough")
         out["lanes"]["L6_FLOW_QUALITY"] = (R, "nothing to judge")
         if theirs:
             out["lanes"]["L5_FLOW_SIDE"] = (R, f"only {'put' if cp == 'C' else 'call'} flow here ({_k(out['opposing'])}) — the flow is against this {side}")
@@ -123,7 +123,7 @@ def flow_gate(prints, side, price, daily_closes, now, cfg):
         out["lanes"]["L5_FLOW_SIDE"] = (R, f"{_k(dollars)} of {what} near the spot after a {updays}-day {'run up' if cp == 'P' else 'dump'} — a HEDGE, not a bet (R9)")
         out["state"] = "FLOW_HEDGE"
     elif repeats_ok:
-        out["lanes"]["L5_FLOW_SIDE"] = (G, f"{_k(dollars)} of {what} bought at the ask, {repeats}x on the {out['cluster']['series_expiry']} series" + ("" if alive else f" — nothing new for {int((now - last_t) // 60)} min"))
+        out["lanes"]["L5_FLOW_SIDE"] = (G, f"{_k(dollars)} of {what} buyers paid up for, {repeats}x on the {out['cluster']['series_expiry']} series" + ("" if alive else f" — nothing new for {int((now - last_t) // 60)} min"))
         out["state"] = ("FLOW_ALIVE_LONG" if side == "long" else "FLOW_ALIVE_SHORT") if alive else "FLOW_FADING"
     else:
         out["lanes"]["L5_FLOW_SIDE"] = (Y, f"{_k(dollars)} of {what} in {len(mine)} print{'s' if len(mine) != 1 else ''} — one print is a guess; waiting for the repeat (R5)")
@@ -174,11 +174,11 @@ def chart_gate(play, price, se, mp, reloaders, tape, now, cfg):
     fails = (se or {}).get("fails") or 0
     through = pivot and price and (price > pivot if long_ else price < pivot)
     if stt in (ps60.BROKE, ps60.RETRACE, ps60.SECOND_ENTRY):
-        lanes["L2_CONFIRM"] = (G, f"pivot {_px(pivot)} broke and held" + (f" (after {fails} failed break{'s' if fails > 1 else ''})" if fails else ""))
+        lanes["L2_CONFIRM"] = (G, f"pivot {_px(pivot)} broke and held" + (f" (price hit {'supply' if long_ else 'demand'} there {fails}× first)" if fails else ""))
     elif through:
         lanes["L2_CONFIRM"] = (Y, f"price is through {_px(pivot)} inside the candle — not confirmed until it holds")
     else:
-        lanes["L2_CONFIRM"] = (R, (f"{fails} failed break{'s' if fails > 1 else ''} — " if fails else "") + f"waiting for the pivot {_px(pivot)} to break" if pivot else "no pivot")
+        lanes["L2_CONFIRM"] = (R, (f"price hit {'supply' if long_ else 'demand'} at it {fails}× — " if fails else "") + f"waiting for the pivot {_px(pivot)} to break" if pivot else "no pivot")
     if stt == ps60.SECOND_ENTRY:
         lanes["L3_SECOND_ENTRY"] = (G, f"second entry through {_px(se.get('second_entry'))}")
     elif stt == ps60.RETRACE:
@@ -193,7 +193,7 @@ def chart_gate(play, price, se, mp, reloaders, tape, now, cfg):
     against = [r for r in (rl["above"] if long_ else rl["below"]) if r.get("kind") == "confirmed" and r.get("ps60", True)
                and r.get("side") == ("ask" if long_ else "bid") and (r.get("stage") or "RELOADING") in ("RELOADING", "STILL THERE")]
     tp = tape or {}
-    tape_txt = (f" · tape {tp['buy_pct']:.0f}% paying up" if tp.get("buy_pct") is not None else "")
+    tape_txt = (f" · tape {tp['buy_pct']:.0f}% paid up" if tp.get("buy_pct") is not None else "")
     if against:
         r = against[0]
         lanes["L4_BUILD"] = (R, f"reload {'seller' if long_ else 'buyer'} stuck on the {'offer' if long_ else 'bid'} at {_px(r['price'])}, {r.get('absorbed', 0):,} sh and still there — get out even (R12)")
@@ -251,7 +251,7 @@ def side_picked(play):
 
 
 def flow_leans(prints):
-    """Which way the money leans on this name: ('long'|'short'|None, call $, put $) from prints bought at the ask."""
+    """Which way the money leans on this name: ('long'|'short'|None, call $, put $) from prints buyers paid up for."""
     c = sum(p.get("premium") or 0 for p in prints if p.get("cp") == "C" and p.get("side") == "ask")
     pt = sum(p.get("premium") or 0 for p in prints if p.get("cp") == "P" and p.get("side") == "ask")
     return (None if not c and not pt else "short" if pt > c else "long"), round(c), round(pt)
@@ -291,7 +291,7 @@ def build(play, price, se, mp, reloaders, tape, prints, daily_closes, bars, now,
     if not picked:
         what = "calls" if side == "long" else "puts"
         lanes["L5_FLOW_SIDE"] = (lanes["L5_FLOW_SIDE"][0], f"no side picked — the money here is in {what}: {_k(call_usd)} calls / {_k(put_usd)} puts"
-                                 if (call_usd or put_usd) else "no side picked — no option flow bought at the ask on this name yet")
+                                 if (call_usd or put_usd) else "no side picked — no option flow buyers paid up for on this name yet")
     # L7: same side as the chart, and the chart has confirmed (§4.2: the bet AFTER the stock confirms)
     if fg["state"] in ("FLOW_OPPOSITE", "FLOW_HEDGE"):
         lanes["L7_CORRELATION"] = (R, "flow is against the chart" if fg["state"] == "FLOW_OPPOSITE" else "a hedge does not correlate with anything")

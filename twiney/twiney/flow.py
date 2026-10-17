@@ -255,7 +255,7 @@ class FlowBook:
     """Per-symbol flow history plus the unusual detector.
 
     UNUSUAL CALLS / UNUSUAL PUTS: inside ``window_minutes`` a watchlist symbol takes ``min_prints`` or more
-    prints of the same side, bought at the ask, at least ``otm_pct`` out of the money, ``max_dte`` days or
+    prints of the same side, buyers paid up, at least ``otm_pct`` out of the money, ``max_dte`` days or
     less to expiry, adding up to ``min_premium`` in premium. That is someone paying up for a move that
     has not started. One call per symbol per side per ``repeat_minutes``.
     """
@@ -290,36 +290,36 @@ class FlowBook:
         cut = now - minutes * 60
         return [p for p in d if p["t"] >= cut]
 
-    def check(self, symbol, now):
-        """Return an unusual dict when the detector fires for ``symbol`` right now, else None."""
+    def check(self, symbol, now, p=None):
+        """UNUSUAL on ONE print: the print that just hit (``p``, else the newest in the window), alone at least
+        min_premium (index products index_min_premium), buyers paid up, out of the money, short enough. Never a total.
+        Returns that print's own premium / strike / expiry, and how many call (put) prints of that kind came in the
+        window (a count, for "calls getting hammered"); else None."""
         c = self.cfg
         index = symbol in set(c.get("index_symbols", ()))
         min_premium = c.get("index_min_premium", 5e6) if index else c["min_premium"]
-        min_prints = c.get("index_min_prints", 3) if index else c["min_prints"]
         prints = self._window(symbol, now, c["window_minutes"])
-        for cp in ("C", "P"):
-            hits = [p for p in prints if p["cp"] == cp and p["side"] == "ask"
-                    and p["otm_pct"] is not None and p["otm_pct"] >= c["otm_pct"]
-                    and (p["dte"] is None or p["dte"] <= c["max_dte"])]
-            prem = sum(p["premium"] for p in hits)
-            if len(hits) >= min_prints and prem >= min_premium:
-                key = (symbol, cp)
-                if now - self.last_call.get(key, -1e9) < c["repeat_minutes"] * 60:
-                    continue
-                self.last_call[key] = now
-                otm = [p["otm_pct"] for p in hits if p["otm_pct"] is not None]
-                dtes = [p["dte"] for p in hits if p["dte"] is not None]
-                u = {"symbol": symbol, "cp": cp, "premium": round(prem), "prints": len(hits),
-                     "minutes": len({int(p["t"] // 60) for p in hits}),
-                     "otm_pct": round(sum(otm) / len(otm), 1) if otm else None,
-                     "dte": round(min(dtes)) if dtes else None, "spot": hits[-1].get("spot"),
-                     "strikes": sorted({p["strike"] for p in hits})[:4], "t": now, "ids": [p["id"] for p in hits if p.get("id") is not None]}
-                self.unusual[key] = u
-                return u
-        return None
+        kind = lambda q: (q.get("side") == "ask" and q.get("otm_pct") is not None and q["otm_pct"] >= c["otm_pct"]
+                          and (q.get("dte") is None or q["dte"] <= c["max_dte"]))
+        if p is None:
+            p = prints[-1] if prints else None
+        if p is None or p.get("symbol", symbol) != symbol or not kind(p) or (p.get("premium") or 0) < min_premium:
+            return None
+        cp = p["cp"]
+        key = (symbol, cp, p.get("strike"), str(p.get("expiry") or ""))
+        if now - self.last_call.get(key, -1e9) < c["repeat_minutes"] * 60:
+            return None
+        self.last_call[key] = now
+        same = [q for q in prints if q.get("cp") == cp and kind(q)]
+        u = {"symbol": symbol, "cp": cp, "premium": round(p["premium"]), "strike": p.get("strike"), "expiry": p.get("expiry"),
+             "prints": 1, "side_prints": len(same), "minutes": len({int(q["t"] // 60) for q in same}),
+             "otm_pct": p.get("otm_pct"), "dte": round(p["dte"]) if p.get("dte") is not None else None, "spot": p.get("spot"),
+             "strikes": [p.get("strike")], "t": now, "ids": [p["id"]] if p.get("id") is not None else []}
+        self.unusual[(symbol, cp)] = u
+        return u
 
     def summary(self, symbol, now, minutes=30):
-        """Calls vs puts premium (bought at the ask) over the last ``minutes``, plus the unusual flags."""
+        """Calls vs puts premium (buyers paid up for) over the last ``minutes``, plus the unusual flags."""
         prints = self._window(symbol, now, minutes)
         calls = sum(p["premium"] for p in prints if p["cp"] == "C" and p["side"] == "ask")
         puts = sum(p["premium"] for p in prints if p["cp"] == "P" and p["side"] == "ask")
@@ -331,7 +331,7 @@ class FlowBook:
 
     def dough(self, symbol, cp, now, index=False):
         """NO FLOW, NO DOUGH — Dan's confirmation. With the setup in hand, is short-dated, out-of-the-money money
-        coming in on the play's side (calls for a long, puts for a short), bought at the ask, and does it KEEP
+        coming in on the play's side (calls for a long, puts for a short), buyers paid up, and does it KEEP
         coming with size? One print is a guess; the same side hit minute after minute is somebody who knows.
 
         Looks back dough_window_minutes (30). Returns {"state", "text", "dollars", "prints", "minutes", "sweeps",
@@ -394,7 +394,7 @@ class FlowBook:
             out.update(state="FLOW FADED", text=f"{k(dollars)} of {kind} came in but nothing for {int(age // 60)} min — it stopped coming")
         elif dollars >= need and mins >= need_min and (age is None or age <= fresh):
             tops = f" · most on the {top['strike']:g} strike {top['dte']:.0f}d out" if top and top.get("dte") is not None else ""
-            out.update(state="FLOW CONFIRMED", text=f"{k(dollars)} of short-dated OTM {kind} bought at the ask in {n} prints over {mins} separate minutes"
+            out.update(state="FLOW CONFIRMED", text=f"{k(dollars)} of short-dated OTM {kind} buyers paid up for in {n} prints over {mins} separate minutes"
                        f"{' · ' + str(sw) + ' sweeps' if sw else ''} — it keeps coming{tops}")
         else:
             miss = []
@@ -406,11 +406,11 @@ class FlowBook:
         return out
 
     def knows(self, symbol, cp, now, index=False):
-        """SOMEBODY KNOWS SOMETHING: short-dated, out-of-the-money contracts of one side (C or P) getting bought at the ask
+        """SOMEBODY KNOWS SOMETHING: short-dated, out-of-the-money contracts of one side (C or P) getting paid up for
         inside the urgency window. Dan's tell when a pivot triggers: conviction that the move is wanted NOW.
 
         Returns {"dollars", "prints", "sweeps", "against", "score", "knows", "top"}:
-        - dollars / prints / sweeps: premium bought at the ask on ``cp`` that is <= urgency_max_dte days out and
+        - dollars / prints / sweeps: premium buyers paid up for on ``cp`` that is <= urgency_max_dte days out and
           >= urgency_min_otm_pct out of the money, inside urgency_window_minutes
         - against: the same measure for the other side
         - score 0..1: dollars against the urgency minimum (1 = twice the minimum), cut in half when the other
@@ -743,7 +743,7 @@ class SimFlow:
 
     def _reactive(self, t):
         """Flow that FOLLOWS the stock, the bigger share of real option flow: a stock dropping hard on its own gets
-        put buying at the ask (and calls sold at the bid), a rally gets calls bought and puts sold. Near the money
+        put buying at the ask (and calls sellers sold down), a rally gets calls bought and puts sold. Near the money
         and short-dated, more and bigger the harder it moves; a sharp move brings out-of-the-money sweeps too."""
         rng = self.rng
         for sym in self.symbols:
@@ -764,7 +764,7 @@ class SimFlow:
             down = r < 0
             step = 5.0 if spot > 1000 else 1.0 if spot > 50 else 0.5 if spot > 10 else 0.25
             sharp = k >= 2.4 and rng.random() < 0.45
-            if sharp:          # chasing it: short-dated, out of the money, swept at the ask
+            if sharp:          # chasing it: short-dated, out of the money, swept, buyers paying up
                 cp, at_ask, otm, dte, kind = ("P" if down else "C"), True, rng.uniform(2.5, 7.0), rng.choice((1, 2, 5)), "sweep"
             else:
                 roll = rng.random()

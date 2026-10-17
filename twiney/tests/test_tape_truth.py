@@ -142,7 +142,7 @@ class UnderOverTests(unittest.TestCase):
 
 
 class LeanTests(unittest.TestCase):
-    """WHO HAS THE TAPE: a side, held with reasons until the data turns; a counter-move is the other side TRYING."""
+    """WHO IS IN CONTROL: a side, held with reasons until the data turns; a counter-move is the other side TRYING."""
     def _cfg(self):
         import copy
         from twiney.config import DEFAULTS
@@ -159,22 +159,22 @@ class LeanTests(unittest.TestCase):
         sb = story.Story(); t = 1_700_000_000.0
         sb.breaks["prior-day low"] = {"dir": "down", "t": t - 600, "lo": 100.0, "hi": 100.0, "state": "broke"}
         down = [101.0 - 0.02 * i for i in range(40)]          # lower highs and lower lows, a new low of day right now
-        ln = story.tape_lean(sb, t, 99.2, self._mins(t, down), {"P": {"usd": 600000}, "C": {"usd": 100000}}, None, False, C)
+        ln = story.tape_lean(sb, t, 99.2, self._mins(t, down), {"P": {"usd": 600000, "prints": 6}, "C": {"usd": 100000, "prints": 1}}, None, False, C)
         self.assertEqual(ln["side"], "bear")
         self.assertIn("prior-day low taken", ln["why"])
         self.assertTrue(any("puts" in w for w in ln["why"]), ln["why"])
-        self.assertIn("Sellers have the tape", ln["changed"])
+        self.assertRegex(ln["changed"], r"^(Sellers|The bears) are in control")
         # a bounce with the buy percentage up: TRYING, not stepping up, and the play-by-play does not turn bullish
         fast_buyers = {"state": "FAST", "buy_pct": 80, "ratio": 1.8, "control": "buyers", "drift": 0.2}
         self.assertIn("Buyers are trying", story.tape_words(fast_buyers, None, sb))
-        self.assertIn("sellers still have the tape", story.tape_words(fast_buyers, None, sb))
+        self.assertRegex(story.tape_words(fast_buyers, None, sb), r"but (sellers|the bears) are still in control")
         foc = {"on": True, "approach": True, "kind": "pdl", "name": "prior-day low", "p": 100.0, "lo": 100.0, "hi": 100.0, "dir": "down"}
         out = story.play_by_play(sb, t, foc, 100.05, 0.3, fast_buyers, None, [], [], C)
         self.assertIn("buyers are trying", out["text"].lower())
         self.assertNotIn("buyers stepping up", out["text"])
         self.assertNotEqual(out["tone"], "bull")
         # the lean holds: the same bounce a minute later with no level taken back does not turn it
-        ln2 = story.tape_lean(sb, t + 60, 100.3, self._mins(t + 60, down[5:] + [99.3, 99.6, 99.9, 100.2, 100.3]), {"P": {"usd": 600000}, "C": {"usd": 100000}}, None, False, C)
+        ln2 = story.tape_lean(sb, t + 60, 100.3, self._mins(t + 60, down[5:] + [99.3, 99.6, 99.9, 100.2, 100.3]), {"P": {"usd": 600000, "prints": 6}, "C": {"usd": 100000, "prints": 1}}, None, False, C)
         self.assertEqual(ln2["side"], "bear")
         self.assertIsNone(ln2["changed"])
 
@@ -184,7 +184,7 @@ class LeanTests(unittest.TestCase):
         sb = story.Story(); t = 1_700_000_000.0
         sb.breaks["prior-day low"] = {"dir": "down", "t": t - 600, "lo": 100.0, "hi": 100.0, "state": "broke"}
         down = [101.0 - 0.02 * i for i in range(40)]
-        story.tape_lean(sb, t, 99.2, self._mins(t, down), {"P": {"usd": 600000}, "C": {"usd": 100000}}, None, False, C)
+        story.tape_lean(sb, t, 99.2, self._mins(t, down), {"P": {"usd": 600000, "prints": 6}, "C": {"usd": 100000, "prints": 1}}, None, False, C)
         self.assertEqual(sb.lean["side"], "bear")
         # the level is recovered on a close (the break failed) and the flow goes even: the reasons are gone
         sb.breaks["prior-day low"]["state"] = "failed"
@@ -193,13 +193,13 @@ class LeanTests(unittest.TestCase):
         self.assertEqual(ln["side"], "bear")                         # not yet: a short while to be sure
         ln = story.tape_lean(sb, t + 120 + 181, 100.5, self._mins(t + 301, flat), {}, None, False, C)
         self.assertIsNone(ln["side"])
-        self.assertIn("No side has the tape", ln["changed"])
+        self.assertIn("Neither side is in control", ln["changed"])
         # buyers take levels: the tape is theirs
         sb.breaks["prior-day high"] = {"dir": "up", "t": t + 400, "lo": 101.0, "hi": 101.0, "state": "broke"}
         up = [100.0 + 0.03 * i for i in range(40)]
         ln = story.tape_lean(sb, t + 500, 101.2, self._mins(t + 500, up), {"C": {"usd": 500000}, "P": {"usd": 50000}}, None, False, C)
         self.assertEqual(ln["side"], "bull")
-        self.assertIn("Buyers have the tape", ln["changed"])
+        self.assertRegex(ln["changed"], r"^(Buyers|The bulls) are in control")
         self.assertIn("Sellers are trying", story.tape_words({"state": "FAST", "buy_pct": 20, "ratio": 1.8}, None, sb))
 
     def test_a_flip_needs_the_hold_time(self):
@@ -208,7 +208,7 @@ class LeanTests(unittest.TestCase):
         sb = story.Story(); t = 1_700_000_000.0
         sb.breaks["prior-day low"] = {"dir": "down", "t": t - 600, "lo": 100.0, "hi": 100.0, "state": "broke"}
         down = [101.0 - 0.02 * i for i in range(40)]
-        story.tape_lean(sb, t, 99.2, self._mins(t, down), {"P": {"usd": 600000}, "C": {"usd": 100000}}, None, False, C)
+        story.tape_lean(sb, t, 99.2, self._mins(t, down), {"P": {"usd": 600000, "prints": 6}, "C": {"usd": 100000, "prints": 1}}, None, False, C)
         # two minutes later everything says buyers (a level up taken, higher highs, calls): still the sellers' tape
         sb.breaks["prior-day high"] = {"dir": "up", "t": t + 100, "lo": 101.0, "hi": 101.0, "state": "broke"}
         up = [100.0 + 0.03 * i for i in range(40)]
@@ -222,7 +222,7 @@ class LeanTests(unittest.TestCase):
         sb = story.Story(); t = 1_700_000_000.0
         ln = story.tape_lean(sb, t, 100.0, self._mins(t, [100.0] * 40), {}, None, False, self._cfg())
         self.assertIsNone(ln["side"])
-        self.assertEqual(ln["text"], "NO SIDE HAS THE TAPE")
+        self.assertEqual(ln["text"], "NEITHER SIDE IN CONTROL")
         self.assertEqual(story.tape_words({"state": "FAST", "buy_pct": 80, "ratio": 1.8}, None, sb), "Buyers stepping up")
 
 
@@ -319,12 +319,12 @@ class AttemptTests(unittest.TestCase):
         self.assertIsNotNone(st["open"])
         self.assertEqual(st["open"]["need"]["name"], "prior-day low")
         self.assertIn("Buyers are trying from 229.40", st["said"][0]); self.assertIn("230.00", st["said"][0]); self.assertIn("Wait", st["said"][0])
-        # eight minutes later they never closed over it: failed, sellers still have it
+        # eight minutes later they never closed over it: failed, sellers still in control
         later = mins + [[t + 60 * i, 229.4, 229.6, 229.3, 229.5, 500] for i in range(9)]
         st = story.attempts(sb, t + 30 + 8 * 60 + 1, 229.5, later, quiet, 0.01, 8.0, C)
         self.assertIsNone(st["open"])
         self.assertEqual(st["done"][-1]["outcome"], "failed")
-        self.assertIn("could not take back prior-day low 230.00", st["said"][0]); self.assertIn("Sellers still have the tape", st["said"][0])
+        self.assertIn("could not take back prior-day low 230.00", st["said"][0]); self.assertRegex(st["said"][0], r"(Sellers|The bears) are still in control")
         # a rest: the next lift right away is not a new attempt
         st = story.attempts(sb, t + 30 + 8 * 60 + 30, 229.6, later, {"state": "FAST", "buy_pct": 75, "control": "buyers"}, 0.01, 8.0, C)
         self.assertIsNone(st["open"])
@@ -348,7 +348,7 @@ class AttemptTests(unittest.TestCase):
         st = story.attempts(sb, t + 125, 230.2, later, {"state": "FAST", "buy_pct": 70}, 0.01, 8.0, C)
         self.assertEqual(st["done"][-1]["outcome"], "took")
         self.assertIn("took back prior-day low 230.00 on a close", st["said"][0])
-        self.assertIn("still have the tape until they hold it", st["said"][0])
+        self.assertIn("are still in control until they hold it", st["said"][0])
 
     def test_no_attempt_without_a_lean(self):
         from twiney import story
@@ -365,7 +365,7 @@ class StorylineLogTests(unittest.TestCase):
         d = tempfile.mkdtemp(); e.storyline_path = os.path.join(d, "storylines.jsonl")
         st = e.syms["AAA"]; st.l1["last"] = 10.0
         sc = e.cfg["story"]
-        e._story_alert(st, {"topic": "lean", "text": "Sellers have the tape: x", "tone": "bear", "pri": 2}, 1_700_000_000.0, sc)
+        e._story_alert(st, {"topic": "lean", "text": "Sellers are in control: x", "tone": "bear", "pri": 2}, 1_700_000_000.0, sc)
         e._story_alert(st, {"topic": "pbp", "text": "noise", "tone": "neutral", "pri": 4}, 1_700_000_001.0, sc)
         e._story_alert(st, {"topic": "attempt", "text": "Buyers are trying", "tone": "neutral", "pri": 3}, 1_700_000_002.0, sc)
         rows = [json.loads(l) for l in open(e.storyline_path)]

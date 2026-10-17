@@ -9,7 +9,7 @@ the stock price then and now (and the stock's close on expiry day once a contrac
                live option quotes, so it is never added in)
   expired:     worth exactly the intrinsic value at expiry: worthless when out of the money
 
-A print bought at the ask is BUYERS paying; one sold at the bid is SELLERS collecting — their side wins when
+A print buyers paid up for is BUYERS paying; one sellers sold down is SELLERS collecting — their side wins when
 the buyers' side loses. Saved to a file, so it survives restarts.
 """
 

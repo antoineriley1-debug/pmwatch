@@ -170,7 +170,7 @@ def second_entry(bars, play, now, cfg):
         failed = cl < pivot - tk if long_ else cl > pivot + tk  # closed back on the wrong side
         if state == IDLE:
             if beyond and failed:
-                out["fails"] += 1          # a wick through that closed back on the wrong side is a failed break
+                out["fails"] += 1          # a wick through that closed back on the wrong side: price hit supply / demand
             elif beyond:
                 state, ext, ext_i, retr = BROKE, (h if long_ else l), i, None
             continue

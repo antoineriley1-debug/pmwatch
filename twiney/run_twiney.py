@@ -44,7 +44,8 @@ def start_market(cfg, mode):
 def console_alert(alert):
     stamp = time.strftime("%H:%M:%S", time.localtime(alert["t"]))
     print(f"{stamp}  {alert['symbol']:<6} {alert['label']:<24} @ {alert['price']}  "
-          f"({alert['side']} · {alert['role']} · absorbed {alert['absorbed']:,})", flush=True)
+          f"({alert.get('side')} · {alert.get('role')}" + (f" · absorbed {alert['absorbed']:,}" if alert.get("absorbed") is not None else "") + ")",
+          flush=True)
 
 
 def _rec_dir(cfg):
@@ -261,6 +262,10 @@ def run_live(cfg, plays, args):
     engine.grades_path = os.path.join(_rec_dir(cfg), "grades.jsonl")
     engine.jlog_path = os.path.join(_rec_dir(cfg), "desk.log")   # structured JSON lines: connections, orders, fills, errors
     engine.score.path = os.path.join(_rec_dir(cfg), "score.jsonl")   # THE DESK SCORE: every judged call, one line each
+    from twiney.callbook import CallBook
+    engine.callbook = CallBook(_rec_dir(cfg), cfg)                     # THE CALL BOOK: a card per judged call
+    from twiney.phrases import Phrases
+    engine.phrases = Phrases(os.path.join(_rec_dir(cfg), "phrases.json"), cfg)   # THE PHRASE LIST: lines Twiney approved
     engine.calib_path = os.path.join(_rec_dir(cfg), "inst_calib.jsonl")   # CHILD ORDERS on the real tape, for tuning
     engine.storyline_path = os.path.join(_rec_dir(cfg), "storylines.jsonl")   # the storyline's turns, every day, for the cross-day study
     engine.oi_path = os.path.join(_rec_dir(cfg), "oi.jsonl")   # OPEN INTEREST: each contract's morning number, day by day
@@ -451,6 +456,10 @@ def run_demo(cfg, plays, args):
     engine.grades_path = os.path.join(_rec_dir(cfg), "grades.jsonl")
     engine.jlog_path = os.path.join(_rec_dir(cfg), "desk.log")   # structured JSON lines: connections, orders, fills, errors
     engine.score.path = os.path.join(_rec_dir(cfg), "score.jsonl")   # THE DESK SCORE: every judged call, one line each
+    from twiney.callbook import CallBook
+    engine.callbook = CallBook(_rec_dir(cfg), cfg)                     # THE CALL BOOK: a card per judged call
+    from twiney.phrases import Phrases
+    engine.phrases = Phrases(os.path.join(_rec_dir(cfg), "phrases.json"), cfg)   # THE PHRASE LIST: lines Twiney approved
     engine.score.src = "practice"      # the practice market's calls never count in the ODDS (the live market's only)
     engine.storyline_path = os.path.join(_rec_dir(cfg), "storylines.jsonl")
     engine.oi_path = os.path.join(_rec_dir(cfg), "oi.jsonl")

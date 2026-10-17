@@ -13,7 +13,7 @@ At a level (your lines, the chart studies' levels):
 - PRESSING <level>: price within reach of it and the tape speeding up into it.
 - STALLING INTO <level>: price within reach of it and the tape slowing / drying up: the move is running out of gas.
 - BREAKOUT / BREAKDOWN WITH SPEED: the level broke in the last 30 s with the tape well above its normal and the
-  aggression on the break's side. With option flow on the same side (calls bought at the ask on a breakout, puts
+  aggression on the break's side. With option flow on the same side (calls buyers paid up for on a breakout, puts
   on a breakdown) it carries the dollars: + FLOW $640K calls.
 - BREAK WITHOUT SPEED: the level broke on a normal / slow tape: suspect, the kind that comes back.
 """

@@ -3,7 +3,8 @@
 It is never in the live read path. The desk's rules make every call on the tape; the model reads what the desk
 recorded (the story, the calls, THE DESK SCORE, the levels, the 60-minute candles, the option flow, your notes and
 fills) and writes it up: the day's recap and tomorrow's plan, an explanation of one call, your voice notes cleaned
-up, the cross-day study. Nothing it writes becomes an alert, a voice call or a trade.
+up, the cross-day study. Nothing it writes becomes an alert, a voice call or a trade, with one exception: the versions
+of a spoken line it writes for THE PHRASE LIST (phrases.py), and only after Twiney approves each one.
 
 Everything it was given is kept next to its answer (recordings/ai/), so the words can always be checked against the
 numbers. Ollama runs on this computer: no key, nothing leaves the machine.
@@ -19,7 +20,7 @@ import urllib.request
 
 KNOWLEDGE = os.path.join(os.path.dirname(__file__), "knowledge", "ps60.md")
 
-JOBS = ("recap", "explain", "notes", "study", "trades", "ask", "market", "marketask")
+JOBS = ("recap", "explain", "notes", "study", "trades", "ask", "market", "marketask", "phrases")
 
 # the language lock, applied to the model's words too (it slips even when taught)
 LANGUAGE = [(re.compile(r"\bresistance\b", re.I), "supply"), (re.compile(r"\bsupport levels?\b", re.I), "demand"),
@@ -171,6 +172,12 @@ class DeskAI:
             if not text:
                 raise RuntimeError("the model answered with nothing")
             rec = {"t": t, "title": title, "text": text, "given": given + "\n\n" + ask, "ms": int((time.time() - t0) * 1000), "error": None}
+            if job == "phrases":                 # THE PHRASE LIST: each version waits as PENDING for Twiney
+                ph = getattr(self.engine, "phrases", None)
+                if ph is not None:
+                    added, refused = ph.add_ai(kw.get("kind"), text)
+                    rec["text"] = text + f"\n\n({len(added)} added as PENDING, {len(refused)} refused: " + \
+                        "; ".join(f'{x["text"]} - {x["why"]}' for x in refused[:6]) + ")"
             rec["file"] = self._save(job, t, rec)
             with self.lock:
                 self.last[job] = rec
@@ -278,6 +285,18 @@ class DeskAI:
             return (f"Your trades, graded against PS60 ({days} days)", self.packet_trades(t, days), ASK_TRADES)
         if job == "market":
             return ("Market analysis detailed report", self.packet_market(), ASK_MARKET)
+        if job == "phrases":
+            from .phrases import KINDS, RULES
+            kind = str(kw.get("kind") or "")
+            if kind not in KINDS:
+                raise RuntimeError("no such call on the phrase list")
+            k = KINDS[kind]
+            ph = getattr(self.engine, "phrases", None)
+            have = ph.approved(kind) if ph is not None else []
+            given = (f"THE CALL: {k['name']}\nTHE DESK'S OWN LINE: {k['default']}\nTHE NUMBERS IT CARRIES (keep each one, "
+                     f"exactly as written, braces and all): " + ", ".join("{" + f + "}" for f in k["fields"]) +
+                     ("\nLINES TWINEY ALREADY APPROVED:\n" + "\n".join(have) if have else "") + "\n\n" + RULES)
+            return (f"Phrase versions: {k['name']}", given, ASK_PHRASES)
         if job == "marketask":
             q = str(kw.get("text") or "").strip()[:2000]
             return ("Your market question", self.packet_market(), ASK_MARKET_Q + "\n\nTWINEY ASKS: " + q)
@@ -586,6 +605,10 @@ that this is analysis for Twiney's own judgment, not advice."""
 ASK_EXPLAIN = """Explain THE CALL above to Twiney in plain words: what the desk saw (name the levels, the sizes, the
 prints, the flow in the data above), why that is a PS60 read, and what it does NOT mean (what still has to confirm).
 Five to ten short sentences. If the data above does not back the call, say so plainly."""
+
+ASK_PHRASES = """Write 6 other ways the voice can say THE CALL above, the way Twiney talks on his desk. One per line, no
+numbering, no quotes, nothing else. Every line keeps every {number} of the desk's own line, spelled exactly with its
+braces, and adds no other braces. Short and spoken: one or two sentences. Use only Twiney's words above."""
 
 ASK_NOTES = """Rewrite Twiney's notes and markers above as a clean journal for the day: fix the transcription mistakes,
 keep every ticker, price and level exactly, group by stock, newest last, and keep his own words where they are

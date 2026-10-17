@@ -294,8 +294,8 @@ def story(play, price, levels, bars, tape, now, recent_alerts, min_shares=1000, 
     if tape and tape.get("state") not in (None, "QUIET"):
         pct = tape.get("buy_pct")
         mix = f" ({pct:.0f}% buys)" if pct is not None else ""
-        words = {"BUYERS PAYING UP": "impatient buyers paying the offer (they want in now)",
-                 "SELLERS HITTING OUT": "impatient sellers hitting the bid (they want out now)",
+        words = {"BUYERS PAID UP TO GET IN": "buyers are paying higher prices to get in",
+                 "SELLERS SOLD DOWN TO GET OUT": "sellers are accepting lower prices to get out",
                  "TWO-SIDED": "two-sided, no one in control"}
         lines.append(f"Tape: {words.get(tape['state'], tape['state'].lower())}{mix}, last {int(tape['window_seconds'])}s.")
 
@@ -356,7 +356,7 @@ def day_trap_flow_text(dt):
     what, other = ("puts", "calls") if side == "long" else ("calls", "puts")
     who = "trapped longs" if side == "long" else "trapped shorts"
     if f["verdict"] == "PRESSES":
-        return (f"Option flow PRESSES them: {dollars(f['presses'])} of {what} bought at the ask since the "
+        return (f"Option flow PRESSES them: {dollars(f['presses'])} of {what} buyers paid up for since the "
                 f"{'high' if side == 'long' else 'low'}{' vs ' + dollars(f['fades']) + ' of ' + other if f['fades'] else ''}.")
     if f["verdict"] == "FADES":
         return (f"Option flow FADES the trap: {dollars(f['fades'])} of {other} bought since the {'high' if side == 'long' else 'low'}"

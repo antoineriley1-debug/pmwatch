@@ -358,24 +358,26 @@ DEFAULTS = {
         # BIG MONEY: option prints at least this big are remembered for big_money_days, with how their buyers are doing
         "big_money_min_premium": 500000,
         "big_money_days": 30,
-        # UNUSUAL CALLS / PUTS: this much premium, in this many prints, bought at the ask, this far out of the money,
-        # this close to expiry, inside this window, on a watchlist symbol. One call per symbol and side per repeat_minutes.
+        # UNUSUAL CALLS / PUTS: ONE print at least this much premium, buyers paid up, this far out of the money, this close
+        # to expiry, on a watchlist symbol. The call names that one print, never a total. One call per strike and expiry
+        # per repeat_minutes; "calls getting hammered" counts the call prints of that kind inside window_minutes
         "min_premium": 250000,
-        "min_prints": 2,
+        "min_prints": 2,                # (no longer used: one print is enough)
         "otm_pct": 3.0,
         "max_dte": 30,
         "window_minutes": 10,
         "repeat_minutes": 20,
-        # index products (SPY, QQQ, SPX, IWM ...) trade huge premium all day: they need far more to count as unusual
+        # index products (SPY, QQQ, SPX, IWM ...) trade huge premium all day: one print needs far more to count as unusual
         "index_symbols": ["SPY", "QQQ", "SPX", "SPXW", "XSP", "NDX", "NDXP", "IWM", "RUT", "DIA", "VIX"],
         "index_min_premium": 5000000,
         "index_min_prints": 3,
+        "hammer_prints": 5,             # "calls getting hammered": this many call (put) prints of that kind inside the window
         # "watchlist" = UNUSUAL alerts only for your watchlist; "all" = every ticker in the feed (switchable in the window)
         "alerts": "watchlist",
         # speak unusual flow for every watchlist symbol, not only the active tab
         "voice_all": True,
         # NO FLOW, NO DOUGH: a READY setup is held at WATCH until short-dated out-of-the-money money keeps coming in
-        # on the play's side (calls for a long, puts for a short): dough_min_dollars bought at the ask across at
+        # on the play's side (calls for a long, puts for a short): dough_min_dollars buyers paid up for across at
         # least dough_min_minutes separate minutes inside dough_window_minutes, the last of it inside
         # dough_fresh_minutes. Off = flow is shown but never holds the grade
         "no_flow_no_dough": True,
@@ -398,8 +400,9 @@ DEFAULTS = {
         # a play whose flow leans hard the other way is held at WATCH instead of READY (0 turns this off)
         "against_bias": 0.6,
         "against_min_premium": 500000,
-        # URGENT FLOW: a short-dated, out-of-the-money contract getting bought at the ask again and again. It makes the
-        # list from one print; it gets CALLED once it has this many prints and dollars inside the window
+        # URGENT FLOW: a short-dated, out-of-the-money contract getting paid up for again and again. It makes the
+        # list from one print; it gets CALLED once it has this many prints inside the window and one of them is at least
+        # urgency_min_dollars (index products: index_min_premium). The call names the print that hit, never a total
         "urgency_window_minutes": 10,
         "urgency_min_prints": 3,
         "urgency_min_dollars": 250000,
@@ -502,7 +505,7 @@ DEFAULTS = {
         "near_ticks": 5,                # within reach of a level: this many ticks ...
         "near_pct": 0.03,               # ... or this % of price, whichever is wider
         "flow_minutes": 15,             # + FLOW: option prints on the break's side in the last N minutes
-        "flow_min_premium": 100000,     # + FLOW: at least this much premium bought at the ask
+        "flow_min_premium": 100000,     # + FLOW: at least this much premium buyers paid up for
         "repeat_seconds": 120,          # a call at the same level is not repeated for this long
     },
     # THE DESK'S VOICE: the browser's own voice, or a cloud voice (ElevenLabs) that never changes: every call in it
@@ -576,7 +579,11 @@ DEFAULTS = {
         "test_atr_pct": 3,              # ... or this % of the ATR, then turned back = BOUNCED (from above) / REJECTED (from below)
         "away_ticks": 8,                # REJECTED / BOUNCED: back the way it came at least this many ticks ...
         "away_atr_pct": 10,             # ... or this % of the ATR
-        "hold_seconds": 60,             # TOOK: through it and held for this long
+        "hold_seconds": 60,             # through it: with no candles to go by, through it this long counts as the close
+        "took_hold_minutes": 5,         # TOOK: after a candle closes through it, price holds on that side this many minutes straight
+        "dip_cents": 2,                 # a dip back through it by more than this many cents restarts the hold ...
+        "dip_atr_pct": 1,               # ... or this % of the daily ATR, whichever is wider
+        "grade_minutes": 10,            # the second call: how it held, this many minutes after it was taken (STRONG / HOLDING / NOT STRONG / LOST)
         "repeat_seconds": 300,          # the same call at the same level not again for this long
         "touch_minutes": 15,            # a touch that does nothing for this long is forgotten
     },
@@ -594,7 +601,7 @@ DEFAULTS = {
         "flow_minutes": 20,             # option flow read over the last N minutes
         "flow_max_dte": 7,              # ... only contracts expiring within this many days (same week: the same rule as SOMEBODY KNOWS SOMETHING)
         "deep_otm_pct": 5.0,            # DEEP OTM: at least this % out of the money (counts 1.5x; near the money counts less)
-        "develop_premium": 50000,       # DEVELOPING: at least this much (weighted) premium bought at the ask on the move's side
+        "develop_premium": 50000,       # DEVELOPING: at least this much (weighted) premium buyers paid up for on the move's side
         "confirm_premium": 250000,      # CONFIRMED: at least this much ...
         "confirm_repeats": 2,           # ... in at least this many separate minutes (one order split in two is one buyer)
         "response_minutes": 5,          # PRICE RESPONSE: what price did over the last N minutes
@@ -628,9 +635,9 @@ DEFAULTS = {
         "pbp_flow_seconds": 120,        # ... calls / puts bought over the last N seconds
         "pbp_flow_min": 25000,          # ... option premium under this is no real flow
         "pbp_quiet": False,             # off: when nothing is going on at the place (no tape, no book, no option flow) the chart stays quiet
-        "lean_min": 2,                  # WHO HAS THE TAPE: this many reasons one way (levels taken, new low / high of day, lower lows, the flow) before a side has it
+        "lean_min": 2,                  # WHO IS IN CONTROL: this many reasons one way (levels taken, new low / high of day, lower lows, the flow) before a side has it
         "lean_hold_minutes": 10,        # ... a side keeps the tape at least this long before the other side can take it (a bounce is "trying" until then)
-        "lean_neutral_minutes": 3,      # ... the reasons gone (levels recovered, flow even) this long: no side has the tape
+        "lean_neutral_minutes": 3,      # ... the reasons gone (levels recovered, flow even) this long: neither side is in control
         "lean_flow_min": 250000,        # ... puts (calls) count as a reason from this much, and at least twice the other side
         "attempt_minutes": 8,           # THE STORYLINE: the other side is TRYING; this long to take their level back on a close, else it failed
         "attempt_rest_minutes": 3,      # ... a rest between attempts
@@ -654,12 +661,27 @@ DEFAULTS = {
                                         # with speed, programs, calls / puts pounded, the open read) judged 5 and 15 minutes later
         "hit_atr": 0.10,                # a HIT: price moved at least this much of the daily ATR the call's way at 15 minutes (a MISS: the other way)
     },
-    "optmoney": {
-        # OPTION MONEY (option_money.py): option max pain, the big strikes, call vs put money, the expected move, opening money,
-        # at the ask on your contract. From Quant Data's tools when your key opens them, else from the desk's own data
+    "phrases": {
+        # THE PHRASE LIST: the voice says each call's built-in line, or in turn a version you APPROVED (the DESK AI
+        # writes versions, they wait as PENDING until you approve them). Off = the built-in lines only
+        "use_approved": True,
+    },
+    "callbook": {
+        # THE CALL BOOK: a card for every call THE DESK SCORE judges: what the desk saw (T&S, LEVEL II, who is in
+        # control, the flow prints, the candles, the levels, the option money), what happened at 5 / 15 / 30 min,
+        # target or stop first, the level-hold grade, your 👍 / 👎 and a note, a picture and the replay
         "enabled": True,
-        "drift_seconds": 60,            # how often each tool is asked, per symbol (Quant Data allows 240 calls a minute)
-        "exposure_seconds": 300,
+        "pictures": True,               # a picture of the chart, the T&S and the flow when the desk is open in a browser
+        "pic_days": 60,                 # pictures are kept this many days
+        "card_days": 0,                 # cards are kept this many days (0 = forever)
+        "target_atr": 0.5,              # with no play target / stop the call's way: the target is this much of the daily ATR ...
+        "stop_atr": 0.25,               # ... and the stop this much the other way (which one price reaches first)
+    },
+    "optmoney": {
+        # OPTION MONEY (option_money.py): option max pain, the big strikes, the flow lean, what options expect, new money overnight,
+        # paid up / sold down on your contract. From Quant Data's tools when your key opens them, else from the desk's own data
+        "enabled": True,
+        "exposure_seconds": 300,        # how often each tool is asked, per symbol (Quant Data allows 240 calls a minute)
         "maxpain_seconds": 900,
         "oi_seconds": 1800,
         "term_seconds": 900,
@@ -668,9 +690,9 @@ DEFAULTS = {
         "max_symbols": 15,
         "strikes_each_side": 3,         # BIG STRIKES drawn above and below price
         "strike_near_atr": 0.5,         # a big strike this close (x the daily ATR) ahead of a call counts as IN THE WAY
-        "lean_min_dollars": 250000,     # call minus put money past this = the money leans CALLS / PUTS (else EVEN)
+        "lean_min_prints": 3,           # OPTION FLOW LEAN: at least this many prints today, one side half again the other = UP / DOWN
         "chart_lines": True,            # MAX PAIN and the BIG STRIKES on the stock chart
-        "tools": {},                    # a tool's path, only if Quant Data moves it (e.g. {"net_drift": "/v1/options/tool/net-drift"})
+        "tools": {},                    # a tool's path, only if Quant Data moves it (e.g. {"exposure": "/v1/options/tool/exposure-by-strike"})
     },
     "gmail": {
         # DAN'S DAILY: the Market Notes email (Access A Trader) read from your Gmail over IMAP. The app password goes

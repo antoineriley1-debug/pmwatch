@@ -134,7 +134,7 @@ class ResponseTests(unittest.TestCase):
     def test_selling_absorbed(self):
         fr = story.flow_read([], 10_000.0, CFG)
         r = story.response(self.mins([100.0] * 6), fr, {"buy_pct": 25, "ratio": 1.8}, 0.10, CFG)
-        self.assertEqual(r["text"], "Sellers hitting it and it won't go down: they're getting absorbed")
+        self.assertEqual(r["text"], "Sellers are accepting lower prices to get out and it won't go down: they're getting absorbed")
 
 
 class StoryRunTests(unittest.TestCase):
@@ -164,7 +164,7 @@ class StoryRunTests(unittest.TestCase):
         self.assertTrue(out["attention"])
         self.assertIn("major PS60 confluence around 145.00", out["now"])
         self.assertIn("Seller reloading at 145.00 ★ · buyers absorbed", out["now"])
-        self.assertIn("Buyers keep lifting 145.00 and the seller keeps reloading", out["now"])
+        self.assertIn("Buyers keep paying up at 145.00 and the seller keeps reloading", out["now"])
         self.assertIn("The flow is starting, not confirmed yet", out["now"])
         self.assertTrue(any("Seller reloading at 145.00 ★" in s["text"] and "supply sitting on it" in s["text"] for s in out["said"]))
         # consumed: through 145 and the prior-day high, calls building
@@ -199,7 +199,7 @@ class StoryRunTests(unittest.TestCase):
         self.run_one(sb, t + 60, 145.20)
         self.run_one(sb, t + 200, 145.05)
         out = self.run_one(sb, t + 260, 144.80)
-        self.assertTrue(any("failed break" in s["text"] for s in out["said"]), [f[1] for f in sb.feed])
+        self.assertTrue(any("price hit supply" in s["text"] or "price hit demand" in s["text"] for s in out["said"]), [f[1] for f in sb.feed])
 
 
 class EngineTests(unittest.TestCase):
@@ -375,9 +375,9 @@ class PlayByPlayTests(unittest.TestCase):
         self.assertIsNotNone(p)
         self.assertIn("pivot 145.00", p)
         self.assertIn("price 145.02", p)
-        self.assertIn("Buyers stepping up, 70% of the tape lifting the offer", p)
+        self.assertIn("Buyers are paying higher prices to get in, 70% of the tape", p)
         self.assertIn("Reload buyer at 145.00 RELOADING, 6,000 shares traded into him", p)
-        self.assertIn("Calls being bought at the ask (biggest 147 call $90K): calls $90K, no puts against them in the last two minutes", p)
+        self.assertIn("Buyers paying up for calls: 1 call print, no puts against them in the last two minutes. This one: $90K at the 147 strike", p)
         self.assertTrue(any(w in p.lower() for w in story.PBP_READ["defend"]), p)
         self.assertTrue(any(x["topic"] == "pbp" for x in out["said"]))      # said out loud: the first read at the place
         self.assertTrue(any(f[3] == "pbp" for f in sb.feed))
@@ -388,8 +388,8 @@ class PlayByPlayTests(unittest.TestCase):
         out = self.go(sb, t, 144.97, pace={"state": "FAST", "buy_pct": 25, "ratio": 1.6},
                       flow=[{"t": t - 20, "cp": "P", "side": "ask", "premium": 60000, "otm_pct": 2.0, "dte": 1, "strike": 143}])
         p = out["play"]
-        self.assertIn("Sellers stepping up, 75% of the tape hitting the bid", p)
-        self.assertIn("Puts being bought at the ask (biggest 143 put $60K): puts $60K, no calls against them", p)
+        self.assertIn("Sellers are accepting lower prices to get out, 75% of the tape", p)
+        self.assertIn("Buyers paying up for puts: 1 put print, no calls against them in the last two minutes. This one: $60K at the 143 strike", p)
         self.assertTrue(any(w in p.lower() for w in story.PBP_READ["reject"]), p)
 
     def test_tape_against_the_options_is_mixed(self):
@@ -495,16 +495,16 @@ class CoachTests(unittest.TestCase):
 
 class VersusTests(unittest.TestCase):
     def test_puts_against_calls_with_the_gap(self):
-        self.assertEqual(story.versus(1_200_000, 300_000, "puts", "calls"), "puts $1.2M vs calls $300K, puts out in front by $900K, 4 to 1")
-        self.assertEqual(story.versus(500_000, 250_000, "calls", "puts"), "calls $500K vs puts $250K, calls out in front by $250K, 2.0 to 1")
-        self.assertEqual(story.versus(100_000, 95_000, "calls", "puts"), "calls $100K vs puts $95K, about even")
-        self.assertEqual(story.versus(80_000, 0, "puts", "calls"), "puts $80K, no calls against them")
+        self.assertEqual(story.versus(12, 3, "puts", "calls"), "12 put prints vs 3 call prints, puts out in front 4 to 1")
+        self.assertEqual(story.versus(6, 3, "calls", "puts"), "6 call prints vs 3 put prints, calls out in front 2.0 to 1")
+        self.assertEqual(story.versus(10, 9, "calls", "puts"), "10 call prints vs 9 put prints, about even")
+        self.assertEqual(story.versus(1, 0, "puts", "calls"), "1 put print, no calls against them")
 
     def test_flow_state_carries_the_comparison(self):
         t = ny_t(2026, 10, 5, 11, 0)
         fr = story.flow_read(prints("P", 600_000, 3, t) + prints("C", 100_000, 2, t), t, CFG)
         fs = story.flow_state(fr, False, CFG)
-        self.assertIn("puts $600K vs calls $100K, puts out in front by $500K, 6 to 1", fs["text"])
+        self.assertIn("3 put prints vs 2 call prints, puts out in front 1.5 to 1", fs["text"]); self.assertNotIn("$600K", fs["text"])
 
 
 class HypeTests(unittest.TestCase):
@@ -816,7 +816,7 @@ class TradeMpTests(unittest.TestCase):
     def test_weak_tape_market_and_puts_say_take_some_profit(self):
         sb, t = story.Story(), ny_t(2026, 10, 5, 11, 0)
         story.trade_read(sb, t, self.trade(), None, 145.0, 0.3, None, None, CFG)
-        fr = {"C": {"now_usd": 10_000}, "P": {"now_usd": 400_000}}
+        fr = {"C": {"now_usd": 10_000, "now_prints": 1}, "P": {"now_usd": 400_000, "now_prints": 6}}
         pace = {"state": "FAST", "buy_pct": 20, "ratio": 2.0}
         mkt = {"dir": "down", "text": "SPY down 0.6%, under VWAP; QQQ down 0.9%, under VWAP."}
         rm = {"to": 147.0, "name": "daily 89 EMA", "dollars": 1.6, "thin": False}
@@ -826,7 +826,7 @@ class TradeMpTests(unittest.TestCase):
         out = story.trade_read(sb, t + 200, self.trade(pnl=40.0), None, 145.40, 0.3, None, rm, CFG, pace, mkt, fr)
         w = [w for k, w in out if k == "weak"]
         self.assertTrue(w, out)
-        self.assertIn("SPY down 0.6%", w[0]); self.assertIn("puts $400K vs calls $10K", w[0]); self.assertIn("not a pullback", w[0])
+        self.assertIn("SPY down 0.6%", w[0]); self.assertIn("6 put prints vs 1 call print", w[0]); self.assertNotIn("$400K", w[0]); self.assertIn("not a pullback", w[0])
         self.assertIn("paying yourself", w[0])
         for bad in ("fading", "stale", "gone"):
             self.assertNotIn(bad, w[0].lower())
@@ -852,14 +852,14 @@ class TradeMpTests(unittest.TestCase):
         sb, t = story.Story(), ny_t(2026, 10, 5, 11, 0)
         tr = self.trade(dir="short", what="short 100 AAPL from 145.00", stop=145.40, target=144.0, key=("short", -100, ()))
         story.trade_read(sb, t, tr, None, 145.0, 0.3, None, None, CFG)
-        fr = {"C": {"now_usd": 450_000}, "P": {"now_usd": 5_000}}
+        fr = {"C": {"now_usd": 450_000, "now_prints": 7}, "P": {"now_usd": 5_000, "now_prints": 1}}
         pace = {"state": "SURGE", "buy_pct": 80, "ratio": 2.2}
         mkt = {"dir": "up", "text": "SPY up 0.7%, over VWAP."}
         story.trade_read(sb, t + 10, dict(tr, pnl=40.0), None, 144.60, 0.3, None, None, CFG, pace, mkt, fr)
         out = story.trade_read(sb, t + 200, dict(tr, pnl=40.0), None, 144.60, 0.3, None, None, CFG, pace, mkt, fr)
         w = [w for k, w in out if k == "weak"]
         self.assertTrue(w, out)
-        self.assertIn("buyers own the tape, 80%", w[0]); self.assertIn("calls $450K vs puts $5K", w[0])
+        self.assertIn("buyers are paying higher prices to get in, 80%", w[0]); self.assertIn("7 call prints vs 1 put print", w[0])
 
 
 class StructureTests(unittest.TestCase):
@@ -918,13 +918,13 @@ class SecondEntryWatchTests(unittest.TestCase):
         self.assertEqual(out[0][0], "set"); self.assertIn("Second entry marked at 146.00, 120 cents away", out[0][1])
         said = []
         for i, px_ in enumerate((145.00, 145.30, 145.52, 145.76, 145.92, 146.05, 146.20)):
-            said += story.second_entry_watch(sb, t + 10 * (i + 1), play, px_, 0.3, {"tail": "Buyers stepping up, 70% of the tape lifting the offer"}, None, CFG)
+            said += story.second_entry_watch(sb, t + 10 * (i + 1), play, px_, 0.3, {"tail": "Buyers are paying higher prices to get in, 70% of the tape"}, None, CFG)
         kinds = [k for k, _w in said]
         self.assertEqual(kinds, ["near", "near", "near", "near", "through"])
         self.assertIn("a dollar away", said[0][1]); self.assertIn("50 cents away", said[1][1]); self.assertIn("a quarter away", said[2][1])
         self.assertIn("a dime away", said[3][1]); self.assertIn("Get ready", said[3][1])
         self.assertIn("Through the second entry 146.00", said[4][1]); self.assertIn("it should go now", said[4][1])
-        self.assertIn("Buyers stepping up", said[4][1])
+        self.assertIn("Buyers are paying higher prices to get in", said[4][1])
         # the build, a minute on
         out = story.second_entry_watch(sb, t + 200, play, 146.40, 0.3, None, "SECOND_ENTRY", CFG)
         self.assertEqual(out[0][0], "build")

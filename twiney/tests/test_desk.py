@@ -112,13 +112,17 @@ class OptionFlowTests(unittest.TestCase):
                            "size": 500, "price": 3.0, "underlying_price": 100.0, "aggressor": "ASK", "flow_type": "SWEEP", "timestamp": 2000}, 2000.0)
             self.assertEqual((p["cp"], p["side"], p["kind"], p["premium"], p["otm_pct"]), ("C", "ask", "sweep", 150000.0, 5.0))
             e.on_flow(p, 2000.0)
-            self.assertFalse([a for a in e.alerts if a["label"].startswith("UNUSUAL")])   # one print is not a pattern
-            e.on_flow(dict(p, t=2030.0, strike=106.0), 2030.0)
+            self.assertFalse([a for a in e.alerts if a["label"].startswith("UNUSUAL")])   # $150K: under the one-print bar
+            e.on_flow(dict(p, t=2030.0, strike=106.0, premium=250000.0), 2030.0)
             calls = [a for a in e.alerts if a["label"] == "UNUSUAL CALLS"]
             self.assertEqual(len(calls), 1)
-            self.assertIn("$300K of calls bought at the ask in 2 prints", calls[0]["text"])
+            # the one print that hit, never a total
+            self.assertIn(f"$250K just hit {sym} 106 calls", calls[0]["text"])
+            self.assertIn("buyers paid up", calls[0]["text"])
+            self.assertEqual(calls[0]["premium"], 250000)
+            e.on_flow(dict(p, t=2035.0, strike=106.0, premium=250000.0), 2035.0)       # same strike: inside the cooldown
             self.assertTrue(any(v["kind"] == "flow" for v in e.voice))
-            e.on_flow(dict(p, t=2040.0), 2040.0)                                        # no repeat inside the cooldown
+            e.on_flow(dict(p, t=2040.0), 2040.0)                                        # small print: nothing
             self.assertEqual(len([a for a in e.alerts if a["label"] == "UNUSUAL CALLS"]), 1)
             # the play read carries the flow, and a trade opened now journals it
             snap = e.snapshot(2041.0)
@@ -185,14 +189,14 @@ class IndexFlowTests(unittest.TestCase):
             e.on_flow(dict(base, symbol="SPY", t=1000.0 + i), 1000.0 + i)
         self.assertFalse([a for a in e.alerts if a["label"].startswith("UNUSUAL")])
         e.set_flow_alerts("all", 1010.0)
-        # $2M of SPY calls in 2 prints would trip a stock; an index needs $5M in 3 prints
-        e.on_flow(dict(base, symbol="QQQ", t=1020.0), 1020.0); e.on_flow(dict(base, symbol="QQQ", t=1021.0), 1021.0)
-        self.assertFalse([a for a in e.alerts if a["symbol"] == "QQQ"])
+        # a $1M print would trip a stock; an index needs one $5M print (never added up)
         for i in range(4):
-            e.on_flow(dict(base, symbol="QQQ", premium=1500000.0, t=1030.0 + i), 1030.0 + i)
+            e.on_flow(dict(base, symbol="QQQ", t=1020.0 + i), 1020.0 + i)
+        self.assertFalse([a for a in e.alerts if a["symbol"] == "QQQ"])
+        e.on_flow(dict(base, symbol="QQQ", premium=5000000.0, t=1030.0), 1030.0)
         self.assertTrue([a for a in e.alerts if a["symbol"] == "QQQ" and a["label"] == "UNUSUAL CALLS"])
         self.assertTrue(any(v["symbol"] == "QQQ" and v["kind"] == "flow" for v in e.voice))
         # a stock off the watchlist is called at the normal bar when ALL is on
-        e.on_flow(dict(base, symbol="COIN", premium=150000.0, t=1040.0), 1040.0); e.on_flow(dict(base, symbol="COIN", premium=150000.0, t=1041.0), 1041.0)
+        e.on_flow(dict(base, symbol="COIN", premium=300000.0, t=1040.0), 1040.0)
         self.assertTrue([a for a in e.alerts if a["symbol"] == "COIN"])
         self.assertEqual(e.snapshot(1042.0)["flow_alerts"], "all")

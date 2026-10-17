@@ -18,7 +18,7 @@ class ClassifyTests(unittest.TestCase):
         self.assertEqual(classify(story("se:through")), ("SECOND ENTRY LIVE", 1))
         self.assertEqual(classify(story("se:through", "bid")), ("SECOND ENTRY LIVE", -1))
         self.assertEqual(classify(story("hype", "bid")), ("CALLS / PUTS POUNDED", -1))
-        self.assertEqual(classify(story("break:PDH")), ("LEVEL BREAK (CLOSE)", 1))
+        self.assertIsNone(classify(story("break:PDH")))      # scored only once it has held: LEVEL BUYERS TOOK
         self.assertEqual(classify(story("openread")), ("OPEN READ", 1))
         self.assertEqual(classify(story("struct:ll", "bid")), ("STRUCTURE (60 / DAILY)", -1))
         self.assertIsNone(classify(story("coach")))        # no direction: not scored

@@ -304,6 +304,10 @@ class Engine:
         self.jlog_path = None     # recordings/desk.log: one JSON line per connection / order / fill / error event
         from .scorecard import Scorecard
         self.score = Scorecard(None, cfg.get("score") or {})   # THE DESK SCORE: every directional call, judged 5 / 15 min later
+        from .callbook import CallBook
+        self.callbook = CallBook(None, cfg)                    # THE CALL BOOK: a card per judged call (the folder is set at start)
+        from .phrases import Phrases
+        self.phrases = Phrases(None, cfg)                      # THE PHRASE LIST: the voice says the built-in line or one Twiney approved
         from .option_money import OptionMoney
         self.optmoney = OptionMoney(cfg)   # OPTION MONEY: max pain, big strikes, call vs put money, expected move, opening money
         self._om_cache = {}
@@ -342,7 +346,7 @@ class Engine:
         self._alert_seq = 0
         self.remove_listeners = []
         self.equity = deque(maxlen=400)              # big equity prints (lit / dark), newest first
-        self.urg = {}                                # (symbol, strike, cp, expiry) -> prints bought at the ask, recent
+        self.urg = {}                                # (symbol, strike, cp, expiry) -> prints buyers paid up for, recent
         self.urg_said = {}
         self.urgent_keys = set()
         self.urg_hist = deque(maxlen=6000)          # every urgent-type print of the session (the ticker search)
@@ -385,6 +389,10 @@ class Engine:
                     row = self.score.note(event, event.get("t") or self.last_t, st.price(), atr)
                     if row is not None:          # the option money at the call, in its direction: for the ODDS
                         row["reads"] = self.optmoney.reads(self.optmoney_view(st.symbol, event.get("t") or self.last_t), row["dir"], atr)
+                        try:                     # THE CALL BOOK: what the desk saw at the call
+                            self.callbook.add(row, event, self._callbook_ctx(st, row["t"]))
+                        except Exception:
+                            log.exception("call book")
             except Exception:
                 log.exception("scorecard note")
         if self.jlog_path and event.get("ev") in self.LOGGED_EVENTS:
@@ -975,6 +983,40 @@ class Engine:
         memo.update(t=t, v=merged)
         return merged
 
+    def _callbook_ctx(self, st, t):
+        """What the desk saw at a call, for its card in THE CALL BOOK: the last 30 prints, the top of the LEVEL II, who
+        is in control, the option flow prints on this stock in the last 15 minutes (each on its own), the candles, the
+        levels, the play's target / stop, and the recording running now (to replay that moment)."""
+        tape = [{"t": round(p["t"], 1), "price": p["price"], "size": round(p["size"]), "side": p["side"], "large": bool(p.get("large"))}
+                for p in st.tape.recent(30)]
+        rows = 5
+        book = {"bids": [[p, round(sz), n] for p, sz, n in st.book.levels(BID, rows)] if st.book else [],
+                "asks": [[p, round(sz), n] for p, sz, n in st.book.levels(ASK, rows)] if st.book else []}
+        # who is in control: the last two minutes of the tape, the same 60% rule as the T&S header
+        bv = sv = 0.0
+        for p in st.tape.recent(400):
+            if t - p["t"] > 120:
+                break
+            if p["side"] == "buy":
+                bv += p["size"]
+            elif p["side"] == "sell":
+                sv += p["size"]
+        tot = bv + sv
+        control = ("BUYERS IN CONTROL" if tot and bv / tot >= 0.6 else "SELLERS IN CONTROL" if tot and sv / tot >= 0.6
+                   else "NEITHER SIDE IN CONTROL")
+        flow = [{"t": round(p["t"], 1), "cp": p.get("cp"), "strike": p.get("strike"), "expiry": p.get("expiry"), "premium": round(p.get("premium") or 0),
+                 "side": p.get("side"), "kind": p.get("kind"), "dte": p.get("dte"), "otm_pct": p.get("otm_pct"), "id": p.get("id")}
+                for p in self.flow._window(st.symbol, t, 15)][-40:]
+        candles = st.bar_list(90)
+        levels = [{"name": L["name"], "price": L["price"]} for L in self.key_levels(st, t)]
+        for k, nm in (("trigger", "PIVOT"), ("second_entry", "2ND ENTRY"), ("target", "TARGET"), ("stop", "STOP"), ("mp", "MP")):
+            if st.play.get(k):
+                levels.append({"name": nm, "price": float(st.play[k]), "mine": True})
+        plan = {"target": st.play.get("target") or st.play.get("mp"), "stop": st.play.get("stop")}
+        rec = getattr(self.recorder, "path", None) if self.recorder is not None else None
+        return {"tape": tape, "book": book, "control": control, "flow": flow, "candles": candles, "levels": levels, "plan": plan,
+                "replay": {"file": os.path.basename(rec), "at": round(t, 1)} if rec else None}
+
     def _level_watch(self, st, t, last, tick):
         """REJECTED / BOUNCED / BUYERS TOOK / SELLERS TOOK at the key levels and your lines: a call, the voice, the
         story feed and the log, all with the tape and the reloaders read at that same level."""
@@ -1038,9 +1080,9 @@ class Engine:
             elif ctl == "buyers" and bp <= 40:
                 words.append(f"buyers in control, price up {self._cents(abs(drift))} in fifteen seconds; sellers hitting and getting absorbed"); short.append(f"buyers in control · +{abs(drift):.2f}")
             elif bp >= 60:
-                words.append(f"buyers stepping up, {bp} percent at the offer"); short.append(f"buyers {bp}%")
+                words.append(f"buyers are paying higher prices to get in, {bp} percent of the tape"); short.append(f"buyers {bp}%")
             elif bp <= 40:
-                words.append(f"sellers stepping up, {100 - bp} percent at the bid"); short.append(f"sellers {100 - bp}%")
+                words.append(f"sellers are accepting lower prices to get out, {100 - bp} percent of the tape"); short.append(f"sellers {100 - bp}%")
             else:
                 words.append("two sided tape"); short.append(f"two-sided {bp}%")
         if pc.get("ratio"):
@@ -1081,7 +1123,7 @@ class Engine:
             words.append(f"and somebody knows something: {'calls' if k is kc else 'puts'} being hit, {narrative.say_dollars(k.get('dollars') or 0)}")
             short.append(f"KNOWS {'calls' if k is kc else 'puts'} {narrative.say_dollars(k.get('dollars') or 0)}")
             st._ctx_flow = self._receipt(st.symbol, "C" if k is kc else "P", k.get("ids"),
-                                         f"{k.get('max_dte')} days or less, out of the money, bought at the ask, last {k.get('window_minutes')} min")
+                                         f"{k.get('max_dte')} days or less, out of the money, buyers paid up, last {k.get('window_minutes')} min")
         else:
             mx = float((self.cfg.get("story") or {}).get("flow_max_dte", 7))
             cutoff = t - 15 * 60
@@ -1092,9 +1134,12 @@ class Engine:
             if max(calls, puts) >= 100000:
                 big = "calls" if calls >= puts else "puts"
                 st._ctx_flow = self._receipt(st.symbol, "C" if calls >= puts else "P", [m.get("id") for m in (cm if calls >= puts else pm)],
-                                             f"{mx:g} days or less, bought at the ask, last 15 min")
-                words.append(f"{big} flow behind it, {narrative.say_dollars(max(calls, puts))} in 15 minutes")
-                short.append(f"{big} {narrative.say_dollars(max(calls, puts))}")
+                                             f"{mx:g} days or less, buyers paid up, last 15 min")
+                side_ = cm if calls >= puts else pm
+                last_ = max(side_, key=lambda m: m["t"])
+                words.append(f"{big} flow behind it, {len(side_)} {big[:-1]} prints in 15 minutes, buyers paid up. "
+                             f"The last one, {self._spoken(last_.get('prem') or 0)} at the {float(last_['strike']):g} strike")
+                short.append(f"{big} ×{len(side_)}")
         return ", ".join(words), " · ".join(short)
 
     def _safe_view(self, fn, st, t, what):
@@ -1174,7 +1219,7 @@ class Engine:
                 against = (f"STEADY {'SELLING' if prog['side'] == 'SELL' else 'BUYING'} AGAINST YOUR {mine.upper()}: "
                            f"~{prog['part']}% of volume since {prog['since']}")
             if kids and mine and ((kids["side"] == "BUY") != (mine == "long")) and not against:
-                against = (f"CHILD ORDERS AGAINST YOUR {mine.upper()}: {kids['n']} prints of {kids['size']} {'at the ask' if kids['side'] == 'BUY' else 'at the bid'} "
+                against = (f"CHILD ORDERS AGAINST YOUR {mine.upper()}: {kids['n']} prints of {kids['size']} {'buyers paid up' if kids['side'] == 'BUY' else 'sellers sold down'} "
                            f"every {kids['every']}s since {kids['since']}")
             v = {"program": prog, "tod": tod, "fund": fund[:6], "walk": walk, "levels": flev[:8], "guides": gd, "against": against, "mine": mine,
                  "kids": {k: v_ for k, v_ in kids.items() if k != "sizes_set"} if kids else None}
@@ -1218,7 +1263,7 @@ class Engine:
         kd = v.get("kids")
         if kd:
             who = "buyer" if kd["side"] == "BUY" else "seller"
-            at = "at the ask" if kd["side"] == "BUY" else "at the bid"
+            at = "buyers paid up" if kd["side"] == "BUY" else "sellers sold down"
             what = "CHILD ORDERS · BUY PROGRAM" if kd["side"] == "BUY" else "CHILD ORDERS · SELL PROGRAM"
             calls.append(((("KIDS", kd["side"])), what,
                           f"{what}: {kd['n']} prints of {kd['size']:,} {at} in {kd['minutes']:g} min, one every {kd['every']:g} s, "
@@ -1354,10 +1399,37 @@ class Engine:
         c = int(round(d * 100))
         return f"{c} cents" if c < 100 else f"{d:.2f} dollars"
 
+    _NUMS = ("zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve",
+             "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty")
+
+    def _took_words(self, ev, nm, p, last):
+        """A level taken: said only once price has held on that side (levelwatch), with how long ago it was taken,
+        and 10 minutes after, how it held."""
+        buyers = (ev.get("took") or ev["kind"]) == "BUYERS TOOK"
+        who, side, back = ("Buyers", "above", "under") if buyers else ("Sellers", "under", "above")
+        m = int(ev.get("minutes") or 0)
+        ago = (self._NUMS[m] if 0 <= m < len(self._NUMS) else str(m)) + (" minute ago" if m == 1 else " minutes ago")
+        away = abs(last - p) if last is not None else 0.0
+        n = int(ev.get("dips") or 0)
+        f = {"who": who, "level": nm, "price": fmt_price(p), "ago": ago, "last": fmt_price(last) if last is not None else "",
+             "away": f"${away:.2f}", "side": side, "back": back, "times": "once" if n == 1 else "twice" if n == 2 else f"{n} times"}
+        kind = "level.took" if ev["kind"] != "HELD" else {"STRONG": "level.strong", "HOLDING": "level.holding",
+                                                         "NOT STRONG": "level.not_strong"}.get(ev["grade"], "level.lost")
+        return self._phrase(kind, f)
+
+    def _phrase(self, kind, fields):
+        """A spoken line: the built-in one, or (in turn) a version Twiney approved on THE PHRASE LIST."""
+        from .phrases import KINDS
+        default = KINDS[kind]["default"].format(**{k: fields.get(k, "") for k in KINDS[kind]["fields"]})
+        try:
+            return self.phrases.pick(kind, fields, default)
+        except Exception:
+            return default
+
     def _level_alert(self, st, ev, t):
         kind, p = ev["kind"], ev["price"]
         from_below = ev.get("from") == "below"
-        up = kind in ("BOUNCED", "BUYERS TOOK") or (kind in ("COMING INTO", "AT") and from_below)
+        up = kind in ("BOUNCED", "BUYERS TOOK") or (kind in ("COMING INTO", "AT") and from_below) or (kind == "HELD" and ev.get("took") == "BUYERS TOOK")
         ctx_w, ctx_s = self._level_context(st, p, t, from_below)
         nm = ev["say"]
         last = ev.get("last")
@@ -1368,22 +1440,48 @@ class Engine:
                     else f"Testing {nm}, {fmt_price(p)}. Price {fmt_price(last)}, {self._cents(abs(gap))} {'under' if gap < 0 else 'over'} it")
         head = {"COMING INTO": f"Coming into {nm}, {fmt_price(p)}, from {'below' if from_below else 'above'}" + (f". Price {fmt_price(last)}" if last is not None else ""),
                 "AT": at_words,
-                "REJECTED": f"Rejected at {nm}, {fmt_price(p)}. Sellers defending it, pulling off",
-                "BOUNCED": f"Bounced off {nm}, {fmt_price(p)}. Buyers defending it, pulling off",
-                "BUYERS TOOK": f"Closed over {nm}, {fmt_price(p)}. Buyers took it",
-                "SELLERS TOOK": f"Closed under {nm}, {fmt_price(p)}. Sellers took it"}[kind]
-        words = head + (". " + ctx_w[0].upper() + ctx_w[1:] if ctx_w else "")
-        text = f"{kind} {ev['name']} {fmt_price(p)}" + (f" · price {fmt_price(last)}" if last is not None and abs(gap) >= tk * 0.5 else "") + (f" · {ctx_s}" if ctx_s else "")
+                "REJECTED": self._phrase("level.rejected", {"level": nm, "price": fmt_price(p)}) if kind == "REJECTED" else "",
+                "BOUNCED": self._phrase("level.bounced", {"level": nm, "price": fmt_price(p)}) if kind == "BOUNCED" else "",
+                "BUYERS TOOK": "", "SELLERS TOOK": "", "HELD": ""}[kind] or (
+                    self._took_words(ev, nm, p, last) if kind in ("BUYERS TOOK", "SELLERS TOOK", "HELD") else "")
+        words = head + (". " + ctx_w[0].upper() + ctx_w[1:] if ctx_w and kind != "HELD" else "")
+        label = kind
+        if kind == "HELD":                           # the 10-minute call: how the level that was taken has held
+            label = f"{ev['took']} · {ev['grade']}"
+            text = f"{label} {ev['name']} {fmt_price(p)} · {ev.get('minutes', 10)} min ago · price {fmt_price(last)}" + (
+                f" · dipped back {ev['dips']}×" if ev.get("dips") else "")
+        else:
+            text = f"{kind} {ev['name']} {fmt_price(p)}" + (f" · held {ev['minutes']} min" if kind.endswith("TOOK") and ev.get("minutes") else "") + (
+                f" · price {fmt_price(last)}" if last is not None and abs(gap) >= tk * 0.5 else "") + (f" · {ctx_s}" if ctx_s else "")
         voice = (self.cfg.get("levels") or {}).get("voice", True)
-        alert = {"t": t, "symbol": st.symbol, "label": kind, "price": fmt_price(p), "side": "bid" if not up else "ask",
+        good = up if kind != "HELD" else (ev["grade"] != "LOST") == up
+        alert = {"t": t, "symbol": st.symbol, "label": label, "price": fmt_price(p), "side": "bid" if not good else "ask",
                  "role": "level", "text": text, "words": f"{st.symbol}. {words}" if voice else None, "code": ev.get("code"),
-                 "zone": ev.get("zone"), "last": last}
+                 "zone": ev.get("zone"), "last": last, "lvl": p}
+        if kind == "HELD":
+            alert["grade"] = ev["grade"]
+            try:
+                self.score.grade(st.symbol, p, ev["took"], ev["grade"])     # saved with the DESK SCORE call it grades
+                self.callbook.grade(st.symbol, p, ev["took"], ev["grade"])  # and on its card in THE CALL BOOK
+            except Exception:
+                pass
         if ctx_w and st.__dict__.get("_ctx_flow") and ("knows" in ctx_w or "flow behind" in ctx_w):
             alert["flow"] = st._ctx_flow
-        alert["key"] = f"{round(t, 2)}|{st.symbol}|{kind}|{p}"
+        alert["key"] = f"{round(t, 2)}|{st.symbol}|{label}|{p}"
         self.alerts.appendleft(alert)
         self._rec(dict(alert, ev="alert"))
         self.log(st.symbol, text, t, kind="level")
+        if kind == "HELD":
+            try:
+                st.storybook.say("level", ("HELD", round(p, 4)), words + ".", "good" if good else "bad", t, repeat=300.0)
+            except Exception:
+                pass
+            for fn in self.listeners:
+                try:
+                    fn(alert)
+                except Exception:
+                    pass
+            return
         if st.__dict__.get("_lfu") is None:
             from .levelverdict import LevelFollowUp
             st._lfu = LevelFollowUp()
@@ -1523,7 +1621,7 @@ class Engine:
                 if call.startswith(("BREAKOUT", "BREAKDOWN")):
                     # one call per break of a level; the only second call allowed is the upgrade to WITH SPEED
                     # one call per break of a level PER DIRECTION (a breakout that comes straight back down is a new
-                    # call: the failed break); the only second call allowed is WITHOUT -> WITH speed, same direction
+                    # call: price hit supply / demand); the only second call allowed is WITHOUT -> WITH speed, same direction
                     # a level is its NAME (VWAP moves a cent every few seconds and is still VWAP)
                     nm = p["level"][1]
                     key = ("BREAK", "up" if call.startswith("BREAKOUT") else "down", nm)
@@ -1557,7 +1655,7 @@ class Engine:
                  "role": "pace", "text": text, "words": f"{st.symbol}. {p['words']}" if (self.cfg.get("pace") or {}).get("voice", True) else None}
         fr = p.get("flow_ref")
         if fr and p.get("flow") and fr.get("ids"):
-            alert["flow"] = self._receipt(st.symbol, fr["cp"], fr["ids"], "short-dated, out of the money, bought at the ask")
+            alert["flow"] = self._receipt(st.symbol, fr["cp"], fr["ids"], "short-dated, out of the money, buyers paid up")
         alert["key"] = f"{round(t, 2)}|{st.symbol}|{call}|{lvl[0]}"
         self.alerts.appendleft(alert)
         self._rec(dict(alert, ev="alert"))
@@ -2790,20 +2888,26 @@ class Engine:
             self._flow_scan(p, t, st)
             if (st is None and self.flow_alerts != "all") or not fresh:
                 return                       # a late batch of earlier prints is filed, never called as if it were now
-            u = self.flow.check(p["symbol"], t)
+            u = self.flow.check(p["symbol"], t, p)
             if u is None:
                 return
-            k = lambda v: f"${v / 1e6:.1f}M" if v >= 1e6 else f"${v / 1e3:.0f}K"
             label = "UNUSUAL CALLS" if u["cp"] == "C" else "UNUSUAL PUTS"
             what = "calls" if u["cp"] == "C" else "puts"
-            text = (f"{label}: {k(u['premium'])} of {what} bought at the ask in {u['prints']} prints"
-                    f"{' · ' + str(u['otm_pct']) + '% out of the money' if u['otm_pct'] is not None else ''}"
-                    f"{' · ' + str(u['dte']) + ' days out' if u['dte'] is not None else ''}"
-                    f" · strikes {', '.join(narrative.px(s) for s in u['strikes'])}. Somebody paying up for a move that has not started.")
+            hammer = int(self.flow.cfg.get("hammer_prints", 5))
+            n, win = u.get("side_prints", 1), int(self.flow.cfg.get("window_minutes", 10))
+            # the one print that just hit; several of that kind in the window: a count, and this one named
+            if n >= hammer:
+                head = (f"{what.capitalize()} getting hammered: {n} {what[:-1]} prints in {win} min, buyers paid up on all of them. "
+                        f"This one: {self._k(u['premium'])} at the {float(u['strike']):g} strike" + (f", expiring {self._exp_md(u['expiry'])}" if self._exp_md(u.get("expiry")) else ""))
+            else:
+                head = self._hit(p["symbol"], u)
+            text = (f"{label}: {head}"
+                    f"{' · ' + str(round(u['otm_pct'], 1)) + '% out of the money' if u['otm_pct'] is not None else ''}"
+                    f"{' · ' + str(u['dte']) + ' days out' if u['dte'] is not None else ''}. Somebody paying up for a move that has not started.")
             alert = {"t": t, "symbol": p["symbol"], "label": label, "price": fmt_price(u["spot"]) if u.get("spot") else None,
                      "side": "ask", "role": "flow", "text": text, "premium": u["premium"], "cp": u["cp"],
-                     "flow": self._receipt(p["symbol"], u["cp"], u.get("ids"), f"out of the money, {self.flow.cfg.get('max_dte')} days or less, bought at the ask, last {self.flow.cfg.get('window_minutes')} min"),
-                     "otm_pct": u["otm_pct"], "dte": u["dte"]}
+                     "flow": self._receipt(p["symbol"], u["cp"], u.get("ids"), "this print"),
+                     "otm_pct": u["otm_pct"], "dte": u["dte"], "strike": u.get("strike"), "expiry": u.get("expiry"), "prints": n}
             alert["key"] = f"{round(t, 2)}|{p['symbol']}|{label}|{u['premium']}"
             self.alerts.appendleft(alert)
             self._rec(dict(alert, ev="alert"))
@@ -2814,8 +2918,10 @@ class Engine:
                     pass
             otm = u.get("otm_pct")
             again = u.get("minutes", 1) >= 2       # "they keep scooping" only when it came again in another minute
-            words = (f"unusual {what} buying, {narrative.say_dollars(u['premium'])}"
-                     + (f", {round(otm)} percent out of the money. " + (f"They keep scooping up the {what}." if again else f"One order, {u['prints']} prints. Watch if it comes again.")
+            words = ((self._phrase("flow.hammered", {"what": what.capitalize(), "count": f"{n} {what[:-1]}", "minutes": str(win),
+                                                      "premium": self._spoken(u["premium"]), "strike": f"{float(u['strike']):g}"})
+                      if n >= hammer else "unusual flow, " + self._hit(p["symbol"], u, spoken=True))
+                     + (f", {round(otm)} percent out of the money. " + (f"They keep scooping up the {what}." if again else "Watch if it comes again.")
                         if otm is not None and otm > 0 else
                         f", {abs(round(otm))} percent in the money. That is a hedge or stock replacement, not the dough." if otm is not None and otm <= -3 else
                         f", right at the money." if otm is not None else "."))
@@ -3684,7 +3790,7 @@ class Engine:
 
     def _knows(self, st, side, t):
         """SOMEBODY KNOWS SOMETHING for a level side: a reload BUYER (bid) is confirmed by short-dated out-of-the-money CALLS
-        bought at the ask; a reload SELLER (ask) by PUTS. Cached for the tick so twenty rows cost one read."""
+        buyers paid up for; a reload SELLER (ask) by PUTS. Cached for the tick so twenty rows cost one read."""
         cp = "C" if side == BID else "P"
         cache = st.__dict__.setdefault("_knows_cache", {})
         # good until a new print lands on this name or a second passes: twenty rows, the reloaders list, the pane
@@ -3709,12 +3815,12 @@ class Engine:
             top = k["top"] or {}
             strike = f" {narrative.px(top['strike'])} strike" if top.get("strike") is not None else ""
             dte = f", {round(top['dte'])} day{'s' if round(top['dte']) != 1 else ''} out" if top.get("dte") is not None else ""
-            return (f"SOMEBODY KNOWS SOMETHING: {money(k['dollars'])} of short-dated out-of-the-money {what} bought at the ask in {k['window_minutes']} min"
+            return (f"SOMEBODY KNOWS SOMETHING: {money(k['dollars'])} of short-dated out-of-the-money {what} buyers paid up for in {k['window_minutes']} min"
                     f" ({k['prints']} prints{', ' + str(k['sweeps']) + ' sweeps' if k['sweeps'] else ''}){strike}{dte}. The flow agrees with the reload {who}.")
         if k["dollars"] > 0:
             return (f"some short-dated {what} coming in ({money(k['dollars'])} in {k['prints']} prints), not enough yet" +
                     (f"; the other side has more ({money(k['against'])})" if k["against"] > k["dollars"] else ""))
-        return f"no short-dated out-of-the-money {what} at the ask in the last {k['window_minutes']} min"
+        return f"no short-dated out-of-the-money {what} with buyers paying up in the last {k['window_minutes']} min"
 
     def best_knows(self, st, t):
         """The strongest SOMEBODY KNOWS SOMETHING score on this symbol, either side, 0..1."""
@@ -3775,6 +3881,12 @@ class Engine:
                     self.score.tick(t, {sym: st.price() for sym, st in self.syms.items() if st.price()})
                 except Exception:
                     log.exception("scorecard tick")
+            if self.callbook.open and t - getattr(self, "_cb_t", -1e9) >= 1.0:
+                self._cb_t = t
+                try:
+                    self.callbook.tick(t, {sym: st.price() for sym, st in self.syms.items() if st.price()})
+                except Exception:
+                    log.exception("call book tick")
             dan = getattr(self, "dan", None)
             if dan is not None and t - getattr(self, "_dan_t", -1e9) >= 60.0:   # DAN'S DAILY: the email on its schedule
                 self._dan_t = t
@@ -4115,7 +4227,7 @@ class Engine:
         alert = {"t": t, "symbol": st.symbol, "label": dough["state"] if picked else "FLOW", "price": fmt_price(st.price()), "side": "ask", "role": "flow",
                  "text": text, "premium": dough["dollars"], "cp": cp, "prints": dough["prints"], "words": words,
                  "flow": self._receipt(st.symbol, ("P" if cp == "C" else "C") if against else cp, dough.get("against_ids") if against else dough.get("ids"),
-                                       "short-dated, out of the money, bought at the ask, last " + str(self.flow.cfg.get("dough_window_minutes", 30)) + " min")}
+                                       "short-dated, out of the money, buyers paid up, last " + str(self.flow.cfg.get("dough_window_minutes", 30)) + " min")}
         alert["key"] = f"{round(t, 2)}|{st.symbol}|{dough['state']}"
         self.alerts.appendleft(alert)
         self._rec(dict(alert, ev="alert"))
@@ -4408,6 +4520,32 @@ class Engine:
                 return True
         return False
 
+    _MONTHS = ("January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
+               "November", "December")
+
+    @staticmethod
+    def _k(v):
+        return f"${v / 1e6:.1f}M" if v >= 1e6 else f"${v / 1e3:.0f}K"
+
+    @staticmethod
+    def _exp_md(e):
+        """An expiry as the OPTION FLOW panel shows it: 10/24."""
+        d = str(e or "").replace("-", "")[:8]
+        return f"{d[4:6]}/{d[6:8]}" if len(d) == 8 and d.isdigit() else ""
+
+    def _hit(self, sym, p, spoken=False):
+        """ONE print, named on its own the way the OPTION FLOW panel row shows it: '$10.0M just hit AAPL 230 calls,
+        expiring 10/24, buyers paid up'. Never a total."""
+        what = "calls" if p.get("cp") == "C" else "puts"
+        prem = float(p.get("premium") or 0)
+        k = f"{float(p['strike']):g} " if p.get("strike") is not None else ""
+        d = str(p.get("expiry") or "").replace("-", "")[:8]
+        if spoken:
+            exp = (f", expiring {self._MONTHS[int(d[4:6]) - 1]} {int(d[6:8])}" if len(d) == 8 and d.isdigit() and 1 <= int(d[4:6]) <= 12 else "")
+            return self._phrase("flow.hit", {"premium": self._spoken(prem), "symbol": sym, "strike": k.strip(), "what": what, "expiring": exp})
+        exp = f", expiring {self._exp_md(d)}" if self._exp_md(d) else ""
+        return f"{self._k(prem)} just hit {sym} {k}{what}{exp}, buyers paid up"
+
     @staticmethod
     def _spoken(v):
         """Dollars the voice can say: 1.2 million, 411 thousand."""
@@ -4464,12 +4602,9 @@ class Engine:
                 continue
             if a.get("repeat") and a.get("last") is not None and t - a["last"] < 300:
                 continue
-            what = "calls" if p["cp"] == "C" else "puts"
-            k = lambda v: f"${v / 1e6:.1f}M" if v >= 1e6 else f"${v / 1e3:.0f}K"
             dte = f", {round(p['dte'])} days out" if p.get("dte") is not None else ""
-            self._fire_user_alert(a, "FLOW ALERT", f"FLOW ALERT: {p['symbol']} option flow - {k(p['premium'])} of {what} bought at the ask, "
-                                  f"{narrative.px(p['strike'])} strike{dte}" + (f", stock at {narrative.px(p['spot'])}" if p.get("spot") else ""),
-                                  f"option flow, {self._spoken(p['premium'])} of {what}, {narrative.px(p['strike'])} strike{dte}", t,
+            self._fire_user_alert(a, "FLOW ALERT", f"FLOW ALERT: {self._hit(p['symbol'], p)}{dte}" + (f", stock at {narrative.px(p['spot'])}" if p.get("spot") else ""),
+                                  f"option flow, {self._hit(p['symbol'], p, spoken=True)}", t,
                                   premium=p["premium"], cp=p["cp"], flow=self._receipt(p["symbol"], p["cp"], [p.get("id")], "this print"))
 
     # ---- equity prints (lit / dark) ---------------------------------------------
@@ -4527,16 +4662,13 @@ class Engine:
             cool = lc.get("flow_repeat_cooldown_minutes", 15) * 60.0
             if t - st.rflow_said.get(key, -1e9) >= cool:
                 st.rflow_said[key] = t
-                tot = sum(x["prem"] for x in same)
-                k = lambda v: f"${v / 1e6:.1f}M" if v >= 1e6 else f"${v / 1e3:.0f}K"
                 what = "CALL" if p["cp"] == "C" else "PUT"
-                days = f"{round(p['dte'])} day{'s' if round(p['dte']) != 1 else ''}"
+                again = f" again, ×{len(same)} on this strike in {int(rw / 60)} min"
                 alert = {"t": t, "symbol": st.symbol, "label": "REPEAT FLOW", "price": fmt_price(spot), "side": "ask", "role": "flow",
-                         "text": f"REPEAT {what} FLOW: {st.symbol} {narrative.px(p['strike'])} strike expiring in {days} bought at the ask "
-                                 f"{len(same)} times in {int(rw / 60)} min, {k(tot)} in all, with the stock at {narrative.px(spot)}. "
-                                 f"Short-dated size hitting the same strike: they want a move now.",
-                         "premium": tot, "cp": p["cp"], "strike": p["strike"], "dte": p["dte"], "prints": len(same),
-                         "flow": self._receipt(st.symbol, p["cp"], [x.get("id") for x in same], f"the {narrative.px(p['strike'])} strike, bought at the ask, last {int(rw / 60)} min")}
+                         "text": f"REPEAT {what} FLOW: {self._hit(st.symbol, p).replace(', buyers paid up', '')}{again}, buyers paid up, "
+                                 f"with the stock at {narrative.px(spot)}. Short-dated size hitting the same strike: they want a move now.",
+                         "premium": prem, "cp": p["cp"], "strike": p["strike"], "dte": p["dte"], "expiry": p.get("expiry"), "prints": len(same),
+                         "flow": self._receipt(st.symbol, p["cp"], [x.get("id") for x in same], f"the {narrative.px(p['strike'])} strike, buyers paid up, last {int(rw / 60)} min")}
                 alert["key"] = f"{round(t, 2)}|{st.symbol}|REPEAT FLOW|{p['strike']}{p['cp']}"
                 self.alerts.appendleft(alert)
                 self._rec(dict(alert, ev="alert"))
@@ -4545,7 +4677,11 @@ class Engine:
                         fn(alert)
                     except Exception:
                         pass
-                self._say(st, "flow", key, "rflow", t, f"repeat {what.lower()} flow, {narrative.px(p['strike'])} strike, {days} out, {self._spoken(tot)} total")
+                d_ = str(p.get("expiry") or "").replace("-", "")[:8]
+                exp_ = (f", expiring {self._MONTHS[int(d_[4:6]) - 1]} {int(d_[6:8])}" if len(d_) == 8 and d_.isdigit() and 1 <= int(d_[4:6]) <= 12 else "")
+                self._say(st, "flow", key, "rflow", t, self._phrase("flow.again", {
+                    "premium": self._spoken(prem), "symbol": st.symbol, "strike": f"{float(p['strike']):g}", "what": "calls" if p["cp"] == "C" else "puts",
+                    "expiring": exp_, "count": str(len(same)), "minutes": str(int(rw / 60))}))
 
     # ---- urgent flow: short-dated, out of the money, being pounded ----------------------
 
@@ -4590,7 +4726,7 @@ class Engine:
         text = board.market_watch_text(sym, side, fg, p.get("spot"))
         alert = {"t": t, "symbol": sym, "label": "FLOW WATCH", "price": fmt_price(p.get("spot")), "side": "ask", "role": "conviction",
                  "text": text, "cp": p.get("cp"), "premium": fg["cluster"]["dollars"], "rules": fg["rules"],
-                 "flow": self._receipt(sym, p.get("cp"), fg["cluster"].get("ids"), "short-term, bought at the ask, today"),
+                 "flow": self._receipt(sym, p.get("cp"), fg["cluster"].get("ids"), "short-term, buyers paid up, today"),
                  "words": f"flow watch. {narrative.say_dollars(fg['cluster']['dollars'])} went into short term {'calls' if side == 'long' else 'puts'}"
                           f"{', ' + board.say_expiry(fg['cluster'].get('dte')) if board.say_expiry(fg['cluster'].get('dte')) else ''}, {fg['cluster']['repeats']} times. Not a play yet, no chart work done."}
         alert["key"] = f"{round(t, 2)}|{sym}|FLOW WATCH|{side}"
@@ -4603,7 +4739,7 @@ class Engine:
                 pass
 
     def _urgency(self, p, t, st, live=True):
-        """Every print bought at the ask on a short-dated, out-of-the-money contract counts toward that contract's
+        """Every print buyers paid up for on a short-dated, out-of-the-money contract counts toward that contract's
         urgency. Enough of them fast enough, with size, and it is called URGENT FLOW (watchlist names; every name
         when flow alerts are on for all)."""
         fc = self.cfg.get("flow", {})
@@ -4626,7 +4762,9 @@ class Engine:
             for k in [k for k, v in self.urg.items() if not v or t - v[-1]["t"] > win][:500]:
                 self.urg.pop(k, None)
         u = self._urg_stats(key, rows, t)
-        hot = u["prints"] >= fc.get("urgency_min_prints", 3) and u["dollars"] >= fc.get("urgency_min_dollars", 250000)
+        # called on the count of prints, and one print at least the size: $250K a print on a stock, $5M on an index product
+        need = fc.get("index_min_premium", 5e6) if p["symbol"] in set(fc.get("index_symbols", ())) else fc.get("urgency_min_dollars", 250000)
+        hot = u["prints"] >= fc.get("urgency_min_prints", 3) and max(r["prem"] for r in rows) >= need
         if hot:
             self.urgent_keys.add(key)
         else:
@@ -4638,18 +4776,16 @@ class Engine:
             return
         self.urg_said[key] = t
         what = "CALL" if p["cp"] == "C" else "PUT"
-        k = lambda v: f"${v / 1e6:.1f}M" if v >= 1e6 else f"${v / 1e3:.0f}K"
-        days = f"{round(p['dte'])} day{'s' if round(p['dte']) != 1 else ''}"
         sw = f", {u['sweeps']} of them sweeps" if u["sweeps"] else ""
-        text = (f"URGENT {what} FLOW: {p['symbol']} {narrative.px(p['strike'])} strike, {days} out, {otm:.1f}% out of the money - bought at the ask "
-                f"{u['prints']} times in {int(win / 60)} min{sw}, {k(u['dollars'])} in all" + (", and picking up speed" if u["accel"] else "") +
+        text = (f"URGENT {what} FLOW: {self._hit(p['symbol'], p)}, {otm:.1f}% out of the money - ×{u['prints']} on this strike in "
+                f"{int(win / 60)} min{sw}" + (", and picking up speed" if u["accel"] else "") +
                 (f", stock at {narrative.px(p['spot'])}" if p.get("spot") else "") + ". Short-dated, out of the money, in a hurry: somebody wants this move now.")
-        words = (f"urgent {what.lower()} buying, {narrative.px(p['strike'])} strike, {days} out, {round(otm)} percent out of the money, "
-                 f"{self._spoken(u['dollars'])} in {u['prints']} prints" + (", mostly sweeps" if u["sweeps"] * 2 >= u["prints"] else "") + (", speeding up" if u["accel"] else ""))
+        words = (f"urgent {what.lower()} flow, {self._hit(p['symbol'], p, spoken=True)}, {round(otm)} percent out of the money, "
+                 f"{u['prints']} times on this strike in {int(win / 60)} minutes" + (", mostly sweeps" if u["sweeps"] * 2 >= u["prints"] else "") + (", speeding up" if u["accel"] else ""))
         alert = {"t": t, "symbol": p["symbol"], "label": "URGENT FLOW", "price": fmt_price(p.get("spot")) if p.get("spot") else None, "side": "ask", "role": "flow",
-                 "text": text, "words": words, "premium": u["dollars"], "cp": p["cp"], "strike": p["strike"], "dte": p["dte"], "otm_pct": otm,
+                 "text": text, "words": words, "premium": p.get("premium") or 0, "expiry": p.get("expiry"), "cp": p["cp"], "strike": p["strike"], "dte": p["dte"], "otm_pct": otm,
                  "prints": u["prints"], "sweeps": u["sweeps"], "accel": u["accel"],
-                 "flow": self._receipt(p["symbol"], p["cp"], u.get("ids"), f"the {narrative.px(p['strike'])} strike, bought at the ask, last {int(self.cfg.get('flow', {}).get('urgency_window_minutes', 10))} min")}
+                 "flow": self._receipt(p["symbol"], p["cp"], u.get("ids"), f"the {narrative.px(p['strike'])} strike, buyers paid up, last {int(self.cfg.get('flow', {}).get('urgency_window_minutes', 10))} min")}
         alert["key"] = f"{round(t, 2)}|{p['symbol']}|URGENT FLOW|{p['strike']}{p['cp']}"
         self.alerts.appendleft(alert)
         self._rec(dict(alert, ev="alert"))
@@ -5424,8 +5560,8 @@ class Engine:
         return dt
 
     def _day_trap(self, st, t, price):
-        """TRAPPED on the day: the strong move that reversed. Everything bought at the ask ABOVE the current price
-        since the open is a long underwater (sold at the bid below it, a short underwater): how many shares, their
+        """TRAPPED on the day: the strong move that reversed. Everything buyers paid up for ABOVE the current price
+        since the open is a long underwater (sellers sold down below it, a short underwater): how many shares, their
         average price, how far under they sit, and what share of the session they are. The session high / low
         with its time says what the move was ("opening high 187.40 at 9:52, now −2.3%"). Gross figures: we cannot
         see who got out, so read it as pressure — their average is where the next push meets supply / demand."""
@@ -5500,7 +5636,7 @@ class Engine:
         return out
 
     def _trap_flow(self, st, side, since, t):
-        """Option money on this name since the extreme that set the trap: calls and puts bought at the ask, and
+        """Option money on this name since the extreme that set the trap: calls and puts buyers paid up for, and
         which way they lean against the trapped crowd. 'presses' = flow goes the way the trapped side must exit
         (puts on trapped longs, calls on trapped shorts); 'fades' = flow is betting on the trapped side's recovery."""
         prints = list(self.flow.by_symbol.get(st.symbol, ()))
@@ -5528,7 +5664,7 @@ class Engine:
         what = "puts" if side == "long" else "calls"
         who = "trapped longs" if side == "long" else "trapped shorts"
         label = f"FLOW PRESSES {who.upper()}"
-        text = (f"{label}: {narrative.dollars(f['presses'])} of {what} bought at the ask since the trap"
+        text = (f"{label}: {narrative.dollars(f['presses'])} of {what} buyers paid up for since the trap"
                 f"{' (' + narrative.dollars(f['fades']) + ' the other way)' if f['fades'] else ''}. "
                 f"Option money is leaning on the same side the {who} will be forced to {'sell' if side == 'long' else 'cover'} into.")
         words = f"{board.say_money(f['presses'])} in {what} since the {who} were called. The flow is pressing them."
@@ -5677,7 +5813,7 @@ class Engine:
                  "text": text, "score": b["score"], "rules": b["rules"], "words": board.words(b)}
         cl = (b.get("flow_gate") or {}).get("cluster") or {}
         if cl.get("ids"):
-            alert["flow"] = self._receipt(st.symbol, "C" if st.play.get("side", "long") == "long" else "P", cl["ids"], "short-term, bought at the ask, today")
+            alert["flow"] = self._receipt(st.symbol, "C" if st.play.get("side", "long") == "long" else "P", cl["ids"], "short-term, buyers paid up, today")
         alert["key"] = f"{round(t, 2)}|{st.symbol}|BOARD|{state}"
         self.alerts.appendleft(alert)
         self._rec(dict(alert, ev="alert"))
@@ -6049,6 +6185,7 @@ class Engine:
                                                                         "why_not": "order entry not loaded"},
                 "replay": dict(self.replay) if self.replay else None,
                 "score": self.score.view() if (self.cfg.get("score") or {}).get("enabled", True) else None,
+                "callbook_pic": self.callbook.wanted(t),
                 "training": self.trainer.view() if self.trainer is not None else None,
                 "ai": self.ai.status() if getattr(self, "ai", None) is not None else None,
                 "dan": self.dan.view() if getattr(self, "dan", None) is not None else None,
