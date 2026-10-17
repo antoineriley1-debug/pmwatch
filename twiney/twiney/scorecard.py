@@ -72,6 +72,8 @@ class Scorecard:
         self.done = deque(maxlen=400)       # resolved calls, newest last
         self.by = {}                        # kind -> {"n", "hit", "miss", "flat", "sum5", "sum15"}
         self.day = None
+        self.src = "live"                   # "practice" on the practice market: the ODDS only ever count the live market
+        self._odds = (None, None)           # (file size, result): the ODDS are re-read only when the file grows
 
     def note(self, alert, t, price, atr):
         c = classify(alert)
@@ -79,7 +81,7 @@ class Scorecard:
             return None
         kind, d = c
         row = {"t": float(t), "symbol": alert.get("symbol"), "kind": kind, "dir": d, "p0": float(price), "atr": float(atr or 0) or None,
-               "text": str(alert.get("text") or "")[:160], "moves": {}}
+               "text": str(alert.get("text") or "")[:160], "moves": {}, "src": self.src}
         self.open.append(row)
         return row
 
@@ -133,3 +135,53 @@ class Scorecard:
         recent = [{"t": r["t"], "symbol": r["symbol"], "kind": r["kind"], "dir": r["dir"], "p0": r["p0"], "outcome": r.get("outcome"),
                    "m5": r["moves"].get("300"), "m15": r["moves"].get("900"), "pct15": r.get("pct15"), "text": r["text"]} for r in list(self.done)[-25:]][::-1]
         return {"kinds": kinds, "recent": recent, "open": len(self.open)}
+
+    READ_NAMES = {"money": "CALL vs PUT MONEY today", "money15": "CALL vs PUT MONEY last 15 min", "strike": "BIG STRIKE ahead",
+                  "max_pain": "OPTION MAX PAIN", "em_room": "EXPECTED MOVE room", "opening": "OPENING MONEY (overnight)"}
+
+    def odds(self):
+        """THE ODDS: every judged call on the live market, all days, split by what the option money said at the call.
+        Per read and answer (e.g. CALL vs PUT MONEY: WITH / AGAINST): how many calls, the hit rate, the average move
+        at 15 minutes in ATRs; against the hit rate of all calls. Nothing here is a call or an order."""
+        import os
+        if not self.path or not os.path.exists(self.path):
+            return {"n": 0, "days": 0, "reads": [], "src": self.src}
+        size = os.path.getsize(self.path)
+        if self._odds[0] == size:
+            return self._odds[1]
+        rows = []
+        try:
+            with open(self.path, encoding="utf-8") as f:
+                for line in f:
+                    try:
+                        r = json.loads(line)
+                    except ValueError:
+                        continue
+                    if r.get("src", "live") == self.src and r.get("outcome"):
+                        rows.append(r)
+        except OSError:
+            return {"n": 0, "days": 0, "reads": [], "src": self.src}
+
+        def stat(rs):
+            n = len(rs)
+            hit = sum(1 for r in rs if r["outcome"] == "HIT")
+            miss = sum(1 for r in rs if r["outcome"] == "MISS")
+            m = [r["moves"].get("900", 0.0) / (r.get("atr") or r["p0"] * 0.018) for r in rs if r.get("p0")]
+            return {"n": n, "hit": hit, "miss": miss, "flat": n - hit - miss, "hit_pct": round(100.0 * hit / n) if n else None,
+                    "avg15": round(sum(m) / len(m), 2) if m else None}
+        from . import studies
+        days = len({studies.day_key(r["t"]) for r in rows})
+        with_reads = [r for r in rows if r.get("reads")]
+        groups = {}
+        for r in with_reads:
+            for k, v in r["reads"].items():
+                groups.setdefault(k, {}).setdefault(v, []).append(r)
+        reads = []
+        for k in self.READ_NAMES:
+            if k in groups:
+                reads.append({"read": k, "name": self.READ_NAMES[k],
+                              "answers": [dict(stat(rs), answer=v) for v, rs in sorted(groups[k].items(), key=lambda kv: -len(kv[1]))]})
+        out = {"n": len(rows), "with_reads": len(with_reads), "days": days, "all": stat(rows), "reads": reads, "src": self.src}
+        self._odds = (size, out)
+        return out
+

@@ -298,16 +298,23 @@ def run_live(cfg, plays, args):
     print(f"TWINEY {__version__} · {mode} · connecting to {ib['host']}:{ib['port']} "
           f"(client id {ib['client_id']}) · {len(plays)} plays · {cfg['depth']['slots']} depth slots", flush=True)
     session.start()
-    flow = [None]
+    flow = [None, None]
 
     def start_flow():
-        """The Quant Data feed runs whenever a key is in config.json: at start, and again the moment one is saved in SETTINGS."""
-        if flow[0]:
-            flow[0].stop()
-            flow[0] = None
+        """The Quant Data feed runs whenever a key is in config.json: at start, and again the moment one is saved in SETTINGS.
+        OPTION MONEY (max pain, big strikes, call vs put money, expected move) rides the same key."""
+        for f in flow:
+            if f:
+                f.stop()
+        flow[0] = flow[1] = None
+        dash.hooks.pop("optmoney_feed", None)
         if cfg.get("quantdata", {}).get("api_key"):
             from twiney.flow import QuantDataFeed
             flow[0] = QuantDataFeed(engine, cfg, [p["symbol"] for p in plays]).start()
+            if (cfg.get("optmoney") or {}).get("enabled", True):
+                from twiney.option_money import OptionMoneyFeed
+                flow[1] = OptionMoneyFeed(engine, cfg, flow[0]._request).start()
+                dash.hooks["optmoney_feed"] = flow[1]
             print("Option flow: Quant Data (key from config.json)" + (" · equity prints on" if cfg["quantdata"].get("equity_enabled") else ""), flush=True)
         else:
             engine.flow_status.update(source="off", state="off", detail="no Quant Data key: paste it in SETTINGS > Quant Data")
@@ -317,8 +324,9 @@ def run_live(cfg, plays, args):
     open_dashboard(dash, cfg, args)
 
     def stop():
-        if flow[0]:
-            flow[0].stop()
+        for f in flow:
+            if f:
+                f.stop()
         session.stop()
         dash.stop()
         desk.stop()
@@ -443,6 +451,7 @@ def run_demo(cfg, plays, args):
     engine.grades_path = os.path.join(_rec_dir(cfg), "grades.jsonl")
     engine.jlog_path = os.path.join(_rec_dir(cfg), "desk.log")   # structured JSON lines: connections, orders, fills, errors
     engine.score.path = os.path.join(_rec_dir(cfg), "score.jsonl")   # THE DESK SCORE: every judged call, one line each
+    engine.score.src = "practice"      # the practice market's calls never count in the ODDS (the live market's only)
     engine.storyline_path = os.path.join(_rec_dir(cfg), "storylines.jsonl")
     engine.oi_path = os.path.join(_rec_dir(cfg), "oi.jsonl")
     engine.load_oi()

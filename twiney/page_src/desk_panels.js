@@ -84,6 +84,8 @@ const CS_DEF = [
     ["range", "flyMax", "Prints that fly to T&S at once (big + reload fills)", 4, 1, 12, true]]],
   ["INDICATORS", [["check", "vwap", "VWAP", true, true], ["check", "mas", "Moving averages", true, true], ["check", "matags", "MA price tags", true, true],
     ["check", "bb", "Bollinger bands", true, true]]],
+  ["OPTION MONEY", [["check", "omMaxPain", "OPTION MAX PAIN line (this week's expiry; not the PS60 max pain / stop)", true], ["check", "omStrikes", "BIG STRIKES: the most option money above and below price", true],
+    ["check", "omLine", "CALL vs PUT MONEY line in the volume pane", true]]],
   ["LEVEL II CANDLE", [["check", "candleFly", "The ladder's candle flies to the chart when it closes (CANDLE mode, 1m / 5m)", true, true]]],
 ];
 function csKey(f){ return f[0] === "range" ? f[1] : f[4] === true || (f[0] === "check" && f.length > 4 && f[4]) ? f[1] : "cs." + f[1]; }
@@ -1037,13 +1039,43 @@ function renderSetup(d){
     <div class="msg ${SU.msg.startsWith("SAVED") ? "ok" : "no"}" id="suMsg">${esc(SU.msg)}</div></div>`;
   const pc = P.setup.pc;
   if (!pc.querySelector("#suForm")){
-    pc.innerHTML = `<div id="suForm"></div><div class="tlog" id="suLog"><div class="tlog-hd"><span>TRADE LOG <b id="tlogSym"></b></span><span class="dim">levels you set · what you say · what you type</span></div>
+    pc.innerHTML = `<div id="suForm"></div><div id="suOm" class="omchk"></div><div class="tlog" id="suLog"><div class="tlog-hd"><span>TRADE LOG <b id="tlogSym"></b></span><span class="dim">levels you set · what you say · what you type</span></div>
       <div class="tlog-in"><input id="tlogIn" placeholder="type a note, Enter" maxlength="600" spellcheck="false"><button id="tlogMic" title="talk: what you say lands here as a journal entry (and on the recording when one is on)">🎙 MIC</button></div><div class="tlog-list" id="tlogList"></div></div>`;
     P.setup.last = null;
   }
   const form = pc.querySelector("#suForm");
   if (form.dataset.h !== html){ form.dataset.h = html; form.innerHTML = html; pc.dataset.sym = curSym; }
+  const om = pc.querySelector("#suOm"); if (om){ const h = omHTML(d.optmoney); if (om.dataset.h !== h){ om.dataset.h = h; om.innerHTML = h; } }
   renderTradeLog(d);
+}
+/* OPTION MONEY in PLAY SETUP: the six reads in one block (where each one comes from in grey), then the checks against
+   this play: the MP against the expected move, a big strike in the way, the option max pain on expiry day, the
+   money's lean against the side. Flow backs up the setup, never replaces it. */
+function omHTML(om){
+  if (!om) return "";
+  const $k = v => v == null ? "—" : (v < 0 ? "−" : "") + "$" + (Math.abs(v) >= 1e9 ? (Math.abs(v) / 1e9).toFixed(1) + "B" : Math.abs(v) >= 1e6 ? (Math.abs(v) / 1e6).toFixed(1) + "M" : Math.round(Math.abs(v) / 1e3) + "K");
+  const src = k => om.src && om.src[k] ? `<i>${esc(om.src[k])}</i>` : "";
+  const ex = e => e ? e.slice(4, 6) + "/" + e.slice(6, 8) : "";
+  const rows = [];
+  const mp = om.max_pain;
+  if (mp) rows.push(["OPTION MAX PAIN", `${px(mp.strike)} ${ex(mp.expiry)} · ${mp.dist >= 0 ? "+" : ""}${(+mp.dist).toFixed(2)} from here${mp.expires_today ? " · <b>EXPIRES TODAY</b>" : ""}`, src("max_pain")]);
+  const ss = om.strikes || [];
+  if (ss.length){ const up = ss.filter(s => s.above).sort((a, b) => a.strike - b.strike)[0], dn = ss.filter(s => !s.above).sort((a, b) => b.strike - a.strike)[0];
+    const f = s => s ? `${s.strike % 1 ? s.strike.toFixed(2) : s.strike} (${s.side}${s.rel >= 0.5 ? ", big" : ""})` : "—";
+    rows.push(["BIG STRIKES", `above ${f(up)} · below ${f(dn)}`, src("strikes")]); }
+  const dr = om.drift;
+  if (dr) rows.push(["CALL vs PUT $", `<b class="${dr.net >= 0 ? "pos" : "neg"}">${$k(dr.net)}</b> today · leans ${dr.lean}${dr.chg15 != null ? ` · last 15 min ${$k(dr.chg15)}` : ""}`, src("drift")]);
+  const em = om.em;
+  if (em) rows.push(["EXPECTED MOVE", `±${(+em.move).toFixed(2)} by ${ex(em.expiry)} (${px(em.lo)} – ${px(em.hi)})`, src("em")]);
+  const op = om.opening;
+  if (op) rows.push(["OPENING MONEY", `calls ${op.calls >= 0 ? "+" : ""}${kfmt(op.calls)} · puts ${op.puts >= 0 ? "+" : ""}${kfmt(op.puts)} contracts overnight · ${op.lean}`, op.src ? `<i>${esc(op.src)}</i>` : ""]);
+  const bs = om.bought_sold;
+  if (bs) rows.push(["BOUGHT vs SOLD", `calls ${kfmt(bs.calls_bought)} / ${kfmt(bs.calls_sold)} · puts ${kfmt(bs.puts_bought)} / ${kfmt(bs.puts_sold)}`, "<i>QUANT DATA</i>"]);
+  const ag = om.aggression;
+  if (ag) rows.push(["AT THE ASK", `${ag.ask_pct}% at the ask · ${ag.bid_pct}% at the bid · ${kfmt(ag.contracts)} ct today`, `<i>${esc(ag.key || "")}</i>`]);
+  const checks = (om.checks || []).map(c => `<div class="omc ${c.tone}">${c.tone === "ok" ? "✓" : "!"} ${esc(c.text)}</div>`).join("");
+  return `<div class="omh">OPTION MONEY <span class="dim">backs up the pivot, never replaces it</span></div>` +
+    rows.map(r => `<div class="omr"><span>${r[0]}</span><span>${r[1]}</span>${r[2]}</div>`).join("") + checks;
 }
 function renderTradeLog(d){
   const list = document.getElementById("tlogList"), hd = document.getElementById("tlogSym"); if (!list) return;
@@ -2685,9 +2717,33 @@ function renderScore(st){
   const html = `<div class="sth">BY CALL · count · hit rate · hit·miss·flat · avg move 5 / 15 min (ATRs)</div>
     <div class="sctab">${kinds || `<div class="dim" style="padding:4px 8px">no call has had its 15 minutes yet${s.open ? ` · ${s.open} waiting` : ""}</div>`}</div>
     <div class="sth">THE LAST CALLS · judged 15 minutes after${s.open ? ` · ${s.open} still waiting` : ""}</div>
-    <div class="sctab">${recent || `<div class="dim" style="padding:4px 8px">nothing judged yet</div>`}</div>`;
+    <div class="sctab">${recent || `<div class="dim" style="padding:4px 8px">nothing judged yet</div>`}</div>` + oddsHTML();
   panelHTML("score", html);
 }
+/* THE ODDS: every judged call on the live market, all days, split by what the OPTION MONEY said at the call (with the
+   move or against it, a big strike in the way or clear ...). Read after a few weeks: keep what proves itself. And
+   which Quant Data tools this key opens (CHECK asks each one once). */
+const ODDS = {d: null};
+async function oddsPoll(){ try { ODDS.d = await (await fetch("/api/optmoney", {cache: "no-store"})).json(); } catch (e) {} }
+oddsPoll(); setInterval(oddsPoll, 30000);
+function oddsHTML(){
+  const o = ODDS.d; if (!o || !o.ok) return "";
+  const od = o.odds || {}, all = od.all || {};
+  const cls = (h, base) => h == null || base == null ? "" : h >= base + 8 ? "good" : h <= base - 8 ? "bad" : "";
+  const reads = (od.reads || []).map(r => `<div class="odn">${esc(r.name)}</div>` + r.answers.map(a =>
+    `<div class="odr"><span>${esc(a.answer)}</span><span>${a.n}</span><span class="${cls(a.hit_pct, all.hit_pct)}">${a.hit_pct == null ? "—" : a.hit_pct + "%"}</span><span>${a.avg15 == null ? "" : (a.avg15 >= 0 ? "+" : "") + a.avg15 + " ATR"}</span></div>`).join("")).join("");
+  const st = o.status || {}, mark = v => v.state === "ok" ? `<b class="ok">OPEN</b>` : v.state === "no" ? `<b class="no">NOT ON THIS KEY</b>` : v.state === "untested" ? `<b class="other">not asked yet</b>` : `<b class="other">${esc(v.state.toUpperCase())}</b>`;
+  const tools = Object.values(st).map(v => `<div title="${esc(v.detail || "")}">${mark(v)} ${esc(v.name)}</div>`).join("");
+  return `<div class="odds"><div class="sth">THE ODDS · live market, every day so far · ${od.n || 0} judged calls over ${od.days || 0} day${od.days === 1 ? "" : "s"}${all.hit_pct != null ? ` · all calls hit ${all.hit_pct}%` : ""}</div>
+    ${reads ? `<div class="odr h"><span>WHEN THE OPTION MONEY SAID</span><span>CALLS</span><span>HIT</span><span>AVG 15m</span></div>${reads}`
+      : `<div class="dim" style="padding:4px 8px">The odds fill in as the live market runs: each call keeps what the option money said, judged 15 minutes later. Give it a few weeks.</div>`}
+    <div class="sth">QUANT DATA TOOLS ${o.checked ? "· checked " + nyHM(o.checked) : ""} <button id="omCheck" ${o.feed ? "" : "disabled"} title="ask each Quant Data tool once with your key and save its answer (recordings/quantdata_tools)">CHECK</button></div>
+    <div class="qd">${o.feed ? tools : `<span class="dim">${o.src === "practice" ? "Practice market: the option money is made from the practice chain and flow." : "No Quant Data key: the option money comes from the desk's own flow and option chain."}</span>`}</div></div>`;
+}
+document.addEventListener("click", async e => { if (!e.target.closest("#omCheck")) return;
+  const out = await post("/api/optmoney/check", {});
+  toast(out.ok ? "Asking each Quant Data tool once… (about 10 seconds)" : (out.reason || "CHECK refused"), out.ok);
+  if (out.ok) setTimeout(async () => { await oddsPoll(); renderScore(state); }, 9000); });
 function renderConviction(d){
   const strip = document.getElementById("cvStrip"), panel = document.getElementById("cvPanel");
   const c = d && d.conviction;
@@ -2705,7 +2761,7 @@ function renderConviction(d){
     <div class="gates big"><b class="${c.chart_gate.ok ? "on" : ""}">CHART GATE ${c.chart_gate.ok ? "GREEN" : "not yet"}</b><b class="${c.flow_gate.ok ? "on" : ""}">FLOW GATE ${c.flow_gate.ok ? "GREEN" : "not yet"}</b></div>
     ${c.max_pain ? `<div class="dim" style="font-size:10.5px;margin-top:3px">Max pain: prior 5m ${c.side_bias === "LONG" ? "low" : "high"} ${px(c.max_pain.options)} (options) · process stop ${px(c.max_pain.equity)} (equity)</div>` : ""}</div>
     <div class="cvrows">${rows}</div>
-    <div class="dim" style="padding:4px 8px;font-size:10.5px">Daily MP 20 · pivot + confirm 20 · 2nd entry 20 · premium ≥ $100K 10 · weeklies 10 · out of the money 10 · repeats 10 · sweeps +5. Flow supports the pivot; it never replaces the second entry.</div>`;
+    <div class="dim" style="padding:4px 8px;font-size:10.5px">Daily MP 20 · pivot + confirm 20 · 2nd entry 20 · premium ≥ $100K 10 · weeklies 10 · out of the money 10 · repeats 10 · sweeps +5. Flow backs up the pivot; it never replaces the second entry.</div>`;
   panelHTML("conviction", html);
 }
 
@@ -2782,7 +2838,7 @@ function renderOchHead(){
   if (!OCH.key) html = `<span class="dim">No contract yet — open OPTIONS, click a strike (or 📈 on its row) and it charts here.</span><button data-och="chain">OPTIONS</button>`;
   else { const pos = d && d.position, q = pos ? Math.abs(pos.qty) : 0, long = pos && pos.qty > 0;
     const rs = d ? optRiskSize(d) : null;
-    html = `<b class="${d && d.right === "P" ? "s" : "b"}">${esc(d ? d.label : OCH.key)}</b>${d && d.expires_today ? `<span class="exptoday" title="expires at 4:00 today: a long one in the money is exercised into shares; the desk calls it out at 3:30 and closes it at 3:50 (SETTINGS, Trading)">EXPIRES TODAY</span>` : d && d.dte != null && d.dte < 7 ? `<span class="dim">${d.dte.toFixed(1)}d left</span>` : ""}${d && d.oi && d.oi.oi != null ? `<span class="ochoi ${d.oi.open_read === "MORE" ? "more" : d.oi.open_read === "LESS" ? "less" : ""}" title="${esc(oiTip(d.oi))}">OPEN INT ${kfmt(d.oi.oi)}${d.oi.oi_change ? ` <i class="${d.oi.oi_change > 0 ? "up" : "dn"}">${d.oi.oi_change > 0 ? "▲" : "▼"}${kfmt(Math.abs(d.oi.oi_change))}</i>` : ""} · TRADED ${d.oi.vol == null ? "—" : kfmt(d.oi.vol)}${d.oi.open_read === "MORE" ? " <b>▲ MORE THAN OPEN</b>" : d.oi.open_read === "LESS" ? " <b>LESS THAN OPEN</b>" : ""}</span>` : ""}${d && d.sim ? `<span class="simtag" title="options market closed: this contract's price is SIMULATED from the stock (paper only); option orders wait for the 9:30 open">SIM · market closed</span>` : ""}
+    html = `<b class="${d && d.right === "P" ? "s" : "b"}">${esc(d ? d.label : OCH.key)}</b>${d && d.expires_today ? `<span class="exptoday" title="expires at 4:00 today: a long one in the money is exercised into shares; the desk calls it out at 3:30 and closes it at 3:50 (SETTINGS, Trading)">EXPIRES TODAY</span>` : d && d.dte != null && d.dte < 7 ? `<span class="dim">${d.dte.toFixed(1)}d left</span>` : ""}${d && d.oi && d.oi.oi != null ? `<span class="ochoi ${d.oi.open_read === "MORE" ? "more" : d.oi.open_read === "LESS" ? "less" : ""}" title="${esc(oiTip(d.oi))}">OPEN INT ${kfmt(d.oi.oi)}${d.oi.oi_change ? ` <i class="${d.oi.oi_change > 0 ? "up" : "dn"}">${d.oi.oi_change > 0 ? "▲" : "▼"}${kfmt(Math.abs(d.oi.oi_change))}</i>` : ""} · TRADED ${d.oi.vol == null ? "—" : kfmt(d.oi.vol)}${d.oi.open_read === "MORE" ? " <b>▲ MORE THAN OPEN</b>" : d.oi.open_read === "LESS" ? " <b>LESS THAN OPEN</b>" : ""}</span>` : ""}${d && d.aggression ? `<span class="ochag" title="today on this contract: contracts traded at the ask (bought in a rush) against at the bid (sold in a rush)">AT THE ASK <b class="up">${d.aggression.ask_pct}%</b> · AT THE BID <b class="dn">${d.aggression.bid_pct}%</b></span>` : ""}${d && d.sim ? `<span class="simtag" title="options market closed: this contract's price is SIMULATED from the stock (paper only); option orders wait for the 9:30 open">SIM · market closed</span>` : ""}
       ${rs ? `<button class="risksz" data-ochn="${rs.n}" title="${esc(rs.why)}">RISK $${riskDollars()} → ${rs.n} ct</button>` : d ? `<span class="dim" title="draw a STOP on the stock chart (or set this contract's stop) and the desk sizes contracts from your RISK $">no stop to size from</span>` : ""}
       ${q ? `<span class="${long ? "b" : "s"}">YOU HAVE ${q}${pos.pnl != null ? ` · ${pos.pnl >= 0 ? "+" : "−"}$${sz(Math.abs(Math.round(pos.pnl)))}` : ""}</span>` : ""}
       <span class="tfs">${[1, 5, 15].map(m => `<button data-ochtf="${m}" class="${tf === m ? "on" : ""}">${m}m</button>`).join("")}<button data-ochind="mas" class="${store.get("och.mas", false) ? "on" : ""}" title="moving averages on the OPTION CHART (the stock chart keeps its own)">MAS</button><button data-ochind="bb" class="${store.get("och.bb", false) ? "on" : ""}" title="Bollinger Bands on the OPTION CHART">BB</button></span>

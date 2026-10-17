@@ -654,6 +654,24 @@ DEFAULTS = {
                                         # with speed, programs, calls / puts pounded, the open read) judged 5 and 15 minutes later
         "hit_atr": 0.10,                # a HIT: price moved at least this much of the daily ATR the call's way at 15 minutes (a MISS: the other way)
     },
+    "optmoney": {
+        # OPTION MONEY (option_money.py): option max pain, the big strikes, call vs put money, the expected move, opening money,
+        # at the ask on your contract. From Quant Data's tools when your key opens them, else from the desk's own data
+        "enabled": True,
+        "drift_seconds": 60,            # how often each tool is asked, per symbol (Quant Data allows 240 calls a minute)
+        "exposure_seconds": 300,
+        "maxpain_seconds": 900,
+        "oi_seconds": 1800,
+        "term_seconds": 900,
+        "trade_side_seconds": 300,
+        "max_per_minute": 60,           # never more than this many option money calls a minute, all symbols together
+        "max_symbols": 15,
+        "strikes_each_side": 3,         # BIG STRIKES drawn above and below price
+        "strike_near_atr": 0.5,         # a big strike this close (x the daily ATR) ahead of a call counts as IN THE WAY
+        "lean_min_dollars": 250000,     # call minus put money past this = the money leans CALLS / PUTS (else EVEN)
+        "chart_lines": True,            # MAX PAIN and the BIG STRIKES on the stock chart
+        "tools": {},                    # a tool's path, only if Quant Data moves it (e.g. {"net_drift": "/v1/options/tool/net-drift"})
+    },
     "gmail": {
         # DAN'S DAILY: the Market Notes email (Access A Trader) read from your Gmail over IMAP. The app password goes
         # here and nowhere else (Google account › Security › 2-Step Verification › App passwords; never your real one)

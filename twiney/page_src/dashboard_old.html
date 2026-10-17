@@ -2059,6 +2059,66 @@ const LEVEL_STYLE = {trigger:["#dbe3ee",[],1.6], second_entry:["#3fd0ff",[6,4],1
   // the OTHER SIDE of the play (a short under a long, a long over a short): same colours, its own dash, an arrow in the label
   alt_trigger:["#c9b8ff",[10,3,2,3],1.6], alt_second_entry:["#3fd0ff",[10,3,2,3],1.6], alt_target:["#26d07c",[8,3,2,3],1], alt_stop:["#ff4d5e",[8,3,2,3],1]};
 
+/* OPTION MONEY on the stock chart: OPTION MAX PAIN (this week's expiry; not the PS60 max pain, the stop), the BIG STRIKES (the most option money above and below
+   price, the line's weight = the money), and CALL vs PUT MONEY as a line across the volume pane (above the middle =
+   calls ahead today, under = puts). Each one switches off in ⚙ CHART SETTINGS › OPTION MONEY. */
+function optMoneyLines(g, om, y, lo, hi, plotW, labelW, C, CS){
+  const light = !!(C && C.dots), font = "bold 10px ui-monospace, Menlo, Consolas, monospace";
+  // off the chart: a small tag on the top / bottom edge says where (and how far), so it is never out of mind
+  const edges = {up: [], dn: []};
+  const edge = (price, txt, col) => (price > hi ? edges.up : edges.dn).push([Math.abs(price - (price > hi ? hi : lo)), txt, col]);
+  if (CS("omStrikes")){
+    for (const s of om.strikes || []){
+      const col = s.side === "calls" ? "#14b8a6" : "#e879a6";
+      if (s.strike < lo || s.strike > hi){ if (s.rel >= 0.5) edge(s.strike, `STRIKE ${s.strike % 1 ? s.strike.toFixed(2) : s.strike} · ${s.unit === "ct" ? kfmt(s.size) + " ct" : "$" + kfmt(s.size)}`, col); continue; }
+      const yy = Math.round(y(s.strike)) + .5, w = 1 + Math.round((s.rel || 0) * 3);
+      g.strokeStyle = col + (s.rel >= 0.5 ? "cc" : "77"); g.lineWidth = w; g.setLineDash([]);
+      g.beginPath(); g.moveTo(plotW * 0.55, yy); g.lineTo(plotW, yy); g.stroke();
+      const amt = s.unit === "ct" ? kfmt(s.size) + " ct" : "$" + kfmt(s.size);
+      const txt = `STRIKE ${s.strike % 1 ? s.strike.toFixed(2) : s.strike} · ${amt}`;
+      g.font = font; const tw = g.measureText(txt).width;
+      g.fillStyle = light ? "#ffffffdd" : "#0b0c0edd"; g.fillRect(plotW - tw - 10, yy - 13, tw + 8, 12);
+      g.fillStyle = col; g.fillText(txt, plotW - tw - 6, yy - 4);
+    }
+  }
+  const mp = om.max_pain;
+  if (mp && mp.strike && CS("omMaxPain") && (mp.strike < lo || mp.strike > hi)) edge(mp.strike, `OPTION MAX PAIN ${mp.strike % 1 ? mp.strike.toFixed(2) : mp.strike}${mp.expires_today ? " · TODAY" : ""}`, "#a855f7");
+  if (mp && mp.strike && CS("omMaxPain") && mp.strike >= lo && mp.strike <= hi){
+    const yy = Math.round(y(mp.strike)) + .5, col = "#a855f7";
+    g.strokeStyle = col; g.lineWidth = mp.expires_today ? 2 : 1.25; g.setLineDash([8, 5]);
+    g.beginPath(); g.moveTo(0, yy); g.lineTo(plotW, yy); g.stroke(); g.setLineDash([]);
+    const txt = `OPTION MAX PAIN ${mp.strike % 1 ? mp.strike.toFixed(2) : mp.strike}${mp.expiry ? " · " + mp.expiry.slice(4, 6) + "/" + mp.expiry.slice(6, 8) : ""}${mp.expires_today ? " · EXPIRES TODAY" : ""}`;
+    g.font = font; const tw = g.measureText(txt).width, lx = plotW * 0.55;
+    g.fillStyle = col; g.fillRect(lx, yy - 14, tw + 8, 13); g.fillStyle = "#ffffff"; g.fillText(txt, lx + 4, yy - 4);
+    g.fillStyle = col; g.fillRect(plotW, yy - 8, labelW, 16); g.fillStyle = "#ffffff"; g.font = "bold 11px ui-monospace, Menlo, Consolas, monospace"; g.fillText("OMP " + px(mp.strike), plotW + 3, yy + 4);
+  }
+  g.font = "bold 9.5px ui-monospace, Menlo, Consolas, monospace";
+  for (const [k, list] of [["up", edges.up], ["dn", edges.dn]]){
+    list.sort((a, b) => a[0] - b[0]).slice(0, 3).forEach(([dist, txt, col], i) => {
+      const t = (k === "up" ? "▲ " : "▼ ") + txt, tw = g.measureText(t).width;
+      const yy = k === "up" ? 12 + i * 13 : (y(lo) - 4) - i * 13, lx = k === "up" ? plotW - tw - 8 : plotW * 0.55;
+      g.fillStyle = light ? "#ffffffdd" : "#0b0c0edd"; g.fillRect(lx - 2, yy - 10, tw + 6, 12); g.fillStyle = col; g.fillText(t, lx + 1, yy);
+    });
+  }
+  g.font = "11px ui-monospace, Menlo, Consolas, monospace";
+}
+function optMoneyStrip(g, dr, xOf, bars, H, volH, plotW, labelW, x0, cw){
+  const ser = dr.series || []; if (ser.length < 2 || !bars.length) return;
+  const top = H - 18 - volH + 4, bot = H - 20, mid = (top + bot) / 2, first = bars[0][0];
+  const vis = ser.filter(([t]) => t >= first); if (vis.length < 2) return;
+  const mx = Math.max(1, ...vis.map(([, v]) => Math.abs(v))), yv = v => mid - v / mx * (bot - top) / 2;
+  g.save(); g.beginPath(); g.rect(0, top, plotW, bot - top); g.clip();
+  g.strokeStyle = "#8a8f98"; g.setLineDash([2, 3]); g.lineWidth = 1; g.beginPath(); g.moveTo(0, Math.round(mid) + .5); g.lineTo(plotW, Math.round(mid) + .5); g.stroke(); g.setLineDash([]);
+  g.lineWidth = 2; let last = null;
+  for (const [t, v] of vis){ const x = xOf(t); if (x == null) continue;
+    if (last){ g.strokeStyle = v >= 0 ? "#16a34a" : "#dc2626"; g.beginPath(); g.moveTo(last[0], last[1]); g.lineTo(x, yv(v)); g.stroke(); }
+    last = [x, yv(v)]; }
+  g.restore();
+  const v = dr.net || 0, txt = `CALL−PUT ${v >= 0 ? "+" : "−"}$${kfmt(Math.abs(v))}`;
+  g.font = "bold 10px ui-monospace, Menlo, Consolas, monospace"; const tw = g.measureText(txt).width;
+  g.fillStyle = v >= 0 ? "#16a34a" : "#dc2626"; g.fillRect(58, top, tw + 8, 13); g.fillStyle = "#ffffff"; g.fillText(txt, 62, top + 10);
+  g.font = "11px ui-monospace, Menlo, Consolas, monospace";
+}
 function drawChart(v){
   if (!v || !v.data || !v.canvas || !v.el || v.el.offsetParent === null) return;
   drawOne(v, v.canvas, v.view, v.type === "foot");
@@ -2225,6 +2285,7 @@ function drawOne(p, cv, v, isFoot){
   }
 
   if (!isFoot && CS("stopRisk")) stopRiskTag(p, d, g, y, lo, hi, plotW, bracketOn);
+  if (!isFoot && !isDaily && d.optmoney) try { optMoneyLines(g, d.optmoney, y, lo, hi, plotW, labelW, C, CS); } catch (e) {}
   const clean = isFoot || store.get("clean", true);
   // PS60: the second-entry line (the new high / low to get back through) and sneaky pivots
   if (d.ps60 && !clean){
@@ -2437,6 +2498,7 @@ function drawOne(p, cv, v, isFoot){
       g.fillStyle = "#7b889e55"; g.fillRect(x, base - full, cw * 0.7, full - hb - hs);
     } else { g.fillStyle = "#7b889e66"; g.fillRect(x, base - full, cw * 0.7, full); }
   }
+  if (!isFoot && !isDaily && d.optmoney && d.optmoney.drift && CS("omLine")) try { optMoneyStrip(g, d.optmoney.drift, xOf, bars, H, volH, plotW, labelW, x0, cw); } catch (e) {}
 
   // absorption bubbles: shares traded into resting size at your levels / big levels
   if (bars.length && !clean){

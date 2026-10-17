@@ -5,7 +5,7 @@ JSONL replay and tests identically. The engine never talks to IBKR; it returns
 slot commands ("depth_on"/"depth_off") which the market-data adapter executes.
 """
 
-from . import board, options, orderflow
+from . import board, option_money, options, orderflow
 import json
 import logging
 import os
@@ -304,6 +304,9 @@ class Engine:
         self.jlog_path = None     # recordings/desk.log: one JSON line per connection / order / fill / error event
         from .scorecard import Scorecard
         self.score = Scorecard(None, cfg.get("score") or {})   # THE DESK SCORE: every directional call, judged 5 / 15 min later
+        from .option_money import OptionMoney
+        self.optmoney = OptionMoney(cfg)   # OPTION MONEY: max pain, big strikes, call vs put money, expected move, opening money
+        self._om_cache = {}
         self._jlog = None
         self.opt_positions = {}   # option key -> {symbol, expiry, strike, right, mult, qty, avg_cost, bid, ask, last}     # (account, symbol) -> {"qty", "avg_cost"}
         self.fills = {}         # exec id -> fill dict
@@ -379,7 +382,9 @@ class Engine:
                 st = self.syms.get(event.get("symbol"))
                 if st is not None:
                     atr = (st.__dict__.get("_story_atr") or {}).get("v") or st.play.get("atr")
-                    self.score.note(event, event.get("t") or self.last_t, st.price(), atr)
+                    row = self.score.note(event, event.get("t") or self.last_t, st.price(), atr)
+                    if row is not None:          # the option money at the call, in its direction: for the ODDS
+                        row["reads"] = self.optmoney.reads(self.optmoney_view(st.symbol, event.get("t") or self.last_t), row["dir"], atr)
             except Exception:
                 log.exception("scorecard note")
         if self.jlog_path and event.get("ev") in self.LOGGED_EVENTS:
@@ -2386,7 +2391,90 @@ class Engine:
                     "dte": options.dte(exp, t),
                     "chart_stop": self._chart_stop_for(sym, right),
                     "tape": self.option_tape(key, t),
-                    "oi": self.oi_view(key, t)}
+                    "oi": self.oi_view(key, t),
+                    "aggression": option_money.aggression(
+                        [p for p in (self.opt_prints.get(key) or ()) if p[0] >= t - ((t + options_ny_off(t)) % 86400)])}
+
+    # ---- OPTION MONEY -----------------------------------------------------------------------------------------
+    def optmoney_view(self, sym, t):
+        """OPTION MONEY for one symbol (option_money.py), at most every 2 s per symbol."""
+        c = self._om_cache.get(sym)
+        if c and abs(t - c[0]) < 2.0:
+            return c[1]
+        st = self.syms.get(sym)
+        v = None
+        try:
+            if st is not None and st.price():
+                atr = (st.__dict__.get("_story_atr") or {}).get("v") or st.play.get("atr")
+                v = self.optmoney.view(sym, st.price(), t, self._optmoney_local(sym, st.price(), t), st.play, atr)
+        except Exception:
+            log.exception("option money")
+        self._om_cache[sym] = (t, v)
+        return v
+
+    def _optmoney_local(self, sym, spot, t):
+        """The desk's own option money: the flow it pulls, the IBKR chain's open interest and implied volatility, the
+        option tape of the contract on the OPTION CHART. On the practice market: the practice chain."""
+        from . import option_money as om
+        prints = list(self.flow.by_symbol.get(sym, ()))
+        if self.connection.get("state") == "DEMO":
+            out = om.practice_view(sym, spot, t, prints)
+        else:
+            day_start = t - ((t + options_ny_off(t)) % 86400)
+            out = {"drift": om.local_drift(prints, t, day_start), "drift_src": "FLOW"}
+            ch = self.opt_chain.get(sym)
+            exps = sorted(e for e in (ch or {}).get("expiries", []) if options.dte(e, t) is not None and options.dte(e, t) >= 0)
+            exp = exps[0] if exps else None
+            call_oi, put_oi, prev = {}, {}, {"C": 0, "P": 0, "n": 0}
+            for key, rec in list(self.opt_oi.items()):
+                if not key.startswith(sym + " "):
+                    continue
+                try:
+                    _s, e, k, r = options.parse_key(key)
+                except (ValueError, IndexError):
+                    continue
+                if e == exp:
+                    (call_oi if r == "C" else put_oi)[k] = rec["oi"]
+                ov = self.oi_view(key, t)
+                if ov.get("oi_change") is not None:
+                    prev[r] += ov["oi_change"]
+                    prev["n"] += 1
+            if len(call_oi) >= 3 and len(put_oi) >= 3:
+                out["max_pain"] = {"strike": om.max_pain_from_oi(call_oi, put_oi), "expiry": exp}
+                out["max_pain_src"] = "CHAIN OI"
+            if call_oi or put_oi:
+                out["oi_rows"] = [(k, call_oi.get(k, 0), put_oi.get(k, 0)) for k in sorted(set(call_oi) | set(put_oi))]
+                out["oi_src"] = "CHAIN OI"
+            if prev["n"]:
+                out["opening"] = om.opening_lean(prev["C"], prev["P"], "CHAIN OI")
+            # the move the options price in: the nearest expiry's at-the-money implied volatility (chain, else flow)
+            iv, days = None, None
+            if exp and ch and ch.get("strikes"):
+                k = min(ch["strikes"], key=lambda x: abs(x - spot))
+                ivs = [(self.opt_quotes.get(options.key_of(sym, exp, k, r)) or {}).get("iv") for r in ("C", "P")]
+                ivs = [x for x in ivs if x]
+                if ivs:
+                    iv, days = sum(ivs) / len(ivs), options.dte(exp, t)
+            if iv is None:
+                near = [p for p in prints[-200:] if p.get("iv") and p.get("otm_pct") is not None and abs(p["otm_pct"]) < 3 and p.get("dte") is not None]
+                if near:
+                    p = min(near, key=lambda x: x["dte"])
+                    iv, days = p["iv"] / 100.0 if p["iv"] > 3 else p["iv"], p["dte"]
+                    exp = exp or str(p.get("expiry", "")).replace("-", "")[:8]
+            if iv and days is not None:
+                out["em"] = {"expiry": exp or "", "move": om.expected_move(spot, iv, days), "iv": round(iv, 3)}
+                out["em_src"] = "CHAIN IV" if ch else "FLOW IV"
+        # AT THE ASK on the contract on the OPTION CHART (or the one held) on this stock
+        key = (self.och_seen.get(sym) or (None,))[0]
+        if not key:
+            held = [k for k, p in self.opt_positions.items() if k.startswith(sym + " ") and p.get("qty")]
+            key = held[0] if held else None
+        if key:
+            day0 = t - ((t + options_ny_off(t)) % 86400)
+            ag = om.aggression([p for p in (self.opt_prints.get(key) or ()) if p[0] >= day0])
+            if ag:
+                out["aggression"] = dict(ag, key=key)
+        return out
 
     # ---- open interest --------------------------------------------------------------------------------------
     def on_opt_oi(self, key, oi, t):
@@ -5768,6 +5856,7 @@ class Engine:
             "orderflow": orderflow.pressure(st.tape.prints, t, self.cfg.get("orderflow", {})),
             "daytrap": self._day_trap_pane(st, t),
             "breaktraps": self._break_trap_pane(st, t),
+            "optmoney": self.optmoney_view(sym, t),
             "seq": self._sequence(st, t, ps),
             "tape": dict(tape, recent=[                  # ⚙ on the prints an algo's child-order stream is made of
                 {"age": round(t - p["t"], 1), "price": fmt_price(p["price"]), "size": round(p["size"]),

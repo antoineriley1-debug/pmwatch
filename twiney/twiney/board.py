@@ -3,7 +3,7 @@
 Source of truth: "PS60 Option Flow Conviction Board — Bot Source of Truth" (twelve Access A Trader videos plus the
 locked notes). Every rule here carries its code from that document's §8 (R1..R17); nothing is invented.
 
-The law (R8): option flow SUPPORTS a pivot thesis. It never replaces Daily room → pivot → confirm → second entry →
+The law (R8): option flow BACKS UP a pivot thesis. It never replaces Daily room → pivot → confirm → second entry →
 build → MP. READY TO GO needs the chart gate AND the flow gate (§7). One gate alone is ARMED — WAITING OTHER GATE.
 """
 
@@ -18,7 +18,7 @@ RULES = {
     "R5": "multiple repeat buyers with a short-term expiration = the formula (ysshM1blOFA)",
     "R6": "more flow, greater chance of the measured potential (V3, V4, t67SFwBMcys)",
     "R7": "daily chart + option flow = results; off-beta names need flow (V4 §4)",
-    "R8": "flow supports the pivot; never replaces confirm, the second entry or the Daily MP (handoff §11)",
+    "R8": "flow backs up the pivot; never replaces confirm, the second entry or the Daily MP (handoff §11)",
     "R9": "near-spot puts in an uptrend are a hedge, not a bet (V3)",
     "R10": "after a sweep: let the 5m put in a high / low past the sweep price, then trade the structure (V3)",
     "R11": "an options trade is stopped at the prior 5m low / high, never breakeven without a confirm pivot (V3, §9.6)",

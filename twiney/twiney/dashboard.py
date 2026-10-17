@@ -330,6 +330,14 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                 except OSError:
                     self._send(404, "the show page is not built: python page_src/build_page.py", "text/plain")
                 return
+            if path == "/api/optmoney":
+                # OPTION MONEY: which Quant Data tools this key opens (the CHECK), and THE ODDS from the scored calls
+                feed = hooks.get("optmoney_feed")
+                om = engine.optmoney
+                self._send(200, json.dumps({"ok": True, "feed": feed is not None, "checked": om.checked,
+                                            "status": {k: dict(v, name=_om_names().get(k, k)) for k, v in om.status.items()},
+                                            "odds": engine.score.odds(), "src": engine.score.src}, default=str), "application/json")
+                return
             if path == "/api/update" and hooks.get("update_relay") and not hooks.get("update"):
                 self._relay_update("GET", None)
                 return
@@ -636,6 +644,14 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                 return
             if path == "/api/update":
                 self._update(body)
+                return
+            if path == "/api/optmoney/check":
+                feed = hooks.get("optmoney_feed")
+                if feed is None:
+                    self._send(200, json.dumps({"ok": False, "reason": "no Quant Data key on this desk (the practice market shows practice numbers)"}), "application/json")
+                    return
+                threading.Thread(target=feed.check, name="optmoney-check", daemon=True).start()
+                self._send(200, json.dumps({"ok": True, "started": True}), "application/json")
                 return
             if path == "/api/pin":
                 ok = engine.set_pinned(str(body.get("symbol", "")).upper(), bool(body.get("pinned")), clock())
@@ -1138,3 +1154,9 @@ class Dashboard:
     def stop(self):
         self.httpd.shutdown()
         self.httpd.server_close()
+
+
+def _om_names():
+    from .option_money import TOOL_NAMES
+    return TOOL_NAMES
+

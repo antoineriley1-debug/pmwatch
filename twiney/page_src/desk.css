@@ -1361,3 +1361,23 @@ body.whitedesk .chart-wrap canvas,body.whitedesk img,body.whitedesk video{filter
 #updBtn.current{background:transparent;color:var(--dim,#8e9096);border-color:var(--line,#2c2e33);font-weight:700}
 .qs .qclr,.qs .qflat{font:700 10.5px var(--mono);height:18px;padding:0 7px;letter-spacing:.06em}
 .qs .qflat,.simple .mgr .flat{color:#ff8a80;border-color:#7a2a2a} .qs .qclr,.simple .mgr .clr{color:#b0b0ad}
+
+/* OPTION MONEY in PLAY SETUP */
+.omchk{padding:4px 8px 6px;border-top:1px solid var(--line,#26282c);font:11px var(--mono)}
+.omchk:empty{display:none}
+.omchk .omh{font:600 10px var(--sans);letter-spacing:.14em;color:#a855f7;margin:2px 0 4px}
+.omchk .omh .dim{letter-spacing:.04em;font-weight:500;margin-left:6px}
+.omchk .omr{display:grid;grid-template-columns:118px 1fr auto;gap:6px;line-height:17px;align-items:baseline}
+.omchk .omr span:first-child{color:var(--dim,#8e9096);font:600 9.5px var(--sans);letter-spacing:.08em}
+.omchk .omr i{font-style:normal;font-size:8.5px;color:#6b7280;letter-spacing:.06em}
+.omchk .omr b.pos{color:var(--buy,#26d07c)} .omchk .omr b.neg{color:var(--sell,#ff4d5e)}
+.omchk .omc{margin-top:3px;padding:2px 6px;border-radius:3px;font:600 10.5px var(--sans)}
+.omchk .omc.ok{background:#16a34a22;color:#4ade80} .omchk .omc.warn{background:#f59e0b22;color:#fbbf24}
+/* THE ODDS on the DESK SCORE */
+.odds .odr{display:grid;grid-template-columns:1fr 46px 46px 70px;gap:6px;padding:1px 8px;font:11px var(--mono);line-height:17px}
+.odds .odr.h{color:var(--dim,#8e9096);font:600 9.5px var(--sans);letter-spacing:.08em}
+.odds .odn{padding:4px 8px 1px;font:600 10px var(--sans);letter-spacing:.1em;color:#a855f7}
+.odds .good{color:var(--buy,#26d07c)} .odds .bad{color:var(--sell,#ff4d5e)}
+.odds .qd{padding:4px 8px;font:10.5px var(--mono);line-height:16px}
+.odds .qd b.ok{color:#4ade80} .odds .qd b.no{color:#f87171} .odds .qd b.other{color:#fbbf24}
+#ochHead .ochag{font:600 10px var(--mono);margin-left:8px;color:var(--dim,#8e9096)} #ochHead .ochag b.up{color:var(--buy,#26d07c)} #ochHead .ochag b.dn{color:var(--sell,#ff4d5e)}

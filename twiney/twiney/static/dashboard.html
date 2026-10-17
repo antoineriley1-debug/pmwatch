@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="build" content="20261016-0628">
+<meta name="build" content="20261017-1809">
 <title>TED · Twiney Execution Desk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script>(function(){const f=window.fetch.bind(window);window.fetch=async function(){const r=await f.apply(null,arguments);if(r.status===401&&!window._tedOut){window._tedOut=1;location.replace("/login?next="+encodeURIComponent(location.pathname));}return r;};})();</script>
@@ -1674,6 +1674,26 @@ body.whitedesk .chart-wrap canvas,body.whitedesk img,body.whitedesk video{filter
 #updBtn.current{background:transparent;color:var(--dim,#8e9096);border-color:var(--line,#2c2e33);font-weight:700}
 .qs .qclr,.qs .qflat{font:700 10.5px var(--mono);height:18px;padding:0 7px;letter-spacing:.06em}
 .qs .qflat,.simple .mgr .flat{color:#ff8a80;border-color:#7a2a2a} .qs .qclr,.simple .mgr .clr{color:#b0b0ad}
+
+/* OPTION MONEY in PLAY SETUP */
+.omchk{padding:4px 8px 6px;border-top:1px solid var(--line,#26282c);font:11px var(--mono)}
+.omchk:empty{display:none}
+.omchk .omh{font:600 10px var(--sans);letter-spacing:.14em;color:#a855f7;margin:2px 0 4px}
+.omchk .omh .dim{letter-spacing:.04em;font-weight:500;margin-left:6px}
+.omchk .omr{display:grid;grid-template-columns:118px 1fr auto;gap:6px;line-height:17px;align-items:baseline}
+.omchk .omr span:first-child{color:var(--dim,#8e9096);font:600 9.5px var(--sans);letter-spacing:.08em}
+.omchk .omr i{font-style:normal;font-size:8.5px;color:#6b7280;letter-spacing:.06em}
+.omchk .omr b.pos{color:var(--buy,#3fb56f)} .omchk .omr b.neg{color:var(--sell,#d9534f)}
+.omchk .omc{margin-top:3px;padding:2px 6px;border-radius:3px;font:600 10.5px var(--sans)}
+.omchk .omc.ok{background:#16a34a22;color:#4ade80} .omchk .omc.warn{background:#f59e0b22;color:#fbbf24}
+/* THE ODDS on the DESK SCORE */
+.odds .odr{display:grid;grid-template-columns:1fr 46px 46px 70px;gap:6px;padding:1px 8px;font:11px var(--mono);line-height:17px}
+.odds .odr.h{color:var(--dim,#8e9096);font:600 9.5px var(--sans);letter-spacing:.08em}
+.odds .odn{padding:4px 8px 1px;font:600 10px var(--sans);letter-spacing:.1em;color:#a855f7}
+.odds .good{color:var(--buy,#3fb56f)} .odds .bad{color:var(--sell,#d9534f)}
+.odds .qd{padding:4px 8px;font:10.5px var(--mono);line-height:16px}
+.odds .qd b.ok{color:#4ade80} .odds .qd b.no{color:#f87171} .odds .qd b.other{color:#fbbf24}
+#ochHead .ochag{font:600 10px var(--mono);margin-left:8px;color:var(--dim,#8e9096)} #ochHead .ochag b.up{color:var(--buy,#3fb56f)} #ochHead .ochag b.dn{color:var(--sell,#d9534f)}
 
 /* ===== skin: graphite terminal. one accent (amber = price), flat controls, no glow ===== */
 :root{--bg:#0c0c0d;--panel:#131416;--panel2:#1a1b1e;--line:#26282c;--text:#d6d6d3;--dim:#7d7f85;
@@ -3389,6 +3409,66 @@ const LEVEL_STYLE = {trigger:["#d6d6d3",[],1.6], second_entry:["#5aa9d6",[6,4],1
   // the OTHER SIDE of the play (a short under a long, a long over a short): same colours, its own dash, an arrow in the label
   alt_trigger:["#c9b8ff",[10,3,2,3],1.6], alt_second_entry:["#5aa9d6",[10,3,2,3],1.6], alt_target:["#3fb56f",[8,3,2,3],1], alt_stop:["#d9534f",[8,3,2,3],1]};
 
+/* OPTION MONEY on the stock chart: OPTION MAX PAIN (this week's expiry; not the PS60 max pain, the stop), the BIG STRIKES (the most option money above and below
+   price, the line's weight = the money), and CALL vs PUT MONEY as a line across the volume pane (above the middle =
+   calls ahead today, under = puts). Each one switches off in ⚙ CHART SETTINGS › OPTION MONEY. */
+function optMoneyLines(g, om, y, lo, hi, plotW, labelW, C, CS){
+  const light = !!(C && C.dots), font = "bold 10px ui-monospace, Menlo, Consolas, monospace";
+  // off the chart: a small tag on the top / bottom edge says where (and how far), so it is never out of mind
+  const edges = {up: [], dn: []};
+  const edge = (price, txt, col) => (price > hi ? edges.up : edges.dn).push([Math.abs(price - (price > hi ? hi : lo)), txt, col]);
+  if (CS("omStrikes")){
+    for (const s of om.strikes || []){
+      const col = s.side === "calls" ? "#14b8a6" : "#e879a6";
+      if (s.strike < lo || s.strike > hi){ if (s.rel >= 0.5) edge(s.strike, `STRIKE ${s.strike % 1 ? s.strike.toFixed(2) : s.strike} · ${s.unit === "ct" ? kfmt(s.size) + " ct" : "$" + kfmt(s.size)}`, col); continue; }
+      const yy = Math.round(y(s.strike)) + .5, w = 1 + Math.round((s.rel || 0) * 3);
+      g.strokeStyle = col + (s.rel >= 0.5 ? "cc" : "77"); g.lineWidth = w; g.setLineDash([]);
+      g.beginPath(); g.moveTo(plotW * 0.55, yy); g.lineTo(plotW, yy); g.stroke();
+      const amt = s.unit === "ct" ? kfmt(s.size) + " ct" : "$" + kfmt(s.size);
+      const txt = `STRIKE ${s.strike % 1 ? s.strike.toFixed(2) : s.strike} · ${amt}`;
+      g.font = font; const tw = g.measureText(txt).width;
+      g.fillStyle = light ? "#ffffffdd" : "#0b0c0edd"; g.fillRect(plotW - tw - 10, yy - 13, tw + 8, 12);
+      g.fillStyle = col; g.fillText(txt, plotW - tw - 6, yy - 4);
+    }
+  }
+  const mp = om.max_pain;
+  if (mp && mp.strike && CS("omMaxPain") && (mp.strike < lo || mp.strike > hi)) edge(mp.strike, `OPTION MAX PAIN ${mp.strike % 1 ? mp.strike.toFixed(2) : mp.strike}${mp.expires_today ? " · TODAY" : ""}`, "#a855f7");
+  if (mp && mp.strike && CS("omMaxPain") && mp.strike >= lo && mp.strike <= hi){
+    const yy = Math.round(y(mp.strike)) + .5, col = "#a855f7";
+    g.strokeStyle = col; g.lineWidth = mp.expires_today ? 2 : 1.25; g.setLineDash([8, 5]);
+    g.beginPath(); g.moveTo(0, yy); g.lineTo(plotW, yy); g.stroke(); g.setLineDash([]);
+    const txt = `OPTION MAX PAIN ${mp.strike % 1 ? mp.strike.toFixed(2) : mp.strike}${mp.expiry ? " · " + mp.expiry.slice(4, 6) + "/" + mp.expiry.slice(6, 8) : ""}${mp.expires_today ? " · EXPIRES TODAY" : ""}`;
+    g.font = font; const tw = g.measureText(txt).width, lx = plotW * 0.55;
+    g.fillStyle = col; g.fillRect(lx, yy - 14, tw + 8, 13); g.fillStyle = "#ffffff"; g.fillText(txt, lx + 4, yy - 4);
+    g.fillStyle = col; g.fillRect(plotW, yy - 8, labelW, 16); g.fillStyle = "#ffffff"; g.font = "bold 11px ui-monospace, Menlo, Consolas, monospace"; g.fillText("OMP " + px(mp.strike), plotW + 3, yy + 4);
+  }
+  g.font = "bold 9.5px ui-monospace, Menlo, Consolas, monospace";
+  for (const [k, list] of [["up", edges.up], ["dn", edges.dn]]){
+    list.sort((a, b) => a[0] - b[0]).slice(0, 3).forEach(([dist, txt, col], i) => {
+      const t = (k === "up" ? "▲ " : "▼ ") + txt, tw = g.measureText(t).width;
+      const yy = k === "up" ? 12 + i * 13 : (y(lo) - 4) - i * 13, lx = k === "up" ? plotW - tw - 8 : plotW * 0.55;
+      g.fillStyle = light ? "#ffffffdd" : "#0b0c0edd"; g.fillRect(lx - 2, yy - 10, tw + 6, 12); g.fillStyle = col; g.fillText(t, lx + 1, yy);
+    });
+  }
+  g.font = "11px ui-monospace, Menlo, Consolas, monospace";
+}
+function optMoneyStrip(g, dr, xOf, bars, H, volH, plotW, labelW, x0, cw){
+  const ser = dr.series || []; if (ser.length < 2 || !bars.length) return;
+  const top = H - 18 - volH + 4, bot = H - 20, mid = (top + bot) / 2, first = bars[0][0];
+  const vis = ser.filter(([t]) => t >= first); if (vis.length < 2) return;
+  const mx = Math.max(1, ...vis.map(([, v]) => Math.abs(v))), yv = v => mid - v / mx * (bot - top) / 2;
+  g.save(); g.beginPath(); g.rect(0, top, plotW, bot - top); g.clip();
+  g.strokeStyle = "#8a8f98"; g.setLineDash([2, 3]); g.lineWidth = 1; g.beginPath(); g.moveTo(0, Math.round(mid) + .5); g.lineTo(plotW, Math.round(mid) + .5); g.stroke(); g.setLineDash([]);
+  g.lineWidth = 2; let last = null;
+  for (const [t, v] of vis){ const x = xOf(t); if (x == null) continue;
+    if (last){ g.strokeStyle = v >= 0 ? "#16a34a" : "#dc2626"; g.beginPath(); g.moveTo(last[0], last[1]); g.lineTo(x, yv(v)); g.stroke(); }
+    last = [x, yv(v)]; }
+  g.restore();
+  const v = dr.net || 0, txt = `CALL−PUT ${v >= 0 ? "+" : "−"}$${kfmt(Math.abs(v))}`;
+  g.font = "bold 10px ui-monospace, Menlo, Consolas, monospace"; const tw = g.measureText(txt).width;
+  g.fillStyle = v >= 0 ? "#16a34a" : "#dc2626"; g.fillRect(58, top, tw + 8, 13); g.fillStyle = "#ffffff"; g.fillText(txt, 62, top + 10);
+  g.font = "11px ui-monospace, Menlo, Consolas, monospace";
+}
 function drawOne(p, cv, v, isFoot){
   const d = p.data;
   const W = cv.clientWidth, H = cv.clientHeight;
@@ -3551,6 +3631,7 @@ function drawOne(p, cv, v, isFoot){
   }
 
   if (!isFoot && CS("stopRisk")) stopRiskTag(p, d, g, y, lo, hi, plotW, bracketOn);
+  if (!isFoot && !isDaily && d.optmoney) try { optMoneyLines(g, d.optmoney, y, lo, hi, plotW, labelW, C, CS); } catch (e) {}
   const clean = isFoot || store.get("clean", true);
   // PS60: the second-entry line (the new high / low to get back through) and sneaky pivots
   if (d.ps60 && !clean){
@@ -3763,6 +3844,7 @@ function drawOne(p, cv, v, isFoot){
       g.fillStyle = "#7d7f8555"; g.fillRect(x, base - full, cw * 0.7, full - hb - hs);
     } else { g.fillStyle = "#7d7f8566"; g.fillRect(x, base - full, cw * 0.7, full); }
   }
+  if (!isFoot && !isDaily && d.optmoney && d.optmoney.drift && CS("omLine")) try { optMoneyStrip(g, d.optmoney.drift, xOf, bars, H, volH, plotW, labelW, x0, cw); } catch (e) {}
 
   // absorption bubbles: shares traded into resting size at your levels / big levels
   if (bars.length && !clean){
@@ -5188,6 +5270,8 @@ const CS_DEF = [
     ["range", "flyMax", "Prints that fly to T&S at once (big + reload fills)", 4, 1, 12, true]]],
   ["INDICATORS", [["check", "vwap", "VWAP", true, true], ["check", "mas", "Moving averages", true, true], ["check", "matags", "MA price tags", true, true],
     ["check", "bb", "Bollinger bands", true, true]]],
+  ["OPTION MONEY", [["check", "omMaxPain", "OPTION MAX PAIN line (this week's expiry; not the PS60 max pain / stop)", true], ["check", "omStrikes", "BIG STRIKES: the most option money above and below price", true],
+    ["check", "omLine", "CALL vs PUT MONEY line in the volume pane", true]]],
   ["LEVEL II CANDLE", [["check", "candleFly", "The ladder's candle flies to the chart when it closes (CANDLE mode, 1m / 5m)", true, true]]],
 ];
 function csKey(f){ return f[0] === "range" ? f[1] : f[4] === true || (f[0] === "check" && f.length > 4 && f[4]) ? f[1] : "cs." + f[1]; }
@@ -6141,13 +6225,43 @@ function renderSetup(d){
     <div class="msg ${SU.msg.startsWith("SAVED") ? "ok" : "no"}" id="suMsg">${esc(SU.msg)}</div></div>`;
   const pc = P.setup.pc;
   if (!pc.querySelector("#suForm")){
-    pc.innerHTML = `<div id="suForm"></div><div class="tlog" id="suLog"><div class="tlog-hd"><span>TRADE LOG <b id="tlogSym"></b></span><span class="dim">levels you set · what you say · what you type</span></div>
+    pc.innerHTML = `<div id="suForm"></div><div id="suOm" class="omchk"></div><div class="tlog" id="suLog"><div class="tlog-hd"><span>TRADE LOG <b id="tlogSym"></b></span><span class="dim">levels you set · what you say · what you type</span></div>
       <div class="tlog-in"><input id="tlogIn" placeholder="type a note, Enter" maxlength="600" spellcheck="false"><button id="tlogMic" title="talk: what you say lands here as a journal entry (and on the recording when one is on)">🎙 MIC</button></div><div class="tlog-list" id="tlogList"></div></div>`;
     P.setup.last = null;
   }
   const form = pc.querySelector("#suForm");
   if (form.dataset.h !== html){ form.dataset.h = html; form.innerHTML = html; pc.dataset.sym = curSym; }
+  const om = pc.querySelector("#suOm"); if (om){ const h = omHTML(d.optmoney); if (om.dataset.h !== h){ om.dataset.h = h; om.innerHTML = h; } }
   renderTradeLog(d);
+}
+/* OPTION MONEY in PLAY SETUP: the six reads in one block (where each one comes from in grey), then the checks against
+   this play: the MP against the expected move, a big strike in the way, the option max pain on expiry day, the
+   money's lean against the side. Flow backs up the setup, never replaces it. */
+function omHTML(om){
+  if (!om) return "";
+  const $k = v => v == null ? "—" : (v < 0 ? "−" : "") + "$" + (Math.abs(v) >= 1e9 ? (Math.abs(v) / 1e9).toFixed(1) + "B" : Math.abs(v) >= 1e6 ? (Math.abs(v) / 1e6).toFixed(1) + "M" : Math.round(Math.abs(v) / 1e3) + "K");
+  const src = k => om.src && om.src[k] ? `<i>${esc(om.src[k])}</i>` : "";
+  const ex = e => e ? e.slice(4, 6) + "/" + e.slice(6, 8) : "";
+  const rows = [];
+  const mp = om.max_pain;
+  if (mp) rows.push(["OPTION MAX PAIN", `${px(mp.strike)} ${ex(mp.expiry)} · ${mp.dist >= 0 ? "+" : ""}${(+mp.dist).toFixed(2)} from here${mp.expires_today ? " · <b>EXPIRES TODAY</b>" : ""}`, src("max_pain")]);
+  const ss = om.strikes || [];
+  if (ss.length){ const up = ss.filter(s => s.above).sort((a, b) => a.strike - b.strike)[0], dn = ss.filter(s => !s.above).sort((a, b) => b.strike - a.strike)[0];
+    const f = s => s ? `${s.strike % 1 ? s.strike.toFixed(2) : s.strike} (${s.side}${s.rel >= 0.5 ? ", big" : ""})` : "—";
+    rows.push(["BIG STRIKES", `above ${f(up)} · below ${f(dn)}`, src("strikes")]); }
+  const dr = om.drift;
+  if (dr) rows.push(["CALL vs PUT $", `<b class="${dr.net >= 0 ? "pos" : "neg"}">${$k(dr.net)}</b> today · leans ${dr.lean}${dr.chg15 != null ? ` · last 15 min ${$k(dr.chg15)}` : ""}`, src("drift")]);
+  const em = om.em;
+  if (em) rows.push(["EXPECTED MOVE", `±${(+em.move).toFixed(2)} by ${ex(em.expiry)} (${px(em.lo)} – ${px(em.hi)})`, src("em")]);
+  const op = om.opening;
+  if (op) rows.push(["OPENING MONEY", `calls ${op.calls >= 0 ? "+" : ""}${kfmt(op.calls)} · puts ${op.puts >= 0 ? "+" : ""}${kfmt(op.puts)} contracts overnight · ${op.lean}`, op.src ? `<i>${esc(op.src)}</i>` : ""]);
+  const bs = om.bought_sold;
+  if (bs) rows.push(["BOUGHT vs SOLD", `calls ${kfmt(bs.calls_bought)} / ${kfmt(bs.calls_sold)} · puts ${kfmt(bs.puts_bought)} / ${kfmt(bs.puts_sold)}`, "<i>QUANT DATA</i>"]);
+  const ag = om.aggression;
+  if (ag) rows.push(["AT THE ASK", `${ag.ask_pct}% at the ask · ${ag.bid_pct}% at the bid · ${kfmt(ag.contracts)} ct today`, `<i>${esc(ag.key || "")}</i>`]);
+  const checks = (om.checks || []).map(c => `<div class="omc ${c.tone}">${c.tone === "ok" ? "✓" : "!"} ${esc(c.text)}</div>`).join("");
+  return `<div class="omh">OPTION MONEY <span class="dim">backs up the pivot, never replaces it</span></div>` +
+    rows.map(r => `<div class="omr"><span>${r[0]}</span><span>${r[1]}</span>${r[2]}</div>`).join("") + checks;
 }
 function renderTradeLog(d){
   const list = document.getElementById("tlogList"), hd = document.getElementById("tlogSym"); if (!list) return;
@@ -7789,9 +7903,33 @@ function renderScore(st){
   const html = `<div class="sth">BY CALL · count · hit rate · hit·miss·flat · avg move 5 / 15 min (ATRs)</div>
     <div class="sctab">${kinds || `<div class="dim" style="padding:4px 8px">no call has had its 15 minutes yet${s.open ? ` · ${s.open} waiting` : ""}</div>`}</div>
     <div class="sth">THE LAST CALLS · judged 15 minutes after${s.open ? ` · ${s.open} still waiting` : ""}</div>
-    <div class="sctab">${recent || `<div class="dim" style="padding:4px 8px">nothing judged yet</div>`}</div>`;
+    <div class="sctab">${recent || `<div class="dim" style="padding:4px 8px">nothing judged yet</div>`}</div>` + oddsHTML();
   panelHTML("score", html);
 }
+/* THE ODDS: every judged call on the live market, all days, split by what the OPTION MONEY said at the call (with the
+   move or against it, a big strike in the way or clear ...). Read after a few weeks: keep what proves itself. And
+   which Quant Data tools this key opens (CHECK asks each one once). */
+const ODDS = {d: null};
+async function oddsPoll(){ try { ODDS.d = await (await fetch("/api/optmoney", {cache: "no-store"})).json(); } catch (e) {} }
+oddsPoll(); setInterval(oddsPoll, 30000);
+function oddsHTML(){
+  const o = ODDS.d; if (!o || !o.ok) return "";
+  const od = o.odds || {}, all = od.all || {};
+  const cls = (h, base) => h == null || base == null ? "" : h >= base + 8 ? "good" : h <= base - 8 ? "bad" : "";
+  const reads = (od.reads || []).map(r => `<div class="odn">${esc(r.name)}</div>` + r.answers.map(a =>
+    `<div class="odr"><span>${esc(a.answer)}</span><span>${a.n}</span><span class="${cls(a.hit_pct, all.hit_pct)}">${a.hit_pct == null ? "—" : a.hit_pct + "%"}</span><span>${a.avg15 == null ? "" : (a.avg15 >= 0 ? "+" : "") + a.avg15 + " ATR"}</span></div>`).join("")).join("");
+  const st = o.status || {}, mark = v => v.state === "ok" ? `<b class="ok">OPEN</b>` : v.state === "no" ? `<b class="no">NOT ON THIS KEY</b>` : v.state === "untested" ? `<b class="other">not asked yet</b>` : `<b class="other">${esc(v.state.toUpperCase())}</b>`;
+  const tools = Object.values(st).map(v => `<div title="${esc(v.detail || "")}">${mark(v)} ${esc(v.name)}</div>`).join("");
+  return `<div class="odds"><div class="sth">THE ODDS · live market, every day so far · ${od.n || 0} judged calls over ${od.days || 0} day${od.days === 1 ? "" : "s"}${all.hit_pct != null ? ` · all calls hit ${all.hit_pct}%` : ""}</div>
+    ${reads ? `<div class="odr h"><span>WHEN THE OPTION MONEY SAID</span><span>CALLS</span><span>HIT</span><span>AVG 15m</span></div>${reads}`
+      : `<div class="dim" style="padding:4px 8px">The odds fill in as the live market runs: each call keeps what the option money said, judged 15 minutes later. Give it a few weeks.</div>`}
+    <div class="sth">QUANT DATA TOOLS ${o.checked ? "· checked " + nyHM(o.checked) : ""} <button id="omCheck" ${o.feed ? "" : "disabled"} title="ask each Quant Data tool once with your key and save its answer (recordings/quantdata_tools)">CHECK</button></div>
+    <div class="qd">${o.feed ? tools : `<span class="dim">${o.src === "practice" ? "Practice market: the option money is made from the practice chain and flow." : "No Quant Data key: the option money comes from the desk's own flow and option chain."}</span>`}</div></div>`;
+}
+document.addEventListener("click", async e => { if (!e.target.closest("#omCheck")) return;
+  const out = await post("/api/optmoney/check", {});
+  toast(out.ok ? "Asking each Quant Data tool once… (about 10 seconds)" : (out.reason || "CHECK refused"), out.ok);
+  if (out.ok) setTimeout(async () => { await oddsPoll(); renderScore(state); }, 9000); });
 function renderConviction(d){
   const strip = document.getElementById("cvStrip"), panel = document.getElementById("cvPanel");
   const c = d && d.conviction;
@@ -7809,7 +7947,7 @@ function renderConviction(d){
     <div class="gates big"><b class="${c.chart_gate.ok ? "on" : ""}">CHART GATE ${c.chart_gate.ok ? "GREEN" : "not yet"}</b><b class="${c.flow_gate.ok ? "on" : ""}">FLOW GATE ${c.flow_gate.ok ? "GREEN" : "not yet"}</b></div>
     ${c.max_pain ? `<div class="dim" style="font-size:10.5px;margin-top:3px">Max pain: prior 5m ${c.side_bias === "LONG" ? "low" : "high"} ${px(c.max_pain.options)} (options) · process stop ${px(c.max_pain.equity)} (equity)</div>` : ""}</div>
     <div class="cvrows">${rows}</div>
-    <div class="dim" style="padding:4px 8px;font-size:10.5px">Daily MP 20 · pivot + confirm 20 · 2nd entry 20 · premium ≥ $100K 10 · weeklies 10 · out of the money 10 · repeats 10 · sweeps +5. Flow supports the pivot; it never replaces the second entry.</div>`;
+    <div class="dim" style="padding:4px 8px;font-size:10.5px">Daily MP 20 · pivot + confirm 20 · 2nd entry 20 · premium ≥ $100K 10 · weeklies 10 · out of the money 10 · repeats 10 · sweeps +5. Flow backs up the pivot; it never replaces the second entry.</div>`;
   panelHTML("conviction", html);
 }
 
@@ -7886,7 +8024,7 @@ function renderOchHead(){
   if (!OCH.key) html = `<span class="dim">No contract yet — open OPTIONS, click a strike (or 📈 on its row) and it charts here.</span><button data-och="chain">OPTIONS</button>`;
   else { const pos = d && d.position, q = pos ? Math.abs(pos.qty) : 0, long = pos && pos.qty > 0;
     const rs = d ? optRiskSize(d) : null;
-    html = `<b class="${d && d.right === "P" ? "s" : "b"}">${esc(d ? d.label : OCH.key)}</b>${d && d.expires_today ? `<span class="exptoday" title="expires at 4:00 today: a long one in the money is exercised into shares; the desk calls it out at 3:30 and closes it at 3:50 (SETTINGS, Trading)">EXPIRES TODAY</span>` : d && d.dte != null && d.dte < 7 ? `<span class="dim">${d.dte.toFixed(1)}d left</span>` : ""}${d && d.oi && d.oi.oi != null ? `<span class="ochoi ${d.oi.open_read === "MORE" ? "more" : d.oi.open_read === "LESS" ? "less" : ""}" title="${esc(oiTip(d.oi))}">OPEN INT ${kfmt(d.oi.oi)}${d.oi.oi_change ? ` <i class="${d.oi.oi_change > 0 ? "up" : "dn"}">${d.oi.oi_change > 0 ? "▲" : "▼"}${kfmt(Math.abs(d.oi.oi_change))}</i>` : ""} · TRADED ${d.oi.vol == null ? "—" : kfmt(d.oi.vol)}${d.oi.open_read === "MORE" ? " <b>▲ MORE THAN OPEN</b>" : d.oi.open_read === "LESS" ? " <b>LESS THAN OPEN</b>" : ""}</span>` : ""}${d && d.sim ? `<span class="simtag" title="options market closed: this contract's price is SIMULATED from the stock (paper only); option orders wait for the 9:30 open">SIM · market closed</span>` : ""}
+    html = `<b class="${d && d.right === "P" ? "s" : "b"}">${esc(d ? d.label : OCH.key)}</b>${d && d.expires_today ? `<span class="exptoday" title="expires at 4:00 today: a long one in the money is exercised into shares; the desk calls it out at 3:30 and closes it at 3:50 (SETTINGS, Trading)">EXPIRES TODAY</span>` : d && d.dte != null && d.dte < 7 ? `<span class="dim">${d.dte.toFixed(1)}d left</span>` : ""}${d && d.oi && d.oi.oi != null ? `<span class="ochoi ${d.oi.open_read === "MORE" ? "more" : d.oi.open_read === "LESS" ? "less" : ""}" title="${esc(oiTip(d.oi))}">OPEN INT ${kfmt(d.oi.oi)}${d.oi.oi_change ? ` <i class="${d.oi.oi_change > 0 ? "up" : "dn"}">${d.oi.oi_change > 0 ? "▲" : "▼"}${kfmt(Math.abs(d.oi.oi_change))}</i>` : ""} · TRADED ${d.oi.vol == null ? "—" : kfmt(d.oi.vol)}${d.oi.open_read === "MORE" ? " <b>▲ MORE THAN OPEN</b>" : d.oi.open_read === "LESS" ? " <b>LESS THAN OPEN</b>" : ""}</span>` : ""}${d && d.aggression ? `<span class="ochag" title="today on this contract: contracts traded at the ask (bought in a rush) against at the bid (sold in a rush)">AT THE ASK <b class="up">${d.aggression.ask_pct}%</b> · AT THE BID <b class="dn">${d.aggression.bid_pct}%</b></span>` : ""}${d && d.sim ? `<span class="simtag" title="options market closed: this contract's price is SIMULATED from the stock (paper only); option orders wait for the 9:30 open">SIM · market closed</span>` : ""}
       ${rs ? `<button class="risksz" data-ochn="${rs.n}" title="${esc(rs.why)}">RISK $${riskDollars()} → ${rs.n} ct</button>` : d ? `<span class="dim" title="draw a STOP on the stock chart (or set this contract's stop) and the desk sizes contracts from your RISK $">no stop to size from</span>` : ""}
       ${q ? `<span class="${long ? "b" : "s"}">YOU HAVE ${q}${pos.pnl != null ? ` · ${pos.pnl >= 0 ? "+" : "−"}$${sz(Math.abs(Math.round(pos.pnl)))}` : ""}</span>` : ""}
       <span class="tfs">${[1, 5, 15].map(m => `<button data-ochtf="${m}" class="${tf === m ? "on" : ""}">${m}m</button>`).join("")}<button data-ochind="mas" class="${store.get("och.mas", false) ? "on" : ""}" title="moving averages on the OPTION CHART (the stock chart keeps its own)">MAS</button><button data-ochind="bb" class="${store.get("och.bb", false) ? "on" : ""}" title="Bollinger Bands on the OPTION CHART">BB</button></span>
