@@ -6129,8 +6129,20 @@ class Engine:
                    for r in ((dv or {}).get("rows") or [])][:20]
         except Exception:  # noqa: BLE001
             dan = []
+        # the index strip: SPY / QQQ / IWM / VIX when they are on the desk (up / down on the day, over / under VWAP),
+        # and how many of your stocks are green
+        idx = []
+        for s_ in ("SPY", "QQQ", "IWM", "DIA", "VIX"):
+            o = self.syms.get(s_)
+            p_, c_ = (o.price(), prev_close(o)) if o is not None else (None, None)
+            if p_ and c_:
+                vw = ((o.__dict__.get("_refs") or {}).get("v") or {}).get("vwap")
+                idx.append({"symbol": s_, "last": fmt_price(p_), "chg_pct": round((p_ - c_) / c_ * 100, 2),
+                            "vwap": None if not vw else ("over" if p_ > vw else "under")})
+        chs = [w["chg_pct"] for w in wl if w.get("chg_pct") is not None]
+        breadth = {"green": sum(1 for x in chs if x > 0), "n": len(chs)}
         return {"ok": True, "now": t, "watchlist": wl, "charts": charts, "alerts": alerts, "trades": trades[-10:], "dan": dan,
-                "myread": self.myread.view(t)}
+                "myread": self.myread.view(t), "indices": idx, "breadth": breadth}
 
     def snapshot(self, t, extra=(), full=None, tv=None):
         """``full``: symbols the page wants the whole bar history for (None = every pane, as before).

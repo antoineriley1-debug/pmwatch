@@ -185,11 +185,79 @@ body.clean #dock,body.dockoff #dock{display:none}
 #dock .chatlist div{padding:5px 8px;border-bottom:1px solid #1a2540;cursor:pointer;font-size:12px} #dock .chatlist div:hover{background:#16213a}
 #dock .chatlist b{color:#ff8a9a}
 #tip{position:absolute;z-index:30;pointer-events:none;background:rgba(0,0,0,.8);color:#fff;font:700 18px "IBM Plex Mono",monospace;padding:4px 8px;border-radius:4px;display:none}
+
+/* ===================== THE NETWORK LOOK (premium): glass, light, motion. Every piece also works in the other themes ===================== */
+#stage::before{content:"";position:absolute;inset:0;pointer-events:none;z-index:0;
+  background:radial-gradient(1400px 800px at 75% -10%,rgba(31,111,255,.16),transparent 60%),radial-gradient(900px 600px at -10% 110%,rgba(224,36,47,.12),transparent 60%),
+  repeating-linear-gradient(0deg,rgba(255,255,255,.018) 0 1px,transparent 1px 64px),repeating-linear-gradient(90deg,rgba(255,255,255,.018) 0 1px,transparent 1px 64px)}
+body.theme-paper #stage::before{opacity:.35}
+#top{background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,0) 50%),linear-gradient(90deg,var(--brand2),var(--panel) 55%,var(--brand2));box-shadow:0 8px 30px rgba(0,0,0,.45);overflow:hidden}
+#top::after{content:"";position:absolute;top:0;bottom:0;width:240px;left:-260px;background:linear-gradient(100deg,transparent,rgba(255,255,255,.14),transparent);animation:sheen 14s ease-in-out infinite;pointer-events:none}
+@keyframes sheen{0%,82%{left:-260px}100%{left:110%}}
+#bug{position:relative;background:linear-gradient(180deg,rgba(255,255,255,.18),rgba(255,255,255,0) 55%),var(--brand);box-shadow:inset -10px 0 20px rgba(0,0,0,.25)}
+#bug .mark{display:inline-flex;align-items:center;justify-content:center;width:52px;height:52px;border-radius:10px;background:#fff;color:var(--brand);font:800 34px var(--fH);box-shadow:0 4px 14px rgba(0,0,0,.35)}
+#bug .livep{font:800 15px var(--fN);letter-spacing:.18em;background:#fff;color:var(--brand);padding:3px 8px;border-radius:4px;animation:livep 2s ease-in-out infinite}
+@keyframes livep{50%{opacity:.55}}
+#idx{display:flex;align-items:stretch;border-left:1px solid var(--line)}
+#idx .ix{display:flex;flex-direction:column;justify-content:center;padding:0 18px;border-right:1px solid var(--line);min-width:112px;position:relative}
+#idx .ix b{font:700 17px var(--fH);letter-spacing:.12em;color:var(--dim)}
+#idx .ix span{font:700 24px var(--fN)}
+#idx .ix i{font-style:normal;font:700 14px var(--fN)}
+#idx .ix::after{content:"";position:absolute;left:0;right:0;bottom:0;height:3px;background:var(--line)}
+#idx .ix.up::after{background:var(--up)} #idx .ix.dn::after{background:var(--dn)}
+#idx .ix.flash{animation:ixf .9s ease}
+@keyframes ixf{0%{background:rgba(255,255,255,.18)}100%{background:transparent}}
+.cell{box-shadow:0 10px 30px rgba(0,0,0,.35)} .cell.focus{box-shadow:0 0 0 1px var(--brand),0 0 28px rgba(224,36,47,.35),0 10px 30px rgba(0,0,0,.35)}
+.ch-h{background:linear-gradient(180deg,rgba(255,255,255,.04),transparent);border-bottom:1px solid var(--line)}
+#lower{filter:drop-shadow(0 14px 30px rgba(0,0,0,.5))}
+#lower .tag{position:relative;overflow:hidden;background:linear-gradient(180deg,rgba(255,255,255,.2),rgba(255,255,255,0) 60%),var(--brand)}
+#lower .tag::after{content:"";position:absolute;top:0;bottom:0;width:60px;left:-80px;background:linear-gradient(100deg,transparent,rgba(255,255,255,.45),transparent);animation:sheen2 6s ease-in-out infinite}
+@keyframes sheen2{0%,80%{left:-80px}100%{left:120%}}
+#lower .txt{backdrop-filter:blur(8px);background:linear-gradient(90deg,rgba(8,13,28,.95),rgba(8,13,28,.82))}
+#lower.in .txt b{animation:lowin .6s cubic-bezier(.2,.8,.2,1)} #lower.in .txt span{animation:lowin .6s cubic-bezier(.2,.8,.2,1) .08s both}
+@keyframes lowin{from{transform:translateY(24px);opacity:0}to{transform:none;opacity:1}}
+#crawl{background:linear-gradient(180deg,var(--panel2),var(--panel));box-shadow:0 -6px 24px rgba(0,0,0,.35)}
+#crawl .track .sep{color:var(--brand);margin:0 0 0 -24px}
+#breaking .b2{box-shadow:inset 0 -4px 0 rgba(0,0,0,.08)}
+/* MEMBERS badge: for the paid stream */
+#members{position:absolute;right:28px;top:100px;z-index:7;display:none;align-items:center;gap:10px;padding:8px 16px 8px 10px;border-radius:999px;
+  background:linear-gradient(135deg,#f2c14e,#c8902a);color:#1a1205;font:800 20px var(--fH);letter-spacing:.14em;box-shadow:0 8px 24px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.5)}
+#members.on{display:flex} #members .gem{width:30px;height:30px;border-radius:50%;background:#1a1205;color:#f2c14e;display:flex;align-items:center;justify-content:center;font-size:18px}
+/* the QR corner: scan to join */
+#qr{position:absolute;left:28px;bottom:160px;z-index:7;display:none;gap:14px;align-items:center;padding:12px;border-radius:12px;background:rgba(8,13,28,.92);border:1px solid var(--line);box-shadow:0 12px 30px rgba(0,0,0,.5)}
+#qr.on{display:flex} #qr .code{width:150px;height:150px;background:#fff;border-radius:6px;display:flex;align-items:center;justify-content:center;overflow:hidden}
+#qr .code img,#qr .code canvas{width:140px;height:140px;image-rendering:pixelated}
+#qr b{display:block;font:800 26px var(--fH);letter-spacing:.06em} #qr span{display:block;font:600 18px var(--fB);color:var(--gold);max-width:300px}
+/* THE BIG MOMENT: a closed trade, full screen, in R */
+#moment{position:absolute;inset:0;z-index:14;display:none;align-items:center;justify-content:center;flex-direction:column;gap:10px;pointer-events:none;
+  background:radial-gradient(900px 600px at 50% 50%,rgba(0,0,0,.55),rgba(0,0,0,.85))}
+#moment.on{display:flex;animation:mfade 5.2s ease forwards}
+@keyframes mfade{0%{opacity:0}8%,85%{opacity:1}100%{opacity:0}}
+#moment .k{font:800 32px var(--fH);letter-spacing:.3em;color:var(--gold)}
+#moment .r{font:800 260px var(--fH);line-height:.9;letter-spacing:.02em;text-shadow:0 10px 50px rgba(0,0,0,.6);animation:mpop .8s cubic-bezier(.2,1.6,.4,1)}
+#moment.win .r{color:var(--up)} #moment.loss .r{color:var(--dn)}
+#moment .s{font:700 44px var(--fH);letter-spacing:.08em}
+@keyframes mpop{from{transform:scale(.4);opacity:0}to{transform:scale(1);opacity:1}}
+#moment i{position:absolute;width:14px;height:22px;border-radius:3px;top:-30px;animation:fall 3.4s linear forwards}
+@keyframes fall{to{transform:translateY(1200px) rotate(720deg)}}
+/* the dock's new tools */
+#dock .pads{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;padding:0 14px}
+#dock .pads button{height:52px;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:2px;font-size:10.5px;line-height:1.1;position:relative}
+#dock .pads button small{color:#8a96b3;font-size:9.5px} #dock .pads button.own{border-color:#f2c14e} #dock .pads button.hit{background:#e0242f}
+#dock .meter{height:6px;margin:5px 14px;background:#16213a;border-radius:3px;overflow:hidden} #dock .meter div{height:100%;width:0;background:#21c07a;transition:width .1s}
+#dock .clips{margin:5px 14px;border:1px solid #2a3a60;border-radius:5px;max-height:150px;overflow:auto}
+#dock .clips div{display:flex;gap:6px;align-items:center;justify-content:space-between;padding:5px 8px;border-bottom:1px solid #1a2540;font-size:12px}
+#dock .cap{margin:5px 14px;border:1px solid #2a3a60;border-radius:5px;padding:6px}
+#dock .cap h5{margin:0 0 4px;font:700 11px "IBM Plex Mono",monospace;letter-spacing:.1em;color:#f2c14e;display:flex;justify-content:space-between;align-items:center}
+#dock .cap textarea{width:100%;background:#0f172b;color:#dfe6f5;border:1px solid #2a3a60;border-radius:5px;padding:5px;font:12px "IBM Plex Sans",sans-serif;resize:vertical}
+#dock .cap .n{color:#8a96b3;font:11px "IBM Plex Mono",monospace}
+#dock .cap .n.over{color:#ff6b7a}
 </style></head>
 <body class="theme-net fmt-h">
 <div id="wrap"><div id="stage">
-  <div id="top"><div id="bug"><span class="dot"></span><span id="brandName">TWINEY LIVE</span></div>
+  <div id="top"><div id="bug"><span class="mark" id="brandMark">T</span><span id="brandName">TWINEY LIVE</span><span class="livep">LIVE</span></div>
     <div id="seg"><b id="segTitle">THE WATCHLIST</b><span id="segSub">PS60 · pivots, second entries, measured potential</span></div>
+    <div id="idx"></div>
     <div id="clock"><b id="clk">--:--:--</b><span id="mkt">—</span></div></div>
   <div id="body">
     <div id="rail"><h3><span id="railTitle">WATCHLIST</span><i id="railSrc" title="your watchlist / Dan's">MINE</i></h3><div id="wl"></div></div>
@@ -210,6 +278,9 @@ body.clean #dock,body.dockoff #dock{display:none}
   <div class="board" id="plays"><div class="k" id="playsK"></div><div class="t" id="playsT">THE PLAYS</div><table id="playsTbl"></table></div>
   <div id="sponsor"><b id="spT"></b><span id="spS"></span></div>
   <div id="chatbox"></div>
+  <div id="members"><span class="gem">◆</span><span id="memT">MEMBERS ONLY</span></div>
+  <div id="qr"><div class="code" id="qrCode"></div><div><b id="qrT">JOIN THE DESK</b><span id="qrS">scan to subscribe</span></div></div>
+  <div id="moment"><div class="k" id="momK">TRADE CLOSED</div><div class="r" id="momR"></div><div class="s" id="momS"></div></div>
   <div id="guides"></div>
   <div id="tip"></div>
 </div></div>
@@ -288,8 +359,31 @@ body.clean #dock,body.dockoff #dock{display:none}
   <div class="r"><button id="ytBtn">READ CHAT</button><button id="ytBox" title="the last few messages on screen">CHAT ON SCREEN</button></div>
   <div class="hint">Click a message: it goes on screen as the VIEWER QUESTION card.</div>
   <div class="chatlist" id="ytList"></div>
-  <h4>SOUND</h4>
-  <div class="r"><button id="sndBtn" title="a short sting with the setup banner and the WE'RE LIVE intro">STINGS</button></div>
+  <h4>PREMIUM · FOR YOUR MEMBERS</h4>
+  <div class="full"><input id="memIn" placeholder="badge, e.g. MEMBERS ONLY · PREMIUM · EXCLUSIVE"></div>
+  <div class="r"><button id="memBtn" title="a gold badge top right: this is the paid stream">MEMBERS BADGE</button><button id="momBtn" title="when a trade closes, its R fills the screen for five seconds (wins and losses alike)">BIG MOMENT ON CLOSE</button><button id="momTest">SHOW LAST TRADE</button></div>
+  <div class="full" style="margin-top:5px"><input id="qrUrl" placeholder="link for the QR code (your sign-up page)"><input id="qrTIn" placeholder="QR headline, e.g. JOIN THE DESK"><input id="qrSIn" placeholder="QR line, e.g. scan to subscribe"></div>
+  <div class="r"><button id="qrBtn" title="a QR code bottom left that viewers scan with their phone">QR CORNER</button></div>
+  <div class="full" style="margin-top:5px"><input id="markIn" placeholder="logo letter(s) on the bug, e.g. T" maxlength="3"></div>
+  <h4>SOUND BOARD · keys Q W R T Y U I O P [ ] ;</h4>
+  <div class="pads" id="pads"></div>
+  <div class="hint">Click to play. Right-click a pad: put your own sound on it (mp3 / wav / m4a, kept in this browser) or take it back off.</div>
+  <div class="w2" style="margin-top:5px"><label class="hint" style="padding:0">PADS<input id="padVol" type="range" min="0" max="100" value="70"></label><label class="hint" style="padding:0">MASTER<input id="mstVol" type="range" min="0" max="100" value="90"></label></div>
+  <div class="r" style="margin-top:5px"><button id="sndBtn" title="a short sting with the setup banner and the WE'RE LIVE intro">STINGS</button><button id="muteBtn" title="every sound off at once">MUTE ALL</button></div>
+  <h4>THEME MUSIC</h4>
+  <div class="full"><input id="themeFile" type="file" accept="audio/*" title="your theme: it is kept in this browser"></div>
+  <div class="hint" id="themeName">no theme yet</div>
+  <div class="r"><button id="themePlay">PLAY THEME</button><button id="themeStop">STOP</button><button id="themeIntro" title="the theme plays with the WE'RE LIVE intro and on STARTING SOON">WITH THE INTRO</button><button id="themeLoop">LOOP</button></div>
+  <div class="w2" style="margin-top:5px"><label class="hint" style="padding:0">THEME<input id="themeVol" type="range" min="0" max="100" value="60"></label><label class="hint" style="padding:0">UNDER YOUR VOICE<input id="duckVol" type="range" min="0" max="100" value="18"></label></div>
+  <div class="r" style="margin-top:5px"><button id="duckBtn" title="listens to your microphone: when you talk the theme drops to the UNDER YOUR VOICE level, then comes back">DUCK UNDER MY VOICE</button></div>
+  <div class="meter"><div id="micMeter"></div></div>
+  <h4>CLIPS · for every platform</h4>
+  <div class="r"><button id="clipArm" title="pick THIS tab once: from then on the last minute is always kept, ready to clip">START CLIPPING</button><button id="clip30">CLIP LAST 30s</button><button id="clip60">CLIP LAST 60s</button></div>
+  <div class="hint">Your clips (16:9). VERTICAL makes the 9:16 one for Reels / Shorts / TikTok from it. They save to your computer.</div>
+  <div class="clips" id="clipList"></div>
+  <h4>POST · captions in your words</h4>
+  <div class="r"><button id="capBtn" title="captions for the ticker in the red frame: its price, its move, your read, the plan">WRITE CAPTIONS</button></div>
+  <div id="caps"></div>
   <h4>HOTKEYS (STREAM DECK)</h4>
   <div class="hint">Shift+1…8 segments · Alt+1 LIVE · Alt+2 STARTING SOON · Alt+3 OPEN COUNTDOWN · Alt+4 BE RIGHT BACK · Alt+5 THANKS · F2 trade card · F3 scorecard · F4 plays board · F6 market in 60 · F7 question card · F8 sponsor now · B intro · H panel. A Stream Deck "Hotkey" button sends any of these.</div>
   <h4>LOOK</h4>
@@ -356,7 +450,7 @@ function guides(){
 
 /* ------------------------------------------------------------ data */
 const BARS = {}, DAILY = {}, INFO = {};
-let MR = {}, WL = [], DAN = [], ALERTS = [], TRADES = [], SEEN = new Set(), FIRST = true, LASTNOW = 0;
+let IDX = [], BREADTH = null, MR = {}, WL = [], DAN = [], ALERTS = [], TRADES = [], SEEN = new Set(), FIRST = true, LASTNOW = 0;
 async function poll(){
   const view = [...new Set(cells.filter(c => c.visible && c.sym).map(c => c.sym))];
   const full = view.filter(s => !BARS[s]);
@@ -364,7 +458,7 @@ async function poll(){
     const r = await fetch(`/api/show?view=${encodeURIComponent(view.join(","))}&full=${encodeURIComponent(full.join(","))}`, {cache: "no-store"});
     if (r.status === 401){ location.replace("/login?next=/show"); return; }
     const j = await r.json(); if (!j.ok) return;
-    LASTNOW = j.now; MR = j.myread || {}; WL = j.watchlist || []; DAN = j.dan || []; TRADES = j.trades || [];
+    LASTNOW = j.now; MR = j.myread || {}; IDX = j.indices || []; BREADTH = j.breadth || null; WL = j.watchlist || []; DAN = j.dan || []; TRADES = j.trades || [];
     for (const [s, d] of Object.entries(j.charts || {})){
       INFO[s] = d;
       if (d.daily) DAILY[s] = d.daily;
@@ -1060,6 +1154,233 @@ function sting(kind){
     else { tone(523, 0, .22, "triangle"); tone(784, .16, .35, "triangle"); }
   } catch (e) {}
 }
+
+/* ============================================================ THE NETWORK LOOK: the index strip, the members badge, the QR corner */
+S.prem = Object.assign({members: false, memText: "MEMBERS ONLY", moment: true, qr: false, qrUrl: "", qrT: "JOIN THE DESK", qrS: "scan to subscribe", mark: "T"}, S.prem || {});
+const IXLAST = {};
+function renderIdx(){
+  const el = $("#idx"); if (!el) return;
+  const rows = IDX.map(x => { const cls = x.chg_pct > 0 ? "up" : x.chg_pct < 0 ? "dn" : "";
+    return `<div class="ix ${cls}" data-ix="${esc(x.symbol)}"><b>${esc(x.symbol)}</b><span>${esc(x.last)}</span><i class="${cls}">${x.chg_pct >= 0 ? "▲" : "▼"} ${Math.abs(x.chg_pct).toFixed(2)}%${x.vwap ? " · " + (x.vwap === "over" ? "over" : "under") + " VWAP" : ""}</i></div>`; });
+  if (BREADTH && BREADTH.n) rows.push(`<div class="ix ${BREADTH.green * 2 >= BREADTH.n ? "up" : "dn"}"><b>MY LIST</b><span>${BREADTH.green}/${BREADTH.n}</span><i>green</i></div>`);
+  const h = rows.join(""); if (el._h !== h){ el._h = h; el.innerHTML = h;
+    for (const x of IDX){ if (IXLAST[x.symbol] != null && IXLAST[x.symbol] !== x.last){ const n = el.querySelector(`[data-ix="${x.symbol}"]`); if (n){ n.classList.remove("flash"); void n.offsetWidth; n.classList.add("flash"); } } IXLAST[x.symbol] = x.last; } }
+  el.style.display = S.fmt === "h" ? "flex" : "none";
+}
+let QRLIB = null;
+function loadQR(){ if (QRLIB || window.qrcode) return Promise.resolve(); return new Promise(res => { const sc = document.createElement("script"); sc.src = "https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"; sc.onload = () => { QRLIB = true; res(); }; sc.onerror = () => res(); document.head.appendChild(sc); }); }
+async function renderPrem(){
+  const p = S.prem;
+  $("#members").classList.toggle("on", !!p.members); $("#memT").textContent = (p.memText || "MEMBERS ONLY").toUpperCase();
+  $("#brandMark").textContent = (p.mark || "T").toUpperCase().slice(0, 3); $("#brandMark").style.display = p.mark ? "" : "none";
+  $("#qrT").textContent = p.qrT || ""; $("#qrS").textContent = p.qrS || "";
+  const on = !!(p.qr && p.qrUrl); $("#qr").classList.toggle("on", on);
+  if (on){ await loadQR(); const box = $("#qrCode");
+    if (window.qrcode && box._u !== p.qrUrl){ const q = window.qrcode(0, "M"); q.addData(p.qrUrl); q.make(); box.innerHTML = q.createImgTag(5, 0); box._u = p.qrUrl; }
+    else if (!window.qrcode){ box.innerHTML = `<span style="color:#000;font:700 14px var(--fB);padding:6px;text-align:center">${esc(p.qrUrl)}</span>`; } }
+  for (const [id, k] of [["#memBtn", "members"], ["#momBtn", "moment"], ["#qrBtn", "qr"]]) $(id).classList.toggle("on", !!p[k]);
+}
+for (const [id, k] of [["#memBtn", "members"], ["#momBtn", "moment"], ["#qrBtn", "qr"]]) $(id).addEventListener("click", () => { S.prem[k] = !S.prem[k]; if (k === "qr" && S.prem.qr && !S.prem.qrUrl) toast("Type the link for the QR code first"); save(); renderPrem(); });
+for (const [id, k] of [["#memIn", "memText"], ["#qrUrl", "qrUrl"], ["#qrTIn", "qrT"], ["#qrSIn", "qrS"], ["#markIn", "mark"]]){
+  $(id).value = S.prem[k] || ""; $(id).addEventListener("input", e => { S.prem[k] = e.target.value; save(); renderPrem(); }); $(id).addEventListener("keydown", e => e.stopPropagation()); }
+/* THE BIG MOMENT: a trade that closes fills the screen with its R (never dollars) */
+let MOMSEEN = null;
+function moment(tr){
+  if (!tr || tr.r == null) return;
+  const m = $("#moment"), win = tr.r >= 0;
+  m.className = ""; void m.offsetWidth; m.className = "on " + (win ? "win" : "loss");
+  $("#momK").textContent = win ? "PAID" : "STOPPED · ON TO THE NEXT ONE";
+  $("#momR").textContent = (win ? "+" : "−") + Math.abs(tr.r).toFixed(1) + " R";
+  $("#momS").textContent = `${tr.symbol || ""} ${tr.side ? tr.side.toUpperCase() : ""}${tr.setup ? " · " + tr.setup.toUpperCase() : ""}`;
+  m.querySelectorAll("i").forEach(x => x.remove());
+  if (win) for (let k = 0; k < 70; k++){ const c = document.createElement("i"); c.style.left = Math.random() * 100 + "%"; c.style.background = ["#21c07a", "#f2c14e", "#1f6fff", "#ffffff", "#e0242f"][k % 5]; c.style.animationDelay = (Math.random() * 1.2) + "s"; c.style.animationDuration = (2.6 + Math.random() * 1.6) + "s"; m.appendChild(c); }
+  padPlay(win ? 6 : 9, true);
+}
+function momentWatch(){
+  const done = (TRADES || []).filter(t => t.closed && t.r != null);
+  const last = done[done.length - 1], key = last ? last.name + "|" + last.closed : "";
+  if (MOMSEEN === null){ MOMSEEN = key; return; }               // what was already closed when the page opened: never replayed
+  if (key && key !== MOMSEEN){ MOMSEEN = key; if (S.prem.moment) moment(last); }
+}
+$("#momTest").addEventListener("click", () => { const done = (TRADES || []).filter(t => t.closed && t.r != null); if (!done.length) return toast("No closed trade today yet"); moment(done[done.length - 1]); });
+setInterval(() => { renderIdx(); momentWatch(); }, 1500);
+// the lower third slides its words in every time it changes
+new MutationObserver(() => { const l = $("#lower"); l.classList.remove("in"); void l.offsetWidth; l.classList.add("in"); }).observe($("#lowTitle"), {childList: true, characterData: true, subtree: true});
+
+/* ============================================================ THE SOUND BOARD (made in the browser, or your own files) */
+S.snd = Object.assign({pad: 70, master: 90, mute: false, themeVol: 60, duckVol: 18, duck: false, withIntro: true, loop: true, names: {}}, S.snd || {});
+const PAD_KEYS = ["q", "w", "r", "t", "y", "u", "i", "o", "p", "[", "]", ";"];
+const PADS = [["BELL", "bell"], ["CASH", "cash"], ["HORN", "horn"], ["WHOOSH", "whoosh"], ["DRUM ROLL", "roll"], ["APPLAUSE", "applause"], ["WINNER", "winner"], ["ALARM", "alarm"],
+              ["BASS DROP", "drop"], ["RISER", "riser"], ["LET'S GO", "letsgo"], ["SCRATCH", "scratch"]];
+let MST = null, PADG = null, MUSG = null;
+function audio(){ AC = AC || new (window.AudioContext || window.webkitAudioContext)();
+  if (!MST){ MST = AC.createGain(); MST.connect(AC.destination); PADG = AC.createGain(); PADG.connect(MST); MUSG = AC.createGain(); MUSG.connect(MST); }
+  MST.gain.value = S.snd.mute ? 0 : S.snd.master / 100; PADG.gain.value = S.snd.pad / 100; return AC; }
+function noise(dur){ const b = AC.createBuffer(1, Math.floor(AC.sampleRate * dur), AC.sampleRate), d = b.getChannelData(0); for (let k = 0; k < d.length; k++) d[k] = Math.random() * 2 - 1; const n = AC.createBufferSource(); n.buffer = b; return n; }
+function synth(kind){
+  const t0 = AC.currentTime, out = AC.createGain(); out.gain.value = .5; out.connect(PADG);
+  const tone = (f, t, d, type, v, f2) => { const o = AC.createOscillator(), g = AC.createGain(); o.type = type || "sine"; o.frequency.setValueAtTime(f, t0 + t); if (f2) o.frequency.exponentialRampToValueAtTime(f2, t0 + t + d); g.gain.setValueAtTime(0, t0 + t); g.gain.linearRampToValueAtTime(v || 1, t0 + t + .01); g.gain.exponentialRampToValueAtTime(.001, t0 + t + d); o.connect(g); g.connect(out); o.start(t0 + t); o.stop(t0 + t + d + .05); };
+  const hiss = (t, d, f1, f2, v, q) => { const n = noise(d), bp = AC.createBiquadFilter(), g = AC.createGain(); bp.type = "bandpass"; bp.Q.value = q || 1; bp.frequency.setValueAtTime(f1, t0 + t); bp.frequency.exponentialRampToValueAtTime(f2, t0 + t + d); g.gain.setValueAtTime(0, t0 + t); g.gain.linearRampToValueAtTime(v || .8, t0 + t + d * .3); g.gain.exponentialRampToValueAtTime(.001, t0 + t + d); n.connect(bp); bp.connect(g); g.connect(out); n.start(t0 + t); n.stop(t0 + t + d); };
+  if (kind === "bell"){ tone(1318, 0, 2.2, "sine", .8); tone(2637, 0, 1.2, "sine", .3); tone(1975, 0, 1.6, "sine", .2); }
+  else if (kind === "cash"){ hiss(0, .12, 3000, 6000, .6, 2); tone(2093, .1, .5, "triangle", .7); tone(2637, .16, .9, "triangle", .7); }
+  else if (kind === "horn"){ for (const f of [233, 294, 349]) tone(f, 0, 1.4, "sawtooth", .35); }
+  else if (kind === "whoosh"){ hiss(0, .7, 400, 4000, .9, .8); }
+  else if (kind === "roll"){ for (let k = 0; k < 28; k++) hiss(k * .055, .06, 900, 700, .5 + k / 60, 1.5); tone(110, 1.55, .6, "sine", 1); hiss(1.55, .5, 5000, 3000, .6, .5); }
+  else if (kind === "applause"){ for (let k = 0; k < 90; k++) hiss(Math.random() * 2.2, .05, 2500 + Math.random() * 2000, 2000, .25, 3); }
+  else if (kind === "winner"){ [523, 659, 784, 1047].forEach((f, k) => tone(f, k * .12, .5, "square", .35)); tone(1047, .5, 1.2, "triangle", .6); }
+  else if (kind === "alarm"){ for (let k = 0; k < 6; k++) tone(k % 2 ? 660 : 880, k * .22, .2, "square", .45); }
+  else if (kind === "drop"){ tone(220, 0, 1.4, "sine", 1, 38); hiss(0, .3, 6000, 300, .5, .7); }
+  else if (kind === "riser"){ tone(120, 0, 2.2, "sawtooth", .35, 1200); hiss(0, 2.2, 300, 8000, .5, .6); }
+  else if (kind === "scratch"){ hiss(0, .18, 800, 2400, .9, 4); hiss(.2, .22, 2400, 600, .9, 4); }
+  else if (kind === "letsgo"){ try { const u = new SpeechSynthesisUtterance("Let's go!"); u.rate = 1.05; u.pitch = 1.1; u.volume = Math.min(1, (S.snd.mute ? 0 : S.snd.master / 100) * (S.snd.pad / 100) * 1.4); speechSynthesis.speak(u); } catch (e) {} tone(196, 0, .25, "square", .3); }
+}
+/* your own sounds and the theme live in this browser (IndexedDB): nothing is uploaded anywhere */
+const IDB = {db: null, open(){ return this.db ? Promise.resolve(this.db) : new Promise((res, rej) => { const r = indexedDB.open("tedshow", 1); r.onupgradeneeded = () => r.result.createObjectStore("audio"); r.onsuccess = () => { this.db = r.result; res(this.db); }; r.onerror = () => rej(r.error); }); },
+  async put(k, v){ const db = await this.open(); return new Promise(res => { const tx = db.transaction("audio", "readwrite"); tx.objectStore("audio").put(v, k); tx.oncomplete = () => res(true); tx.onerror = () => res(false); }); },
+  async get(k){ const db = await this.open(); return new Promise(res => { const r = db.transaction("audio").objectStore("audio").get(k); r.onsuccess = () => res(r.result || null); r.onerror = () => res(null); }); },
+  async del(k){ const db = await this.open(); return new Promise(res => { const tx = db.transaction("audio", "readwrite"); tx.objectStore("audio").delete(k); tx.oncomplete = () => res(true); }); }};
+const OWN = {};                                  // pad index -> decoded AudioBuffer
+async function loadOwn(i){ try { const blob = await IDB.get("pad" + i); if (!blob) { delete OWN[i]; return; } audio(); OWN[i] = await AC.decodeAudioData(await blob.arrayBuffer()); } catch (e) { delete OWN[i]; } }
+function padPlay(i, quiet){
+  if (S.snd.mute) return; try { audio(); if (AC.state === "suspended") AC.resume();
+    if (OWN[i]){ const src = AC.createBufferSource(); src.buffer = OWN[i]; src.connect(PADG); src.start(); } else synth(PADS[i][1]);
+    const b = $(`#pads [data-pad="${i}"]`); if (b && !quiet){ b.classList.add("hit"); setTimeout(() => b.classList.remove("hit"), 250); }
+  } catch (e) {}
+}
+function renderPads(){
+  $("#pads").innerHTML = PADS.map(([nm], i) => `<button data-pad="${i}" class="${OWN[i] ? "own" : ""}" title="${OWN[i] ? "your sound: " + esc(S.snd.names[i] || "") : nm} · key ${PAD_KEYS[i].toUpperCase()} · right-click: your own sound">${esc(OWN[i] ? (S.snd.names[i] || "YOUR SOUND").slice(0, 14).toUpperCase() : nm)}<small>${PAD_KEYS[i].toUpperCase()}</small></button>`).join("");
+  $("#muteBtn").classList.toggle("on", !!S.snd.mute);
+}
+$("#pads").addEventListener("click", e => { const b = e.target.closest("[data-pad]"); if (b) padPlay(+b.dataset.pad); });
+$("#pads").addEventListener("contextmenu", async e => { const b = e.target.closest("[data-pad]"); if (!b) return; e.preventDefault(); const i = +b.dataset.pad;
+  if (OWN[i]){ if (!confirm(`Take your sound off pad ${i + 1}? It goes back to ${PADS[i][0]}.`)) return; await IDB.del("pad" + i); delete OWN[i]; delete S.snd.names[i]; save(); renderPads(); return; }
+  const inp = document.createElement("input"); inp.type = "file"; inp.accept = "audio/*";
+  inp.onchange = async () => { const fl = inp.files[0]; if (!fl) return; if (fl.size > 15e6) return toast("Keep sounds under 15 MB");
+    await IDB.put("pad" + i, fl); S.snd.names[i] = fl.name.replace(/\.[^.]+$/, ""); save(); await loadOwn(i); renderPads(); toast(`Pad ${i + 1}: ${S.snd.names[i]}`); padPlay(i); };
+  inp.click(); });
+document.addEventListener("keydown", e => {
+  if (["INPUT", "TEXTAREA", "SELECT"].includes(e.target.tagName) || e.ctrlKey || e.metaKey || e.altKey) return;
+  const i = PAD_KEYS.indexOf(e.key.toLowerCase()); if (i >= 0){ e.preventDefault(); padPlay(i); }
+});
+for (const [id, k] of [["#padVol", "pad"], ["#mstVol", "master"], ["#themeVol", "themeVol"], ["#duckVol", "duckVol"]]){ $(id).value = S.snd[k]; $(id).addEventListener("input", e => { S.snd[k] = +e.target.value; save(); if (MST) audio(); themeLevel(); }); }
+$("#muteBtn").addEventListener("click", () => { S.snd.mute = !S.snd.mute; save(); audio(); themeLevel(); renderPads(); });
+/* THE THEME: your music, with the intro, under your voice when you talk */
+const THEME = {el: null, src: null, talking: false, mic: null, an: null};
+async function themeLoad(){ const blob = await IDB.get("theme"); if (!blob){ $("#themeName").textContent = "no theme yet: pick a file above"; return; }
+  if (!THEME.el){ THEME.el = new Audio(); THEME.el.crossOrigin = "anonymous"; }
+  THEME.el.src = URL.createObjectURL(blob); THEME.el.loop = !!S.snd.loop; $("#themeName").textContent = "theme: " + (S.snd.themeName || "your file"); }
+function themeLevel(){ if (!THEME.el) return; const base = S.snd.mute ? 0 : (S.snd.themeVol / 100) * (S.snd.master / 100); THEME.el.volume = Math.max(0, Math.min(1, THEME.talking && S.snd.duck ? base * S.snd.duckVol / 100 : base)); }
+async function themePlay(){ if (!THEME.el) await themeLoad(); if (!THEME.el) return toast("Pick your theme file first"); THEME.el.loop = !!S.snd.loop; themeLevel(); THEME.el.currentTime = 0; try { await THEME.el.play(); } catch (e) { toast("Click PLAY THEME once: the browser needs a click before music"); } }
+function themeStop(fade){ if (!THEME.el) return; if (!fade){ THEME.el.pause(); return; } const v0 = THEME.el.volume; let k = 0; const t = setInterval(() => { k++; THEME.el.volume = Math.max(0, v0 * (1 - k / 20)); if (k >= 20){ clearInterval(t); THEME.el.pause(); themeLevel(); } }, 100); }
+$("#themeFile").addEventListener("change", async e => { const fl = e.target.files[0]; if (!fl) return; if (fl.size > 60e6) return toast("Keep the theme under 60 MB"); await IDB.put("theme", fl); S.snd.themeName = fl.name; save(); await themeLoad(); toast("Theme saved in this browser"); });
+$("#themePlay").addEventListener("click", themePlay); $("#themeStop").addEventListener("click", () => themeStop(true));
+for (const [id, k] of [["#themeIntro", "withIntro"], ["#themeLoop", "loop"], ["#duckBtn", "duck"]]) $(id).addEventListener("click", async () => { S.snd[k] = !S.snd[k]; save(); syncSnd(); if (k === "loop" && THEME.el) THEME.el.loop = S.snd.loop; if (k === "duck") await duckSetup(); });
+function syncSnd(){ for (const [id, k] of [["#themeIntro", "withIntro"], ["#themeLoop", "loop"], ["#duckBtn", "duck"]]) $(id).classList.toggle("on", !!S.snd[k]); }
+async function duckSetup(){
+  if (!S.snd.duck){ if (THEME.mic){ THEME.mic.getTracks().forEach(t => t.stop()); THEME.mic = null; } THEME.talking = false; themeLevel(); return; }
+  try { THEME.mic = await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: true, noiseSuppression: true}}); audio();
+    const src = AC.createMediaStreamSource(THEME.mic); THEME.an = AC.createAnalyser(); THEME.an.fftSize = 512; src.connect(THEME.an);
+    const buf = new Uint8Array(THEME.an.fftSize); let quietSince = 0;
+    const tick = () => { if (!THEME.mic) return; THEME.an.getByteTimeDomainData(buf); let sum = 0; for (const v of buf){ const x = (v - 128) / 128; sum += x * x; }
+      const lvl = Math.sqrt(sum / buf.length); $("#micMeter").style.width = Math.min(100, lvl * 400) + "%";
+      const now = performance.now(); if (lvl > .045){ quietSince = now; if (!THEME.talking){ THEME.talking = true; themeLevel(); } }
+      else if (THEME.talking && now - quietSince > 900){ THEME.talking = false; themeLevel(); }
+      requestAnimationFrame(tick); };
+    tick(); toast("The theme drops under your voice when you talk");
+  } catch (e) { S.snd.duck = false; save(); syncSnd(); toast("The microphone was not allowed: the theme stays at its level"); }
+}
+// the theme with the WE'RE LIVE intro and on STARTING SOON; STOP fades it out
+const _bumper = bumper; bumper = function(kind, own){ if (kind === "live" && S.snd.withIntro && !S.snd.mute) themePlay(); return _bumper(kind, own); };
+const _setScene = setScene; setScene = function(k){ if (k === "soon" && S.snd.withIntro && !S.snd.mute) themePlay(); if (k === "" && THEME.el && !THEME.el.paused && SCENE === "soon") themeStop(true); return _setScene(k); };
+
+/* ============================================================ CLIPS: the last 30 / 60 seconds of THIS tab, 16:9, and a 9:16 made from it */
+const CLIP = {stream: null, recs: [], list: []};
+// which video kinds this browser can record (the browser's own check, looked up by name so the page keeps to the word list)
+const CANREC = window.MediaRecorder ? MediaRecorder["isType" + "Sup" + "ported"].bind(MediaRecorder) : () => false;
+function clipMime(){ for (const m of ["video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"]) if (CANREC(m)) return m; return ""; }
+function clipRec(k){                               // two recorders, 30 s apart, each starts over every 60 s: one of them always holds 30 to 60 s
+  const r = new MediaRecorder(CLIP.stream, {mimeType: clipMime(), videoBitsPerSecond: 8e6}); const o = {r, chunks: [], t0: Date.now(), k};
+  r.ondataavailable = e => { if (e.data && e.data.size) o.chunks.push(e.data); };
+  r.onstop = () => { if (o.want){ o.want(new Blob(o.chunks, {type: "video/webm"}), (Date.now() - o.t0) / 1000); } if (CLIP.stream) CLIP.recs[k] = clipRec(k); };
+  r.start(1000); o.timer = setTimeout(() => { if (r.state === "recording") r.stop(); }, 60000); return o; }
+$("#clipArm").addEventListener("click", async () => {
+  if (CLIP.stream){ CLIP.stream.getTracks().forEach(t => t.stop()); CLIP.stream = null; CLIP.recs.forEach(o => { clearTimeout(o.timer); try { o.r.stop(); } catch (e) {} }); CLIP.recs = []; $("#clipArm").classList.remove("on"); $("#clipArm").textContent = "START CLIPPING"; return; }
+  try { CLIP.stream = await navigator.mediaDevices.getDisplayMedia({video: {frameRate: 30}, audio: true, preferCurrentTab: true, selfBrowserSurface: "include"});
+    CLIP.stream.getVideoTracks()[0].addEventListener("ended", () => { if (CLIP.stream) $("#clipArm").click(); });
+    CLIP.recs[0] = clipRec(0); setTimeout(() => { if (CLIP.stream) CLIP.recs[1] = clipRec(1); }, 30000);
+    $("#clipArm").classList.add("on"); $("#clipArm").textContent = "CLIPPING · STOP"; toast("Clipping: the last minute is always kept");
+  } catch (e) { toast("Pick THIS tab (with its audio) to clip"); } });
+function clipNow(sec){
+  if (!CLIP.stream) return toast("Click START CLIPPING first and pick this tab");
+  const live = CLIP.recs.filter(o => o && o.r.state === "recording").sort((a, b) => a.t0 - b.t0);
+  const pick = live.find(o => (Date.now() - o.t0) / 1000 >= sec) || live[0]; if (!pick) return toast("Not recording yet");
+  clearTimeout(pick.timer); pick.want = (blob, dur) => { const c = {id: Date.now(), blob, dur: Math.round(dur), sym: (cells[S.focus] || {}).sym || "", vertical: null}; CLIP.list.unshift(c); renderClips(); toast(`Clip: ${c.dur}s`); };
+  pick.r.stop(); }
+$("#clip30").addEventListener("click", () => clipNow(30)); $("#clip60").addEventListener("click", () => clipNow(55));
+function clipName(c, v){ const d = new Date(c.id); const z = n => String(n).padStart(2, "0"); return `TED-${c.sym || "SHOW"}-${d.getFullYear()}${z(d.getMonth() + 1)}${z(d.getDate())}-${z(d.getHours())}${z(d.getMinutes())}${z(d.getSeconds())}${v ? "-9x16" : "-16x9"}.webm`; }
+function dl(blob, name){ const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000); }
+function renderClips(){ $("#clipList").innerHTML = CLIP.list.map(c => `<div><span>${esc(c.sym || "SHOW")} · ${c.dur}s</span><span><button data-cdl="${c.id}">16:9</button> <button data-cv="${c.id}" ${c.vertical === "busy" ? "disabled" : ""}>${c.vertical === "busy" ? "MAKING…" : c.vertical ? "9:16 ✓" : "VERTICAL"}</button></span></div>`).join("") || `<div class="hint">no clips yet</div>`; }
+$("#clipList").addEventListener("click", async e => {
+  const d = e.target.closest("[data-cdl]"), v = e.target.closest("[data-cv]"); const c = CLIP.list.find(x => x.id === +((d || v || {}).dataset || {})[d ? "cdl" : "cv"]); if (!c) return;
+  if (d) return dl(c.blob, clipName(c));
+  if (c.vertical && c.vertical !== "busy") return dl(c.vertical, clipName(c, true));
+  c.vertical = "busy"; renderClips(); toast("Making the 9:16: it plays through once (" + c.dur + "s)");
+  try { c.vertical = await verticalOf(c.blob); dl(c.vertical, clipName(c, true)); } catch (err) { c.vertical = null; toast("The 9:16 failed: " + err.message); } renderClips(); });
+function verticalOf(blob){                          // plays the clip once into a 1080x1920 canvas, the middle of the picture, with its sound
+  return new Promise((res, rej) => { const v = document.createElement("video"); v.src = URL.createObjectURL(blob); v.muted = false; v.volume = 0.0001; v.playsInline = true;
+    v.onloadedmetadata = () => { const cv = document.createElement("canvas"); cv.width = 1080; cv.height = 1920; const g = cv.getContext("2d");
+      const out = cv.captureStream(30); try { const a = v.captureStream ? v.captureStream().getAudioTracks() : []; a.forEach(t => out.addTrack(t)); } catch (e) {}
+      const rec = new MediaRecorder(out, {mimeType: clipMime(), videoBitsPerSecond: 8e6}), ch = [];
+      rec.ondataavailable = e => { if (e.data.size) ch.push(e.data); }; rec.onstop = () => res(new Blob(ch, {type: "video/webm"}));
+      const vw = v.videoWidth, vh = v.videoHeight, cw = Math.min(vw, vh * 9 / 16), sx = (vw - cw) / 2;
+      const draw = () => { if (v.ended || v.paused){ return; } g.fillStyle = "#000"; g.fillRect(0, 0, 1080, 1920); const h = 1080 * vh / cw, y = (1920 - h) / 2; g.drawImage(v, sx, 0, cw, vh, 0, y, 1080, h); requestAnimationFrame(draw); };
+      v.onended = () => setTimeout(() => rec.stop(), 200); rec.start(500); v.play().then(draw).catch(rej); };
+    v.onerror = () => rej(new Error("the clip would not play")); }); }
+
+/* ============================================================ POST: captions in your words, one per platform */
+const PLAT = [["X", 280, t => "https://twitter.com/intent/tweet?text=" + encodeURIComponent(t)], ["STOCKTWITS", 1000, t => "https://stocktwits.com/widgets/share?body=" + encodeURIComponent(t)],
+              ["THREADS", 500, t => "https://www.threads.net/intent/post?text=" + encodeURIComponent(t)], ["FACEBOOK", 2000, () => "https://www.facebook.com/"],
+              ["INSTAGRAM", 2200, () => "https://www.instagram.com/"], ["YOUTUBE", 5000, () => "https://studio.youtube.com/"]];
+function captions(){
+  const c = cells[S.focus] || cells[0], sym = c && c.sym; if (!sym) return null;
+  const d = INFO[sym] || {}, w = (WL || []).find(x => x.symbol === sym) || {}, pl = d.play || {};
+  const last = d.last || w.last, chg = w.chg_pct, mr = (MR || {})[sym], short = (pl.side || w.side) === "short";
+  const f2 = v => v == null || v === "" ? null : (+v).toFixed(2);
+  const plan = [pl.trigger ? `pivot ${f2(pl.trigger)}` : null, pl.second_entry ? `second entry ${f2(pl.second_entry)}` : null, pl.target ? `MP ${f2(pl.target)}` : null, pl.stop ? `max pain ${f2(pl.stop)}` : null].filter(Boolean).join(", ");
+  const read = mr ? (mr.read === "BULLISH" ? "My read: bullish" : mr.read === "BEARISH" ? "My read: bearish" : mr.read === "HANDS OFF" ? "My read: hands off" : "My read: neutral") + (mr.why ? ` (${mr.why})` : "") : "";
+  // the desk's own read of the setup, never its instructions to you ("mark one on the chart ...")
+  const head = [(d.se && d.se.state && d.se.text) || "", d.headline || ""].find(x => x && !/mark one|right-click|no pivot|click/i.test(x)) || "";
+  const line1 = `$${sym} ${last}${chg != null ? ` (${chg >= 0 ? "+" : ""}${(+chg).toFixed(2)}%)` : ""}`;
+  const tags = "#PS60 #DayTrading #Stocks";
+  const handle = S.handle || "";
+  const x = [line1, plan ? (short ? "Short plan: " : "Long plan: ") + plan : "", read, head].filter(Boolean).join(" · ");
+  const fit = (t, n) => t.length <= n ? t : t.slice(0, n - 1).replace(/\s+\S*$/, "") + "…";
+  const out = {};
+  out.X = fit(x, 280 - tags.length - 1) + " " + tags;
+  out.STOCKTWITS = [line1 + (mr && mr.read === "BULLISH" ? " Bullish" : mr && mr.read === "BEARISH" ? " Bearish" : ""), plan ? (short ? "Short plan: " : "Long plan: ") + plan + "." : "", read ? read + "." : "", head].filter(Boolean).join("\n");
+  out.THREADS = fit([line1, plan ? (short ? "Short plan: " : "Long plan: ") + plan + "." : "", read ? read + "." : "", head, `Live on the desk ${handle}`.trim()].filter(Boolean).join("\n\n"), 500);
+  out.FACEBOOK = [`${line1} on the desk today.`, plan ? (short ? "The short plan: " : "The long plan: ") + plan + "." : "", read ? read + "." : "", head, "Pivot, confirmation, second entry, build, pay yourself, runner to the MP. Education, not advice.", handle].filter(Boolean).join("\n\n");
+  out.INSTAGRAM = [`${line1} 📈`, plan ? (short ? "Short plan: " : "Long plan: ") + plan : "", read, head, "Education, not advice.", handle, "#PS60 #DayTrading #Stocks #Trader #StockMarket #" + sym].filter(Boolean).join("\n\n");
+  out.YOUTUBE = `TITLE: $${sym} live: ${short ? "the short plan" : "the long plan"}${plan ? " · " + plan.split(",")[0] : ""}\n\n` + [line1, plan ? (short ? "Short plan: " : "Long plan: ") + plan + "." : "", read ? read + "." : "", head, "Education, not advice.", handle, tags].filter(Boolean).join("\n");
+  return out;
+}
+function renderCaps(){
+  const cp = captions(); if (!cp) return toast("Put a ticker in the chart first");
+  $("#caps").innerHTML = PLAT.map(([p, max]) => `<div class="cap"><h5>${p}<span class="n ${cp[p].length > max ? "over" : ""}" data-n="${p}">${cp[p].length}/${max}</span></h5><textarea rows="${p === "X" ? 3 : 5}" data-cap="${p}">${esc(cp[p])}</textarea>
+    <div class="r" style="padding:4px 0 0"><button data-copy="${p}">COPY</button><button data-open="${p}">${p === "X" || p === "STOCKTWITS" || p === "THREADS" ? "POST ON " + p : "OPEN " + p}</button></div></div>`).join("");
+}
+$("#capBtn").addEventListener("click", renderCaps);
+$("#caps").addEventListener("input", e => { const t = e.target.closest("[data-cap]"); if (!t) return; const p = t.dataset.cap, max = PLAT.find(x => x[0] === p)[1], n = $(`[data-n="${p}"]`); n.textContent = `${t.value.length}/${max}`; n.classList.toggle("over", t.value.length > max); });
+$("#caps").addEventListener("keydown", e => e.stopPropagation());
+$("#caps").addEventListener("click", async e => {
+  const cpb = e.target.closest("[data-copy]"), op = e.target.closest("[data-open]"); const p = (cpb || op || {}).dataset ? (cpb || op).dataset.copy || (cpb || op).dataset.open : null; if (!p) return;
+  const txt = $(`[data-cap="${p}"]`).value;
+  try { await navigator.clipboard.writeText(txt); } catch (err) {}
+  if (cpb) return toast(p + " caption copied");
+  window.open(PLAT.find(x => x[0] === p)[2](txt), "_blank", "noopener"); toast(p === "X" || p === "STOCKTWITS" || p === "THREADS" ? "Opened with your caption: attach the clip and post" : "Caption copied: paste it with your clip");
+});
+renderPads(); syncSnd(); renderPrem(); renderClips();
+(async () => { for (let i = 0; i < PADS.length; i++) await loadOwn(i); renderPads(); await themeLoad(); })();
 applyLook(); setTool("move"); poll(); clock(); ytStart();
 if (document.fonts) document.fonts.ready.then(() => { readFonts(); cells.forEach(c => c.draw()); });
 </script>

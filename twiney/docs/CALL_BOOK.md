@@ -90,3 +90,24 @@ VWAP), ON PLAN or CAREFUL. Every step goes into THE CALL BOOK. All the numbers a
 
 Hand management stays one click: 25 / 50 / 75, +½, BE and X on every row (shares and contracts), X asks once, a
 message never covers a button, and a row never redraws while you are clicking it.
+
+## THE SHOW: premium, sound board, theme, clips, posting
+
+Open the SHOW (the SHOW button on the desk, or /show). Everything new is in the panel on the right:
+
+- **The look**: the network top bar with your logo letter (PREMIUM › logo letter), a LIVE pill, and the index strip
+  (SPY / QQQ / IWM / VIX when they are on your desk, and how many of your stocks are green).
+- **PREMIUM**: MEMBERS BADGE (gold, top right: your own words), QR CORNER (paste your sign-up link: viewers scan it),
+  BIG MOMENT ON CLOSE (a closed trade fills the screen with its R for five seconds; SHOW LAST TRADE replays it).
+- **SOUND BOARD**: 12 pads, click or keys Q W R T Y U I O P [ ] ;. Right-click a pad to put your own sound on it.
+  PADS / MASTER volume, MUTE ALL.
+- **THEME MUSIC**: pick your file once (kept in this browser). PLAY / STOP (fades out), WITH THE INTRO (plays with
+  WE'RE LIVE and STARTING SOON), LOOP, and DUCK UNDER MY VOICE (the music drops while you talk).
+- **CLIPS**: START CLIPPING and pick THIS tab with its audio once. CLIP LAST 30s / 60s saves the moment; VERTICAL
+  makes the 9:16 for Reels / Shorts / TikTok. They download to your computer.
+- **POST**: WRITE CAPTIONS writes one for X, StockTwits, Threads, Facebook, Instagram and YouTube from the ticker in
+  the red frame (price, move, your plan, MY READ). Edit it, then POST ON X / STOCKTWITS / THREADS opens the post with
+  the caption in it (attach the clip); for Facebook, Instagram and YouTube it copies the caption and opens the site.
+
+In OBS, add the SHOW as a Window Capture (or a Browser Source with ?clean=1) and tick "capture audio" so the pads and
+the theme go out on the stream.
