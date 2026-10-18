@@ -266,6 +266,8 @@ def run_live(cfg, plays, args):
     engine.callbook = CallBook(_rec_dir(cfg), cfg)                     # THE CALL BOOK: a card per judged call
     from twiney.phrases import Phrases
     engine.phrases = Phrases(os.path.join(_rec_dir(cfg), "phrases.json"), cfg)   # THE PHRASE LIST: lines Twiney approved
+    from twiney.myread import MyRead
+    engine.myread = MyRead(_rec_dir(cfg))                              # MY READ: how Twiney sees each stock
     engine.calib_path = os.path.join(_rec_dir(cfg), "inst_calib.jsonl")   # CHILD ORDERS on the real tape, for tuning
     engine.storyline_path = os.path.join(_rec_dir(cfg), "storylines.jsonl")   # the storyline's turns, every day, for the cross-day study
     engine.oi_path = os.path.join(_rec_dir(cfg), "oi.jsonl")   # OPEN INTEREST: each contract's morning number, day by day
@@ -460,6 +462,8 @@ def run_demo(cfg, plays, args):
     engine.callbook = CallBook(_rec_dir(cfg), cfg)                     # THE CALL BOOK: a card per judged call
     from twiney.phrases import Phrases
     engine.phrases = Phrases(os.path.join(_rec_dir(cfg), "phrases.json"), cfg)   # THE PHRASE LIST: lines Twiney approved
+    from twiney.myread import MyRead
+    engine.myread = MyRead(_rec_dir(cfg))                              # MY READ: how Twiney sees each stock
     engine.score.src = "practice"      # the practice market's calls never count in the ODDS (the live market's only)
     engine.storyline_path = os.path.join(_rec_dir(cfg), "storylines.jsonl")
     engine.oi_path = os.path.join(_rec_dir(cfg), "oi.jsonl")

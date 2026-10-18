@@ -449,7 +449,7 @@ async function sendOrder(symbol, action, price, qty){
     const out = await post("/api/trade/order", {symbol, action, price, qty});
     toast(out.ok ? "Sent: " + out.sent : "Blocked: " + out.reason, out.ok);
   };
-  if (t.one_click){ const w = flowAgainst((state.panes || []).concat(Object.values(state.extra || {})).find(d => d && d.symbol === symbol), action); if (w) toast(w.trim(), false); return go(); }
+  if (t.one_click){ const w = flowAgainst((state.panes || []).concat(Object.values(state.extra || {})).find(d => d && d.symbol === symbol), action) + (typeof myReadAgainstOrder === "function" ? myReadAgainstOrder(symbol, action) : ""); if (w) toast(w.trim(), false); return go(); }
   const pane = (state.panes || []).concat(Object.values(state.extra || {})).find(d => d && d.symbol === symbol);
   const pl = pane ? pane.play : {};
   const legs = [];
@@ -462,7 +462,7 @@ async function sendOrder(symbol, action, price, qty){
     } else if (pl.target && (action === "BUY" ? pl.target > price : pl.target < price)) legs.push("target " + px(pl.target));
   }
   const g = pane && pane.ps60;
-  const warn = (g && g.grade === "PASS" ? ` ⚠ PS60 says PASS: ${g.why}.` : g && g.grade === "WATCH" ? ` · PS60: WATCH — ${g.why}.` : "") + flowAgainst(pane, action);
+  const warn = (g && g.grade === "PASS" ? ` ⚠ PS60 says PASS: ${g.why}.` : g && g.grade === "WATCH" ? ` · PS60: WATCH — ${g.why}.` : "") + flowAgainst(pane, action) + (typeof myReadAgainstOrder === "function" ? myReadAgainstOrder(symbol, action) : "");
   confirmBox(`${action} ${sz(qty)} ${symbol} @ ${px(price)}`, `about $${sz(Math.round(qty * price))}` + (legs.length ? " · with " + legs.join(" + ") : " · no stop/target attached") + warn,
     action === "BUY" ? "b" : "s", go);
 }

@@ -235,7 +235,7 @@ async function loadLayouts(){
 
 /* ---------- symbol tabs */
 function renderTabs(){
-  document.getElementById("symTabs").innerHTML = TABS.list.map(s => `<span class="stab ${s === TABS.active ? "on" : ""}" data-sym="${esc(s)}">${esc(s)}${s === TABS.active && store.get("voice", true) ? `<span class="v" title="voice reads this tab">VOICE</span>` : ""}<span class="x" data-close="${esc(s)}" title="close tab">✕</span></span>`).join("");
+  document.getElementById("symTabs").innerHTML = TABS.list.map(s => `<span class="stab ${s === TABS.active ? "on" : ""}" data-sym="${esc(s)}">${esc(s)}${myReadTag(s)}${s === TABS.active && store.get("voice", true) ? `<span class="v" title="voice reads this tab">VOICE</span>` : ""}<span class="x" data-close="${esc(s)}" title="close tab">✕</span></span>`).join("");
   document.querySelectorAll(".ztab .sym").forEach(el => el.textContent = curSym || "");
 }
 async function openTab(sym, add){
@@ -252,7 +252,7 @@ async function openTab(sym, add){
   renderTabs(); renderRecent(); poll(true);
 }
 function closeTab(sym){ TABS.list = TABS.list.filter(s => s !== sym); if (TABS.active === sym){ TABS.active = TABS.list[TABS.list.length - 1] || null; curSym = TABS.active; if (curSym) post("/api/play", {symbol: curSym, action: "focus"}); } savePrefs({tabs: TABS.list, active: TABS.active}); renderTabs(); poll(true); }
-document.getElementById("symTabs").addEventListener("click", e => { const x = e.target.closest("[data-close]"); if (x){ closeTab(x.dataset.close); return; } const t = e.target.closest(".stab"); if (t) openTab(t.dataset.sym, false); });
+document.getElementById("symTabs").addEventListener("click", e => { const mr = e.target.closest("[data-mr]"); if (mr){ e.stopPropagation(); myReadOpen(mr.dataset.mr, mr); return; } const x = e.target.closest("[data-close]"); if (x){ closeTab(x.dataset.close); return; } const t = e.target.closest(".stab"); if (t) openTab(t.dataset.sym, false); });
 document.getElementById("addTab").addEventListener("click", () => document.getElementById("symIn").focus());
 document.getElementById("symIn").addEventListener("keydown", e => { e.stopPropagation(); if (e.key === "Enter"){ openTab(e.target.value, true); e.target.value = ""; e.target.blur(); } if (e.key === "Escape") e.target.blur(); });
 document.getElementById("symHist").addEventListener("change", e => { if (e.target.value) openTab(e.target.value, false); e.target.value = ""; });

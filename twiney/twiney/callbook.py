@@ -93,7 +93,7 @@ class CallBook:
                 "flow": ctx.get("flow") or [], "candles": ctx.get("candles") or [], "levels": ctx.get("levels") or [],
                 "reads": row.get("reads") or {}, "target": target, "stop": stop, "plan_src": src,
                 "moves": {}, "first": None, "hold": None, "outcome": None, "thumb": 0, "note": "",
-                "pic": None, "replay": ctx.get("replay"),
+                "pic": None, "replay": ctx.get("replay"), "myread": ctx.get("myread"),
                 "settings": {k: _get(self.cfg, k) for k in TUNING if _get(self.cfg, k) is not None},
                 "hi": row["p0"], "lo": row["p0"]}
         if alert.get("lvl") is not None:
@@ -318,12 +318,20 @@ class CallBook:
                 rows.append({"value": v, "n": len(cs), "hit_pct": round(100.0 * hit / len(cs)), "from": min(c["t"] for c in cs),
                              "to": max(c["t"] for c in cs)})
             tuning.append({"setting": k, "values": rows})
+        # MY READ: the desk's calls with your read and against it (BULLISH / BEARISH reads only)
+        def _rate(cs):
+            return {"n": len(cs), "hit_pct": round(100.0 * sum(1 for c in cs if c["outcome"] == "HIT") / len(cs)) if cs else None}
+        sided = [c for c in judged if c.get("myread") in ("BULLISH", "BEARISH")]
+        with_ = [c for c in sided if (c["myread"] == "BULLISH") == (c["dir"] > 0)]
+        against = [c for c in sided if (c["myread"] == "BULLISH") != (c["dir"] > 0)]
         n = len(judged)
-        return {"n": n, "cards": len(cards), "hit_pct": round(100.0 * sum(1 for c in judged if c["outcome"] == "HIT") / n) if n else None,
+        return {"myread": {"with": _rate(with_), "against": _rate(against),
+                           "hands_off": _rate([c for c in judged if c.get("myread") == "HANDS OFF"])},
+                "n": n, "cards": len(cards), "hit_pct": round(100.0 * sum(1 for c in judged if c["outcome"] == "HIT") / n) if n else None,
                 "kinds": kinds, "tuning": tuning}
 
     @staticmethod
     def brief(c):
         """A card in the list: no T&S / book / candles (the whole card is fetched when opened)."""
         return {k: c.get(k) for k in ("id", "t", "symbol", "kind", "dir", "label", "words", "price", "moves", "first", "first_t",
-                                      "hold", "outcome", "thumb", "note", "pic", "control", "target", "stop", "plan_src", "src")}
+                                      "hold", "outcome", "thumb", "note", "pic", "control", "target", "stop", "plan_src", "src", "myread")}

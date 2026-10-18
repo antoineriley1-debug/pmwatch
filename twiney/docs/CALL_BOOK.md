@@ -50,3 +50,16 @@ SETTINGS › Phrase list › use_approved off = the desk's own lines only. The l
    enabled on, SAVE.
 5. The PC only needs to be on when you use the AI (WRITE VERSIONS, the recap, EXPLAIN...). When it is off, the desk
    keeps working and the AI buttons say Ollama is not answering.
+
+## MY READ (the tag on each ticker tab)
+
+How you see a stock, set by you only. Click the small tag next to the ticker on its tab (it says READ when nothing
+is set): BULLISH, BEARISH, NEUTRAL or HANDS OFF, a one-line why, and tick "for the week" to keep it until Friday's
+close (otherwise it comes off at today's close). CLEAR takes it off.
+
+- It shows on the tab, the watchlist and THE SHOW.
+- If your read and the Daily read disagree, the desk says so once.
+- A call against your read is marked AGAINST YOUR READ (or HANDS OFF); it is still said.
+- An order against it gets a warning on the confirm (or a note with one-click on). It never blocks the order.
+- THE CALL BOOK keeps it on every card. THE WEEKLY REVIEW shows the desk's hit rate with your read and against it,
+  and how your own reads did: a BULLISH read is right when price closed over where it was when you set it.

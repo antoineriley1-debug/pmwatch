@@ -1203,7 +1203,7 @@ document.addEventListener("click", async e => {
 });
 function renderWatch(s){
   panelHTML("watch", danHTML(s.dan) + (s.ranking || []).map(r => `<div class="wlrow ${r.symbol === curSym ? "cur" : ""}" data-sym="${esc(r.symbol)}">
-    <span><b>${esc(r.symbol)}</b>${r.depth ? ' <span style="color:var(--gold)">◆</span>' : ""}<span class="wlx" data-rm="${esc(r.symbol)}" title="take ${esc(r.symbol)} off the watchlist">✕</span></span><span style="color:var(--gold)">${px(r.last)}</span>
+    <span><b>${esc(r.symbol)}</b>${MYREAD[r.symbol] ? ` <span class="mrmini ${MR_CLS[MYREAD[r.symbol].read]}" title="MY READ: ${esc(MYREAD[r.symbol].read)}${MYREAD[r.symbol].why ? " · " + esc(MYREAD[r.symbol].why) : ""}">${MR_SHORT[MYREAD[r.symbol].read].split(" ")[0]}</span>` : ""}${r.depth ? ' <span style="color:var(--gold)">◆</span>' : ""}<span class="wlx" data-rm="${esc(r.symbol)}" title="take ${esc(r.symbol)} off the watchlist">✕</span></span><span style="color:var(--gold)">${px(r.last)}</span>
     <span class="gw"><span class="g ${r.ps60 ? r.ps60.grade : ""}">${r.ps60 ? r.ps60.grade : ""}</span>${r.ps60 && r.ps60.flow && r.ps60.flow.bias != null && Math.abs(r.ps60.flow.bias) >= 0.3 ? ` <span class="fb ${r.ps60.flow.bias > 0 ? "c" : "p"}" title="option flow last 30 min: ${r.ps60.flow.bias > 0 ? "call" : "put"} heavy">${r.ps60.flow.bias > 0 ? "C" : "P"}${Math.round(Math.abs(r.ps60.flow.bias) * 100)}</span>` : ""}</span>
     <span class="w">${r.rank ? "#" + r.rank + " · " : ""}${r.side} · ${esc(r.retired ? "RETIRED" : r.status)}</span></div>`).join("") || `<div class="dim" style="padding:8px">No plays.</div>`);
 }
@@ -1214,7 +1214,8 @@ function renderCalls(s){
     const age = s.now - a.t;
     const gr = a.key ? `<span class="grade" data-key="${esc(a.key)}"><button data-v="good" class="${a.grade==="good"?"on":""}">GOOD</button><button data-v="bad" class="${a.grade==="bad"?"on":""}">BAD</button></span>` : "";
     const fb = a.flow && a.flow.ids && a.flow.ids.length ? `<button class="fbtn" data-flowkey="${esc(a.key || "")}" title="open OPTION FLOW on the exact prints this call added up">🔎 FLOW</button>` : "";
-    return `<div class="say ${sayClass(a)} ${age < 15 ? "fresh" : ""}"><span class="age">${ago(age)}</span>${gr}${fb}<b>${esc(a.symbol)}</b> — ${esc(a.text || a.label)}</div>`;
+    const mr = myReadAgainstCall(a);
+    return `<div class="say ${sayClass(a)} ${age < 15 ? "fresh" : ""}"><span class="age">${ago(age)}</span>${gr}${fb}<b>${esc(a.symbol)}</b>${mr ? ` <b class="mragainst" title="this call goes against MY READ on ${esc(a.symbol)}">${mr}</b>` : ""} — ${esc(a.text || a.label)}</div>`;
   }).join("") : `<div class="say">No calls for ${esc(curSym || "this symbol")} yet.</div>`);
   const fb = document.getElementById("feedBody"); if (fb.dataset.h !== html){ fb.dataset.h = html; fb.innerHTML = html; }
 }
@@ -1657,8 +1658,8 @@ async function transmit(){
     } catch (e) { tkNote("send failed: " + e.message); }
     TK.inflight = false; P.ticket.last = null; renderTicket(state, d, true); poll(true);
   };
-  if (t.one_click) return send();
-  confirmBox(`${TK.side} ${sz(qty)} ${d.symbol} ${type}${type !== "MKT" ? " @ " + px(price) : ""}${aux ? " stop " + px(aux) : ""}`, `about $${sz(Math.round(qty * (price || d.last || 0)))} · ${tif}` + (d.ps60 && d.ps60.grade === "PASS" ? ` · PS60 PASS: ${d.ps60.why}` : "") + flowAgainst(d, TK.side), TK.side === "BUY" ? "b" : "s", send);
+  if (t.one_click){ const w = myReadAgainstOrder(d.symbol, TK.side); if (w) toast(w.trim(), false); return send(); }
+  confirmBox(`${TK.side} ${sz(qty)} ${d.symbol} ${type}${type !== "MKT" ? " @ " + px(price) : ""}${aux ? " stop " + px(aux) : ""}`, `about $${sz(Math.round(qty * (price || d.last || 0)))} · ${tif}` + (d.ps60 && d.ps60.grade === "PASS" ? ` · PS60 PASS: ${d.ps60.why}` : "") + flowAgainst(d, TK.side) + myReadAgainstOrder(d.symbol, TK.side), TK.side === "BUY" ? "b" : "s", send);
 }
 P.ticket.el.addEventListener("click", e => {
   const d = curData();
@@ -2428,7 +2429,7 @@ function render(s){
   renderQuote(d);
   charts.chart.el.classList.toggle("clean", store.get("clean", true));
   drawChart(charts.chart); drawChart(charts.foot); drawChart(charts.chart2); drawChart(charts.chart3); renderFast(d);
-  renderBook(d); renderTape(d); renderSetup(d); renderPS60(d); renderReloads(d); renderConviction(d); renderStory(d); renderScore(s); try { renderCallBook(s); callbookPics(s); renderPhrases(); } catch (e) {} try { renderAI(s); } catch (e) {}
+  renderBook(d); renderTape(d); renderSetup(d); renderPS60(d); renderReloads(d); renderConviction(d); renderStory(d); renderScore(s); try { renderCallBook(s); callbookPics(s); renderPhrases(); myReadState(s); } catch (e) {} try { renderAI(s); } catch (e) {}
   renderTicket(s, d);
   renderWatch(s); renderCalls(s); renderPositions(s); renderOrders(s);
   renderDesk(s); renderTrades(s); renderFlow(s); renderFlowScope(s); renderEquity(s); renderMyAlerts(s); renderUrgency(s); renderBigMoney(curData());
@@ -2771,7 +2772,7 @@ function cbCard(c){
     <div class="cbrow"><span>5 min ${cbMove(c, "300")}</span><span>15 min ${cbMove(c, "900")}</span><span>30 min ${cbMove(c, "1800")}</span>
       <span title="target ${c.target} · stop ${c.stop} (${c.plan_src === "PLAY" ? "your play's lines" : "from the ATR: SETTINGS › Call book"})">${first}${c.first_t ? ` <i class="dim">${Math.round(c.first_t / 60)} min</i>` : ""}</span>
       ${c.hold ? `<span>LEVEL HELD: <b class="${c.hold === "STRONG" || c.hold === "HOLDING" ? "good" : "bad"}">${esc(c.hold)}</b></span>` : ""}
-      <span><b>${esc(c.control || "")}</b></span></div>
+      <span><b>${esc(c.control || "")}</b></span>${c.myread ? `<span>MY READ: <b class="mr ${MR_CLS[c.myread]}">${esc(c.myread)}</b></span>` : ""}</div>
     <div class="cbrate"><button data-cbt="1" class="${c.thumb > 0 ? "on" : ""}" title="a good call">👍</button><button data-cbt="-1" class="${c.thumb < 0 ? "on" : ""}" title="a bad call">👎</button>
       <input id="cbNote" placeholder="your note on this call" value="${esc(c.note || "")}"><button id="cbSave">SAVE</button>
       ${c.replay ? `<button id="cbReplay" title="open the recording at this moment in the replay desk">REPLAY</button>` : ""}</div>
@@ -2792,6 +2793,11 @@ function cbReview(r){
   const tune = (r.tuning || []).map(s => `<div class="cbtn"><b>${esc(s.setting)}</b>${s.values.map(v => `<span>${esc(String(v.value))}: ${v.hit_pct}% of ${v.n} <i class="dim">${tm(v.from)}–${tm(v.to)}</i></span>`).join("<span>→</span>")}</div>`).join("");
   return `<div class="sth">THE WEEKLY REVIEW · ${r.n} judged calls${r.hit_pct != null ? " · all hit " + r.hit_pct + "%" : ""} · worst first</div>
     <div class="sctab">${kinds || `<div class="dim" style="padding:4px 8px">nothing judged in these days yet</div>`}</div>
+    <div class="sth">MY READ · the desk's calls with your read and against it · how your own reads did</div>
+    <div class="sctab">${(() => { const m = r.myread || {}, w = m.with || {}, a = m.against || {}, h = m.hands_off || {};
+      const row = (n, x) => `<div class="scrow"><span>${n}</span><i>${x.n || 0}</i><b class="${x.hit_pct >= 60 ? "good" : x.hit_pct != null && x.hit_pct <= 35 ? "bad" : ""}">${x.hit_pct == null ? "—" : x.hit_pct + "%"}</b><em>hit rate</em></div>`;
+      const mine = (r.my_reads || []).map(x => `<div class="scrow"><span>YOUR ${esc(x.read)} READS</span><i>${x.n}</i><b class="${x.right_pct >= 60 ? "good" : x.right_pct <= 40 ? "bad" : ""}">${x.right_pct}%</b><em>right at the close</em><u>${x.avg_pct >= 0 ? "+" : ""}${x.avg_pct}% avg</u></div>`).join("");
+      return row("CALLS WITH YOUR READ", w) + row("CALLS AGAINST YOUR READ", a) + (h.n ? row("CALLS ON HANDS OFF", h) : "") + (mine || `<div class="dim" style="padding:4px 8px">your reads are judged at their close: set some and give it a few days</div>`); })()}</div>
     <div class="sth">SETTINGS THAT CHANGED · hit rate before → after</div>
     <div class="sctab">${tune || `<div class="dim" style="padding:4px 8px">no setting changed in these days</div>`}</div>`;
 }
@@ -2810,7 +2816,7 @@ function renderCallBook(st, now){
     const cards = ((d && d.cards) || []).filter(c => !CB.kind || c.kind === CB.kind);
     body = cards.length ? `<div class="cblist">${cards.map(c => `<div class="cbli ${c.outcome === "HIT" ? "good" : c.outcome === "MISS" ? "bad" : ""}" data-cb="${esc(c.id)}" title="${esc(c.words || "")}">
         <span>${CB.days > 1 ? new Date(c.t * 1000).toLocaleDateString("en-US", {month: "numeric", day: "numeric"}) + " " : ""}${tm(c.t)}</span><b>${esc(c.symbol)}</b><i>${esc(c.kind)} ${c.dir > 0 ? "▲" : "▼"}</i>
-        <em>${c.outcome || "…"}</em><u>${c.first === "TARGET" ? "🎯" : c.first === "STOP" ? "⛔" : ""}${c.hold ? " " + esc(c.hold) : ""}</u><u>${c.thumb > 0 ? "👍" : c.thumb < 0 ? "👎" : ""}${c.note ? " ✎" : ""}${c.pic ? " 📷" : ""}</u></div>`).join("")}</div>`
+        <em>${c.outcome || "…"}</em><u>${c.first === "TARGET" ? "🎯" : c.first === "STOP" ? "⛔" : ""}${c.hold ? " " + esc(c.hold) : ""}</u><u>${c.thumb > 0 ? "👍" : c.thumb < 0 ? "👎" : ""}${c.note ? " ✎" : ""}${c.pic ? " 📷" : ""}${c.myread && MYREAD_AGAINST(c) ? " ✗read" : ""}</u></div>`).join("")}</div>`
       : `<div class="dim" style="padding:8px">${d ? "No calls in these days yet. Every call THE DESK SCORE judges gets a card here." : "reading…"}</div>`;
   }
   panelHTML("callbook", head + body);
@@ -2902,6 +2908,70 @@ document.addEventListener("click", async e => {
     toast(out.ok ? "The DESK AI is writing versions… they show here as PENDING" : (out.reason || "the AI could not start"), out.ok); if (out.ok){ PH.wait = Date.now(); PH.waitN = PH.n; renderPhrases(true); } }
 });
 document.addEventListener("keydown", e => { if (e.target.id === "phNew") e.stopPropagation(); }, true);
+/* MY READ: how YOU see each stock, set by you only: BULLISH / BEARISH / NEUTRAL / HANDS OFF, a one-line why, today
+   or this week. A tag on the tab (click it to change), on the watchlist and THE SHOW; a call against it is marked; an
+   order against it gets a warning; it never blocks an order and never silences a call. */
+let MYREAD = {}, MYREAD_H = "";
+const MR_SHORT = {BULLISH: "▲ BULL", BEARISH: "▼ BEAR", NEUTRAL: "◆ NEUTRAL", "HANDS OFF": "✋ HANDS OFF"};
+const MR_CLS = {BULLISH: "bull", BEARISH: "bear", NEUTRAL: "neut", "HANDS OFF": "off"};
+function myReadTag(sym){
+  const r = MYREAD[sym];
+  return `<span class="mrtag ${r ? MR_CLS[r.read] : "none"}" data-mr="${esc(sym)}" title="${r ? "MY READ: " + r.read + (r.why ? " · " + esc(r.why) : "") + (r.week ? " · this week" : " · today") + " · click to change" : "MY READ: not set · click to set how you see " + esc(sym)}">${r ? MR_SHORT[r.read] : "READ"}</span>`;
+}
+function MYREAD_AGAINST(c){ return c.myread === "HANDS OFF" || (c.myread === "BULLISH" && c.dir < 0) || (c.myread === "BEARISH" && c.dir > 0); }
+function myReadDir(a){
+  // the direction of a call: calls / puts by the contract, the rest by its side (buyers = up, sellers = down)
+  if (a.cp) return a.cp === "C" ? 1 : -1;
+  return a.side === "ask" ? 1 : a.side === "bid" ? -1 : 0;
+}
+function myReadAgainstCall(a){
+  const r = MYREAD[a.symbol]; if (!r) return "";
+  const d = myReadDir(a); if (!d) return "";
+  if (r.read === "HANDS OFF") return "HANDS OFF";
+  return (r.read === "BULLISH" && d < 0) || (r.read === "BEARISH" && d > 0) ? "AGAINST YOUR READ" : "";
+}
+function myReadAgainstOrder(symbol, action){
+  // the order bar's warning (it never blocks): BUY with a BEARISH read, SELL short with a BULLISH one, anything on HANDS OFF
+  const r = MYREAD[symbol]; if (!r) return "";
+  const pos = (state.positions || []).find(p => p.symbol === symbol), flat = !pos || !pos.qty;
+  if (r.read === "HANDS OFF") return ` ⚠ MY READ on ${symbol} is HANDS OFF${r.why ? " (" + r.why + ")" : ""}.`;
+  if (action === "BUY" && r.read === "BEARISH" && (flat || pos.qty > 0)) return ` ⚠ MY READ on ${symbol} is BEARISH${r.why ? " (" + r.why + ")" : ""}: this buy is against it.`;
+  if (action === "SELL" && r.read === "BULLISH" && (flat || pos.qty < 0)) return ` ⚠ MY READ on ${symbol} is BULLISH${r.why ? " (" + r.why + ")" : ""}: this short is against it.`;
+  return "";
+}
+function myReadState(s){
+  const h = JSON.stringify(s.myread || {});
+  if (h !== MYREAD_H){ MYREAD_H = h; MYREAD = s.myread || {}; renderTabs(); }
+  // your read against the desk's Daily read: said once per stock, read and Daily read
+  const d = curData(), c = d && d.story && d.story.ctx, r = curSym && MYREAD[curSym];
+  if (r && c && c.bias && (r.read === "BULLISH" || r.read === "BEARISH")){
+    const daily = c.bias === "bull" ? "BULLISH" : "BEARISH", k = curSym + "|" + r.read + "|" + daily + "|" + r.t;
+    if (daily !== r.read && !myReadState.said.has(k)){ myReadState.said.add(k); toast(`${curSym}: your read is ${r.read} · the Daily says ${daily === "BULLISH" ? "buyers" : "sellers"} are in control (${c.text || "the Daily PS60 read"})`, false); }
+  }
+}
+myReadState.said = new Set();
+function myReadOpen(sym, at){
+  document.querySelectorAll(".mrpop").forEach(x => x.remove());
+  const r = MYREAD[sym] || {}, b = at.getBoundingClientRect();
+  const pop = document.createElement("div"); pop.className = "mrpop";
+  pop.style.left = Math.min(window.innerWidth - 330, b.left) + "px"; pop.style.top = (b.bottom + 4) + "px";
+  pop.innerHTML = `<div class="mrh">MY READ · ${esc(sym)}</div>
+    <div class="mrb">${["BULLISH", "BEARISH", "NEUTRAL", "HANDS OFF"].map(v => `<button data-mrv="${v}" class="${MR_CLS[v]} ${r.read === v ? "on" : ""}">${MR_SHORT[v]}</button>`).join("")}</div>
+    <input class="mrwhy" placeholder="why, in one line (optional)" value="${esc(r.why || "")}" maxlength="200">
+    <div class="mrf"><label><input type="checkbox" class="mrweek" ${r.week ? "checked" : ""}> for the week</label>
+      <button data-mrv="" title="take the read off">CLEAR</button><button class="mrx">✕</button></div>`;
+  document.body.appendChild(pop);
+  const why = pop.querySelector(".mrwhy"); why.addEventListener("keydown", e => { e.stopPropagation(); if (e.key === "Escape") pop.remove(); });
+  pop.addEventListener("mousedown", e => e.stopPropagation());
+  pop.addEventListener("click", async e => {
+    if (e.target.closest(".mrx")){ pop.remove(); return; }
+    const v = e.target.closest("[data-mrv]"); if (!v) return;
+    const out = await post("/api/myread", {symbol: sym, read: v.dataset.mrv, why: why.value, week: pop.querySelector(".mrweek").checked});
+    if (out.ok){ toast(v.dataset.mrv ? `MY READ on ${sym}: ${v.dataset.mrv}` : `MY READ on ${sym} cleared`, true); pop.remove(); poll(true); }
+    else toast(out.reason || "could not set it", false);
+  });
+  setTimeout(() => document.addEventListener("mousedown", function off(){ pop.remove(); document.removeEventListener("mousedown", off); }), 0);
+}
 /* THE ODDS: every judged call on the live market, all days, split by what the OPTION MONEY said at the call (with the
    move or against it, a big strike in the way or clear ...). Read after a few weeks: keep what proves itself. And
    which Quant Data tools this key opens (CHECK asks each one once). */

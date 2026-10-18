@@ -306,6 +306,8 @@ class Engine:
         self.score = Scorecard(None, cfg.get("score") or {})   # THE DESK SCORE: every directional call, judged 5 / 15 min later
         from .callbook import CallBook
         self.callbook = CallBook(None, cfg)                    # THE CALL BOOK: a card per judged call (the folder is set at start)
+        from .myread import MyRead
+        self.myread = MyRead(None)                             # MY READ: how Twiney sees each stock (set by him only)
         from .phrases import Phrases
         self.phrases = Phrases(None, cfg)                      # THE PHRASE LIST: the voice says the built-in line or one Twiney approved
         from .option_money import OptionMoney
@@ -1014,7 +1016,8 @@ class Engine:
                 levels.append({"name": nm, "price": float(st.play[k]), "mine": True})
         plan = {"target": st.play.get("target") or st.play.get("mp"), "stop": st.play.get("stop")}
         rec = getattr(self.recorder, "path", None) if self.recorder is not None else None
-        return {"tape": tape, "book": book, "control": control, "flow": flow, "candles": candles, "levels": levels, "plan": plan,
+        mr = self.myread.get(st.symbol, t)
+        return {"myread": mr["read"] if mr else None, "tape": tape, "book": book, "control": control, "flow": flow, "candles": candles, "levels": levels, "plan": plan,
                 "replay": {"file": os.path.basename(rec), "at": round(t, 1)} if rec else None}
 
     def _level_watch(self, st, t, last, tick):
@@ -3881,6 +3884,12 @@ class Engine:
                     self.score.tick(t, {sym: st.price() for sym, st in self.syms.items() if st.price()})
                 except Exception:
                     log.exception("scorecard tick")
+            if t - getattr(self, "_mr_t", -1e9) >= 30.0:          # MY READ: a read past its close comes off, its close is kept
+                self._mr_t = t
+                try:
+                    self.myread.tick(t, {sym: st.price() for sym, st in self.syms.items() if st.price()})
+                except Exception:
+                    log.exception("my read tick")
             if self.callbook.open and t - getattr(self, "_cb_t", -1e9) >= 1.0:
                 self._cb_t = t
                 try:
@@ -6120,7 +6129,8 @@ class Engine:
                    for r in ((dv or {}).get("rows") or [])][:20]
         except Exception:  # noqa: BLE001
             dan = []
-        return {"ok": True, "now": t, "watchlist": wl, "charts": charts, "alerts": alerts, "trades": trades[-10:], "dan": dan}
+        return {"ok": True, "now": t, "watchlist": wl, "charts": charts, "alerts": alerts, "trades": trades[-10:], "dan": dan,
+                "myread": self.myread.view(t)}
 
     def snapshot(self, t, extra=(), full=None, tv=None):
         """``full``: symbols the page wants the whole bar history for (None = every pane, as before).
@@ -6186,6 +6196,7 @@ class Engine:
                 "replay": dict(self.replay) if self.replay else None,
                 "score": self.score.view() if (self.cfg.get("score") or {}).get("enabled", True) else None,
                 "callbook_pic": self.callbook.wanted(t),
+                "myread": self.myread.view(t),
                 "training": self.trainer.view() if self.trainer is not None else None,
                 "ai": self.ai.status() if getattr(self, "ai", None) is not None else None,
                 "dan": self.dan.view() if getattr(self, "dan", None) is not None else None,

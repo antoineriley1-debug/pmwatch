@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="build" content="20261017-2334">
+<meta name="build" content="20261018-0452">
 <title>TED · SHOW</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;600;700&family=Barlow+Condensed:wght@500;600;700;800&family=Barlow:wght@500;600;700&family=Barlow+Semi+Condensed:wght@600;700&family=Oswald:wght@500;600;700&family=Roboto:wght@500;700&family=Roboto+Condensed:wght@600;700&display=swap" rel="stylesheet">
 <style>
@@ -43,6 +43,7 @@ body.theme-desk #bug .dot{background:#d9534f}
 .wr b{font:700 26px var(--fH);letter-spacing:.03em}
 .wr .px{font:600 24px var(--fN);text-align:right}
 .wr .sub{color:var(--dim);font:600 15px var(--fN)}
+.wr .mr{font-style:normal;font-size:.8em} .wr .mr.bull{color:#22c37a} .wr .mr.bear{color:#e5484d} .wr .mr.neut{color:#9aa4b4} .wr .mr.off{color:#f5c542}
 .wr .ch{font:700 17px var(--fN);text-align:right}
 .up{color:var(--up)} .dn{color:var(--dn)}
 #grid{flex:1;display:grid;gap:10px;padding:10px;min-width:0;min-height:0}
@@ -356,7 +357,7 @@ function guides(){
 
 /* ------------------------------------------------------------ data */
 const BARS = {}, DAILY = {}, INFO = {};
-let WL = [], DAN = [], ALERTS = [], TRADES = [], SEEN = new Set(), FIRST = true, LASTNOW = 0;
+let MR = {}, WL = [], DAN = [], ALERTS = [], TRADES = [], SEEN = new Set(), FIRST = true, LASTNOW = 0;
 async function poll(){
   const view = [...new Set(cells.filter(c => c.visible && c.sym).map(c => c.sym))];
   const full = view.filter(s => !BARS[s]);
@@ -364,7 +365,7 @@ async function poll(){
     const r = await fetch(`/api/show?view=${encodeURIComponent(view.join(","))}&full=${encodeURIComponent(full.join(","))}`, {cache: "no-store"});
     if (r.status === 401){ location.replace("/login?next=/show"); return; }
     const j = await r.json(); if (!j.ok) return;
-    LASTNOW = j.now; WL = j.watchlist || []; DAN = j.dan || []; TRADES = j.trades || [];
+    LASTNOW = j.now; MR = j.myread || {}; WL = j.watchlist || []; DAN = j.dan || []; TRADES = j.trades || [];
     for (const [s, d] of Object.entries(j.charts || {})){
       INFO[s] = d;
       if (d.daily) DAILY[s] = d.daily;
@@ -386,7 +387,7 @@ function renderRail(){
   $("#railSrc").textContent = src === "dan" ? "DAN'S" : "MINE"; $("#railTitle").textContent = src === "dan" ? "DAN'S WATCHLIST" : "WATCHLIST";
   const fsym = cells[S.focus] && cells[S.focus].sym;
   const rows = src === "dan" ? DAN.map(d => { const w = WL.find(x => x.symbol === d.symbol) || {}; return {symbol: d.symbol, last: w.last, chg_pct: w.chg_pct, side: d.side, pivot: d.pivot, stars: d.stars}; }) : WL;
-  const h = rows.map(w => `<div class="wr ${w.symbol === fsym ? "on" : ""}" data-sym="${esc(w.symbol)}"><b>${esc(w.symbol)}</b><div class="px">${px(w.last)}</div>
+  const h = rows.map(w => `<div class="wr ${w.symbol === fsym ? "on" : ""}" data-sym="${esc(w.symbol)}"><b>${esc(w.symbol)}${MR[w.symbol] ? ` <i class="mr ${({BULLISH: "bull", BEARISH: "bear", NEUTRAL: "neut", "HANDS OFF": "off"})[MR[w.symbol].read]}">${({BULLISH: "▲", BEARISH: "▼", NEUTRAL: "◆", "HANDS OFF": "✋"})[MR[w.symbol].read]}</i>` : ""}</b><div class="px">${px(w.last)}</div>
       <div class="sub">${w.pivot ? (w.side === "short" ? "▼" : "▲") + " PIVOT " + px(w.pivot) : "&nbsp;"}${w.stars ? " " + "★".repeat(w.stars) : ""}</div><div class="ch ${w.chg_pct >= 0 ? "up" : "dn"}">${pct(w.chg_pct)}</div></div>`).join("");
   const el = $("#wl"); if (el._h !== h){ el._h = h; el.innerHTML = h; }
   const ch = WL.map(w => `<span class="${w.symbol === fsym ? "on" : ""}" data-sym="${esc(w.symbol)}">${esc(w.symbol)} <b class="${w.chg_pct >= 0 ? "up" : "dn"}">${pct(w.chg_pct)}</b></span>`).join("");

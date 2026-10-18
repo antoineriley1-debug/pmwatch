@@ -345,8 +345,10 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                         out = {"ok": c is not None, "card": c}
                     else:
                         cards = cb.read(days, clock() if engine.replay is None else None)
-                        out = {"ok": True, "days": days, "cards": [cb.brief(c) for c in cards[:300]],
-                               "review": cb.review(cards) if q.get("review") else None}
+                        rv = cb.review(cards) if q.get("review") else None
+                        if rv is not None:                 # how your own reads did over the same days
+                            rv["my_reads"] = engine.myread.review(clock() - days * 86400)
+                        out = {"ok": True, "days": days, "cards": [cb.brief(c) for c in cards[:300]], "review": rv}
                 self._send(200, json.dumps(out, default=str, separators=(",", ":")), "application/json")
                 return
             if path == "/api/phrases":
@@ -693,6 +695,19 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                 else:
                     out = {"ok": False, "reason": "unknown action"}
                 self._send(200, json.dumps(out, default=str), "application/json")
+                return
+            if path == "/api/myread":
+                # MY READ: BULLISH / BEARISH / NEUTRAL / HANDS OFF on a stock, today or this week (read "" clears it)
+                sym = str(body.get("symbol", "")).upper()
+                with engine.lock:
+                    st = engine.syms.get(sym)
+                    try:
+                        r = engine.myread.set(sym, body.get("read") or None, body.get("why", ""), bool(body.get("week")), clock(),
+                                              st.price() if st is not None else None)
+                        out = {"ok": True, "read": r}
+                    except ValueError as exc:
+                        out = {"ok": False, "reason": str(exc)}
+                self._send(200, json.dumps(out), "application/json")
                 return
             if path == "/api/callbook/rate":
                 with engine.lock:
