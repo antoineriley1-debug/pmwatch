@@ -63,3 +63,30 @@ close (otherwise it comes off at today's close). CLEAR takes it off.
 - An order against it gets a warning on the confirm (or a note with one-click on). It never blocks the order.
 - THE CALL BOOK keeps it on every card. THE WEEKLY REVIEW shows the desk's hit rate with your read and against it,
   and how your own reads did: a BULLISH read is right when price closed over where it was when you set it.
+
+## THE TRADE BOT (POSITIONS › the bar on top)
+
+Paper only. Once you are in, it manages the trade the PS60 way. Shares and contracts on the same stock are managed
+side by side, each on its own.
+
+1. With the stock on screen, click **BOT OFF** so it says **BOT ON**. It takes over the position you hold (or the next
+   one you open there).
+2. **TRAIL 5 | 60**: the runner's stop trails under the last finished 5-minute or 60-minute candle.
+3. **KIND**: AUTO (it reads the Daily: 15+ daily candles in one range and an MP of 2+ ATR = GIVE IT ROOM, else PAY
+   YOURSELF EARLY), or pick ROOM / EARLY yourself, any time.
+4. **PAY AT $**: your own pay-yourself distance for this stock (blank = a quarter of the ATR, $0.50 to $1.00).
+5. **TAKE BACK**: you manage it from here; the bot moves nothing more.
+
+What it does: the stop at max pain (the prior 5-minute low / high), or it keeps the stop you set on a contract;
+GIVE IT ROOM = break even after 1 ATR and pay yourself only near the MP; PAY YOURSELF EARLY = half off at the pay
+distance, then break even; then the runner trails. It tightens into a ROAD BLOCK (a Daily level, a key level, your
+sneaky pivot, a 60-minute moving average of 20 or slower in the way) and when the market turns against the trade for
+two minutes while it is green. It gets out when the level is graded LOST, a reload under it is CLEANED UP, or a
+5-minute candle closes back through the pivot, and it never adds back.
+
+Its read, live on the bar: THE PLAN (setup, pivot, 2nd entry, stop, MP, R), THE GOAL, EXPECTING, ROAD BLOCKS, IN THE
+TRADE (from the entry, best / worst, the stop), WITH IT / AGAINST IT (who is in control, the option flow, MY READ,
+VWAP), ON PLAN or CAREFUL. Every step goes into THE CALL BOOK. All the numbers are in SETTINGS › Trading › bot.
+
+Hand management stays one click: 25 / 50 / 75, +½, BE and X on every row (shares and contracts), X asks once, a
+message never covers a button, and a row never redraws while you are clicking it.

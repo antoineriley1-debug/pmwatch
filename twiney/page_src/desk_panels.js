@@ -1509,6 +1509,49 @@ document.addEventListener("input", e => {
 });
 document.addEventListener("keydown", e => { const box = e.target.closest && e.target.closest(".pp[data-pp]"); if (!box) return; e.stopPropagation(); if (e.key === "Enter") sendPartial(box.dataset.pp, box); }, true);
 
+/* THE TRADE BOT: once you are in, it manages the trade the PS60 way (paper only). The bar on top of POSITIONS: BOT ON
+   for the stock on screen (it takes over the next position there, or the one you hold), the 5 | 60 switch (the
+   runner's stop trails under that candle's lows), the kind (AUTO = the bot reads the Daily: GIVE IT ROOM or PAY
+   YOURSELF EARLY), PAY AT, and every trade it is managing with its last steps and TAKE BACK. */
+function botHTML(s){
+  const b = (s.trading || {}).bot; if (!b || !b.on) return "";
+  const sym = curSym, a = (b.armed || {})[sym], legs = Object.values(b.trades || {}).filter(t => t.symbol === sym), tr = legs[0];
+  const cfg = a || tr || {};
+  const trail = (tr ? tr.trail : a ? a.trail : 5), mode = tr ? tr.mode : a ? a.mode : null;
+  const sw = `<span class="botsw" title="the runner's stop trails under the last finished 5-minute or 60-minute candle's low (high for a short)">TRAIL <button data-bott="5" class="${trail === 5 ? "on" : ""}">5</button><button data-bott="60" class="${trail === 60 ? "on" : ""}">60</button></span>`;
+  const md = `<span class="botsw" title="AUTO: the bot reads the Daily: a long consolidation with a big MP = GIVE IT ROOM, else PAY YOURSELF EARLY">KIND <button data-botm="" class="${!mode || (tr && tr.mode_by === "bot") ? "on" : ""}">AUTO</button><button data-botm="GIVE IT ROOM" class="${mode === "GIVE IT ROOM" && (!tr || tr.mode_by === "you") ? "on" : ""}">ROOM</button><button data-botm="PAY YOURSELF EARLY" class="${mode === "PAY YOURSELF EARLY" && (!tr || tr.mode_by === "you") ? "on" : ""}">EARLY</button></span>`;
+  const pay = `<span class="botsw" title="PAY YOURSELF EARLY: how far your way before half comes off (blank = a quarter of the daily ATR, $0.50 to $1.00)">PAY AT $<input id="botPay" value="${cfg.pay_at && (!tr || tr.pay_at !== tr.pay_at_auto) ? (+cfg.pay_at).toFixed(2) : ""}" placeholder="${a && a.pay_at_auto ? (+a.pay_at_auto).toFixed(2) : tr ? (+tr.pay_at).toFixed(2) : "auto"}"></span>`;
+  const head = sym ? `<div class="botbar ${tr ? "live" : a ? "armed" : ""}"><b>TRADE BOT · ${esc(sym)}</b>
+      <button class="botgo ${a || tr ? "on" : ""}" data-boton="${a || tr ? 0 : 1}" title="${a || tr ? "TAKE BACK: you manage it from here" : "the bot takes over the next position on " + esc(sym) + " (or the one you hold now)"}">${tr ? "TAKE BACK" : a ? "BOT ON · waiting for a position" : "BOT OFF"}</button>
+      ${sw}${md}${pay}
+      ${!b.may_act ? `<span class="bad">LIVE account: the bot acts on PAPER only</span>` : ""}
+      ${a && a.preview && !tr ? `<span class="dim">this one would be <b>${esc(a.preview)}</b>: ${esc(a.preview_why || "")}</span>` : ""}
+      ${b.losses_today ? `<span class="dim">bot losses today ${b.losses_today} / ${b.max_losses}</span>` : ""}</div>` : "";
+  const rd = t => { const r = t.read; if (!r) return "";
+    return `<div class="botread ${r.stance === "CAREFUL" ? "careful" : "onplan"}"><b>${esc(r.stance)}</b> <span>THE PLAN: ${esc(r.plan)}</span>${r.goal ? `<span>THE GOAL: ${esc(r.goal)}</span>` : ""}<span>EXPECTING: ${esc(r.expect)}</span>${r.blocks ? `<span class="rb">${esc(r.blocks)}</span>` : ""}${r.inside ? `<span>IN THE TRADE: ${esc(r.inside)}</span>` : ""}
+      ${r.with.length ? `<span class="w">WITH IT: ${esc(r.with.join(" · "))}</span>` : ""}${r.against.length ? `<span class="a">AGAINST IT: ${esc(r.against.join(" · "))}</span>` : ""}</div>`; };
+  const live = Object.values(b.trades || {}).sort((x, y) => (x.symbol === sym ? -1 : 0) - (y.symbol === sym ? -1 : 0)).map(t => `<div class="bottr"><b>${esc(t.symbol)}</b> ${t.kind === "option" ? `<span class="botopt">${esc(t.key)}</span>` : "<span>SHARES</span>"} ${t.side.toUpperCase()} ${t.kind === "option" ? "· stock at " : "from "}${(+t.entry).toFixed(2)} · <b>${esc(t.mode)}</b> · stop ${t.stop != null ? (+t.stop).toFixed(2) + (t.kind === "option" ? " on the stock" : "") : t.your_stop ? "your " + (+t.your_stop).toFixed(2) + " on the contract" : "—"}${t.be ? " (break even done)" : ""}${t.paid ? " · paid" : ""} · trail ${t.trail}
+      ${rd(t)}<div class="botsteps">${(t.steps || []).slice(-3).map(x => `<div><i>${typeof nyHM === "function" ? nyHM(x.t) : ""}</i> ${esc(x.text)}</div>`).join("")}</div></div>`).join("");
+  return head + live;
+}
+document.addEventListener("click", async e => {
+  if (!P.positions || !P.positions.pc.contains(e.target)) return;
+  const sym = curSym; if (!sym) return;
+  const go = e.target.closest("[data-boton]"), tt = e.target.closest("[data-bott]"), mm = e.target.closest("[data-botm]");
+  let body = null;
+  if (go) body = {symbol: sym, on: go.dataset.boton === "1"};
+  else if (tt) body = {symbol: sym, on: true, trail: +tt.dataset.bott};
+  else if (mm) body = {symbol: sym, on: true, mode: mm.dataset.botm};
+  if (!body) return;
+  const out = await post("/api/trade/bot", body);
+  toast(out.ok ? (body.on === false ? `TRADE BOT off on ${sym}: you manage it` : `TRADE BOT on ${sym}`) : (out.reason || "refused"), !!out.ok);
+  P.positions.last = null; poll(true);
+});
+document.addEventListener("change", async e => {
+  if (e.target.id !== "botPay" || !curSym) return;
+  const out = await post("/api/trade/bot", {symbol: curSym, on: true, pay_at: e.target.value || 0});
+  toast(out.ok ? `PAY AT on ${curSym}: ${e.target.value ? "$" + (+e.target.value).toFixed(2) : "auto"}` : (out.reason || "refused"), !!out.ok);
+});
 function renderPositions(s){
   const A = s.account, on = canReduce();
   if (P.positions.pc.contains(document.activeElement) && document.activeElement.tagName === "INPUT") return;   // typing in the partial form
@@ -1544,7 +1587,7 @@ function renderPositions(s){
     `<tr class="posrow opt wk bk"><td class="l"><b>${esc(o.symbol)}</b> <span class="s">BACKUP STOP</span></td><td>${o.aux ? (+o.aux).toFixed(2) : NA}</td><td colspan="3" class="l dim" title="a real stop order held at IBKR: it protects the contract with the desk or the computer off. The desk's own stop goes first; this one sits a little past it, follows your stop, and comes off when you are out">at IBKR · ${esc(o.action)} ${sz(o.remaining ?? o.qty)} ct if the contract trades ${o.aux ? (+o.aux).toFixed(2) : NA} (limit ${o.lmt ? (+o.lmt).toFixed(2) : NA}, ${esc(o.tif || "")}) · works with the desk off</td><td></td></tr>` :
     `<tr class="posrow opt wk"><td class="l"><b>${esc(o.symbol)}</b> <span class="${o.action === "BUY" ? "b" : "s"}">${esc(o.action)} ${sz(o.remaining ?? o.qty)} ct</span></td><td>${o.lmt ? (+o.lmt).toFixed(2) : NA}</td><td colspan="3" class="l gold">WORKING · not filled yet — it shows here as a position once it fills</td>
       <td class="l ctl"><button class="danger" data-cxl="${o.order_id}" title="cancel this option order">CANCEL</button></td></tr>`).join("");
-  panelHTML("positions", `<table class="grid pos2"><tr><th>POSITION</th><th>ENTRY</th><th>LAST</th><th>P&amp;L %</th><th>STOP · TGT</th><th style="text-align:left" title="25 / 50 / 75 = take that much off at the touch · … = your own number · @ = partial at your price · BE = stop to breakeven · X = close · +½ +1× +… = scale in at the touch">OUT 25 · 50 · 75 · … · @ · BE · X &nbsp; IN +½ · +1× · +…</th></tr>${rows + orows + wk || `<tr><td colspan="6" class="dim l">${A.seen ? "FLAT" : "NO ACCOUNT DATA"}</td></tr>`}</table>`);
+  panelHTML("positions", botHTML(s) + `<table class="grid pos2"><tr><th>POSITION</th><th>ENTRY</th><th>LAST</th><th>P&amp;L %</th><th>STOP · TGT</th><th style="text-align:left" title="25 / 50 / 75 = take that much off at the touch · … = your own number · @ = partial at your price · BE = stop to breakeven · X = close · +½ +1× +… = scale in at the touch">OUT 25 · 50 · 75 · … · @ · BE · X &nbsp; IN +½ · +1× · +…</th></tr>${rows + orows + wk || `<tr><td colspan="6" class="dim l">${A.seen ? "FLAT" : "NO ACCOUNT DATA"}</td></tr>`}</table>`);
 }
 /* right-click a position: an option one goes on the OPTION CHART (with its L2, T&S and ORDER ENTRY), the stock
    chart switches to its underlying; a stock one opens its chart */
@@ -1684,7 +1727,7 @@ P.ticket.el.addEventListener("change", e => {
 // or the scale plan never fires an order
 P.ticket.el.addEventListener("keydown", e => { e.stopPropagation(); if (e.key === "Enter" && e.target.tagName === "INPUT" && /^(tkQty|tkPx|tkAux)$/.test(e.target.id || "")) transmit(); });
 P.positions.el.addEventListener("click", async e => {
-  const c = e.target.closest("button[data-close]"); if (c){ if (!confirm("CLOSE the whole " + c.dataset.close + " position?")) return; flatten(c.dataset.close); return; }
+  const c = e.target.closest("button[data-close]"); if (c){ flatten(c.dataset.close); return; }      // one confirm: the SEND box (Enter)
   const ad = e.target.closest("button[data-add]"); if (ad){ let n = ad.dataset.n; if (n === "ask"){ n = prompt("Add how many shares to " + ad.dataset.add + "?"); if (!n) return; } if (!canTrade()) return toast("Can't trade: " + whyNot(), false);
     const out = await post("/api/trade/adjust", {symbol: ad.dataset.add, shares: +n, mode: "add"}); toast(out.ok ? "Sent: " + out.sent : "Blocked: " + (out.reason || ""), out.ok); return; }
   const oc = e.target.closest("button[data-oclose], button[data-oadd]"); if (oc){ const key = oc.dataset.oclose || oc.dataset.oadd, mode = oc.dataset.oclose != null ? "close" : "add"; let n = oc.dataset.n, price = null;

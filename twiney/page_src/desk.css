@@ -1422,3 +1422,17 @@ body.whitedesk .chart-wrap canvas,body.whitedesk img,body.whitedesk video{filter
 .mrb button.on{background:rgba(78,161,255,.15);border-color:#4ea1ff}
 .mrwhy{width:100%;box-sizing:border-box;margin:6px 0;background:transparent;color:inherit;border:1px solid var(--line,#2a3340);border-radius:4px;padding:4px 6px;font:11px var(--mono)}
 .mrf{display:flex;gap:6px;align-items:center} .mrf label{flex:1;color:var(--dim)} .mrf button{font:600 10px var(--mono);background:transparent;color:inherit;border:1px solid var(--line,#2a3340);border-radius:4px;padding:2px 6px;cursor:pointer}
+/* THE TRADE BOT */
+.botbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:4px 8px;border-bottom:1px solid var(--line);font:11px var(--mono)}
+.botbar.armed{background:rgba(245,197,66,.07)} .botbar.live{background:rgba(78,161,255,.10)} .botbar .bad{color:#e5484d;font-weight:700}
+.botgo{font:700 11px var(--mono);padding:2px 8px;border-radius:4px;border:1px solid var(--line);background:transparent;color:var(--dim);cursor:pointer}
+.botgo.on{color:#4ea1ff;border-color:#4ea1ff}
+.botsw{display:inline-flex;gap:2px;align-items:center;color:var(--dim)} .botsw button{font:700 10px var(--mono);padding:1px 6px;border:1px solid var(--line);background:transparent;color:var(--dim);cursor:pointer;border-radius:3px}
+.botsw button.on{color:var(--gold);border-color:var(--gold)} .botsw input{width:46px;background:transparent;color:inherit;border:1px solid var(--line);border-radius:3px;font:11px var(--mono);padding:1px 3px}
+.bottr{padding:3px 8px;font:11px var(--mono);border-bottom:1px solid var(--line)} .botsteps{color:var(--dim);font-size:10.5px} .botsteps i{font-style:normal;margin-right:4px}
+.botread{display:flex;flex-direction:column;gap:1px;margin:3px 0;padding:3px 6px;border-left:3px solid #22c37a;background:rgba(34,195,122,.06)}
+.botread.careful{border-left-color:#f5c542;background:rgba(245,197,66,.08)} .botread b{font-size:10.5px} .botread .w{color:#22c37a} .botread .a{color:#f5c542}
+.botopt{color:var(--gold)}
+.botread .rb{color:#4ea1ff}
+/* the messages never cover a button: clicks go straight through them to POSITIONS / the order bar underneath */
+#toasts, #toasts .toast{pointer-events:none}

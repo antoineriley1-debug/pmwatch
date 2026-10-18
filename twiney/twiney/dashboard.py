@@ -1195,6 +1195,9 @@ def make_handler(engine, clock, trader=None, desk=None, rec_dir=None, layout_pat
                     out = tr.set_opt_level(str(body.get("key", "")), str(body.get("role", "")), body.get("price"), body.get("n") or 1, now)
                 elif action == "trail":
                     out = tr.set_trail(sym, body.get("dollars"), bool(body.get("on", True)), now)
+                elif action == "bot":           # THE TRADE BOT: on / TAKE BACK, the 5 | 60 switch, the kind, PAY AT
+                    with tr.lock:
+                        out = tr.bot.arm(sym, bool(body.get("on", True)), body.get("trail"), body.get("mode"), body.get("pay_at"), now)
                 elif action == "scale_fire":
                     out = tr.fire_scale_rung(sym, body.get("i"), now)
                 else:

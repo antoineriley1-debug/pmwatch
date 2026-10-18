@@ -680,6 +680,8 @@ class Trader:
         # it allows can never be split by another click (two flattens, two closes, the same ticket twice)
         self.lock = threading.RLock()
         self.log = deque(maxlen=200)
+        from .tradebot import TradeBot
+        self.bot = TradeBot(self)        # THE TRADE BOT: manages a position once you are in (paper only)
 
     def _note(self, now, text, ok):
         self.log.appendleft({"t": now, "text": text, "ok": ok})
@@ -2315,6 +2317,10 @@ class Trader:
             self._auto_entries(now or time.time())
         except Exception as exc:
             log.warning("auto 2nd entry: %s", exc)
+        try:
+            self.bot.tick(now or time.time())
+        except Exception as exc:
+            log.warning("trade bot: %s", exc)
         limit = self.cfg["max_daily_loss"]
         # the lock guards a LIVE account; paper / practice only if you switched it on — and never again today once you
         # lifted it by hand (UNLOCK sticks: it does not come straight back half a second later)
@@ -3621,5 +3627,5 @@ class Trader:
                  scale_templates={k: v for k, v in (self.cfg["scale_plan"].get("templates") or {}).items()},
                  qty_presets=list(self.cfg.get("qty_presets") or [25, 50, 100, 200, 500, 1000]),
                  manage_presets=list(self.cfg.get("manage_presets") or [5, 10, 20]),
-                 manage_option_presets=list(self.cfg.get("manage_option_presets") or [1, 2, 5]))
+                 manage_option_presets=list(self.cfg.get("manage_option_presets") or [1, 2, 5]), bot=self.bot.view())
         return s

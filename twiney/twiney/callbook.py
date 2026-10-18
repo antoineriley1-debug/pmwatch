@@ -106,6 +106,15 @@ class CallBook:
         self._trim()
         return card
 
+    def step(self, cid, t, text):
+        """THE TRADE BOT: one more step on its trade's card."""
+        c = self.recent.get(cid) or self._find(cid)
+        if c is None:
+            return None
+        c.setdefault("steps", []).append({"t": round(t, 1), "text": str(text)[:300]})
+        self._save(c)
+        return c
+
     def grade(self, symbol, lvl, took, grade):
         """The level-hold grade (10 minutes after a level was taken), onto the card that called it taken."""
         kind = "LEVEL " + took
@@ -334,4 +343,4 @@ class CallBook:
     def brief(c):
         """A card in the list: no T&S / book / candles (the whole card is fetched when opened)."""
         return {k: c.get(k) for k in ("id", "t", "symbol", "kind", "dir", "label", "words", "price", "moves", "first", "first_t",
-                                      "hold", "outcome", "thumb", "note", "pic", "control", "target", "stop", "plan_src", "src", "myread")}
+                                      "hold", "outcome", "thumb", "note", "pic", "control", "target", "stop", "plan_src", "src", "myread", "steps")}

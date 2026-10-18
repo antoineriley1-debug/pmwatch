@@ -13,7 +13,13 @@ function selOpen(el){ const a = document.activeElement; return !!(a && a.tagName
   Object.defineProperty(Element.prototype, "innerHTML", {configurable: true, get(){ return d.get.call(this); },
     set(v){ if (selOpen(this)){ if (this.dataset) delete this.dataset.h; return; } d.set.call(this, v); }}); })();
 document.addEventListener("change", e => { if (e.target.tagName === "SELECT") setTimeout(() => { if (document.activeElement === e.target) e.target.blur(); }, 0); }, true);
-function panelHTML(id, html){ const p = P[id]; if (p.last === html) return false; if (selOpen(p.pc)) return false; p.last = html; p.pc.innerHTML = html; return true; }
+function panelHTML(id, html){ const p = P[id]; if (p.last === html) return false; if (selOpen(p.pc)) return false;
+  if (PRESS.id === id){ PRESS.pending = true; return false; }      // a button is being pressed in it: never pulled out from under the click
+  p.last = html; p.pc.innerHTML = html; return true; }
+// a press on a panel holds its redraws until the click is done (a redraw between mouse-down and mouse-up loses the click)
+const PRESS = {id: null, pending: false};
+document.addEventListener("pointerdown", e => { const el = e.target.closest && e.target.closest(".pnl[data-p]"); PRESS.id = el ? el.dataset.p : null; PRESS.pending = false; }, true);
+document.addEventListener("pointerup", () => { if (!PRESS.id) return; setTimeout(() => { const id = PRESS.id, again = PRESS.pending; PRESS.id = null; PRESS.pending = false; if (again && P[id]){ P[id].last = null; if (typeof poll === "function") poll(true); } }, 120); }, true);
 
 /* ---------- docking */
 function emptyLayout(){ return {zones: {TL: [], TC: [], TR: [], TX: [], BL: [], BC: [], BR: [], BX: []}, active: {}, sizes: {c1: 250, c3: 430, c4: 300, r2: {L: 300, C: 300, R: 300, X: 300}}, floats: {}, hidden: [], max: null}; }

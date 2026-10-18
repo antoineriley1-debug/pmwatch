@@ -236,6 +236,25 @@ DEFAULTS = {
         },
         # market and naked stop entries stay off unless you turn this on (Dan: limit ~99%)
         "allow_market": False,
+        # THE TRADE BOT (POSITIONS › BOT): once you are in, it manages the trade the PS60 way. PAPER / practice only
+        "bot": {
+            "enabled": True,
+            "trail_default": 5,         # the runner's stop trails under the last 5- or 60-minute candle (the 5 | 60 switch)
+            "consolidate_days": 15,     # GIVE IT ROOM: at least this many daily candles in one range before the break ...
+            "range_width_atr": 2.5,     # ... a range no wider than this many daily ATRs ...
+            "room_mp_atr": 2.0,         # ... and an MP of at least this many ATRs to the next Daily supply / demand
+            "be_atr": 1.0,              # GIVE IT ROOM: the stop goes to break even once the trade has gone this many ATRs
+            "room_pay_last_pct": 10,    # GIVE IT ROOM: pay yourself only in the last this % of the way to the MP
+            "pay_atr_frac": 0.25,       # PAY YOURSELF EARLY: at this part of the daily ATR ...
+            "pay_min": 0.5,             # ... never under this many dollars ...
+            "pay_max": 1.0,             # ... nor over this many (the play's own PAY AT wins)
+            "pay_pct": 50,              # how much of the position comes off when you pay yourself (%)
+            "max_losses_day": 3,        # after this many losing bot trades in a day it takes over nothing new
+            "h60_ma_min": 20,           # ROAD BLOCKS: the 60-minute moving averages this long and slower (20, 34, 50 ...)
+            "block_atr": 0.1,           # into a road block: within this part of the daily ATR of it, the stop tightens once
+            "tighten_seconds": 120,     # the market against the trade this long (CAREFUL) while green: the stop tightens
+            "allow_live": False,        # the bot never acts on a LIVE account unless this is on (paper first)
+        },
         # AUTO 2ND ENTRY: the 2nd entry you draw becomes a stop-limit entry (limit this many ticks through it) with
         # the play's stop + target attached, sized from risk_dollars, placed while ARMED, one entry per drawn level
         "auto_second_entry": True,
