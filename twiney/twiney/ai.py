@@ -244,6 +244,10 @@ class DeskAI:
         day = studies.day_key(t)
         if (self.engine.connection or {}).get("state") == "CONNECTED":
             self.live_day = day
+        # the status line says READY (or why not) on its own: Ollama is asked every few minutes, off the desk's thread
+        if self.enabled() and not self.busy and time.time() - self.reach["t"] >= 180:
+            self.reach["t"] = time.time()
+            threading.Thread(target=self.check, kwargs={"force": True}, name="twiney-ai-check", daemon=True).start()
         a = self.ac()
         if not (self.enabled() and a.get("recap_at_close", True)) or self.recap_day == day or self.live_day != day:
             return False
