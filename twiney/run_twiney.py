@@ -1,0 +1,705 @@
+#!/usr/bin/env python3
+"""TWINEY — read-only IBKR order-flow workstation built around PS60 levels.
+
+    python run_twiney.py                      live: TWS / IB Gateway market data
+    python run_twiney.py --demo               synthetic feed, no IBKR needed
+    python run_twiney.py --replay FILE.jsonl  re-run a recording (audit / tuning)
+
+Market data only. There is no order-placement path.
+"""
+
+import argparse
+import logging
+import os
+import sys
+import threading
+import time
+import webbrowser
+
+from twiney import __version__
+from twiney import paths as _paths
+from twiney.bigmoney import BigMoney
+from twiney.config import LOAD_WARNINGS, PLACEHOLDERS_STRIPPED, ConfigError, build_config, load_config, load_plays
+from twiney.dashboard import Dashboard, EngineRef
+from twiney.desk import Desk
+from twiney.engine import Engine
+from twiney.ai import DeskAI
+from twiney.danmail import DanMail
+from twiney.recorder import Recorder
+from twiney.replay import compare, replay, session_header, span
+from twiney.trading import IbkrBroker, SimBroker, Trader, TradingGate
+
+
+def start_market(cfg, mode):
+    """MARKET ANALYSIS DETAILED REPORT: the daily-close boards (live: IBKR + FRED, practice: synthetic, replay: what is
+    on disk). Its closes live in the data folder (history/macro), never in a zip or git."""
+    from twiney.macrofeed import MacroFeed
+    try:
+        return MacroFeed(cfg, mode=mode, cache_dir=os.path.join(_paths.history_dir(), "macro")).start()
+    except Exception:
+        logging.getLogger("twiney").exception("market report")
+        return None
+
+
+def console_alert(alert):
+    stamp = time.strftime("%H:%M:%S", time.localtime(alert["t"]))
+    print(f"{stamp}  {alert['symbol']:<6} {alert['label']:<24} @ {alert['price']}  "
+          f"({alert.get('side')} · {alert.get('role')}" + (f" · absorbed {alert['absorbed']:,}" if alert.get("absorbed") is not None else "") + ")",
+          flush=True)
+
+
+def _rec_dir(cfg):
+    """Recordings live in the data folder (unless config.json gives an absolute path)."""
+    from twiney import paths as _paths
+    d = _paths.recordings_dir(cfg["recording"]["dir"])
+    cfg["recording"]["dir"] = d          # everything downstream (clips, replay lists, exports) reads the same place
+    return d
+
+
+def make_auth(cfg, args):
+    """THE SIGN-IN (twiney/auth.py): on unless config.json says dashboard.sign_in false. No password yet: a one-time
+    SETUP CODE is printed here, and the sign-in page creates the password with it."""
+    from twiney.auth import Auth, auth_path
+    d = cfg.get("dashboard") or {}
+    if d.get("sign_in", True) is False:
+        print("WARNING: the sign-in is OFF (config.json dashboard.sign_in): anyone who reaches this desk sees everything", flush=True)
+        return None
+    auth = Auth(auth_path(args.config), d.get("session_hours", 12))
+    if not auth.has_password():
+        code = auth.new_setup_code()
+        print(f"TED SIGN-IN: no password yet. SETUP CODE {code} - open the desk and create your password with it "
+              f"(or run: python run_twiney.py --set-password)", flush=True)
+    return auth
+
+
+def attach_updater(dash, cfg):
+    """The UPDATE button (the VPS install only: TED runs from the /opt/ted/app link)."""
+    from twiney.dashboard import BUILD
+    from twiney.updater import Updater
+    u = cfg.get("update") or {}
+    up = Updater(BUILD, u.get("repo"), u.get("branch"), u.get("app_link") or "/opt/ted/app")
+    if up.enabled():
+        dash.hooks["update"] = up
+    return up
+
+
+def set_password_cli(args):
+    """python run_twiney.py --set-password: create or replace the desk's password from a terminal. Every browser
+    signed in before has to sign in again."""
+    import getpass
+    from twiney.auth import Auth, auth_path
+    auth = Auth(auth_path(args.config))
+    print(("Replace" if auth.has_password() else "Create") + f" TED's password ({auth.path})", flush=True)
+    for _ in range(3):
+        pw = getpass.getpass("New password: ")
+        ok, why = auth.set_password(pw, getpass.getpass("Again: "))
+        if ok:
+            print("Password saved. Every browser signed in before must sign in again.", flush=True)
+            return 0
+        print(f"Not saved: {why}", flush=True)
+    return 1
+
+
+def layout_file(args):
+    """layout.json lives next to config.json (the TWINEY folder)."""
+    return os.path.join(os.path.dirname(os.path.abspath(args.config)), "layout.json")
+
+
+SOURCE = [None]   # where this launch's data comes from when it was picked by SETTINGS: live | practice | recorded
+
+
+def _recording_path(cfg, name):
+    """A recording in the recordings folder by its name (never a path outside it)."""
+    if not name:
+        return None
+    base = os.path.basename(str(name))
+    path = os.path.join(_rec_dir(cfg), base)
+    return path if base.endswith(".jsonl") and os.path.isfile(path) else None
+
+
+def datasource_hook(cfg, config_path, restart):
+    """The SIM menu's DATA choice: saved in config.json (start mode + data + the recorded day), then TED restarts on it."""
+    def switch(source, recording=None):
+        from twiney import settings as _settings
+        source = str(source or "").lower()
+        if source not in ("paper", "live", "practice", "recorded"):
+            return {"ok": False, "reason": "PAPER, LIVE, PRACTICE or RECORDED"}
+        if source == "recorded" and not _recording_path(cfg, recording):
+            return {"ok": False, "reason": "pick a recording first"}
+        changes = {"trading.start_mode": "paper" if source == "paper" else "sim",
+                   "trading.sim_data": "live" if source == "paper" else source}
+        if source == "recorded":
+            changes["trading.sim_recording"] = os.path.basename(recording)
+        _settings.apply(cfg, config_path, changes)
+        threading.Timer(0.6, restart).start()
+        return {"ok": True, "source": source, "restarting": True}
+    return switch
+
+
+class PracticeLauncher:
+    """THE PRACTICE DESK from the live desk: a second TED on the next port, on the practice market (synthetic tape,
+    book and option flow, orders filled by the simulator), the same settings and plays. Started from the PRACTICE
+    button, opened in its own tab; stopped from there or when the live desk stops."""
+
+    def __init__(self, config_path, port, spawn=None, probe=None):
+        self.config_path, self.port = config_path, int(port)
+        self.spawn = spawn or self._spawn
+        self.probe = probe or self._probe
+        self.proc = None
+
+    def command(self):
+        here = os.path.abspath(__file__)
+        cmd = [sys.executable, here, "--demo", "--no-browser", "--port", str(self.port)]
+        if self.config_path:
+            cmd += ["--config", self.config_path]
+        return cmd
+
+    def _spawn(self, cmd):
+        import subprocess
+        env = dict(os.environ, TWINEY_PRACTICE="1")
+        return subprocess.Popen(cmd, env=env)
+
+    def _probe(self):
+        import urllib.request
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/api/state", timeout=1.5) as r:
+                return r.status == 200
+        except Exception:
+            return False
+
+    @property
+    def url(self):
+        return f"http://127.0.0.1:{self.port}"
+
+    def running(self):
+        return self.proc is not None and self.proc.poll() is None
+
+    def status(self):
+        return {"running": self.running(), "url": self.url, "port": self.port}
+
+    def start(self, wait_s=12.0):
+        if not self.running():
+            self.proc = self.spawn(self.command())
+        t0 = time.time()
+        ready = self.probe()
+        while not ready and time.time() - t0 < wait_s and self.running():
+            time.sleep(0.5)
+            ready = self.probe()
+        return dict(self.status(), ok=self.running(), ready=ready,
+                    reason=None if self.running() else "the practice desk did not start (see the console)")
+
+    def stop(self):
+        if self.running():
+            try:
+                self.proc.terminate()
+                self.proc.wait(timeout=8)
+            except Exception:
+                try:
+                    self.proc.kill()
+                except Exception:
+                    pass
+        self.proc = None
+        return dict(self.status(), ok=True)
+
+
+def restart_process(stop=None):
+    """RESTART from the desk: stop cleanly (IBKR session, recording), then start again with the same arguments.
+    The browser tab stays and reconnects by itself."""
+    print("Restarting TED to apply settings...", flush=True)
+    try:
+        if stop:
+            stop()
+    except Exception:
+        pass
+    os.environ["TWINEY_RESTARTED"] = "1"
+    args = [sys.executable] + sys.argv
+    if os.name == "nt":
+        import subprocess
+        subprocess.Popen(args)
+        os._exit(0)
+    os.execv(sys.executable, args)
+
+
+def open_dashboard(dash, cfg, args):
+    print(f"Dashboard: {dash.url}", flush=True)
+    if os.environ.get("TWINEY_RESTARTED"):
+        return                      # restarted from the desk: the tab is already open
+    if cfg["dashboard"]["open_browser"] and not args.no_browser:
+        threading.Timer(0.8, lambda: webbrowser.open(dash.url)).start()
+
+
+def wait_forever(stop=None):
+    try:
+        while True:
+            time.sleep(0.5)
+    except KeyboardInterrupt:
+        print("\nStopping TWINEY.", flush=True)
+        if stop:
+            stop()
+
+
+def run_live(cfg, plays, args):
+    try:
+        from twiney.ibkr import MarketDataSession, ibapi_app_factory
+        factory = ibapi_app_factory()
+    except ImportError:
+        print("ERROR: the IBKR TWS API Python package (ibapi) is not installed.\n"
+              "Download the TWS API from IBKR, then from its source/pythonclient folder run:\n"
+              "    python -m pip install .\n"
+              "(Use --demo to try the dashboard without IBKR.)", file=sys.stderr)
+        return 2
+    recorder = None
+    if cfg["recording"]["enabled"]:
+        recorder = Recorder(_rec_dir(cfg))
+        recorder.write(session_header(plays, cfg, __version__))
+        print(f"Recording raw events to {recorder.path}", flush=True)
+    engine = Engine(plays, cfg, recorder)
+    if globals().get("_CONFIG_READONLY"):
+        engine._message("error", f"config.json is read-only for this user ({args.config}): SETTINGS and keys will not be kept. "
+                        f"Fix the folder's owner (on the VPS: sudo chown -R ted:ted {os.path.dirname(os.path.abspath(args.config))})", time.time(), category="FATAL")
+    engine.study_async = True          # chart studies off the engine lock: the book and the tape never wait on them
+    engine.plays_path = args.plays
+    engine.grades_path = os.path.join(_rec_dir(cfg), "grades.jsonl")
+    engine.jlog_path = os.path.join(_rec_dir(cfg), "desk.log")   # structured JSON lines: connections, orders, fills, errors
+    engine.score.path = os.path.join(_rec_dir(cfg), "score.jsonl")   # THE DESK SCORE: every judged call, one line each
+    from twiney.callbook import CallBook
+    engine.callbook = CallBook(_rec_dir(cfg), cfg)                     # THE CALL BOOK: a card per judged call
+    from twiney.phrases import Phrases
+    engine.phrases = Phrases(os.path.join(_rec_dir(cfg), "phrases.json"), cfg)   # THE PHRASE LIST: lines Twiney approved
+    from twiney.myread import MyRead
+    engine.myread = MyRead(_rec_dir(cfg))                              # MY READ: how Twiney sees each stock
+    engine.calib_path = os.path.join(_rec_dir(cfg), "inst_calib.jsonl")   # CHILD ORDERS on the real tape, for tuning
+    engine.storyline_path = os.path.join(_rec_dir(cfg), "storylines.jsonl")   # the storyline's turns, every day, for the cross-day study
+    engine.oi_path = os.path.join(_rec_dir(cfg), "oi.jsonl")   # OPEN INTEREST: each contract's morning number, day by day
+    engine.load_oi()
+    engine.ai = DeskAI(engine, cfg, _rec_dir(cfg))   # DESK AI (Ollama): the recap, tomorrow's plan, explanations, notes, the study
+    engine.dan = DanMail(engine, cfg, _paths.data_dir())   # DAN'S DAILY: the Market Notes email from Gmail, on its schedule
+    engine.macro = start_market(cfg, "live")         # the MARKET page: your boards on IBKR daily closes + FRED
+    engine.load_user_alerts(os.path.join(os.path.dirname(os.path.abspath(args.plays)), "alerts.json"))
+    engine.listeners.append(console_alert)
+    note_stripped(engine, args)
+    if CLEANED[0]:
+        engine._save_plays()
+        engine._message("info", "Clean chart: yesterday's lines are off — draw today's pivot, 2nd entry, stop and target "
+                                "(SETTINGS, Trading, clean chart on start)", time.time())
+    engine.bigmoney = BigMoney(cfg["flow"], os.path.join(cfg["recording"]["dir"], "big_money.jsonl"))
+    gate = TradingGate(cfg)
+    session = MarketDataSession(engine, cfg, plays, factory, gate=gate)
+    engine.session = session
+    session.macro = engine.macro
+    engine.play_listeners.append(session.add_play)
+    engine.remove_listeners.append(session.remove_play)
+    trader = Trader(engine, cfg, IbkrBroker(engine, session), gate) if cfg["trading"]["enabled"] else None
+    engine.trader = trader
+    if trader is not None and str(cfg["trading"].get("start_mode", "paper")).lower() == "sim":
+        trader.set_mode("SIM")                 # SETTINGS > Trading > Start in: simulation on live data, nothing to IBKR
+    start_watchdog(lambda: trader)
+    desk = Desk(engine, cfg, plays, __version__, prefix="twiney", base_dir=os.path.dirname(os.path.abspath(__file__)))
+    if recorder:
+        desk.started = time.time()
+    dash = Dashboard(engine, cfg["dashboard"]["host"], cfg["dashboard"]["port"], trader=trader, desk=desk,
+                     rec_dir=_rec_dir(cfg), layout_path=layout_file(args), config_path=args.config, auth=make_auth(cfg, args)).start()
+    ib = cfg["ibkr"]
+    mode = "order entry PAPER-ONLY" if trader and not cfg["trading"]["allow_live"] else \
+        "order entry LIVE ALLOWED" if trader else "view only"
+    print(f"TWINEY {__version__} · {mode} · connecting to {ib['host']}:{ib['port']} "
+          f"(client id {ib['client_id']}) · {len(plays)} plays · {cfg['depth']['slots']} depth slots", flush=True)
+    session.start()
+    flow = [None, None]
+
+    def start_flow():
+        """The Quant Data feed runs whenever a key is in config.json: at start, and again the moment one is saved in SETTINGS.
+        OPTION MONEY (max pain, big strikes, call vs put money, expected move) rides the same key."""
+        for f in flow:
+            if f:
+                f.stop()
+        flow[0] = flow[1] = None
+        dash.hooks.pop("optmoney_feed", None)
+        if cfg.get("quantdata", {}).get("api_key"):
+            from twiney.flow import QuantDataFeed
+            flow[0] = QuantDataFeed(engine, cfg, [p["symbol"] for p in plays]).start()
+            if (cfg.get("optmoney") or {}).get("enabled", True):
+                from twiney.option_money import OptionMoneyFeed
+                flow[1] = OptionMoneyFeed(engine, cfg, flow[0]._request).start()
+                dash.hooks["optmoney_feed"] = flow[1]
+            print("Option flow: Quant Data (key from config.json)" + (" · equity prints on" if cfg["quantdata"].get("equity_enabled") else ""), flush=True)
+        else:
+            engine.flow_status.update(source="off", state="off", detail="no Quant Data key: paste it in SETTINGS > Quant Data")
+            print("Option flow: off (add your Quant Data key in SETTINGS on the desk)", flush=True)
+    start_flow()
+    dash.hooks["flow_restart"] = start_flow
+    open_dashboard(dash, cfg, args)
+
+    def stop():
+        for f in flow:
+            if f:
+                f.stop()
+        session.stop()
+        dash.stop()
+        desk.stop()
+    practice = PracticeLauncher(args.config, int(cfg["dashboard"]["port"]) + 1)
+    dash.hooks["practice"] = practice
+    if SOURCE[0]:
+        dash.hooks["datasource"] = datasource_hook(cfg, args.config, lambda: restart_process(stop_all))
+        dash.hooks["source"] = SOURCE[0]
+
+    def stop_all():
+        if practice.running():
+            os.environ["TWINEY_PRACTICE_BACK"] = "1"   # a restart (UPDATE, settings) brings the practice desk back with it
+        practice.stop()
+        stop()
+    dash.hooks["restart"] = lambda: restart_process(stop_all)
+    attach_updater(dash, cfg)
+    if os.environ.pop("TWINEY_PRACTICE_BACK", None):
+        threading.Thread(target=practice.start, name="practice-back", daemon=True).start()
+    wait_forever(stop_all)
+    return 0
+
+
+CLEANED = [0]
+LINE_KEYS = ("trigger", "second_entry", "stop", "target", "mp")
+
+
+def clean_chart(plays, cfg, path=None, today=None):
+    """The first start of a new day comes up with clean charts (SETTINGS, Trading, clean chart on start): the pivot,
+    2nd entry, stop and target lines from an earlier day are gone, the tickers stay. A restart later the same day keeps
+    the lines you drew today. Returns how many tickers had lines taken off."""
+    if not cfg.get("trading", {}).get("clean_chart_on_start", True):
+        return 0
+    if path and os.path.exists(path):
+        marker = os.path.join(os.path.dirname(os.path.abspath(path)), ".clean_chart_v1")
+        first = not os.path.exists(marker)      # this build's first start: the old saved lines go, whatever their date
+        if first:
+            try:
+                open(marker, "w").close()
+            except OSError:
+                pass
+        saved = time.strftime("%Y%m%d", time.localtime(os.path.getmtime(path)))
+        if not first and saved == (today or time.strftime("%Y%m%d")):
+            return 0        # drawn today: keep them
+    n = 0
+    for p in plays:
+        if any(p.get(k) for k in LINE_KEYS) or p.get("alt"):
+            n += 1
+        for k in LINE_KEYS:
+            if k in p:
+                p[k] = None
+        p.pop("alt", None)
+        p["watch"] = True           # no pivot: a watch-only ticker until you draw one
+    return n
+
+
+def note_stripped(engine, args):
+    """plays.json still carried the example's made-up prices for these tickers: they start blank, and the desk says so."""
+    for w in LOAD_WARNINGS:
+        engine._message("warn", w, time.time())
+    if PLACEHOLDERS_STRIPPED:
+        syms = ", ".join(PLACEHOLDERS_STRIPPED)
+        engine._message("warn", f"{syms}: the example placeholder levels in {os.path.basename(args.plays)} were dropped — "
+                                f"those charts start blank; draw your own stop, target and 2nd entry", time.time())
+
+
+def start_watchdog(get_trader, clock=time.time, every=0.5):
+    """The loss lock, breakeven stops and the exit guard run on their own clock, browser open or not."""
+    def run():
+        saved_at = clock()
+        while True:
+            tr = get_trader()
+            if tr is not None:
+                try:
+                    tr.watchdog(clock())
+                except Exception as exc:
+                    logging.getLogger("twiney").exception("watchdog failed")
+                    try:
+                        tr.engine._message("error", f"order watchdog error: {exc}", clock())
+                    except Exception:
+                        pass
+                # the live histories, kept for the practice desk: every five minutes
+                if clock() - saved_at >= 300:
+                    saved_at = clock()
+                    try:
+                        tr.engine.save_history(_paths.history_dir(), clock())
+                    except Exception:
+                        logging.getLogger("twiney").exception("history cache")
+            time.sleep(every)
+    threading.Thread(target=run, name="twiney-watchdog", daemon=True).start()
+
+    def fast():
+        """Woken by every price update: option stops fire on the tick that crosses them."""
+        while True:
+            tr = get_trader()
+            evt = getattr(getattr(tr, "engine", None), "price_evt", None)
+            if evt is None:
+                time.sleep(every)
+                continue
+            evt.wait(every)
+            evt.clear()
+            try:
+                if any(p.get("qty") for p in list(tr.engine.opt_positions.values())):
+                    tr.fast_stops(clock())
+            except Exception:
+                logging.getLogger("twiney").exception("fast stops failed")
+    threading.Thread(target=fast, name="twiney-fast-stops", daemon=True).start()
+
+
+def run_demo(cfg, plays, args):
+    from twiney.sim import DemoFeed
+    recorder = None
+    if cfg["recording"]["enabled"]:
+        recorder = Recorder(_rec_dir(cfg), time.strftime("demo-%Y%m%d-%H%M%S.jsonl"))
+        recorder.write(session_header(plays, cfg, __version__))
+        print(f"Recording the demo to {recorder.path} (replay it or grade its calls for tune.py)", flush=True)
+    engine = Engine(plays, cfg, recorder)
+    if globals().get("_CONFIG_READONLY"):
+        engine._message("error", f"config.json is read-only for this user ({args.config}): SETTINGS and keys will not be kept. "
+                        f"Fix the folder's owner (on the VPS: sudo chown -R ted:ted {os.path.dirname(os.path.abspath(args.config))})", time.time(), category="FATAL")
+    engine.study_async = True          # chart studies off the engine lock: the book and the tape never wait on them
+    engine.plays_path = args.plays if os.path.exists(args.plays) and not args.plays.endswith("plays.example.json") else None
+    engine.grades_path = os.path.join(_rec_dir(cfg), "grades.jsonl")
+    engine.jlog_path = os.path.join(_rec_dir(cfg), "desk.log")   # structured JSON lines: connections, orders, fills, errors
+    engine.score.path = os.path.join(_rec_dir(cfg), "score.jsonl")   # THE DESK SCORE: every judged call, one line each
+    from twiney.callbook import CallBook
+    engine.callbook = CallBook(_rec_dir(cfg), cfg)                     # THE CALL BOOK: a card per judged call
+    from twiney.phrases import Phrases
+    engine.phrases = Phrases(os.path.join(_rec_dir(cfg), "phrases.json"), cfg)   # THE PHRASE LIST: lines Twiney approved
+    from twiney.myread import MyRead
+    engine.myread = MyRead(_rec_dir(cfg))                              # MY READ: how Twiney sees each stock
+    engine.score.src = "practice"      # the practice market's calls never count in the ODDS (the live market's only)
+    engine.storyline_path = os.path.join(_rec_dir(cfg), "storylines.jsonl")
+    engine.oi_path = os.path.join(_rec_dir(cfg), "oi.jsonl")
+    engine.load_oi()
+    engine.ai = DeskAI(engine, cfg, _rec_dir(cfg))   # DESK AI (Ollama) on the practice desk too: same buttons, practice numbers
+    engine.dan = DanMail(engine, cfg, _paths.data_dir())   # DAN'S DAILY on the practice desk too (the real email, when Gmail is set)
+    engine.macro = start_market(cfg, "practice")     # the MARKET page on synthetic closes (labelled PRACTICE)
+    engine.load_user_alerts(os.path.join(os.path.dirname(os.path.abspath(args.plays)), "alerts.json"))
+    engine.listeners.append(console_alert)
+    note_stripped(engine, args)
+    if CLEANED[0]:
+        engine._save_plays()
+        engine._message("info", "Clean chart: yesterday's lines are off — draw today's pivot, 2nd entry, stop and target "
+                                "(SETTINGS, Trading, clean chart on start)", time.time())
+    # practice flow is made up and the demo price starts fresh every launch: its big prints live in memory
+    # only, so the real 30-day memory (recordings/big_money.jsonl) never carries practice prints
+    engine.bigmoney = BigMoney(cfg["flow"], None)
+    feed = DemoFeed(engine, plays, seed=None, scenario=cfg.get("demo", {}).get("scenario"), history_dir=_paths.history_dir())
+    feed.start(time.time())
+    print(f"Practice session · day type: {feed.scenario}  (not shown on the desk; set demo.scenario in config.json to pick one)", flush=True)
+    gate = TradingGate(cfg)
+    gate.set_sim()
+    sim = SimBroker(engine)
+    engine.sim_broker = sim
+    trader = Trader(engine, cfg, sim, gate)
+    engine.trader = trader
+    desk = Desk(engine, cfg, plays, __version__, prefix="demo", base_dir=os.path.dirname(os.path.abspath(__file__)))
+    if recorder:
+        desk.started = time.time()
+    dash = Dashboard(engine, cfg["dashboard"]["host"], cfg["dashboard"]["port"], trader=trader, desk=desk,
+                     rec_dir=_rec_dir(cfg), layout_path=layout_file(args), config_path=args.config, auth=make_auth(cfg, args)).start()
+    print(f"TWINEY {__version__} · DEMO FEED (synthetic, not market data) · practice orders fill in the simulator",
+          flush=True)
+    open_dashboard(dash, cfg, args)
+    stop_evt = threading.Event()
+
+    from twiney.flow import SimFlow
+    sim_flow = SimFlow(engine, [p["symbol"] for p in plays], market=feed)
+    engine.play_listeners.append(lambda p: sim_flow.symbols.append(p["symbol"]))
+
+    def loop():
+        log = logging.getLogger("twiney.demo")
+        while not stop_evt.is_set():
+            now = time.time()
+            try:                     # one bad step is logged and the practice market keeps going
+                feed.step(now)
+                sim_flow.step(now)
+                engine.practice_opt_tick(now)     # contracts you hold / have orders on / chart move with the stock
+            except Exception as exc:
+                log.exception("practice market step failed")
+                engine._message("error", f"practice market step failed: {exc}", now)
+            stop_evt.wait(0.25)
+    threading.Thread(target=loop, daemon=True).start()
+    start_watchdog(lambda: trader)
+    dash.hooks["restart"] = lambda: restart_process(lambda: (stop_evt.set(), dash.stop(), desk.stop()))
+    if SOURCE[0]:
+        attach_updater(dash, cfg)              # the service itself on the practice market, not the PRACTICE button's desk
+    elif os.environ.get("TWINEY_PRACTICE") == "1":
+        # the PRACTICE button's desk: its UPDATE goes through the live desk next door, which installs the build and
+        # restarts both (it checks your live positions first)
+        dash.hooks["update_relay"] = f"http://127.0.0.1:{int(cfg['dashboard']['port']) - 1}"
+    if SOURCE[0]:
+        dash.hooks["datasource"] = datasource_hook(cfg, args.config, dash.hooks["restart"])
+        dash.hooks["source"] = SOURCE[0]
+    wait_forever(lambda: (stop_evt.set(), dash.stop(), desk.stop()))
+    return 0
+
+
+def run_replay(cfg, plays, args):
+    box = {}
+    dash = None
+    ref = EngineRef(box)
+
+    control = {"paused": False, "speed": args.speed, "position": None, "file": os.path.basename(args.replay)}
+    from twiney.training import Trainer
+    trainer = Trainer(os.path.join(_rec_dir(cfg), "training.jsonl"), cfg.get("score") or {}) if args.speed > 0 else None
+    try:                                   # the scrubber's range: first and last market time in the file
+        control["start"], control["end"] = span(args.replay)
+    except OSError:
+        pass
+    if args.start:                         # open at a clip: jump to its start, pause at its end
+        control["seek"] = float(args.start)
+    if args.end:
+        control["pause_at"] = float(args.end)
+
+    market = []
+
+    def ready(engine):
+        box["engine"] = engine
+        if not market:
+            market.append(start_market(cfg, "cache"))   # the MARKET page from what is on disk: nothing is asked
+        engine.macro = market[0]
+        engine.connection.update(state="REPLAY", detail=args.replay)
+        nonlocal dash
+        if args.speed > 0:
+            engine.replay = control
+            engine.ai = DeskAI(engine, cfg, _rec_dir(cfg))   # DESK AI on a replayed day too (never the close recap: not a live day)
+            # practice orders fill against the replayed book, exactly like the demo
+            gate = TradingGate(cfg)
+            gate.set_sim()
+            sim = SimBroker(engine)
+            engine.sim_broker = sim
+            engine.trader = Trader(engine, cfg, sim, gate)
+            if dash is None:
+                dash = Dashboard(ref, cfg["dashboard"]["host"], cfg["dashboard"]["port"],
+                                 clock=lambda: box["engine"].last_t, trader=None, rec_dir=_rec_dir(cfg),
+                                 layout_path=layout_file(args), config_path=args.config, auth=make_auth(cfg, args)).start()
+                if SOURCE[0]:
+                    _d = dash
+                    dash.hooks["restart"] = lambda: restart_process(lambda: _d.stop())
+                    dash.hooks["datasource"] = datasource_hook(cfg, args.config, dash.hooks["restart"])
+                    attach_updater(dash, cfg)
+                    dash.hooks["source"] = SOURCE[0]
+                open_dashboard(dash, cfg, args)
+            dash.trader = engine.trader
+            if not control.get("_watchdog"):
+                control["_watchdog"] = True
+                start_watchdog(lambda: getattr(box.get("engine"), "trader", None), clock=lambda: box["engine"].last_t)
+
+    use_file_settings = not args.override
+    try:
+        while True:
+            engine, recorded = replay(args.replay,
+                                      plays=None if use_file_settings else plays,
+                                      cfg=None if use_file_settings else cfg,
+                                      speed=args.speed, on_alert=console_alert, engine_ready=ready,
+                                      control=control if args.speed > 0 else None, trainer=trainer)
+            if control.get("restart_at") is None:
+                control["done"] = True
+                if engine is None:
+                    print("recording is empty", file=sys.stderr)
+                    return 1
+                got, want = compare(engine, recorded)
+                print(f"\nReplay finished: {sum(got.values())} alerts replayed, {sum(want.values())} recorded.")
+                for key in sorted(set(got) | set(want)):
+                    g, w = got.get(key, 0), want.get(key, 0)
+                    mark = "ok " if g == w else "DIFF"
+                    print(f"  {mark} {key[0]:<6} {key[1]:<24} @ {key[2]}  replay {g} / recorded {w}")
+                if dash is None:
+                    return 0
+                print("Replay done; dashboard stays up. Click a marker to jump back. Ctrl+C to exit.")
+                while control.get("restart_at") is None:
+                    time.sleep(0.3)
+            # jumped backwards (or the replay had finished): start over and fast-forward to that moment
+            control.update(stop=False, done=False, seek=control.pop("restart_at"), position=None)
+    except KeyboardInterrupt:
+        print("\nStopping TWINEY.", flush=True)
+        if dash is not None:
+            dash.stop()
+    return 0
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description="TWINEY — read-only IBKR order-flow workstation (PS60)")
+    ap.add_argument("--config", default=None, help="settings file (default: config.json in your TWINEY data folder)")
+    ap.add_argument("--plays", default=None, help="plays file (default: plays.json in your TWINEY data folder)")
+    ap.add_argument("--demo", action="store_true", help="synthetic feed; no IBKR connection")
+    ap.add_argument("--replay", metavar="FILE", help="replay a JSONL recording")
+    ap.add_argument("--speed", type=float, default=0.0, help="replay pacing multiple (0 = as fast as possible)")
+    ap.add_argument("--override", action="store_true",
+                    help="replay with current config.json/plays.json instead of the recording's own")
+    ap.add_argument("--no-browser", action="store_true")
+    ap.add_argument("--start", type=float, help="replay: jump to this time first (a clip's start)")
+    ap.add_argument("--end", type=float, help="replay: pause at this time (a clip's end)")
+    ap.add_argument("--port", type=int, help="dashboard port (overrides config.json)")
+    ap.add_argument("--set-password", action="store_true", help="create or replace the desk's sign-in password, then exit")
+    ap.add_argument("-v", "--verbose", action="store_true")
+    args = ap.parse_args(argv)
+    # your files live in the data folder (C:\Users\you\TWINEY), never in the program folder a new zip replaces
+    from twiney import paths as _paths
+    program_dir = os.path.dirname(os.path.abspath(__file__))
+    if args.config is None:
+        args.config = _paths.ensure_config(program_dir)
+    if args.plays is None:
+        args.plays = _paths.ensure_plays(program_dir)
+    if args.set_password:
+        return set_password_cli(args)
+    print(f"Your settings, key, plays and layout: {os.path.dirname(os.path.abspath(args.config))}", flush=True)
+    _cfg_dir = os.path.dirname(os.path.abspath(args.config))
+    if not os.access(_cfg_dir, os.W_OK) or (os.path.exists(args.config) and not os.access(args.config, os.W_OK)):
+        print(f"WARNING: {args.config} is not writable by this user: SETTINGS (keys included) will NOT be kept. "
+              f"Fix the owner of {_cfg_dir} (on the VPS: sudo chown -R ted:ted {_cfg_dir})", flush=True)
+        _CONFIG_READONLY = True
+    else:
+        _CONFIG_READONLY = False
+    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.WARNING,
+                        format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    try:
+        if args.demo:
+            cfg = load_config(args.config) if os.path.exists(args.config) else build_config({})
+            if args.port: cfg["dashboard"]["port"] = args.port
+            plays = load_plays(args.plays) if os.path.exists(args.plays) else load_plays("plays.example.json")
+            # PRACTICE starts from a clean slate EVERY launch: its price is made up fresh each time, so a line drawn in an
+            # earlier practice session sits at a meaningless price. Lines you draw now stay until you move or delete them
+            CLEANED[0] = clean_chart(plays, {"trading": {"clean_chart_on_start": True}})
+            for p in plays:
+                p["extra_levels"], p["sneaky_levels"], p["zones"] = [], [], []
+            return run_demo(cfg, plays, args)
+        if args.replay:
+            cfg = load_config(args.config) if os.path.exists(args.config) else build_config({})
+            if args.port: cfg["dashboard"]["port"] = args.port
+            plays = load_plays(args.plays) if args.override else None
+            return run_replay(cfg, plays, args)
+        cfg = load_config(args.config)
+        if args.port: cfg["dashboard"]["port"] = args.port
+        # SIM on the practice market or a recorded day (SETTINGS, or the SIM menu on the desk): this launch runs that
+        # feed instead of IBKR. The command line never changes, so a restart reads the setting again
+        tc = cfg.get("trading") or {}
+        src = str(tc.get("sim_data") or "live").lower() if str(tc.get("start_mode") or "paper").lower() == "sim" else "live"
+        if src == "practice":
+            print("SIM on the PRACTICE MARKET (SETTINGS > Trading > SIM data): no IBKR this session", flush=True)
+            SOURCE[0] = "practice"
+            plays = load_plays(args.plays)
+            CLEANED[0] = clean_chart(plays, {"trading": {"clean_chart_on_start": True}})
+            for p in plays:
+                p["extra_levels"], p["sneaky_levels"], p["zones"] = [], [], []
+            return run_demo(cfg, plays, args)
+        if src == "recorded":
+            path = _recording_path(cfg, tc.get("sim_recording"))
+            if path:
+                print(f"SIM on a RECORDED DAY: {os.path.basename(path)} replayed in real time (no IBKR this session)", flush=True)
+                SOURCE[0] = "recorded"
+                args.replay, args.speed = path, 1.0
+                return run_replay(cfg, None, args)
+            print("SIM recorded day: no recording picked or the file is missing: starting on LIVE data", flush=True)
+        SOURCE[0] = "live"
+        plays = load_plays(args.plays)
+        CLEANED[0] = clean_chart(plays, cfg, args.plays)
+        return run_live(cfg, plays, args)
+    except ConfigError as exc:
+        print(f"CONFIG ERROR: {exc}", file=sys.stderr)
+        return 2
+    except OSError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

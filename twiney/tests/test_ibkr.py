@@ -1,0 +1,1014 @@
+import decimal
+import unittest
+
+from helpers import ASK, BID, INSERT, cfg, plays
+from twiney.engine import Engine
+from twiney.ibkr import MarketDataSession, TwineyWrapper, num, parse_error_args
+from twiney.trading import IbkrBroker, Trader, TradingGate
+
+
+class FakeClient:
+    """Stands in for ibapi.client.EClient; records every request."""
+
+    def __init__(self):
+        self.calls = []
+        self.connected = False
+
+    def connect(self, host, port, client_id):
+        self.calls.append(("connect", host, port, client_id))
+        self.connected = True
+
+    def isConnected(self):
+        return self.connected
+
+    def disconnect(self):
+        self.calls.append(("disconnect",))
+        was = self.connected
+        self.connected = False
+        if was:
+            self.connectionClosed()  # EClient.disconnect() does this too
+
+    def __getattr__(self, name):
+        if name.startswith(("req", "cancel", "place")):
+            return lambda *a: self.calls.append((name,) + a)
+        raise AttributeError(name)
+
+
+class FakeApp(TwineyWrapper, FakeClient):
+    def __init__(self, engine, session):
+        FakeClient.__init__(self)
+        TwineyWrapper.__init__(self, engine, session, clock=lambda: session.clock())
+
+
+class Clock:
+    def __init__(self):
+        self.t = 100.0
+
+    def __call__(self):
+        return self.t
+
+
+def fake_order(action, qty, order_type, price, tif="DAY", parent_id=None, transmit=True, aux=None, oca=None, outside_rth=False):
+    return {"action": action, "qty": qty, "type": order_type, "price": price, "tif": tif,
+            "parent": parent_id, "transmit": transmit, "aux": aux, "oca": oca, "outside_rth": outside_rth}
+
+
+def make_session(**trading):
+    trading.setdefault("sim_options_after_hours", False)     # the test clock sits after hours: real quotes unless a test asks
+    c = cfg(trading=trading)
+    engine = Engine(plays(), c)
+    clock = Clock()
+    gate = TradingGate(c)
+    s = MarketDataSession(engine, c, plays(), FakeApp, contract_factory=lambda p: p["symbol"], clock=clock,
+                          order_factory=fake_order, gate=gate)
+    engine.trader = Trader(engine, c, IbkrBroker(engine, s), gate)
+    return s, engine, clock
+
+
+def names(app):
+    return [c[0] for c in app.calls]
+
+
+class ParsingTests(unittest.TestCase):
+    def test_error_signatures(self):
+        self.assertEqual(parse_error_args((5, 317, "reset")), (5, 317, "reset"))
+        self.assertEqual(parse_error_args((5, 317, "reset", "")), (5, 317, "reset"))
+        self.assertEqual(parse_error_args((5, 1712345678, 317, "reset", "")), (5, 317, "reset"))
+        self.assertEqual(parse_error_args((-1, 2104, "farm ok")), (-1, 2104, "farm ok"))
+
+    def test_num_handles_decimal_and_unset(self):
+        self.assertEqual(num(decimal.Decimal("300")), 300.0)
+        self.assertIsNone(num(decimal.Decimal(2 ** 127 - 1)))
+        self.assertIsNone(num(1.7976931348623157e308))
+        self.assertIsNone(num("x"))
+
+
+class SessionTests(unittest.TestCase):
+    def connect(self):
+        s, engine, clock = make_session()
+        s.step(clock())
+        app = s.app
+        self.assertEqual(app.calls[0], ("connect", "127.0.0.1", 7497, 61))
+        app.nextValidId(1)
+        return s, engine, clock, app
+
+    def test_ready_subscribes_l1_for_every_active_play(self):
+        s, engine, clock, app = self.connect()
+        self.assertEqual(engine.connection["state"], "CONNECTED")
+        self.assertIn(("reqMarketDataType", 1), app.calls)
+        self.assertEqual(names(app).count("reqMktData"), 4)
+        self.assertEqual(names(app).count("reqHistoricalData"), 8)  # 1-minute + daily per play
+
+    def test_orders_positions_fills_are_shown_read_only(self):
+        s, engine, clock, app = self.connect()
+        self.assertIn("reqPositions", names(app))
+        s.step(clock())
+        self.assertIn("reqAllOpenOrders", names(app))
+        self.assertIn("reqExecutions", names(app))
+        O = lambda **k: type("O", (), k)()
+        app.openOrder(7, O(symbol="AAA"), O(permId=555, action="BUY", totalQuantity=decimal.Decimal("200"),
+                      orderType="LMT", lmtPrice=9.9, auxPrice=0.0, tif="DAY"), O(status="Submitted"))
+        app.orderStatus(7, "Submitted", decimal.Decimal("0"), decimal.Decimal("200"), 0.0, 555, 0, 0.0, 1, "", 0.0)
+        app.openOrderEnd()
+        app.position("DU1", O(symbol="AAA"), decimal.Decimal("100"), 9.80)
+        app.execDetails(1, O(symbol="AAA"), O(execId="e1", side="BOT", shares=decimal.Decimal("100"),
+                                               price=9.80, time="20260926 09:45:00"))
+        app.tickPrice(s.l1_ids["AAA"], 4, 10.0, None)
+        acct = engine.snapshot(clock())["account"]
+        self.assertEqual(acct["pending"][0]["action"], "BUY")
+        self.assertEqual(acct["pending"][0]["lmt"], 9.9)
+        self.assertEqual(acct["positions"][0]["qty"], 100)
+        self.assertEqual(acct["fills"][0]["side"], "BOT")
+        # the order disappears from "pending" once a refresh no longer lists it
+        clock.t += 5
+        s.step(clock())
+        app.openOrderEnd()
+        self.assertEqual(engine.snapshot(clock())["account"]["pending"], [])
+
+    def test_history_bars_feed_the_chart(self):
+        s, engine, clock, app = self.connect()
+        hid = [c[1] for c in app.calls if c[0] == "reqHistoricalData" and c[2] == "AAA"][0]
+        bar = type("Bar", (), {"date": "1712345640", "open": 10.0, "high": 10.1, "low": 9.9,
+                               "close": 10.05, "volume": decimal.Decimal("12000")})()
+        app.historicalData(hid, bar)
+        app.historicalDataEnd(hid, "", "")
+        self.assertEqual(engine.syms["AAA"].bar_list()[0][1:6], [10.0, 10.1, 9.9, 10.05, 12000.0])
+        self.assertNotIn(hid, app.req)
+
+    def test_l1_depth_and_tape_callbacks_reach_engine(self):
+        s, engine, clock, app = self.connect()
+        rid = s.l1_ids["AAA"]
+        app.tickPrice(rid, 4, 10.0, None)
+        app.tickPrice(rid, 1, -1.0, None)          # "no data" price ignored
+        app.tickSize(rid, 0, decimal.Decimal("500"))
+        self.assertEqual(engine.syms["AAA"].l1["last"], 10.0)
+        self.assertIsNone(engine.syms["AAA"].l1["bid"])
+        self.assertEqual(engine.syms["AAA"].l1["bid_size"], 500.0)
+        for sym, px in (("BBB", 55.0), ("CCC", 21.0), ("DDD", 5.5)):
+            app.tickPrice(s.l1_ids[sym], 4, px, None)
+        s.step(clock())
+        self.assertEqual(names(app).count("reqMktDepth"), 3)
+        self.assertEqual(names(app).count("reqTickByTickData"), 3)
+        d_id, t_id = s.depth_ids["AAA"]
+        req = [c for c in app.calls if c[0] == "reqMktDepth" and c[1] == d_id][0]
+        self.assertEqual(req[3:5], (40, True))  # rows requested (every exchange takes a row with SMART depth), smart depth
+        tbt = [c for c in app.calls if c[0] == "reqTickByTickData" and c[1] == t_id][0]
+        self.assertEqual(tbt[3], "AllLast")
+        app.updateMktDepthL2(d_id, 0, "NSDQ", INSERT, ASK, 10.0, decimal.Decimal("800"), True)
+        self.assertEqual(engine.syms["AAA"].book.size_at(ASK, 10.0), 800)
+        app.tickByTickAllLast(t_id, 1, 1712345678, 10.0, decimal.Decimal("100"), None, "ARCA", "")
+        self.assertEqual(engine.syms["AAA"].tape.last()["size"], 100)
+
+    def test_a_book_out_of_step_with_the_tape_is_asked_for_again(self):
+        s, engine, clock, app = self.connect()
+        for sym, px in (("AAA", 10.0), ("BBB", 55.0), ("CCC", 21.0), ("DDD", 5.5)):
+            app.tickPrice(s.l1_ids[sym], 4, px, None)
+        s.step(clock())
+        d_id, t_id = s.depth_ids["AAA"]
+        # a stale book: best bid 9.90 x best ask 9.95 while the tape trades 10.05 (above its ask)
+        app.updateMktDepthL2(d_id, 0, "NSDQ", INSERT, BID, 9.90, decimal.Decimal("500"), True)
+        app.updateMktDepthL2(d_id, 0, "NSDQ", INSERT, ASK, 9.95, decimal.Decimal("500"), True)
+        st = engine.syms["AAA"]
+        st.resync_until = 0
+        t0 = clock()
+        for k in range(25):
+            engine.on_print("AAA", 10.05, 100, "ARCA", t0 + k * 0.5)
+        self.assertTrue(st.resub_depth)
+        before = names(app).count("reqMktDepth")
+        s.step(clock())
+        self.assertEqual(names(app).count("reqMktDepth"), before + 1)
+        self.assertNotEqual(s.depth_ids["AAA"][0], d_id)            # a fresh request id
+        self.assertFalse(st.resub_depth)
+        self.assertTrue(any("out of step with the tape" in m["text"] for m in engine.messages))
+
+    def test_a_healthy_book_is_left_alone(self):
+        s, engine, clock, app = self.connect()
+        for sym, px in (("AAA", 10.0), ("BBB", 55.0), ("CCC", 21.0), ("DDD", 5.5)):
+            app.tickPrice(s.l1_ids[sym], 4, px, None)
+        s.step(clock())
+        d_id, _t = s.depth_ids["AAA"]
+        app.updateMktDepthL2(d_id, 0, "NSDQ", INSERT, BID, 10.04, decimal.Decimal("500"), True)
+        app.updateMktDepthL2(d_id, 0, "NSDQ", INSERT, ASK, 10.05, decimal.Decimal("500"), True)
+        st = engine.syms["AAA"]; st.resync_until = 0
+        for k in range(40):
+            engine.on_print("AAA", 10.05 if k % 2 else 10.04, 100, "ARCA", clock() + k * 0.5)
+        self.assertFalse(getattr(st, "resub_depth", False))
+
+    def test_rotation_cancels_old_depth_and_tape(self):
+        s, engine, clock, app = self.connect()
+        for sym, px in (("AAA", 10.0), ("BBB", 50.0), ("CCC", 20.0), ("DDD", 5.5)):
+            app.tickPrice(s.l1_ids[sym], 4, px, None)
+        s.step(clock())
+        old = s.depth_ids["DDD"] if "DDD" in s.depth_ids else None
+        self.assertIsNone(old)
+        clock.t += 60
+        app.tickPrice(s.l1_ids["DDD"], 4, 5.0, None)
+        app.tickPrice(s.l1_ids["CCC"], 4, 24.0, None)
+        s.step(clock())
+        self.assertIn("DDD", s.depth_ids)
+        self.assertNotIn("CCC", s.depth_ids)
+        self.assertIn("cancelMktDepth", names(app))
+        self.assertIn("cancelTickByTickData", names(app))
+
+    def test_error_317_resets_book(self):
+        s, engine, clock, app = self.connect()
+        app.tickPrice(s.l1_ids["AAA"], 4, 10.0, None)
+        s.step(clock())
+        d_id, _ = s.depth_ids["AAA"]
+        app.updateMktDepthL2(d_id, 0, "", INSERT, ASK, 10.0, 800, True)
+        app.error(d_id, 317, "Market depth data has been RESET", "")
+        self.assertEqual(engine.syms["AAA"].book.levels(ASK), [])
+        self.assertEqual(engine.syms["AAA"].resets, 1)
+
+    def test_error_309_releases_slot_without_cancelling_dead_request(self):
+        s, engine, clock, app = self.connect()
+        app.tickPrice(s.l1_ids["AAA"], 4, 10.0, None)
+        s.step(clock())
+        d_id, t_id = s.depth_ids["AAA"]
+        app.error(d_id, clock(), 309, "Max number (3) of market depth requests has been reached", "")
+        s.step(clock())
+        self.assertNotIn("AAA", s.depth_ids)
+        self.assertNotIn(("cancelMktDepth", d_id, True), app.calls)
+        self.assertIn(("cancelTickByTickData", t_id), app.calls)
+
+    def test_1101_resubscribes_everything(self):
+        s, engine, clock, app = self.connect()
+        app.tickPrice(s.l1_ids["AAA"], 4, 10.0, None)
+        s.step(clock())
+        before = names(app).count("reqMktData")
+        app.error(-1, 1101, "Connectivity restored - data lost")
+        self.assertEqual(names(app).count("reqMktData"), before + 4)
+        self.assertEqual(engine.slots, {})
+        self.assertEqual(engine.connection["state"], "CONNECTED")
+        s.step(clock())
+        self.assertIn("AAA", s.depth_ids)
+
+    def test_1100_pauses_rotation_until_data_is_back(self):
+        s, engine, clock, app = self.connect()
+        app.error(-1, 1100, "Connectivity between IB and TWS has been lost")
+        self.assertEqual(engine.connection["state"], "FEED_DOWN")
+        s.step(clock())
+        self.assertEqual(s.depth_ids, {})                       # nothing is requested while the feed is down
+        app.tickPrice(s.l1_ids["AAA"], 4, 10.0, None)           # a real tick: the feed is back, rotation resumes
+        self.assertEqual(engine.connection["state"], "CONNECTED")
+        s.step(clock())
+        self.assertNotEqual(s.depth_ids, {})
+
+    def test_reconnect_all_farms_clears_feed_down_without_a_1102(self):
+        s, engine, clock, app = self.connect()
+        app.error(-1, 2110, "Connectivity between Trader Workstation and server is broken.")
+        self.assertEqual(engine.connection["state"], "FEED_DOWN")
+        app.error(-1, 2104, "Market data farm connection is OK:usfarm")
+        self.assertEqual(engine.connection["state"], "CONNECTED")
+
+    def test_connection_closed_backs_off_and_reconnects(self):
+        s, engine, clock, app = self.connect()
+        app.connectionClosed()
+        self.assertIsNone(s.app)
+        self.assertEqual(engine.connection["state"], "DISCONNECTED")
+        s.step(clock())
+        self.assertIsNone(s.app)  # still in backoff
+        clock.t += 2.1
+        s.step(clock())
+        self.assertIsNotNone(s.app)
+        self.assertEqual(s.app.calls[0][0], "connect")
+
+    def test_backoff_doubles_until_ready(self):
+        s, engine, clock = make_session()
+        s.step(clock())
+        s.app.connectionClosed()
+        self.assertEqual(s.backoff, 4.0)
+        clock.t += 2.1
+        s.step(clock())
+        s.app.connectionClosed()
+        self.assertEqual(s.backoff, 8.0)
+        clock.t += 4.1
+        s.step(clock())
+        s.app.nextValidId(1)
+        self.assertEqual(s.backoff, 2.0)
+
+    def test_no_next_valid_id_times_out(self):
+        s, engine, clock = make_session()
+        s.step(clock())
+        clock.t += 16
+        s.step(clock())
+        self.assertIsNone(s.app)
+        self.assertIn("nextValidId", engine.connection["detail"])
+
+    def test_live_account_never_gets_an_order(self):
+        s, engine, clock, app = self.connect()
+        app.managedAccounts("U1234567")
+        tr = engine.trader
+        self.assertFalse(tr.gate.arm(True))
+        out = tr.submit("AAA", "BUY", 10.0, 100, clock())
+        self.assertFalse(out["ok"])
+        self.assertIn("PAPER", out["reason"])
+        self.assertNotIn("placeOrder", names(app))
+
+    def test_paper_account_order_round_trip(self):
+        s, engine, clock, app = self.connect()
+        app.managedAccounts("DU7654321")
+        app.nextValidId(41)
+        tr = engine.trader
+        self.assertEqual(tr.gate.mode, "PAPER")
+        self.assertTrue(tr.gate.arm(True))
+        engine.syms["AAA"].play.update(stop=9.5, target=11.0)
+        out = tr.submit("AAA", "BUY", 10.0, 100, clock())
+        self.assertTrue(out["ok"], out)
+        placed = [c for c in app.calls if c[0] == "placeOrder"]
+        self.assertEqual([c[1] for c in placed], [41, 42, 43])
+        self.assertEqual(placed[0][3]["type"], "LMT")
+        self.assertEqual((placed[1][3]["type"], placed[1][3]["aux"], placed[1][3]["price"], placed[1][3]["parent"],
+                          placed[1][3]["oca"]), ("STP LMT", 9.5, 9.4, 41, "twiney41-x1"))
+        self.assertEqual((placed[2][3]["type"], placed[2][3]["price"], placed[2][3]["parent"]), ("LMT", 11.0, 41))
+        self.assertEqual(s.next_order_id, 44)
+        # TWS acknowledges with a permId: the same order, not a duplicate
+        O = lambda **k: type("O", (), k)()
+        app.openOrder(41, O(symbol="AAA"), O(permId=900, action="BUY", totalQuantity=decimal.Decimal("100"),
+                      orderType="LMT", lmtPrice=10.0, auxPrice=0.0, tif="DAY"), O(status="Submitted"))
+        app.orderStatus(41, "Submitted", decimal.Decimal("0"), decimal.Decimal("100"), 0.0, 900, 0, 0.0, 1, "", 0.0)
+        pend = engine.snapshot(clock())["account"]["pending"]
+        self.assertEqual(len([o for o in pend if o["role"] == "entry"]), 1)
+        self.assertEqual([o for o in pend if o["role"] == "entry"][0]["status"], "Submitted")
+        # moving the order re-sends placeOrder with the same id and the new price
+        self.assertTrue(engine.trader.modify(41, 10.05, clock())["ok"])
+        moved = [c for c in app.calls if c[0] == "placeOrder" and c[1] == 41][-1]
+        self.assertEqual((moved[3]["price"], moved[3]["qty"], moved[3]["type"]), (10.05, 100, "LMT"))
+        # cancel goes through cancelOrder with the TWS order id
+        tr.cancel(41, clock())
+        self.assertIn(("cancelOrder", 41, ""), app.calls)
+        n = tr.cancel_all("AAA", clock())["cancelled"]
+        self.assertEqual(n, 3)
+
+    def test_no_order_before_next_valid_id(self):
+        s, engine, clock = make_session()
+        s.step(clock())
+        s.app.managedAccounts("DU1")
+        self.assertIsNone(s.next_order_id)
+        engine.trader.gate.arm(True)
+        out = engine.trader.submit("AAA", "BUY", 10.0, 1, clock())
+        self.assertFalse(out["ok"])
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+
+class AuditFixTests(unittest.TestCase):
+    """Things a live IBKR session gets wrong easily: each pinned by a test."""
+
+    def connect(self):
+        s, engine, clock = make_session()
+        s.step(clock())
+        app = s.app
+        app.nextValidId(1)
+        app.managedAccounts("DU1")
+        return s, engine, clock, app
+
+    def test_moving_a_stop_limit_twice_keeps_the_limit_under_the_stop(self):
+        s, engine, clock, app = self.connect()
+        engine.trader.gate.arm(True)
+        engine.syms["AAA"].play.update(stop=9.5, target=11.0)
+        engine.trader.submit("AAA", "BUY", 10.0, 100, clock())
+        stop_id = [c[1] for c in app.calls if c[0] == "placeOrder" and c[3]["type"] == "STP LMT"][0]
+        s.modify_order(stop_id, 9.0, clock())
+        s.modify_order(stop_id, 9.7, clock())
+        last = [c for c in app.calls if c[0] == "placeOrder" and c[1] == stop_id][-1][3]
+        self.assertEqual((last["aux"], last["price"]), (9.7, 9.6))
+        self.assertEqual(last["oca"], "twiney1-x1")        # still paired with its target
+
+    def test_family_is_held_until_the_last_leg(self):
+        s, engine, clock, app = self.connect()
+        engine.trader.gate.arm(True)
+        engine.syms["AAA"].play.update(stop=9.5, target=11.0)
+        engine.trader.submit("AAA", "BUY", 10.0, 100, clock())
+        self.assertEqual([c[3]["transmit"] for c in app.calls if c[0] == "placeOrder"], [False, False, True])
+
+    def test_option_positions_and_fills_never_touch_the_stock(self):
+        s, engine, clock, app = self.connect()
+        O = lambda **k: type("O", (), k)()
+        app.position("DU1", O(symbol="AAA", secType="STK"), decimal.Decimal("100"), 9.5)
+        app.position("DU1", O(symbol="AAA", secType="OPT"), decimal.Decimal("5"), 120.0)
+        app.execDetails(1, O(symbol="AAA", secType="OPT"), O(execId="x.1.1.01", side="BOT", shares=5, price=1.2, time=""))
+        self.assertEqual(engine.trader.broker.position("AAA"), 100)
+        self.assertEqual(engine.fills, {})                       # the stock's fills (and its P&L) untouched
+        self.assertEqual(len(engine.opt_fills), 1)               # the contract's fill is journaled on its own
+
+    def test_daily_bars_are_new_york_dates_and_today_is_skipped(self):
+        s, engine, clock, app = self.connect()
+        did = [c[1] for c in app.calls if c[0] == "reqHistoricalData" and c[2] == "AAA"][1]
+        mk = lambda d: type("Bar", (), {"date": d, "open": 10.0, "high": 10.5, "low": 9.5, "close": 10.2, "volume": 1e6})()
+        app.historicalData(did, mk("20260105"))
+        from twiney.ibkr import ny_today
+        app.historicalData(did, mk(ny_today(clock())))
+        days = sorted(engine.syms["AAA"].daily)
+        self.assertEqual(len(days), 1)
+        import datetime
+        self.assertEqual(datetime.datetime.utcfromtimestamp(days[0]).strftime("%Y-%m-%d %H"), "2026-01-05 05")
+
+    def test_irregular_prints_never_reach_the_tape(self):
+        s, engine, clock, app = self.connect()
+        for sym, px in (("AAA", 10.0), ("BBB", 55.0), ("CCC", 21.0)):
+            app.tickPrice(s.l1_ids[sym], 4, px, None)
+        s.step(clock())
+        d_id, t_id = s.depth_ids["AAA"]
+        app.tickByTickAllLast(t_id, 1, 0, 11.50, decimal.Decimal("5000"), None, "FINRA", "B")   # average price
+        app.tickByTickAllLast(t_id, 1, 0, 11.40, decimal.Decimal("100"), type("A", (), {"unreported": True})(), "X", "")
+        app.tickByTickAllLast(t_id, 1, 0, 10.01, decimal.Decimal("100"), None, "ARCA", " I")    # odd lot: real
+        self.assertEqual(engine.syms["AAA"].tape.last()["price"], 10.01)
+        self.assertEqual(engine.syms["AAA"].l1["last"], 10.01)
+        self.assertLess(max(b[2] for b in engine.syms["AAA"].bar_list()), 11.0)
+
+    def test_no_bid_clears_the_quote(self):
+        s, engine, clock, app = self.connect()
+        rid = s.l1_ids["AAA"]
+        app.tickPrice(rid, 1, 9.99, None)
+        app.tickPrice(rid, 1, -1.0, None)
+        self.assertIsNone(engine.syms["AAA"].l1["bid"])
+
+    def test_rejected_order_is_not_left_working(self):
+        s, engine, clock, app = self.connect()
+        engine.trader.gate.arm(True)
+        out = engine.trader.submit("AAA", "BUY", 10.0, 100, clock(), bracket=False)
+        app.error(out["id"], 201, "Order rejected - reason: margin")
+        self.assertEqual(engine.snapshot(clock())["account"]["pending"], [])
+
+    def test_disconnect_disarms(self):
+        s, engine, clock, app = self.connect()
+        engine.trader.gate.arm(True)
+        s.handle_closed("test")
+        self.assertFalse(engine.trader.gate.armed)
+        self.assertEqual(engine.trader.gate.mode, "NONE")
+
+    def test_execution_correction_replaces_the_fill_and_commissions_count(self):
+        s, engine, clock, app = self.connect()
+        O = lambda **k: type("O", (), k)()
+        app.execDetails(1, O(symbol="AAA", secType="STK"), O(execId="a.b.01.01", side="BOT", shares=100, price=10.0, time=""))
+        app.execDetails(1, O(symbol="AAA", secType="STK"), O(execId="c.d.01.01", side="SLD", shares=100, price=10.5, time=""))
+        app.execDetails(1, O(symbol="AAA", secType="STK"), O(execId="c.d.01.02", side="SLD", shares=100, price=10.4, time=""))
+        app.commissionReport(O(execId="a.b.01.01", commission=1.0))
+        app.commissionReport(O(execId="c.d.01.02", commission=1.0))
+        self.assertEqual(len(engine.fills), 2)
+        self.assertAlmostEqual(engine.day_pnl()["realized"], 38.0)
+
+    def test_manual_tws_orders_are_shown_but_never_cancelled(self):
+        s, engine, clock, app = self.connect()
+        O = lambda **k: type("O", (), k)()
+        for perm, sym in ((501, "AAA"), (502, "BBB")):
+            app.openOrder(0, O(symbol=sym, secType="STK"), O(permId=perm, clientId=0, action="BUY", totalQuantity=100,
+                          orderType="LMT", lmtPrice=9.0, auxPrice=0.0, tif="DAY"), O(status="Submitted"))
+        self.assertEqual(len(engine.snapshot(clock())["account"]["pending"]), 2)
+        self.assertEqual(s.cancel_all(clock()), 0)
+
+
+
+class _Opt:
+    """An option contract the way ibapi hands it to position()."""
+    def __init__(self, symbol="TSLA", expiry="20261003", strike=240.0, right="C"):
+        self.secType, self.symbol, self.lastTradeDateOrContractMonth, self.strike, self.right = "OPT", symbol, expiry, strike, right
+        self.multiplier, self.localSymbol = "100", f"{symbol}  261003C00240000"
+
+
+class OptionPositionTests(unittest.TestCase):
+    """Option positions from TWS show in POSITIONS with their own quotes and can be scaled in / out of from the
+    desk: LIMIT DAY orders on the contract they came in as. Closing is never blocked; adding goes through the
+    caps in real dollars."""
+    def test_option_price_off_the_step_is_resent_on_the_dime(self):
+        s, engine, clock = make_session(max_dollars_per_order=20000)
+        s.step(clock()); app = s.app; app.nextValidId(50)
+        app.position("DU1", _Opt(), 5, 312.0)
+        rid = s.opt_ids["TSLA 20261003 240C"]
+        app.tickPrice(rid, 1, 3.40, None); app.tickPrice(rid, 2, 3.50, None)
+        tr = engine.trader; tr.gate.set_accounts(["DU1"]); tr.gate.arm(True)
+        out = tr.opt_adjust("TSLA 20261003 240C", 1, "add", 3.55, clock())     # 3.55: not a dime
+        self.assertTrue(out["ok"], out)
+        oid = out["id"]
+        app.error(oid, 110, "The price does not conform to the minimum price variation for this contract.")
+        last = [c for c in app.calls if c[0] == "placeOrder"][-1]
+        self.assertNotEqual(last[1], oid); self.assertIsInstance(last[2], _Opt)
+        self.assertEqual((last[3]["action"], last[3]["qty"], last[3]["price"]), ("BUY", 1, 3.6))     # up to buy
+        app.error(last[1], 110, "again")                                                            # only once
+        self.assertEqual([c for c in app.calls if c[0] == "placeOrder"][-1][1], last[1])
+
+    def test_ibkr_halted_tick_is_said(self):
+        s, engine, clock = make_session()
+        s.step(clock()); app = s.app; app.nextValidId(50)
+        sym, rid = next(iter(s.l1_ids.items()))
+        app.tickGeneric(rid, 49, 1.0)
+        self.assertEqual(engine.syms[sym].halt_kind, "HALTED")
+        self.assertTrue(any(a["label"] == "HALTED" for a in engine.alerts))
+        app.tickGeneric(rid, 49, 0.0)
+        self.assertIsNone(engine.syms[sym].halt_kind)
+
+    def test_option_quotes_come_back_after_a_reconnect(self):
+        s, engine, clock = make_session(max_dollars_per_order=20000)
+        s.step(clock()); app = s.app; app.nextValidId(50)
+        app.position("DU1", _Opt(), 5, 312.0)
+        self.assertIn("TSLA 20261003 240C", s.opt_ids)
+        app.connectionClosed()                                   # TWS restarts / the network drops
+        self.assertEqual(s.opt_ids, {})
+        clock.t += 2.1; s.step(clock()); app2 = s.app; app2.nextValidId(60)
+        self.assertIsNot(app2, app)
+        app2.position("DU1", _Opt(), 5, 312.0)                    # IBKR re-sends the position on the new connection
+        self.assertIn("TSLA 20261003 240C", s.opt_ids)
+        self.assertTrue(any(c[0] == "reqMktData" and len(c) > 1 and c[1] == s.opt_ids["TSLA 20261003 240C"] for c in app2.calls))
+
+    def test_position_quote_and_orders(self):
+        s, engine, clock = make_session(max_dollars_per_order=20000)
+        s.step(clock()); app = s.app; app.nextValidId(50)
+        app.position("DU1", _Opt(), 5, 312.0)          # 5 calls, $3.12 a contract (IBKR: 312 with the multiplier in)
+        p = engine.opt_positions["TSLA 20261003 240C"]
+        self.assertEqual((p["qty"], p["avg_cost"], p["mult"], p["right"], p["strike"]), (5, 312.0, 100.0, "C", 240.0))
+        rid = s.opt_ids["TSLA 20261003 240C"]
+        self.assertIn("reqMktData", names(app))
+        app.tickPrice(rid, 1, 3.40, None); app.tickPrice(rid, 2, 3.50, None); app.tickPrice(rid, 4, 3.45, None)
+        v = next(x for x in engine.snapshot(clock())["account"]["opt_positions"])
+        self.assertEqual((v["label"], v["bid"], v["ask"], v["per_contract"]), ("TSLA 10/03 240C", 3.40, 3.50, 3.12))
+        self.assertAlmostEqual(v["pnl"], (3.45 * 100 - 312.0) * 5, places=2)
+        tr = engine.trader; tr.gate.set_accounts(["DU1"]); tr.gate.arm(True)
+        # scale out at the bid: one price step through it (3.40 -> 3.30) so it fills now
+        out = tr.opt_adjust("TSLA 20261003 240C", 2, "close", None, clock())
+        self.assertTrue(out["ok"], out)
+        placed = [c for c in app.calls if c[0] == "placeOrder"][-1]
+        oid, contract, order = placed[1], placed[2], placed[3]
+        self.assertIsInstance(contract, _Opt)
+        self.assertEqual((order["action"], order["qty"], order["price"], order["type"], order["tif"]), ("SELL", 2, 3.30, "LMT", "DAY"))
+        pend = [o for o in engine._pending() if o.get("symbol") == "TSLA 20261003 240C"]
+        self.assertEqual(len(pend), 1); self.assertTrue(pend[0]["opt"])
+        # scale in one at the ask, at a typed price
+        out = tr.opt_adjust("TSLA 20261003 240C", 1, "add", 3.55, clock())
+        self.assertTrue(out["ok"], out)
+        order = [c for c in app.calls if c[0] == "placeOrder"][-1][3]
+        self.assertEqual((order["action"], order["qty"], order["price"]), ("BUY", 1, 3.55))
+        # drag that order on the OPTION CHART: re-sent to IBKR on the option contract, on a nickel, same id
+        oid = out["id"]
+        mv = tr.modify(oid, 3.62, clock())
+        self.assertTrue(mv["ok"], mv)
+        last = [c for c in app.calls if c[0] == "placeOrder"][-1]
+        self.assertEqual(last[1], oid); self.assertIsInstance(last[2], _Opt); self.assertEqual(last[3]["price"], 3.6)
+        # adding over the dollar cap is blocked in real dollars (60 contracts × $3.55 × 100 = $21,300)
+        out = tr.opt_adjust("TSLA 20261003 240C", 60, "add", 3.55, clock())
+        self.assertFalse(out["ok"]); self.assertIn("cap", out["reason"])
+        # closing works locked / disarmed
+        tr.gate.arm(False); tr.gate.lock_out("day loss")
+        out = tr.opt_adjust("TSLA 20261003 240C", 0, "close", None, clock())
+        self.assertTrue(out["ok"], out)
+        order = [c for c in app.calls if c[0] == "placeOrder"][-1][3]
+        # 5 held, the SELL 2 above still working: the close takes the other 3 (never 5 on top of the 2: that is short 2)
+        self.assertEqual((order["action"], order["qty"]), ("SELL", 3))
+        out = tr.opt_adjust("TSLA 20261003 240C", 0, "close", None, clock())
+        self.assertFalse(out["ok"]); self.assertIn("already being closed", out["reason"])
+        # the fill lands in the journal, the position leaving clears the row
+        class Ex: execId, side, shares, price, time = "e1", "SLD", 5, 3.40, ""
+        app.execDetails(1, _Opt(), Ex())
+        self.assertEqual(engine.fills, {}); self.assertEqual(len(engine.opt_fills), 1)
+        self.assertTrue(engine.snapshot(clock())["account"]["fills"][0]["opt"])
+        app.position("DU1", _Opt(), 0, 0.0)
+        self.assertNotIn("TSLA 20261003 240C", engine.opt_positions)
+
+    def test_no_quote_needs_a_price_and_sim_has_no_options(self):
+        s, engine, clock = make_session()
+        s.step(clock()); app = s.app; app.nextValidId(50)
+        app.position("DU1", _Opt(), 2, 100.0)
+        tr = engine.trader; tr.gate.set_accounts(["DU1"]); tr.gate.arm(True)
+        out = tr.opt_adjust("TSLA 20261003 240C", 1, "close", None, clock())
+        self.assertFalse(out["ok"]); self.assertIn("type a price", out["reason"])
+        self.assertFalse(tr.opt_adjust("NOPE", 1, "close", None, clock())["ok"])
+
+
+class NoSubscriptionTests(SessionTests):
+    """IBKR refuses live quotes (354 / 10168): the desk says what to fix on the MKT light and falls back to DELAYED once."""
+    def test_354_falls_back_to_delayed_and_explains(self):
+        sess, engine, clock, app = self.connect()
+        rid = sess.l1_ids["AAA"]
+        app.error(rid, 354, "Requested market data is not subscribed. Delayed market data is available.", "")
+        self.assertIn("NO LIVE DATA", sess.engine.data_problem); self.assertIn("Client Portal", sess.engine.data_problem)
+        self.assertIn(("reqMarketDataType", 3), app.calls)
+        self.assertEqual(sess.engine.connection["market_data_type"], 3)
+        self.assertNotEqual(sess.l1_ids["AAA"], rid)                      # quotes asked for again, as delayed
+        n = app.calls.count(("reqMarketDataType", 3))
+        app.error(sess.l1_ids["AAA"], 10168, "Requested market data is not subscribed. Delayed market data is not enabled.", "")
+        self.assertEqual(app.calls.count(("reqMarketDataType", 3)), n)    # only once
+        light = sess.engine._feeds(sess.clock())["market"]
+        self.assertEqual(light["label"], "DELAYED"); self.assertIn("not valid", light["detail"])
+
+
+class OptionDepthTests(unittest.TestCase):
+    """The contract on the OPTION CHART gets a real book (IBKR market depth on the option, each exchange's quote): it
+    takes one depth line from the stock ladders while charted, the option LEVEL II shows every level, and a refusal
+    falls back to the top of book, said in MESSAGES."""
+    def _charted(self):
+        s, engine, clock = make_session()
+        s.step(clock()); app = s.app; app.nextValidId(50)
+        app.position("DU1", _Opt(), 2, 312.0)            # IBKR knows the contract now
+        key = "TSLA 20261003 240C"
+        engine.opt_live = {key: clock()}                  # it is on the OPTION CHART
+        return s, engine, clock, app, key
+
+    def test_charted_contract_gets_a_book_and_a_depth_line(self):
+        s, engine, clock, app, key = self._charted()
+        self.assertEqual(engine.opt_depth_wanted(clock()), key)
+        clock.t += 1; s.step(clock())
+        reqs = [c for c in app.calls if c[0] == "reqMktDepth" and isinstance(c[2], _Opt)]
+        self.assertEqual(len(reqs), 1)
+        rid = reqs[0][1]
+        self.assertLessEqual(len(engine.slots), engine.cfg["depth"]["slots"] - 1)     # one line went to the contract
+        for i, (bp, ap, sz) in enumerate(((3.40, 3.50, 20), (3.35, 3.55, 40), (3.30, 3.60, 15))):
+            app.updateMktDepthL2(rid, i, "CBOE", 0, 1, bp, sz, True)
+            app.updateMktDepthL2(rid, i, "ISE", 0, 0, ap, sz + 5, True)
+        rid_q = s.opt_ids[key]
+        app.tickPrice(rid_q, 1, 3.40, None); app.tickPrice(rid_q, 2, 3.50, None)
+        tape = engine.option_tape(key, clock())
+        self.assertTrue(tape["deep_book"])
+        rows = {round(r["price"], 2): r for r in tape["book"]}
+        self.assertEqual(rows[3.35]["bid"], 40); self.assertEqual(rows[3.60]["ask"], 20)
+        engine.opt_live = {}                                                          # chart closed: the line comes back
+        clock.t += 120; s.step(clock())
+        self.assertIn(("cancelMktDepth", rid, True), app.calls)
+        self.assertIsNone(s.opt_depth)
+
+    def test_refused_book_falls_back_to_top_of_book(self):
+        s, engine, clock, app, key = self._charted()
+        clock.t += 1; s.step(clock())
+        rid = s.opt_depth[1]
+        app.error(rid, 309, "Max number (3) of market depth requests has been reached")
+        self.assertIsNone(s.opt_depth)
+        self.assertIsNone(engine.opt_depth_wanted(clock()))                           # not asked again for 5 minutes
+        self.assertTrue(any("no option book" in m["text"] for m in engine.messages))
+        clock.t += 1; s.step(clock())
+        self.assertEqual(len([c for c in app.calls if c[0] == "reqMktDepth" and isinstance(c[2], _Opt)]), 1)
+
+
+class AfterHoursSimOptionsTests(unittest.TestCase):
+    """PAPER after hours: the option chain / chart / L2 / T&S run on the practice model priced from the stock, the
+    OPT light goes yellow SIM, stale IBKR option ticks are ignored, and no option order goes to IBKR on a
+    simulated price. Never on a LIVE account."""
+    def _session(self, acct="DU1"):
+        s, engine, clock = make_session(sim_options_after_hours=True, max_dollars_per_order=50000)
+        clock.t = 1759708800.0 + 21 * 3600          # Monday 5 pm New York: options closed
+        s.step(clock()); app = s.app; app.nextValidId(50)
+        engine.trader.gate.set_accounts([acct])
+        sym = next(iter(s.l1_ids)); rid = s.l1_ids[sym]
+        app.tickPrice(rid, 1, 99.9, None); app.tickPrice(rid, 2, 100.1, None); app.tickPrice(rid, 4, 100.0, None)
+        return s, engine, clock, app, sym
+
+    def test_paper_after_hours_chain_and_light_are_sim(self):
+        s, engine, clock, app, sym = self._session()
+        self.assertTrue(engine.opt_sim(clock()))
+        ch = engine.option_chain(sym, t=clock())
+        self.assertTrue(ch["available"]); self.assertTrue(ch["sim"]); self.assertEqual(ch["source"], "SIM")
+        self.assertTrue(any(r["ask"] for r in ch["rows"]))
+        lights = engine._feeds(clock())
+        self.assertEqual((lights["options"]["color"], lights["options"]["label"]), ("amber", "SIM"))
+
+    def test_live_account_never_sims(self):
+        s, engine, clock, app, sym = self._session(acct="U123")
+        self.assertFalse(engine.opt_sim(clock()))
+
+    def test_market_hours_are_real(self):
+        s, engine, clock, app, sym = self._session()
+        clock.t = 1759708800.0 + 24 * 3600 + 15 * 3600     # Tuesday 11:00 ET
+        self.assertFalse(engine.opt_sim(clock()))
+
+    def test_option_order_is_held_and_ibkr_ticks_ignored(self):
+        s, engine, clock, app, sym = self._session()
+        app.position("DU1", _Opt(symbol=sym), 2, 312.0)
+        key = next(k for k in s.opt_ids if k.startswith(sym + " "))
+        app.tickPrice(s.opt_ids[key], 1, 0.01, None)
+        self.assertNotEqual((engine.opt_quotes.get(key) or {}).get("bid"), 0.01)
+        tr = engine.trader; tr.gate.arm(True)
+        n = len([c for c in app.calls if c[0] == "placeOrder"])
+        out = tr.opt_adjust(key, 1, "close", 3.0, clock())
+        self.assertFalse(out["ok"]); self.assertIn("SIMULATED", out["reason"])
+        self.assertEqual(len([c for c in app.calls if c[0] == "placeOrder"]), n)
+
+
+class StudyHistoryTests(unittest.TestCase):
+    """The chart studies' IBKR histories: 10 years daily, then 30-minute (1 year, regular hours), 5-minute extended
+    hours (kept up to date) and 5-minute chart history, one request at a time (never 6 on a contract inside 2 s)."""
+    def test_requests_go_out_spaced_and_the_live_one_is_kept(self):
+        s, engine, clock = make_session()
+        s.step(clock()); app = s.app; app.nextValidId(1)
+        daily = [c for c in app.calls if c[0] == "reqHistoricalData" and c[5] == "1 day"]
+        self.assertTrue(daily)
+        self.assertEqual(daily[0][4], "10 Y")
+        before = len([c for c in app.calls if c[0] == "reqHistoricalData"])
+        s.step(clock())                                   # same instant: nothing more yet
+        for _ in range(40):
+            clock.t += 0.7
+            s.step(clock())
+        study = [c for c in app.calls if c[0] == "reqHistoricalData"][before:]
+        sizes = [(c[2], c[4], c[5], c[7], c[9]) for c in study]
+        sym = study[0][2]
+        self.assertIn((sym, "1 Y", "30 mins", 1, False), sizes)
+        self.assertIn((sym, "3 D", "5 mins", 0, True), sizes)        # premarket / after hours, kept up to date
+        self.assertIn((sym, "2 M", "5 mins", 0 if not s.cfg["chart"]["regular_hours_only"] else 1, False), sizes)
+        self.assertEqual(len(study), 3 * len(s.l1_ids))
+
+    def test_study_bars_reach_the_engine_and_the_live_update(self):
+        s, engine, clock = make_session()
+        s.step(clock()); app = s.app; app.nextValidId(1)
+        for _ in range(40):
+            clock.t += 0.7
+            s.step(clock())
+        rid = next(r for r, v in app.req.items() if v[0] == "m5x")
+        sym = app.req[rid][1]
+        bar = type("B", (), {"date": "1789999800", "open": 10.0, "high": 10.5, "low": 9.9, "close": 10.2, "volume": 500})()
+        app.historicalData(rid, bar)
+        app.historicalDataEnd(rid, "", "")
+        self.assertIn(rid, app.req)                       # kept up to date: the id stays live
+        bar.high = 10.8
+        app.historicalDataUpdate(rid, bar)
+        self.assertEqual(engine.syms[sym].m5x[1789999800.0][1], 10.8)
+
+
+class RegularSessionDayRangeTests(unittest.TestCase):
+    def test_premarket_print_never_sets_the_low_of_day(self):
+        from twiney.engine import Engine
+        e = Engine(plays(), cfg())
+        sym = next(iter(e.syms))
+        pre = 1_800_000_000.0 + 4.0 * 3600            # 7:00 New York
+        rth = 1_800_000_000.0 + 7.0 * 3600            # 10:00 New York
+        e.on_l1(sym, "bid", 9.99, pre); e.on_l1(sym, "ask", 10.01, pre)
+        e.on_print(sym, 9.00, 100, "ARCA", pre)
+        self.assertIsNone(e.syms[sym].day_lo)
+        e.on_print(sym, 10.00, 100, "ARCA", rth)
+        e.on_print(sym, 9.80, 100, "ARCA", rth + 60)
+        self.assertEqual(e.syms[sym].day_lo[0], 9.80)
+
+
+class OptionChainClassTests(unittest.TestCase):
+    def test_the_standard_class_wins_over_an_odd_one_that_comes_last(self):
+        s, engine, clock = make_session()
+        app = FakeApp(engine, s)
+        app.req[77] = ("chain", "AAA")
+        app.securityDefinitionOptionParameter(77, "SMART", 1, "AAA", "100", ["20261009", "20261016"], [370.0, 375.0, 380.0, 385.0, 390.0])
+        app.securityDefinitionOptionParameter(77, "CBOE", 1, "AAA", "100", ["20261009"], [380.0])
+        app.securityDefinitionOptionParameter(77, "SMART", 1, "2AAA", "100", ["20261016"], [311.0])   # an odd class, last
+        self.assertNotIn("AAA", engine.opt_chain)                    # nothing until IBKR says the answer is complete
+        app.securityDefinitionOptionParameterEnd(77)
+        ch = engine.opt_chain["AAA"]
+        self.assertEqual(ch["strikes"], [370.0, 375.0, 380.0, 385.0, 390.0])
+        self.assertEqual(ch["expiries"], ["20261009", "20261016"])
+
+    def test_no_class_named_after_the_symbol_takes_the_one_with_most_strikes(self):
+        from twiney.ibkr import pick_chain_class
+        rows = [("X1", ["a"], [1.0], 100, 1), ("X2", ["a", "b"], [1.0, 2.0, 3.0], 100, 1), ("X3", ["a"], [1.0, 2.0, 3.0, 4.0], 10, 1)]
+        self.assertEqual(pick_chain_class("AAA", rows)[0], "X2")
+
+
+class OptionChartLineTests(unittest.TestCase):
+    """Right-click the OPTION CHART: 2ND, STOP and TARGET at the contract's own price, like the stock chart."""
+    KEY = "TSLA 20261003 240C"
+
+    def _held(self):
+        s, engine, clock = make_session(max_dollars_per_order=20000)
+        s.step(clock()); app = s.app; app.nextValidId(50)
+        app.position("DU1", _Opt(), 4, 312.0)
+        rid = s.opt_ids[self.KEY]
+        app.tickPrice(rid, 1, 3.40, None); app.tickPrice(rid, 2, 3.50, None)
+        tr = engine.trader; tr.gate.set_accounts(["DU1"]); tr.gate.arm(True)
+        return s, engine, clock, app, rid, tr
+
+    def _orders(self, app):
+        return [c for c in app.calls if c[0] == "placeOrder" and isinstance(c[2], _Opt)]
+
+    def test_target_takes_every_contract_out_once(self):
+        s, engine, clock, app, rid, tr = self._held()
+        self.assertTrue(tr.set_opt_level(self.KEY, "target", 4.00, 1, clock())["ok"])
+        self.assertFalse(tr.set_opt_level(self.KEY, "target", 3.30, 1, clock())["ok"])     # already through it
+        tr.watchdog(clock()); self.assertEqual(self._orders(app), [])
+        app.tickPrice(rid, 1, 4.00, None); app.tickPrice(rid, 2, 4.10, None)
+        tr.watchdog(clock())
+        o = self._orders(app)
+        self.assertEqual(len(o), 1); self.assertEqual((o[0][3]["action"], o[0][3]["qty"]), ("SELL", 4))
+        tr.watchdog(clock()); self.assertEqual(len(self._orders(app)), 1)
+        self.assertNotIn("target", tr._opt_level_view().get(self.KEY, {}))
+
+    def test_stop_on_the_contract(self):
+        s, engine, clock, app, rid, tr = self._held()
+        self.assertTrue(tr.set_opt_level(self.KEY, "stop", 3.00, 1, clock())["ok"])
+        self.assertEqual(tr.opt_stops[self.KEY]["on"], "option")
+        app.tickPrice(rid, 1, 2.95, None); app.tickPrice(rid, 2, 3.05, None)
+        tr.watchdog(clock())
+        o = self._orders(app)
+        self.assertEqual(len(o), 1); self.assertEqual((o[0][3]["action"], o[0][3]["qty"]), ("SELL", 4))
+
+    def test_second_entry_adds_when_the_contract_trades_through_it(self):
+        s, engine, clock, app, rid, tr = self._held()
+        self.assertTrue(tr.set_opt_level(self.KEY, "second_entry", 3.80, 2, clock())["ok"])
+        tr.watchdog(clock()); self.assertEqual(self._orders(app), [])
+        app.tickPrice(rid, 1, 3.80, None); app.tickPrice(rid, 2, 3.90, None)
+        tr.watchdog(clock())
+        o = self._orders(app)
+        self.assertEqual(len(o), 1); self.assertEqual((o[0][3]["action"], o[0][3]["qty"]), ("BUY", 2))
+        self.assertNotIn("second_entry", tr._opt_level_view().get(self.KEY, {}))
+
+    def test_line_off(self):
+        s, engine, clock, app, rid, tr = self._held()
+        tr.set_opt_level(self.KEY, "stop", 3.00, 1, clock())
+        self.assertTrue(tr.set_opt_level(self.KEY, "stop", None, 1, clock())["ok"])
+        self.assertNotIn(self.KEY, tr.opt_stops)
+
+
+class OptionChartLineEdgeTests(OptionChartLineTests):
+    def test_stop_turned_off_elsewhere_stays_off(self):
+        s, engine, clock, app, rid, tr = self._held()
+        tr.set_opt_level(self.KEY, "stop", 3.00, 1, clock())
+        tr.set_opt_stop(self.KEY, None, "option", clock())
+        tr.watchdog(clock()); tr.watchdog(clock())
+        self.assertNotIn(self.KEY, tr.opt_stops)
+        self.assertNotIn("stop", tr._opt_level_view().get(self.KEY, {}))
+
+    def test_one_stop_per_contract(self):
+        s, engine, clock, app, rid, tr = self._held()
+        tr.set_opt_level(self.KEY, "stop", 3.00, 1, clock())
+        tr.set_opt_stop(self.KEY, 2.00, "option", clock())
+        tr.watchdog(clock())
+        self.assertEqual(tr._opt_level_view()[self.KEY]["stop"], 2.00)
+        self.assertEqual(tr.opt_stops[self.KEY]["price"], 2.00)
+
+    def test_flat_clears_every_line(self):
+        s, engine, clock, app, rid, tr = self._held()
+        tr.set_opt_level(self.KEY, "target", 4.00, 1, clock())
+        tr.set_opt_level(self.KEY, "stop", 3.00, 1, clock())
+        tr.watchdog(clock())
+        app.position("DU1", _Opt(), 0, 0.0)
+        tr.watchdog(clock())
+        self.assertNotIn(self.KEY, tr._opt_level_view())
+        self.assertNotIn(self.KEY, tr.opt_stops)
+
+    def test_second_entry_never_fires_late_or_twice(self):
+        s, engine, clock, app, rid, tr = self._held()
+        tr.set_opt_level(self.KEY, "second_entry", 3.80, 1, clock())
+        tr.gate.arm(False)
+        app.tickPrice(rid, 1, 3.85, None); app.tickPrice(rid, 2, 3.95, None)
+        tr.watchdog(clock())                                          # crossed while disarmed: refused, line off
+        self.assertNotIn("second_entry", tr._opt_level_view().get(self.KEY, {}))
+        tr.gate.arm(True)
+        app.tickPrice(rid, 1, 5.90, None); app.tickPrice(rid, 2, 6.00, None)
+        for _ in range(3):
+            tr.watchdog(clock()); clock.t += 20
+        self.assertEqual(self._orders(app), [])                       # nothing chased at 6.00
+
+    def test_line_drawn_flat_that_the_fill_is_through_is_not_set(self):
+        s, engine, clock, app, rid, tr = self._held()
+        app.position("DU1", _Opt(), 0, 0.0); tr.watchdog(clock())
+        tr.set_opt_level(self.KEY, "stop", 3.60, 1, clock())         # a stop ABOVE where it fills
+        app.position("DU1", _Opt(), 2, 345.0)
+        tr.watchdog(clock()); tr.watchdog(clock())
+        self.assertNotIn(self.KEY, tr.opt_stops)
+        self.assertEqual(self._orders(app), [])
+
+
+class DepthVenueTests(unittest.TestCase):
+    def _d(self, ex, st="STK"):
+        from types import SimpleNamespace
+        return SimpleNamespace(exchange=ex, secType=st, listingExch="", serviceDataType="Deep", aggGroup=1)
+
+    def test_missing_nasdaq_is_said(self):
+        s, engine, clock = make_session()
+        s.step(clock()); app = s.app; app.nextValidId(50)
+        self.assertIn("reqMktDepthExchanges", names(app))
+        app.mktDepthExchanges([self._d("ARCA"), self._d("IEX"), self._d("CBOE", "OPT")])
+        self.assertEqual(engine.depth_venues, ["ARCA", "IEX"])
+        self.assertTrue(any("NO NASDAQ" in m["text"] for m in engine.messages))
+
+    def test_nasdaq_present(self):
+        s, engine, clock = make_session()
+        s.step(clock()); app = s.app; app.nextValidId(50)
+        app.mktDepthExchanges([self._d("ARCA"), self._d("ISLAND")])
+        self.assertFalse(any("NO NASDAQ" in m["text"] for m in engine.messages))
+        self.assertTrue(any("ISLAND" in m["text"] for m in engine.messages))
+
+
+class LineLimitTests(unittest.TestCase):
+    """IBKR allows 100 market data lines at once. The desk stays under its budget, never leaves an old stock's chain
+    quotes open, asks again for a refused Time & Sales feed, and goes back to LIVE by itself when another login
+    that took the live data (10197) logs out."""
+
+    def connect(self):
+        s, engine, clock = make_session()
+        s.step(clock()); app = s.app; app.nextValidId(1)
+        for sym, px in (("AAA", 10.0), ("BBB", 55.0), ("CCC", 21.0), ("DDD", 5.5)):
+            app.tickPrice(s.l1_ids[sym], 4, px, None)             # prices in: the ladders take their depth slots
+        return s, engine, clock, app
+
+    def _keys(self, sym, n, base=100):
+        return [f"{sym} 20261009 {base + i}C" for i in range(n)]
+
+    def setUp(self):
+        import twiney.ibkr as ib
+        self._mk = ib.make_option_contract
+        ib.make_option_contract = lambda *a: a                      # no ibapi here
+        self.addCleanup(setattr, ib, "make_option_contract", self._mk)
+
+    def test_switching_chains_drops_the_old_stocks_quotes(self):
+        s, engine, clock, app = self.connect()
+        s.watch_option_quotes("AAPL", self._keys("AAPL", 30))
+        self.assertEqual(len(s.opt_ids), 10)                             # only the 10 nearest the price
+        s.watch_option_quotes("TSLA", self._keys("TSLA", 10))
+        self.assertEqual(sorted({k.split()[0] for k in s.opt_ids}), ["TSLA"])
+        self.assertEqual(names(app).count("cancelMktData"), 10)
+
+    def test_never_over_the_line_budget(self):
+        s, engine, clock, app = self.connect()
+        s.cfg["ibkr"]["chain_quote_rows"] = 200
+        s.watch_option_quotes("AAPL", self._keys("AAPL", 200))
+        self.assertEqual(s.lines_used(), s.lines_budget())
+        self.assertLessEqual(s.lines_used(), 85)
+        self.assertTrue(any("line limit" in m["text"] for m in engine.messages))
+
+    def test_held_and_charted_contracts_keep_their_quotes(self):
+        s, engine, clock, app = self.connect()
+        app.position("DU1", _Opt(), 2, 312.0)
+        held = "TSLA 20261003 240C"
+        self.assertIn(held, engine.opt_positions)
+        s.subscribe_opt(held)
+        s.watch_option_quotes("AAPL", self._keys("AAPL", 5))
+        s.watch_option_quotes("MSFT", self._keys("MSFT", 5))
+        self.assertIn(held, s.opt_ids)
+        for k in ("AAPL 20261009 100C", "AAPL 20261009 101C", "AAPL 20261009 102C"):
+            s.chart_option(k)
+        self.assertNotIn("AAPL 20261009 100C", s.opt_ids)                # only the last two charts keep quotes
+        self.assertIn("AAPL 20261009 101C", s.opt_ids); self.assertIn("AAPL 20261009 102C", s.opt_ids)
+
+    def test_refused_time_and_sales_is_asked_for_again(self):
+        s, engine, clock, app = self.connect()
+        s.step(clock())
+        sym = sorted(s.depth_ids)[0]
+        d_id, t_id = s.depth_ids[sym]
+        app.error(t_id, 10190, "Max number of tick-by-tick requests has been reached.", "")
+        self.assertTrue(any("NO TIME & SALES" in m["text"] for m in engine.messages))
+        n = names(app).count("reqTickByTickData")
+        clock.t += 5; s.step(clock())
+        self.assertEqual(names(app).count("reqTickByTickData"), n)        # not yet
+        clock.t += 20; s.step(clock())
+        self.assertEqual(names(app).count("reqTickByTickData"), n + 1)
+        self.assertNotEqual(s.depth_ids[sym][1], t_id)
+
+    def test_10197_goes_back_to_live_by_itself(self):
+        s, engine, clock, app = self.connect()
+        s.step(clock())
+        self.assertTrue(s.depth_ids)
+        rid = s.l1_ids["AAA"]
+        app.error(rid, 10197, "No market data during competing live session", "")
+        self.assertIn("other login", engine.data_problem)
+        self.assertEqual(engine.connection["market_data_type"], 3)
+        clock.t += 61; s.step(clock())
+        self.assertEqual(app.calls.count(("reqMarketDataType", 1)), 2)   # tried live again
+        app.error(s.l1_ids["AAA"], 10197, "No market data during competing live session", "")   # still on
+        self.assertEqual(app.calls.count(("reqMarketDataType", 3)), 2)   # quietly back to delayed
+        clock.t += 61; s.step(clock())
+        self.assertEqual(app.calls.count(("reqMarketDataType", 1)), 3)
+        n_tape = names(app).count("reqTickByTickData")
+        app.marketDataType(s.l1_ids["AAA"], 1)                             # the other login is gone
+        self.assertEqual(engine.data_problem, "")
+        self.assertFalse(s._delayed_fallback)
+        self.assertTrue(any("LIVE DATA BACK" in m["text"] for m in engine.messages))
+        s.step(clock())
+        self.assertGreater(names(app).count("reqTickByTickData"), n_tape)  # books and Time & Sales asked again
+
+
+class HistoryLoadTests(unittest.TestCase):
+    """A chart has its bars as soon as it opens: the intraday histories go out first, and a refused request (IBKR
+    pacing) is asked again instead of leaving the chart with one bar until tomorrow."""
+
+    def connect(self):
+        s, engine, clock = make_session()
+        s.step(clock())
+        app = s.app
+        app.nextValidId(1)
+        return s, engine, clock, app
+
+    def test_the_5_minute_bars_and_the_extended_hours_go_out_before_the_year_of_30_minute(self):
+        s, engine, clock, app = self.connect()
+        before = len([c for c in app.calls if c[0] == "reqHistoricalData"])
+        for i in range(3):
+            clock.t += 1.0
+            s.step(clock())
+        study = [c for c in app.calls if c[0] == "reqHistoricalData"][before:]
+        self.assertEqual([c[4] for c in study[:3]], ["3 D", "2 M", "1 Y"])       # m5x, m5, m30 for the first symbol
+        self.assertEqual(study[0][5], "5 mins")
+
+    def test_a_refused_minute_history_is_asked_again(self):
+        s, engine, clock, app = self.connect()
+        hid = [c[1] for c in app.calls if c[0] == "reqHistoricalData" and c[2] == "AAA" and c[5] == "1 min"][0]
+        n0 = len([c for c in app.calls if c[0] == "reqHistoricalData" and c[2] == "AAA" and c[5] == "1 min"])
+        app.error(hid, 162, "Historical Market Data Service error message: pacing violation")
+        self.assertNotIn(hid, app.req)
+        clock.t += 5.0; s.step(clock())
+        self.assertEqual(len([c for c in app.calls if c[0] == "reqHistoricalData" and c[2] == "AAA" and c[5] == "1 min"]), n0)   # not yet
+        clock.t += 12.0; s.step(clock())
+        again = [c for c in app.calls if c[0] == "reqHistoricalData" and c[2] == "AAA" and c[5] == "1 min"]
+        self.assertEqual(len(again), n0 + 1)
+        self.assertEqual(again[-1][4], "5 D")
+        self.assertEqual(app.req[again[-1][1]], ("hist", "AAA"))
+
+    def test_a_refusal_is_retried_three_times_then_left(self):
+        s, engine, clock, app = self.connect()
+        for k in range(5):
+            hid = [c[1] for c in app.calls if c[0] == "reqHistoricalData" and c[2] == "AAA" and c[5] == "1 min"][-1]
+            app.error(hid, 162, "pacing violation")
+            clock.t += 70.0; s.step(clock())
+        self.assertEqual(len([c for c in app.calls if c[0] == "reqHistoricalData" and c[2] == "AAA" and c[5] == "1 min"]), 4)

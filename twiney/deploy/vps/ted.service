@@ -1,0 +1,18 @@
+[Unit]
+Description=TED - Twiney's Execution Desk
+After=network-online.target ibgateway.service
+Wants=network-online.target
+
+[Service]
+User=ted
+Group=ted
+WorkingDirectory=/opt/ted/app
+Environment=TWINEY_HOME=/var/lib/ted
+Environment=PYTHONUNBUFFERED=1
+# the desk listens on 127.0.0.1:8765 only (its own rule); you reach it over an SSH tunnel
+ExecStart=/opt/ted/venv/bin/python /opt/ted/app/run_twiney.py --no-browser
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
